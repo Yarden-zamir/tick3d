@@ -2,6 +2,9 @@ import { randomInt } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { type Game, type Player, play, replay } from '../src/game.ts';
 import {
+  CHAT_KEEP,
+  CHAT_MAX_LENGTH,
+  type ChatMessage,
   CODE_ALPHABET,
   CODE_LENGTH,
   type Code,
@@ -13,6 +16,7 @@ import {
   type SessionUpdate,
   type SessionView,
   isMoveList,
+  normalizeChat,
   normalizeName,
 } from '../src/protocol.ts';
 
@@ -80,7 +84,39 @@ function schema(maxSessions: number): string {
         SELECT code FROM sessions ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET ${maxSessions}
       );
     END;
+
+    -- Chat. A deleted session takes its messages with it (foreign keys are on for this connection).
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL REFERENCES sessions (code) ON DELETE CASCADE,
+      seat TEXT NOT NULL CHECK (seat IN ('X', 'O')),
+      text TEXT NOT NULL CHECK (length(text) BETWEEN 1 AND ${CHAT_MAX_LENGTH}),
+      created_at INTEGER NOT NULL
+    ) STRICT;
+    CREATE INDEX IF NOT EXISTS messages_code ON messages (code, id);
+
+    -- Keep the newest messages of each session only.
+    DROP TRIGGER IF EXISTS messages_keep_newest;
+    CREATE TRIGGER messages_keep_newest AFTER INSERT ON messages
+    BEGIN
+      DELETE FROM messages WHERE code = NEW.code AND id NOT IN (
+        SELECT id FROM messages WHERE code = NEW.code ORDER BY id DESC LIMIT ${CHAT_KEEP}
+      );
+    END;
   `;
+}
+
+type MessageRow = { id: number; seat: Player; text: string; created_at: number };
+
+function isMessageRow(value: unknown): value is MessageRow {
+  if (typeof value !== 'object' || value === null) return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.id === 'number' &&
+    (row.seat === 'X' || row.seat === 'O') &&
+    typeof row.text === 'string' &&
+    typeof row.created_at === 'number'
+  );
 }
 
 function newCode(): Code {
@@ -118,6 +154,7 @@ function isLocked(row: Row, games: number[][]): boolean {
 export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA foreign_keys = ON;');
   db.exec(schema(maxSessions));
 
   const select = db.prepare(
@@ -130,6 +167,18 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
     `UPDATE sessions SET name = ?, games = ?, seat_x = ?, seat_o = ?, hide_board = ?, hide_history = ?, locked_game = ?,
      version = version + 1, updated_at = ? WHERE code = ?`,
   );
+
+  const selectChat = db.prepare('SELECT id, seat, text, created_at FROM messages WHERE code = ? ORDER BY id');
+  const insertChat = db.prepare('INSERT INTO messages (code, seat, text, created_at) VALUES (?, ?, ?, ?)');
+  // A message changes the session for the event streams, so it moves the version on.
+  const touch = db.prepare('UPDATE sessions SET version = version + 1, updated_at = ? WHERE code = ?');
+
+  function chatOf(code: Code): ChatMessage[] {
+    return selectChat.all(code).map((row) => {
+      if (!isMessageRow(row)) throw new Error(`unexpected message row for session ${code}`);
+      return { id: row.id, from: row.seat, text: row.text, at: row.created_at };
+    });
+  }
 
   function load(code: Code): Row {
     const row: unknown = select.get(code);
@@ -167,6 +216,7 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
       options: { hideBoard: row.hide_board === 1, hideHistory: row.hide_history === 1 },
       locked: isLocked(row, games),
       version: row.version,
+      chat: chatOf(row.code),
     };
   }
 
@@ -259,6 +309,17 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
       if (isLocked(row, games)) return view(row, player);
       if (currentGame(games).status.kind !== 'playing') throw new StoreError(409, 'This game is over. Start a new game first.');
       return view(save(row, { locked_game: games.length - 1 }), player);
+    },
+
+    chat(code: Code, player: PlayerToken, text: unknown): SessionView {
+      const row = load(code);
+      const seat = seated(row, player);
+      const message = normalizeChat(text);
+      if (message === undefined) throw new StoreError(400, `A message needs 1 to ${CHAT_MAX_LENGTH} characters.`);
+      const now = Date.now();
+      insertChat.run(code, seat, message, now);
+      touch.run(now, code);
+      return view(load(code), player);
     },
 
     close(): void {

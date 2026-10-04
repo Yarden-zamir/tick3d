@@ -15,7 +15,15 @@ import {
   undo,
 } from './game.ts';
 import { api, OnlineError } from './online.ts';
-import { type Code, type MatchOptions, type SessionView, normalizeCode, normalizeName } from './protocol.ts';
+import {
+  type ChatMessage,
+  type Code,
+  type MatchOptions,
+  type SessionView,
+  normalizeChat,
+  normalizeCode,
+  normalizeName,
+} from './protocol.ts';
 import { setMuted, sounds } from './sound.ts';
 
 const MODES = ['computer', 'friend', 'online'] as const;
@@ -172,6 +180,14 @@ const themeSwatch = element('#theme-swatch', HTMLSpanElement);
 const themeName = element('#theme-name', HTMLSpanElement);
 const themePicker = element('#theme-picker', HTMLDivElement);
 const coordsTitle = element('#coords-title', HTMLSpanElement);
+const chatEl = element('#chat', HTMLElement);
+const chatLog = element('#chat-log', HTMLOListElement);
+const chatForm = element('#chat-form', HTMLFormElement);
+const chatInput = element('#chat-input', HTMLInputElement);
+const chatSend = element('#chat-send', HTMLButtonElement);
+const chatNotice = element('#chat-notice', HTMLButtonElement);
+const chatNoticeFrom = element('#chat-notice-from', HTMLElement);
+const chatNoticeText = element('#chat-notice-text', HTMLSpanElement);
 
 type Online = {
   code: Code;
@@ -181,6 +197,7 @@ type Online = {
   options: MatchOptions;
   locked: boolean;
   version: number;
+  chat: ChatMessage[];
   unsubscribe: () => void;
 };
 
@@ -196,6 +213,14 @@ let busy = false;
 // Increments on every new local game, so a computer move scheduled for an old game is dropped.
 let round = 0;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+// Chat sends do not use `busy`, so a message never blocks a move.
+let chatSending = false;
+// What the chat log shows, so a render rebuilds it (and scrolls it) only when messages change.
+let chatShown = '';
+let chatNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+// Messages from the other player that arrived while this tab was in the background.
+let unread = 0;
+const baseTitle = document.title;
 // The keypad entry: layer, row, column, each 1..4. A tap fills the next one.
 let coordDigits: number[] = [];
 
@@ -433,6 +458,13 @@ function applyView(view: SessionView): void {
     after.moves.length === before.moves.length + 1 &&
     before.moves.every((cell, i) => after.moves[i] === cell);
   if (isNewMove) announce(after);
+  const lastSeen = previous.chat.at(-1)?.id ?? -1;
+  const incoming = online.chat.filter((message) => message.id > lastSeen && message.from !== online?.you);
+  const newest = incoming.at(-1);
+  if (newest !== undefined) {
+    sounds.message();
+    notifyChat(newest, incoming.length);
+  }
   if (review && review.game >= games.length) review = undefined;
   releaseLockIfOver();
   render();
@@ -634,6 +666,7 @@ function render(): void {
   if (review) reviewLabel.textContent = statusText();
   coordsForm.hidden = review !== undefined;
   renderCoords();
+  renderChat();
 
   document.querySelectorAll<HTMLElement>('[data-show-mode]').forEach((field) => {
     field.hidden = field.dataset.showMode !== settings.mode;
@@ -893,6 +926,115 @@ coordsForm.addEventListener('submit', (event) => {
   coordDigits = [];
   humanMove(target);
   renderCoords();
+});
+
+// ---- Chat ----
+
+function renderChat(): void {
+  chatEl.hidden = online === undefined;
+  if (online === undefined) {
+    chatShown = '';
+    return;
+  }
+  const canWrite = online.you !== null;
+  chatInput.disabled = !canWrite;
+  chatSend.disabled = !canWrite || chatSending;
+  chatInput.placeholder = canWrite ? 'Message your opponent' : 'Only the two players can chat';
+
+  const shown = `${online.code}:${online.chat.map((message) => message.id).join(',')}`;
+  if (shown === chatShown) return;
+  chatShown = shown;
+  if (online.chat.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'chat-empty';
+    empty.textContent = canWrite ? 'No messages yet. Say hi.' : 'No messages yet.';
+    chatLog.replaceChildren(empty);
+    return;
+  }
+  chatLog.replaceChildren(
+    ...online.chat.map((message) => {
+      const item = document.createElement('li');
+      item.className = `chat-message from-${message.from.toLowerCase()}`;
+      item.classList.toggle('mine', message.from === online?.you);
+      const name = document.createElement('b');
+      name.textContent = playerName(message.from);
+      const text = document.createElement('span');
+      text.dir = 'auto'; // Hebrew and Arabic messages read right to left
+      text.textContent = message.text;
+      item.append(name, text);
+      return item;
+    }),
+  );
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+// True when the whole chat box is on screen, so the player sees new messages arrive.
+function chatInView(): boolean {
+  if (chatEl.hidden || document.hidden) return false;
+  const box = chatEl.getBoundingClientRect();
+  return box.top >= 0 && box.bottom <= innerHeight;
+}
+
+// A bar at the top of the screen with the newest message, unless the chat is already in view.
+// In a background tab, the page title also counts unread messages.
+function notifyChat(message: ChatMessage, count: number): void {
+  if (document.hidden) {
+    unread += count;
+    document.title = `(${unread}) ${baseTitle}`;
+  }
+  if (chatInView()) return;
+  chatNoticeFrom.textContent = playerName(message.from);
+  chatNoticeText.textContent = message.text;
+  chatNotice.classList.toggle('from-x', message.from === 'X');
+  chatNotice.classList.toggle('from-o', message.from === 'O');
+  chatNotice.hidden = false;
+  clearTimeout(chatNoticeTimer);
+  chatNoticeTimer = setTimeout(hideChatNotice, 6000);
+}
+
+function hideChatNotice(): void {
+  clearTimeout(chatNoticeTimer);
+  chatNotice.hidden = true;
+}
+
+chatNotice.addEventListener('click', () => {
+  hideChatNotice();
+  chatEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (online?.you != null) chatInput.focus({ preventScroll: true });
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  unread = 0;
+  document.title = baseTitle;
+});
+
+chatForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (online === undefined || chatSending) return;
+  if (online.you === null) return reject(undefined, 'spectator');
+  const text = normalizeChat(chatInput.value);
+  if (text === undefined) {
+    sounds.invalid();
+    showToast('Type a message first.');
+    return;
+  }
+  const code = online.code;
+  chatSending = true;
+  render();
+  void (async () => {
+    try {
+      const view = await api.chat(code, text);
+      chatInput.value = '';
+      sounds.sent();
+      if (online?.code === code) applyView(view);
+    } catch (error) {
+      showError(error);
+    } finally {
+      chatSending = false;
+      render();
+    }
+  })();
 });
 
 joinForm.addEventListener('submit', (event) => {

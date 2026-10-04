@@ -116,6 +116,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     }
     case 'POST games':
       return mutate(store.newGame(code, requirePlayer(req)));
+    case 'POST chat': {
+      const body = await readJson(req);
+      const text = typeof body === 'object' && body !== null && 'text' in body ? body.text : undefined;
+      return mutate(store.chat(code, requirePlayer(req), text));
+    }
     default:
       throw new StoreError(404, 'Not found.');
   }

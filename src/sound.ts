@@ -48,6 +48,16 @@ export const sounds = {
     tone({ frequency: 180, duration: 0.12, type: 'square', volume: 0.06 });
     tone({ frequency: 140, at: 0.11, duration: 0.16, type: 'square', volume: 0.06 });
   },
+  // A chat message from the other player: a bright two-note ding.
+  message(): void {
+    tone({ frequency: 987.77, duration: 0.12, type: 'triangle', volume: 0.16 });
+    tone({ frequency: 1318.51, at: 0.1, duration: 0.22, type: 'triangle', volume: 0.16 });
+    tone({ frequency: 2637, at: 0.1, duration: 0.1, volume: 0.03 });
+  },
+  // Your chat message left: a short upward whoosh.
+  sent(): void {
+    tone({ frequency: 520, duration: 0.14, volume: 0.09, slideTo: 1240 });
+  },
   click(): void {
     tone({ frequency: 1200, duration: 0.04, volume: 0.05 });
   },

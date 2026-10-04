@@ -1033,6 +1033,172 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.45rem;
 }
 
+/* ---- Chat ---- */
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: min(100%, 26rem);
+  padding: 0.7rem;
+  border: var(--border) solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+.chat-title {
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  height: 9rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.5rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  list-style: none;
+}
+
+.chat-empty {
+  margin: auto;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* A bubble in the color of its sender's mark. Your own bubbles sit on the right. */
+.chat-message {
+  display: grid;
+  max-width: 85%;
+  align-self: flex-start;
+  padding: 0.3rem 0.6rem 0.35rem;
+  border: 2px solid var(--line);
+  border-radius: 8px 8px 8px 2px;
+  box-shadow: 2px 2px 0 var(--shadow);
+  color: var(--on-color);
+  overflow-wrap: anywhere;
+}
+
+.chat-message.mine {
+  align-self: flex-end;
+  border-radius: 8px 8px 2px 8px;
+}
+
+.chat-message.from-x {
+  background: var(--x);
+}
+
+.chat-message.from-o {
+  background: var(--o);
+}
+
+.chat-message b {
+  font-size: 0.75rem;
+}
+
+.chat-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.chat-form input {
+  flex: 1;
+}
+
+.chat-form button {
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  border: var(--border) solid var(--line);
+  background: var(--primary);
+  color: var(--on-color);
+  box-shadow: 3px 3px 0 var(--shadow);
+  font-weight: 800;
+  cursor: pointer;
+  transition: translate 0.08s, box-shadow 0.08s;
+}
+
+.chat-form button:hover:not(:disabled) {
+  translate: -1px -1px;
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+.chat-form button:active:not(:disabled) {
+  translate: 3px 3px;
+  box-shadow: 0 0 0 var(--shadow);
+}
+
+/* A bar that slides in from the top when the other player writes. */
+.chat-notice {
+  position: fixed;
+  z-index: 10;
+  top: max(0.75rem, env(safe-area-inset-top));
+  left: 50%;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: min(calc(100vw - 2rem), 26rem);
+  padding: 0.55rem 0.8rem;
+  border: var(--border) solid #000;
+  border-radius: 12px;
+  background: var(--primary);
+  color: var(--on-color);
+  box-shadow: 5px 5px 0 #000;
+  text-align: left;
+  cursor: pointer;
+  animation: notice-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.chat-notice.from-x {
+  background: var(--x);
+}
+
+.chat-notice.from-o {
+  background: var(--o);
+}
+
+.chat-notice-icon {
+  font-size: 1.3rem;
+}
+
+.chat-notice-body {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-notice-body b {
+  font-size: 0.8rem;
+}
+
+.chat-notice-body span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.chat-notice small {
+  padding: 0.2rem 0.5rem;
+  border: 2px solid #000;
+  border-radius: 6px;
+  background: #fff;
+  color: #000;
+  font-weight: 800;
+}
+
+@keyframes notice-in {
+  from {
+    translate: -50% -150%;
+  }
+}
+
 /* ---- History ---- */
 
 .history ol {

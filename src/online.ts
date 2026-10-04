@@ -71,6 +71,7 @@ export const api = {
   newGame: (code: Code) => request('POST', `/${code}/games`),
   update: (code: Code, changes: SessionUpdate) => request('PATCH', `/${code}`, changes),
   lock: (code: Code) => request('POST', `/${code}/lock`),
+  chat: (code: Code, text: string) => request('POST', `/${code}/chat`, { text }),
 
   // Calls onChange after every change, and after each reconnect in case a change was missed.
   subscribe(code: Code, onChange: () => void): () => void {

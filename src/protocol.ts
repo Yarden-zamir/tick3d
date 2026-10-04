@@ -8,12 +8,17 @@ export const NAME_MAX_LENGTH = 40;
 export const MAX_SESSIONS = 10_000;
 // Each game holds at most 64 moves, so this caps one session row at about 100 kB.
 export const MAX_GAMES_PER_SESSION = 500;
+export const CHAT_MAX_LENGTH = 200;
+// A session keeps its newest messages only.
+export const CHAT_KEEP = 50;
 
 export type Code = string & { readonly __brand: 'Code' };
 export type PlayerToken = string & { readonly __brand: 'PlayerToken' };
 
 // Match options apply to both players and to watchers. View and layout stay per screen.
 export type MatchOptions = { hideBoard: boolean; hideHistory: boolean };
+
+export type ChatMessage = { id: number; from: Player; text: string; at: number };
 
 export type SessionView = {
   code: Code;
@@ -25,6 +30,8 @@ export type SessionView = {
   // True while a lock holds: from the lock until the live game ends.
   locked: boolean;
   version: number;
+  // Oldest first. Only the two players can write, everybody with the code can read.
+  chat: ChatMessage[];
 };
 
 export type SessionUpdate = { name?: string } & Partial<MatchOptions>;
@@ -43,6 +50,12 @@ export function normalizeName(input: unknown): string | undefined {
   return name.length >= 1 && name.length <= NAME_MAX_LENGTH ? name : undefined;
 }
 
+export function normalizeChat(input: unknown): string | undefined {
+  if (typeof input !== 'string') return undefined;
+  const text = input.trim();
+  return text.length >= 1 && text.length <= CHAT_MAX_LENGTH ? text : undefined;
+}
+
 const TOKEN_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789-';
 
 // A token is a crypto.randomUUID() kept in the browser. It proves which seat a browser holds.
@@ -54,6 +67,19 @@ export function asPlayerToken(input: unknown): PlayerToken | undefined {
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 const isCell = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < CELL_COUNT;
+
+function isChatMessage(value: unknown): value is ChatMessage {
+  if (!isRecord(value)) return false;
+  const { id, from, text, at } = value;
+  return (
+    typeof id === 'number' &&
+    Number.isInteger(id) &&
+    (from === 'X' || from === 'O') &&
+    normalizeChat(text) === text &&
+    typeof at === 'number' &&
+    Number.isFinite(at)
+  );
+}
 
 export function isMoveList(value: unknown): value is number[] {
   return Array.isArray(value) && value.length <= CELL_COUNT && value.every(isCell);
@@ -95,7 +121,7 @@ export function parseSessionView(value: unknown): SessionView {
   if (!isRecord(value)) return fail('body');
   const code = typeof value.code === 'string' ? normalizeCode(value.code) : undefined;
   const name = normalizeName(value.name);
-  const { games, seats, you, options, locked, version } = value;
+  const { games, seats, you, options, locked, version, chat } = value;
   if (code === undefined) return fail('code');
   if (name === undefined) return fail('name');
   if (!Array.isArray(games) || games.length === 0 || !games.every(isMoveList)) return fail('games');
@@ -106,6 +132,7 @@ export function parseSessionView(value: unknown): SessionView {
   }
   if (typeof locked !== 'boolean') return fail('locked');
   if (typeof version !== 'number' || !Number.isInteger(version)) return fail('version');
+  if (!Array.isArray(chat) || chat.length > CHAT_KEEP || !chat.every(isChatMessage)) return fail('chat');
   return {
     code,
     name,
@@ -115,5 +142,6 @@ export function parseSessionView(value: unknown): SessionView {
     options: { hideBoard: options.hideBoard, hideHistory: options.hideHistory },
     locked,
     version,
+    chat: chat.map(({ id, from, text, at }) => ({ id, from, text, at })),
   };
 }
