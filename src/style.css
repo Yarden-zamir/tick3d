@@ -154,10 +154,9 @@ input:disabled {
 
 .brand {
   grid-area: brand;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 1rem;
 }
 
@@ -330,7 +329,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 .board.tower {
   flex-direction: column-reverse;
   align-items: center;
-  perspective: 1400px;
   /* The lowest plane draws below its box, so the padding keeps it clear of the controls under the board. */
   padding-block: 0 calc(var(--side) * 0.3);
 }
@@ -344,12 +342,16 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: grid;
   place-items: center;
   transform-style: preserve-3d;
+  /* Each layer has its own vanishing point, so all four planes show the same tilt. */
+  perspective: 1400px;
 }
 
+/* The tilted plane is a diamond, so the box is empty above its left corner.
+   The label sits there, beside the upper left edge of its own plane. */
 .tower .layer-label {
   position: absolute;
   left: 0;
-  top: 50%;
+  top: 30%;
   translate: 0 -50%;
 }
 
@@ -473,12 +475,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   inset: 4%;
   border-radius: 50%;
   border: calc(var(--cell) * 0.13) solid var(--o);
-}
-
-/* In the tower, pieces stand up toward the viewer like tokens. */
-.tower .piece {
-  transform: rotateZ(-45deg) rotateX(-62deg);
-  transform-origin: 50% 80%;
 }
 
 .cell.win {
@@ -856,6 +852,24 @@ body[data-turn='O'] .status[data-state='playing'] {
   .app {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: 'brand' 'stage' 'panel';
+    gap: 1.25rem;
+  }
+
+  /* One column: the tower may use the full width. A layer box is 6.75 cells wide. */
+  :root {
+    --cell: clamp(30px, 11.5vw, 50px);
+  }
+
+  .brand {
+    gap: 0.75rem;
+  }
+
+  .brand p {
+    font-size: 0.9rem;
+  }
+
+  .theme-switch button {
+    padding-inline: 0.55rem;
   }
 }
 

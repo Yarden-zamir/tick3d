@@ -10,9 +10,16 @@ import {
 
 const TOKEN_KEY = 'tick3d.player';
 
+// crypto.randomUUID exists only on HTTPS and localhost. A phone on the local network loads the dev
+// server over plain HTTP, so fall back to random hex from getRandomValues, which works everywhere.
+function randomId(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 function newToken(): PlayerToken {
-  const token = asPlayerToken(crypto.randomUUID());
-  if (token === undefined) throw new Error('crypto.randomUUID produced an invalid player token');
+  const token = asPlayerToken(randomId());
+  if (token === undefined) throw new Error('randomId produced an invalid player token');
   return token;
 }
 
