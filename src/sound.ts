@@ -48,6 +48,10 @@ export const sounds = {
     tone({ frequency: 180, duration: 0.12, type: 'square', volume: 0.06 });
     tone({ frequency: 140, at: 0.11, duration: 0.16, type: 'square', volume: 0.06 });
   },
+  // A clock tick in the last 10 seconds. The last 3 seconds sound higher.
+  tick(urgent: boolean): void {
+    tone({ frequency: urgent ? 1400 : 900, duration: 0.05, type: 'square', volume: 0.04 });
+  },
   click(): void {
     tone({ frequency: 1200, duration: 0.04, volume: 0.05 });
   },

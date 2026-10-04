@@ -34,6 +34,11 @@
 
       <section class="stage">
         <div class="status" id="status" aria-live="polite"></div>
+        <div class="clocks" id="clocks" hidden>
+          <span class="clock x" data-clock="X"></span>
+          <span class="clock o" data-clock="O"></span>
+          <span class="clock-note" id="clock-note">The clock starts after the first move of each player.</span>
+        </div>
         <div class="board" id="board" role="grid" aria-label="Game board"></div>
         <div class="board-hidden" id="board-hidden" hidden>
           <strong>Board hidden</strong>
@@ -114,7 +119,7 @@
           <div class="join-row">
             <input id="join-code" maxlength="4" placeholder="Code" autocapitalize="characters" autocomplete="off" />
             <button type="submit">Join</button>
-            <button type="button" id="new-code">New code</button>
+            <button type="button" id="new-code" title="Create an online game with a new code" aria-label="New code: create an online game">New code</button>
           </div>
         </form>
 
@@ -134,6 +139,44 @@
             <button type="button" data-value="column">Top to bottom</button>
             <button type="button" data-value="steps">Steps</button>
           </div>
+        </div>
+
+        <div class="field clock-editor">
+          <span class="label">Time limit</span>
+          <div class="limits">
+            <div class="limit" data-limit="perGame">
+              <label class="limit-switch">
+                <span>Whole game, each player</span>
+                <input type="checkbox" role="switch" data-limit-on />
+              </label>
+              <div class="limit-options" role="group" aria-label="Time per player">
+                <button type="button" data-preset="60">1m</button>
+                <button type="button" data-preset="180">3m</button>
+                <button type="button" data-preset="300">5m</button>
+                <button type="button" data-preset="600">10m</button>
+                <label class="limit-custom">
+                  <input type="number" data-limit-value inputmode="decimal" placeholder="custom" min="0.5" max="120" step="0.5" aria-label="Custom minutes per player" />
+                  <span>min</span>
+                </label>
+              </div>
+            </div>
+            <div class="limit" data-limit="perMove">
+              <label class="limit-switch">
+                <span>Each move</span>
+                <input type="checkbox" role="switch" data-limit-on />
+              </label>
+              <div class="limit-options" role="group" aria-label="Time per move">
+                <button type="button" data-preset="10">10s</button>
+                <button type="button" data-preset="30">30s</button>
+                <button type="button" data-preset="60">1m</button>
+                <label class="limit-custom">
+                  <input type="number" data-limit-value inputmode="numeric" placeholder="custom" min="3" max="600" step="1" aria-label="Custom seconds per move" />
+                  <span>sec</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <p class="clock-summary" id="clock-summary"></p>
         </div>
 
         <div class="field">
@@ -161,6 +204,7 @@
           <button type="button" id="sound" aria-label="Sound"></button>
         </div>
         <button type="button" class="lock" id="lock"></button>
+        <button type="button" class="lock" id="show-card" hidden>🏆 Result card</button>
 
         <details class="history" id="history-box">
           <summary>Games in this session</summary>
@@ -172,10 +216,29 @@
           <p>Take turns to place a mark. Get four in a straight line to win.</p>
           <p>Lines can run along a layer, up through the layers, or diagonally through the cube. There are 76 lines.</p>
           <p>Point at a cell to light up the cells above and below it.</p>
+          <p>Time limits work like a chess clock. Set a limit for each player's whole game, a limit per move, or both. A player who runs out of either limit loses. The first move of each player is untimed. A change during a game starts with the next game.</p>
           <p>Lock settings keeps every setting, the view included, until the game ends. Online, the lock and the hide options apply to both players.</p>
         </details>
       </aside>
     </div>
+    <dialog class="end-card" id="end-card" aria-label="Game result">
+      <img id="end-card-image" alt="" width="1080" height="1350" />
+      <div class="include-options">
+        <label class="include" id="end-card-code-option">
+          <input type="checkbox" id="end-card-code" checked />
+          <span>Include the game code</span>
+        </label>
+        <label class="include">
+          <input type="checkbox" id="end-card-link" checked />
+          <span>Include the link</span>
+        </label>
+      </div>
+      <div class="end-card-actions">
+        <button type="button" class="primary" id="end-card-share">Share</button>
+        <button type="button" id="end-card-save">Save image</button>
+        <button type="button" id="end-card-close">Close</button>
+      </div>
+    </dialog>
     <div class="toast" id="toast" role="alert"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

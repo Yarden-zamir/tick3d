@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { CODE_ALPHABET, type Code, type PlayerToken } from '../src/protocol.ts';
+import type { TimeControl } from '../src/clock.ts';
+import { CODE_ALPHABET, type Code, MAX_SESSIONS, type PlayerToken } from '../src/protocol.ts';
 import { type Store, StoreError, openStore } from './store.ts';
 
 const alice = 'aaaaaaaa-0000-4000-8000-000000000001' as PlayerToken;
@@ -32,7 +33,13 @@ describe('sessions', () => {
     const view = store.create(alice, '  Friday match ');
     expect(view.code).toHaveLength(4);
     expect([...view.code].every((c) => CODE_ALPHABET.includes(c))).toBe(true);
-    expect(view).toMatchObject({ name: 'Friday match', you: 'X', games: [[]], seats: { X: true, O: false } });
+    expect(view).toMatchObject({
+      name: 'Friday match',
+      you: 'X',
+      games: [{ moves: [], times: [], clock: { perMove: null, perGame: null }, timedOut: false }],
+      seats: { X: true, O: false },
+      clock: { perMove: null, perGame: null },
+    });
   });
 
   it('seats the second player as O and lets a third one watch', () => {
@@ -68,7 +75,7 @@ describe('moves', () => {
     store.move(code, alice, { game: 0, moveCount: 0, cell: 0 });
     expect(status(() => store.move(code, bob, { game: 0, moveCount: 0, cell: 1 }))).toBe(409);
     expect(status(() => store.move(code, bob, { game: 0, moveCount: 1, cell: 0 }))).toBe(409);
-    expect(store.move(code, bob, { game: 0, moveCount: 1, cell: 1 }).games).toEqual([[0, 1]]);
+    expect(store.move(code, bob, { game: 0, moveCount: 1, cell: 1 }).games[0]?.moves).toEqual([0, 1]);
   });
 
   it('keeps finished games in the history when a new game starts', () => {
@@ -78,8 +85,8 @@ describe('moves', () => {
     moves.forEach((cell, i) => store.move(code, i % 2 === 0 ? alice : bob, { game: 0, moveCount: i, cell }));
     expect(status(() => store.move(code, bob, { game: 0, moveCount: 7, cell: 5 }))).toBe(409);
     const view = store.newGame(code, bob);
-    expect(view.games).toEqual([moves, []]);
-    expect(store.get(code, carol).games[0]).toEqual(moves);
+    expect(view.games.map((game) => game.moves)).toEqual([moves, []]);
+    expect(store.get(code, carol).games[0]?.moves).toEqual(moves);
   });
 });
 
@@ -110,6 +117,60 @@ describe('match options and lock', () => {
     expect(status(() => store.lock(code, alice))).toBe(409);
     expect(store.update(code, bob, { hideBoard: true }).options.hideBoard).toBe(true);
     expect(store.newGame(code, alice).locked).toBe(false);
+  });
+});
+
+describe('clock', () => {
+  let time = 1_000_000;
+  const clockStore = (clock: TimeControl) => {
+    time = 1_000_000;
+    store = openStore(':memory:', MAX_SESSIONS, () => time);
+    const { code } = store.create(alice, 'Timed', clock);
+    store.join(code, bob);
+    return code;
+  };
+  const move = (code: Code, player: PlayerToken, moveCount: number, cell: number) =>
+    store.move(code, player, { game: 0, moveCount, cell });
+
+  it('records a timeout on the next read, without a page reporting it', () => {
+    const code = clockStore({ perMove: 10, perGame: null });
+    move(code, alice, 0, 0);
+    time += 60_000; // first moves are untimed
+    move(code, bob, 1, 1);
+    time += 9_000;
+    move(code, alice, 2, 2);
+    time += 10_001;
+    expect(store.get(code, carol).games[0]).toMatchObject({ timedOut: true, moves: [0, 1, 2] });
+    expect(status(() => move(code, bob, 3, 3))).toBe(409);
+    expect(store.newGame(code, bob).games).toHaveLength(2);
+  });
+
+  it('applies both limits together', () => {
+    const code = clockStore({ perMove: 20, perGame: 30 });
+    move(code, alice, 0, 0);
+    move(code, bob, 1, 1);
+    time += 19_000; // inside the move limit
+    move(code, alice, 2, 2);
+    move(code, bob, 3, 3);
+    time += 11_001; // inside the move limit, but X has used 30 s of the game limit
+    expect(store.get(code, alice).games[0]?.timedOut).toBe(true);
+  });
+
+  it('keeps the limit of a started game and applies a change from the next game', () => {
+    const code = clockStore({ perMove: null, perGame: null });
+    const before = store.update(code, alice, { clock: { perMove: 30, perGame: null } });
+    expect(before.games[0]?.clock).toEqual({ perMove: 30, perGame: null });
+    move(code, alice, 0, 0);
+    const during = store.update(code, bob, { clock: { perMove: null, perGame: 300 } });
+    expect(during.clock).toEqual({ perMove: null, perGame: 300 });
+    expect(during.games[0]?.clock).toEqual({ perMove: 30, perGame: null });
+    [1, 16, 2, 32, 3, 48].forEach((cell, i) => move(code, i % 2 === 0 ? bob : alice, i + 1, cell));
+    expect(store.newGame(code, alice).games[1]?.clock).toEqual({ perMove: null, perGame: 300 });
+  });
+
+  it('keeps out-of-range limits out of the table', () => {
+    store = openStore(':memory:');
+    expect(() => store.create(alice, 'Bad', { perMove: 1, perGame: null })).toThrow();
   });
 });
 
