@@ -8,7 +8,9 @@
       // Apply a stored theme before the first paint, so the page never flashes the other theme.
       try {
         const theme = JSON.parse(localStorage.getItem('tick3d.settings') ?? 'null')?.theme;
-        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+        if (['light', 'dark', 'candy', 'mint', 'midnight', 'mono'].includes(theme)) {
+          document.documentElement.dataset.theme = theme;
+        }
       } catch {}
     </script>
     <title>tick3d · 3D tic-tac-toe</title>
@@ -24,14 +26,8 @@
   <body>
     <div class="app">
       <header class="brand">
-        <div>
-          <h1>tick<span>3d</span></h1>
-          <p>Four in a row, in any direction, through a 4×4×4 cube.</p>
-        </div>
-        <div class="theme-switch" role="group" aria-label="Color theme">
-          <button type="button" data-theme-choice="light">☀ Light</button>
-          <button type="button" data-theme-choice="dark">☾ Dark</button>
-        </div>
+        <h1>tick<span>3d</span></h1>
+        <p>Four in a row, in any direction, through a 4×4×4 cube.</p>
       </header>
 
       <section class="stage">
@@ -135,6 +131,23 @@
             <button type="button" data-value="row">Side by side</button>
             <button type="button" data-value="column">Top to bottom</button>
             <button type="button" data-value="steps">Steps</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="label" id="theme-label">Theme</span>
+          <div class="theme-picker" role="group" aria-labelledby="theme-label">
+            <button type="button" data-theme-choice="system">
+              <span class="swatch"><span data-theme="light"></span><span data-theme="dark"></span></span>Auto
+            </button>
+            <button type="button" data-theme-choice="light"><span class="swatch" data-theme="light"><span></span></span>Light</button>
+            <button type="button" data-theme-choice="dark"><span class="swatch" data-theme="dark"><span></span></span>Dark</button>
+            <button type="button" data-theme-choice="candy"><span class="swatch" data-theme="candy"><span></span></span>Candy</button>
+            <button type="button" data-theme-choice="mint"><span class="swatch" data-theme="mint"><span></span></span>Mint</button>
+            <button type="button" data-theme-choice="midnight">
+              <span class="swatch" data-theme="midnight"><span></span></span>Midnight
+            </button>
+            <button type="button" data-theme-choice="mono"><span class="swatch" data-theme="mono"><span></span></span>Mono</button>
           </div>
         </div>
 

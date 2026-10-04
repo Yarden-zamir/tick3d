@@ -22,7 +22,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - Session history: the panel lists the games of the session. Replay steps through a finished game move by move.
 - Sound effects made with Web Audio. Each layer has its own note. A mute button keeps the choice.
 - Two views: a 3D tower of tilted layers and a flat view. The flat view has four layouts: grid, side by side, top to bottom, and steps.
-- Light and dark themes in a neo-brutalist style. The theme follows the device until you pick one. Like the mute button, it stays open during a lock.
+- Six neo-brutalist themes in the panel: Light, Dark, Candy, Mint, Midnight and Mono. Auto, the default, follows the device: light or dark. Like the mute button, the theme stays open during a lock.
 - Point at a cell to light up the cells above and below it.
 - The browser keeps the settings in `localStorage`. The app checks each stored value and uses the default for a value that is not valid.
 

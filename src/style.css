@@ -1,19 +1,9 @@
-/* Neo-brutalist theme: flat fills, thick lines, hard offset shadows.
-   Light is the default. Dark applies through the system setting or the theme switch,
-   which sets data-theme on <html> (index.html sets it before the first paint). */
+/* Neo-brutalist themes: flat fills, thick lines, hard offset shadows.
+   A theme sets data-theme on <html> (index.html applies a stored one before the first paint).
+   Without data-theme, the page follows the device: light, or dark. The theme rules match any
+   element, so the theme picker draws each preview with that theme's own tokens. */
 :root {
-  color-scheme: light;
-  --page: #e4e7ff;
-  --dot: rgb(0 0 0 / 0.14);
-  --surface: #ffffff;
-  --surface-2: #f1f2ff;
-  --ink: #000000;
-  --muted: #3d3d5c;
-  --line: #000000;
-  --shadow: #000000;
-  --slab: #ffe14d;
-  --peer: #d9d2ff;
-  /* Fixed colors with black text in both themes. */
+  /* Fixed colors with black text in every theme. */
   --x: #ff5277;
   --o: #00b3ff;
   --win: #7cff8a;
@@ -29,8 +19,23 @@
   font-family: 'Bricolage Grotesque', ui-rounded, system-ui, sans-serif;
 }
 
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+  --page: #e4e7ff;
+  --dot: rgb(0 0 0 / 0.14);
+  --surface: #ffffff;
+  --surface-2: #f1f2ff;
+  --ink: #000000;
+  --muted: #3d3d5c;
+  --line: #000000;
+  --shadow: #000000;
+  --slab: #ffe14d;
+  --peer: #d9d2ff;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
+  :root:not([data-theme]) {
     color-scheme: dark;
     --page: #15122b;
     --dot: rgb(243 240 255 / 0.12);
@@ -45,7 +50,7 @@
   }
 }
 
-:root[data-theme='dark'] {
+[data-theme='dark'] {
   color-scheme: dark;
   --page: #15122b;
   --dot: rgb(243 240 255 / 0.12);
@@ -57,6 +62,62 @@
   --shadow: #f3f0ff;
   --slab: #6c5ce7;
   --peer: #4b3f9e;
+}
+
+[data-theme='candy'] {
+  color-scheme: light;
+  --page: #ffc8dd;
+  --dot: rgb(0 0 0 / 0.14);
+  --surface: #ffffff;
+  --surface-2: #ffe5ef;
+  --ink: #000000;
+  --muted: #5c2a3d;
+  --line: #000000;
+  --shadow: #000000;
+  --slab: #8ee3dd;
+  --peer: #ffd1e3;
+}
+
+[data-theme='mint'] {
+  color-scheme: light;
+  --page: #b6f0cf;
+  --dot: rgb(0 0 0 / 0.14);
+  --surface: #ffffff;
+  --surface-2: #e6fbef;
+  --ink: #000000;
+  --muted: #24513a;
+  --line: #000000;
+  --shadow: #000000;
+  --slab: #ff9f43;
+  --peer: #fff1a8;
+}
+
+[data-theme='midnight'] {
+  color-scheme: dark;
+  --page: #0b1a2e;
+  --dot: rgb(234 244 255 / 0.12);
+  --surface: #16304f;
+  --surface-2: #10243d;
+  --ink: #eaf4ff;
+  --muted: #a9c2dd;
+  --line: #eaf4ff;
+  --shadow: #ff5277;
+  --slab: #1f7a8c;
+  --peer: #2b4f7a;
+}
+
+[data-theme='mono'] {
+  color-scheme: light;
+  --page: #e6e6e6;
+  --dot: rgb(0 0 0 / 0.16);
+  --surface: #ffffff;
+  --surface-2: #f2f2f2;
+  --ink: #000000;
+  --muted: #4a4a4a;
+  --line: #000000;
+  --shadow: #000000;
+  --slab: #bdbdbd;
+  --peer: #dedede;
 }
 
 * {
@@ -154,10 +215,6 @@ input:disabled {
 
 .brand {
   grid-area: brand;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 1rem;
 }
 
 .brand h1 {
@@ -189,8 +246,7 @@ input:disabled {
 
 /* ---- Segmented controls and the theme switch ---- */
 
-.segmented,
-.theme-switch {
+.segmented {
   display: flex;
   gap: 0.25rem;
   padding: 0.25rem;
@@ -200,8 +256,7 @@ input:disabled {
   box-shadow: 3px 3px 0 var(--shadow);
 }
 
-.segmented button,
-.theme-switch button {
+.segmented button {
   flex: 1;
   padding: 0.45rem 0.4rem;
   border: 2px solid transparent;
@@ -214,14 +269,12 @@ input:disabled {
   transition: background 0.15s, color 0.15s;
 }
 
-.segmented button:hover:not(:disabled):not([aria-pressed='true']),
-.theme-switch button:hover:not([aria-pressed='true']) {
+.segmented button:hover:not(:disabled):not([aria-pressed='true']) {
   color: var(--ink);
   border-color: var(--line);
 }
 
-.segmented button[aria-pressed='true'],
-.theme-switch button[aria-pressed='true'] {
+.segmented button[aria-pressed='true'] {
   background: var(--ink);
   color: var(--surface);
   font-weight: 800;
@@ -231,14 +284,66 @@ input:disabled {
   opacity: 1;
 }
 
-.theme-switch {
-  flex: 0 0 auto;
-  background: var(--surface);
+.theme-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.4rem, 1fr));
+  gap: 0.5rem;
 }
 
-.theme-switch button {
-  padding-inline: 0.75rem;
-  white-space: nowrap;
+.theme-picker button {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.35rem 0.35rem 0.3rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 2px 2px 0 var(--shadow);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: translate 0.08s, box-shadow 0.08s;
+}
+
+.theme-picker button:hover {
+  translate: -1px -1px;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+.theme-picker button:active {
+  translate: 2px 2px;
+  box-shadow: 0 0 0 var(--shadow);
+}
+
+.theme-picker button[aria-pressed='true'] {
+  background: var(--primary);
+  color: var(--on-color);
+  font-weight: 800;
+}
+
+/* A preview: the theme's page with one of its boards on it. Auto shows light and dark halves. */
+.swatch {
+  display: flex;
+  height: 2.2rem;
+  overflow: hidden;
+  border: 2px solid #000;
+  border-radius: 5px;
+}
+
+.swatch span {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  background: var(--page);
+}
+
+.swatch span::before {
+  content: '';
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--line);
+  border-radius: 3px;
+  background: var(--slab);
+  box-shadow: 2px 2px 0 var(--shadow);
 }
 
 /* ---- Stage and board ---- */
@@ -926,16 +1031,8 @@ body[data-turn='O'] .status[data-state='playing'] {
     --cell: clamp(30px, 11.5vw, 50px);
   }
 
-  .brand {
-    gap: 0.75rem;
-  }
-
   .brand p {
     font-size: 0.9rem;
-  }
-
-  .theme-switch button {
-    padding-inline: 0.55rem;
   }
 }
 

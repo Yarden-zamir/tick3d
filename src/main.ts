@@ -22,8 +22,8 @@ const MODES = ['computer', 'friend', 'online'] as const;
 const VIEWS = ['tower', 'flat'] as const;
 const LAYOUTS = ['grid', 'row', 'column', 'steps'] as const;
 const PLAYERS = ['X', 'O'] as const;
-// 'system' follows the device setting until the player picks light or dark.
-const THEMES = ['system', 'light', 'dark'] as const;
+// 'system' (Auto) follows the device: light or dark. The others are fixed palettes in style.css.
+const THEMES = ['system', 'light', 'dark', 'candy', 'mint', 'midnight', 'mono'] as const;
 type Mode = (typeof MODES)[number];
 type View = (typeof VIEWS)[number];
 type Layout = (typeof LAYOUTS)[number];
@@ -698,22 +698,20 @@ function stepReview(action: string | undefined): void {
 
 // ---- Theme ----
 
-const resolvedTheme = (): 'light' | 'dark' =>
-  settings.theme === 'system' ? (darkQuery.matches ? 'dark' : 'light') : settings.theme;
-
 // The theme is a per-screen look like the sound, so the settings lock does not hold it.
 function applyTheme(): void {
   if (settings.theme === 'system') delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = settings.theme;
-  const theme = resolvedTheme();
-  themeButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.themeChoice === theme)));
+  themeButtons.forEach((button) =>
+    button.setAttribute('aria-pressed', String(button.dataset.themeChoice === settings.theme)),
+  );
   themeColorMeta.content = getComputedStyle(document.documentElement).getPropertyValue('--page').trim();
 }
 
 themeButtons.forEach((button) => {
   button.addEventListener('click', () => {
     const theme = oneOf(THEMES, button.dataset.themeChoice, settings.theme);
-    if (theme === resolvedTheme()) return;
+    if (theme === settings.theme) return;
     settings.theme = theme;
     saveSettings();
     sounds.click();
@@ -721,6 +719,7 @@ themeButtons.forEach((button) => {
   });
 });
 
+// Auto follows a device switch between light and dark while the page is open.
 darkQuery.addEventListener('change', applyTheme);
 
 // ---- Settings ----
