@@ -609,9 +609,8 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* Tower: the four layers as tilted planes stacked from layer 1 (bottom) to layer 4 (top).
-   Dragging sideways sets --spin on the board (main.ts): the tower turns, the tilt stays. */
+   main.ts sets the transform of each grid and plate: a fixed tilt, and the spin from a drag. */
 .board.tower {
-  --spin: 45deg;
   flex-direction: column-reverse;
   align-items: center;
   cursor: grab;
@@ -628,14 +627,16 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 /* A plane tilted by 62deg and turned by 45deg projects to about 0.66 of its side in height.
    That is its tallest turn, so the layer height keeps a small gap at any turn and no plane
-   covers cells of another plane. */
+   covers cells of another plane.
+   Speed: nothing in the tower is preserve-3d. The plate and the grid are each drawn flat once,
+   then projected with the layer's perspective, plate first. Turning the tower moves 8 ready
+   pictures on the GPU and repaints nothing, however many marks the board holds. */
 .tower .layer {
   height: calc(var(--side) * 0.72);
   pointer-events: none;
   width: calc(var(--side) * 1.5);
   display: grid;
   place-items: center;
-  transform-style: preserve-3d;
   /* Each layer has its own vanishing point, so all four planes show the same tilt. */
   perspective: 1400px;
 }
@@ -646,71 +647,88 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: none;
 }
 
-.tower .grid {
-  transform: rotateX(62deg) rotateZ(var(--spin));
-  transform-style: preserve-3d;
+.tower .grid,
+.tower .plate {
+  will-change: transform;
   /* Eases a reset back to the resting view. A drag follows the pointer with no delay. */
   transition: transform 0.35s cubic-bezier(0.34, 1.3, 0.64, 1);
 }
 
-.board[data-dragging] .grid {
+.board[data-dragging] .grid,
+.board[data-dragging] .plate {
   transition: none;
 }
 
-/* In the tower the depth is real 3D, not a flat offset shadow: an offset shadow lies in the
-   plane and swings to the wrong side when the tower turns. A base plate sits below each board
-   and each tile, so their edges show under them at any turn. */
+/* An offset shadow lies in the plane and swings to the wrong side when the tower turns, so
+   the tower shows thickness with sheets at different heights in 3D instead (main.ts). */
 .tower .grid {
-  position: relative;
   box-shadow: none;
-  --depth: calc(var(--cell) * 0.24);
 }
 
-.tower .grid::after {
-  content: '';
-  position: absolute;
-  inset: calc(var(--border) * -1);
-  border-radius: inherit;
+.plate {
+  display: none;
+}
+
+/* All sheets of a layer share one grid area, so they line up exactly and turn around the same
+   center. They paint in markup order, bottom sheet first. */
+.tower .plate,
+.tower .grid {
+  grid-area: 1 / 1;
+}
+
+.tower .plate {
+  display: block;
+  /* The grid's border box: the side plus its border on both edges. */
+  width: calc(var(--side) + var(--border) * 2);
+  height: calc(var(--side) + var(--border) * 2);
+  border-radius: calc(var(--cell) * 0.22);
   background: var(--shadow);
-  transform: translateZ(calc(var(--depth) * -1));
-  pointer-events: none;
 }
 
-.tower .cell {
-  box-shadow: none;
-}
-
-.tower .cell::after {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: inherit;
-  background: var(--line);
-  transform: translateZ(-4px);
-  pointer-events: none;
-}
-
-/* A tile lifts toward the viewer on hover and sinks when pressed. */
+.tower .cell,
 .tower .cell:hover,
-.tower .cell:focus-visible {
-  translate: 0 0 4px;
-  box-shadow: none;
-}
-
+.tower .cell:focus-visible,
 .tower .cell:active {
-  translate: 0 0 -2px;
   box-shadow: none;
 }
 
-/* Pieces sit just above their tile, with an even outline and no offset shadow. */
-.tower .piece {
-  transform: translateZ(2px);
+/* The base and the marks exist for the tower only. */
+.board:not(.tower) :is(.base, .marks) {
+  display: none;
 }
 
-.tower .cell.x .piece,
-.tower .cell.o .piece {
-  filter: drop-shadow(1.5px 0 0 var(--line)) drop-shadow(-1.5px 0 0 var(--line)) drop-shadow(0 1.5px 0 var(--line))
-    drop-shadow(0 -1.5px 0 var(--line));
+/* The tiles and the marks float above the board's top, so they show the board through them:
+   no fill and no border of their own. They keep the grid's border width, so every sheet has the
+   same geometry and the cells line up. */
+.tower .grid:not(.base) {
+  background: none;
+  border-color: transparent;
+}
+
+/* A footprint under each tile: it shows as the tile's edge below the raised tile. */
+.foot {
+  width: var(--cell);
+  height: var(--cell);
+  border-radius: calc(var(--cell) * 0.16);
+  background: var(--line);
+}
+
+.mark {
+  position: relative;
+  width: var(--cell);
+  height: var(--cell);
+}
+
+/* In the tower the marks sheet draws the pieces, so the cells show none. */
+.tower .cell .piece {
+  visibility: hidden;
+}
+
+/* The raised pieces keep a thin even outline, with no offset shadow. */
+.tower .mark.x .piece,
+.tower .mark.o .piece {
+  filter: drop-shadow(1px 0 0 var(--line)) drop-shadow(-1px 0 0 var(--line)) drop-shadow(0 1px 0 var(--line))
+    drop-shadow(0 -1px 0 var(--line));
 }
 
 .angle-row {
@@ -790,7 +808,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   background: var(--surface);
   box-shadow: 2px 2px 0 var(--shadow);
   cursor: pointer;
-  transform-style: preserve-3d;
   transition: background 0.15s, translate 0.08s, box-shadow 0.08s;
 }
 
@@ -826,8 +843,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   transition: scale 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.cell.x .piece,
-.cell.o .piece {
+:is(.cell, .mark).x .piece,
+:is(.cell, .mark).o .piece {
   scale: 1;
   /* A thin outline plus a hard drop, drawn around the shape the ::before cuts out. */
   filter: drop-shadow(1px 0 0 var(--line)) drop-shadow(-1px 0 0 var(--line)) drop-shadow(0 1px 0 var(--line))
@@ -840,12 +857,12 @@ body[data-turn='O'] .status[data-state='playing'] {
   inset: 0;
 }
 
-.cell.x .piece::before {
+:is(.cell, .mark).x .piece::before {
   background: var(--x);
   clip-path: polygon(20% 0, 50% 30%, 80% 0, 100% 20%, 70% 50%, 100% 80%, 80% 100%, 50% 70%, 20% 100%, 0 80%, 30% 50%, 0 20%);
 }
 
-.cell.o .piece::before {
+:is(.cell, .mark).o .piece::before {
   inset: 4%;
   border-radius: 50%;
   border: calc(var(--cell) * 0.13) solid var(--o);
@@ -856,7 +873,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   animation: win-blink 0.9s steps(1) infinite;
 }
 
-.board.finished .cell:not(.win) .piece {
+.board.finished :is(.cell, .mark):not(.win) .piece {
   opacity: 0.35;
 }
 

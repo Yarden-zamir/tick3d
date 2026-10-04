@@ -233,13 +233,33 @@ const canChangeMatch = () => online === undefined || online.you !== null;
 // ---- Board ----
 
 const cells: HTMLButtonElement[] = [];
+// The tower draws each layer as flat sheets stacked in 3D, from the bottom up: the plate (the
+// board's underside), the base (the board's top with a footprint under each tile), the grid of
+// tiles (the cells you click), and the marks (the pieces, standing on the tiles). Each sheet is
+// painted once; turning the tower only moves the sheets. The flat view shows the grid alone.
+// Heights above the board's top, in cells.
+const SHEETS = { plate: -0.14, base: 0, grid: 0.035, marks: 0.065 } as const;
+type Sheet = keyof typeof SHEETS;
+const sheets: { element: HTMLDivElement; sheet: Sheet }[] = [];
+// The piece shown on the marks sheet for each cell.
+const marks: HTMLSpanElement[] = [];
+
+function sheetOf(sheet: Sheet, className: string): HTMLDivElement {
+  const element = document.createElement('div');
+  element.className = className;
+  sheets.push({ element, sheet });
+  return element;
+}
+
 for (let layer = 0; layer < SIZE; layer++) {
   const layerEl = document.createElement('div');
   layerEl.className = 'layer';
   layerEl.style.setProperty('--i', String(layer));
   layerEl.innerHTML = `<span class="layer-label">Layer ${layer + 1}</span>`;
-  const grid = document.createElement('div');
-  grid.className = 'grid';
+  const plate = sheetOf('plate', 'plate');
+  const base = sheetOf('base', 'grid base');
+  const grid = sheetOf('grid', 'grid');
+  const markSheet = sheetOf('marks', 'grid marks');
   for (let row = 0; row < SIZE; row++) {
     for (let column = 0; column < SIZE; column++) {
       const cell = toCell({ layer, row, column });
@@ -253,9 +273,16 @@ for (let layer = 0; layer < SIZE; layer++) {
       button.addEventListener('pointerleave', () => highlightColumn(undefined));
       cells[cell] = button;
       grid.append(button);
+      base.append(Object.assign(document.createElement('span'), { className: 'foot' }));
+      const mark = document.createElement('span');
+      mark.className = 'mark';
+      mark.innerHTML = '<span class="piece"></span>';
+      marks[cell] = mark;
+      markSheet.append(mark);
     }
   }
-  layerEl.append(grid);
+  // Bottom sheet first: the sheets paint in this order, so higher sheets cover lower ones.
+  layerEl.append(plate, base, grid, markSheet);
   boardEl.append(layerEl);
 }
 if (cells.length !== CELL_COUNT) throw new Error('board build is incomplete');
@@ -282,8 +309,23 @@ const DRAG_SPIN = 0.4;
 // A press counts as a drag after this many pixels sideways, so a tap still places a mark.
 const DRAG_THRESHOLD = 6;
 
+// The tower's fixed tilt, in degrees. Only the spin changes.
+const TOWER_TILT = 62;
+let cameraShown = '';
+
+// Turning the tower only changes the transform of the 16 sheets. Each sheet is flat (style.css),
+// so the browser turns it as one ready-made picture: the cost of a frame does not grow with the
+// number of marks. Nothing else on the page is restyled during a drag.
 function applyCamera(): void {
-  boardEl.style.setProperty('--spin', `${settings.spin}deg`);
+  const turn = settings.view === 'tower' ? `rotateX(${TOWER_TILT}deg) rotateZ(${settings.spin}deg)` : '';
+  if (turn !== cameraShown) {
+    cameraShown = turn;
+    // Each sheet rises by its height in the board's own frame, so the edges show under the
+    // tiles and pieces at any turn.
+    for (const { element, sheet } of sheets) {
+      element.style.transform = turn && `${turn} translateZ(calc(var(--cell) * ${SHEETS[sheet]}))`;
+    }
+  }
   resetAngleButton.disabled = settings.spin === DEFAULTS.spin;
 }
 
@@ -715,6 +757,7 @@ function shownGame(): Game {
 }
 
 function render(): void {
+  applyCamera();
   const game = shownGame();
   const live = review === undefined && isLive();
   const options = matchOptions();
@@ -739,6 +782,12 @@ function render(): void {
     button.classList.toggle('o', mark === 'O');
     button.classList.toggle('win', winLine.includes(cell));
     button.classList.toggle('last', cell === last);
+    const piece = marks[cell];
+    if (piece) {
+      piece.classList.toggle('x', mark === 'X');
+      piece.classList.toggle('o', mark === 'O');
+      piece.classList.toggle('win', winLine.includes(cell));
+    }
     button.setAttribute('aria-label', `Layer ${layer + 1}, row ${row + 1}, column ${column + 1}: ${mark ?? 'empty'}`);
   });
 
