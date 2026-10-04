@@ -31,7 +31,16 @@ import {
   winnerOf,
 } from './game.ts';
 import { api, OnlineError } from './online.ts';
-import { type Code, type MatchOptions, type SessionView, normalizeCode, normalizeName, toGame } from './protocol.ts';
+import {
+  type ChatMessage,
+  type Code,
+  type MatchOptions,
+  type SessionView,
+  normalizeChat,
+  normalizeCode,
+  normalizeName,
+  toGame,
+} from './protocol.ts';
 import { setMuted, sounds } from './sound.ts';
 
 const MODES = ['computer', 'friend', 'online'] as const;
@@ -83,6 +92,8 @@ type Settings = {
   // Locally, the time limit of every game. Online, the time limit for a session that this screen creates.
   clock: TimeControl;
   muted: boolean;
+  // The tower's turn around its vertical axis, in degrees. Dragging the tower sets it.
+  spin: number;
   theme: Theme;
 };
 type Toggle = 'hideBoard' | 'hideHistory';
@@ -97,6 +108,7 @@ const DEFAULTS: Settings = {
   hideHistory: false,
   clock: NO_LIMIT,
   muted: false,
+  spin: 45,
   theme: 'light',
 };
 const STORAGE_KEY = 'tick3d.settings';
@@ -131,6 +143,9 @@ function oneOf<T extends string>(options: readonly T[], value: unknown, fallback
 }
 
 const bool = (value: unknown, fallback: boolean) => (typeof value === 'boolean' ? value : fallback);
+const wrapSpin = (spin: number) => ((spin % 360) + 360) % 360;
+const finite = (value: unknown, fallback: number) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
 // Stored settings come from an older visit or a hand edit, so check every field.
 function loadSettings(): Settings {
@@ -151,6 +166,7 @@ function loadSettings(): Settings {
     hideHistory: bool(stored.hideHistory, DEFAULTS.hideHistory),
     clock: parseClock(stored.clock) ?? DEFAULTS.clock,
     muted: bool(stored.muted, DEFAULTS.muted),
+    spin: wrapSpin(finite(stored.spin, DEFAULTS.spin)),
     theme: oneOf(THEMES, stored.theme, DEFAULTS.theme),
   };
 }
@@ -194,6 +210,9 @@ const newGameButton = element('#new-game', HTMLButtonElement);
 const undoButton = element('#undo', HTMLButtonElement);
 const soundButton = element('#sound', HTMLButtonElement);
 const lockButton = element('#lock', HTMLButtonElement);
+const resetAngleButton = element('#reset-angle', HTMLButtonElement);
+const rulesButton = element('#rules-button', HTMLButtonElement);
+const rulesBanner = element('#rules-banner', HTMLButtonElement);
 const clockSummary = element('#clock-summary', HTMLParagraphElement);
 const clocksEl = element('#clocks', HTMLDivElement);
 const clockNote = element('#clock-note', HTMLSpanElement);
@@ -212,6 +231,14 @@ const themeSwatch = element('#theme-swatch', HTMLSpanElement);
 const themeName = element('#theme-name', HTMLSpanElement);
 const themePicker = element('#theme-picker', HTMLDivElement);
 const coordsTitle = element('#coords-title', HTMLSpanElement);
+const chatEl = element('#chat', HTMLElement);
+const chatLog = element('#chat-log', HTMLOListElement);
+const chatForm = element('#chat-form', HTMLFormElement);
+const chatInput = element('#chat-input', HTMLInputElement);
+const chatSend = element('#chat-send', HTMLButtonElement);
+const chatNotice = element('#chat-notice', HTMLButtonElement);
+const chatNoticeFrom = element('#chat-notice-from', HTMLElement);
+const chatNoticeText = element('#chat-notice-text', HTMLSpanElement);
 
 type Online = {
   code: Code;
@@ -222,6 +249,7 @@ type Online = {
   locked: boolean;
   clock: TimeControl;
   version: number;
+  chat: ChatMessage[];
   unsubscribe: () => void;
 };
 
@@ -237,6 +265,14 @@ let busy = false;
 // Increments on every new local game, so a computer move scheduled for an old game is dropped.
 let round = 0;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+// Chat sends do not use `busy`, so a message never blocks a move.
+let chatSending = false;
+// What the chat log shows, so a render rebuilds it (and scrolls it) only when messages change.
+let chatShown = '';
+let chatNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+// Messages from the other player that arrived while this tab was in the background.
+let unread = 0;
+const baseTitle = document.title;
 // Server time minus local time. Online move times come from the server, so the clocks use its time.
 let serverOffset = 0;
 let lastTickSecond: number | undefined;
@@ -276,13 +312,33 @@ const canChangeMatch = () => online === undefined || online.you !== null;
 // ---- Board ----
 
 const cells: HTMLButtonElement[] = [];
+// The tower draws each layer as flat sheets stacked in 3D, from the bottom up: the plate (the
+// board's underside), the base (the board's top with a footprint under each tile), the grid of
+// tiles (the cells you click), and the marks (the pieces, standing on the tiles). Each sheet is
+// painted once; turning the tower only moves the sheets. The flat view shows the grid alone.
+// Heights above the board's top, in cells.
+const SHEETS = { plate: -0.14, base: 0, grid: 0.035, marks: 0.065 } as const;
+type Sheet = keyof typeof SHEETS;
+const sheets: { element: HTMLDivElement; sheet: Sheet }[] = [];
+// The piece shown on the marks sheet for each cell.
+const marks: HTMLSpanElement[] = [];
+
+function sheetOf(sheet: Sheet, className: string): HTMLDivElement {
+  const element = document.createElement('div');
+  element.className = className;
+  sheets.push({ element, sheet });
+  return element;
+}
+
 for (let layer = 0; layer < SIZE; layer++) {
   const layerEl = document.createElement('div');
   layerEl.className = 'layer';
   layerEl.style.setProperty('--i', String(layer));
   layerEl.innerHTML = `<span class="layer-label">Layer ${layer + 1}</span>`;
-  const grid = document.createElement('div');
-  grid.className = 'grid';
+  const plate = sheetOf('plate', 'plate');
+  const base = sheetOf('base', 'grid base');
+  const grid = sheetOf('grid', 'grid');
+  const markSheet = sheetOf('marks', 'grid marks');
   for (let row = 0; row < SIZE; row++) {
     for (let column = 0; column < SIZE; column++) {
       const cell = toCell({ layer, row, column });
@@ -296,9 +352,16 @@ for (let layer = 0; layer < SIZE; layer++) {
       button.addEventListener('pointerleave', () => highlightColumn(undefined));
       cells[cell] = button;
       grid.append(button);
+      base.append(Object.assign(document.createElement('span'), { className: 'foot' }));
+      const mark = document.createElement('span');
+      mark.className = 'mark';
+      mark.innerHTML = '<span class="piece"></span>';
+      marks[cell] = mark;
+      markSheet.append(mark);
     }
   }
-  layerEl.append(grid);
+  // Bottom sheet first: the sheets paint in this order, so higher sheets cover lower ones.
+  layerEl.append(plate, base, grid, markSheet);
   boardEl.append(layerEl);
 }
 if (cells.length !== CELL_COUNT) throw new Error('board build is incomplete');
@@ -316,6 +379,119 @@ function highlightColumn(cell: number | undefined): void {
     button.classList.toggle('peer', target !== undefined && row === target.row && column === target.column);
   });
 }
+
+// ---- Tower camera ----
+
+// The tower only turns around its vertical axis: the tilt stays at the resting view.
+// Degrees of turn per pixel dragged sideways.
+const DRAG_SPIN = 0.4;
+// A press counts as a drag after this many pixels sideways, so a tap still places a mark.
+const DRAG_THRESHOLD = 6;
+
+// The tower's fixed tilt, in degrees. Only the spin changes.
+const TOWER_TILT = 62;
+let cameraShown = '';
+
+// Turning the tower only changes the transform of the 16 sheets. Each sheet is flat (style.css),
+// so the browser turns it as one ready-made picture: the cost of a frame does not grow with the
+// number of marks. Nothing else on the page is restyled during a drag.
+function applyCamera(): void {
+  const turn = settings.view === 'tower' ? `rotateX(${TOWER_TILT}deg) rotateZ(${settings.spin}deg)` : '';
+  if (turn !== cameraShown) {
+    cameraShown = turn;
+    // Each sheet rises by its height in the board's own frame, so the edges show under the
+    // tiles and pieces at any turn.
+    for (const { element, sheet } of sheets) {
+      element.style.transform = turn && `${turn} translateZ(calc(var(--cell) * ${SHEETS[sheet]}))`;
+    }
+  }
+  resetAngleButton.disabled = settings.spin === DEFAULTS.spin;
+}
+
+type Drag = { pointer: number; x: number; spin: number; moved: boolean };
+let drag: Drag | undefined;
+let dragFrame = 0;
+// The click that ends a drag must not place a mark.
+let swallowClick = false;
+
+boardEl.addEventListener('pointerdown', (event) => {
+  if (settings.view !== 'tower' || !event.isPrimary || event.button !== 0) return;
+  drag = { pointer: event.pointerId, x: event.clientX, spin: settings.spin, moved: false };
+});
+
+boardEl.addEventListener('pointermove', (event) => {
+  if (drag === undefined || event.pointerId !== drag.pointer) return;
+  const dx = event.clientX - drag.x;
+  if (!drag.moved) {
+    if (Math.abs(dx) < DRAG_THRESHOLD) return;
+    drag.moved = true;
+    boardEl.dataset.dragging = '';
+    boardEl.setPointerCapture(event.pointerId);
+    highlightColumn(undefined);
+  }
+  settings.spin = wrapSpin(drag.spin + dx * DRAG_SPIN);
+  // One style update per frame, however fast the pointer events come.
+  if (dragFrame === 0) {
+    dragFrame = requestAnimationFrame(() => {
+      dragFrame = 0;
+      applyCamera();
+    });
+  }
+});
+
+function endDrag(event: PointerEvent): void {
+  if (drag === undefined || event.pointerId !== drag.pointer) return;
+  if (drag.moved) {
+    // A click follows pointerup in the same task, or not at all. Either way the flag ends here.
+    swallowClick = event.type === 'pointerup';
+    setTimeout(() => (swallowClick = false));
+    delete boardEl.dataset.dragging;
+    applyCamera();
+    saveSettings();
+  }
+  drag = undefined;
+}
+
+boardEl.addEventListener('pointerup', endDrag);
+// The browser takes over a touch that turns into a vertical scroll.
+boardEl.addEventListener('pointercancel', endDrag);
+
+boardEl.addEventListener(
+  'click',
+  (event) => {
+    if (!swallowClick) return;
+    swallowClick = false;
+    event.stopPropagation();
+    event.preventDefault();
+  },
+  true,
+);
+
+resetAngleButton.addEventListener('click', () => {
+  settings.spin = DEFAULTS.spin;
+  saveSettings();
+  sounds.click();
+  applyCamera();
+});
+
+// ---- Rules banner ----
+
+// The Rules button opens a short rules banner, which closes on a tap or after a while.
+const RULES_BANNER_MS = 8000;
+let rulesTimer: ReturnType<typeof setTimeout> | undefined;
+
+function setRulesBanner(open: boolean): void {
+  clearTimeout(rulesTimer);
+  rulesBanner.hidden = !open;
+  rulesButton.setAttribute('aria-expanded', String(open));
+  if (open) rulesTimer = setTimeout(() => setRulesBanner(false), RULES_BANNER_MS);
+}
+
+rulesButton.addEventListener('click', () => {
+  sounds.click();
+  setRulesBanner(rulesBanner.hidden !== false);
+});
+rulesBanner.addEventListener('click', () => setRulesBanner(false));
 
 // ---- Feedback ----
 
@@ -345,6 +521,13 @@ function reject(cell: number | undefined, reason: Refusal): void {
   button.classList.remove('shake');
   void button.offsetWidth; // restart the animation
   button.classList.add('shake');
+}
+
+// The refusal flash ends by itself. Removing the class lets the next refusal play it again.
+for (const button of cells) {
+  button.addEventListener('animationend', (event) => {
+    if (event.animationName === 'reject') button.classList.remove('shake');
+  });
 }
 
 // The player at this screen, if there is exactly one.
@@ -380,6 +563,10 @@ function finish(game: Game): void {
   }, CARD_DELAY_MS);
 }
 
+// The confetti animation lasts 1.4 s after a delay of up to 0.12 s.
+const CONFETTI_MS = 1600;
+let confettiTimer: ReturnType<typeof setTimeout> | undefined;
+
 function celebrate(): void {
   const css = getComputedStyle(document.documentElement);
   const colors = ['--x', '--primary', '--o', '--toggle-on', '--win'].map((name) => css.getPropertyValue(name).trim());
@@ -395,6 +582,9 @@ function celebrate(): void {
       return spark;
     }),
   );
+  // Spent sparks would stay in the page, invisible, so remove them.
+  clearTimeout(confettiTimer);
+  confettiTimer = setTimeout(() => burstEl.replaceChildren(), CONFETTI_MS);
 }
 
 // ---- Local play ----
@@ -510,6 +700,13 @@ function applyView(view: SessionView): void {
   const timedOutNow = games.length === beforeCount && before.status.kind === 'playing' && after.status.kind === 'timeout';
   if (isNewMove) announce(after);
   else if (timedOutNow) finish(after);
+  const lastSeen = previous.chat.at(-1)?.id ?? -1;
+  const incoming = online.chat.filter((message) => message.id > lastSeen && message.from !== online?.you);
+  const newest = incoming.at(-1);
+  if (newest !== undefined) {
+    sounds.message();
+    notifyChat(newest, incoming.length);
+  }
   if (review && review.game >= games.length) review = undefined;
   releaseLockIfOver();
   render();
@@ -687,6 +884,7 @@ function shownGame(): Game {
 }
 
 function render(): void {
+  applyCamera();
   const game = shownGame();
   const live = review === undefined && isLive();
   const options = matchOptions();
@@ -711,6 +909,12 @@ function render(): void {
     button.classList.toggle('o', mark === 'O');
     button.classList.toggle('win', winLine.includes(cell));
     button.classList.toggle('last', cell === last);
+    const piece = marks[cell];
+    if (piece) {
+      piece.classList.toggle('x', mark === 'X');
+      piece.classList.toggle('o', mark === 'O');
+      piece.classList.toggle('win', winLine.includes(cell));
+    }
     button.setAttribute('aria-label', `Layer ${layer + 1}, row ${row + 1}, column ${column + 1}: ${mark ?? 'empty'}`);
   });
 
@@ -721,6 +925,7 @@ function render(): void {
   if (review) reviewLabel.textContent = statusText();
   coordsForm.hidden = review !== undefined;
   renderCoords();
+  renderChat();
 
   document.querySelectorAll<HTMLElement>('[data-show-mode]').forEach((field) => {
     field.hidden = field.dataset.showMode !== settings.mode;
@@ -1255,6 +1460,115 @@ coordsForm.addEventListener('submit', (event) => {
   renderCoords();
 });
 
+// ---- Chat ----
+
+function renderChat(): void {
+  chatEl.hidden = online === undefined;
+  if (online === undefined) {
+    chatShown = '';
+    return;
+  }
+  const canWrite = online.you !== null;
+  chatInput.disabled = !canWrite;
+  chatSend.disabled = !canWrite || chatSending;
+  chatInput.placeholder = canWrite ? 'Message your opponent' : 'Only the two players can chat';
+
+  const shown = `${online.code}:${online.chat.map((message) => message.id).join(',')}`;
+  if (shown === chatShown) return;
+  chatShown = shown;
+  if (online.chat.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'chat-empty';
+    empty.textContent = canWrite ? 'No messages yet. Say hi.' : 'No messages yet.';
+    chatLog.replaceChildren(empty);
+    return;
+  }
+  chatLog.replaceChildren(
+    ...online.chat.map((message) => {
+      const item = document.createElement('li');
+      item.className = `chat-message from-${message.from.toLowerCase()}`;
+      item.classList.toggle('mine', message.from === online?.you);
+      const name = document.createElement('b');
+      name.textContent = playerName(message.from);
+      const text = document.createElement('span');
+      text.dir = 'auto'; // Hebrew and Arabic messages read right to left
+      text.textContent = message.text;
+      item.append(name, text);
+      return item;
+    }),
+  );
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+// True when the whole chat box is on screen, so the player sees new messages arrive.
+function chatInView(): boolean {
+  if (chatEl.hidden || document.hidden) return false;
+  const box = chatEl.getBoundingClientRect();
+  return box.top >= 0 && box.bottom <= innerHeight;
+}
+
+// A bar at the top of the screen with the newest message, unless the chat is already in view.
+// In a background tab, the page title also counts unread messages.
+function notifyChat(message: ChatMessage, count: number): void {
+  if (document.hidden) {
+    unread += count;
+    document.title = `(${unread}) ${baseTitle}`;
+  }
+  if (chatInView()) return;
+  chatNoticeFrom.textContent = playerName(message.from);
+  chatNoticeText.textContent = message.text;
+  chatNotice.classList.toggle('from-x', message.from === 'X');
+  chatNotice.classList.toggle('from-o', message.from === 'O');
+  chatNotice.hidden = false;
+  clearTimeout(chatNoticeTimer);
+  chatNoticeTimer = setTimeout(hideChatNotice, 6000);
+}
+
+function hideChatNotice(): void {
+  clearTimeout(chatNoticeTimer);
+  chatNotice.hidden = true;
+}
+
+chatNotice.addEventListener('click', () => {
+  hideChatNotice();
+  chatEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (online?.you != null) chatInput.focus({ preventScroll: true });
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  unread = 0;
+  document.title = baseTitle;
+});
+
+chatForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (online === undefined || chatSending) return;
+  if (online.you === null) return reject(undefined, 'spectator');
+  const text = normalizeChat(chatInput.value);
+  if (text === undefined) {
+    sounds.invalid();
+    showToast('Type a message first.');
+    return;
+  }
+  const code = online.code;
+  chatSending = true;
+  render();
+  void (async () => {
+    try {
+      const view = await api.chat(code, text);
+      chatInput.value = '';
+      sounds.sent();
+      if (online?.code === code) applyView(view);
+    } catch (error) {
+      showError(error);
+    } finally {
+      chatSending = false;
+      render();
+    }
+  })();
+});
+
 joinForm.addEventListener('submit', (event) => {
   event.preventDefault();
   if (settingsLocked()) return reject(undefined, 'locked');
@@ -1334,6 +1648,7 @@ soundButton.addEventListener('click', () => {
 setMuted(settings.muted);
 setInterval(tickClock, 200);
 applyTheme();
+applyCamera();
 const linkCode = new URLSearchParams(location.search).get('code');
 if (linkCode !== null) {
   const code = normalizeCode(linkCode);

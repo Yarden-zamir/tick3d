@@ -24,6 +24,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - A game keeps the time limit it started with. A change during a game starts with the next game, and the panel shows both limits until then.
 - End card: at the end of a game, a card shows the result, the final board and the game details. The card uses the active theme. Share sends the image through the system share sheet. Without file sharing (most desktop browsers), Share copies the image, and Save image downloads it. Two check boxes, both on by default, add the game code and the link to the card and the share text. A local game has no code, so it shows only the link option.
 - Sound effects made with Web Audio. Each layer has its own note. A mute button keeps the choice.
+- Drag the tower sideways to turn it all the way round. The tilt stays at the resting view. On a touch screen, a vertical swipe still scrolls the page. Reset angle returns to the resting view, and the browser keeps the angle. A drag never places a mark. Boards and tiles have real 3D depth in the tower, so they look solid at any turn. Layer 1 is the bottom plane and layer 4 the top one; the flat view labels each layer.
 - Two views: a 3D tower of tilted layers and a flat view. The flat view has four layouts: grid, side by side, top to bottom, and steps.
 - Twelve neo-brutalist themes in a folding menu in the panel: Light (the default), Dark, Snow, Candy, Mint, Retro, Midnight, Synthwave, Bloodmoon, Dark coffee, Batman (dark, no color) and Mono. Like the mute button, the theme stays open during a lock.
 - Point at a cell to light up the cells above and below it.
@@ -37,6 +38,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - The creator plays X. The first other browser that opens the code plays O. Further browsers watch.
 - A browser keeps its seat through a random token in `localStorage`.
 - A code loads the full session, finished games included. Either player can name the session and start the next game after a game ends.
+- Chat: on a wide screen a column at the left, on a narrower one a box under the board. It sends messages to the other player in real time. Only the two players can write, watchers read along. A session keeps its newest 50 messages of up to 200 characters, and its messages go when the session goes.
 - Hide board and Hide all but last move belong to the session. A change by either player applies to both players and to watchers. View and layout stay per screen.
 - The time limit also belongs to the session. A new session takes the time limit of the screen that creates it. Either player can change it at any time, except during a lock. The change reaches both players and starts with the next game. The server records the move times and decides a timeout, so a page that closes cannot avoid a loss on time.
 - The server keeps the newest 10,000 sessions. When a new session goes past that limit, the oldest session (by creation order) is deleted.
