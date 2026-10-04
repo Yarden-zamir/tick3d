@@ -280,9 +280,12 @@ input:disabled {
 .app {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 21rem;
+  /* Chat, shown in online sessions only, sits under the board. */
   grid-template-areas:
     'brand brand'
-    'stage panel';
+    'stage panel'
+    'chat panel';
+  grid-template-rows: auto auto 1fr;
   gap: 1.75rem 2rem;
   max-width: 74rem;
   margin: 0 auto;
@@ -1250,6 +1253,9 @@ body[data-turn='O'] .status[data-state='playing'] {
 /* ---- Chat ---- */
 
 .chat {
+  grid-area: chat;
+  align-self: start;
+  justify-self: center;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -1848,10 +1854,35 @@ body[data-turn='O'] .status[data-state='playing'] {
   to { scale: 1; }
 }
 
+/* Wide screens with an online session: the chat gets its own column at the left, where the
+   page had empty space, and stays in view while the page scrolls. */
+@media (min-width: 72rem) {
+  .app:has(> .chat:not([hidden])) {
+    grid-template-columns: 19rem minmax(0, 1fr) 21rem;
+    grid-template-areas:
+      'brand brand brand'
+      'chat stage panel';
+    grid-template-rows: auto 1fr;
+    max-width: 90rem;
+  }
+
+  .app:has(> .chat:not([hidden])) .chat {
+    position: sticky;
+    top: 1rem;
+    justify-self: stretch;
+    width: auto;
+  }
+
+  .app:has(> .chat:not([hidden])) .chat-log {
+    height: min(30rem, calc(100dvh - 10rem));
+  }
+}
+
 @media (max-width: 52rem) {
   .app {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: 'brand' 'stage' 'panel';
+    grid-template-areas: 'brand' 'stage' 'chat' 'panel';
+    grid-template-rows: none;
     gap: 1.25rem;
   }
 
