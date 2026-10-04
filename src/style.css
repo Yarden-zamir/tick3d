@@ -244,7 +244,8 @@ input::placeholder {
 .join button,
 .coords button,
 .review button,
-.history button {
+.history button,
+.end-card-actions button {
   padding: 0.55rem 0.85rem;
   border-radius: 8px;
   border: var(--border) solid var(--line);
@@ -255,13 +256,13 @@ input::placeholder {
   transition: translate 0.08s, box-shadow 0.08s, background 0.15s;
 }
 
-:is(.actions, .toggles, .online, .join, .coords, .review, .history) button:hover:not(:disabled),
+:is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:hover:not(:disabled),
 .lock:hover:not(:disabled) {
   translate: -1px -1px;
   box-shadow: 4px 4px 0 var(--shadow);
 }
 
-:is(.actions, .toggles, .online, .join, .coords, .review, .history) button:active:not(:disabled),
+:is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:active:not(:disabled),
 .lock:active:not(:disabled) {
   translate: 3px 3px;
   box-shadow: 0 0 0 var(--shadow);
@@ -296,6 +297,47 @@ input:disabled {
   gap: 1rem;
 }
 
+/* Rules and the link to the source sit together at the right of the title row. */
+.brand-links {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* Small buttons in the brutalist style, one height. Rules is an icon that opens the rules banner. */
+.repo-link,
+.rules-button {
+  flex: none;
+  box-sizing: border-box;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.8rem;
+  border: var(--border) solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--shadow);
+  color: var(--ink);
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+  transition: translate 0.08s, box-shadow 0.08s;
+}
+
+.repo-link:hover,
+.rules-button:hover {
+  translate: -1px -1px;
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+.repo-link:active,
+.rules-button:active {
+  translate: 3px 3px;
+  box-shadow: 0 0 0 var(--shadow);
+}
+
 .brand h1 {
   margin: 0;
   font-size: clamp(2.4rem, 7vw, 3.6rem);
@@ -317,27 +359,24 @@ input:disabled {
   rotate: -5deg;
 }
 
-/* Rules sits on the title row, at the right. It opens the rules banner. */
+/* The icon-only buttons are square. */
 .rules-button {
-  flex: none;
-  padding: 0.35rem 0.75rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  font-weight: 800;
-  cursor: pointer;
-  transition: translate 0.08s, box-shadow 0.08s;
+  justify-content: center;
+  width: 2.5rem;
+  padding: 0;
 }
 
-.rules-button:hover {
-  translate: -1px -1px;
-  box-shadow: 3px 3px 0 var(--shadow);
-}
+/* Narrow phones: the source link keeps its icon only, so the title row fits. */
+@media (max-width: 30rem) {
+  .repo-link span {
+    display: none;
+  }
 
-.rules-button:active {
-  translate: 2px 2px;
-  box-shadow: 0 0 0 var(--shadow);
+  .repo-link {
+    justify-content: center;
+    width: 2.5rem;
+    padding: 0;
+  }
 }
 
 .rules-banner {
@@ -558,7 +597,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--on-color);
 }
 
-.status[data-state='won'] {
+.status[data-state='won'],
+.status[data-state='timeout'] {
   background: var(--win);
   color: var(--on-color);
   animation: pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -1223,7 +1263,8 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .history li {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  /* Name, result, then the Replay and Card buttons. */
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 0.6rem;
   padding: 0.35rem 0.5rem;
@@ -1251,6 +1292,312 @@ body[data-turn='O'] .status[data-state='playing'] {
   box-shadow: 2px 2px 0 var(--shadow);
 }
 
+/* ---- Time limit editor ---- */
+
+/* One box like the segmented controls, one row per limit, a line between the rows. */
+.limits {
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+.limit {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+}
+
+.limit + .limit {
+  border-top: 2px solid var(--line);
+}
+
+.limit-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* A square switch drawn from the native checkbox, so it keeps keyboard and screen reader support.
+   Sizes are in px so track and knob round the same way: the inside is 40 x 20, the knob 16 x 16,
+   so it sits 2px from every edge and travels 20px. */
+.limit-switch input {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  box-shadow: 2px 2px 0 var(--shadow);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.limit-switch input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface-2);
+  transition: translate 0.15s, background 0.15s;
+}
+
+.limit-switch input:checked {
+  background: var(--toggle-on);
+}
+
+.limit-switch input:checked::after {
+  background: var(--surface);
+  translate: 20px 0;
+}
+
+/* The choices: quick picks and a custom box, as one segmented control. */
+.limit-options {
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.limit-options button,
+.limit-custom {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.2rem;
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.limit-options button:hover:not(:disabled):not([aria-pressed='true']) {
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.limit-options button[aria-pressed='true'],
+.limit-custom.active {
+  background: var(--ink);
+  color: var(--surface);
+  font-weight: 800;
+}
+
+.limit-custom {
+  flex: 1.6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding-inline: 0.35rem;
+  border: 2px dashed var(--line);
+  cursor: text;
+}
+
+/* A value is about 4 characters wide, so value and unit sit together in the middle. */
+.limit-custom input {
+  width: 4ch;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+}
+
+.limit-custom input::-webkit-inner-spin-button,
+.limit-custom input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.limit-custom input:focus-visible {
+  outline: none;
+}
+
+.limit-custom:focus-within {
+  border-style: solid;
+  color: var(--ink);
+  background: var(--peer);
+}
+
+.limit-custom span {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.limit-custom input:placeholder-shown {
+  width: 100%;
+}
+
+.limit-custom input::placeholder {
+  color: var(--muted);
+  font-weight: 600;
+  text-align: center;
+}
+
+/* An empty custom box shows only its placeholder, without the unit. */
+.limit-custom input:placeholder-shown + span {
+  display: none;
+}
+
+.clock-summary {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* ---- Clocks ---- */
+
+.clocks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.clock {
+  padding: 0.3rem 0.8rem;
+  border: var(--border) solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--shadow);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.clock.x.active {
+  background: var(--x);
+  color: var(--on-color);
+}
+
+.clock.o.active {
+  background: var(--o);
+  color: var(--on-color);
+}
+
+/* The last 10 seconds: the clock blinks in the danger color, like the winning cells blink. */
+.clock.low {
+  animation: clock-blink 1s steps(1) infinite;
+}
+
+.clock.out {
+  background: var(--danger);
+  color: var(--on-color);
+  text-decoration: line-through;
+}
+
+.clock-note {
+  width: 100%;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+@keyframes clock-blink {
+  50% {
+    background: var(--danger);
+    color: var(--on-color);
+  }
+}
+
+/* ---- End card ---- */
+
+.end-card {
+  width: min(92vw, 30rem);
+  max-height: 96dvh;
+  padding: 1rem;
+  border: var(--border) solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 8px 8px 0 var(--shadow);
+  overflow-y: auto;
+}
+
+.end-card[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  animation: pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.end-card::backdrop {
+  background: rgb(0 0 0 / 0.55);
+}
+
+.end-card img {
+  width: 100%;
+  height: auto;
+  max-height: 70dvh;
+  object-fit: contain;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+}
+
+.include-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+}
+
+.end-card .include {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.end-card .include input {
+  width: 1.2rem;
+  height: 1.2rem;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--toggle-on);
+}
+
+.end-card-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.end-card-actions button {
+  flex: 1;
+}
+
+.end-card-actions .primary {
+  flex: 1.5;
+  background: var(--primary);
+  color: var(--on-color);
+  font-weight: 800;
+}
+
 /* ---- Feedback ---- */
 
 .toast {
@@ -1269,6 +1616,11 @@ body[data-turn='O'] .status[data-state='playing'] {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s, translate 0.2s;
+}
+
+/* Information gets the O color as its shadow. A refused action keeps the X color. */
+.toast[data-tone='info'] {
+  box-shadow: 5px 5px 0 var(--o);
 }
 
 .toast.show {
