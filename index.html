@@ -29,7 +29,7 @@
   <body>
     <div class="app">
       <header class="brand">
-        <h1>tick<span>3d</span></h1>
+        <h1><a href="/" class="home-link" id="home-link" title="Home">tick<span>3d</span></a></h1>
         <div class="brand-links">
           <span class="offline-badge" id="offline-badge" hidden title="This game works without a network on this device">Offline ready</span>
           <button type="button" class="repo-link account-button" id="account-button" aria-haspopup="dialog">
@@ -335,6 +335,13 @@
         <h3>On this device</h3>
         <ul class="my-games-list" id="my-games-device"></ul>
       </section>
+    </dialog>
+    <dialog class="end-card home-confirm" id="home-confirm" aria-labelledby="home-confirm-text">
+      <p id="home-confirm-text"></p>
+      <div class="end-card-actions">
+        <button type="button" class="primary" id="home-confirm-leave">Leave</button>
+        <button type="button" id="home-confirm-stay">Stay</button>
+      </div>
     </dialog>
     <div class="update-bar" id="update-bar" hidden role="status">
       <span>A new version of tick3d is ready.</span>
