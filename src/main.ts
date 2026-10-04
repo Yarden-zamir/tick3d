@@ -1,5 +1,16 @@
 import './style.css';
 import { chooseMove, DIFFICULTIES, type Difficulty } from './ai.ts';
+import { type CardInput, drawCard, saveImage, shareImage } from './card.ts';
+import {
+  CLOCK_PRESETS,
+  type TimeControl,
+  clockKey,
+  describeClock,
+  formatClock,
+  isFlagged,
+  parseClock,
+  remaining,
+} from './clock.ts';
 import {
   CELL_COUNT,
   SIZE,
@@ -11,12 +22,14 @@ import {
   parseCoordinates,
   play,
   replay,
+  timeOut,
   toCell,
   toCoords,
   undo,
+  winnerOf,
 } from './game.ts';
 import { api, OnlineError } from './online.ts';
-import { type Code, type MatchOptions, type SessionView, normalizeCode, normalizeName } from './protocol.ts';
+import { type Code, type MatchOptions, type SessionView, normalizeCode, normalizeName, toGame } from './protocol.ts';
 import { setMuted, sounds } from './sound.ts';
 
 const MODES = ['computer', 'friend', 'online'] as const;
@@ -35,6 +48,8 @@ type Settings = {
   layout: Layout;
   hideBoard: boolean;
   hideHistory: boolean;
+  // Locally, the time limit of every game. Online, the time limit for a session that this screen creates.
+  clock: TimeControl;
   muted: boolean;
 };
 type Toggle = 'hideBoard' | 'hideHistory';
@@ -47,12 +62,22 @@ const DEFAULTS: Settings = {
   layout: 'grid',
   hideBoard: false,
   hideHistory: false,
+  clock: { kind: 'off' },
   muted: false,
 };
 const STORAGE_KEY = 'tick3d.settings';
 const COMPUTER_DELAY_MS = 450;
+const CARD_DELAY_MS = 1400;
 
-type Refusal = MoveError | 'wait' | 'not-your-turn' | 'spectator' | 'reviewing' | 'no-session' | 'locked';
+type Refusal =
+  | MoveError
+  | 'wait'
+  | 'not-your-turn'
+  | 'spectator'
+  | 'reviewing'
+  | 'no-session'
+  | 'locked'
+  | 'clock-mid-game';
 const REFUSAL_TEXT: Record<Refusal, string> = {
   occupied: 'That cell is taken. Pick an empty cell.',
   'game-over': 'The game is over. Start a new game.',
@@ -62,6 +87,7 @@ const REFUSAL_TEXT: Record<Refusal, string> = {
   reviewing: 'You are looking at an old position. Go back to the live game first.',
   'no-session': 'Create an online game or join one with a code first.',
   locked: 'Settings are locked until this game ends.',
+  'clock-mid-game': 'Change the clock before the first move or after the game ends.',
 };
 
 function oneOf<T extends string>(options: readonly T[], value: unknown, fallback: T): T {
@@ -87,6 +113,7 @@ function loadSettings(): Settings {
     layout: oneOf(LAYOUTS, stored.layout, DEFAULTS.layout),
     hideBoard: bool(stored.hideBoard, DEFAULTS.hideBoard),
     hideHistory: bool(stored.hideHistory, DEFAULTS.hideHistory),
+    clock: parseClock(stored.clock) ?? DEFAULTS.clock,
     muted: bool(stored.muted, DEFAULTS.muted),
   };
 }
@@ -126,6 +153,17 @@ const newGameButton = element('#new-game', HTMLButtonElement);
 const undoButton = element('#undo', HTMLButtonElement);
 const soundButton = element('#sound', HTMLButtonElement);
 const lockButton = element('#lock', HTMLButtonElement);
+const clockSelect = element('#clock', HTMLSelectElement);
+const clocksEl = element('#clocks', HTMLDivElement);
+const clockNote = element('#clock-note', HTMLSpanElement);
+const showCardButton = element('#show-card', HTMLButtonElement);
+const cardDialog = element('#end-card', HTMLDialogElement);
+const cardImage = element('#end-card-image', HTMLImageElement);
+const cardInclude = element('#end-card-include', HTMLInputElement);
+const cardIncludeLabel = element('#end-card-include-label', HTMLSpanElement);
+const cardShareButton = element('#end-card-share', HTMLButtonElement);
+const cardSaveButton = element('#end-card-save', HTMLButtonElement);
+const cardCloseButton = element('#end-card-close', HTMLButtonElement);
 
 type Online = {
   code: Code;
@@ -134,6 +172,7 @@ type Online = {
   seats: Record<Player, boolean>;
   options: MatchOptions;
   locked: boolean;
+  clock: TimeControl;
   version: number;
   unsubscribe: () => void;
 };
@@ -150,6 +189,11 @@ let busy = false;
 // Increments on every new local game, so a computer move scheduled for an old game is dropped.
 let round = 0;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+// Server time minus local time. Online move times come from the server, so the clocks use its time.
+let serverOffset = 0;
+let lastTickSecond: number | undefined;
+let lastFlagRefresh = 0;
+let card: { index: number; canvas: HTMLCanvasElement } | undefined;
 
 function current(): Game {
   const game = games.at(-1);
@@ -168,6 +212,12 @@ const settingsLocked = () => (online ? online.locked : localLocked && isLive());
 function matchOptions(): MatchOptions {
   return online ? online.options : { hideBoard: settings.hideBoard, hideHistory: settings.hideHistory };
 }
+
+function matchClock(): TimeControl {
+  return online ? online.clock : settings.clock;
+}
+
+const nowMs = () => Date.now() + (online ? serverOffset : 0);
 
 // Watchers cannot change a session. Everybody can change a local game.
 const canChangeMatch = () => online === undefined || online.you !== null;
@@ -248,21 +298,30 @@ function me(): Player | null {
   return null;
 }
 
-// Plays the sounds for the last move of `game`, and for the result if the move ended it.
+// Plays the sound for the last move of the live game, and the result if the move ended it.
 function announce(game: Game): void {
   const last = game.moves.at(-1);
   if (last === undefined) return;
   sounds.place(other(game.turn), toCoords(last).layer);
-  if (game.status.kind === 'won') {
-    const mine = me();
-    if (mine !== null && game.status.winner !== mine) sounds.lose();
-    else {
-      sounds.win();
-      celebrate();
-    }
-  } else if (game.status.kind === 'draw') {
-    sounds.draw();
+  if (game.status.kind !== 'playing') finish(game);
+}
+
+// The live game just ended: result sound, celebration, and the end card a moment later.
+function finish(game: Game): void {
+  const winner = winnerOf(game.status);
+  const mine = me();
+  if (winner === null) sounds.draw();
+  else if (mine !== null && winner !== mine) sounds.lose();
+  else {
+    sounds.win();
+    celebrate();
   }
+  const index = games.length - 1;
+  setTimeout(() => {
+    // Show the card only if that game is still the finished live game and nothing else is open.
+    if (games.length - 1 !== index || isLive() || review !== undefined || cardDialog.open) return;
+    void openCard(index);
+  }, CARD_DELAY_MS);
 }
 
 function celebrate(): void {
@@ -344,6 +403,8 @@ function resetLocalSession(): void {
 
 function undoMove(): void {
   if (settings.mode === 'online' || thinking || review || !isLive() || current().moves.length === 0) return;
+  // Undo would hand back time that the clock already counted, so a timed game has no undo.
+  if (matchClock().kind !== 'off') return;
   if (settingsLocked()) return reject(undefined, 'locked');
   // Against the computer, go back to the last position where it was the human's turn.
   const count = settings.mode === 'computer' ? 2 : 1;
@@ -368,10 +429,12 @@ function applyView(view: SessionView): void {
   if (view.version < online.version) return; // an older response arrived late
   const before = current();
   const beforeCount = games.length;
-  games = view.games.map((moves) => replay(moves));
+  games = view.games.map(toGame);
+  serverOffset = view.now - Date.now();
   const previous = online;
   online = { ...view, unsubscribe: online.unsubscribe };
   const after = current();
+  if (clockKey(online.clock) !== clockKey(previous.clock)) showToast(`Clock: ${describeClock(online.clock)}.`);
   if (online.locked && !previous.locked) showToast('Settings are locked for both players until this game ends.');
   for (const [option, label] of [['hideBoard', 'Hide board'], ['hideHistory', 'Hide all but last move']] as const) {
     if (online.options[option] !== previous.options[option]) {
@@ -383,7 +446,9 @@ function applyView(view: SessionView): void {
     games.length === beforeCount &&
     after.moves.length === before.moves.length + 1 &&
     before.moves.every((cell, i) => after.moves[i] === cell);
+  const timedOutNow = games.length === beforeCount && before.status.kind === 'playing' && after.status.kind === 'timeout';
   if (isNewMove) announce(after);
+  else if (timedOutNow) finish(after);
   if (review && review.game >= games.length) review = undefined;
   releaseLockIfOver();
   render();
@@ -401,7 +466,8 @@ function openSession(view: SessionView): void {
   localLocked = false;
   burstEl.replaceChildren();
   online = { ...view, unsubscribe: () => undefined };
-  games = view.games.map((moves) => replay(moves));
+  games = view.games.map(toGame);
+  serverOffset = view.now - Date.now();
   const code = view.code;
   online.unsubscribe = api.subscribe(code, () => void refresh(code));
   setUrlCode(code);
@@ -441,7 +507,8 @@ function defaultSessionName(): string {
   return `Game of ${new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
 }
 
-const createSession = () => withBusy(async () => openSession(await api.create(defaultSessionName())));
+const createSession = () =>
+  withBusy(async () => openSession(await api.create(defaultSessionName(), settings.clock)));
 
 const joinSession = (code: Code) =>
   withBusy(async () => {
@@ -457,7 +524,7 @@ async function onlineMove(cell: number): Promise<void> {
   if (online.you === null) return reject(cell, 'spectator');
   if (busy) return reject(cell, 'not-your-turn');
   const game = current();
-  const result = play(game, cell);
+  const result = play(game, cell, nowMs());
   if (!result.ok) return reject(cell, result.error);
   if (game.turn !== online.you) return reject(cell, 'not-your-turn');
   const code = online.code;
@@ -509,6 +576,8 @@ function resultText(game: Game): string {
   switch (game.status.kind) {
     case 'won':
       return `${game.status.winner} won`;
+    case 'timeout':
+      return `${game.status.winner} won on time`;
     case 'draw':
       return 'Draw';
     case 'playing':
@@ -529,6 +598,12 @@ function statusText(): string {
       if (mine === null) return `Player ${game.status.winner} wins!`;
       if (game.status.winner === mine) return 'You win!';
       return settings.mode === 'computer' ? 'The computer wins.' : 'Your opponent wins.';
+    case 'timeout': {
+      const loser = other(game.status.winner);
+      if (mine === null) return `${loser} ran out of time. Player ${game.status.winner} wins!`;
+      if (game.status.winner !== mine) return 'You ran out of time.';
+      return `${settings.mode === 'computer' ? 'The computer' : 'Your opponent'} ran out of time. You win!`;
+    }
     case 'draw':
       return 'Draw. The cube is full.';
     case 'playing':
@@ -615,7 +690,8 @@ function render(): void {
   // Score: finished games of this session only.
   const score = { X: 0, O: 0, draw: 0 };
   for (const g of games) {
-    if (g.status.kind === 'won') score[g.status.winner]++;
+    const winner = winnerOf(g.status);
+    if (winner !== null) score[winner]++;
     if (g.status.kind === 'draw') score.draw++;
   }
   scoreEl.innerHTML = [
@@ -638,6 +714,13 @@ function render(): void {
         button.addEventListener('click', () => startReview(index));
         item.append(button);
       }
+      if (g.status.kind !== 'playing') {
+        const cardButton = document.createElement('button');
+        cardButton.type = 'button';
+        cardButton.textContent = 'Card';
+        cardButton.addEventListener('click', () => void openCard(index));
+        item.append(cardButton);
+      }
       item.classList.toggle('active', review?.game === index);
       return item;
     }),
@@ -646,7 +729,13 @@ function render(): void {
   const onlineWithoutSeat = settings.mode === 'online' && online?.you == null;
   newGameButton.disabled = frozen || busy || thinking || onlineWithoutSeat || (settings.mode === 'online' && isLive());
   undoButton.hidden = settings.mode === 'online';
-  undoButton.disabled = frozen || thinking || review !== undefined || !isLive() || current().moves.length === 0;
+  undoButton.disabled =
+    frozen || thinking || review !== undefined || !isLive() || current().moves.length === 0 || matchClock().kind !== 'off';
+  showCardButton.hidden = isLive() || review !== undefined;
+  clockSelect.value = clockKey(matchClock());
+  clockSelect.disabled =
+    frozen || busy || !canChangeMatch() || (online !== undefined && isLive() && current().moves.length > 0);
+  renderClocks();
   lockButton.disabled = frozen || busy || !isLive() || review !== undefined || !canChangeMatch();
   const lockScope = online ? ' for both players' : '';
   lockButton.textContent = frozen ? `🔒 Locked${lockScope} until this game ends` : `🔓 Lock settings${lockScope}`;
@@ -654,6 +743,171 @@ function render(): void {
   soundButton.textContent = settings.muted ? '🔇' : '🔊';
   soundButton.setAttribute('aria-pressed', String(!settings.muted));
 }
+
+// ---- Clock ----
+
+function renderClocks(): void {
+  const control = matchClock();
+  const game = current();
+  const left = remaining(control, game, nowMs());
+  clocksEl.hidden = left === null || review !== undefined || (settings.mode === 'online' && online === undefined);
+  if (left === null) return;
+  const live = game.status.kind === 'playing';
+  clocksEl.querySelectorAll<HTMLElement>('[data-clock]').forEach((chip) => {
+    const player: Player = chip.dataset.clock === 'X' ? 'X' : 'O';
+    const active = live && game.turn === player && game.moves.length >= 2;
+    chip.textContent = `${playerName(player)} · ${formatClock(left[player])}`;
+    chip.classList.toggle('active', active);
+    chip.classList.toggle('low', active && left[player] <= 10_000);
+    chip.classList.toggle('out', left[player] <= 0);
+  });
+  clockNote.hidden = !live || game.moves.length >= 2;
+}
+
+// Runs 5 times a second: redraws the clocks, ticks in the last 10 seconds, and ends a game on time.
+function tickClock(): void {
+  renderClocks();
+  const control = matchClock();
+  const game = current();
+  if (control.kind === 'off' || game.status.kind !== 'playing') return;
+  const now = nowMs();
+  if (isFlagged(control, game, now)) {
+    if (online === undefined) {
+      round++; // drops a computer move in progress
+      thinking = false;
+      setCurrent(timeOut(game));
+      releaseLockIfOver();
+      finish(current());
+      render();
+    } else if (now - lastFlagRefresh > 1000) {
+      // The server records the timeout when it reads the session, so a refresh is enough.
+      lastFlagRefresh = now;
+      void refresh(online.code);
+    }
+    return;
+  }
+  const left = remaining(control, game, now)?.[game.turn];
+  if (left === undefined || game.moves.length < 2 || left > 10_000) return;
+  const second = Math.ceil(left / 1000);
+  if (second !== lastTickSecond) {
+    lastTickSecond = second;
+    sounds.tick(second <= 3);
+  }
+}
+
+clockSelect.replaceChildren(...CLOCK_PRESETS.map((preset) => new Option(describeClock(preset), clockKey(preset))));
+
+clockSelect.addEventListener('change', () => {
+  const clock = parseClock(clockSelect.value);
+  if (clock === undefined) throw new Error(`unknown clock ${clockSelect.value}`);
+  if (settingsLocked()) {
+    render();
+    return reject(undefined, 'locked');
+  }
+  sounds.click();
+  settings.clock = clock;
+  saveSettings();
+  // Locally the clock is a match-up setting like the difficulty, so it starts a fresh session.
+  if (online === undefined) return resetLocalSession();
+  if (online.you === null) {
+    render();
+    return reject(undefined, 'spectator');
+  }
+  if (isLive() && current().moves.length > 0) {
+    render();
+    return reject(undefined, 'clock-mid-game');
+  }
+  const code = online.code;
+  void withBusy(async () => applyView(await api.update(code, { clock })));
+});
+
+// ---- End card ----
+
+function cardInput(game: Game, index: number): CardInput {
+  const winner = winnerOf(game.status);
+  const mine = me();
+  const title =
+    winner === null
+      ? 'Draw'
+      : mine === null
+        ? `${winner} wins`
+        : winner === mine
+          ? 'You win!'
+          : settings.mode === 'computer'
+            ? 'Computer wins'
+            : 'You lost';
+  const subtitle =
+    game.status.kind === 'won'
+      ? `Four in a row in ${game.moves.length} moves`
+      : game.status.kind === 'timeout'
+        ? `${other(game.status.winner)} ran out of time after ${game.moves.length} moves`
+        : 'The cube is full. Nobody got four in a row.';
+  const level = `${settings.difficulty.charAt(0).toUpperCase()}${settings.difficulty.slice(1)}`;
+  const matchup =
+    settings.mode === 'computer'
+      ? `vs Computer · ${level} · You played ${settings.human}`
+      : online
+        ? `Online · ${online.name}`
+        : 'Two players, one screen';
+  const first = game.times[0] ?? 0;
+  const last = game.times.at(-1) ?? 0;
+  const duration = first > 0 && last > first ? ` · Game time ${formatClock(last - first)}` : '';
+  const link = online ? `${location.host}/?code=${online.code}` : location.host;
+  return {
+    game,
+    title,
+    subtitle,
+    matchup,
+    details: `Game ${index + 1} · ${describeClock(matchClock())}${duration}`,
+    date: new Date(last > 0 ? last - serverOffset : Date.now()),
+    footer: cardInclude.checked ? (online ? `Code ${online.code} · ${link}` : link) : '',
+  };
+}
+
+async function openCard(index: number): Promise<void> {
+  const game = games[index];
+  if (game === undefined || game.status.kind === 'playing') throw new Error(`game ${index} has no result to show`);
+  cardIncludeLabel.textContent = online ? 'Include the game code and link' : 'Include the link';
+  const input = cardInput(game, index);
+  const canvas = await drawCard(input);
+  card = { index, canvas };
+  cardImage.src = canvas.toDataURL('image/png');
+  cardImage.alt = `${input.title}. ${input.subtitle}.`;
+  if (!cardDialog.open) cardDialog.showModal();
+}
+
+function cardFilename(): string {
+  return `tick3d-${new Date().toISOString().slice(0, 10)}.png`;
+}
+
+cardShareButton.addEventListener('click', () => {
+  if (card === undefined) return;
+  const { canvas, index } = card;
+  const game = games[index];
+  if (game === undefined) return;
+  const input = cardInput(game, index);
+  const url = cardInclude.checked ? (online ? location.href : location.origin) : undefined;
+  const code = cardInclude.checked && online ? ` Code ${online.code}.` : '';
+  void shareImage(canvas, cardFilename(), `${input.title}: ${input.subtitle} on tick3d.${code}`, url).then((outcome) => {
+    if (outcome === 'copied') showToast('Image copied. Paste it anywhere.');
+    if (outcome === 'saved') showToast('Image saved.');
+  });
+});
+
+cardSaveButton.addEventListener('click', () => {
+  if (card !== undefined) void saveImage(card.canvas, cardFilename());
+});
+cardCloseButton.addEventListener('click', () => cardDialog.close());
+cardInclude.addEventListener('change', () => {
+  if (card !== undefined) void openCard(card.index);
+});
+// A click on the dimmed backdrop lands on the dialog element itself.
+cardDialog.addEventListener('click', (event) => {
+  if (event.target === cardDialog) cardDialog.close();
+});
+showCardButton.addEventListener('click', () => {
+  if (!isLive()) void openCard(games.length - 1);
+});
 
 // ---- Review ----
 
@@ -839,6 +1093,7 @@ soundButton.addEventListener('click', () => {
 // ---- Start ----
 
 setMuted(settings.muted);
+setInterval(tickClock, 200);
 const linkCode = new URLSearchParams(location.search).get('code');
 if (linkCode !== null) {
   const code = normalizeCode(linkCode);

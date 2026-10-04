@@ -13,6 +13,8 @@ export type Coords = { layer: number; row: number; column: number };
 export type Status =
   | { kind: 'playing' }
   | { kind: 'won'; winner: Player; line: Line }
+  // The other player ran out of time.
+  | { kind: 'timeout'; winner: Player }
   | { kind: 'draw' };
 
 export type Game = {
@@ -21,12 +23,18 @@ export type Game = {
   first: Player;
   status: Status;
   moves: readonly number[];
+  // When each move happened, in epoch milliseconds. The clock reads these.
+  times: readonly number[];
 };
 
 export type MoveError = 'occupied' | 'game-over';
 export type MoveResult = { ok: true; game: Game } | { ok: false; error: MoveError };
 
 export const other = (player: Player): Player => (player === 'X' ? 'O' : 'X');
+
+export function winnerOf(status: Status): Player | null {
+  return status.kind === 'won' || status.kind === 'timeout' ? status.winner : null;
+}
 
 export function assertCell(cell: number): void {
   if (!Number.isInteger(cell) || cell < 0 || cell >= CELL_COUNT) {
@@ -110,30 +118,40 @@ export function newGame(first: Player = 'X'): Game {
     first,
     status: { kind: 'playing' },
     moves: [],
+    times: [],
   };
 }
 
-export function play(game: Game, cell: number): MoveResult {
+export function play(game: Game, cell: number, at: number = Date.now()): MoveResult {
   assertCell(cell);
   if (game.status.kind !== 'playing') return { ok: false, error: 'game-over' };
   if (game.board[cell] !== null) return { ok: false, error: 'occupied' };
 
   const board = game.board.with(cell, game.turn);
   const moves = [...game.moves, cell];
+  const times = [...game.times, at];
   const line = winningLine(board, cell, game.turn);
   const status: Status = line
     ? { kind: 'won', winner: game.turn, line }
     : moves.length === CELL_COUNT
       ? { kind: 'draw' }
       : { kind: 'playing' };
-  return { ok: true, game: { ...game, board, moves, status, turn: other(game.turn) } };
+  return { ok: true, game: { ...game, board, moves, times, status, turn: other(game.turn) } };
+}
+
+// Ends a live game: the player to move ran out of time.
+export function timeOut(game: Game): Game {
+  if (game.status.kind !== 'playing') throw new Error('only a live game can time out');
+  return { ...game, status: { kind: 'timeout', winner: other(game.turn) } };
 }
 
 // Replays a move list from an empty board. Throws if a move is not legal.
-export function replay(moves: readonly number[], first: Player = 'X'): Game {
+// Without `times`, every move gets time 0, which is fine for positions that no clock reads.
+export function replay(moves: readonly number[], first: Player = 'X', times?: readonly number[]): Game {
+  if (times !== undefined && times.length !== moves.length) throw new Error('times and moves differ in length');
   let game = newGame(first);
-  for (const cell of moves) {
-    const result = play(game, cell);
+  for (const [i, cell] of moves.entries()) {
+    const result = play(game, cell, times?.[i] ?? 0);
     if (!result.ok) throw new Error(`move history is not valid: ${result.error} at cell ${cell}`);
     game = result.game;
   }
@@ -143,7 +161,8 @@ export function replay(moves: readonly number[], first: Player = 'X'): Game {
 // Replays all moves except the last `count`, so the result is always a reachable position.
 export function undo(game: Game, count: number): Game {
   if (!Number.isInteger(count) || count < 0) throw new RangeError(`undo count must be >= 0, got ${count}`);
-  return replay(game.moves.slice(0, Math.max(0, game.moves.length - count)), game.first);
+  const keep = Math.max(0, game.moves.length - count);
+  return replay(game.moves.slice(0, keep), game.first, game.times.slice(0, keep));
 }
 
 // Reads "layer row column" typed by a player, 1-based: "234", "2 3 4" and "2,3,4" all work.

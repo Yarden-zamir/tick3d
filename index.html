@@ -23,6 +23,11 @@
 
       <section class="stage">
         <div class="status" id="status" aria-live="polite"></div>
+        <div class="clocks" id="clocks" hidden>
+          <span class="clock x" data-clock="X"></span>
+          <span class="clock o" data-clock="O"></span>
+          <span class="clock-note" id="clock-note">The clock starts after the first move of each player.</span>
+        </div>
         <div class="board" id="board" role="grid" aria-label="Game board"></div>
         <div class="board-hidden" id="board-hidden" hidden>
           <strong>Board hidden</strong>
@@ -114,6 +119,11 @@
           </div>
         </div>
 
+        <label class="field">
+          <span class="label">Time limit</span>
+          <select id="clock"></select>
+        </label>
+
         <div class="field">
           <span class="label">Hide</span>
           <div class="toggles">
@@ -130,6 +140,7 @@
           <button type="button" id="sound" aria-label="Sound"></button>
         </div>
         <button type="button" class="lock" id="lock"></button>
+        <button type="button" class="lock" id="show-card" hidden>🏆 Result card</button>
 
         <details class="history" id="history-box">
           <summary>Games in this session</summary>
@@ -141,10 +152,23 @@
           <p>Take turns to place a mark. Get four in a straight line to win.</p>
           <p>Lines can run along a layer, up through the layers, or diagonally through the cube. There are 76 lines.</p>
           <p>Point at a cell to light up the cells above and below it.</p>
+          <p>With a time limit, a player who runs out of time loses. The first move of each player is untimed.</p>
           <p>Lock settings keeps every setting, the view included, until the game ends. Online, the lock and the hide options apply to both players.</p>
         </details>
       </aside>
     </div>
+    <dialog class="end-card" id="end-card" aria-label="Game result">
+      <img id="end-card-image" alt="" width="1080" height="1350" />
+      <label class="include">
+        <input type="checkbox" id="end-card-include" checked />
+        <span id="end-card-include-label">Include the game code and link</span>
+      </label>
+      <div class="end-card-actions">
+        <button type="button" class="primary" id="end-card-share">Share</button>
+        <button type="button" id="end-card-save">Save image</button>
+        <button type="button" id="end-card-close">Close</button>
+      </div>
+    </dialog>
     <div class="toast" id="toast" role="alert"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

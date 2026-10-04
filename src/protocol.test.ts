@@ -15,11 +15,13 @@ describe('parseSessionView', () => {
   const valid = {
     code: 'AB3K',
     name: 'Match',
-    games: [[0, 1]],
+    games: [{ moves: [0, 1], times: [10, 20], timedOut: false }],
     seats: { X: true, O: false },
     you: 'X',
     options: { hideBoard: true, hideHistory: false },
     locked: false,
+    clock: { kind: 'game', seconds: 300 },
+    now: 30,
     version: 2,
   };
 
@@ -28,7 +30,9 @@ describe('parseSessionView', () => {
   });
 
   it.each([
-    ['games', { ...valid, games: [[64]] }],
+    ['games', { ...valid, games: [{ moves: [64], times: [1], timedOut: false }] }],
+    ['game times', { ...valid, games: [{ moves: [0, 1], times: [1], timedOut: false }] }],
+    ['clock', { ...valid, clock: { kind: 'game', seconds: 7 } }],
     ['you', { ...valid, you: 'Z' }],
     ['seats', { ...valid, seats: {} }],
     ['options', { ...valid, options: { hideBoard: 'yes', hideHistory: false } }],
@@ -42,9 +46,10 @@ describe('parseSessionUpdate', () => {
   it('accepts a name and match options', () => {
     expect(parseSessionUpdate({ name: ' Rematch ', hideBoard: true })).toEqual({ name: 'Rematch', hideBoard: true });
     expect(parseSessionUpdate({ hideHistory: false })).toEqual({ hideHistory: false });
+    expect(parseSessionUpdate({ clock: 'move:30' })).toEqual({ clock: { kind: 'move', seconds: 30 } });
   });
 
-  it.each([{}, { name: '' }, { hideBoard: 'true' }, { locked: true }, null])('rejects %j', (input) => {
+  it.each([{}, { name: '' }, { hideBoard: 'true' }, { locked: true }, { clock: 'move:45' }, null])('rejects %j', (input) => {
     expect(parseSessionUpdate(input)).toBeUndefined();
   });
 });

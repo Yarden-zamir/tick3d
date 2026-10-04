@@ -1,3 +1,4 @@
+import type { TimeControl } from './clock.ts';
 import {
   type Code,
   type MoveRequest,
@@ -57,7 +58,7 @@ async function request(method: string, path: string, body?: unknown): Promise<Se
 }
 
 export const api = {
-  create: (name: string) => request('POST', '', { name }),
+  create: (name: string, clock: TimeControl) => request('POST', '', { name, clock }),
   load: (code: Code) => request('GET', `/${code}`),
   join: (code: Code) => request('POST', `/${code}/join`),
   move: (code: Code, move: MoveRequest) => request('POST', `/${code}/moves`, move),

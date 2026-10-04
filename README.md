@@ -20,6 +20,8 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - Hide the board, or hide all marks except the last move. Play by coordinates: type the layer, row and column, for example `2 3 4`. Hidden marks show again when the game ends.
 - Lock settings: after a lock, no setting (the view included) changes until the game ends. In a local game, a page reload ends the lock. In an online session, either player can lock, the server keeps the lock, and it holds for both players.
 - Session history: the panel lists the games of the session. Replay steps through a finished game move by move.
+- Time limit, like a chess clock: 10 s, 30 s or 1 min per move, or 1, 3, 5 or 10 min per player for the game. A player who runs out of time loses. The first move of each player is untimed, so the clock starts after both players moved once. A clock ticks in the last 10 seconds. A timed game has no undo.
+- End card: at the end of a game, a card shows the result, the final board and the game details. Share sends the image through the system share sheet. Without file sharing (most desktop browsers), Share copies the image, and Save image downloads it. A check box adds the game code and link to the card and the share text.
 - Sound effects made with Web Audio. Each layer has its own note. A mute button keeps the choice.
 - Two views: a 3D tower of tilted layers and a flat view. The flat view has four layouts: grid, side by side, top to bottom, and steps.
 - Point at a cell to light up the cells above and below it.
@@ -33,6 +35,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - A browser keeps its seat through a random token in `localStorage`.
 - A code loads the full session, finished games included. Either player can name the session and start the next game after a game ends.
 - Hide board and Hide all but last move belong to the session. A change by either player applies to both players and to watchers. View and layout stay per screen.
+- The time limit also belongs to the session. A new session takes the time limit of the screen that creates it. Either player can change it before the first move or after the game ends. The server records the move times and decides a timeout, so a page that closes cannot avoid a loss on time.
 - The server keeps the newest 10,000 sessions. A SQLite trigger deletes the oldest session (by creation time) when a new session goes past that limit.
 
 ## Code
@@ -40,6 +43,8 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - `src/game.ts`: board, lines, move validation, win and draw detection, undo.
 - `src/ai.ts`: the three computer levels.
 - `src/sound.ts`: synthesized sounds.
+- `src/clock.ts`: time limits and the time left for each player.
+- `src/card.ts`: draws the end card on a canvas and shares it.
 - `src/protocol.ts`: the contract between the page and the API (code format, names, response check).
 - `src/online.ts`: the API client and the live update stream.
 - `src/main.ts`, `src/style.css`, `index.html`: the page.
