@@ -82,14 +82,15 @@ function cookie(name: string, value: string, options: { maxAge: number; domain?:
 
 // A return address must be on our own domain, so the login can never send a player elsewhere.
 function safeReturn(config: AuthConfig, value: string | null): string {
-  if (value === null) return config.origin;
+  const home = new URL('/', config.origin).toString();
+  if (value === null) return home;
   try {
     const url = new URL(value);
     const host = url.hostname;
     const ours = host === config.cookieDomain || host.endsWith(`.${config.cookieDomain}`);
-    return url.protocol === 'https:' && ours ? url.toString() : config.origin;
+    return url.protocol === 'https:' && ours ? url.toString() : home;
   } catch {
-    return config.origin;
+    return home;
   }
 }
 
