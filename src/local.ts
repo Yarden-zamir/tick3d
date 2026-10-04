@@ -1,0 +1,180 @@
+// The device backend: computer and friend games, and Nearby games this device hosts. It runs the
+// same session rules as the server (src/session/core.ts) over IndexedDB, so these games work offline.
+import type { Difficulty } from './ai.ts';
+import type { TimeControl } from './clock.ts';
+import type { Player } from './game.ts';
+import type { DeviceDb, DeviceSession } from './device-db.ts';
+import {
+  CODE_ALPHABET,
+  CODE_LENGTH,
+  type Code,
+  type MoveRequest,
+  type PlayerInfo,
+  type PlayerToken,
+  type SessionUpdate,
+  type SessionView,
+} from './protocol.ts';
+import * as core from './session/core.ts';
+import { CURRENT_FORMAT, type SessionDoc, parseDoc } from './session/format.ts';
+
+export type LocalMode = 'computer' | 'friend' | 'nearby';
+
+export type NewLocalSession = {
+  mode: LocalMode;
+  name: string;
+  clock: TimeControl;
+  // The seat of the player at this device. A friend game holds both seats.
+  human: Player;
+  difficulty?: Difficulty;
+};
+
+export type LocalSummary = { code: Code; mode: LocalMode; name: string; games: number; updatedAt: number; doc: SessionDoc };
+
+function randomCode(): Code {
+  const bytes = crypto.getRandomValues(new Uint8Array(CODE_LENGTH));
+  return Array.from(bytes, (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length]).join('') as Code;
+}
+
+export function createLocalBackend(
+  db: DeviceDb,
+  token: PlayerToken,
+  // The account of this device's player, shown on its seats. Null without a login.
+  account: () => PlayerInfo | null,
+) {
+  const listeners = new Map<Code, Set<() => void>>();
+  // Other tabs of this device hear about changes, so two open tabs show the same game.
+  const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel('tick3d-local');
+  const fire = (code: Code) => listeners.get(code)?.forEach((listener) => listener());
+  if (channel) channel.onmessage = (event: MessageEvent<unknown>) => {
+    if (typeof event.data === 'string') fire(event.data as Code);
+  };
+
+  // One change at a time in this tab, like the server queue. Two tabs that change the same
+  // game in the same instant keep the later write; revisit if that ever loses a move in practice.
+  let queue: Promise<unknown> = Promise.resolve();
+  function serialized<T>(task: () => Promise<T>): Promise<T> {
+    const run = queue.then(task, task);
+    queue = run.catch(() => undefined);
+    return run;
+  }
+
+  async function read(code: Code): Promise<DeviceSession & { parsed: SessionDoc }> {
+    const row = await db.get('sessions', code);
+    if (row === undefined) throw new core.SessionError(404, `No game with code ${code} on this device.`);
+    return { ...row, parsed: parseDoc(row.doc) };
+  }
+
+  async function write(row: DeviceSession, doc: SessionDoc): Promise<DeviceSession> {
+    // Every write passes the same check as every read, as on the server.
+    const stored: unknown = JSON.parse(JSON.stringify(doc));
+    parseDoc(stored);
+    const next = { code: row.code, doc: stored, version: row.version + 1, updatedAt: Date.now() };
+    await db.put('sessions', next);
+    fire(row.code);
+    channel?.postMessage(row.code);
+    return next;
+  }
+
+  // The device holds its own seats; in a computer game it also moves for the computer.
+  const identity = (withComputer = false): core.Identity => new Set(withComputer ? [token, core.COMPUTER_TOKEN] : [token]);
+
+  function view(row: DeviceSession, doc: SessionDoc, withComputer = false): SessionView {
+    const info = account();
+    const seatInfo = (seat: Player) => (doc.seats[seat] === token ? info : null);
+    return core.viewOf(doc, {
+      code: row.code,
+      version: row.version,
+      identity: identity(withComputer),
+      now: Date.now(),
+      // Everyone at this device is present. A Nearby host replaces this with its guests' presence.
+      presence: { X: doc.seats.X !== null, O: doc.seats.O !== null },
+      players: { X: seatInfo('X'), O: seatInfo('O') },
+    });
+  }
+
+  // Loads, records a timeout, writes an older format back, applies one rule, and returns the view.
+  function change(code: Code, rule: (doc: SessionDoc) => SessionDoc, withComputer = false): Promise<SessionView> {
+    return serialized(async () => {
+      const loaded = await read(code);
+      let row: DeviceSession = loaded;
+      let doc = core.settle(loaded.parsed, Date.now()) ?? loaded.parsed;
+      const stale = (loaded.doc as { format?: unknown }).format !== CURRENT_FORMAT;
+      if (doc !== loaded.parsed || stale) row = await write(row, doc);
+      const next = rule(doc);
+      if (next !== doc) {
+        row = await write(row, next);
+        doc = next;
+      }
+      return view(row, doc, withComputer);
+    });
+  }
+
+  return {
+    create: (options: NewLocalSession): Promise<SessionView> =>
+      serialized(async () => {
+        const { mode, name, clock, human, difficulty } = options;
+        const seats: Record<Player, string | null> =
+          mode === 'friend'
+            ? { X: token, O: token }
+            : mode === 'computer'
+              ? { X: human === 'X' ? token : core.COMPUTER_TOKEN, O: human === 'O' ? token : core.COMPUTER_TOKEN }
+              : // A Nearby host takes its seat; the first guest takes the other.
+                { X: human === 'X' ? token : null, O: human === 'O' ? token : null };
+        const computer = mode === 'computer' && difficulty !== undefined ? { difficulty, seat: human === 'X' ? 'O' : 'X' } as const : undefined;
+        const doc = core.createDoc({ name, mode, clock, seats, ...(computer ? { computer } : {}) });
+        let code = randomCode();
+        while ((await db.get('sessions', code)) !== undefined) code = randomCode();
+        const row = await write({ code, doc: null, version: 0, updatedAt: 0 }, doc);
+        return view(row, doc);
+      }),
+
+    load: (code: Code) => change(code, (doc) => doc),
+    move: (code: Code, request: MoveRequest) => change(code, (doc) => core.move(doc, identity(), request, Date.now())),
+    // The page plays the computer's moves through this, with the computer's token added.
+    computerMove: (code: Code, request: MoveRequest) =>
+      change(code, (doc) => core.move(doc, identity(true), request, Date.now()), true),
+    newGame: (code: Code) => change(code, (doc) => core.newGame(doc, identity())),
+    update: (code: Code, changes: SessionUpdate) => change(code, (doc) => core.update(doc, identity(), changes)),
+    lock: (code: Code) => change(code, (doc) => core.lock(doc, identity())),
+    chat: (code: Code, text: string) => change(code, (doc) => core.chat(doc, identity(), text, Date.now())),
+    undo: (code: Code, count: number) => change(code, (doc) => core.undo(doc, identity(true), count)),
+    // A device-held session has nobody else to join; a Nearby guest joins through the host.
+    join: (code: Code) => change(code, (doc) => doc),
+
+    subscribe(code: Code, onChange: () => void): () => void {
+      const set = listeners.get(code) ?? new Set();
+      listeners.set(code, set);
+      set.add(onChange);
+      return () => set.delete(onChange);
+    },
+
+    // Every session on this device, newest first.
+    async list(): Promise<LocalSummary[]> {
+      const rows = await db.all('sessions');
+      return rows
+        .map((row) => ({ row, doc: parseDoc(row.doc) }))
+        .filter((entry): entry is { row: DeviceSession; doc: SessionDoc & { mode: LocalMode } } => entry.doc.mode !== 'online')
+        .map(({ row, doc }) => ({
+          code: row.code,
+          mode: doc.mode,
+          name: doc.name,
+          games: doc.games.filter((game) => game.moves.length > 0).length,
+          updatedAt: row.updatedAt,
+          doc,
+        }))
+        .sort((a, b) => b.updatedAt - a.updatedAt);
+    },
+
+    // The raw document, for the Nearby host. It answers guests with the same rules as the server.
+    change: (code: Code, rule: (doc: SessionDoc) => SessionDoc) =>
+      serialized(async () => {
+        const row = await read(code);
+        const doc = core.settle(row.parsed, Date.now()) ?? row.parsed;
+        const next = rule(doc);
+        const saved = next === row.parsed ? row : await write(row, next);
+        return { code, doc: next, version: saved.version };
+      }),
+  };
+}
+
+export type LocalBackend = ReturnType<typeof createLocalBackend>;

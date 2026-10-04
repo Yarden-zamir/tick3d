@@ -14,6 +14,7 @@ import {
   remaining,
   sameClock,
 } from './clock.ts';
+import { type DeviceDb, memoryDeviceDb, openDeviceDb } from './device-db.ts';
 import {
   CELL_COUNT,
   SIZE,
@@ -24,26 +25,31 @@ import {
   other,
   play,
   replay,
-  timeOut,
   toCell,
   toCoords,
-  undo,
   winnerOf,
 } from './game.ts';
-import { api, OnlineError } from './online.ts';
+import { type LocalBackend, createLocalBackend } from './local.ts';
+import { type Me, OnlineError, api, token } from './online.ts';
 import {
   type ChatMessage,
   type Code,
   type MatchOptions,
+  type MoveRequest,
+  type ResultUpload,
+  type SessionUpdate,
   type SessionView,
   normalizeChat,
   normalizeCode,
   normalizeName,
   toGame,
+  toRecord,
 } from './protocol.ts';
+import { SessionError } from './session/core.ts';
+import type { SessionDoc } from './session/format.ts';
 import { setMuted, sounds } from './sound.ts';
 
-const MODES = ['computer', 'friend', 'online'] as const;
+const MODES = ['computer', 'friend', 'online', 'nearby'] as const;
 const VIEWS = ['tower', 'flat'] as const;
 const LAYOUTS = ['grid', 'row', 'column', 'steps'] as const;
 const PLAYERS = ['X', 'O'] as const;
@@ -87,9 +93,7 @@ type Settings = {
   human: Player;
   view: View;
   layout: Layout;
-  hideBoard: boolean;
-  hideHistory: boolean;
-  // Locally, the time limit of every game. Online, the time limit for a session that this screen creates.
+  // The time limit for the next session this screen starts. A session keeps its own limit after that.
   clock: TimeControl;
   muted: boolean;
   // The tower's turn around its vertical axis, in degrees. Dragging the tower sets it.
@@ -104,8 +108,6 @@ const DEFAULTS: Settings = {
   human: 'X',
   view: 'tower',
   layout: 'grid',
-  hideBoard: false,
-  hideHistory: false,
   clock: NO_LIMIT,
   muted: false,
   spin: 45,
@@ -134,7 +136,7 @@ const REFUSAL_TEXT: Record<Refusal, string> = {
   'not-your-turn': 'It is not your turn.',
   spectator: 'You are watching. Both seats are taken.',
   reviewing: 'You are looking at an old position. Go back to the live game first.',
-  'no-session': 'Create an online game or join one with a code first.',
+  'no-session': 'Create an session game or join one with a code first.',
   locked: 'Settings are locked until this game ends.',
 };
 
@@ -162,8 +164,6 @@ function loadSettings(): Settings {
     human: oneOf(PLAYERS, stored.human, DEFAULTS.human),
     view: oneOf(VIEWS, stored.view, DEFAULTS.view),
     layout: oneOf(LAYOUTS, stored.layout, DEFAULTS.layout),
-    hideBoard: bool(stored.hideBoard, DEFAULTS.hideBoard),
-    hideHistory: bool(stored.hideHistory, DEFAULTS.hideHistory),
     clock: parseClock(stored.clock) ?? DEFAULTS.clock,
     muted: bool(stored.muted, DEFAULTS.muted),
     spin: wrapSpin(finite(stored.spin, DEFAULTS.spin)),
@@ -200,7 +200,7 @@ const coordsBack = element('#coords-back', HTMLButtonElement);
 const coordsPlace = element('#coords-place', HTMLButtonElement);
 const digitButtons = document.querySelectorAll<HTMLButtonElement>('[data-digit]');
 const historyEl = element('#history', HTMLOListElement);
-const onlineCodeEl = element('#online-code', HTMLElement);
+const onlineCodeEl = element('#session-code', HTMLElement);
 const shareButton = element('#share', HTMLButtonElement);
 const sessionNameInput = element('#session-name', HTMLInputElement);
 const joinForm = element('#join', HTMLFormElement);
@@ -240,26 +240,19 @@ const chatNotice = element('#chat-notice', HTMLButtonElement);
 const chatNoticeFrom = element('#chat-notice-from', HTMLElement);
 const chatNoticeText = element('#chat-notice-text', HTMLSpanElement);
 
-type Online = {
-  code: Code;
-  name: string;
-  you: Player | null;
-  seats: Record<Player, boolean>;
-  options: MatchOptions;
-  locked: boolean;
-  clock: TimeControl;
-  version: number;
-  chat: ChatMessage[];
-  unsubscribe: () => void;
-};
+// The open session: its latest view, the backend that holds it, and its mode.
+type Session = SessionView & { backend: SessionBackend; mode: Mode; unsubscribe: () => void };
 
 const settings = loadSettings();
-// The session: every game played with the current settings. The last game is the live one.
+// The games of the open session, oldest first. The last game is the live one.
 let games: Game[] = [newGame('X', settings.clock)];
-let online: Online | undefined;
+let session: Session | undefined;
 let review: { game: number; move: number } | undefined;
-// The lock for local games. Online sessions keep their lock on the server, for both players.
-let localLocked = false;
+// Storage on this device, and the backend for computer, friend and hosted Nearby games.
+let deviceDb: DeviceDb | undefined;
+let local: LocalBackend | undefined;
+// Login state from the server. Without a network or on a LAN host, login is not available.
+let account: Me = { loginAvailable: false, user: null };
 let thinking = false;
 let busy = false;
 // Increments on every new local game, so a computer move scheduled for an old game is dropped.
@@ -273,7 +266,7 @@ let chatNoticeTimer: ReturnType<typeof setTimeout> | undefined;
 // Messages from the other player that arrived while this tab was in the background.
 let unread = 0;
 const baseTitle = document.title;
-// Server time minus local time. Online move times come from the server, so the clocks use its time.
+// Session holder time minus local time. Move times come from the server or the Nearby host, so the clocks use its time.
 let serverOffset = 0;
 let lastTickSecond: number | undefined;
 let lastFlagRefresh = 0;
@@ -292,22 +285,24 @@ function setCurrent(game: Game): void {
 }
 
 const isLive = () => current().status.kind === 'playing';
-const settingsLocked = () => (online ? online.locked : localLocked && isLive());
+const settingsLocked = () => session?.locked ?? false;
+// A game with another device: online, or Nearby. Moves are final and chat is open.
+const shared = () => session?.mode === 'online' || session?.mode === 'nearby';
 
-// Online, the hide options belong to the session and apply to both players. Locally, they are settings.
+// The hide options belong to the session. With another device they apply to both players.
 function matchOptions(): MatchOptions {
-  return online ? online.options : { hideBoard: settings.hideBoard, hideHistory: settings.hideHistory };
+  return session?.options ?? { hideBoard: false, hideHistory: false };
 }
 
 // The time limit for the next game. The live game keeps its own limit in `current().clock`.
 function nextClock(): TimeControl {
-  return online ? online.clock : settings.clock;
+  return session?.clock ?? settings.clock;
 }
 
-const nowMs = () => Date.now() + (online ? serverOffset : 0);
+const nowMs = () => Date.now() + serverOffset;
 
-// Watchers cannot change a session. Everybody can change a local game.
-const canChangeMatch = () => online === undefined || online.you !== null;
+// Watchers cannot change a session.
+const canChangeMatch = () => session !== undefined && session.you !== null;
 
 // ---- Board ----
 
@@ -510,7 +505,7 @@ function showProblem(text: string): void {
 }
 
 function showError(error: unknown): void {
-  if (!(error instanceof OnlineError)) throw error;
+  if (!(error instanceof OnlineError) && !(error instanceof SessionError)) throw error;
   showProblem(error.message);
 }
 
@@ -532,9 +527,8 @@ for (const button of cells) {
 
 // The player at this screen, if there is exactly one.
 function me(): Player | null {
-  if (settings.mode === 'computer') return settings.human;
-  if (settings.mode === 'online') return online?.you ?? null;
-  return null;
+  if (session === undefined || session.mode === 'friend') return null;
+  return session.you;
 }
 
 // Plays the sound for the last move of the live game, and the result if the move ended it.
@@ -556,6 +550,7 @@ function finish(game: Game): void {
     celebrate();
   }
   const index = games.length - 1;
+  if (session !== undefined) void recordResult(session, game, index);
   setTimeout(() => {
     // Show the card only if that game is still the finished live game and nothing else is open.
     if (games.length - 1 !== index || isLive() || review !== undefined || cardDialog.open) return;
@@ -587,83 +582,102 @@ function celebrate(): void {
   confettiTimer = setTimeout(() => burstEl.replaceChildren(), CONFETTI_MS);
 }
 
-// ---- Local play ----
+// ---- Sessions ----
 
-const isComputerTurn = () => settings.mode === 'computer' && isLive() && current().turn !== settings.human;
+// Every mode plays a session through a backend with the same calls: the server for online
+// games, this device for computer and friend games, the host's device for Nearby games.
+type SessionBackend = {
+  load(code: Code): Promise<SessionView>;
+  join(code: Code): Promise<SessionView>;
+  move(code: Code, request: MoveRequest): Promise<SessionView>;
+  newGame(code: Code): Promise<SessionView>;
+  update(code: Code, changes: SessionUpdate): Promise<SessionView>;
+  lock(code: Code): Promise<SessionView>;
+  chat(code: Code, text: string): Promise<SessionView>;
+  subscribe(code: Code, onChange: () => void): () => void;
+};
+
+const isComputerTurn = () =>
+  session?.mode === 'computer' && session.you !== null && isLive() && current().turn !== session.you;
 
 function humanMove(cell: number): void {
   if (review) return reject(cell, 'reviewing');
-  if (settings.mode === 'online') return void onlineMove(cell);
-  if (thinking || isComputerTurn()) return reject(cell, 'wait');
-  const result = play(current(), cell);
+  void playMove(cell);
+}
+
+async function playMove(cell: number): Promise<void> {
+  if (session === undefined) return reject(cell, 'no-session');
+  if (session.you === null) return reject(cell, 'spectator');
+  const waitReason = session.mode === 'computer' ? 'wait' : 'not-your-turn';
+  if (busy || thinking) return reject(cell, waitReason);
+  const game = current();
+  const result = play(game, cell, nowMs());
   if (!result.ok) return reject(cell, result.error);
-  commit(result.game);
-}
-
-// The lock holds for one game only, so it ends with the game.
-function releaseLockIfOver(): void {
-  if (!isLive()) localLocked = false;
-}
-
-function commit(next: Game): void {
-  setCurrent(next);
-  announce(next);
-  releaseLockIfOver();
-  render();
+  // In a friend game this device plays both seats.
+  if (session.mode !== 'friend' && game.turn !== session.you) return reject(cell, waitReason);
+  const { code, backend } = session;
+  const request = { game: games.length - 1, moveCount: game.moves.length, cell };
+  // Show the move at once. The answer replaces it, or a refresh undoes it on an error.
+  setCurrent(result.game);
+  announce(result.game);
+  await withBusy(async () => {
+    try {
+      applyView(await backend.move(code, request));
+    } catch (error) {
+      await refresh(code);
+      throw error;
+    }
+  });
   scheduleComputer();
 }
 
 function scheduleComputer(): void {
-  if (!isComputerTurn()) return;
+  if (!isComputerTurn() || session === undefined || thinking) return;
+  const backend = local;
+  if (backend === undefined) throw new Error('a computer game without the device backend');
   thinking = true;
   render();
+  const { code } = session;
   const scheduledRound = round;
   setTimeout(() => {
-    if (scheduledRound !== round) return;
+    if (scheduledRound !== round || session?.code !== code || !isComputerTurn()) {
+      thinking = false;
+      return render();
+    }
     // The hard level searches on the main thread for up to 600 ms. CSS animations keep running,
     // but input waits. Move the search to a Web Worker if the budget grows past about one second.
     const game = current();
     const cell = chooseMove(game.board, game.turn, settings.difficulty);
-    thinking = false;
-    const result = play(game, cell);
-    if (!result.ok) throw new Error(`computer chose an illegal move: ${result.error} at cell ${cell}`);
-    commit(result.game);
+    const request = { game: games.length - 1, moveCount: game.moves.length, cell };
+    void (async () => {
+      try {
+        const view = await backend.computerMove(code, request);
+        thinking = false;
+        applyView(view);
+      } catch (error) {
+        showError(error);
+      } finally {
+        thinking = false;
+        render();
+      }
+    })();
   }, COMPUTER_DELAY_MS);
 }
 
-// Starts the next local game. An empty live game is replaced, any other stays in the history.
-function startLocalGame(): void {
-  round++;
-  thinking = false;
-  review = undefined;
-  localLocked = false;
-  const next = newGame('X', settings.clock);
-  games = current().moves.length === 0 ? [...games.slice(0, -1), next] : [...games, next];
-  burstEl.replaceChildren();
-  render();
-  scheduleComputer();
-}
-
-function resetLocalSession(): void {
-  games = [newGame('X', settings.clock)];
-  startLocalGame();
-}
-
 function undoMove(): void {
-  if (settings.mode === 'online' || thinking || review || !isLive() || current().moves.length === 0) return;
+  const backend = local;
+  if (session === undefined || backend === undefined || (session.mode !== 'computer' && session.mode !== 'friend')) return;
+  if (thinking || review || !isLive() || current().moves.length === 0) return;
   // Undo would hand back time that the clock already counted, so a timed game has no undo.
   if (hasLimit(current().clock)) return;
   if (settingsLocked()) return reject(undefined, 'locked');
   // Against the computer, go back to the last position where it was the human's turn.
-  const count = settings.mode === 'computer' ? 2 : 1;
+  const count = session.mode === 'computer' && current().turn === session.you && current().moves.length >= 2 ? 2 : 1;
   round++;
-  setCurrent(undo(current(), count));
+  const { code } = session;
   sounds.click();
-  render();
-  scheduleComputer();
+  void withBusy(async () => applyView(await backend.undo(code, count))).then(scheduleComputer);
 }
-
-// ---- Online play ----
 
 function setUrlCode(code: Code | undefined): void {
   const url = new URL(location.href);
@@ -673,26 +687,30 @@ function setUrlCode(code: Code | undefined): void {
 }
 
 function applyView(view: SessionView): void {
-  if (online === undefined || online.code !== view.code) throw new Error(`view for ${view.code} without an open session`);
-  if (view.version < online.version) return; // an older response arrived late
+  // A late answer for a session that is closed now changes nothing.
+  if (session === undefined || session.code !== view.code) return;
+  if (view.version < session.version) return; // an older answer arrived late
   const before = current();
   const beforeCount = games.length;
   games = view.games.map(toGame);
   serverOffset = view.now - Date.now();
-  const previous = online;
-  online = { ...view, unsubscribe: online.unsubscribe };
+  const previous = session;
+  session = { ...view, backend: session.backend, mode: session.mode, unsubscribe: session.unsubscribe };
   const after = current();
-  if (!sameClock(online.clock, previous.clock)) {
-    const startsLater = after.status.kind === 'playing' && after.moves.length > 0;
-    showToast(`Time limit${startsLater ? ' for the next game' : ''}: ${describeClock(online.clock)}.`);
-  }
-  if (online.locked && !previous.locked) showToast('Settings are locked for both players until this game ends.');
-  for (const [option, label] of [['hideBoard', 'Hide board'], ['hideHistory', 'Hide all but last move']] as const) {
-    if (online.options[option] !== previous.options[option]) {
-      showToast(`${label} is ${online.options[option] ? 'on' : 'off'} for both players.`);
+  // Changes by the other player get a message. On one device, the player made them.
+  if (shared()) {
+    if (!sameClock(session.clock, previous.clock)) {
+      const startsLater = after.status.kind === 'playing' && after.moves.length > 0;
+      showToast(`Time limit${startsLater ? ' for the next game' : ''}: ${describeClock(session.clock)}.`);
+    }
+    if (session.locked && !previous.locked) showToast('Settings are locked for both players until this game ends.');
+    for (const [option, label] of [['hideBoard', 'Hide board'], ['hideHistory', 'Hide all but last move']] as const) {
+      if (session.options[option] !== previous.options[option]) {
+        showToast(`${label} is ${session.options[option] ? 'on' : 'off'} for both players.`);
+      }
     }
   }
-  // A move that is not on screen yet came from the opponent. Our own moves were announced already.
+  // A move that is not on screen yet came from the other player or the computer. Our own moves were announced already.
   const isNewMove =
     games.length === beforeCount &&
     after.moves.length === before.moves.length + 1 &&
@@ -701,47 +719,50 @@ function applyView(view: SessionView): void {
   if (isNewMove) announce(after);
   else if (timedOutNow) finish(after);
   const lastSeen = previous.chat.at(-1)?.id ?? -1;
-  const incoming = online.chat.filter((message) => message.id > lastSeen && message.from !== online?.you);
+  const incoming = session.chat.filter((message) => message.id > lastSeen && message.from !== session?.you);
   const newest = incoming.at(-1);
-  if (newest !== undefined) {
+  if (newest !== undefined && shared()) {
     sounds.message();
     notifyChat(newest, incoming.length);
   }
   if (review && review.game >= games.length) review = undefined;
-  releaseLockIfOver();
+  if (session.mode === 'online') void deviceDb?.put('remote', { code: session.code, view, savedAt: Date.now() });
   render();
 }
 
-function openSession(view: SessionView): void {
-  online?.unsubscribe();
-  round++; // drops a computer move scheduled for the local game
+function openSession(view: SessionView, backend: SessionBackend, mode: Mode): void {
+  session?.unsubscribe();
+  round++; // drops a computer move scheduled for the previous session
   thinking = false;
-  if (settings.mode !== 'online') {
-    settings.mode = 'online';
+  if (settings.mode !== mode) {
+    settings.mode = mode;
     saveSettings();
   }
   review = undefined;
-  localLocked = false;
   burstEl.replaceChildren();
-  online = { ...view, unsubscribe: () => undefined };
+  session = { ...view, backend, mode, unsubscribe: () => undefined };
   games = view.games.map(toGame);
   serverOffset = view.now - Date.now();
   const code = view.code;
-  online.unsubscribe = api.subscribe(code, () => void refresh(code));
-  setUrlCode(code);
+  session.unsubscribe = backend.subscribe(code, () => void refresh(code));
+  setUrlCode(mode === 'online' ? code : undefined);
+  if (mode === 'online') void deviceDb?.put('remote', { code, view, savedAt: Date.now() });
   render();
+  scheduleComputer();
 }
 
 function leaveSession(): void {
-  online?.unsubscribe();
-  online = undefined;
+  session?.unsubscribe();
+  session = undefined;
+  games = [newGame('X', settings.clock)];
   setUrlCode(undefined);
 }
 
 async function refresh(code: Code): Promise<void> {
+  const open = session;
+  if (open === undefined || open.code !== code) return;
   try {
-    const view = await api.load(code);
-    if (online?.code === code) applyView(view);
+    applyView(await open.backend.load(code));
   } catch (error) {
     showError(error);
   }
@@ -761,50 +782,123 @@ async function withBusy(task: () => Promise<void>): Promise<void> {
   }
 }
 
-function defaultSessionName(): string {
-  return `Game of ${new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
+function defaultSessionName(mode: Mode = 'online'): string {
+  const day = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const kind = mode === 'computer' ? `${settings.difficulty} computer` : mode === 'friend' ? 'friend' : mode === 'nearby' ? 'nearby game' : 'game';
+  return mode === 'online' ? `Game of ${day}` : `${kind[0]?.toUpperCase()}${kind.slice(1)} · ${day}`;
+}
+
+// The seat of the player in a computer game: the one the computer does not hold.
+const humanSeatOf = (doc: SessionDoc): Player | undefined => (doc.computer ? other(doc.computer.seat) : undefined);
+
+// Opens the newest session on this device for the chosen match-up, or starts one.
+async function openLocalSession(mode: 'computer' | 'friend'): Promise<void> {
+  const backend = local;
+  if (backend === undefined) throw new Error('the device backend is not ready');
+  const latest = (await backend.list()).find(
+    (entry) =>
+      entry.mode === mode &&
+      (mode !== 'computer' || (entry.doc.computer?.difficulty === settings.difficulty && humanSeatOf(entry.doc) === settings.human)),
+  );
+  const view =
+    latest !== undefined
+      ? await backend.load(latest.code)
+      : await backend.create({ mode, name: defaultSessionName(mode), clock: settings.clock, human: settings.human, difficulty: settings.difficulty });
+  openSession(view, backend, mode);
+}
+
+// Reopens any session on this device, for example from My games.
+async function openDeviceSession(code: Code): Promise<void> {
+  const backend = local;
+  if (backend === undefined) throw new Error('the device backend is not ready');
+  const entry = (await backend.list()).find((item) => item.code === code);
+  if (entry === undefined || entry.mode === 'nearby') return showProblem('That game is not on this device any more.');
+  if (entry.doc.computer) {
+    settings.difficulty = entry.doc.computer.difficulty;
+    settings.human = humanSeatOf(entry.doc) ?? settings.human;
+    saveSettings();
+  }
+  openSession(await backend.load(code), backend, entry.mode);
 }
 
 const createSession = () =>
-  withBusy(async () => openSession(await api.create(defaultSessionName(), settings.clock)));
+  withBusy(async () => {
+    if (!navigator.onLine) throw new OnlineError('You are offline. Online games need a connection.');
+    openSession(await api.create(defaultSessionName(), settings.clock), api, 'online');
+  });
 
 const joinSession = (code: Code) =>
   withBusy(async () => {
-    let view = await api.load(code);
+    let view: SessionView;
+    try {
+      view = await api.load(code);
+    } catch (error) {
+      // Without a network, an online game this device saw before opens read-only.
+      const cached = await deviceDb?.get('remote', code);
+      if (!(error instanceof OnlineError) || cached === undefined) throw error;
+      openSession(cached.view, api, 'online');
+      showToast('You are offline. This is the game as you last saw it.');
+      return;
+    }
     if (view.you === null && (!view.seats.X || !view.seats.O)) view = await api.join(code);
-    openSession(view);
+    openSession(view, api, 'online');
     sounds.click();
     showToast(view.you === null ? 'Both seats are taken. You are watching.' : `Joined ${view.name} as ${view.you}.`);
   });
 
-async function onlineMove(cell: number): Promise<void> {
-  if (online === undefined) return reject(cell, 'no-session');
-  if (online.you === null) return reject(cell, 'spectator');
-  if (busy) return reject(cell, 'not-your-turn');
-  const game = current();
-  const result = play(game, cell, nowMs());
-  if (!result.ok) return reject(cell, result.error);
-  if (game.turn !== online.you) return reject(cell, 'not-your-turn');
-  const code = online.code;
-  const request = { game: games.length - 1, moveCount: game.moves.length, cell };
-  // Show the move at once. The server answer replaces it, or a refresh undoes it on an error.
-  setCurrent(result.game);
-  announce(result.game);
-  releaseLockIfOver();
-  await withBusy(async () => {
-    try {
-      applyView(await api.move(code, request));
-    } catch (error) {
-      await refresh(code);
-      throw error;
-    }
-  });
+// ---- Nearby ----
+
+// Opens the Nearby panel. The host and guest flows come with the Nearby transport.
+function openNearby(): void {
+  render();
+}
+
+// ---- Results of games away from the server ----
+
+let flushing = false;
+
+// Keeps a finished computer, friend or Nearby game for upload. Online games are on the server already.
+async function recordResult(open: Session, game: Game, index: number): Promise<void> {
+  if (deviceDb === undefined || open.mode === 'online') return;
+  const you = open.mode === 'friend' ? null : open.you;
+  // A Nearby watcher played no part, so it has no result of its own.
+  if (open.mode !== 'friend' && you === null) return;
+  const upload: ResultUpload = {
+    // One id per device, session and game, so a result that is sent twice is stored once.
+    id: `${token}-${open.code.toLowerCase()}-${index}`,
+    mode: open.mode,
+    game: toRecord(game),
+    you,
+    difficulty: open.mode === 'computer' ? settings.difficulty : null,
+    finishedAt: game.times.at(-1) ?? Date.now(),
+  };
+  if ((await deviceDb.get('results', upload.id)) === undefined) {
+    await deviceDb.put('results', { id: upload.id, upload, sent: false });
+  }
+  await flushResults();
+}
+
+// Sends every result that is waiting, when the network is up. A failure leaves them for the next try.
+async function flushResults(): Promise<void> {
+  if (flushing || deviceDb === undefined || !navigator.onLine) return;
+  flushing = true;
+  try {
+    const waiting = (await deviceDb.all('results')).filter((result) => !result.sent);
+    if (waiting.length === 0) return;
+    await api.uploadResults(waiting.map((result) => result.upload));
+    for (const result of waiting) await deviceDb.put('results', { ...result, sent: true });
+  } catch (error) {
+    if (!(error instanceof OnlineError)) throw error;
+    // The server is out of reach. The results wait for the next finished game or reconnect.
+  } finally {
+    flushing = false;
+  }
 }
 
 async function shareLink(): Promise<void> {
-  if (online === undefined) return;
+  if (session?.mode !== 'online') return;
   const url = location.href;
-  const text = `Play 3D tic-tac-toe with me on tick3d. Code ${online.code}.`;
+  const text = `Play 3D tic-tac-toe with me on tick3d. Code ${session.code}.`;
   if (typeof navigator.share === 'function') {
     try {
       await navigator.share({ title: 'tick3d', text, url });
@@ -823,11 +917,20 @@ async function shareLink(): Promise<void> {
 
 // ---- Rendering ----
 
+// "You", "Computer", the GitHub name of a logged-in player, or the seat.
 function playerName(player: Player): string {
   const mine = me();
-  if (settings.mode === 'friend' || mine === null) return `Player ${player}`;
+  if (session === undefined || session.mode === 'friend') return `Player ${player}`;
   if (player === mine) return 'You';
-  return settings.mode === 'computer' ? 'Computer' : 'Opponent';
+  if (session.mode === 'computer') return 'Computer';
+  return session.players[player]?.login ?? (mine === null ? `Player ${player}` : 'Opponent');
+}
+
+// The other player in a game with another device, when they took a seat but closed the game.
+function awayPlayer(): Player | undefined {
+  if (session === undefined || !shared() || session.you === null) return undefined;
+  const opponent = other(session.you);
+  return session.seats[opponent] && !session.presence[opponent] ? opponent : undefined;
 }
 
 function resultText(game: Game): string {
@@ -849,7 +952,10 @@ function statusText(): string {
     const reviewed = games[review.game];
     return `Game ${review.game + 1} · move ${review.move} of ${reviewed?.moves.length ?? 0}`;
   }
-  if (settings.mode === 'online' && online === undefined) return 'Create a game or enter a code';
+  if (settings.mode === 'online' && session === undefined) {
+    return navigator.onLine ? 'Create a game or enter a code' : 'You are offline. Online games need a connection.';
+  }
+  if (session === undefined) return 'Getting the game ready…';
   const mine = me();
   switch (game.status.kind) {
     case 'won':
@@ -867,10 +973,16 @@ function statusText(): string {
     case 'playing':
       if (thinking) return 'Computer is thinking…';
       if (settings.mode === 'friend') return `Player ${game.turn} to move`;
-      if (settings.mode === 'online' && online !== undefined) {
-        if (online.you === null) return `Watching · ${game.turn} to move`;
-        if (!online.seats[other(online.you)]) return 'Waiting for a second player. Share the code.';
-        return game.turn === online.you ? `Your move (${game.turn})` : `Opponent's move (${game.turn})`;
+      if (shared()) {
+        if (session.you === null) return `Watching · ${game.turn} to move`;
+        const opponent = other(session.you);
+        if (!session.seats[opponent]) {
+          return session.mode === 'online' ? 'Waiting for a second player. Share the code.' : 'Waiting for a second device to join.';
+        }
+        // An async game goes on while a player is away: a move waits for them.
+        const away = awayPlayer() !== undefined;
+        if (game.turn === session.you) return away ? `Your move (${game.turn}) · ${playerName(opponent)} is away and sees it later` : `Your move (${game.turn})`;
+        return away ? `${playerName(opponent)} is away · the game waits for their move` : `${playerName(opponent)}'s move (${game.turn})`;
       }
       return `Your move (${game.turn})`;
   }
@@ -946,10 +1058,11 @@ function render(): void {
   });
 
   // Online box
-  onlineCodeEl.textContent = online?.code ?? '····';
-  shareButton.disabled = online === undefined;
-  if (document.activeElement !== sessionNameInput) sessionNameInput.value = online?.name ?? '';
-  sessionNameInput.disabled = online?.you == null || busy;
+  const onlineSession = session?.mode === 'online' ? session : undefined;
+  onlineCodeEl.textContent = onlineSession?.code ?? '····';
+  shareButton.disabled = onlineSession === undefined;
+  if (document.activeElement !== sessionNameInput) sessionNameInput.value = onlineSession?.name ?? '';
+  sessionNameInput.disabled = onlineSession?.you == null || busy;
   joinCodeInput.disabled = frozen || busy;
   newCodeButton.disabled = frozen || busy;
 
@@ -960,13 +1073,32 @@ function render(): void {
     if (winner !== null) score[winner]++;
     if (g.status.kind === 'draw') score.draw++;
   }
-  scoreEl.innerHTML = [
-    ['X', playerName('X'), score.X],
-    ['draw', 'Draws', score.draw],
-    ['O', playerName('O'), score.O],
-  ]
-    .map(([key, label, value]) => `<div class="tally ${key}"><b>${value}</b><span>${label}</span></div>`)
-    .join('');
+  const away = awayPlayer();
+  scoreEl.replaceChildren(
+    ...([
+      ['X', playerName('X'), score.X],
+      ['draw', 'Draws', score.draw],
+      ['O', playerName('O'), score.O],
+    ] as const).map(([key, label, value]) => {
+      const tally = document.createElement('div');
+      tally.className = `tally ${key}`;
+      tally.classList.toggle('away', key === away);
+      const count = document.createElement('b');
+      count.textContent = String(value);
+      const name = document.createElement('span');
+      const info = key === 'draw' || session === undefined ? null : session.players[key];
+      if (info) {
+        const avatar = document.createElement('img');
+        avatar.src = `${info.avatar}&s=48`;
+        avatar.alt = '';
+        avatar.className = 'avatar';
+        name.append(avatar);
+      }
+      name.append(key === away ? `${label} · away` : label);
+      tally.append(count, name);
+      return tally;
+    }),
+  );
 
   historyEl.replaceChildren(
     ...games.map((g, index) => {
@@ -992,16 +1124,17 @@ function render(): void {
     }),
   );
 
-  const onlineWithoutSeat = settings.mode === 'online' && online?.you == null;
-  newGameButton.disabled = frozen || busy || thinking || onlineWithoutSeat || (settings.mode === 'online' && isLive());
-  undoButton.hidden = settings.mode === 'online';
+  // With another device, a game must end before the next one starts.
+  const sharedLive = shared() && isLive() && current().moves.length > 0;
+  newGameButton.disabled = frozen || busy || thinking || session?.you == null || sharedLive;
+  undoButton.hidden = shared() || settings.mode === 'online' || settings.mode === 'nearby';
   undoButton.disabled =
     frozen || thinking || review !== undefined || !isLive() || current().moves.length === 0 || hasLimit(current().clock);
   showCardButton.hidden = isLive() || review !== undefined;
   renderClockEditor(frozen);
   renderClocks();
   lockButton.disabled = frozen || busy || !isLive() || review !== undefined || !canChangeMatch();
-  const lockScope = online ? ' for both players' : '';
+  const lockScope = shared() ? ' for both players' : '';
   lockButton.textContent = frozen ? `🔒 Locked${lockScope} until this game ends` : `🔓 Lock settings${lockScope}`;
   lockButton.setAttribute('aria-pressed', String(frozen));
   soundButton.innerHTML = settings.muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
@@ -1013,7 +1146,7 @@ function render(): void {
 function renderClocks(): void {
   const game = current();
   const left = remaining(game, nowMs());
-  clocksEl.hidden = left === null || review !== undefined || (settings.mode === 'online' && online === undefined);
+  clocksEl.hidden = left === null || review !== undefined || session === undefined;
   if (left === null) return;
   const live = game.status.kind === 'playing';
   clocksEl.querySelectorAll<HTMLElement>('[data-clock]').forEach((chip) => {
@@ -1038,17 +1171,11 @@ function tickClock(): void {
   if (!hasLimit(game.clock) || game.status.kind !== 'playing') return;
   const now = nowMs();
   if (isFlagged(game, now)) {
-    if (online === undefined) {
-      round++; // drops a computer move in progress
-      thinking = false;
-      setCurrent(timeOut(game));
-      releaseLockIfOver();
-      finish(current());
-      render();
-    } else if (now - lastFlagRefresh > 1000) {
-      // The server records the timeout when it reads the session, so a refresh is enough.
+    // The holder of the session (server, device or Nearby host) records the timeout when it
+    // reads the session, so a refresh is enough in every mode.
+    if (session !== undefined && now - lastFlagRefresh > 1000) {
       lastFlagRefresh = now;
-      void refresh(online.code);
+      void refresh(session.code);
     }
     return;
   }
@@ -1128,24 +1255,20 @@ function applyClock(clock: TimeControl): void {
   sounds.click();
   settings.clock = clock;
   saveSettings();
-  if (online === undefined) {
-    // A game keeps the limit it started with. A game without moves has not started yet.
-    const game = current();
-    if (game.status.kind === 'playing' && game.moves.length === 0) setCurrent({ ...game, clock });
-    else if (game.status.kind === 'playing') showToast('The new time limit starts with the next game.');
-    return render();
-  }
-  if (online.you === null) {
+  if (session === undefined) return render();
+  if (session.you === null) {
     render();
     return reject(undefined, 'spectator');
   }
-  const code = online.code;
-  // Show the change at once, as with moves. The server answer replaces it, or a refresh undoes it on an error.
-  online = { ...online, clock };
+  const { code, backend } = session;
+  // A game keeps the limit it started with, so a change during a game starts with the next one.
+  if (!shared() && isLive() && current().moves.length > 0) showToast('The new time limit starts with the next game.');
+  // Show the change at once, as with moves. The answer replaces it, or a refresh undoes it on an error.
+  session = { ...session, clock };
   render();
   void withBusy(async () => {
     try {
-      applyView(await api.update(code, { clock }));
+      applyView(await backend.update(code, { clock }));
     } catch (error) {
       await refresh(code);
       throw error;
@@ -1201,15 +1324,18 @@ function cardInput(game: Game, index: number): CardInput {
         : 'The cube is full. Nobody got four in a row.';
   const level = `${settings.difficulty.charAt(0).toUpperCase()}${settings.difficulty.slice(1)}`;
   const matchup =
-    settings.mode === 'computer'
-      ? `vs Computer · ${level} · You played ${settings.human}`
-      : online
-        ? `Online · ${online.name}`
-        : 'Two players, one screen';
+    session?.mode === 'computer'
+      ? `vs Computer · ${level} · You played ${session.you ?? settings.human}`
+      : session?.mode === 'online'
+        ? `Online · ${session.name}`
+        : session?.mode === 'nearby'
+          ? `Nearby · ${session.name}`
+          : 'Two players, one screen';
   const first = game.times[0] ?? 0;
   const last = game.times.at(-1) ?? 0;
   const duration = first > 0 && last > first ? ` · Game time ${formatClock(last - first)}` : '';
-  const link = online ? `${location.host}/?code=${online.code}` : location.host;
+  const onlineCode = session?.mode === 'online' ? session.code : undefined;
+  const link = onlineCode ? `${location.host}/?code=${onlineCode}` : location.host;
   return {
     game,
     title,
@@ -1217,7 +1343,7 @@ function cardInput(game: Game, index: number): CardInput {
     matchup,
     details: `Game ${index + 1} · ${describeClock(game.clock)}${duration}`,
     date: new Date(last > 0 ? last - serverOffset : Date.now()),
-    footer: [online && cardCode.checked ? `Code ${online.code}` : '', cardLink.checked ? link : '']
+    footer: [onlineCode && cardCode.checked ? `Code ${onlineCode}` : '', cardLink.checked ? link : '']
       .filter((part) => part !== '')
       .join(' · '),
   };
@@ -1227,7 +1353,7 @@ async function openCard(index: number): Promise<void> {
   const game = games[index];
   if (game === undefined || game.status.kind === 'playing') throw new Error(`game ${index} has no result to show`);
   // A local game has no code, so only the link option applies.
-  cardCodeOption.hidden = online === undefined;
+  cardCodeOption.hidden = session?.mode !== 'online';
   const input = cardInput(game, index);
   const canvas = await drawCard(input);
   card = { index, canvas };
@@ -1246,8 +1372,9 @@ cardShareButton.addEventListener('click', () => {
   const game = games[index];
   if (game === undefined) return;
   const input = cardInput(game, index);
-  const url = cardLink.checked ? (online ? location.href : location.origin) : undefined;
-  const code = cardCode.checked && online ? ` Code ${online.code}.` : '';
+  const isOnline = session?.mode === 'online';
+  const url = cardLink.checked ? (isOnline ? location.href : location.origin) : undefined;
+  const code = cardCode.checked && isOnline && session ? ` Code ${session.code}.` : '';
   void shareImage(canvas, cardFilename(), `${input.title}: ${input.subtitle} on tick3d.${code}`, url).then((outcome) => {
     if (outcome === 'copied') showToast('Image copied. Paste it anywhere.');
     if (outcome === 'saved') showToast('Image saved.');
@@ -1351,16 +1478,16 @@ function changeSetting(setting: string, value: string | undefined): void {
   saveSettings();
   sounds.click();
   if (setting === 'view' || setting === 'layout') return render();
-  if (setting === 'mode' && previousMode === 'online') leaveSession();
+  leaveSession();
+  review = undefined;
+  render();
   if (settings.mode === 'online') {
-    games = [newGame()];
-    review = undefined;
-    render();
     if (previousMode !== 'online') void createSession();
     return;
   }
-  // A different match-up means a fresh session.
-  resetLocalSession();
+  if (settings.mode === 'nearby') return openNearby();
+  // Each match-up continues its newest session on this device, or starts one.
+  void openLocalSession(settings.mode).catch(showError);
 }
 
 document.querySelectorAll<HTMLElement>('.segmented').forEach((group) => {
@@ -1379,17 +1506,13 @@ document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) =
   if (toggle !== 'hideBoard' && toggle !== 'hideHistory') throw new Error(`unknown toggle ${toggle}`);
   button.addEventListener('click', () => {
     if (settingsLocked()) return reject(undefined, 'locked');
+    if (session === undefined) return reject(undefined, 'no-session');
+    if (session.you === null) return reject(undefined, 'spectator');
     sounds.click();
-    if (online === undefined) {
-      settings[toggle] = !settings[toggle];
-      saveSettings();
-      return render();
-    }
-    if (online.you === null) return reject(undefined, 'spectator');
-    const code = online.code;
-    const value = !online.options[toggle];
+    const { code, backend } = session;
+    const value = !session.options[toggle];
     const changes = toggle === 'hideBoard' ? { hideBoard: value } : { hideHistory: value };
-    void withBusy(async () => applyView(await api.update(code, changes)));
+    void withBusy(async () => applyView(await backend.update(code, changes)));
   });
 });
 
@@ -1463,20 +1586,20 @@ coordsForm.addEventListener('submit', (event) => {
 // ---- Chat ----
 
 function renderChat(): void {
-  chatEl.hidden = online === undefined;
-  if (online === undefined) {
+  chatEl.hidden = !shared();
+  if (session === undefined || !shared()) {
     chatShown = '';
     return;
   }
-  const canWrite = online.you !== null;
+  const canWrite = session.you !== null;
   chatInput.disabled = !canWrite;
   chatSend.disabled = !canWrite || chatSending;
   chatInput.placeholder = canWrite ? 'Message your opponent' : 'Only the two players can chat';
 
-  const shown = `${online.code}:${online.chat.map((message) => message.id).join(',')}`;
+  const shown = `${session.code}:${session.chat.map((message) => message.id).join(',')}`;
   if (shown === chatShown) return;
   chatShown = shown;
-  if (online.chat.length === 0) {
+  if (session.chat.length === 0) {
     const empty = document.createElement('li');
     empty.className = 'chat-empty';
     empty.textContent = canWrite ? 'No messages yet. Say hi.' : 'No messages yet.';
@@ -1484,10 +1607,10 @@ function renderChat(): void {
     return;
   }
   chatLog.replaceChildren(
-    ...online.chat.map((message) => {
+    ...session.chat.map((message) => {
       const item = document.createElement('li');
       item.className = `chat-message from-${message.from.toLowerCase()}`;
-      item.classList.toggle('mine', message.from === online?.you);
+      item.classList.toggle('mine', message.from === session?.you);
       const name = document.createElement('b');
       name.textContent = playerName(message.from);
       const text = document.createElement('span');
@@ -1532,7 +1655,7 @@ function hideChatNotice(): void {
 chatNotice.addEventListener('click', () => {
   hideChatNotice();
   chatEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  if (online?.you != null) chatInput.focus({ preventScroll: true });
+  if (session?.you != null) chatInput.focus({ preventScroll: true });
 });
 
 document.addEventListener('visibilitychange', () => {
@@ -1543,23 +1666,23 @@ document.addEventListener('visibilitychange', () => {
 
 chatForm.addEventListener('submit', (event) => {
   event.preventDefault();
-  if (online === undefined || chatSending) return;
-  if (online.you === null) return reject(undefined, 'spectator');
+  if (session === undefined || !shared() || chatSending) return;
+  if (session.you === null) return reject(undefined, 'spectator');
   const text = normalizeChat(chatInput.value);
   if (text === undefined) {
     sounds.invalid();
     showToast('Type a message first.');
     return;
   }
-  const code = online.code;
+  const { code, backend } = session;
   chatSending = true;
   render();
   void (async () => {
     try {
-      const view = await api.chat(code, text);
+      const view = await backend.chat(code, text);
       chatInput.value = '';
       sounds.sent();
-      if (online?.code === code) applyView(view);
+      if (session?.code === code) applyView(view);
     } catch (error) {
       showError(error);
     } finally {
@@ -1590,16 +1713,16 @@ newCodeButton.addEventListener('click', () => {
 shareButton.addEventListener('click', () => void shareLink());
 
 sessionNameInput.addEventListener('change', () => {
-  if (online === undefined) return;
+  if (session === undefined) return;
   const name = normalizeName(sessionNameInput.value);
   if (name === undefined) {
     showProblem('A name needs 1 to 40 characters.');
-    sessionNameInput.value = online.name;
+    sessionNameInput.value = session.name;
     return;
   }
-  const code = online.code;
+  const { code, backend } = session;
   void withBusy(async () => {
-    applyView(await api.update(code, { name }));
+    applyView(await backend.update(code, { name }));
     showToast('Session renamed.');
   });
 });
@@ -1610,29 +1733,26 @@ reviewEl.querySelectorAll<HTMLButtonElement>('[data-review]').forEach((button) =
 
 newGameButton.addEventListener('click', () => {
   if (settingsLocked()) return reject(undefined, 'locked');
+  if (session === undefined) return reject(undefined, 'no-session');
   sounds.click();
-  if (settings.mode !== 'online') return startLocalGame();
-  if (online === undefined) return reject(undefined, 'no-session');
-  const code = online.code;
+  round++; // drops a computer move for the game that ends here
+  thinking = false;
+  const { code, backend } = session;
   void withBusy(async () => {
     review = undefined;
     burstEl.replaceChildren();
-    applyView(await api.newGame(code));
-  });
+    applyView(await backend.newGame(code));
+  }).then(scheduleComputer);
 });
 
 undoButton.addEventListener('click', undoMove);
 
 lockButton.addEventListener('click', () => {
-  if (!isLive() || review || settingsLocked()) return;
+  if (!isLive() || review || settingsLocked() || session === undefined) return;
+  if (session.you === null) return reject(undefined, 'spectator');
   sounds.click();
-  if (online === undefined) {
-    localLocked = true;
-    return render();
-  }
-  if (online.you === null) return reject(undefined, 'spectator');
-  const code = online.code;
-  void withBusy(async () => applyView(await api.lock(code)));
+  const { code, backend } = session;
+  void withBusy(async () => applyView(await backend.lock(code)));
 });
 
 soundButton.addEventListener('click', () => {
@@ -1645,21 +1765,51 @@ soundButton.addEventListener('click', () => {
 
 // ---- Start ----
 
+// Asks the server who is logged in. Without a network the page keeps the last answer.
+async function refreshAccount(): Promise<void> {
+  if (!navigator.onLine) return;
+  try {
+    account = await api.me();
+  } catch (error) {
+    if (!(error instanceof OnlineError)) throw error;
+  }
+  render();
+}
+
+async function start(): Promise<void> {
+  try {
+    deviceDb = await openDeviceDb();
+  } catch {
+    // The browser blocks storage (some private modes). Games then last for this visit only.
+    deviceDb = memoryDeviceDb();
+    showToast('This browser does not let the game store data, so games last for this visit only.');
+  }
+  local = createLocalBackend(deviceDb, token, () => account.user);
+  void refreshAccount();
+  void flushResults();
+  addEventListener('online', () => {
+    void flushResults();
+    void refreshAccount();
+    if (session?.mode === 'online') void refresh(session.code);
+    render();
+  });
+  addEventListener('offline', () => render());
+
+  const linkCode = new URLSearchParams(location.search).get('code');
+  const code = linkCode === null ? undefined : normalizeCode(linkCode);
+  if (linkCode !== null && code === undefined) {
+    setUrlCode(undefined);
+    showToast(`The link code "${linkCode}" is not valid.`);
+  }
+  if (code !== undefined) return joinSession(code);
+  if (settings.mode === 'online') return render();
+  if (settings.mode === 'nearby') return openNearby();
+  await openLocalSession(settings.mode);
+}
+
 setMuted(settings.muted);
 setInterval(tickClock, 200);
 applyTheme();
 applyCamera();
-const linkCode = new URLSearchParams(location.search).get('code');
-if (linkCode !== null) {
-  const code = normalizeCode(linkCode);
-  if (code === undefined) {
-    setUrlCode(undefined);
-    showToast(`The link code "${linkCode}" is not valid.`);
-    startLocalGame();
-  } else {
-    render();
-    void joinSession(code);
-  }
-} else {
-  startLocalGame();
-}
+render();
+void start().catch(showError);

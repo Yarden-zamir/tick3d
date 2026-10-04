@@ -2,10 +2,15 @@ import type { TimeControl } from './clock.ts';
 import {
   type Code,
   type MoveRequest,
+  type MyGames,
+  type PlayerInfo,
   type PlayerToken,
+  RESULTS_PER_UPLOAD,
+  type ResultUpload,
   type SessionUpdate,
   type SessionView,
   asPlayerToken,
+  parsePlayerInfo,
   parseSessionView,
 } from './protocol.ts';
 
@@ -38,14 +43,15 @@ function playerToken(): PlayerToken {
   }
 }
 
-const token = playerToken();
+export const token = playerToken();
 
+// A refused or failed server call. The message is fit to show to the player.
 export class OnlineError extends Error {}
 
-async function request(method: string, path: string, body?: unknown): Promise<SessionView> {
+async function call(method: string, path: string, body?: unknown): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(`/api/sessions${path}`, {
+    response = await fetch(`/api${path}`, {
       method,
       headers: { 'content-type': 'application/json', 'x-player': token },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -61,7 +67,28 @@ async function request(method: string, path: string, body?: unknown): Promise<Se
         : `Server error (${response.status}).`;
     throw new OnlineError(message);
   }
-  return parseSessionView(data);
+  return data;
+}
+
+const request = async (method: string, path: string, body?: unknown): Promise<SessionView> =>
+  parseSessionView(await call(method, `/sessions${path}`, body));
+
+export type Me = { loginAvailable: boolean; user: PlayerInfo | null };
+
+function parseMe(value: unknown): Me {
+  if (typeof value !== 'object' || value === null) throw new Error('invalid answer from /api/me');
+  const { loginAvailable, user } = value as Record<string, unknown>;
+  const info = user === null ? null : parsePlayerInfo(user);
+  if (typeof loginAvailable !== 'boolean' || info === undefined) throw new Error('invalid answer from /api/me');
+  return { loginAvailable, user: info };
+}
+
+// The page reads "My games" only to display it, so a light shape check is enough here.
+function parseMyGames(value: unknown): MyGames {
+  if (typeof value !== 'object' || value === null || !('total' in value) || !('sessions' in value)) {
+    throw new Error('invalid answer from /api/me/games');
+  }
+  return value as MyGames;
 }
 
 export const api = {
@@ -74,9 +101,28 @@ export const api = {
   lock: (code: Code) => request('POST', `/${code}/lock`),
   chat: (code: Code, text: string) => request('POST', `/${code}/chat`, { text }),
 
+  me: async () => parseMe(await call('GET', '/me')),
+  myGames: async () => parseMyGames(await call('GET', '/me/games')),
+  logout: () => call('POST', '/auth/logout'),
+  // Login is a full page visit to GitHub and back to this page.
+  loginUrl: () => `/api/auth/login?return=${encodeURIComponent(location.href)}`,
+
+  // Sends finished games in batches. Returns how many the server stored as new.
+  async uploadResults(results: readonly ResultUpload[]): Promise<number> {
+    let stored = 0;
+    for (let start = 0; start < results.length; start += RESULTS_PER_UPLOAD) {
+      const answer = await call('POST', '/results', { results: results.slice(start, start + RESULTS_PER_UPLOAD) });
+      const count = typeof answer === 'object' && answer !== null && 'stored' in answer ? answer.stored : undefined;
+      if (typeof count !== 'number') throw new Error('invalid answer from /api/results');
+      stored += count;
+    }
+    return stored;
+  },
+
   // Calls onChange after every change, and after each reconnect in case a change was missed.
+  // The token marks this page's seats as present, so the other player sees "here" or "away".
   subscribe(code: Code, onChange: () => void): () => void {
-    const source = new EventSource(`/api/sessions/${code}/events`);
+    const source = new EventSource(`/api/sessions/${code}/events?player=${encodeURIComponent(token)}`);
     source.onmessage = () => onChange();
     source.onopen = () => onChange();
     return () => source.close();
