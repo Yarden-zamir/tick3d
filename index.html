@@ -143,34 +143,36 @@
 
         <div class="field clock-editor">
           <span class="label">Time limit</span>
-          <div class="limit" data-limit="perGame">
-            <label class="limit-switch">
-              <input type="checkbox" data-limit-on />
-              <span>Per player, whole game</span>
-            </label>
-            <div class="limit-row">
-              <input type="number" data-limit-value inputmode="decimal" min="0.5" max="120" step="0.5" aria-label="Minutes per player" />
-              <span class="unit">min</span>
-              <div class="chips">
+          <div class="limits">
+            <div class="limit" data-limit="perGame">
+              <label class="limit-switch">
+                <span>Whole game, each player</span>
+                <input type="checkbox" role="switch" data-limit-on />
+              </label>
+              <div class="limit-options" role="group" aria-label="Time per player">
                 <button type="button" data-preset="60">1m</button>
                 <button type="button" data-preset="180">3m</button>
                 <button type="button" data-preset="300">5m</button>
                 <button type="button" data-preset="600">10m</button>
+                <label class="limit-custom">
+                  <input type="number" data-limit-value inputmode="decimal" placeholder="custom" min="0.5" max="120" step="0.5" aria-label="Custom minutes per player" />
+                  <span>min</span>
+                </label>
               </div>
             </div>
-          </div>
-          <div class="limit" data-limit="perMove">
-            <label class="limit-switch">
-              <input type="checkbox" data-limit-on />
-              <span>Per move</span>
-            </label>
-            <div class="limit-row">
-              <input type="number" data-limit-value inputmode="numeric" min="3" max="600" step="1" aria-label="Seconds per move" />
-              <span class="unit">sec</span>
-              <div class="chips">
+            <div class="limit" data-limit="perMove">
+              <label class="limit-switch">
+                <span>Each move</span>
+                <input type="checkbox" role="switch" data-limit-on />
+              </label>
+              <div class="limit-options" role="group" aria-label="Time per move">
                 <button type="button" data-preset="10">10s</button>
                 <button type="button" data-preset="30">30s</button>
                 <button type="button" data-preset="60">1m</button>
+                <label class="limit-custom">
+                  <input type="number" data-limit-value inputmode="numeric" placeholder="custom" min="3" max="600" step="1" aria-label="Custom seconds per move" />
+                  <span>sec</span>
+                </label>
               </div>
             </div>
           </div>

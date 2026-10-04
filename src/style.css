@@ -1082,35 +1082,46 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 /* ---- Time limit editor ---- */
 
-.limit {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.6rem 0.7rem;
-  border: 2px solid var(--line);
+/* One box like the segmented controls, one row per limit, a line between the rows. */
+.limits {
+  border: var(--border) solid var(--line);
   border-radius: 10px;
   background: var(--surface-2);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+.limit {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+}
+
+.limit + .limit {
+  border-top: 2px solid var(--line);
 }
 
 .limit-switch {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.6rem;
   font-weight: 700;
   cursor: pointer;
 }
 
-/* A switch drawn from the native checkbox, so it keeps keyboard and screen reader support. */
+/* A square switch drawn from the native checkbox, so it keeps keyboard and screen reader support.
+   Sizes are in px so track and knob round the same way: the inside is 40 x 20, the knob 16 x 16,
+   so it sits 2px from every edge and travels 20px. */
 .limit-switch input {
   appearance: none;
   position: relative;
   flex: none;
-  width: 2.6rem;
-  height: 1.5rem;
+  width: 44px;
+  height: 24px;
   margin: 0;
   padding: 0;
   border: 2px solid var(--line);
-  border-radius: 999px;
+  border-radius: 4px;
   background: var(--surface);
   box-shadow: 2px 2px 0 var(--shadow);
   cursor: pointer;
@@ -1120,14 +1131,15 @@ body[data-turn='O'] .status[data-state='playing'] {
 .limit-switch input::after {
   content: '';
   position: absolute;
-  top: 0.15rem;
-  left: 0.15rem;
-  width: 0.95rem;
-  height: 0.95rem;
+  top: 2px;
+  left: 2px;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
   border: 2px solid var(--line);
-  border-radius: 50%;
-  background: var(--ink);
-  transition: translate 0.15s;
+  border-radius: 2px;
+  background: var(--surface-2);
+  transition: translate 0.15s, background 0.15s;
 }
 
 .limit-switch input:checked {
@@ -1135,62 +1147,107 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 .limit-switch input:checked::after {
-  translate: 1.1rem 0;
-  background: var(--on-color);
-}
-
-.limit-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.45rem;
-}
-
-.limit-row input {
-  width: 4.6rem;
-  padding: 0.35rem 0.5rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.limit-row .unit {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--muted);
-}
-
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-left: auto;
-}
-
-.chips button {
-  padding: 0.2rem 0.5rem;
-  border: 2px solid var(--line);
-  border-radius: 6px;
   background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  font-size: 0.85rem;
+  translate: 20px 0;
+}
+
+/* The choices: quick picks and a custom box, as one segmented control. */
+.limit-options {
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.limit-options button,
+.limit-custom {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.2rem;
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
   font-weight: 700;
+  font-size: 0.9rem;
   cursor: pointer;
-  transition: translate 0.08s, box-shadow 0.08s;
+  transition: background 0.15s, color 0.15s;
 }
 
-.chips button:hover:not(:disabled) {
-  translate: -1px -1px;
-  box-shadow: 3px 3px 0 var(--shadow);
+.limit-options button:hover:not(:disabled):not([aria-pressed='true']) {
+  color: var(--ink);
+  border-color: var(--line);
 }
 
-.chips button:active:not(:disabled) {
-  translate: 2px 2px;
-  box-shadow: 0 0 0 var(--shadow);
-}
-
-.chips button[aria-pressed='true'] {
-  background: var(--primary);
-  color: var(--on-color);
+.limit-options button[aria-pressed='true'],
+.limit-custom.active {
+  background: var(--ink);
+  color: var(--surface);
   font-weight: 800;
+}
+
+.limit-custom {
+  flex: 1.6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding-inline: 0.35rem;
+  border: 2px dashed var(--line);
+  cursor: text;
+}
+
+/* A value is about 4 characters wide, so value and unit sit together in the middle. */
+.limit-custom input {
+  width: 4ch;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+}
+
+.limit-custom input::-webkit-inner-spin-button,
+.limit-custom input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.limit-custom input:focus-visible {
+  outline: none;
+}
+
+.limit-custom:focus-within {
+  border-style: solid;
+  color: var(--ink);
+  background: var(--peer);
+}
+
+.limit-custom span {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.limit-custom input:placeholder-shown {
+  width: 100%;
+}
+
+.limit-custom input::placeholder {
+  color: var(--muted);
+  font-weight: 600;
+  text-align: center;
+}
+
+/* An empty custom box shows only its placeholder, without the unit. */
+.limit-custom input:placeholder-shown + span {
+  display: none;
 }
 
 .clock-summary {

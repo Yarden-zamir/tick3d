@@ -870,7 +870,12 @@ function limitControls(kind: LimitKind) {
   if (!(on instanceof HTMLInputElement) || !(value instanceof HTMLInputElement)) {
     throw new Error(`time limit editor for ${kind} is incomplete`);
   }
-  return { on, value, presets: [...box.querySelectorAll<HTMLButtonElement>('[data-preset]')] };
+  const options = box.querySelector('.limit-options');
+  const custom = box.querySelector('.limit-custom');
+  if (!(options instanceof HTMLElement) || !(custom instanceof HTMLElement)) {
+    throw new Error(`time limit editor for ${kind} is incomplete`);
+  }
+  return { on, value, options, custom, presets: [...box.querySelectorAll<HTMLButtonElement>('[data-preset]')] };
 }
 
 const limitEditors: Record<LimitKind, ReturnType<typeof limitControls>> = {
@@ -882,17 +887,26 @@ function renderClockEditor(frozen: boolean): void {
   const next = nextClock();
   const disabled = frozen || busy || !canChangeMatch();
   for (const kind of ['perGame', 'perMove'] as const) {
-    const { on, value, presets } = limitEditors[kind];
+    const { on, value, options, custom, presets } = limitEditors[kind];
     const seconds = next[kind];
     if (seconds !== null) lastLimit[kind] = seconds;
     on.checked = seconds !== null;
     on.disabled = disabled;
-    if (document.activeElement !== value) value.value = String((seconds ?? lastLimit[kind]) / LIMIT_SCALE[kind]);
-    value.disabled = disabled || seconds === null;
+    // The choices show only while the limit is on.
+    options.hidden = seconds === null;
+    value.disabled = disabled;
+    let onPreset = false;
     for (const preset of presets) {
-      preset.setAttribute('aria-pressed', String(Number(preset.dataset.preset) === seconds));
+      const pressed = Number(preset.dataset.preset) === seconds;
+      onPreset ||= pressed;
+      preset.setAttribute('aria-pressed', String(pressed));
       preset.disabled = disabled;
     }
+    // A value that matches no quick pick is a custom value: the custom box shows it as selected.
+    // With a quick pick selected, the custom box stays empty, so it never repeats the quick pick.
+    const isCustom = seconds !== null && !onPreset;
+    custom.classList.toggle('active', isCustom);
+    if (document.activeElement !== value) value.value = isCustom ? String(seconds / LIMIT_SCALE[kind]) : '';
   }
   const game = current();
   const pending = game.status.kind === 'playing' && game.moves.length > 0 && !sameClock(game.clock, next);
@@ -940,8 +954,10 @@ for (const kind of ['perGame', 'perMove'] as const) {
   const { on, value, presets } = limitEditors[kind];
   on.addEventListener('change', () => setLimit(kind, on.checked ? lastLimit[kind] : null));
   value.addEventListener('change', () => {
+    // An emptied custom box means no change.
+    if (value.value.trim() === '') return render();
     const amount = Number(value.value.replace(',', '.'));
-    setLimit(kind, value.value.trim() === '' || !Number.isFinite(amount) ? NaN : Math.round(amount * LIMIT_SCALE[kind]));
+    setLimit(kind, Number.isFinite(amount) ? Math.round(amount * LIMIT_SCALE[kind]) : NaN);
   });
   for (const preset of presets) {
     preset.addEventListener('click', () => setLimit(kind, Number(preset.dataset.preset)));
