@@ -34,7 +34,7 @@ import { DEVICE_ICONS, deviceLabel, detectDevice } from './nearby/device.ts';
 import { type Channel, answerOffer, createOffer } from './nearby/peer.ts';
 import { renderQr, startScanner } from './nearby/qr.ts';
 import { type NearbyGuest, type NearbyHost, createNearbyGuest, createNearbyHost } from './nearby/session.ts';
-import type { Hello } from './nearby/signal.ts';
+import { type Hello, decodeSignal } from './nearby/signal.ts';
 import { setupPwa } from './pwa.ts';
 import { type Me, OnlineError, api, token } from './online.ts';
 import {
@@ -950,17 +950,33 @@ async function renderNearby(): Promise<void> {
   nearbyDevices.hidden = nearbyDevices.childElementCount === 0;
 }
 
-function showNearbyStep(text: string, options: { qr?: string; input?: boolean } = {}): void {
+// A Nearby code as a link to this site. A phone's normal camera app opens it: an invite opens
+// Nearby and joins, and an answer reaches the hosting tab in the same browser (see nearbyLinkCode).
+const nearbyLink = (code: string) => `${location.origin}/?nearby=${encodeURIComponent(code)}`;
+
+// Takes a bare code, or a link that carries one, and returns the bare code.
+function nearbyCodeOf(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('http')) return trimmed;
+  try {
+    return new URL(trimmed).searchParams.get('nearby') ?? trimmed;
+  } catch {
+    return trimmed;
+  }
+}
+
+function showNearbyStep(text: string, options: { code?: string; input?: boolean } = {}): void {
   nearbyStep.hidden = false;
   nearbyStepText.textContent = text;
-  nearbyQr.hidden = options.qr === undefined;
-  nearbyText.hidden = options.qr === undefined;
-  nearbyCodeOut.value = options.qr ?? '';
+  nearbyQr.hidden = options.code === undefined;
+  nearbyText.hidden = options.code === undefined;
+  nearbyCodeOut.value = options.code ?? '';
   nearbyInput.hidden = !options.input;
   nearbyCodeIn.value = '';
-  if (options.qr !== undefined) {
-    const code = options.qr;
-    void renderQr(code).then((svg) => {
+  if (options.code !== undefined) {
+    const code = options.code;
+    // The QR code holds a link, the text box the bare code. Both work in either place.
+    void renderQr(nearbyLink(code)).then((svg) => {
       if (nearbyCodeOut.value === code) nearbyQr.replaceChildren(svg);
     });
   } else nearbyQr.replaceChildren();
@@ -983,7 +999,7 @@ async function useNearbyCode(code: string): Promise<void> {
   stopScanner = undefined;
   nearbyVideo.hidden = true;
   try {
-    await handler(code.trim());
+    await handler(nearbyCodeOf(code));
   } catch (error) {
     showProblem(error instanceof Error ? error.message : 'That code did not work.');
   }
@@ -995,8 +1011,8 @@ async function inviteGuest(): Promise<void> {
   const state = nearby;
   const invite = await createOffer(nearbyHello());
   nearby = { ...state, invite };
-  showNearbyStep('1. On the other device, choose Nearby, tap Join a game and scan this code. 2. Then scan the code that device shows.', {
-    qr: invite.code,
+  showNearbyStep('1. Scan this code with the other device\'s camera. 2. Then scan the code that device shows, with this device\'s camera or the button below.', {
+    code: invite.code,
     input: true,
   });
   onNearbyCode = async (code) => {
@@ -1024,13 +1040,13 @@ async function hostNearby(): Promise<void> {
   void renderNearby();
 }
 
-async function joinNearby(): Promise<void> {
+async function joinNearby(code?: string): Promise<void> {
   nearby = { kind: 'joining' };
   showNearbyStep("Scan the code on the host's screen.", { input: true });
   onNearbyCode = async (code) => {
     const answer = await answerOffer(code, nearbyHello());
     nearby = { kind: 'joining', answer: answer.code };
-    showNearbyStep(`Show this code to ${answer.peer.name}, the host, to scan.`, { qr: answer.code });
+    showNearbyStep(`Show this code to ${answer.peer.name}, the host, to scan.`, { code: answer.code });
     onNearbyCode = undefined;
     const channel = await answer.connected;
     const guest = createNearbyGuest(channel, token, (reason) => {
@@ -1047,6 +1063,32 @@ async function joinNearby(): Promise<void> {
     showToast(view.you === null ? 'Both seats are taken. You are watching.' : `Joined the game hosted on ${answer.peer.name} as ${view.you}.`);
     void renderNearby();
   };
+  if (code !== undefined) await useNearbyCode(code);
+}
+
+// Answer codes scanned with a normal camera open a new tab. That tab hands the code to the
+// hosting tab of the same browser over this channel, so the host never copies anything.
+const nearbyHandoff = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel('tick3d-nearby');
+nearbyHandoff?.addEventListener('message', (event: MessageEvent<unknown>) => {
+  if (nearby.kind === 'hosting' && onNearbyCode !== undefined && typeof event.data === 'string') {
+    void useNearbyCode(event.data);
+  }
+});
+
+// Handles a page opened from a Nearby QR code: an invite joins, an answer goes to the hosting tab.
+async function openNearbyLink(code: string): Promise<void> {
+  const url = new URL(location.href);
+  url.searchParams.delete('nearby');
+  history.replaceState(null, '', url);
+  settings.mode = 'nearby';
+  saveSettings();
+  openNearby();
+  if ((await decodeSignal(code).catch(() => undefined))?.kind === 'answer') {
+    nearbyHandoff?.postMessage(code);
+    showNearbyStep('The code went to the tab that hosts the game. You can close this tab.');
+    return;
+  }
+  await joinNearby(code);
 }
 
 // Leaves Nearby play. The host says goodbye to its guests; a guest closes its connection.
@@ -2246,6 +2288,8 @@ async function start(): Promise<void> {
     showToast(`The link code "${linkCode}" is not valid.`);
   }
   if (code !== undefined) return joinSession(code);
+  const nearbyCode = params.get('nearby');
+  if (nearbyCode !== null) return openNearbyLink(nearbyCode);
   if (settings.mode === 'online') return render();
   if (settings.mode === 'nearby') return openNearby();
   await openLocalSession(settings.mode);

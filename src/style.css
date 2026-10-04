@@ -2242,12 +2242,24 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 800;
 }
 
-/* Four opponents share one row, so their buttons shrink and keep their words on one line. */
-.segmented[data-setting='mode'] button {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding-inline: 0.15rem;
-  font-size: 0.88rem;
+/* Four opponents in a 2 x 2 grid, each with an icon, so every word has room on any screen. */
+.mode-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.mode-picker button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding-block: 0.5rem;
+}
+
+.mode-picker svg {
+  flex: none;
+  width: 1.2rem;
+  height: 1.2rem;
 }
 
 /* A Nearby code is long and mixed case, unlike a 4 character game code. */
