@@ -5,7 +5,7 @@ This repository deploys tick3d to `tick3d.yarden-zamir.com` with KitSHn.
 - A push to `main` deploys `prod`. A pull request deploys to `pr.<number>.tick3d.yarden-zamir.com`.
 - The `Dockerfile` has three stages. The `build` stage runs the tests and the build. A failed test stops the deploy.
 - The `site` service (`caddy:2.11-alpine`) serves `dist/` and listens on the KitSHn Unix socket (`container/Caddyfile`). The host Caddy routes the hostname to that socket (`Caddyfile.j2`).
-- The `api` service (`node:24-alpine`) serves `/api/*` for online play. The `site` Caddy proxies `/api/*` to `api:8080`. The API keeps sessions in SQLite at `/data/tick3d.db` on the `sessions` volume.
+- The `api` service (`node:24-alpine`) serves `/api/*` for online play. The `site` Caddy proxies `/api/*` to `api:8080`. The API keeps sessions in DuckDB at `/data/tick3d.duckdb` on the `sessions` volume.
 - Each environment has its own `sessions` volume, so a pull request preview never touches production sessions.
 - Files in `/assets/` have a content hash in the name, so Caddy caches them for one year. `index.html` is not cached.
 - There are no secrets beyond `KITSHN_VPS_HOST` and `KITSHN_SSH_KEY`.
@@ -22,7 +22,7 @@ Run these on the VPS. They take `--environment <env>` and default to `prod`.
 - `kitshn status Yarden-zamir/tick3d`: ref, services, health, route, socket, and last deploy, as JSON.
 - `kitshn logs Yarden-zamir/tick3d site`: Docker logs for the site container.
 - `kitshn logs Yarden-zamir/tick3d api`: Docker logs for the API container.
-- `kitshn compose Yarden-zamir/tick3d -- exec api node -e "<script>"`: run a query against the database with `node:sqlite`. The image has no `sqlite3` binary.
+- To query the database by hand, stop the `api` service first. While the API runs, DuckDB lets no other process open the file. Then run `kitshn compose Yarden-zamir/tick3d -- run --rm api node --input-type=module -e "<script>"` with `@duckdb/node-api`, and start `api` again.
 
 ## Origin
 

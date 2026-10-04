@@ -1,0 +1,23 @@
+{
+  "format": 1,
+  "name": "Friday rematch",
+  "games": [
+    {
+      "moves": [0, 1, 16, 2, 32, 3, 48],
+      "times": [1791117504344, 1791117506120, 1791117509031, 1791117511877, 1791117514502, 1791117517015, 1791117519660],
+      "clock": { "perMove": 30, "perGame": null },
+      "timedOut": false
+    },
+    {
+      "moves": [21, 0, 42],
+      "times": [1791117620000, 1791117631000, 1791117652000],
+      "clock": { "perMove": null, "perGame": 300 },
+      "timedOut": true
+    },
+    { "moves": [], "times": [], "clock": { "perMove": null, "perGame": 300 }, "timedOut": false }
+  ],
+  "seats": { "X": "aaaaaaaa-0000-4000-8000-000000000001", "O": "bbbbbbbb-0000-4000-8000-000000000002" },
+  "options": { "hideBoard": true, "hideHistory": false },
+  "lockedGame": null,
+  "clock": { "perMove": null, "perGame": 300 }
+}

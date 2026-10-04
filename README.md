@@ -39,7 +39,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - A code loads the full session, finished games included. Either player can name the session and start the next game after a game ends.
 - Hide board and Hide all but last move belong to the session. A change by either player applies to both players and to watchers. View and layout stay per screen.
 - The time limit also belongs to the session. A new session takes the time limit of the screen that creates it. Either player can change it at any time, except during a lock. The change reaches both players and starts with the next game. The server records the move times and decides a timeout, so a page that closes cannot avoid a loss on time.
-- The server keeps the newest 10,000 sessions. A SQLite trigger deletes the oldest session (by creation time) when a new session goes past that limit.
+- The server keeps the newest 10,000 sessions. When a new session goes past that limit, the oldest session (by creation order) is deleted.
 
 ## Code
 
@@ -51,9 +51,19 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - `src/protocol.ts`: the contract between the page and the API (code format, names, response check).
 - `src/online.ts`: the API client and the live update stream.
 - `src/main.ts`, `src/style.css`, `index.html`: the page.
-- `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the SQLite store.
+- `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the DuckDB store. `server/format.ts`: the stored session format and its upgrades.
 
-The page is plain TypeScript built with Vite. The API runs on Node 24, which runs TypeScript directly, with the built-in `node:sqlite`. Neither has runtime dependencies.
+The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs on Node 24, which runs TypeScript directly, and stores sessions in [DuckDB](https://duckdb.org) through `@duckdb/node-api`.
+
+## Stored data and format changes
+
+- The `sessions` table has one row per session: the code, a creation order, a version, timestamps, and the session as one `VARIANT` document.
+- The document carries a `format` number. `server/format.ts` reads every known format, upgrades old documents step by step, and writes the current format back on the first read.
+- A new optional field needs only a default in `parseDoc`. A breaking change needs a new `CURRENT_FORMAT` and one `UPGRADES` step. Neither needs a database reset or a manual migration.
+- A server refuses a document from a newer format, so an older server version never overwrites newer data.
+- Every write goes through the same check as every read, so the table never holds a document that cannot be read back.
+- `server/fixtures/` holds a stored document of each released format. A test reads each one, so old data keeps working.
+- Table changes are append-only statements such as `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS`, which run on every start.
 
 ## Develop
 

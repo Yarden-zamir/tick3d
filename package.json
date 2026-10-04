@@ -9,7 +9,10 @@
     "check": "tsc",
     "test": "vitest run",
     "build": "tsc && vite build",
-    "api": "DB_PATH=./dev.db node server/main.ts"
+    "api": "DB_PATH=./dev.duckdb node server/main.ts"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "1.5.6-r.1"
   },
   "devDependencies": {
     "@types/node": "^24.9.2",

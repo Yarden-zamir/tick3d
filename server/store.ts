@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
-import { LIMIT_RANGE, NO_LIMIT, type TimeControl, isFlagged, parseClock } from '../src/clock.ts';
+import { DuckDBInstance } from '@duckdb/node-api';
+import { NO_LIMIT, type TimeControl, isFlagged } from '../src/clock.ts';
 import { type Game, type Player, other, play, timeOut } from '../src/game.ts';
 import {
   CODE_ALPHABET,
@@ -9,16 +9,15 @@ import {
   type GameRecord,
   MAX_GAMES_PER_SESSION,
   MAX_SESSIONS,
-  NAME_MAX_LENGTH,
   type MoveRequest,
   type PlayerToken,
   type SessionUpdate,
   type SessionView,
-  isGameRecord,
   normalizeName,
   toGame,
   toRecord,
 } from '../src/protocol.ts';
+import { CURRENT_FORMAT, type SessionDoc, parseDoc } from './format.ts';
 
 export class StoreError extends Error {
   status: 400 | 403 | 404 | 405 | 409;
@@ -28,292 +27,242 @@ export class StoreError extends Error {
   }
 }
 
-type Row = {
-  code: Code; // the table CHECK keeps codes at 4 characters
-  name: string;
-  games: string;
-  seat_x: string | null;
-  seat_o: string | null;
-  hide_board: number;
-  hide_history: number;
-  locked_game: number | null;
-  clock_move: number | null;
-  clock_game: number | null;
-  version: number;
-};
+// Each statement is idempotent and runs on every start, in order. To change the table, append a
+// statement such as `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ... DEFAULT ...`. Never edit one.
+// The session itself is a VARIANT document (see format.ts), so most format changes need no SQL at all.
+const SCHEMA = [
+  'CREATE SEQUENCE IF NOT EXISTS session_order',
+  `CREATE TABLE IF NOT EXISTS sessions (
+     code VARCHAR PRIMARY KEY CHECK (length(code) = ${CODE_LENGTH}),
+     -- Creation order, so the oldest sessions go first when the table is full.
+     seq BIGINT NOT NULL DEFAULT nextval('session_order'),
+     doc VARIANT NOT NULL,
+     version INTEGER NOT NULL DEFAULT 1,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+];
 
-function isRow(value: unknown): value is Row {
-  if (typeof value !== 'object' || value === null) return false;
-  const row = value as Record<string, unknown>;
-  return (
-    typeof row.code === 'string' &&
-    row.code.length === CODE_LENGTH &&
-    typeof row.name === 'string' &&
-    typeof row.games === 'string' &&
-    (row.seat_x === null || typeof row.seat_x === 'string') &&
-    (row.seat_o === null || typeof row.seat_o === 'string') &&
-    typeof row.hide_board === 'number' &&
-    typeof row.hide_history === 'number' &&
-    (row.locked_game === null || typeof row.locked_game === 'number') &&
-    (row.clock_move === null || typeof row.clock_move === 'number') &&
-    (row.clock_game === null || typeof row.clock_game === 'number') &&
-    typeof row.version === 'number'
-  );
-}
+// `stale` marks a document stored in an older format. It is written back in the current format.
+type Row = { code: Code; doc: SessionDoc; version: number; stale: boolean };
 
 const emptyRecord = (clock: TimeControl): GameRecord => ({ moves: [], times: [], clock, timedOut: false });
 
-function schema(maxSessions: number): string {
-  if (!Number.isInteger(maxSessions) || maxSessions < 1) throw new RangeError(`maxSessions must be >= 1: ${maxSessions}`);
-  const { perMove, perGame } = LIMIT_RANGE;
-  return `
-    CREATE TABLE IF NOT EXISTS sessions (
-      code TEXT PRIMARY KEY CHECK (length(code) = ${CODE_LENGTH}),
-      name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND ${NAME_MAX_LENGTH}),
-      games TEXT NOT NULL CHECK (json_valid(games) AND json_type(games) = 'array'),
-      seat_x TEXT,
-      seat_o TEXT,
-      hide_board INTEGER NOT NULL DEFAULT 0 CHECK (hide_board IN (0, 1)),
-      hide_history INTEGER NOT NULL DEFAULT 0 CHECK (hide_history IN (0, 1)),
-      -- Index of the game that the lock holds. The lock ends when that game ends.
-      locked_game INTEGER CHECK (locked_game >= 0),
-      -- The time limit for the next game, in seconds. NULL means no limit of that kind.
-      clock_move INTEGER CHECK (clock_move BETWEEN ${perMove.min} AND ${perMove.max}),
-      clock_game INTEGER CHECK (clock_game BETWEEN ${perGame.min} AND ${perGame.max}),
-      version INTEGER NOT NULL DEFAULT 1,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    ) STRICT;
-    CREATE INDEX IF NOT EXISTS sessions_created ON sessions (created_at);
-
-    -- Keep the newest sessions only. The limit is part of the trigger, so recreate it on start.
-    DROP TRIGGER IF EXISTS sessions_keep_newest;
-    CREATE TRIGGER sessions_keep_newest AFTER INSERT ON sessions
-    BEGIN
-      DELETE FROM sessions WHERE code IN (
-        SELECT code FROM sessions ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET ${maxSessions}
-      );
-    END;
-  `;
+// Every write passes the same check as every read, so the table never holds a document that cannot
+// be read back. This replaces the column CHECK constraints that a document column cannot have.
+function serialize(doc: SessionDoc): string {
+  const text = JSON.stringify(doc);
+  parseDoc(JSON.parse(text));
+  return text;
 }
 
 function newCode(): Code {
   return Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('') as Code;
 }
 
-function seatOf(row: Row, player: PlayerToken | undefined): Player | null {
+function seatOf(doc: SessionDoc, player: PlayerToken | undefined): Player | null {
   if (player === undefined) return null;
-  if (row.seat_x === player) return 'X';
-  if (row.seat_o === player) return 'O';
+  if (doc.seats.X === player) return 'X';
+  if (doc.seats.O === player) return 'O';
   return null;
 }
 
-function parseGames(row: Row): GameRecord[] {
-  const games: unknown = JSON.parse(row.games);
-  if (!Array.isArray(games) || games.length === 0 || !games.every(isGameRecord)) {
-    throw new Error(`stored games are not valid for session ${row.code}`);
-  }
-  return games;
-}
-
-function clockOf(row: Row): TimeControl {
-  const clock = parseClock({ perMove: row.clock_move, perGame: row.clock_game });
-  if (clock === undefined) throw new Error(`stored clock is not valid for session ${row.code}`);
-  return clock;
-}
-
-function currentGame(games: GameRecord[]): Game {
-  const record = games.at(-1);
+function currentGame(doc: SessionDoc): Game {
+  const record = doc.games.at(-1);
   if (record === undefined) throw new Error('session has no games');
   return toGame(record);
 }
 
-function isLocked(row: Row, games: GameRecord[]): boolean {
-  return row.locked_game === games.length - 1 && currentGame(games).status.kind === 'playing';
+function isLocked(doc: SessionDoc): boolean {
+  return doc.lockedGame === doc.games.length - 1 && currentGame(doc).status.kind === 'playing';
 }
 
-// node:sqlite is synchronous and Node runs one request handler at a time, so each
-// read-check-write below is atomic without an explicit transaction.
-// Revisit this if the API ever runs more than one process against the same file.
-export function openStore(path: string, maxSessions: number = MAX_SESSIONS, now: () => number = Date.now) {
-  const db = new DatabaseSync(path);
-  db.exec('PRAGMA journal_mode = WAL;');
-  db.exec(schema(maxSessions));
+function seated(doc: SessionDoc, player: PlayerToken | undefined): Player {
+  const seat = seatOf(doc, player);
+  if (seat === null) throw new StoreError(403, 'Only the two players can change this game.');
+  return seat;
+}
 
-  const select = db.prepare(
-    `SELECT code, name, games, seat_x, seat_o, hide_board, hide_history, locked_game, clock_move, clock_game, version
-     FROM sessions WHERE code = ?`,
-  );
-  const insert = db.prepare(
-    `INSERT INTO sessions (code, name, games, seat_x, clock_move, clock_game, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  );
-  const update = db.prepare(
-    `UPDATE sessions SET name = ?, games = ?, seat_x = ?, seat_o = ?, hide_board = ?, hide_history = ?, locked_game = ?,
-     clock_move = ?, clock_game = ?, version = version + 1, updated_at = ? WHERE code = ?`,
-  );
+export async function openStore(path: string, maxSessions: number = MAX_SESSIONS, now: () => number = Date.now) {
+  if (!Number.isInteger(maxSessions) || maxSessions < 1) throw new RangeError(`maxSessions must be >= 1: ${maxSessions}`);
+  // The API container is small, so cap memory and threads below DuckDB's defaults (80% of RAM, all cores).
+  // A new file defaults to the v1.0 storage format for old readers, but VARIANT needs v1.5 storage.
+  const instance = await DuckDBInstance.create(path, {
+    memory_limit: '256MB',
+    threads: '2',
+    storage_compatibility_version: 'v1.5.0',
+  });
+  const db = await instance.connect();
+  for (const statement of SCHEMA) await db.run(statement);
 
-  function loadRaw(code: Code): Row {
-    const row: unknown = select.get(code);
+  // DuckDB calls are async, so two requests could interleave a read and a write. A queue runs
+  // store operations one at a time, which keeps each read-check-write atomic in this process.
+  // Revisit this if the API ever runs more than one process against the same file.
+  let queue: Promise<unknown> = Promise.resolve();
+  function serialized<T>(task: () => Promise<T>): Promise<T> {
+    const run = queue.then(task, task);
+    queue = run.catch(() => undefined);
+    return run;
+  }
+
+  async function loadRaw(code: Code): Promise<Row> {
+    const reader = await db.runAndReadAll('FROM sessions SELECT doc::JSON AS doc, version WHERE code = $code', { code });
+    const [row] = reader.getRowObjectsJS();
     if (row === undefined) throw new StoreError(404, `No game with code ${code}.`);
-    if (!isRow(row)) throw new Error(`unexpected row shape for session ${code}`);
-    return row;
+    if (typeof row.doc !== 'string' || typeof row.version !== 'number') throw new Error(`unexpected row shape for ${code}`);
+    const stored: unknown = JSON.parse(row.doc);
+    const format = typeof stored === 'object' && stored !== null && 'format' in stored ? stored.format : undefined;
+    return { code, doc: parseDoc(stored), version: row.version, stale: format !== CURRENT_FORMAT };
   }
 
-  // Loads a session and records a timeout that happened since the last write. The result of a
-  // flagged clock never depends on a page reporting it, so every read and write sees the same game.
-  function load(code: Code): Row {
-    const row = loadRaw(code);
-    const games = parseGames(row);
-    const game = currentGame(games);
-    if (!isFlagged(game, now())) return row;
-    games[games.length - 1] = toRecord(timeOut(game));
-    return save(row, { games: JSON.stringify(games) });
-  }
-
-  type Changes = Partial<Omit<Row, 'code' | 'version'>>;
-
-  function save(row: Row, changes: Changes): Row {
-    const next = { ...row, ...changes };
-    update.run(
-      next.name,
-      next.games,
-      next.seat_x,
-      next.seat_o,
-      next.hide_board,
-      next.hide_history,
-      next.locked_game,
-      next.clock_move,
-      next.clock_game,
-      now(),
-      row.code,
+  async function save(row: Row, doc: SessionDoc): Promise<Row> {
+    await db.run(
+      'UPDATE sessions SET doc = $doc::JSON::VARIANT, version = version + 1, updated_at = now() WHERE code = $code',
+      { code: row.code, doc: serialize(doc) },
     );
     return loadRaw(row.code);
   }
 
+  // Loads a session and records a timeout that happened since the last write. The result of a
+  // flagged clock never depends on a page reporting it, so every read and write sees the same game.
+  // A document in an older format is written back in the current format here, on first read.
+  async function load(code: Code): Promise<Row> {
+    const row = await loadRaw(code);
+    const game = currentGame(row.doc);
+    if (isFlagged(game, now())) {
+      return save(row, { ...row.doc, games: [...row.doc.games.slice(0, -1), toRecord(timeOut(game))] });
+    }
+    return row.stale ? save(row, row.doc) : row;
+  }
+
   function view(row: Row, player: PlayerToken | undefined): SessionView {
-    const games = parseGames(row);
+    const { doc } = row;
     return {
       code: row.code,
-      name: row.name,
-      games,
-      seats: { X: row.seat_x !== null, O: row.seat_o !== null },
-      you: seatOf(row, player),
-      options: { hideBoard: row.hide_board === 1, hideHistory: row.hide_history === 1 },
-      locked: isLocked(row, games),
-      clock: clockOf(row),
+      name: doc.name,
+      games: doc.games,
+      seats: { X: doc.seats.X !== null, O: doc.seats.O !== null },
+      you: seatOf(doc, player),
+      options: doc.options,
+      locked: isLocked(doc),
+      clock: doc.clock,
       now: now(),
       version: row.version,
     };
   }
 
-  function seated(row: Row, player: PlayerToken | undefined): Player {
-    const seat = seatOf(row, player);
-    if (seat === null) throw new StoreError(403, 'Only the two players can change this game.');
-    return seat;
-  }
-
   return {
     // The creator takes seat X, so the creator moves first in the first game.
-    create(player: PlayerToken, name: string, clock: TimeControl = NO_LIMIT): SessionView {
-      const validName = normalizeName(name);
-      if (validName === undefined) throw new StoreError(400, 'A name needs 1 to 40 characters.');
-      for (let attempt = 0; attempt < 20; attempt++) {
-        const code = newCode();
-        try {
-          const time = now();
-          const games = JSON.stringify([emptyRecord(clock)]);
-          insert.run(code, validName, games, player, clock.perMove, clock.perGame, time, time);
-          return view(load(code), player);
-        } catch (error) {
-          const duplicate = error instanceof Error && 'errcode' in error && error.errcode === 1555;
-          if (!duplicate) throw error;
+    create: (player: PlayerToken, name: string, clock: TimeControl = NO_LIMIT): Promise<SessionView> =>
+      serialized(async () => {
+        const validName = normalizeName(name);
+        if (validName === undefined) throw new StoreError(400, 'A name needs 1 to 40 characters.');
+        const doc: SessionDoc = {
+          format: CURRENT_FORMAT,
+          name: validName,
+          games: [emptyRecord(clock)],
+          seats: { X: player, O: null },
+          options: { hideBoard: false, hideHistory: false },
+          lockedGame: null,
+          clock,
+        };
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const code = newCode();
+          try {
+            await db.run('INSERT INTO sessions (code, doc) VALUES ($code, $doc::JSON::VARIANT)', { code, doc: serialize(doc) });
+          } catch (error) {
+            if (error instanceof Error && error.message.includes('Duplicate key')) continue;
+            throw error;
+          }
+          // Keep the newest sessions only. DuckDB 1.5 has no triggers; with DuckDB 2.0, move this into an AFTER INSERT trigger.
+          await db.run(`DELETE FROM sessions WHERE code IN (SELECT code FROM sessions ORDER BY seq DESC OFFSET ${maxSessions})`);
+          return view(await load(code), player);
         }
-      }
-      throw new Error('could not find a free session code after 20 attempts');
-    },
+        throw new Error('could not find a free session code after 20 attempts');
+      }),
 
-    get(code: Code, player: PlayerToken | undefined): SessionView {
-      return view(load(code), player);
-    },
+    get: (code: Code, player: PlayerToken | undefined): Promise<SessionView> =>
+      serialized(async () => view(await load(code), player)),
 
-    join(code: Code, player: PlayerToken): SessionView {
-      const row = load(code);
-      if (seatOf(row, player) !== null) return view(row, player);
-      if (row.seat_x === null) return view(save(row, { seat_x: player }), player);
-      if (row.seat_o === null) return view(save(row, { seat_o: player }), player);
-      throw new StoreError(409, 'Both seats are taken. You can watch this game.');
-    },
+    join: (code: Code, player: PlayerToken): Promise<SessionView> =>
+      serialized(async () => {
+        const row = await load(code);
+        const { seats } = row.doc;
+        if (seatOf(row.doc, player) !== null) return view(row, player);
+        if (seats.X === null) return view(await save(row, { ...row.doc, seats: { ...seats, X: player } }), player);
+        if (seats.O === null) return view(await save(row, { ...row.doc, seats: { ...seats, O: player } }), player);
+        throw new StoreError(409, 'Both seats are taken. You can watch this game.');
+      }),
 
-    move(code: Code, player: PlayerToken, request: MoveRequest): SessionView {
-      const row = load(code);
-      const seat = seated(row, player);
-      const games = parseGames(row);
-      const game = currentGame(games);
-      // The client sends what it saw. A mismatch means another move landed first.
-      if (request.game !== games.length - 1 || request.moveCount !== game.moves.length) {
-        throw new StoreError(409, 'The board changed. It now shows the latest moves.');
-      }
-      if (game.status.kind === 'timeout') throw new StoreError(409, `Time is up. ${other(game.status.winner)} ran out of time.`);
-      if (game.status.kind === 'playing' && game.turn !== seat) throw new StoreError(409, 'It is not your turn.');
-      const result = play(game, request.cell, now());
-      if (!result.ok) {
-        throw new StoreError(409, result.error === 'occupied' ? 'That cell is taken.' : 'This game is over.');
-      }
-      games[games.length - 1] = toRecord(result.game);
-      return view(save(row, { games: JSON.stringify(games) }), player);
-    },
+    move: (code: Code, player: PlayerToken, request: MoveRequest): Promise<SessionView> =>
+      serialized(async () => {
+        const row = await load(code);
+        const seat = seated(row.doc, player);
+        const { games } = row.doc;
+        const game = currentGame(row.doc);
+        // The client sends what it saw. A mismatch means another move landed first.
+        if (request.game !== games.length - 1 || request.moveCount !== game.moves.length) {
+          throw new StoreError(409, 'The board changed. It now shows the latest moves.');
+        }
+        if (game.status.kind === 'timeout') throw new StoreError(409, `Time is up. ${other(game.status.winner)} ran out of time.`);
+        if (game.status.kind === 'playing' && game.turn !== seat) throw new StoreError(409, 'It is not your turn.');
+        const result = play(game, request.cell, now());
+        if (!result.ok) {
+          throw new StoreError(409, result.error === 'occupied' ? 'That cell is taken.' : 'This game is over.');
+        }
+        return view(await save(row, { ...row.doc, games: [...games.slice(0, -1), toRecord(result.game)] }), player);
+      }),
 
-    newGame(code: Code, player: PlayerToken): SessionView {
-      const row = load(code);
-      seated(row, player);
-      const games = parseGames(row);
-      if (currentGame(games).status.kind === 'playing') throw new StoreError(409, 'Finish this game first.');
-      if (games.length >= MAX_GAMES_PER_SESSION) {
-        throw new StoreError(409, `A session holds ${MAX_GAMES_PER_SESSION} games. Start a new code.`);
-      }
-      return view(save(row, { games: JSON.stringify([...games, emptyRecord(clockOf(row))]) }), player);
-    },
+    newGame: (code: Code, player: PlayerToken): Promise<SessionView> =>
+      serialized(async () => {
+        const row = await load(code);
+        seated(row.doc, player);
+        if (currentGame(row.doc).status.kind === 'playing') throw new StoreError(409, 'Finish this game first.');
+        if (row.doc.games.length >= MAX_GAMES_PER_SESSION) {
+          throw new StoreError(409, `A session holds ${MAX_GAMES_PER_SESSION} games. Start a new code.`);
+        }
+        return view(await save(row, { ...row.doc, games: [...row.doc.games, emptyRecord(row.doc.clock)] }), player);
+      }),
 
     // The name stays open during a lock. The match options and the clock do not.
-    update(code: Code, player: PlayerToken, changes: SessionUpdate): SessionView {
-      const row = load(code);
-      seated(row, player);
-      const games = parseGames(row);
-      const changesMatch =
-        changes.hideBoard !== undefined || changes.hideHistory !== undefined || changes.clock !== undefined;
-      if (changesMatch && isLocked(row, games)) throw new StoreError(409, 'Settings are locked until this game ends.');
-      const next: Changes = {};
-      if (changes.name !== undefined) next.name = changes.name;
-      if (changes.hideBoard !== undefined) next.hide_board = changes.hideBoard ? 1 : 0;
-      if (changes.hideHistory !== undefined) next.hide_history = changes.hideHistory ? 1 : 0;
-      if (changes.clock !== undefined) {
-        next.clock_move = changes.clock.perMove;
-        next.clock_game = changes.clock.perGame;
+    update: (code: Code, player: PlayerToken, changes: SessionUpdate): Promise<SessionView> =>
+      serialized(async () => {
+        const row = await load(code);
+        seated(row.doc, player);
+        const changesMatch = changes.hideBoard !== undefined || changes.hideHistory !== undefined || changes.clock !== undefined;
+        if (changesMatch && isLocked(row.doc)) throw new StoreError(409, 'Settings are locked until this game ends.');
+        const doc: SessionDoc = {
+          ...row.doc,
+          name: changes.name ?? row.doc.name,
+          options: {
+            hideBoard: changes.hideBoard ?? row.doc.options.hideBoard,
+            hideHistory: changes.hideHistory ?? row.doc.options.hideHistory,
+          },
+          clock: changes.clock ?? row.doc.clock,
+        };
         // A game keeps the limit it started with. A game without moves has not started yet.
-        const live = games.at(-1);
-        if (live !== undefined && live.moves.length === 0 && !live.timedOut) {
-          games[games.length - 1] = emptyRecord(changes.clock);
-          next.games = JSON.stringify(games);
+        const live = doc.games.at(-1);
+        if (changes.clock !== undefined && live !== undefined && live.moves.length === 0 && !live.timedOut) {
+          doc.games = [...doc.games.slice(0, -1), emptyRecord(changes.clock)];
         }
-      }
-      return view(save(row, next), player);
-    },
+        return view(await save(row, doc), player);
+      }),
 
     // Locks the match options, and every screen's own settings, for both players until the live game ends.
-    lock(code: Code, player: PlayerToken): SessionView {
-      const row = load(code);
-      seated(row, player);
-      const games = parseGames(row);
-      if (isLocked(row, games)) return view(row, player);
-      if (currentGame(games).status.kind !== 'playing') throw new StoreError(409, 'This game is over. Start a new game first.');
-      return view(save(row, { locked_game: games.length - 1 }), player);
-    },
+    lock: (code: Code, player: PlayerToken): Promise<SessionView> =>
+      serialized(async () => {
+        const row = await load(code);
+        seated(row.doc, player);
+        if (isLocked(row.doc)) return view(row, player);
+        if (currentGame(row.doc).status.kind !== 'playing') throw new StoreError(409, 'This game is over. Start a new game first.');
+        return view(await save(row, { ...row.doc, lockedGame: row.doc.games.length - 1 }), player);
+      }),
 
     close(): void {
-      db.close();
+      db.closeSync();
+      instance.closeSync();
     },
   };
 }
 
-export type Store = ReturnType<typeof openStore>;
+export type Store = Awaited<ReturnType<typeof openStore>>;
