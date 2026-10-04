@@ -2241,3 +2241,17 @@ body[data-turn='O'] .status[data-state='playing'] {
   margin: 0;
   font-weight: 800;
 }
+
+/* Four opponents share one row, so their buttons shrink and keep their words on one line. */
+.segmented[data-setting='mode'] button {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-inline: 0.15rem;
+  font-size: 0.88rem;
+}
+
+/* A Nearby code is long and mixed case, unlike a 4 character game code. */
+.nearby .join-row input {
+  text-transform: none;
+  letter-spacing: normal;
+}
