@@ -747,7 +747,6 @@ function render(): void {
   sessionNameInput.disabled = online?.you == null || busy;
   joinCodeInput.disabled = frozen || busy;
   newCodeButton.disabled = frozen || busy;
-  newCodeButton.textContent = online === undefined ? 'New online game' : 'New code';
 
   // Score: finished games of this session only.
   const score = { X: 0, O: 0, draw: 0 };
