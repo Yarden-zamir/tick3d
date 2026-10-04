@@ -16,6 +16,8 @@
   },
   "devDependencies": {
     "@types/node": "^24.9.2",
+    "jsqr": "^1.4.0",
+    "qrcode-generator": "^2.0.4",
     "typescript": "^7.0.2",
     "vite": "^8.3.2",
     "vitest": "^5.0.3"
