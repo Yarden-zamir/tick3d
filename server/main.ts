@@ -1,5 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { type Code, type PlayerToken, asPlayerToken, normalizeCode, parseMoveRequest } from '../src/protocol.ts';
+import {
+  type Code,
+  type PlayerToken,
+  asPlayerToken,
+  normalizeCode,
+  parseMoveRequest,
+  parseSessionUpdate,
+} from '../src/protocol.ts';
 import { StoreError, openStore } from './store.ts';
 
 const PORT = 8080;
@@ -92,10 +99,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     case 'GET events':
       return openStream(req, res, code);
     case 'PATCH ': {
-      const body = await readJson(req);
-      const name = typeof body === 'object' && body !== null && 'name' in body ? body.name : undefined;
-      return mutate(store.rename(code, requirePlayer(req), name));
+      const changes = parseSessionUpdate(await readJson(req));
+      if (changes === undefined) {
+        throw new StoreError(400, 'An update needs a name of 1 to 40 characters, hideBoard or hideHistory.');
+      }
+      return mutate(store.update(code, requirePlayer(req), changes));
     }
+    case 'POST lock':
+      return mutate(store.lock(code, requirePlayer(req)));
     case 'POST join':
       return mutate(store.join(code, requirePlayer(req)));
     case 'POST moves': {

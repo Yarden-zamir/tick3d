@@ -55,8 +55,8 @@ describe('sessions', () => {
 
   it('lets only seated players rename', () => {
     const code = playedSession();
-    expect(store.rename(code, bob, 'Rematch').name).toBe('Rematch');
-    expect(status(() => store.rename(code, carol, 'Mine'))).toBe(403);
+    expect(store.update(code, bob, { name: 'Rematch' }).name).toBe('Rematch');
+    expect(status(() => store.update(code, carol, { name: 'Mine' }))).toBe(403);
   });
 });
 
@@ -80,6 +80,36 @@ describe('moves', () => {
     const view = store.newGame(code, bob);
     expect(view.games).toEqual([moves, []]);
     expect(store.get(code, carol).games[0]).toEqual(moves);
+  });
+});
+
+describe('match options and lock', () => {
+  it('shares options with the other player and watchers', () => {
+    const code = playedSession();
+    expect(store.get(code, alice).options).toEqual({ hideBoard: false, hideHistory: false });
+    store.update(code, alice, { hideBoard: true });
+    expect(store.get(code, bob).options).toEqual({ hideBoard: true, hideHistory: false });
+    expect(store.get(code, carol).options.hideBoard).toBe(true);
+    expect(status(() => store.update(code, carol, { hideHistory: true }))).toBe(403);
+  });
+
+  it('locks options for both players until the game ends, but not the name', () => {
+    const code = playedSession();
+    expect(status(() => store.lock(code, carol))).toBe(403);
+    expect(store.lock(code, bob).locked).toBe(true);
+    expect(store.get(code, alice).locked).toBe(true);
+    expect(store.lock(code, alice).locked).toBe(true);
+    expect(status(() => store.update(code, alice, { hideBoard: true }))).toBe(409);
+    expect(status(() => store.update(code, bob, { hideHistory: true }))).toBe(409);
+    expect(store.update(code, alice, { name: 'Locked match' }).name).toBe('Locked match');
+
+    [0, 1, 16, 2, 32, 3, 48].forEach((cell, i) =>
+      store.move(code, i % 2 === 0 ? alice : bob, { game: 0, moveCount: i, cell }),
+    );
+    expect(store.get(code, alice).locked).toBe(false);
+    expect(status(() => store.lock(code, alice))).toBe(409);
+    expect(store.update(code, bob, { hideBoard: true }).options.hideBoard).toBe(true);
+    expect(store.newGame(code, alice).locked).toBe(false);
   });
 });
 

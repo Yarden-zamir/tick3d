@@ -16,7 +16,7 @@ import {
   undo,
 } from './game.ts';
 import { api, OnlineError } from './online.ts';
-import { type Code, type SessionView, normalizeCode, normalizeName } from './protocol.ts';
+import { type Code, type MatchOptions, type SessionView, normalizeCode, normalizeName } from './protocol.ts';
 import { setMuted, sounds } from './sound.ts';
 
 const MODES = ['computer', 'friend', 'online'] as const;
@@ -132,6 +132,8 @@ type Online = {
   name: string;
   you: Player | null;
   seats: Record<Player, boolean>;
+  options: MatchOptions;
+  locked: boolean;
   version: number;
   unsubscribe: () => void;
 };
@@ -141,7 +143,8 @@ const settings = loadSettings();
 let games: Game[] = [newGame()];
 let online: Online | undefined;
 let review: { game: number; move: number } | undefined;
-let locked = false;
+// The lock for local games. Online sessions keep their lock on the server, for both players.
+let localLocked = false;
 let thinking = false;
 let busy = false;
 // Increments on every new local game, so a computer move scheduled for an old game is dropped.
@@ -159,7 +162,15 @@ function setCurrent(game: Game): void {
 }
 
 const isLive = () => current().status.kind === 'playing';
-const settingsLocked = () => locked && isLive();
+const settingsLocked = () => (online ? online.locked : localLocked && isLive());
+
+// Online, the hide options belong to the session and apply to both players. Locally, they are settings.
+function matchOptions(): MatchOptions {
+  return online ? online.options : { hideBoard: settings.hideBoard, hideHistory: settings.hideHistory };
+}
+
+// Watchers cannot change a session. Everybody can change a local game.
+const canChangeMatch = () => online === undefined || online.you !== null;
 
 // ---- Board ----
 
@@ -285,7 +296,7 @@ function humanMove(cell: number): void {
 
 // The lock holds for one game only, so it ends with the game.
 function releaseLockIfOver(): void {
-  if (!isLive()) locked = false;
+  if (!isLive()) localLocked = false;
 }
 
 function commit(next: Game): void {
@@ -319,7 +330,7 @@ function startLocalGame(): void {
   round++;
   thinking = false;
   review = undefined;
-  locked = false;
+  localLocked = false;
   games = current().moves.length === 0 ? [...games.slice(0, -1), newGame()] : [...games, newGame()];
   burstEl.replaceChildren();
   render();
@@ -358,8 +369,15 @@ function applyView(view: SessionView): void {
   const before = current();
   const beforeCount = games.length;
   games = view.games.map((moves) => replay(moves));
-  online = { ...online, name: view.name, you: view.you, seats: view.seats, version: view.version };
+  const previous = online;
+  online = { ...view, unsubscribe: online.unsubscribe };
   const after = current();
+  if (online.locked && !previous.locked) showToast('Settings are locked for both players until this game ends.');
+  for (const [option, label] of [['hideBoard', 'Hide board'], ['hideHistory', 'Hide all but last move']] as const) {
+    if (online.options[option] !== previous.options[option]) {
+      showToast(`${label} is ${online.options[option] ? 'on' : 'off'} for both players.`);
+    }
+  }
   // A move that is not on screen yet came from the opponent. Our own moves were announced already.
   const isNewMove =
     games.length === beforeCount &&
@@ -380,7 +398,7 @@ function openSession(view: SessionView): void {
     saveSettings();
   }
   review = undefined;
-  locked = false;
+  localLocked = false;
   burstEl.replaceChildren();
   online = { ...view, unsubscribe: () => undefined };
   games = view.games.map((moves) => replay(moves));
@@ -535,8 +553,9 @@ function shownGame(): Game {
 function render(): void {
   const game = shownGame();
   const live = review === undefined && isLive();
-  const hideBoard = settings.hideBoard && live;
-  const hideHistory = settings.hideHistory && live;
+  const options = matchOptions();
+  const hideBoard = options.hideBoard && live;
+  const hideHistory = options.hideHistory && live;
   const frozen = settingsLocked();
 
   document.body.dataset.turn = game.turn;
@@ -580,8 +599,8 @@ function render(): void {
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) => {
-    button.setAttribute('aria-pressed', String(settings[button.dataset.toggle as Toggle]));
-    button.disabled = frozen;
+    button.setAttribute('aria-pressed', String(options[button.dataset.toggle as Toggle]));
+    button.disabled = frozen || busy || !canChangeMatch();
   });
 
   // Online box
@@ -628,8 +647,9 @@ function render(): void {
   newGameButton.disabled = frozen || busy || thinking || onlineWithoutSeat || (settings.mode === 'online' && isLive());
   undoButton.hidden = settings.mode === 'online';
   undoButton.disabled = frozen || thinking || review !== undefined || !isLive() || current().moves.length === 0;
-  lockButton.disabled = frozen || !isLive() || review !== undefined;
-  lockButton.textContent = frozen ? '🔒 Locked until this game ends' : '🔓 Lock settings for this game';
+  lockButton.disabled = frozen || busy || !isLive() || review !== undefined || !canChangeMatch();
+  const lockScope = online ? ' for both players' : '';
+  lockButton.textContent = frozen ? `🔒 Locked${lockScope} until this game ends` : `🔓 Lock settings${lockScope}`;
   lockButton.setAttribute('aria-pressed', String(frozen));
   soundButton.textContent = settings.muted ? '🔇' : '🔊';
   soundButton.setAttribute('aria-pressed', String(!settings.muted));
@@ -712,10 +732,17 @@ document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) =
   if (toggle !== 'hideBoard' && toggle !== 'hideHistory') throw new Error(`unknown toggle ${toggle}`);
   button.addEventListener('click', () => {
     if (settingsLocked()) return reject(undefined, 'locked');
-    settings[toggle] = !settings[toggle];
-    saveSettings();
     sounds.click();
-    render();
+    if (online === undefined) {
+      settings[toggle] = !settings[toggle];
+      saveSettings();
+      return render();
+    }
+    if (online.you === null) return reject(undefined, 'spectator');
+    const code = online.code;
+    const value = !online.options[toggle];
+    const changes = toggle === 'hideBoard' ? { hideBoard: value } : { hideHistory: value };
+    void withBusy(async () => applyView(await api.update(code, changes)));
   });
 });
 
@@ -765,7 +792,7 @@ sessionNameInput.addEventListener('change', () => {
   }
   const code = online.code;
   void withBusy(async () => {
-    applyView(await api.rename(code, name));
+    applyView(await api.update(code, { name }));
     showToast('Session renamed.');
   });
 });
@@ -790,10 +817,15 @@ newGameButton.addEventListener('click', () => {
 undoButton.addEventListener('click', undoMove);
 
 lockButton.addEventListener('click', () => {
-  if (!isLive() || review) return;
-  locked = true;
+  if (!isLive() || review || settingsLocked()) return;
   sounds.click();
-  render();
+  if (online === undefined) {
+    localLocked = true;
+    return render();
+  }
+  if (online.you === null) return reject(undefined, 'spectator');
+  const code = online.code;
+  void withBusy(async () => applyView(await api.lock(code)));
 });
 
 soundButton.addEventListener('click', () => {
