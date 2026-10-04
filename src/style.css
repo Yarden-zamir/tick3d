@@ -1,9 +1,9 @@
 /* Neo-brutalist themes: flat fills, thick lines, hard offset shadows.
    A theme sets data-theme on <html> (index.html applies a stored one before the first paint).
-   Without data-theme, the page follows the device: light, or dark. The theme rules match any
-   element, so the theme picker draws each preview with that theme's own tokens. */
+   Without data-theme, the page is light. The theme rules match any element, so the theme
+   picker draws each preview with that theme's own tokens. */
 :root {
-  /* Fixed colors with black text in every theme. */
+  /* Piece and accent colors with black text. Batman overrides them with greys. */
   --x: #ff5277;
   --o: #00b3ff;
   --win: #7cff8a;
@@ -32,22 +32,6 @@
   --shadow: #000000;
   --slab: #ffe14d;
   --peer: #d9d2ff;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    color-scheme: dark;
-    --page: #15122b;
-    --dot: rgb(243 240 255 / 0.12);
-    --surface: #262147;
-    --surface-2: #1d1938;
-    --ink: #f3f0ff;
-    --muted: #bdb6e6;
-    --line: #f3f0ff;
-    --shadow: #f3f0ff;
-    --slab: #6c5ce7;
-    --peer: #4b3f9e;
-  }
 }
 
 [data-theme='dark'] {
@@ -104,6 +88,97 @@
   --shadow: #ff5277;
   --slab: #1f7a8c;
   --peer: #2b4f7a;
+}
+
+[data-theme='snow'] {
+  color-scheme: light;
+  --page: #ffffff;
+  --dot: rgb(0 0 0 / 0.1);
+  --surface: #ffffff;
+  --surface-2: #f6f6f6;
+  --ink: #000000;
+  --muted: #555555;
+  --line: #000000;
+  --shadow: #000000;
+  --slab: #ffffff;
+  --peer: #e8eeff;
+}
+
+[data-theme='retro'] {
+  color-scheme: light;
+  --page: #f2cf9a;
+  --dot: rgb(43 26 16 / 0.16);
+  --surface: #fff6e6;
+  --surface-2: #f8e3c2;
+  --ink: #2b1a10;
+  --muted: #6b4a2f;
+  --line: #2b1a10;
+  --shadow: #2b1a10;
+  --slab: #e07a2f;
+  --peer: #f5c26b;
+}
+
+[data-theme='synthwave'] {
+  color-scheme: dark;
+  --page: #1b0b3a;
+  --dot: rgb(255 110 199 / 0.16);
+  --surface: #2a1257;
+  --surface-2: #200d45;
+  --ink: #fdf0ff;
+  --muted: #c9a6ff;
+  --line: #ff6ec7;
+  --shadow: #00e5ff;
+  --slab: #4b1d8f;
+  --peer: #5c2aa8;
+}
+
+[data-theme='bloodmoon'] {
+  color-scheme: dark;
+  --page: #170404;
+  --dot: rgb(255 120 120 / 0.12);
+  --surface: #2e0a0c;
+  --surface-2: #230709;
+  --ink: #ffe3e3;
+  --muted: #dba3a3;
+  --line: #ffd0d0;
+  --shadow: #c0001d;
+  --slab: #7a0f1a;
+  --peer: #5a1a20;
+}
+
+[data-theme='coffee'] {
+  color-scheme: dark;
+  --page: #1e140f;
+  --dot: rgb(243 229 216 / 0.1);
+  --surface: #3b2a20;
+  --surface-2: #2c1f17;
+  --ink: #f3e5d8;
+  --muted: #c7aa90;
+  --line: #f3e5d8;
+  --shadow: #c08552;
+  --slab: #6f4e37;
+  --peer: #57402f;
+}
+
+/* Batman: dark with no color at all. X and O still differ by shape, and by shade. */
+[data-theme='batman'] {
+  color-scheme: dark;
+  --page: #0a0a0a;
+  --dot: rgb(255 255 255 / 0.08);
+  --surface: #1c1c1c;
+  --surface-2: #141414;
+  --ink: #f2f2f2;
+  --muted: #a6a6a6;
+  --line: #f2f2f2;
+  --shadow: #f2f2f2;
+  --slab: #3a3a3a;
+  --peer: #333333;
+  --x: #f2f2f2;
+  --o: #9a9a9a;
+  --win: #ffffff;
+  --primary: #d4d4d4;
+  --toggle-on: #bdbdbd;
+  --danger: #6b6b6b;
 }
 
 [data-theme='mono'] {
@@ -320,7 +395,45 @@ input:disabled {
   font-weight: 800;
 }
 
-/* A preview: the theme's page with one of its boards on it. Auto shows light and dark halves. */
+/* The theme list folds away. The closed row shows the current theme. */
+.theme-menu summary {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--shadow);
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.theme-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.theme-menu summary::after {
+  content: '▾';
+  margin-left: auto;
+  transition: rotate 0.15s;
+}
+
+.theme-menu[open] summary::after {
+  rotate: 180deg;
+}
+
+.theme-menu summary .swatch {
+  width: 3rem;
+  height: 1.9rem;
+}
+
+.theme-menu .theme-picker {
+  margin-top: 0.7rem;
+}
+
+/* A preview: the theme's page with one of its boards on it. */
 .swatch {
   display: flex;
   height: 2.2rem;
@@ -859,6 +972,22 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 .slot.next small {
+  color: var(--on-color);
+}
+
+/* The slots show the last move until the player taps a number. */
+.played-x .slot {
+  background: var(--x);
+  color: var(--on-color);
+}
+
+.played-o .slot {
+  background: var(--o);
+  color: var(--on-color);
+}
+
+.played-x .slot small,
+.played-o .slot small {
   color: var(--on-color);
 }
 

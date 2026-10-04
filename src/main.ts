@@ -22,12 +22,39 @@ const MODES = ['computer', 'friend', 'online'] as const;
 const VIEWS = ['tower', 'flat'] as const;
 const LAYOUTS = ['grid', 'row', 'column', 'steps'] as const;
 const PLAYERS = ['X', 'O'] as const;
-// 'system' (Auto) follows the device: light or dark. The others are fixed palettes in style.css.
-const THEMES = ['system', 'light', 'dark', 'candy', 'mint', 'midnight', 'mono'] as const;
+// Palettes in style.css, in menu order. index.html repeats the names for its pre-paint script.
+const THEMES = [
+  'light',
+  'dark',
+  'snow',
+  'candy',
+  'mint',
+  'retro',
+  'midnight',
+  'synthwave',
+  'bloodmoon',
+  'coffee',
+  'batman',
+  'mono',
+] as const;
 type Mode = (typeof MODES)[number];
 type View = (typeof VIEWS)[number];
 type Layout = (typeof LAYOUTS)[number];
 type Theme = (typeof THEMES)[number];
+const THEME_NAMES: Record<Theme, string> = {
+  light: 'Light',
+  dark: 'Dark',
+  snow: 'Snow',
+  candy: 'Candy',
+  mint: 'Mint',
+  retro: 'Retro',
+  midnight: 'Midnight',
+  synthwave: 'Synthwave',
+  bloodmoon: 'Bloodmoon',
+  coffee: 'Dark coffee',
+  batman: 'Batman',
+  mono: 'Mono',
+};
 
 type Settings = {
   mode: Mode;
@@ -51,7 +78,7 @@ const DEFAULTS: Settings = {
   hideBoard: false,
   hideHistory: false,
   muted: false,
-  theme: 'system',
+  theme: 'light',
 };
 const STORAGE_KEY = 'tick3d.settings';
 // Inline icons draw in the text color, so they follow the theme. Emoji do not.
@@ -123,7 +150,8 @@ const burstEl = element('#burst', HTMLDivElement);
 const reviewEl = element('#review', HTMLDivElement);
 const reviewLabel = element('#review-label', HTMLSpanElement);
 const coordsForm = element('#coords', HTMLFormElement);
-const coordsSlots = [...element('#coords-slots', HTMLDivElement).querySelectorAll('b')];
+const coordsSlotsEl = element('#coords-slots', HTMLDivElement);
+const coordsSlots = [...coordsSlotsEl.querySelectorAll('b')];
 const coordsBack = element('#coords-back', HTMLButtonElement);
 const coordsPlace = element('#coords-place', HTMLButtonElement);
 const digitButtons = document.querySelectorAll<HTMLButtonElement>('[data-digit]');
@@ -139,8 +167,11 @@ const undoButton = element('#undo', HTMLButtonElement);
 const soundButton = element('#sound', HTMLButtonElement);
 const lockButton = element('#lock', HTMLButtonElement);
 const themeColorMeta = element('meta[name="theme-color"]', HTMLMetaElement);
-const themeButtons = document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]');
-const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+const themeMenu = element('#theme-menu', HTMLDetailsElement);
+const themeSwatch = element('#theme-swatch', HTMLSpanElement);
+const themeName = element('#theme-name', HTMLSpanElement);
+const themePicker = element('#theme-picker', HTMLDivElement);
+const coordsTitle = element('#coords-title', HTMLSpanElement);
 
 type Online = {
   code: Code;
@@ -698,29 +729,34 @@ function stepReview(action: string | undefined): void {
 
 // ---- Theme ----
 
-// The theme is a per-screen look like the sound, so the settings lock does not hold it.
-function applyTheme(): void {
-  if (settings.theme === 'system') delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme = settings.theme;
-  themeButtons.forEach((button) =>
-    button.setAttribute('aria-pressed', String(button.dataset.themeChoice === settings.theme)),
-  );
-  themeColorMeta.content = getComputedStyle(document.documentElement).getPropertyValue('--page').trim();
-}
-
-themeButtons.forEach((button) => {
+// One preview tile per theme. Each swatch carries data-theme, so it draws with that theme's tokens.
+const themeButtons = THEMES.map((theme) => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.dataset.themeChoice = theme;
+  button.innerHTML = `<span class="swatch" data-theme="${theme}"><span></span></span>${THEME_NAMES[theme]}`;
   button.addEventListener('click', () => {
-    const theme = oneOf(THEMES, button.dataset.themeChoice, settings.theme);
+    themeMenu.open = false;
     if (theme === settings.theme) return;
     settings.theme = theme;
     saveSettings();
     sounds.click();
     applyTheme();
   });
+  return button;
 });
+themePicker.replaceChildren(...themeButtons);
 
-// Auto follows a device switch between light and dark while the page is open.
-darkQuery.addEventListener('change', applyTheme);
+// The theme is a per-screen look like the sound, so the settings lock does not hold it.
+function applyTheme(): void {
+  document.documentElement.dataset.theme = settings.theme;
+  themeButtons.forEach((button) =>
+    button.setAttribute('aria-pressed', String(button.dataset.themeChoice === settings.theme)),
+  );
+  themeSwatch.dataset.theme = settings.theme;
+  themeName.textContent = THEME_NAMES[settings.theme];
+  themeColorMeta.content = getComputedStyle(document.documentElement).getPropertyValue('--page').trim();
+}
 
 // ---- Settings ----
 
@@ -800,11 +836,27 @@ function coordTarget(): number | undefined {
   return toCell({ layer: layer - 1, row: row - 1, column: column - 1 });
 }
 
+// Until the player taps a number, the slots show the last move of the game, so its
+// coordinates stay readable with the board hidden. A tap starts the player's own entry.
 function renderCoords(): void {
+  const game = current();
+  const last = game.moves.at(-1);
+  const showLast = coordDigits.length === 0 && last !== undefined;
+  const lastPlayer = other(game.turn);
+  let digits = coordDigits;
+  if (showLast) {
+    const { layer, row, column } = toCoords(last);
+    digits = [layer + 1, row + 1, column + 1];
+  }
   coordsSlots.forEach((slot, i) => {
-    slot.textContent = String(coordDigits[i] ?? '');
-    slot.parentElement?.classList.toggle('next', i === coordDigits.length);
+    slot.textContent = String(digits[i] ?? '');
+    slot.parentElement?.classList.toggle('next', !showLast && i === coordDigits.length);
   });
+  coordsSlotsEl.classList.toggle('played-x', showLast && lastPlayer === 'X');
+  coordsSlotsEl.classList.toggle('played-o', showLast && lastPlayer === 'O');
+  const name = playerName(lastPlayer);
+  const mark = name === `Player ${lastPlayer}` ? '' : ` (${lastPlayer})`;
+  coordsTitle.textContent = showLast ? `${name} played${mark}` : 'Move by coordinates';
   const target = coordTarget();
   cells.forEach((button, cell) => button.classList.toggle('aim', cell === target));
   const full = coordDigits.length === 3;
