@@ -1,52 +1,71 @@
 import { randomInt } from 'node:crypto';
-import { DuckDBInstance } from '@duckdb/node-api';
-import { NO_LIMIT, type TimeControl, isFlagged } from '../src/clock.ts';
-import { type Game, type Player, other, play, timeOut } from '../src/game.ts';
+import { type DuckDBValue, DuckDBInstance, listValue } from '@duckdb/node-api';
+import { DIFFICULTIES } from '../src/ai.ts';
+import { NO_LIMIT, type TimeControl } from '../src/clock.ts';
+import { type Player, other, winnerOf } from '../src/game.ts';
 import {
   CODE_ALPHABET,
   CODE_LENGTH,
   type Code,
-  type GameRecord,
-  MAX_GAMES_PER_SESSION,
-  MAX_SESSIONS,
   type MoveRequest,
+  type MyGames,
+  type PlayerInfo,
   type PlayerToken,
+  type ResultUpload,
+  SESSION_MODES,
+  type SessionSummary,
   type SessionUpdate,
   type SessionView,
-  normalizeName,
+  type Tally,
+  parseResultUpload,
   toGame,
-  toRecord,
 } from '../src/protocol.ts';
-import { CURRENT_FORMAT, type SessionDoc, parseDoc } from './format.ts';
+import * as core from '../src/session/core.ts';
+import { CURRENT_FORMAT, type SessionDoc, parseDoc } from '../src/session/format.ts';
 
-export class StoreError extends Error {
-  status: 400 | 403 | 404 | 405 | 409;
-  constructor(status: 400 | 403 | 404 | 405 | 409, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+const { SessionError } = core;
 
-// Each statement is idempotent and runs on every start, in order. To change the table, append a
+// Each statement is idempotent and runs on every start, in order. To change a table, append a
 // statement such as `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ... DEFAULT ...`. Never edit one.
-// The session itself is a VARIANT document (see format.ts), so most format changes need no SQL at all.
+// A session is a VARIANT document (see src/session/format.ts), so most format changes need no SQL at all.
+// Nothing here deletes old rows: sessions, games and results have no limit until storage calls for one.
 const SCHEMA = [
   'CREATE SEQUENCE IF NOT EXISTS session_order',
   `CREATE TABLE IF NOT EXISTS sessions (
      code VARCHAR PRIMARY KEY CHECK (length(code) = ${CODE_LENGTH}),
-     -- Creation order, so the oldest sessions go first when the table is full.
      seq BIGINT NOT NULL DEFAULT nextval('session_order'),
      doc VARIANT NOT NULL,
      version INTEGER NOT NULL DEFAULT 1,
      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
+  // GitHub accounts. The id is GitHub's, which stays the same when a player renames the account.
+  `CREATE TABLE IF NOT EXISTS users (
+     github_id BIGINT PRIMARY KEY,
+     login VARCHAR NOT NULL,
+     avatar VARCHAR NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  // The devices of an account. A token is the random id one browser keeps.
+  `CREATE TABLE IF NOT EXISTS player_tokens (
+     token VARCHAR PRIMARY KEY,
+     github_id BIGINT NOT NULL,
+     linked_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  // Finished games played away from the server: computer, friend and Nearby games.
+  `CREATE TABLE IF NOT EXISTS results (
+     id VARCHAR PRIMARY KEY,
+     token VARCHAR NOT NULL,
+     doc VARIANT NOT NULL,
+     finished_at TIMESTAMPTZ NOT NULL,
+     received_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
 ];
 
-// `stale` marks a document stored in an older format. It is written back in the current format.
-type Row = { code: Code; doc: SessionDoc; version: number; stale: boolean };
+export type GitHubUser = { id: number; login: string; avatar: string };
 
-const emptyRecord = (clock: TimeControl): GameRecord => ({ moves: [], times: [], clock, timedOut: false });
+type Row = { code: Code; doc: SessionDoc; version: number; stale: boolean };
 
 // Every write passes the same check as every read, so the table never holds a document that cannot
 // be read back. This replaces the column CHECK constraints that a document column cannot have.
@@ -60,31 +79,20 @@ function newCode(): Code {
   return Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('') as Code;
 }
 
-function seatOf(doc: SessionDoc, player: PlayerToken | undefined): Player | null {
-  if (player === undefined) return null;
-  if (doc.seats.X === player) return 'X';
-  if (doc.seats.O === player) return 'O';
-  return null;
+const emptyTally = (): Tally => ({ played: 0, won: 0, lost: 0, drawn: 0 });
+
+function count(tally: Tally, outcome: 'won' | 'lost' | 'drawn' | 'played'): void {
+  tally.played++;
+  if (outcome !== 'played') tally[outcome]++;
 }
 
-function currentGame(doc: SessionDoc): Game {
-  const record = doc.games.at(-1);
-  if (record === undefined) throw new Error('session has no games');
-  return toGame(record);
-}
+type StoreOptions = {
+  now?: () => number;
+  // Which seats of a session have it open now. The HTTP layer knows; tests pass nothing.
+  presence?: (code: Code) => Record<Player, boolean>;
+};
 
-function isLocked(doc: SessionDoc): boolean {
-  return doc.lockedGame === doc.games.length - 1 && currentGame(doc).status.kind === 'playing';
-}
-
-function seated(doc: SessionDoc, player: PlayerToken | undefined): Player {
-  const seat = seatOf(doc, player);
-  if (seat === null) throw new StoreError(403, 'Only the two players can change this game.');
-  return seat;
-}
-
-export async function openStore(path: string, maxSessions: number = MAX_SESSIONS, now: () => number = Date.now) {
-  if (!Number.isInteger(maxSessions) || maxSessions < 1) throw new RangeError(`maxSessions must be >= 1: ${maxSessions}`);
+export async function openStore(path: string, { now = Date.now, presence = () => ({ X: false, O: false }) }: StoreOptions = {}) {
   // The API container is small, so cap memory and threads below DuckDB's defaults (80% of RAM, all cores).
   // A new file defaults to the v1.0 storage format for old readers, but VARIANT needs v1.5 storage.
   const instance = await DuckDBInstance.create(path, {
@@ -105,10 +113,13 @@ export async function openStore(path: string, maxSessions: number = MAX_SESSIONS
     return run;
   }
 
+  async function rows(sql: string, values: Record<string, DuckDBValue>): Promise<Record<string, unknown>[]> {
+    return (await db.runAndReadAll(sql, values)).getRowObjectsJS();
+  }
+
   async function loadRaw(code: Code): Promise<Row> {
-    const reader = await db.runAndReadAll('FROM sessions SELECT doc::JSON AS doc, version WHERE code = $code', { code });
-    const [row] = reader.getRowObjectsJS();
-    if (row === undefined) throw new StoreError(404, `No game with code ${code}.`);
+    const [row] = await rows('FROM sessions SELECT doc::JSON AS doc, version WHERE code = $code', { code });
+    if (row === undefined) throw new SessionError(404, `No game with code ${code}.`);
     if (typeof row.doc !== 'string' || typeof row.version !== 'number') throw new Error(`unexpected row shape for ${code}`);
     const stored: unknown = JSON.parse(row.doc);
     const format = typeof stored === 'object' && stored !== null && 'format' in stored ? stored.format : undefined;
@@ -123,49 +134,67 @@ export async function openStore(path: string, maxSessions: number = MAX_SESSIONS
     return loadRaw(row.code);
   }
 
-  // Loads a session and records a timeout that happened since the last write. The result of a
-  // flagged clock never depends on a page reporting it, so every read and write sees the same game.
-  // A document in an older format is written back in the current format here, on first read.
+  // Loads a session, records a timeout that happened since the last write, and writes a document
+  // in an older format back in the current format.
   async function load(code: Code): Promise<Row> {
     const row = await loadRaw(code);
-    const game = currentGame(row.doc);
-    if (isFlagged(game, now())) {
-      return save(row, { ...row.doc, games: [...row.doc.games.slice(0, -1), toRecord(timeOut(game))] });
-    }
+    const settled = core.settle(row.doc, now());
+    if (settled !== undefined) return save(row, settled);
     return row.stale ? save(row, row.doc) : row;
   }
 
-  function view(row: Row, player: PlayerToken | undefined): SessionView {
-    const { doc } = row;
-    return {
-      code: row.code,
-      name: doc.name,
-      games: doc.games,
-      seats: { X: doc.seats.X !== null, O: doc.seats.O !== null },
-      you: seatOf(doc, player),
-      options: doc.options,
-      locked: isLocked(doc),
-      clock: doc.clock,
-      now: now(),
-      version: row.version,
+  // The token plus the tokens of the same GitHub account, so a logged-in player holds their seats on every device.
+  async function identityOf(token: PlayerToken | undefined): Promise<core.Identity> {
+    if (token === undefined) return new Set();
+    const linked = await rows(
+      `FROM player_tokens SELECT token
+       WHERE github_id = (FROM player_tokens SELECT github_id WHERE token = $token)`,
+      { token },
+    );
+    return new Set([token, ...linked.map((row) => String(row.token))]);
+  }
+
+  async function playersOf(doc: SessionDoc): Promise<Record<Player, PlayerInfo | null>> {
+    const seatTokens = [doc.seats.X, doc.seats.O].filter((token) => token !== null);
+    if (seatTokens.length === 0) return { X: null, O: null };
+    const found = await rows(
+      `FROM player_tokens JOIN users USING (github_id) SELECT token, login, avatar
+       WHERE list_contains($tokens, token)`,
+      { tokens: listValue(seatTokens) },
+    );
+    const info = (token: string | null): PlayerInfo | null => {
+      const match = found.find((row) => row.token === token);
+      return match === undefined ? null : { login: String(match.login), avatar: String(match.avatar) };
     };
+    return { X: info(doc.seats.X), O: info(doc.seats.O) };
+  }
+
+  async function view(row: Row, identity: core.Identity): Promise<SessionView> {
+    return core.viewOf(row.doc, {
+      code: row.code,
+      version: row.version,
+      identity,
+      now: now(),
+      presence: presence(row.code),
+      players: await playersOf(row.doc),
+    });
+  }
+
+  // Loads, applies one rule of the core, saves when it changed something, and returns the caller's view.
+  function change(code: Code, token: PlayerToken, rule: (doc: SessionDoc, identity: core.Identity) => SessionDoc) {
+    return serialized(async () => {
+      const row = await load(code);
+      const identity = await identityOf(token);
+      const doc = rule(row.doc, identity);
+      return view(doc === row.doc ? row : await save(row, doc), identity);
+    });
   }
 
   return {
     // The creator takes seat X, so the creator moves first in the first game.
-    create: (player: PlayerToken, name: string, clock: TimeControl = NO_LIMIT): Promise<SessionView> =>
+    create: (token: PlayerToken, name: string, clock: TimeControl = NO_LIMIT): Promise<SessionView> =>
       serialized(async () => {
-        const validName = normalizeName(name);
-        if (validName === undefined) throw new StoreError(400, 'A name needs 1 to 40 characters.');
-        const doc: SessionDoc = {
-          format: CURRENT_FORMAT,
-          name: validName,
-          games: [emptyRecord(clock)],
-          seats: { X: player, O: null },
-          options: { hideBoard: false, hideHistory: false },
-          lockedGame: null,
-          clock,
-        };
+        const doc = core.createDoc({ name, mode: 'online', clock, seats: { X: token, O: null } });
         for (let attempt = 0; attempt < 20; attempt++) {
           const code = newCode();
           try {
@@ -174,88 +203,127 @@ export async function openStore(path: string, maxSessions: number = MAX_SESSIONS
             if (error instanceof Error && error.message.includes('Duplicate key')) continue;
             throw error;
           }
-          // Keep the newest sessions only. DuckDB 1.5 has no triggers; with DuckDB 2.0, move this into an AFTER INSERT trigger.
-          await db.run(`DELETE FROM sessions WHERE code IN (SELECT code FROM sessions ORDER BY seq DESC OFFSET ${maxSessions})`);
-          return view(await load(code), player);
+          return view(await load(code), await identityOf(token));
         }
         throw new Error('could not find a free session code after 20 attempts');
       }),
 
-    get: (code: Code, player: PlayerToken | undefined): Promise<SessionView> =>
-      serialized(async () => view(await load(code), player)),
+    get: (code: Code, token: PlayerToken | undefined): Promise<SessionView> =>
+      serialized(async () => view(await load(code), await identityOf(token))),
 
-    join: (code: Code, player: PlayerToken): Promise<SessionView> =>
+    // The seats a token holds in a session, for presence. Empty for a watcher.
+    seatsOf: (code: Code, token: PlayerToken): Promise<Player[]> =>
+      serialized(async () => core.seatsOf((await loadRaw(code)).doc, await identityOf(token))),
+
+    join: (code: Code, token: PlayerToken) => change(code, token, (doc, identity) => core.join(doc, identity, token)),
+    move: (code: Code, token: PlayerToken, request: MoveRequest) =>
+      change(code, token, (doc, identity) => core.move(doc, identity, request, now())),
+    newGame: (code: Code, token: PlayerToken) => change(code, token, core.newGame),
+    update: (code: Code, token: PlayerToken, changes: SessionUpdate) =>
+      change(code, token, (doc, identity) => core.update(doc, identity, changes)),
+    lock: (code: Code, token: PlayerToken) => change(code, token, core.lock),
+    chat: (code: Code, token: PlayerToken, text: unknown) =>
+      change(code, token, (doc, identity) => core.chat(doc, identity, text, now())),
+
+    // Links this browser to a GitHub account, and refreshes the account's name and picture.
+    linkToken: (token: PlayerToken, user: GitHubUser): Promise<void> =>
       serialized(async () => {
-        const row = await load(code);
-        const { seats } = row.doc;
-        if (seatOf(row.doc, player) !== null) return view(row, player);
-        if (seats.X === null) return view(await save(row, { ...row.doc, seats: { ...seats, X: player } }), player);
-        if (seats.O === null) return view(await save(row, { ...row.doc, seats: { ...seats, O: player } }), player);
-        throw new StoreError(409, 'Both seats are taken. You can watch this game.');
+        await db.run(
+          `INSERT INTO users (github_id, login, avatar) VALUES ($id, $login, $avatar)
+           ON CONFLICT (github_id) DO UPDATE SET login = excluded.login, avatar = excluded.avatar, seen_at = now()`,
+          { id: user.id, login: user.login, avatar: user.avatar },
+        );
+        await db.run(
+          `INSERT INTO player_tokens (token, github_id) VALUES ($token, $id)
+           ON CONFLICT (token) DO UPDATE SET github_id = excluded.github_id, linked_at = now()`,
+          { token, id: user.id },
+        );
       }),
 
-    move: (code: Code, player: PlayerToken, request: MoveRequest): Promise<SessionView> =>
+    // Stores finished games from a device. A result already stored (same id) is skipped, so a
+    // device can send again after a lost answer. Returns how many results were new.
+    addResults: (token: PlayerToken, uploads: readonly unknown[]): Promise<number> =>
       serialized(async () => {
-        const row = await load(code);
-        const seat = seated(row.doc, player);
-        const { games } = row.doc;
-        const game = currentGame(row.doc);
-        // The client sends what it saw. A mismatch means another move landed first.
-        if (request.game !== games.length - 1 || request.moveCount !== game.moves.length) {
-          throw new StoreError(409, 'The board changed. It now shows the latest moves.');
+        const results = uploads.map((upload) => parseResultUpload(upload));
+        if (!results.every((result): result is ResultUpload => result !== undefined)) {
+          throw new SessionError(400, 'A result is not a valid finished game.');
         }
-        if (game.status.kind === 'timeout') throw new StoreError(409, `Time is up. ${other(game.status.winner)} ran out of time.`);
-        if (game.status.kind === 'playing' && game.turn !== seat) throw new StoreError(409, 'It is not your turn.');
-        const result = play(game, request.cell, now());
-        if (!result.ok) {
-          throw new StoreError(409, result.error === 'occupied' ? 'That cell is taken.' : 'This game is over.');
+        let stored = 0;
+        for (const result of results) {
+          const inserted = await rows(
+            `INSERT INTO results (id, token, doc, finished_at)
+             VALUES ($id, $token, $doc::JSON::VARIANT, make_timestamptz($finished * 1000))
+             ON CONFLICT (id) DO NOTHING RETURNING id`,
+            { id: result.id, token, doc: JSON.stringify(result), finished: result.finishedAt },
+          );
+          stored += inserted.length;
         }
-        return view(await save(row, { ...row.doc, games: [...games.slice(0, -1), toRecord(result.game)] }), player);
+        return stored;
       }),
 
-    newGame: (code: Code, player: PlayerToken): Promise<SessionView> =>
+    // Every session and result of this player, on all their linked devices.
+    myGames: (token: PlayerToken): Promise<MyGames> =>
       serialized(async () => {
-        const row = await load(code);
-        seated(row.doc, player);
-        if (currentGame(row.doc).status.kind === 'playing') throw new StoreError(409, 'Finish this game first.');
-        if (row.doc.games.length >= MAX_GAMES_PER_SESSION) {
-          throw new StoreError(409, `A session holds ${MAX_GAMES_PER_SESSION} games. Start a new code.`);
-        }
-        return view(await save(row, { ...row.doc, games: [...row.doc.games, emptyRecord(row.doc.clock)] }), player);
-      }),
+        const identity = await identityOf(token);
+        const tokens = listValue([...identity]);
+        const total = emptyTally();
+        const byMode = Object.fromEntries(SESSION_MODES.map((mode) => [mode, emptyTally()])) as MyGames['byMode'];
+        const byDifficulty = Object.fromEntries(DIFFICULTIES.map((level) => [level, emptyTally()])) as MyGames['byDifficulty'];
 
-    // The name stays open during a lock. The match options and the clock do not.
-    update: (code: Code, player: PlayerToken, changes: SessionUpdate): Promise<SessionView> =>
-      serialized(async () => {
-        const row = await load(code);
-        seated(row.doc, player);
-        const changesMatch = changes.hideBoard !== undefined || changes.hideHistory !== undefined || changes.clock !== undefined;
-        if (changesMatch && isLocked(row.doc)) throw new StoreError(409, 'Settings are locked until this game ends.');
-        const doc: SessionDoc = {
-          ...row.doc,
-          name: changes.name ?? row.doc.name,
-          options: {
-            hideBoard: changes.hideBoard ?? row.doc.options.hideBoard,
-            hideHistory: changes.hideHistory ?? row.doc.options.hideHistory,
-          },
-          clock: changes.clock ?? row.doc.clock,
+        const sessionRows = await rows(
+          `FROM sessions SELECT code, doc::JSON AS doc, epoch_ms(updated_at) AS updated
+           WHERE list_contains($tokens, doc.seats.X::VARCHAR) OR list_contains($tokens, doc.seats.O::VARCHAR)
+           ORDER BY updated_at DESC`,
+          { tokens },
+        );
+        const sessions: SessionSummary[] = [];
+        for (const row of sessionRows) {
+          const doc = parseDoc(JSON.parse(String(row.doc)));
+          const you = core.seatsOf(doc, identity)[0];
+          if (you === undefined) continue;
+          for (const record of doc.games) {
+            const game = toGame(record);
+            if (game.status.kind === 'playing') continue;
+            const winner = winnerOf(game.status);
+            const outcome = winner === null ? 'drawn' : winner === you ? 'won' : 'lost';
+            count(total, outcome);
+            count(byMode.online, outcome);
+          }
+          const live = core.currentGame(doc);
+          sessions.push({
+            code: row.code as Code,
+            name: doc.name,
+            games: doc.games.filter((record) => record.moves.length > 0).length,
+            you,
+            opponent: (await playersOf(doc))[other(you)],
+            yourTurn: live.status.kind === 'playing' && live.turn === you && doc.seats[other(you)] !== null,
+            updatedAt: Number(row.updated),
+          });
+        }
+
+        const resultRows = await rows('FROM results SELECT doc::JSON AS doc WHERE list_contains($tokens, token)', { tokens });
+        for (const row of resultRows) {
+          const result = parseResultUpload(JSON.parse(String(row.doc)));
+          if (result === undefined) throw new Error('a stored result does not parse');
+          const winner = winnerOf(toGame(result.game).status);
+          // A friend game has no "you": both seats played on one device, so it only counts as played.
+          const outcome = result.you === null ? 'played' : winner === null ? 'drawn' : winner === result.you ? 'won' : 'lost';
+          count(total, outcome);
+          count(byMode[result.mode], outcome);
+          if (result.difficulty !== null) count(byDifficulty[result.difficulty], outcome);
+        }
+
+        const [user] = await rows(
+          'FROM player_tokens JOIN users USING (github_id) SELECT login, avatar WHERE token = $token',
+          { token },
+        );
+        return {
+          user: user === undefined ? null : { login: String(user.login), avatar: String(user.avatar) },
+          total,
+          byMode,
+          byDifficulty,
+          sessions,
         };
-        // A game keeps the limit it started with. A game without moves has not started yet.
-        const live = doc.games.at(-1);
-        if (changes.clock !== undefined && live !== undefined && live.moves.length === 0 && !live.timedOut) {
-          doc.games = [...doc.games.slice(0, -1), emptyRecord(changes.clock)];
-        }
-        return view(await save(row, doc), player);
-      }),
-
-    // Locks the match options, and every screen's own settings, for both players until the live game ends.
-    lock: (code: Code, player: PlayerToken): Promise<SessionView> =>
-      serialized(async () => {
-        const row = await load(code);
-        seated(row.doc, player);
-        if (isLocked(row.doc)) return view(row, player);
-        if (currentGame(row.doc).status.kind !== 'playing') throw new StoreError(409, 'This game is over. Start a new game first.');
-        return view(await save(row, { ...row.doc, lockedGame: row.doc.games.length - 1 }), player);
       }),
 
     close(): void {

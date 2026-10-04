@@ -20,6 +20,9 @@ describe('parseDoc', () => {
     const doc = parseDoc({ name: 'Minimal', games: [{ moves: [5] }], seats: {} });
     expect(doc).toEqual({
       format: CURRENT_FORMAT,
+      mode: 'online',
+      computer: null,
+      chat: [],
       name: 'Minimal',
       games: [{ moves: [5], times: [0], clock: { perMove: null, perGame: null }, timedOut: false }],
       seats: { X: null, O: null },

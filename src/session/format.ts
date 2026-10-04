@@ -8,14 +8,29 @@
 //    Documents upgrade when they are read and are written back in the current format.
 // 3. Never edit an UPGRADES step after release. Documents in that format can still exist.
 // fixtures/format-1.json holds a real format 1 document. Its test proves that old data still reads.
-import { NO_LIMIT, type TimeControl, parseClock } from '../src/clock.ts';
-import type { Player } from '../src/game.ts';
-import { type GameRecord, type MatchOptions, isMoveList, normalizeName } from '../src/protocol.ts';
+import { DIFFICULTIES, type Difficulty } from '../ai.ts';
+import { NO_LIMIT, type TimeControl, parseClock } from '../clock.ts';
+import type { Player } from '../game.ts';
+import {
+  CHAT_KEEP,
+  type ChatMessage,
+  type GameRecord,
+  type MatchOptions,
+  SESSION_MODES,
+  type SessionMode,
+  isChatMessage,
+  isMoveList,
+  normalizeName,
+} from '../protocol.ts';
 
 export const CURRENT_FORMAT = 1;
 
 export type SessionDoc = {
   format: typeof CURRENT_FORMAT;
+  // Where the session runs: the server (online), or one device (computer, friend, a Nearby host).
+  mode: SessionMode;
+  // The computer's level and seat, in a computer game only.
+  computer: { difficulty: Difficulty; seat: Player } | null;
   name: string;
   games: GameRecord[];
   // Player tokens. Never sent to a page.
@@ -25,6 +40,8 @@ export type SessionDoc = {
   lockedGame: number | null;
   // The time limit for the next game.
   clock: TimeControl;
+  // Oldest first, the newest CHAT_KEEP messages only.
+  chat: ChatMessage[];
 };
 
 type RawDoc = Record<string, unknown>;
@@ -78,13 +95,29 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
   const clock = doc.clock === undefined ? NO_LIMIT : parseClock(doc.clock);
   if (clock === undefined) throw new FormatError('the session clock is invalid');
   const lockedGame = typeof doc.lockedGame === 'number' && Number.isInteger(doc.lockedGame) ? doc.lockedGame : null;
+  const mode = doc.mode === undefined ? 'online' : SESSION_MODES.find((known) => known === doc.mode);
+  if (mode === undefined) throw new FormatError(`unknown session mode ${String(doc.mode)}`);
+  const chat = doc.chat === undefined ? [] : doc.chat;
+  if (!Array.isArray(chat) || !chat.every(isChatMessage)) throw new FormatError('the chat is invalid');
   return {
     format: CURRENT_FORMAT,
+    mode,
+    computer: readComputer(doc.computer, mode),
     name,
     games: doc.games.map(readGame),
     seats: { X: readSeat(seats.X), O: readSeat(seats.O) },
     options: { hideBoard: options.hideBoard === true, hideHistory: options.hideHistory === true },
     lockedGame,
     clock,
+    chat: chat.slice(-CHAT_KEEP),
   };
+}
+
+function readComputer(value: unknown, mode: SessionMode): SessionDoc['computer'] {
+  if (mode !== 'computer') return null;
+  if (!isRecord(value)) throw new FormatError('a computer game needs its computer settings');
+  const difficulty = DIFFICULTIES.find((level) => level === value.difficulty);
+  const seat = value.seat === 'X' || value.seat === 'O' ? value.seat : undefined;
+  if (difficulty === undefined || seat === undefined) throw new FormatError('the computer settings are invalid');
+  return { difficulty, seat };
 }
