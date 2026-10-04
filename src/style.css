@@ -455,6 +455,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 .toggles button,
 .lock,
 .online button,
+.join button,
 .coords button,
 .review button,
 .history button {
