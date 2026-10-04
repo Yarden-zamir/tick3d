@@ -935,7 +935,17 @@ function applyClock(clock: TimeControl): void {
     return reject(undefined, 'spectator');
   }
   const code = online.code;
-  void withBusy(async () => applyView(await api.update(code, { clock })));
+  // Show the change at once, as with moves. The server answer replaces it, or a refresh undoes it on an error.
+  online = { ...online, clock };
+  render();
+  void withBusy(async () => {
+    try {
+      applyView(await api.update(code, { clock }));
+    } catch (error) {
+      await refresh(code);
+      throw error;
+    }
+  });
 }
 
 function setLimit(kind: LimitKind, seconds: number | null): void {
