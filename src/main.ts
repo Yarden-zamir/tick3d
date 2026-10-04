@@ -1044,7 +1044,7 @@ async function joinNearby(): Promise<void> {
     if (view.you === null && (!view.seats.X || !view.seats.O)) view = await guest.join(view.code);
     openSession(view, guest, 'nearby');
     sounds.sent();
-    showToast(view.you === null ? 'Both seats are taken. You are watching.' : `Joined ${answer.peer.name}'s game as ${view.you}.`);
+    showToast(view.you === null ? 'Both seats are taken. You are watching.' : `Joined the game hosted on ${answer.peer.name} as ${view.you}.`);
     void renderNearby();
   };
 }
