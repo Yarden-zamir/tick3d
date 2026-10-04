@@ -29,7 +29,7 @@
     <div class="app">
       <header class="brand">
         <h1>tick<span>3d</span></h1>
-        <p>Four in a row, in any direction, through a 4×4×4 cube.</p>
+        <button type="button" class="rules-button" id="rules-button" aria-controls="rules-banner" aria-expanded="false">Rules ⓘ</button>
       </header>
 
       <section class="stage">
@@ -182,6 +182,11 @@
       </aside>
     </div>
     <div class="toast" id="toast" role="alert"></div>
+    <button type="button" class="rules-banner" id="rules-banner" hidden aria-label="Rules. Tap to close.">
+      <b>How to win</b>
+      <span>Take turns placing X and O. Get four of yours in a straight line: along a row or column, up through the layers, or diagonally through the cube. There are 76 lines.</span>
+      <small>Tap to close</small>
+    </button>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

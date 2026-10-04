@@ -174,6 +174,8 @@ const undoButton = element('#undo', HTMLButtonElement);
 const soundButton = element('#sound', HTMLButtonElement);
 const lockButton = element('#lock', HTMLButtonElement);
 const resetAngleButton = element('#reset-angle', HTMLButtonElement);
+const rulesButton = element('#rules-button', HTMLButtonElement);
+const rulesBanner = element('#rules-banner', HTMLButtonElement);
 const themeColorMeta = element('meta[name="theme-color"]', HTMLMetaElement);
 const themeMenu = element('#theme-menu', HTMLDetailsElement);
 const themeSwatch = element('#theme-swatch', HTMLSpanElement);
@@ -350,6 +352,25 @@ resetAngleButton.addEventListener('click', () => {
   sounds.click();
   applyCamera();
 });
+
+// ---- Rules banner ----
+
+// The Rules button opens a short rules banner, which closes on a tap or after a while.
+const RULES_BANNER_MS = 8000;
+let rulesTimer: ReturnType<typeof setTimeout> | undefined;
+
+function setRulesBanner(open: boolean): void {
+  clearTimeout(rulesTimer);
+  rulesBanner.hidden = !open;
+  rulesButton.setAttribute('aria-expanded', String(open));
+  if (open) rulesTimer = setTimeout(() => setRulesBanner(false), RULES_BANNER_MS);
+}
+
+rulesButton.addEventListener('click', () => {
+  sounds.click();
+  setRulesBanner(rulesBanner.hidden !== false);
+});
+rulesBanner.addEventListener('click', () => setRulesBanner(false));
 
 // ---- Feedback ----
 
