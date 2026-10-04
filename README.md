@@ -53,6 +53,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - `src/protocol.ts`: the contract between the page and the API (code format, names, response check).
 - `src/online.ts`: the API client and the live update stream.
 - `src/main.ts`, `src/style.css`, `index.html`: the page.
+- `public/`: the favicons, touch icons and web manifest, copied into the build as is.
 - `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the SQLite store.
 
 The page is plain TypeScript built with Vite. The API runs on Node 24, which runs TypeScript directly, with the built-in `node:sqlite`. Neither has runtime dependencies.
