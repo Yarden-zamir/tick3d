@@ -86,6 +86,7 @@ describe('GitHub login', () => {
 describe('login settings', () => {
   it('turns login off without settings, and stops on half the settings', () => {
     expect(authConfigFromEnv({})).toBeUndefined();
+    expect(authConfigFromEnv({ AUTH_ORIGIN: 'https://x', COOKIE_DOMAIN: 'x' })).toBeUndefined();
     expect(() => authConfigFromEnv({ GITHUB_CLIENT_ID: 'x' })).toThrow();
     expect(() =>
       authConfigFromEnv({ GITHUB_CLIENT_ID: 'a', GITHUB_CLIENT_SECRET: 'b', AUTH_SECRET: 'short', AUTH_ORIGIN: 'https://x', COOKIE_DOMAIN: 'x' }),

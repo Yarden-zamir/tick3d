@@ -27,10 +27,14 @@ export type AuthConfig = {
 
 export function authConfigFromEnv(env: NodeJS.ProcessEnv): AuthConfig | undefined {
   const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, AUTH_SECRET, AUTH_ORIGIN, COOKIE_DOMAIN } = env;
-  const values = [GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, AUTH_SECRET, AUTH_ORIGIN, COOKIE_DOMAIN];
-  if (values.every((value) => !value)) return undefined;
+  // The three secrets switch login on. The origin and cookie domain are plain settings that a deploy
+  // always sets, so they alone do not turn login on.
+  const secrets = [GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, AUTH_SECRET];
+  if (secrets.every((value) => !value)) return undefined;
   // Some but not all settings is a deploy mistake, so it stops the server instead of silently disabling login.
-  if (!values.every((value) => value)) throw new Error('GitHub login needs all of GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, AUTH_SECRET, AUTH_ORIGIN and COOKIE_DOMAIN');
+  if (![...secrets, AUTH_ORIGIN, COOKIE_DOMAIN].every((value) => value)) {
+    throw new Error('GitHub login needs all of GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, AUTH_SECRET, AUTH_ORIGIN and COOKIE_DOMAIN');
+  }
   if ((AUTH_SECRET ?? '').length < 32) throw new Error('AUTH_SECRET needs at least 32 characters');
   return {
     clientId: GITHUB_CLIENT_ID ?? '',

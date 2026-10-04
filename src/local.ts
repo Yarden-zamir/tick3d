@@ -42,6 +42,8 @@ export function createLocalBackend(
   account: () => PlayerInfo | null,
 ) {
   const listeners = new Map<Code, Set<() => void>>();
+  // A Nearby host reports which seats are connected. Other sessions on this device are all present.
+  const presenceOf = new Map<Code, (doc: SessionDoc) => Record<Player, boolean>>();
   // Other tabs of this device hear about changes, so two open tabs show the same game.
   const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel('tick3d-local');
   const fire = (code: Code) => listeners.get(code)?.forEach((listener) => listener());
@@ -86,8 +88,7 @@ export function createLocalBackend(
       version: row.version,
       identity: identity(withComputer),
       now: Date.now(),
-      // Everyone at this device is present. A Nearby host replaces this with its guests' presence.
-      presence: { X: doc.seats.X !== null, O: doc.seats.O !== null },
+      presence: presenceOf.get(row.code)?.(doc) ?? { X: doc.seats.X !== null, O: doc.seats.O !== null },
       players: { X: seatInfo('X'), O: seatInfo('O') },
     });
   }
@@ -140,6 +141,13 @@ export function createLocalBackend(
     undo: (code: Code, count: number) => change(code, (doc) => core.undo(doc, identity(true), count)),
     // A device-held session has nobody else to join; a Nearby guest joins through the host.
     join: (code: Code) => change(code, (doc) => doc),
+
+    // For a Nearby host: who is connected, and a nudge to redraw when a guest comes or goes.
+    setPresence(code: Code, presence: ((doc: SessionDoc) => Record<Player, boolean>) | undefined): void {
+      if (presence === undefined) presenceOf.delete(code);
+      else presenceOf.set(code, presence);
+    },
+    notify: (code: Code) => fire(code),
 
     subscribe(code: Code, onChange: () => void): () => void {
       const set = listeners.get(code) ?? new Set();
