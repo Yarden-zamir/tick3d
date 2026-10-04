@@ -1203,6 +1203,8 @@ async function deviceTallies(): Promise<Tally> {
   return tally;
 }
 
+const gameCount = (count: number) => `${count} ${count === 1 ? 'game' : 'games'}`;
+
 async function openMyGames(): Promise<void> {
   myGamesDialog.showModal();
   // Account
@@ -1234,7 +1236,7 @@ async function openMyGames(): Promise<void> {
     ...deviceSessions
       .filter((entry) => entry.mode !== 'nearby')
       .map((entry) =>
-        listItem(entry.name, `${entry.mode === 'computer' ? 'Computer' : 'Friend'} · ${entry.games} games · ${ago(entry.updatedAt)}`, 'Open', () => {
+        listItem(entry.name, `${entry.mode === 'computer' ? 'Computer' : 'Friend'} · ${gameCount(entry.games)} · ${ago(entry.updatedAt)}`, 'Open', () => {
           void openDeviceSession(entry.code).catch(showError);
         }),
       ),
@@ -1258,7 +1260,7 @@ async function openMyGames(): Promise<void> {
       ...mine.sessions.map((summary) =>
         listItem(
           summary.name,
-          `vs ${summary.opponent?.login ?? 'Opponent'} · ${summary.games} games · ${ago(summary.updatedAt)}`,
+          `vs ${summary.opponent?.login ?? 'Opponent'} · ${gameCount(summary.games)} · ${ago(summary.updatedAt)}`,
           'Continue',
           () => void joinSession(summary.code),
           summary.yourTurn ? 'Your turn' : undefined,

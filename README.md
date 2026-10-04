@@ -33,7 +33,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - A GitHub button in the header links to this repository.
 - The browser keeps the settings in `localStorage`. The app checks each stored value and uses the default for a value that is not valid.
 
-![The flat view in the steps layout, Midnight theme](docs/screenshots/flat.png)
+![The flat view in the grid layout, Midnight theme](docs/screenshots/flat.png)
 
 ![Synthwave, Candy and Mono themes on a phone](docs/screenshots/themes.png)
 
