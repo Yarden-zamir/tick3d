@@ -29,6 +29,16 @@ services:
       context: .
       target: api
     pull_policy: build
+    # GitHub login. KitSHn passes the repository's KITSHN_GITHUB_CLIENT_ID variable and the
+    # KITSHN_GITHUB_CLIENT_SECRET and KITSHN_AUTH_SECRET secrets without their prefix.
+    # Without the three, login stays off and the page hides it.
+    # Every environment shares the cookie domain, so pull request previews see the production login.
+    environment:
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      AUTH_ORIGIN: https://tick3d.yarden-zamir.com
+      COOKIE_DOMAIN: tick3d.yarden-zamir.com
     volumes:
       - sessions:/data
     healthcheck:

@@ -1,0 +1,38 @@
+# The whole game on your own computer, for a local network: `docker compose -f compose.lan.yml up --build`.
+# Others on the same Wi-Fi then open http://<this computer's address>:8080 and play the Online mode.
+# There is no HTTPS here, so a browser gives the page no offline cache and no camera. The game itself works.
+# Login is off: GitHub returns only to the public address.
+services:
+  site:
+    build:
+      context: .
+      target: site
+    volumes:
+      - ./container/Caddyfile.lan:/etc/caddy/Caddyfile:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      LAN_HOST: "1"
+      # The name the page shows ("Hosted on ..."). Set it, or the container's own name shows.
+      LAN_HOST_NAME: ${LAN_HOST_NAME:-}
+    volumes:
+      - lan-sessions:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  lan-sessions:

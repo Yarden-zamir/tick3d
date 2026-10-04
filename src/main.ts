@@ -30,6 +30,12 @@ import {
   winnerOf,
 } from './game.ts';
 import { type LocalBackend, createLocalBackend } from './local.ts';
+import { DEVICE_ICONS, deviceLabel, detectDevice } from './nearby/device.ts';
+import { type Channel, answerOffer, createOffer } from './nearby/peer.ts';
+import { renderQr, startScanner } from './nearby/qr.ts';
+import { type NearbyGuest, type NearbyHost, createNearbyGuest, createNearbyHost } from './nearby/session.ts';
+import type { Hello } from './nearby/signal.ts';
+import { setupPwa } from './pwa.ts';
 import { type Me, OnlineError, api, token } from './online.ts';
 import {
   type ChatMessage,
@@ -39,6 +45,7 @@ import {
   type ResultUpload,
   type SessionUpdate,
   type SessionView,
+  type Tally,
   normalizeChat,
   normalizeCode,
   normalizeName,
@@ -239,6 +246,42 @@ const chatSend = element('#chat-send', HTMLButtonElement);
 const chatNotice = element('#chat-notice', HTMLButtonElement);
 const chatNoticeFrom = element('#chat-notice-from', HTMLElement);
 const chatNoticeText = element('#chat-notice-text', HTMLSpanElement);
+const accountButton = element('#account-button', HTMLButtonElement);
+const accountAvatar = element('#account-avatar', HTMLImageElement);
+const accountName = element('#account-name', HTMLSpanElement);
+const offlineBadge = element('#offline-badge', HTMLSpanElement);
+const updateBar = element('#update-bar', HTMLDivElement);
+const updateReload = element('#update-reload', HTMLButtonElement);
+const myGamesDialog = element('#my-games', HTMLDialogElement);
+const myGamesClose = element('#my-games-close', HTMLButtonElement);
+const accountBox = element('#account-box', HTMLDivElement);
+const myGamesNote = element('#my-games-note', HTMLParagraphElement);
+const myGamesStats = element('#my-games-stats', HTMLDivElement);
+const myGamesOnlineBox = element('#my-games-online-box', HTMLElement);
+const myGamesOnline = element('#my-games-online', HTMLUListElement);
+const myGamesDevice = element('#my-games-device', HTMLUListElement);
+const lanHost = element('#lan-host', HTMLParagraphElement);
+const nearbyDeviceIcon = element('#nearby-device-icon', HTMLSpanElement);
+const nearbyNameInput = element('#nearby-name', HTMLInputElement);
+const nearbyStart = element('#nearby-start', HTMLDivElement);
+const nearbyHostButton = element('#nearby-host', HTMLButtonElement);
+const nearbyJoinButton = element('#nearby-join', HTMLButtonElement);
+const nearbyStep = element('#nearby-step', HTMLDivElement);
+const nearbyStepText = element('#nearby-step-text', HTMLParagraphElement);
+const nearbyQr = element('#nearby-qr', HTMLDivElement);
+const nearbyText = element('#nearby-text', HTMLDetailsElement);
+const nearbyCodeOut = element('#nearby-code-out', HTMLTextAreaElement);
+const nearbyCopy = element('#nearby-copy', HTMLButtonElement);
+const nearbyVideo = element('#nearby-video', HTMLVideoElement);
+const nearbyInput = element('#nearby-input', HTMLDivElement);
+const nearbyScan = element('#nearby-scan', HTMLButtonElement);
+const nearbyCodeIn = element('#nearby-code-in', HTMLInputElement);
+const nearbyUseCode = element('#nearby-use-code', HTMLButtonElement);
+const nearbyCancel = element('#nearby-cancel', HTMLButtonElement);
+const nearbyDevices = element('#nearby-devices', HTMLUListElement);
+const nearbyActions = element('#nearby-actions', HTMLDivElement);
+const nearbyAdd = element('#nearby-add', HTMLButtonElement);
+const nearbyStop = element('#nearby-stop', HTMLButtonElement);
 
 // The open session: its latest view, the backend that holds it, and its mode.
 type Session = SessionView & { backend: SessionBackend; mode: Mode; unsubscribe: () => void };
@@ -848,9 +891,400 @@ const joinSession = (code: Code) =>
 
 // ---- Nearby ----
 
-// Opens the Nearby panel. The host and guest flows come with the Nearby transport.
-function openNearby(): void {
+type NearbyState =
+  | { kind: 'idle' }
+  // Hosting: the open session is this device's, guests connect over WebRTC.
+  | { kind: 'hosting'; host: NearbyHost; invite?: { accept(code: string): Promise<{ channel: Channel; peer: Hello }> } }
+  // Joining: waiting for the host's code, then showing our answer until the host connects.
+  | { kind: 'joining'; answer?: string }
+  | { kind: 'guest'; guest: NearbyGuest; hostHello: Hello };
+
+let nearby: NearbyState = { kind: 'idle' };
+let stopScanner: (() => void) | undefined;
+let wakeLock: { release(): Promise<void> } | undefined;
+const thisDevice = detectDevice();
+
+function nearbyHello(): Hello {
+  const name = nearbyNameInput.value.trim() || account.user?.login || deviceLabel(thisDevice);
+  return { device: thisDevice, name: name.slice(0, 24) };
+}
+
+function deviceItem(hello: Hello | { device: 'server'; name: string }, role: string): HTMLLIElement {
+  const item = document.createElement('li');
+  const icon = document.createElement('span');
+  icon.className = 'device-icon';
+  icon.innerHTML = DEVICE_ICONS[hello.device];
+  icon.title = deviceLabel(hello.device);
+  const name = document.createElement('b');
+  name.textContent = hello.name;
+  const what = document.createElement('small');
+  what.textContent = role;
+  item.append(icon, name, what);
+  return item;
+}
+
+function seatRole(seat: Player | null): string {
+  return seat === null ? 'Watching' : `Plays ${seat}`;
+}
+
+async function renderNearby(): Promise<void> {
+  const state = nearby;
+  nearbyStart.hidden = state.kind !== 'idle';
+  nearbyActions.hidden = state.kind !== 'hosting' && state.kind !== 'guest';
+  nearbyAdd.hidden = state.kind !== 'hosting';
+  nearbyStop.textContent = state.kind === 'guest' ? 'Leave Nearby game' : 'End Nearby game';
+  nearbyDeviceIcon.innerHTML = DEVICE_ICONS[thisDevice];
+  if (state.kind === 'hosting') {
+    const hostSeat = session?.you ?? 'X';
+    const guests = await state.host.guests();
+    nearbyDevices.replaceChildren(
+      deviceItem(nearbyHello(), `You · host · plays ${hostSeat}`),
+      ...guests.map((guest) => deviceItem(guest.hello, seatRole(guest.seat))),
+    );
+  } else if (state.kind === 'guest') {
+    nearbyDevices.replaceChildren(
+      deviceItem(state.hostHello, 'Host'),
+      deviceItem(nearbyHello(), `You · ${seatRole(session?.you ?? null).toLowerCase()}`),
+    );
+  } else nearbyDevices.replaceChildren();
+  nearbyDevices.hidden = nearbyDevices.childElementCount === 0;
+}
+
+function showNearbyStep(text: string, options: { qr?: string; input?: boolean } = {}): void {
+  nearbyStep.hidden = false;
+  nearbyStepText.textContent = text;
+  nearbyQr.hidden = options.qr === undefined;
+  nearbyText.hidden = options.qr === undefined;
+  nearbyCodeOut.value = options.qr ?? '';
+  nearbyInput.hidden = !options.input;
+  nearbyCodeIn.value = '';
+  if (options.qr !== undefined) {
+    const code = options.qr;
+    void renderQr(code).then((svg) => {
+      if (nearbyCodeOut.value === code) nearbyQr.replaceChildren(svg);
+    });
+  } else nearbyQr.replaceChildren();
+}
+
+function hideNearbyStep(): void {
+  stopScanner?.();
+  stopScanner = undefined;
+  nearbyVideo.hidden = true;
+  nearbyStep.hidden = true;
+}
+
+// Runs a code from the camera or the text box through the current step.
+let onNearbyCode: ((code: string) => Promise<void>) | undefined;
+
+async function useNearbyCode(code: string): Promise<void> {
+  const handler = onNearbyCode;
+  if (handler === undefined) return;
+  stopScanner?.();
+  stopScanner = undefined;
+  nearbyVideo.hidden = true;
+  try {
+    await handler(code.trim());
+  } catch (error) {
+    showProblem(error instanceof Error ? error.message : 'That code did not work.');
+  }
+}
+
+// The host shows an invite, scans or reads the guest's answer, and connects.
+async function inviteGuest(): Promise<void> {
+  if (nearby.kind !== 'hosting') return;
+  const state = nearby;
+  const invite = await createOffer(nearbyHello());
+  nearby = { ...state, invite };
+  showNearbyStep('1. On the other device, choose Nearby, tap Join a game and scan this code. 2. Then scan the code that device shows.', {
+    qr: invite.code,
+    input: true,
+  });
+  onNearbyCode = async (code) => {
+    const { channel, peer } = await invite.accept(code);
+    state.host.addGuest(channel, peer);
+    onNearbyCode = undefined;
+    hideNearbyStep();
+    sounds.sent();
+    showToast(`${peer.name} joined.`);
+    void renderNearby();
+  };
+}
+
+async function hostNearby(): Promise<void> {
+  const backend = local;
+  if (backend === undefined) throw new Error('the device backend is not ready');
+  const view = await backend.create({ mode: 'nearby', name: defaultSessionName('nearby'), clock: settings.clock, human: 'X' });
+  openSession(view, backend, 'nearby');
+  const host = createNearbyHost(backend, view.code, token);
+  host.onGuestsChanged(() => void renderNearby());
+  nearby = { kind: 'hosting', host };
+  // Keep the host's screen on: guests lose the game when the host's page sleeps.
+  wakeLock = await navigator.wakeLock?.request('screen').catch(() => undefined);
+  await inviteGuest();
+  void renderNearby();
+}
+
+async function joinNearby(): Promise<void> {
+  nearby = { kind: 'joining' };
+  showNearbyStep("Scan the code on the host's screen.", { input: true });
+  onNearbyCode = async (code) => {
+    const answer = await answerOffer(code, nearbyHello());
+    nearby = { kind: 'joining', answer: answer.code };
+    showNearbyStep(`Show this code to ${answer.peer.name}, the host, to scan.`, { qr: answer.code });
+    onNearbyCode = undefined;
+    const channel = await answer.connected;
+    const guest = createNearbyGuest(channel, token, (reason) => {
+      if (nearby.kind !== 'guest' || nearby.guest !== guest) return;
+      showToast(reason);
+      endNearby(false);
+    });
+    nearby = { kind: 'guest', guest, hostHello: answer.peer };
+    hideNearbyStep();
+    let view = await guest.load('' as Code);
+    if (view.you === null && (!view.seats.X || !view.seats.O)) view = await guest.join(view.code);
+    openSession(view, guest, 'nearby');
+    sounds.sent();
+    showToast(view.you === null ? 'Both seats are taken. You are watching.' : `Joined ${answer.peer.name}'s game as ${view.you}.`);
+    void renderNearby();
+  };
+}
+
+// Leaves Nearby play. The host says goodbye to its guests; a guest closes its connection.
+function endNearby(sayBye = true): void {
+  const state = nearby;
+  if (state.kind === 'hosting') state.host.stop('The host ended the game.');
+  if (state.kind === 'guest' && sayBye) state.guest.close();
+  void wakeLock?.release().catch(() => undefined);
+  wakeLock = undefined;
+  onNearbyCode = undefined;
+  hideNearbyStep();
+  nearby = { kind: 'idle' };
+  if (session?.mode === 'nearby') leaveSession();
   render();
+  void renderNearby();
+}
+
+// Opens the Nearby panel. A session starts when this device hosts or joins.
+function openNearby(): void {
+  if (nearbyNameInput.value === '') nearbyNameInput.value = account.user?.login ?? deviceLabel(thisDevice);
+  render();
+  void renderNearby();
+}
+
+nearbyHostButton.addEventListener('click', () => {
+  sounds.click();
+  void hostNearby().catch((error: unknown) => {
+    showProblem(error instanceof Error ? error.message : 'Could not start hosting.');
+    endNearby();
+  });
+});
+nearbyJoinButton.addEventListener('click', () => {
+  sounds.click();
+  void joinNearby().catch((error: unknown) => showProblem(error instanceof Error ? error.message : 'Could not join.'));
+});
+nearbyAdd.addEventListener('click', () => void inviteGuest().catch(showError));
+nearbyStop.addEventListener('click', () => endNearby());
+nearbyCancel.addEventListener('click', () => {
+  hideNearbyStep();
+  onNearbyCode = undefined;
+  if (nearby.kind === 'joining') nearby = { kind: 'idle' };
+  void renderNearby();
+});
+nearbyUseCode.addEventListener('click', () => void useNearbyCode(nearbyCodeIn.value));
+nearbyCopy.addEventListener('click', () => {
+  void navigator.clipboard.writeText(nearbyCodeOut.value).then(
+    () => showToast('Code copied.'),
+    () => showProblem('Copy did not work. Select the code and copy it.'),
+  );
+});
+nearbyScan.addEventListener('click', () => {
+  nearbyVideo.hidden = false;
+  void startScanner(nearbyVideo, (code) => void useNearbyCode(code)).then(
+    (stop) => (stopScanner = stop),
+    () => {
+      nearbyVideo.hidden = true;
+      showProblem('The camera is not available. Paste the code instead.');
+    },
+  );
+});
+
+// ---- Account and My games ----
+
+function renderAccount(): void {
+  const user = account.user;
+  accountAvatar.hidden = user === null;
+  if (user !== null) accountAvatar.src = `${user.avatar}&s=48`;
+  accountName.textContent = user?.login ?? 'My games';
+}
+
+function tallyBox(label: string, tally: Tally): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'my-tally';
+  const title = document.createElement('b');
+  title.textContent = label;
+  const numbers = document.createElement('span');
+  numbers.textContent =
+    tally.won + tally.lost + tally.drawn === 0 && tally.played > 0
+      ? `${tally.played} played`
+      : `${tally.won} won · ${tally.lost} lost · ${tally.drawn} drawn`;
+  box.append(title, numbers);
+  return box;
+}
+
+function listItem(title: string, detail: string, action: string, onClick: () => void, badge?: string): HTMLLIElement {
+  const item = document.createElement('li');
+  const text = document.createElement('div');
+  const name = document.createElement('b');
+  name.textContent = title;
+  const small = document.createElement('small');
+  small.textContent = detail;
+  text.append(name, small);
+  item.append(text);
+  if (badge) {
+    const mark = document.createElement('span');
+    mark.className = 'badge';
+    mark.textContent = badge;
+    item.append(mark);
+  }
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = action;
+  button.addEventListener('click', () => {
+    myGamesDialog.close();
+    onClick();
+  });
+  item.append(button);
+  return item;
+}
+
+const ago = (time: number) => new Date(time).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+
+// Stats from the results on this device, for when the server is out of reach.
+async function deviceTallies(): Promise<Tally> {
+  const tally: Tally = { played: 0, won: 0, lost: 0, drawn: 0 };
+  for (const { upload } of (await deviceDb?.all('results')) ?? []) {
+    tally.played++;
+    if (upload.you === null) continue;
+    const winner = winnerOf(toGame(upload.game).status);
+    tally[winner === null ? 'drawn' : winner === upload.you ? 'won' : 'lost']++;
+  }
+  return tally;
+}
+
+async function openMyGames(): Promise<void> {
+  myGamesDialog.showModal();
+  // Account
+  accountBox.replaceChildren();
+  if (account.user) {
+    const avatar = document.createElement('img');
+    avatar.className = 'avatar';
+    avatar.src = `${account.user.avatar}&s=64`;
+    avatar.alt = '';
+    const name = document.createElement('b');
+    name.textContent = account.user.login;
+    const logout = document.createElement('button');
+    logout.type = 'button';
+    logout.textContent = 'Log out';
+    logout.addEventListener('click', () => void api.logout().then(refreshAccount).then(() => myGamesDialog.close(), showError));
+    accountBox.append(avatar, name, logout);
+  } else if (account.loginAvailable && navigator.onLine) {
+    const text = document.createElement('span');
+    text.textContent = 'Log in to keep your games and stats on every device.';
+    const login = document.createElement('a');
+    login.className = 'login-link';
+    login.href = api.loginUrl();
+    login.textContent = 'Log in with GitHub';
+    accountBox.append(text, login);
+  }
+  // Device sessions
+  const deviceSessions = (await local?.list()) ?? [];
+  myGamesDevice.replaceChildren(
+    ...deviceSessions
+      .filter((entry) => entry.mode !== 'nearby')
+      .map((entry) =>
+        listItem(entry.name, `${entry.mode === 'computer' ? 'Computer' : 'Friend'} · ${entry.games} games · ${ago(entry.updatedAt)}`, 'Open', () => {
+          void openDeviceSession(entry.code).catch(showError);
+        }),
+      ),
+  );
+  if (myGamesDevice.childElementCount === 0) myGamesDevice.innerHTML = '<li class="empty">No games on this device yet.</li>';
+  // Server stats and online sessions
+  myGamesStats.replaceChildren();
+  myGamesOnline.replaceChildren();
+  try {
+    if (!navigator.onLine) throw new OnlineError('offline');
+    const mine = await api.myGames();
+    myGamesNote.textContent = mine.user ? 'Your games on every device you logged in with.' : 'Your games on this browser.';
+    myGamesStats.append(
+      tallyBox('All games', mine.total),
+      tallyBox('Online', mine.byMode.online),
+      tallyBox('Computer', mine.byMode.computer),
+      tallyBox('Nearby', mine.byMode.nearby),
+      tallyBox('Friend', mine.byMode.friend),
+    );
+    myGamesOnline.append(
+      ...mine.sessions.map((summary) =>
+        listItem(
+          summary.name,
+          `vs ${summary.opponent?.login ?? 'Opponent'} · ${summary.games} games · ${ago(summary.updatedAt)}`,
+          'Continue',
+          () => void joinSession(summary.code),
+          summary.yourTurn ? 'Your turn' : undefined,
+        ),
+      ),
+    );
+    if (mine.sessions.length === 0) myGamesOnline.innerHTML = '<li class="empty">No online sessions yet.</li>';
+    myGamesOnlineBox.hidden = false;
+  } catch (error) {
+    if (!(error instanceof OnlineError)) throw error;
+    myGamesNote.textContent = 'You are offline. These are the games on this device.';
+    myGamesStats.append(tallyBox('Games on this device', await deviceTallies()));
+    myGamesOnlineBox.hidden = true;
+  }
+}
+
+accountButton.addEventListener('click', () => void openMyGames().catch(showError));
+myGamesClose.addEventListener('click', () => myGamesDialog.close());
+myGamesDialog.addEventListener('click', (event) => {
+  if (event.target === myGamesDialog) myGamesDialog.close();
+});
+
+// ---- Offline and updates ----
+
+setupPwa({
+  onOfflineReady() {
+    offlineBadge.hidden = false;
+    showToast('Ready for offline play. Computer and friend games work without a network now.');
+  },
+  onNeedRefresh(reload) {
+    updateBar.hidden = false;
+    updateReload.onclick = () => void reload();
+  },
+});
+// A worker that is already active means this device had the game ready offline before.
+void navigator.serviceWorker?.getRegistration().then((registration) => {
+  if (registration?.active) offlineBadge.hidden = false;
+});
+
+// A LAN host (a laptop that runs the server for the local network) says so in the online box.
+async function checkLanHost(): Promise<void> {
+  try {
+    const response = await fetch('/api/health');
+    const body: unknown = await response.json();
+    const lan = typeof body === 'object' && body !== null && 'lan' in body ? body.lan : null;
+    if (typeof lan === 'object' && lan !== null && 'name' in lan && typeof lan.name === 'string') {
+      lanHost.hidden = false;
+      lanHost.replaceChildren();
+      const icon = document.createElement('span');
+      icon.className = 'device-icon';
+      icon.innerHTML = DEVICE_ICONS.server;
+      const text = document.createElement('span');
+      text.textContent = `Hosted on ${lan.name} on this network`;
+      lanHost.append(icon, text);
+    }
+  } catch {
+    // No server answers (offline, or a static preview). The online box stays as it is.
+  }
 }
 
 // ---- Results of games away from the server ----
@@ -1137,6 +1571,7 @@ function render(): void {
   const lockScope = shared() ? ' for both players' : '';
   lockButton.textContent = frozen ? `🔒 Locked${lockScope} until this game ends` : `🔓 Lock settings${lockScope}`;
   lockButton.setAttribute('aria-pressed', String(frozen));
+  renderAccount();
   soundButton.innerHTML = settings.muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
   soundButton.setAttribute('aria-pressed', String(!settings.muted));
 }
@@ -1478,6 +1913,7 @@ function changeSetting(setting: string, value: string | undefined): void {
   saveSettings();
   sounds.click();
   if (setting === 'view' || setting === 'layout') return render();
+  if (previousMode === 'nearby' && nearby.kind !== 'idle') endNearby();
   leaveSession();
   review = undefined;
   render();
@@ -1786,6 +2222,14 @@ async function start(): Promise<void> {
   }
   local = createLocalBackend(deviceDb, token, () => account.user);
   void refreshAccount();
+  void checkLanHost();
+  const params = new URLSearchParams(location.search);
+  if (params.get('login') === 'failed') {
+    showProblem('The GitHub login did not work. Try again.');
+    const url = new URL(location.href);
+    url.searchParams.delete('login');
+    history.replaceState(null, '', url);
+  }
   void flushResults();
   addEventListener('online', () => {
     void flushResults();
