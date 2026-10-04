@@ -17,7 +17,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
   - Medium: takes a win, blocks your win, otherwise picks one of its three best cells.
   - Hard: takes a win, blocks your win, otherwise searches ahead with alpha-beta pruning for up to 600 ms.
 - Move validation: an occupied cell, a move after the game ends, a move out of turn, or a move by a spectator is refused with a sound and a message. The server checks online moves again with the same rules.
-- Hide the board, or hide all marks except the last move. Play by coordinates: type the layer, row and column, for example `2 3 4`. Hidden marks show again when the game ends.
+- Hide the board, or hide all marks except the last move. Play by coordinates: tap the layer, row and column on the 1 to 4 keypad, for example `2 3 4`. The target cell is outlined before you place. Hidden marks show again when the game ends.
 - Lock settings: after a lock, no setting (the view included) changes until the game ends. In a local game, a page reload ends the lock. In an online session, either player can lock, the server keeps the lock, and it holds for both players.
 - Session history: the panel lists the games of the session. Replay steps through a finished game move by move.
 - Sound effects made with Web Audio. Each layer has its own note. A mute button keeps the choice.

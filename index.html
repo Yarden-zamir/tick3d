@@ -39,7 +39,7 @@
         <div class="board" id="board" role="grid" aria-label="Game board"></div>
         <div class="board-hidden" id="board-hidden" hidden>
           <strong>Board hidden</strong>
-          <span>Type the layer, row and column of your move below.</span>
+          <span>Tap the layer, row and column of your move below.</span>
         </div>
         <div class="review" id="review" hidden>
           <span id="review-label"></span>
@@ -51,10 +51,21 @@
             <button type="button" data-review="exit">Back to live game</button>
           </div>
         </div>
-        <form class="coords" id="coords" autocomplete="off">
-          <label for="coords-input">Move by coordinates</label>
-          <input id="coords-input" inputmode="numeric" maxlength="7" placeholder="layer row column · 2 3 4" />
-          <button type="submit">Place</button>
+        <form class="coords" id="coords" aria-labelledby="coords-title">
+          <span class="coords-title" id="coords-title">Move by coordinates</span>
+          <div class="coords-slots" id="coords-slots" aria-live="polite">
+            <span class="slot"><small>Layer</small><b></b></span>
+            <span class="slot"><small>Row</small><b></b></span>
+            <span class="slot"><small>Column</small><b></b></span>
+          </div>
+          <div class="keypad">
+            <button type="button" data-digit="1">1</button>
+            <button type="button" data-digit="2">2</button>
+            <button type="button" data-digit="3">3</button>
+            <button type="button" data-digit="4">4</button>
+            <button type="button" id="coords-back" aria-label="Delete last number">⌫</button>
+            <button type="submit" class="place" id="coords-place">Place</button>
+          </div>
         </form>
         <div class="burst" id="burst" aria-hidden="true"></div>
       </section>

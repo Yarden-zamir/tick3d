@@ -709,13 +709,79 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.6rem;
 }
 
-.coords label {
-  font-size: 0.9rem;
-  font-weight: 700;
+.coords {
+  flex-direction: column;
+  gap: 0.55rem;
 }
 
-.coords input {
-  width: 13rem;
+.coords-title {
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+/* Three read-only slots: layer, row, column. The next one to fill is highlighted. */
+.coords-slots {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.slot {
+  display: grid;
+  justify-items: center;
+  width: 4.6rem;
+  padding: 0.25rem 0.3rem 0.3rem;
+  border: var(--border) solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.slot small {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.slot b {
+  min-height: 1.6rem;
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.slot.next {
+  background: var(--primary);
+  color: var(--on-color);
+}
+
+.slot.next small {
+  color: var(--on-color);
+}
+
+.keypad {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.keypad button {
+  min-width: 2.9rem;
+  min-height: 2.9rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.keypad .place {
+  background: var(--win);
+  color: var(--on-color);
+}
+
+/* The cell the keypad points at. */
+.cell.aim {
+  outline: 3px solid var(--o);
+  outline-offset: 2px;
+  background: var(--peer);
 }
 
 .review {

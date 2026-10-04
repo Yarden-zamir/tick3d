@@ -8,7 +8,6 @@ import {
   type Player,
   newGame,
   other,
-  parseCoordinates,
   play,
   replay,
   toCell,
@@ -124,7 +123,10 @@ const burstEl = element('#burst', HTMLDivElement);
 const reviewEl = element('#review', HTMLDivElement);
 const reviewLabel = element('#review-label', HTMLSpanElement);
 const coordsForm = element('#coords', HTMLFormElement);
-const coordsInput = element('#coords-input', HTMLInputElement);
+const coordsSlots = [...element('#coords-slots', HTMLDivElement).querySelectorAll('b')];
+const coordsBack = element('#coords-back', HTMLButtonElement);
+const coordsPlace = element('#coords-place', HTMLButtonElement);
+const digitButtons = document.querySelectorAll<HTMLButtonElement>('[data-digit]');
 const historyEl = element('#history', HTMLOListElement);
 const onlineCodeEl = element('#online-code', HTMLElement);
 const shareButton = element('#share', HTMLButtonElement);
@@ -163,6 +165,8 @@ let busy = false;
 // Increments on every new local game, so a computer move scheduled for an old game is dropped.
 let round = 0;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+// The keypad entry: layer, row, column, each 1..4. A tap fills the next one.
+let coordDigits: number[] = [];
 
 function current(): Game {
   const game = games.at(-1);
@@ -598,6 +602,7 @@ function render(): void {
   reviewEl.hidden = review === undefined;
   if (review) reviewLabel.textContent = statusText();
   coordsForm.hidden = review !== undefined;
+  renderCoords();
 
   document.querySelectorAll<HTMLElement>('[data-show-mode]').forEach((field) => {
     field.hidden = field.dataset.showMode !== settings.mode;
@@ -789,16 +794,54 @@ document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) =
 
 // ---- Other controls ----
 
+// The cell the keypad points at once layer, row and column are all chosen.
+function coordTarget(): number | undefined {
+  const [layer, row, column] = coordDigits;
+  if (layer === undefined || row === undefined || column === undefined) return undefined;
+  return toCell({ layer: layer - 1, row: row - 1, column: column - 1 });
+}
+
+function renderCoords(): void {
+  coordsSlots.forEach((slot, i) => {
+    slot.textContent = String(coordDigits[i] ?? '');
+    slot.parentElement?.classList.toggle('next', i === coordDigits.length);
+  });
+  const target = coordTarget();
+  cells.forEach((button, cell) => button.classList.toggle('aim', cell === target));
+  const full = coordDigits.length === 3;
+  digitButtons.forEach((button) => (button.disabled = full));
+  coordsBack.disabled = coordDigits.length === 0;
+  coordsPlace.disabled = !full;
+}
+
+digitButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const digit = Number(button.dataset.digit);
+    if (!Number.isInteger(digit) || digit < 1 || digit > SIZE) throw new Error(`bad keypad digit ${button.dataset.digit}`);
+    if (coordDigits.length >= 3) return;
+    coordDigits = [...coordDigits, digit];
+    sounds.click();
+    renderCoords();
+  });
+});
+
+coordsBack.addEventListener('click', () => {
+  coordDigits = coordDigits.slice(0, -1);
+  sounds.click();
+  renderCoords();
+});
+
 coordsForm.addEventListener('submit', (event) => {
   event.preventDefault();
-  const coords = parseCoordinates(coordsInput.value);
-  if (coords === undefined) {
+  const target = coordTarget();
+  if (target === undefined) {
     sounds.invalid();
-    showToast('Type three numbers from 1 to 4: layer, row, column.');
+    showToast('Tap a layer, a row and a column first.');
     return;
   }
-  coordsInput.value = '';
-  humanMove(toCell(coords));
+  coordDigits = [];
+  humanMove(target);
+  renderCoords();
 });
 
 joinForm.addEventListener('submit', (event) => {
