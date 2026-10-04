@@ -16,8 +16,8 @@ export type PlayerToken = string & { readonly __brand: 'PlayerToken' };
 // Match options apply to both players and to watchers. View and layout stay per screen.
 export type MatchOptions = { hideBoard: boolean; hideHistory: boolean };
 
-// One game as stored: moves, the time of each move, and whether the player to move ran out of time.
-export type GameRecord = { moves: number[]; times: number[]; timedOut: boolean };
+// One game as stored: moves, the time of each move, its time limit, and whether the player to move ran out of time.
+export type GameRecord = { moves: number[]; times: number[]; clock: TimeControl; timedOut: boolean };
 
 export type SessionView = {
   code: Code;
@@ -28,6 +28,7 @@ export type SessionView = {
   options: MatchOptions;
   // True while a lock holds: from the lock until the live game ends.
   locked: boolean;
+  // The time limit for the next game. Each game keeps the limit it started with.
   clock: TimeControl;
   // Server time when the view was made. Pages use it to correct their own clock.
   now: number;
@@ -37,12 +38,12 @@ export type SessionView = {
 export type SessionUpdate = { name?: string; clock?: TimeControl } & Partial<MatchOptions>;
 
 export function toGame(record: GameRecord): Game {
-  const game = replay(record.moves, 'X', record.times);
+  const game = replay(record.moves, { times: record.times, clock: record.clock });
   return record.timedOut ? timeOut(game) : game;
 }
 
 export function toRecord(game: Game): GameRecord {
-  return { moves: [...game.moves], times: [...game.times], timedOut: game.status.kind === 'timeout' };
+  return { moves: [...game.moves], times: [...game.times], clock: game.clock, timedOut: game.status.kind === 'timeout' };
 }
 
 export type MoveRequest = { game: number; moveCount: number; cell: number };
@@ -77,13 +78,14 @@ export function isMoveList(value: unknown): value is number[] {
 
 export function isGameRecord(value: unknown): value is GameRecord {
   if (!isRecord(value)) return false;
-  const { moves, times, timedOut } = value;
+  const { moves, times, timedOut, clock } = value;
   return (
     isMoveList(moves) &&
     Array.isArray(times) &&
     times.length === moves.length &&
     times.every((time) => typeof time === 'number' && Number.isFinite(time)) &&
-    typeof timedOut === 'boolean'
+    typeof timedOut === 'boolean' &&
+    parseClock(clock) !== undefined
   );
 }
 

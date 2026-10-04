@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { parseClock } from '../src/clock.ts';
+import { NO_LIMIT, parseClock } from '../src/clock.ts';
 import {
   type Code,
   type PlayerToken,
@@ -83,8 +83,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (method !== 'POST') throw new StoreError(405, 'Method not allowed.');
     const body = await readJson(req);
     const fields: Record<string, unknown> = typeof body === 'object' && body !== null ? { ...body } : {};
-    const clock = fields.clock === undefined ? { kind: 'off' as const } : parseClock(fields.clock);
-    if (clock === undefined) throw new StoreError(400, 'The clock is not one of the presets.');
+    const clock = fields.clock === undefined ? NO_LIMIT : parseClock(fields.clock);
+    if (clock === undefined) throw new StoreError(400, 'The time limit is out of range.');
     const name = typeof fields.name === 'string' ? fields.name : '';
     return send(res, 201, store.create(requirePlayer(req), name, clock));
   }
@@ -105,7 +105,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     case 'PATCH ': {
       const changes = parseSessionUpdate(await readJson(req));
       if (changes === undefined) {
-        throw new StoreError(400, 'An update needs a name of 1 to 40 characters, hideBoard, hideHistory or a clock preset.');
+        throw new StoreError(400, 'An update needs a name of 1 to 40 characters, hideBoard, hideHistory or a valid clock.');
       }
       return mutate(store.update(code, requirePlayer(req), changes));
     }

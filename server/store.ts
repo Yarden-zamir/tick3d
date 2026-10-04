@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { CLOCK_PRESETS, type TimeControl, clockKey, isFlagged, parseClock } from '../src/clock.ts';
+import { LIMIT_RANGE, NO_LIMIT, type TimeControl, isFlagged, parseClock } from '../src/clock.ts';
 import { type Game, type Player, other, play, timeOut } from '../src/game.ts';
 import {
   CODE_ALPHABET,
@@ -37,7 +37,8 @@ type Row = {
   hide_board: number;
   hide_history: number;
   locked_game: number | null;
-  clock: string;
+  clock_move: number | null;
+  clock_game: number | null;
   version: number;
 };
 
@@ -54,16 +55,17 @@ function isRow(value: unknown): value is Row {
     typeof row.hide_board === 'number' &&
     typeof row.hide_history === 'number' &&
     (row.locked_game === null || typeof row.locked_game === 'number') &&
-    typeof row.clock === 'string' &&
+    (row.clock_move === null || typeof row.clock_move === 'number') &&
+    (row.clock_game === null || typeof row.clock_game === 'number') &&
     typeof row.version === 'number'
   );
 }
 
-const EMPTY_RECORD: GameRecord = { moves: [], times: [], timedOut: false };
+const emptyRecord = (clock: TimeControl): GameRecord => ({ moves: [], times: [], clock, timedOut: false });
 
 function schema(maxSessions: number): string {
   if (!Number.isInteger(maxSessions) || maxSessions < 1) throw new RangeError(`maxSessions must be >= 1: ${maxSessions}`);
-  const clockKeys = CLOCK_PRESETS.map((preset) => `'${clockKey(preset)}'`).join(', ');
+  const { perMove, perGame } = LIMIT_RANGE;
   return `
     CREATE TABLE IF NOT EXISTS sessions (
       code TEXT PRIMARY KEY CHECK (length(code) = ${CODE_LENGTH}),
@@ -75,7 +77,9 @@ function schema(maxSessions: number): string {
       hide_history INTEGER NOT NULL DEFAULT 0 CHECK (hide_history IN (0, 1)),
       -- Index of the game that the lock holds. The lock ends when that game ends.
       locked_game INTEGER CHECK (locked_game >= 0),
-      clock TEXT NOT NULL DEFAULT 'off' CHECK (clock IN (${clockKeys})),
+      -- The time limit for the next game, in seconds. NULL means no limit of that kind.
+      clock_move INTEGER CHECK (clock_move BETWEEN ${perMove.min} AND ${perMove.max}),
+      clock_game INTEGER CHECK (clock_game BETWEEN ${perGame.min} AND ${perGame.max}),
       version INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -113,7 +117,7 @@ function parseGames(row: Row): GameRecord[] {
 }
 
 function clockOf(row: Row): TimeControl {
-  const clock = parseClock(row.clock);
+  const clock = parseClock({ perMove: row.clock_move, perGame: row.clock_game });
   if (clock === undefined) throw new Error(`stored clock is not valid for session ${row.code}`);
   return clock;
 }
@@ -137,15 +141,16 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS, now:
   db.exec(schema(maxSessions));
 
   const select = db.prepare(
-    `SELECT code, name, games, seat_x, seat_o, hide_board, hide_history, locked_game, clock, version
+    `SELECT code, name, games, seat_x, seat_o, hide_board, hide_history, locked_game, clock_move, clock_game, version
      FROM sessions WHERE code = ?`,
   );
   const insert = db.prepare(
-    'INSERT INTO sessions (code, name, games, seat_x, clock, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    `INSERT INTO sessions (code, name, games, seat_x, clock_move, clock_game, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const update = db.prepare(
     `UPDATE sessions SET name = ?, games = ?, seat_x = ?, seat_o = ?, hide_board = ?, hide_history = ?, locked_game = ?,
-     clock = ?, version = version + 1, updated_at = ? WHERE code = ?`,
+     clock_move = ?, clock_game = ?, version = version + 1, updated_at = ? WHERE code = ?`,
   );
 
   function loadRaw(code: Code): Row {
@@ -161,7 +166,7 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS, now:
     const row = loadRaw(code);
     const games = parseGames(row);
     const game = currentGame(games);
-    if (!isFlagged(clockOf(row), game, now())) return row;
+    if (!isFlagged(game, now())) return row;
     games[games.length - 1] = toRecord(timeOut(game));
     return save(row, { games: JSON.stringify(games) });
   }
@@ -178,7 +183,8 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS, now:
       next.hide_board,
       next.hide_history,
       next.locked_game,
-      next.clock,
+      next.clock_move,
+      next.clock_game,
       now(),
       row.code,
     );
@@ -209,14 +215,15 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS, now:
 
   return {
     // The creator takes seat X, so the creator moves first in the first game.
-    create(player: PlayerToken, name: string, clock: TimeControl = { kind: 'off' }): SessionView {
+    create(player: PlayerToken, name: string, clock: TimeControl = NO_LIMIT): SessionView {
       const validName = normalizeName(name);
       if (validName === undefined) throw new StoreError(400, 'A name needs 1 to 40 characters.');
       for (let attempt = 0; attempt < 20; attempt++) {
         const code = newCode();
         try {
           const time = now();
-          insert.run(code, validName, JSON.stringify([EMPTY_RECORD]), player, clockKey(clock), time, time);
+          const games = JSON.stringify([emptyRecord(clock)]);
+          insert.run(code, validName, games, player, clock.perMove, clock.perGame, time, time);
           return view(load(code), player);
         } catch (error) {
           const duplicate = error instanceof Error && 'errcode' in error && error.errcode === 1555;
@@ -265,7 +272,7 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS, now:
       if (games.length >= MAX_GAMES_PER_SESSION) {
         throw new StoreError(409, `A session holds ${MAX_GAMES_PER_SESSION} games. Start a new code.`);
       }
-      return view(save(row, { games: JSON.stringify([...games, EMPTY_RECORD]) }), player);
+      return view(save(row, { games: JSON.stringify([...games, emptyRecord(clockOf(row))]) }), player);
     },
 
     // The name stays open during a lock. The match options and the clock do not.
@@ -276,16 +283,20 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS, now:
       const changesMatch =
         changes.hideBoard !== undefined || changes.hideHistory !== undefined || changes.clock !== undefined;
       if (changesMatch && isLocked(row, games)) throw new StoreError(409, 'Settings are locked until this game ends.');
-      // A new clock in the middle of a game would change time that is already spent.
-      const game = currentGame(games);
-      if (changes.clock !== undefined && game.status.kind === 'playing' && game.moves.length > 0) {
-        throw new StoreError(409, 'Change the clock before the first move or after the game ends.');
-      }
       const next: Changes = {};
       if (changes.name !== undefined) next.name = changes.name;
       if (changes.hideBoard !== undefined) next.hide_board = changes.hideBoard ? 1 : 0;
       if (changes.hideHistory !== undefined) next.hide_history = changes.hideHistory ? 1 : 0;
-      if (changes.clock !== undefined) next.clock = clockKey(changes.clock);
+      if (changes.clock !== undefined) {
+        next.clock_move = changes.clock.perMove;
+        next.clock_game = changes.clock.perGame;
+        // A game keeps the limit it started with. A game without moves has not started yet.
+        const live = games.at(-1);
+        if (live !== undefined && live.moves.length === 0 && !live.timedOut) {
+          games[games.length - 1] = emptyRecord(changes.clock);
+          next.games = JSON.stringify(games);
+        }
+      }
       return view(save(row, next), player);
     },
 

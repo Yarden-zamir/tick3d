@@ -119,10 +119,41 @@
           </div>
         </div>
 
-        <label class="field">
+        <div class="field clock-editor">
           <span class="label">Time limit</span>
-          <select id="clock"></select>
-        </label>
+          <div class="limit" data-limit="perGame">
+            <label class="limit-switch">
+              <input type="checkbox" data-limit-on />
+              <span>Per player, whole game</span>
+            </label>
+            <div class="limit-row">
+              <input type="number" data-limit-value inputmode="decimal" min="0.5" max="120" step="0.5" aria-label="Minutes per player" />
+              <span class="unit">min</span>
+              <div class="chips">
+                <button type="button" data-preset="60">1m</button>
+                <button type="button" data-preset="180">3m</button>
+                <button type="button" data-preset="300">5m</button>
+                <button type="button" data-preset="600">10m</button>
+              </div>
+            </div>
+          </div>
+          <div class="limit" data-limit="perMove">
+            <label class="limit-switch">
+              <input type="checkbox" data-limit-on />
+              <span>Per move</span>
+            </label>
+            <div class="limit-row">
+              <input type="number" data-limit-value inputmode="numeric" min="3" max="600" step="1" aria-label="Seconds per move" />
+              <span class="unit">sec</span>
+              <div class="chips">
+                <button type="button" data-preset="10">10s</button>
+                <button type="button" data-preset="30">30s</button>
+                <button type="button" data-preset="60">1m</button>
+              </div>
+            </div>
+          </div>
+          <p class="clock-summary" id="clock-summary"></p>
+        </div>
 
         <div class="field">
           <span class="label">Hide</span>
@@ -152,7 +183,7 @@
           <p>Take turns to place a mark. Get four in a straight line to win.</p>
           <p>Lines can run along a layer, up through the layers, or diagonally through the cube. There are 76 lines.</p>
           <p>Point at a cell to light up the cells above and below it.</p>
-          <p>With a time limit, a player who runs out of time loses. The first move of each player is untimed.</p>
+          <p>Time limits work like a chess clock. Set a limit for each player's whole game, a limit per move, or both. A player who runs out of either limit loses. The first move of each player is untimed. A change during a game starts with the next game.</p>
           <p>Lock settings keeps every setting, the view included, until the game ends. Online, the lock and the hide options apply to both players.</p>
         </details>
       </aside>

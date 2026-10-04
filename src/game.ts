@@ -1,3 +1,5 @@
+import type { TimeControl } from './clock.ts';
+
 // Rules for 3D tic-tac-toe on a 4x4x4 cube (also known as Qubic).
 // A cell is an index 0..63: layer * 16 + row * 4 + column.
 
@@ -25,6 +27,8 @@ export type Game = {
   moves: readonly number[];
   // When each move happened, in epoch milliseconds. The clock reads these.
   times: readonly number[];
+  // The time limit this game is played with. It never changes during the game.
+  clock: TimeControl;
 };
 
 export type MoveError = 'occupied' | 'game-over';
@@ -111,7 +115,7 @@ export function emptyCells(board: Board): number[] {
   return cells;
 }
 
-export function newGame(first: Player = 'X'): Game {
+export function newGame(first: Player = 'X', clock: TimeControl = { perMove: null, perGame: null }): Game {
   return {
     board: Array<Mark>(CELL_COUNT).fill(null),
     turn: first,
@@ -119,6 +123,7 @@ export function newGame(first: Player = 'X'): Game {
     status: { kind: 'playing' },
     moves: [],
     times: [],
+    clock,
   };
 }
 
@@ -145,11 +150,13 @@ export function timeOut(game: Game): Game {
   return { ...game, status: { kind: 'timeout', winner: other(game.turn) } };
 }
 
+type ReplayOptions = { first?: Player; times?: readonly number[]; clock?: TimeControl };
+
 // Replays a move list from an empty board. Throws if a move is not legal.
 // Without `times`, every move gets time 0, which is fine for positions that no clock reads.
-export function replay(moves: readonly number[], first: Player = 'X', times?: readonly number[]): Game {
+export function replay(moves: readonly number[], { first = 'X', times, clock }: ReplayOptions = {}): Game {
   if (times !== undefined && times.length !== moves.length) throw new Error('times and moves differ in length');
-  let game = newGame(first);
+  let game = newGame(first, clock);
   for (const [i, cell] of moves.entries()) {
     const result = play(game, cell, times?.[i] ?? 0);
     if (!result.ok) throw new Error(`move history is not valid: ${result.error} at cell ${cell}`);
@@ -162,7 +169,7 @@ export function replay(moves: readonly number[], first: Player = 'X', times?: re
 export function undo(game: Game, count: number): Game {
   if (!Number.isInteger(count) || count < 0) throw new RangeError(`undo count must be >= 0, got ${count}`);
   const keep = Math.max(0, game.moves.length - count);
-  return replay(game.moves.slice(0, keep), game.first, game.times.slice(0, keep));
+  return replay(game.moves.slice(0, keep), { first: game.first, times: game.times.slice(0, keep), clock: game.clock });
 }
 
 // Reads "layer row column" typed by a player, 1-based: "234", "2 3 4" and "2,3,4" all work.

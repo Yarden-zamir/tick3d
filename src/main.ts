@@ -2,14 +2,17 @@ import './style.css';
 import { chooseMove, DIFFICULTIES, type Difficulty } from './ai.ts';
 import { type CardInput, drawCard, saveImage, shareImage } from './card.ts';
 import {
-  CLOCK_PRESETS,
+  LIMIT_RANGE,
+  NO_LIMIT,
   type TimeControl,
-  clockKey,
   describeClock,
   formatClock,
+  formatDuration,
+  hasLimit,
   isFlagged,
   parseClock,
   remaining,
+  sameClock,
 } from './clock.ts';
 import {
   CELL_COUNT,
@@ -62,7 +65,7 @@ const DEFAULTS: Settings = {
   layout: 'grid',
   hideBoard: false,
   hideHistory: false,
-  clock: { kind: 'off' },
+  clock: NO_LIMIT,
   muted: false,
 };
 const STORAGE_KEY = 'tick3d.settings';
@@ -76,8 +79,7 @@ type Refusal =
   | 'spectator'
   | 'reviewing'
   | 'no-session'
-  | 'locked'
-  | 'clock-mid-game';
+  | 'locked';
 const REFUSAL_TEXT: Record<Refusal, string> = {
   occupied: 'That cell is taken. Pick an empty cell.',
   'game-over': 'The game is over. Start a new game.',
@@ -87,7 +89,6 @@ const REFUSAL_TEXT: Record<Refusal, string> = {
   reviewing: 'You are looking at an old position. Go back to the live game first.',
   'no-session': 'Create an online game or join one with a code first.',
   locked: 'Settings are locked until this game ends.',
-  'clock-mid-game': 'Change the clock before the first move or after the game ends.',
 };
 
 function oneOf<T extends string>(options: readonly T[], value: unknown, fallback: T): T {
@@ -153,7 +154,7 @@ const newGameButton = element('#new-game', HTMLButtonElement);
 const undoButton = element('#undo', HTMLButtonElement);
 const soundButton = element('#sound', HTMLButtonElement);
 const lockButton = element('#lock', HTMLButtonElement);
-const clockSelect = element('#clock', HTMLSelectElement);
+const clockSummary = element('#clock-summary', HTMLParagraphElement);
 const clocksEl = element('#clocks', HTMLDivElement);
 const clockNote = element('#clock-note', HTMLSpanElement);
 const showCardButton = element('#show-card', HTMLButtonElement);
@@ -179,7 +180,7 @@ type Online = {
 
 const settings = loadSettings();
 // The session: every game played with the current settings. The last game is the live one.
-let games: Game[] = [newGame()];
+let games: Game[] = [newGame('X', settings.clock)];
 let online: Online | undefined;
 let review: { game: number; move: number } | undefined;
 // The lock for local games. Online sessions keep their lock on the server, for both players.
@@ -213,7 +214,8 @@ function matchOptions(): MatchOptions {
   return online ? online.options : { hideBoard: settings.hideBoard, hideHistory: settings.hideHistory };
 }
 
-function matchClock(): TimeControl {
+// The time limit for the next game. The live game keeps its own limit in `current().clock`.
+function nextClock(): TimeControl {
   return online ? online.clock : settings.clock;
 }
 
@@ -268,22 +270,27 @@ function highlightColumn(cell: number | undefined): void {
 
 // ---- Feedback ----
 
-function showToast(text: string): void {
+function showToast(text: string, tone: 'info' | 'problem' = 'info'): void {
   toastEl.textContent = text;
+  toastEl.dataset.tone = tone;
   toastEl.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
 }
 
+// A refused action: error sound and a red message.
+function showProblem(text: string): void {
+  sounds.invalid();
+  showToast(text, 'problem');
+}
+
 function showError(error: unknown): void {
   if (!(error instanceof OnlineError)) throw error;
-  sounds.invalid();
-  showToast(error.message);
+  showProblem(error.message);
 }
 
 function reject(cell: number | undefined, reason: Refusal): void {
-  sounds.invalid();
-  showToast(REFUSAL_TEXT[reason]);
+  showProblem(REFUSAL_TEXT[reason]);
   if (cell === undefined) return;
   const button = cellButton(cell);
   button.classList.remove('shake');
@@ -390,21 +397,22 @@ function startLocalGame(): void {
   thinking = false;
   review = undefined;
   localLocked = false;
-  games = current().moves.length === 0 ? [...games.slice(0, -1), newGame()] : [...games, newGame()];
+  const next = newGame('X', settings.clock);
+  games = current().moves.length === 0 ? [...games.slice(0, -1), next] : [...games, next];
   burstEl.replaceChildren();
   render();
   scheduleComputer();
 }
 
 function resetLocalSession(): void {
-  games = [newGame()];
+  games = [newGame('X', settings.clock)];
   startLocalGame();
 }
 
 function undoMove(): void {
   if (settings.mode === 'online' || thinking || review || !isLive() || current().moves.length === 0) return;
   // Undo would hand back time that the clock already counted, so a timed game has no undo.
-  if (matchClock().kind !== 'off') return;
+  if (hasLimit(current().clock)) return;
   if (settingsLocked()) return reject(undefined, 'locked');
   // Against the computer, go back to the last position where it was the human's turn.
   const count = settings.mode === 'computer' ? 2 : 1;
@@ -434,7 +442,10 @@ function applyView(view: SessionView): void {
   const previous = online;
   online = { ...view, unsubscribe: online.unsubscribe };
   const after = current();
-  if (clockKey(online.clock) !== clockKey(previous.clock)) showToast(`Clock: ${describeClock(online.clock)}.`);
+  if (!sameClock(online.clock, previous.clock)) {
+    const startsLater = after.status.kind === 'playing' && after.moves.length > 0;
+    showToast(`Time limit${startsLater ? ' for the next game' : ''}: ${describeClock(online.clock)}.`);
+  }
   if (online.locked && !previous.locked) showToast('Settings are locked for both players until this game ends.');
   for (const [option, label] of [['hideBoard', 'Hide board'], ['hideHistory', 'Hide all but last move']] as const) {
     if (online.options[option] !== previous.options[option]) {
@@ -622,7 +633,7 @@ function shownGame(): Game {
   if (review === undefined) return current();
   const reviewed = games[review.game];
   if (reviewed === undefined) throw new Error(`no game ${review.game} to review`);
-  return replay(reviewed.moves.slice(0, review.move), reviewed.first);
+  return replay(reviewed.moves.slice(0, review.move), { first: reviewed.first, clock: reviewed.clock });
 }
 
 function render(): void {
@@ -730,11 +741,9 @@ function render(): void {
   newGameButton.disabled = frozen || busy || thinking || onlineWithoutSeat || (settings.mode === 'online' && isLive());
   undoButton.hidden = settings.mode === 'online';
   undoButton.disabled =
-    frozen || thinking || review !== undefined || !isLive() || current().moves.length === 0 || matchClock().kind !== 'off';
+    frozen || thinking || review !== undefined || !isLive() || current().moves.length === 0 || hasLimit(current().clock);
   showCardButton.hidden = isLive() || review !== undefined;
-  clockSelect.value = clockKey(matchClock());
-  clockSelect.disabled =
-    frozen || busy || !canChangeMatch() || (online !== undefined && isLive() && current().moves.length > 0);
+  renderClockEditor(frozen);
   renderClocks();
   lockButton.disabled = frozen || busy || !isLive() || review !== undefined || !canChangeMatch();
   const lockScope = online ? ' for both players' : '';
@@ -747,19 +756,22 @@ function render(): void {
 // ---- Clock ----
 
 function renderClocks(): void {
-  const control = matchClock();
   const game = current();
-  const left = remaining(control, game, nowMs());
+  const left = remaining(game, nowMs());
   clocksEl.hidden = left === null || review !== undefined || (settings.mode === 'online' && online === undefined);
   if (left === null) return;
   const live = game.status.kind === 'playing';
   clocksEl.querySelectorAll<HTMLElement>('[data-clock]').forEach((chip) => {
     const player: Player = chip.dataset.clock === 'X' ? 'X' : 'O';
     const active = live && game.turn === player && game.moves.length >= 2;
-    chip.textContent = `${playerName(player)} · ${formatClock(left[player])}`;
+    const clock = left[player];
+    // The game limit is the main figure. With both limits, the active player also sees the move limit.
+    const main = clock.game ?? clock.move ?? clock.left;
+    const both = clock.game !== null && clock.move !== null;
+    chip.textContent = `${playerName(player)} · ${formatClock(main)}${both && active ? ` · move ${formatClock(clock.move ?? 0)}` : ''}`;
     chip.classList.toggle('active', active);
-    chip.classList.toggle('low', active && left[player] <= 10_000);
-    chip.classList.toggle('out', left[player] <= 0);
+    chip.classList.toggle('low', active && clock.left <= 10_000);
+    chip.classList.toggle('out', clock.left <= 0);
   });
   clockNote.hidden = !live || game.moves.length >= 2;
 }
@@ -767,11 +779,10 @@ function renderClocks(): void {
 // Runs 5 times a second: redraws the clocks, ticks in the last 10 seconds, and ends a game on time.
 function tickClock(): void {
   renderClocks();
-  const control = matchClock();
   const game = current();
-  if (control.kind === 'off' || game.status.kind !== 'playing') return;
+  if (!hasLimit(game.clock) || game.status.kind !== 'playing') return;
   const now = nowMs();
-  if (isFlagged(control, game, now)) {
+  if (isFlagged(game, now)) {
     if (online === undefined) {
       round++; // drops a computer move in progress
       thinking = false;
@@ -786,7 +797,7 @@ function tickClock(): void {
     }
     return;
   }
-  const left = remaining(control, game, now)?.[game.turn];
+  const left = remaining(game, now)?.[game.turn].left;
   if (left === undefined || game.moves.length < 2 || left > 10_000) return;
   const second = Math.ceil(left / 1000);
   if (second !== lastTickSecond) {
@@ -795,31 +806,96 @@ function tickClock(): void {
   }
 }
 
-clockSelect.replaceChildren(...CLOCK_PRESETS.map((preset) => new Option(describeClock(preset), clockKey(preset))));
+// The editor shows minutes for the game limit and seconds for the move limit.
+const LIMIT_SCALE: Record<LimitKind, number> = { perGame: 60, perMove: 1 };
+type LimitKind = keyof TimeControl;
+// The last value of each limit, so a limit that is switched off comes back with the same value.
+const lastLimit: Record<LimitKind, number> = { perGame: 300, perMove: 30 };
 
-clockSelect.addEventListener('change', () => {
-  const clock = parseClock(clockSelect.value);
-  if (clock === undefined) throw new Error(`unknown clock ${clockSelect.value}`);
+function limitControls(kind: LimitKind) {
+  const box = element(`[data-limit="${kind}"]`, HTMLDivElement);
+  const on = box.querySelector('[data-limit-on]');
+  const value = box.querySelector('[data-limit-value]');
+  if (!(on instanceof HTMLInputElement) || !(value instanceof HTMLInputElement)) {
+    throw new Error(`time limit editor for ${kind} is incomplete`);
+  }
+  return { on, value, presets: [...box.querySelectorAll<HTMLButtonElement>('[data-preset]')] };
+}
+
+const limitEditors: Record<LimitKind, ReturnType<typeof limitControls>> = {
+  perGame: limitControls('perGame'),
+  perMove: limitControls('perMove'),
+};
+
+function renderClockEditor(frozen: boolean): void {
+  const next = nextClock();
+  const disabled = frozen || busy || !canChangeMatch();
+  for (const kind of ['perGame', 'perMove'] as const) {
+    const { on, value, presets } = limitEditors[kind];
+    const seconds = next[kind];
+    if (seconds !== null) lastLimit[kind] = seconds;
+    on.checked = seconds !== null;
+    on.disabled = disabled;
+    if (document.activeElement !== value) value.value = String((seconds ?? lastLimit[kind]) / LIMIT_SCALE[kind]);
+    value.disabled = disabled || seconds === null;
+    for (const preset of presets) {
+      preset.setAttribute('aria-pressed', String(Number(preset.dataset.preset) === seconds));
+      preset.disabled = disabled;
+    }
+  }
+  const game = current();
+  const pending = game.status.kind === 'playing' && game.moves.length > 0 && !sameClock(game.clock, next);
+  clockSummary.textContent = pending
+    ? `This game: ${describeClock(game.clock)}. Next game: ${describeClock(next)}.`
+    : describeClock(next);
+}
+
+function applyClock(clock: TimeControl): void {
   if (settingsLocked()) {
     render();
     return reject(undefined, 'locked');
   }
+  if (sameClock(clock, nextClock())) return render();
   sounds.click();
   settings.clock = clock;
   saveSettings();
-  // Locally the clock is a match-up setting like the difficulty, so it starts a fresh session.
-  if (online === undefined) return resetLocalSession();
+  if (online === undefined) {
+    // A game keeps the limit it started with. A game without moves has not started yet.
+    const game = current();
+    if (game.status.kind === 'playing' && game.moves.length === 0) setCurrent({ ...game, clock });
+    else if (game.status.kind === 'playing') showToast('The new time limit starts with the next game.');
+    return render();
+  }
   if (online.you === null) {
     render();
     return reject(undefined, 'spectator');
   }
-  if (isLive() && current().moves.length > 0) {
-    render();
-    return reject(undefined, 'clock-mid-game');
-  }
   const code = online.code;
   void withBusy(async () => applyView(await api.update(code, { clock })));
-});
+}
+
+function setLimit(kind: LimitKind, seconds: number | null): void {
+  const { min, max } = LIMIT_RANGE[kind];
+  if (seconds !== null && (!Number.isInteger(seconds) || seconds < min || seconds > max)) {
+    const what = kind === 'perGame' ? 'The limit per player' : 'The limit per move';
+    showProblem(`${what} goes from ${formatDuration(min)} to ${formatDuration(max)}.`);
+    return render();
+  }
+  const next = nextClock();
+  applyClock(kind === 'perGame' ? { ...next, perGame: seconds } : { ...next, perMove: seconds });
+}
+
+for (const kind of ['perGame', 'perMove'] as const) {
+  const { on, value, presets } = limitEditors[kind];
+  on.addEventListener('change', () => setLimit(kind, on.checked ? lastLimit[kind] : null));
+  value.addEventListener('change', () => {
+    const amount = Number(value.value.replace(',', '.'));
+    setLimit(kind, value.value.trim() === '' || !Number.isFinite(amount) ? NaN : Math.round(amount * LIMIT_SCALE[kind]));
+  });
+  for (const preset of presets) {
+    preset.addEventListener('click', () => setLimit(kind, Number(preset.dataset.preset)));
+  }
+}
 
 // ---- End card ----
 
@@ -858,7 +934,7 @@ function cardInput(game: Game, index: number): CardInput {
     title,
     subtitle,
     matchup,
-    details: `Game ${index + 1} · ${describeClock(matchClock())}${duration}`,
+    details: `Game ${index + 1} · ${describeClock(game.clock)}${duration}`,
     date: new Date(last > 0 ? last - serverOffset : Date.now()),
     footer: cardInclude.checked ? (online ? `Code ${online.code} · ${link}` : link) : '',
   };
@@ -1006,8 +1082,7 @@ coordsForm.addEventListener('submit', (event) => {
   event.preventDefault();
   const coords = parseCoordinates(coordsInput.value);
   if (coords === undefined) {
-    sounds.invalid();
-    showToast('Type three numbers from 1 to 4: layer, row, column.');
+    showProblem('Type three numbers from 1 to 4: layer, row, column.');
     return;
   }
   coordsInput.value = '';
@@ -1019,8 +1094,7 @@ joinForm.addEventListener('submit', (event) => {
   if (settingsLocked()) return reject(undefined, 'locked');
   const code = normalizeCode(joinCodeInput.value);
   if (code === undefined) {
-    sounds.invalid();
-    showToast('A code has 4 letters or digits.');
+    showProblem('A code has 4 letters or digits.');
     return;
   }
   joinCodeInput.value = '';
@@ -1039,8 +1113,7 @@ sessionNameInput.addEventListener('change', () => {
   if (online === undefined) return;
   const name = normalizeName(sessionNameInput.value);
   if (name === undefined) {
-    sounds.invalid();
-    showToast('A name needs 1 to 40 characters.');
+    showProblem('A name needs 1 to 40 characters.');
     sessionNameInput.value = online.name;
     return;
   }
