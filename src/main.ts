@@ -65,6 +65,8 @@ type Settings = {
   hideBoard: boolean;
   hideHistory: boolean;
   muted: boolean;
+  // The tower's turn around its vertical axis, in degrees. Dragging the tower sets it.
+  spin: number;
   theme: Theme;
 };
 type Toggle = 'hideBoard' | 'hideHistory';
@@ -78,6 +80,7 @@ const DEFAULTS: Settings = {
   hideBoard: false,
   hideHistory: false,
   muted: false,
+  spin: 45,
   theme: 'light',
 };
 const STORAGE_KEY = 'tick3d.settings';
@@ -104,6 +107,9 @@ function oneOf<T extends string>(options: readonly T[], value: unknown, fallback
 }
 
 const bool = (value: unknown, fallback: boolean) => (typeof value === 'boolean' ? value : fallback);
+const wrapSpin = (spin: number) => ((spin % 360) + 360) % 360;
+const finite = (value: unknown, fallback: number) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
 // Stored settings come from an older visit or a hand edit, so check every field.
 function loadSettings(): Settings {
@@ -123,6 +129,7 @@ function loadSettings(): Settings {
     hideBoard: bool(stored.hideBoard, DEFAULTS.hideBoard),
     hideHistory: bool(stored.hideHistory, DEFAULTS.hideHistory),
     muted: bool(stored.muted, DEFAULTS.muted),
+    spin: wrapSpin(finite(stored.spin, DEFAULTS.spin)),
     theme: oneOf(THEMES, stored.theme, DEFAULTS.theme),
   };
 }
@@ -166,6 +173,7 @@ const newGameButton = element('#new-game', HTMLButtonElement);
 const undoButton = element('#undo', HTMLButtonElement);
 const soundButton = element('#sound', HTMLButtonElement);
 const lockButton = element('#lock', HTMLButtonElement);
+const resetAngleButton = element('#reset-angle', HTMLButtonElement);
 const themeColorMeta = element('meta[name="theme-color"]', HTMLMetaElement);
 const themeMenu = element('#theme-menu', HTMLDetailsElement);
 const themeSwatch = element('#theme-swatch', HTMLSpanElement);
@@ -263,6 +271,85 @@ function highlightColumn(cell: number | undefined): void {
     button.classList.toggle('peer', target !== undefined && row === target.row && column === target.column);
   });
 }
+
+// ---- Tower camera ----
+
+// The tower only turns around its vertical axis: the tilt stays at the resting view.
+// Degrees of turn per pixel dragged sideways.
+const DRAG_SPIN = 0.4;
+// A press counts as a drag after this many pixels sideways, so a tap still places a mark.
+const DRAG_THRESHOLD = 6;
+
+function applyCamera(): void {
+  boardEl.style.setProperty('--spin', `${settings.spin}deg`);
+  resetAngleButton.disabled = settings.spin === DEFAULTS.spin;
+}
+
+type Drag = { pointer: number; x: number; spin: number; moved: boolean };
+let drag: Drag | undefined;
+let dragFrame = 0;
+// The click that ends a drag must not place a mark.
+let swallowClick = false;
+
+boardEl.addEventListener('pointerdown', (event) => {
+  if (settings.view !== 'tower' || !event.isPrimary || event.button !== 0) return;
+  drag = { pointer: event.pointerId, x: event.clientX, spin: settings.spin, moved: false };
+});
+
+boardEl.addEventListener('pointermove', (event) => {
+  if (drag === undefined || event.pointerId !== drag.pointer) return;
+  const dx = event.clientX - drag.x;
+  if (!drag.moved) {
+    if (Math.abs(dx) < DRAG_THRESHOLD) return;
+    drag.moved = true;
+    boardEl.dataset.dragging = '';
+    boardEl.setPointerCapture(event.pointerId);
+    highlightColumn(undefined);
+  }
+  settings.spin = wrapSpin(drag.spin + dx * DRAG_SPIN);
+  // One style update per frame, however fast the pointer events come.
+  if (dragFrame === 0) {
+    dragFrame = requestAnimationFrame(() => {
+      dragFrame = 0;
+      applyCamera();
+    });
+  }
+});
+
+function endDrag(event: PointerEvent): void {
+  if (drag === undefined || event.pointerId !== drag.pointer) return;
+  if (drag.moved) {
+    // A click follows pointerup in the same task, or not at all. Either way the flag ends here.
+    swallowClick = event.type === 'pointerup';
+    setTimeout(() => (swallowClick = false));
+    delete boardEl.dataset.dragging;
+    applyCamera();
+    saveSettings();
+  }
+  drag = undefined;
+}
+
+boardEl.addEventListener('pointerup', endDrag);
+// The browser takes over a touch that turns into a vertical scroll.
+boardEl.addEventListener('pointercancel', endDrag);
+
+boardEl.addEventListener(
+  'click',
+  (event) => {
+    if (!swallowClick) return;
+    swallowClick = false;
+    event.stopPropagation();
+    event.preventDefault();
+  },
+  true,
+);
+
+resetAngleButton.addEventListener('click', () => {
+  settings.spin = DEFAULTS.spin;
+  saveSettings();
+  sounds.click();
+  applyCamera();
+});
 
 // ---- Feedback ----
 
@@ -975,6 +1062,7 @@ soundButton.addEventListener('click', () => {
 
 setMuted(settings.muted);
 applyTheme();
+applyCamera();
 const linkCode = new URLSearchParams(location.search).get('code');
 if (linkCode !== null) {
   const code = normalizeCode(linkCode);
