@@ -129,14 +129,29 @@ export function play(game: Game, cell: number): MoveResult {
   return { ok: true, game: { ...game, board, moves, status, turn: other(game.turn) } };
 }
 
+// Replays a move list from an empty board. Throws if a move is not legal.
+export function replay(moves: readonly number[], first: Player = 'X'): Game {
+  let game = newGame(first);
+  for (const cell of moves) {
+    const result = play(game, cell);
+    if (!result.ok) throw new Error(`move history is not valid: ${result.error} at cell ${cell}`);
+    game = result.game;
+  }
+  return game;
+}
+
 // Replays all moves except the last `count`, so the result is always a reachable position.
 export function undo(game: Game, count: number): Game {
   if (!Number.isInteger(count) || count < 0) throw new RangeError(`undo count must be >= 0, got ${count}`);
-  let replay = newGame(game.first);
-  for (const cell of game.moves.slice(0, Math.max(0, game.moves.length - count))) {
-    const result = play(replay, cell);
-    if (!result.ok) throw new Error(`move history is not valid: ${result.error} at cell ${cell}`);
-    replay = result.game;
-  }
-  return replay;
+  return replay(game.moves.slice(0, Math.max(0, game.moves.length - count)), game.first);
+}
+
+// Reads "layer row column" typed by a player, 1-based: "234", "2 3 4" and "2,3,4" all work.
+export function parseCoordinates(text: string): Coords | undefined {
+  const parts = [...text].filter((char) => char !== ' ' && char !== ',');
+  if (parts.length !== 3) return undefined;
+  const values = parts.map(Number);
+  if (!values.every((value) => Number.isInteger(value) && value >= 1 && value <= SIZE)) return undefined;
+  const [layer, row, column] = values as [number, number, number];
+  return { layer: layer - 1, row: row - 1, column: column - 1 };
 }

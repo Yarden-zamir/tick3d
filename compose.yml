@@ -1,6 +1,8 @@
 services:
   site:
-    build: .
+    build:
+      context: .
+      target: site
     pull_policy: build
     environment:
       KITSHN_RECIPE: ${KITSHN_RECIPE}
@@ -10,6 +12,9 @@ services:
       KITSHN_DEFAULT_SOCKET: ${KITSHN_DEFAULT_SOCKET}
     volumes:
       - ${KITSHN_SOCKET_DIR}:${KITSHN_SOCKET_DIR}
+    depends_on:
+      api:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "test", "-S", "${KITSHN_DEFAULT_SOCKET}"]
       interval: 30s
@@ -17,3 +22,22 @@ services:
       retries: 5
       start_period: 10s
     restart: unless-stopped
+
+  # Online sessions: a Node API with a SQLite file on the sessions volume. Caddy in `site` proxies /api/* here.
+  api:
+    build:
+      context: .
+      target: api
+    pull_policy: build
+    volumes:
+      - sessions:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  sessions:

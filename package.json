@@ -8,9 +8,11 @@
     "dev": "vite",
     "check": "tsc",
     "test": "vitest run",
-    "build": "tsc && vite build"
+    "build": "tsc && vite build",
+    "api": "DB_PATH=./dev.db node server/main.ts"
   },
   "devDependencies": {
+    "@types/node": "^24.9.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.2",
     "vitest": "^5.0.3"
