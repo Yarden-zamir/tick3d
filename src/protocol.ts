@@ -1,4 +1,5 @@
 // Contract between the page and the online API. Both sides import this file.
+import { DIFFICULTIES, type Difficulty } from './ai.ts';
 import { type TimeControl, parseClock } from './clock.ts';
 import { CELL_COUNT, type Game, type Player, replay, timeOut } from './game.ts';
 
@@ -6,9 +7,7 @@ import { CELL_COUNT, type Game, type Player, replay, timeOut } from './game.ts';
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const CODE_LENGTH = 4;
 export const NAME_MAX_LENGTH = 40;
-export const MAX_SESSIONS = 10_000;
-// Each game holds at most 64 moves, so this caps one session row at about 100 kB.
-export const MAX_GAMES_PER_SESSION = 500;
+// Sessions and games per session have no limit. Add one when storage use calls for it.
 export const CHAT_MAX_LENGTH = 200;
 // A session keeps its newest messages only.
 export const CHAT_KEEP = 50;
@@ -20,6 +19,10 @@ export type PlayerToken = string & { readonly __brand: 'PlayerToken' };
 export type MatchOptions = { hideBoard: boolean; hideHistory: boolean };
 
 export type ChatMessage = { id: number; from: Player; text: string; at: number };
+// A GitHub account linked to a seat. Shown next to the seat, never required to play.
+export type PlayerInfo = { login: string; avatar: string };
+export const SESSION_MODES = ['online', 'computer', 'friend', 'nearby'] as const;
+export type SessionMode = (typeof SESSION_MODES)[number];
 // One game as stored: moves, the time of each move, its time limit, and whether the player to move ran out of time.
 export type GameRecord = { moves: number[]; times: number[]; clock: TimeControl; timedOut: boolean };
 
@@ -39,6 +42,10 @@ export type SessionView = {
   version: number;
   // Oldest first. Only the two players can write, everybody with the code can read.
   chat: ChatMessage[];
+  // Which seats have the session open right now. A seat that is away still plays: moves wait for it.
+  presence: Record<Player, boolean>;
+  // The GitHub account behind each seat, when its player logged in.
+  players: Record<Player, PlayerInfo | null>;
 };
 
 export type SessionUpdate = { name?: string; clock?: TimeControl } & Partial<MatchOptions>;
@@ -84,7 +91,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 const isCell = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < CELL_COUNT;
 
-function isChatMessage(value: unknown): value is ChatMessage {
+export function isChatMessage(value: unknown): value is ChatMessage {
   if (!isRecord(value)) return false;
   const { id, from, text, at } = value;
   return (
@@ -155,7 +162,7 @@ export function parseSessionView(value: unknown): SessionView {
   if (!isRecord(value)) return fail('body');
   const code = typeof value.code === 'string' ? normalizeCode(value.code) : undefined;
   const name = normalizeName(value.name);
-  const { games, seats, you, options, locked, now, version, chat } = value;
+  const { games, seats, you, options, locked, now, version, chat, presence, players } = value;
   const clock = parseClock(value.clock);
   if (code === undefined) return fail('code');
   if (name === undefined) return fail('name');
@@ -170,6 +177,11 @@ export function parseSessionView(value: unknown): SessionView {
   if (typeof now !== 'number' || !Number.isFinite(now)) return fail('now');
   if (typeof version !== 'number' || !Number.isInteger(version)) return fail('version');
   if (!Array.isArray(chat) || chat.length > CHAT_KEEP || !chat.every(isChatMessage)) return fail('chat');
+  if (!isRecord(presence) || typeof presence.X !== 'boolean' || typeof presence.O !== 'boolean') return fail('presence');
+  if (!isRecord(players)) return fail('players');
+  const playerX = players.X === null ? null : parsePlayerInfo(players.X);
+  const playerO = players.O === null ? null : parsePlayerInfo(players.O);
+  if (playerX === undefined || playerO === undefined) return fail('players');
   return {
     code,
     name,
@@ -182,5 +194,82 @@ export function parseSessionView(value: unknown): SessionView {
     now,
     version,
     chat: chat.map(({ id, from, text, at }) => ({ id, from, text, at })),
+    presence: { X: presence.X, O: presence.O },
+    players: { X: playerX, O: playerO },
   };
 }
+
+const GITHUB_LOGIN_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
+
+export function parsePlayerInfo(value: unknown): PlayerInfo | undefined {
+  if (!isRecord(value)) return undefined;
+  const { login, avatar } = value;
+  if (typeof login !== 'string' || login.length < 1 || login.length > 39) return undefined;
+  if (![...login].every((char) => GITHUB_LOGIN_CHARS.includes(char))) return undefined;
+  // Avatars come from GitHub only, so a page never loads an image from an address a player chose.
+  if (typeof avatar !== 'string' || !avatar.startsWith('https://avatars.githubusercontent.com/')) return undefined;
+  return { login, avatar };
+}
+
+// ---- Results of games played away from the server ----
+
+// A finished computer, friend or Nearby game, sent by the device that played it.
+// `id` is made on the device, so sending the same result twice stores it once.
+export type ResultUpload = {
+  id: string;
+  mode: Exclude<SessionMode, 'online'>;
+  game: GameRecord;
+  // The seat of this device's player. Null for a friend game, where one device plays both seats.
+  you: Player | null;
+  difficulty: Difficulty | null;
+  finishedAt: number;
+};
+
+// One upload carries at most this many results. A device sends more in several requests.
+export const RESULTS_PER_UPLOAD = 100;
+
+const RESULT_ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789-';
+
+export function parseResultUpload(value: unknown): ResultUpload | undefined {
+  if (!isRecord(value)) return undefined;
+  const { id, mode, game, you, difficulty, finishedAt } = value;
+  if (typeof id !== 'string' || id.length < 16 || id.length > 64 || ![...id].every((c) => RESULT_ID_CHARS.includes(c))) {
+    return undefined;
+  }
+  if (mode !== 'computer' && mode !== 'friend' && mode !== 'nearby') return undefined;
+  if (!isGameRecord(game)) return undefined;
+  // Only finished games count. Replaying also proves every move is legal.
+  let finished: Game;
+  try {
+    finished = toGame(game);
+  } catch {
+    return undefined;
+  }
+  if (finished.status.kind === 'playing') return undefined;
+  if (you !== null && you !== 'X' && you !== 'O') return undefined;
+  if (mode === 'friend' ? you !== null : you === null) return undefined;
+  const level = difficulty === null ? null : DIFFICULTIES.find((d) => d === difficulty);
+  if (level === undefined || (mode === 'computer') !== (level !== null)) return undefined;
+  if (typeof finishedAt !== 'number' || !Number.isFinite(finishedAt)) return undefined;
+  return { id, mode, game, you, difficulty: level, finishedAt };
+}
+
+// ---- My games ----
+
+export type Tally = { played: number; won: number; lost: number; drawn: number };
+export type SessionSummary = {
+  code: Code;
+  name: string;
+  games: number;
+  you: Player;
+  opponent: PlayerInfo | null;
+  yourTurn: boolean;
+  updatedAt: number;
+};
+export type MyGames = {
+  user: PlayerInfo | null;
+  total: Tally;
+  byMode: Record<SessionMode, Tally>;
+  byDifficulty: Record<Difficulty, Tally>;
+  sessions: SessionSummary[];
+};

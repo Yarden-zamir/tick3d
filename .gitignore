@@ -1,4 +1,4 @@
 /Caddyfile
 node_modules/
 dist/
-dev.db*
+dev.duckdb*

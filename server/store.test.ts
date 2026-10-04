@@ -1,232 +1,156 @@
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { mkdtemp } from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { TimeControl } from '../src/clock.ts';
-import { CHAT_KEEP, CODE_ALPHABET, type Code, MAX_SESSIONS, type PlayerToken } from '../src/protocol.ts';
-import { type Store, StoreError, openStore } from './store.ts';
+import { replay } from '../src/game.ts';
+import { type Code, type PlayerToken, type ResultUpload, toRecord } from '../src/protocol.ts';
+import { SessionError } from '../src/session/core.ts';
+import { type Store, openStore } from './store.ts';
 
 const alice = 'aaaaaaaa-0000-4000-8000-000000000001' as PlayerToken;
 const bob = 'bbbbbbbb-0000-4000-8000-000000000002' as PlayerToken;
 const carol = 'cccccccc-0000-4000-8000-000000000003' as PlayerToken;
+const alicePhone = 'dddddddd-0000-4000-8000-000000000004' as PlayerToken;
+const X_WINS = [0, 1, 16, 2, 32, 3, 48];
+const ALICE_GITHUB = { id: 101, login: 'alice', avatar: 'https://avatars.githubusercontent.com/u/101?v=4' };
 
 let store: Store;
 afterEach(() => store.close());
 
-function status(fn: () => unknown): number | undefined {
+async function status(fn: () => Promise<unknown>): Promise<number | undefined> {
   try {
-    fn();
+    await fn();
   } catch (error) {
-    if (error instanceof StoreError) return error.status;
+    if (error instanceof SessionError) return error.status;
     throw error;
   }
   return undefined;
 }
 
-function playedSession() {
-  store = openStore(':memory:');
-  const { code } = store.create(alice, 'Friday match');
-  store.join(code, bob);
+async function session(): Promise<Code> {
+  store = await openStore(':memory:');
+  const { code } = await store.create(alice, 'Friday match');
+  await store.join(code, bob);
   return code;
 }
 
+async function playMoves(code: Code, cells: number[], game = 0): Promise<void> {
+  for (const [moveCount, cell] of cells.entries()) {
+    await store.move(code, moveCount % 2 === 0 ? alice : bob, { game, moveCount, cell });
+  }
+}
+
+function result(id: string, overrides: Partial<ResultUpload> = {}): ResultUpload {
+  const game = toRecord(replay(X_WINS, { times: X_WINS.map((_, i) => 1_000 + i) }));
+  return { id, mode: 'computer', game, you: 'X', difficulty: 'hard', finishedAt: 2_000, ...overrides };
+}
+
 describe('sessions', () => {
-  it('creates a 4 character code and seats the creator as X', () => {
-    store = openStore(':memory:');
-    const view = store.create(alice, '  Friday match ');
+  it('creates a session with a 4 character code and the creator as X', async () => {
+    store = await openStore(':memory:');
+    const view = await store.create(alice, '  Friday match ');
     expect(view.code).toHaveLength(4);
-    expect([...view.code].every((c) => CODE_ALPHABET.includes(c))).toBe(true);
-    expect(view).toMatchObject({
-      name: 'Friday match',
-      you: 'X',
-      games: [{ moves: [], times: [], clock: { perMove: null, perGame: null }, timedOut: false }],
-      seats: { X: true, O: false },
-      clock: { perMove: null, perGame: null },
-    });
+    expect(view).toMatchObject({ name: 'Friday match', you: 'X', seats: { X: true, O: false }, chat: [], players: { X: null, O: null } });
   });
 
-  it('seats the second player as O and lets a third one watch', () => {
-    const code = playedSession();
-    expect(store.get(code, bob).you).toBe('O');
-    expect(status(() => store.join(code, carol))).toBe(409);
-    expect(store.get(code, carol).you).toBeNull();
+  it('returns 404 for an unknown code', async () => {
+    store = await openStore(':memory:');
+    expect(await status(() => store.get('ZZZZ' as Code, alice))).toBe(404);
   });
 
-  it('returns 404 for an unknown code', () => {
-    store = openStore(':memory:');
-    expect(status(() => store.get('ZZZZ' as Code, alice))).toBe(404);
+  it('keeps sessions, games and chat after the store reopens the same file', async () => {
+    const path = `${await mkdtemp('/tmp/tick3d-store-')}/sessions.duckdb`;
+    store = await openStore(path);
+    const { code } = await store.create(alice, 'Persistent');
+    await store.join(code, bob);
+    await store.move(code, alice, { game: 0, moveCount: 0, cell: 5 });
+    await store.chat(code, bob, 'hello');
+    store.close();
+    store = await openStore(path);
+    expect(await store.get(code, bob)).toMatchObject({ you: 'O', games: [{ moves: [5] }], chat: [{ from: 'O', text: 'hello' }] });
   });
 
-  it('rejects an invalid name', () => {
-    store = openStore(':memory:');
-    expect(status(() => store.create(alice, '   '))).toBe(400);
-    expect(status(() => store.create(alice, 'x'.repeat(41)))).toBe(400);
-  });
-
-  it('lets only seated players rename', () => {
-    const code = playedSession();
-    expect(store.update(code, bob, { name: 'Rematch' }).name).toBe('Rematch');
-    expect(status(() => store.update(code, carol, { name: 'Mine' }))).toBe(403);
-  });
-});
-
-describe('moves', () => {
-  it('enforces seat, turn, stale state and occupied cells', () => {
-    const code = playedSession();
-    expect(status(() => store.move(code, carol, { game: 0, moveCount: 0, cell: 0 }))).toBe(403);
-    expect(status(() => store.move(code, bob, { game: 0, moveCount: 0, cell: 0 }))).toBe(409);
-    store.move(code, alice, { game: 0, moveCount: 0, cell: 0 });
-    expect(status(() => store.move(code, bob, { game: 0, moveCount: 0, cell: 1 }))).toBe(409);
-    expect(status(() => store.move(code, bob, { game: 0, moveCount: 1, cell: 0 }))).toBe(409);
-    expect(store.move(code, bob, { game: 0, moveCount: 1, cell: 1 }).games[0]?.moves).toEqual([0, 1]);
-  });
-
-  it('keeps finished games in the history when a new game starts', () => {
-    const code = playedSession();
-    expect(status(() => store.newGame(code, alice))).toBe(409);
-    const moves = [0, 1, 16, 2, 32, 3, 48];
-    moves.forEach((cell, i) => store.move(code, i % 2 === 0 ? alice : bob, { game: 0, moveCount: i, cell }));
-    expect(status(() => store.move(code, bob, { game: 0, moveCount: 7, cell: 5 }))).toBe(409);
-    const view = store.newGame(code, bob);
-    expect(view.games.map((game) => game.moves)).toEqual([moves, []]);
-    expect(store.get(code, carol).games[0]?.moves).toEqual(moves);
-  });
-});
-
-describe('match options and lock', () => {
-  it('shares options with the other player and watchers', () => {
-    const code = playedSession();
-    expect(store.get(code, alice).options).toEqual({ hideBoard: false, hideHistory: false });
-    store.update(code, alice, { hideBoard: true });
-    expect(store.get(code, bob).options).toEqual({ hideBoard: true, hideHistory: false });
-    expect(store.get(code, carol).options.hideBoard).toBe(true);
-    expect(status(() => store.update(code, carol, { hideHistory: true }))).toBe(403);
-  });
-
-  it('locks options for both players until the game ends, but not the name', () => {
-    const code = playedSession();
-    expect(status(() => store.lock(code, carol))).toBe(403);
-    expect(store.lock(code, bob).locked).toBe(true);
-    expect(store.get(code, alice).locked).toBe(true);
-    expect(store.lock(code, alice).locked).toBe(true);
-    expect(status(() => store.update(code, alice, { hideBoard: true }))).toBe(409);
-    expect(status(() => store.update(code, bob, { hideHistory: true }))).toBe(409);
-    expect(store.update(code, alice, { name: 'Locked match' }).name).toBe('Locked match');
-
-    [0, 1, 16, 2, 32, 3, 48].forEach((cell, i) =>
-      store.move(code, i % 2 === 0 ? alice : bob, { game: 0, moveCount: i, cell }),
-    );
-    expect(store.get(code, alice).locked).toBe(false);
-    expect(status(() => store.lock(code, alice))).toBe(409);
-    expect(store.update(code, bob, { hideBoard: true }).options.hideBoard).toBe(true);
-    expect(store.newGame(code, alice).locked).toBe(false);
-  });
-});
-
-describe('clock', () => {
-  let time = 1_000_000;
-  const clockStore = (clock: TimeControl) => {
-    time = 1_000_000;
-    store = openStore(':memory:', MAX_SESSIONS, () => time);
-    const { code } = store.create(alice, 'Timed', clock);
-    store.join(code, bob);
-    return code;
-  };
-  const move = (code: Code, player: PlayerToken, moveCount: number, cell: number) =>
-    store.move(code, player, { game: 0, moveCount, cell });
-
-  it('records a timeout on the next read, without a page reporting it', () => {
-    const code = clockStore({ perMove: 10, perGame: null });
-    move(code, alice, 0, 0);
-    time += 60_000; // first moves are untimed
-    move(code, bob, 1, 1);
-    time += 9_000;
-    move(code, alice, 2, 2);
-    time += 10_001;
-    expect(store.get(code, carol).games[0]).toMatchObject({ timedOut: true, moves: [0, 1, 2] });
-    expect(status(() => move(code, bob, 3, 3))).toBe(409);
-    expect(store.newGame(code, bob).games).toHaveLength(2);
-  });
-
-  it('applies both limits together', () => {
-    const code = clockStore({ perMove: 20, perGame: 30 });
-    move(code, alice, 0, 0);
-    move(code, bob, 1, 1);
-    time += 19_000; // inside the move limit
-    move(code, alice, 2, 2);
-    move(code, bob, 3, 3);
-    time += 11_001; // inside the move limit, but X has used 30 s of the game limit
-    expect(store.get(code, alice).games[0]?.timedOut).toBe(true);
-  });
-
-  it('keeps the limit of a started game and applies a change from the next game', () => {
-    const code = clockStore({ perMove: null, perGame: null });
-    const before = store.update(code, alice, { clock: { perMove: 30, perGame: null } });
-    expect(before.games[0]?.clock).toEqual({ perMove: 30, perGame: null });
-    move(code, alice, 0, 0);
-    const during = store.update(code, bob, { clock: { perMove: null, perGame: 300 } });
-    expect(during.clock).toEqual({ perMove: null, perGame: 300 });
-    expect(during.games[0]?.clock).toEqual({ perMove: 30, perGame: null });
-    [1, 16, 2, 32, 3, 48].forEach((cell, i) => move(code, i % 2 === 0 ? bob : alice, i + 1, cell));
-    expect(store.newGame(code, alice).games[1]?.clock).toEqual({ perMove: null, perGame: 300 });
-  });
-
-  it('keeps out-of-range limits out of the table', () => {
-    store = openStore(':memory:');
-    expect(() => store.create(alice, 'Bad', { perMove: 1, perGame: null })).toThrow();
-  });
-});
-
-describe('retention', () => {
-  it('deletes the oldest sessions past the limit', () => {
-    store = openStore(':memory:', 3);
-    const codes = Array.from({ length: 5 }, (_, i) => store.create(alice, `Game ${i}`).code);
-    expect(status(() => store.get(codes[0]!, alice))).toBe(404);
-    expect(status(() => store.get(codes[1]!, alice))).toBe(404);
-    for (const code of codes.slice(2)) expect(store.get(code, alice).code).toBe(code);
-  });
-});
-
-describe('chat', () => {
-  it('sends a message to the other player and watchers, from players only', () => {
-    const code = playedSession();
-    const before = store.get(code, alice).version;
-    const view = store.chat(code, alice, '  good luck ');
-    expect(view.chat).toMatchObject([{ from: 'X', text: 'good luck' }]);
-    expect(view.version).toBeGreaterThan(before);
-    store.chat(code, bob, 'you too');
-    expect(store.get(code, carol).chat.map((m) => [m.from, m.text])).toEqual([
-      ['X', 'good luck'],
-      ['O', 'you too'],
+  it('runs requests that arrive together one after the other', async () => {
+    const code = await session();
+    const results = await Promise.allSettled([
+      store.move(code, alice, { game: 0, moveCount: 0, cell: 0 }),
+      store.move(code, alice, { game: 0, moveCount: 0, cell: 1 }),
     ]);
-    expect(status(() => store.chat(code, carol, 'hi'))).toBe(403);
-    expect(status(() => store.chat(code, alice, '   '))).toBe(400);
-    expect(status(() => store.chat(code, alice, 'x'.repeat(201)))).toBe(400);
-    expect(status(() => store.chat(code, alice, 5))).toBe(400);
+    expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+    expect((await store.get(code, alice)).games[0]?.moves).toHaveLength(1);
   });
 
-  it('keeps the newest messages only', () => {
-    const code = playedSession();
-    for (let i = 0; i < CHAT_KEEP + 5; i++) store.chat(code, alice, `message ${i}`);
-    const chat = store.get(code, bob).chat;
-    expect(chat).toHaveLength(CHAT_KEEP);
-    expect(chat[0]?.text).toBe('message 5');
-    expect(chat.at(-1)?.text).toBe(`message ${CHAT_KEEP + 4}`);
+  it('keeps every session: nothing old is deleted', async () => {
+    store = await openStore(':memory:');
+    const codes: Code[] = [];
+    for (let i = 0; i < 30; i++) codes.push((await store.create(alice, `Game ${i}`)).code);
+    for (const code of codes) expect((await store.get(code, alice)).code).toBe(code);
   });
 
-  it('deletes the messages of a deleted session', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tick3d-'));
-    const path = join(dir, 'chat.db');
-    store = openStore(path, 1);
-    const first = store.create(alice, 'First').code;
-    store.chat(first, alice, 'hello');
-    store.chat(first, alice, 'anyone?');
-    const second = store.create(bob, 'Second').code;
-    expect(status(() => store.get(first, alice))).toBe(404);
-    store.chat(second, bob, 'fresh');
-    const db = new DatabaseSync(path);
-    expect(db.prepare('SELECT code, text FROM messages').all()).toEqual([{ code: second, text: 'fresh' }]);
-    db.close();
+  it('reports presence from the HTTP layer', async () => {
+    store = await openStore(':memory:', { presence: () => ({ X: true, O: false }) });
+    const { code } = await store.create(alice, 'Present');
+    expect((await store.get(code, alice)).presence).toEqual({ X: true, O: false });
+  });
+});
+
+describe('accounts', () => {
+  it('gives a logged-in player their seats on every linked device, with their GitHub name', async () => {
+    const code = await session();
+    expect((await store.get(code, alicePhone)).you).toBeNull();
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    const fromPhone = await store.get(code, alicePhone);
+    expect(fromPhone.you).toBe('X');
+    expect(fromPhone.players).toEqual({ X: { login: 'alice', avatar: ALICE_GITHUB.avatar }, O: null });
+    await store.move(code, alicePhone, { game: 0, moveCount: 0, cell: 9 });
+    expect((await store.get(code, bob)).games[0]?.moves).toEqual([9]);
+  });
+
+  it('refreshes a renamed account', async () => {
+    const code = await session();
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alice, { ...ALICE_GITHUB, login: 'alice-renamed' });
+    expect((await store.get(code, bob)).players.X?.login).toBe('alice-renamed');
+  });
+});
+
+describe('results', () => {
+  it('stores a result once, even when a device sends it again', async () => {
+    store = await openStore(':memory:');
+    const first = result('11111111-0000-4000-8000-000000000001');
+    expect(await store.addResults(alice, [first])).toBe(1);
+    expect(await store.addResults(alice, [first, result('11111111-0000-4000-8000-000000000002')])).toBe(1);
+    expect((await store.myGames(alice)).byMode.computer.played).toBe(2);
+  });
+
+  it('refuses an unfinished game or a malformed result, and stores none of the batch', async () => {
+    store = await openStore(':memory:');
+    const unfinished = { ...result('22222222-0000-4000-8000-000000000001'), game: toRecord(replay([0, 1])) };
+    expect(await status(() => store.addResults(alice, [result('22222222-0000-4000-8000-000000000002'), unfinished]))).toBe(400);
+    expect(await status(() => store.addResults(alice, [{ id: 'short' }]))).toBe(400);
+    expect((await store.myGames(alice)).total.played).toBe(0);
+  });
+});
+
+describe('my games', () => {
+  it('counts online games and uploaded results for the player across linked devices', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    await store.newGame(code, bob);
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addResults(alicePhone, [
+      result('33333333-0000-4000-8000-000000000001'),
+      result('33333333-0000-4000-8000-000000000002', { you: 'O', difficulty: 'easy' }),
+      result('33333333-0000-4000-8000-000000000003', { mode: 'friend', you: null, difficulty: null }),
+    ]);
+    const mine = await store.myGames(alice);
+    expect(mine.user?.login).toBe('alice');
+    expect(mine.byMode.online).toEqual({ played: 1, won: 1, lost: 0, drawn: 0 });
+    expect(mine.byMode.computer).toEqual({ played: 2, won: 1, lost: 1, drawn: 0 });
+    expect(mine.byMode.friend).toEqual({ played: 1, won: 0, lost: 0, drawn: 0 });
+    expect(mine.byDifficulty.easy.lost).toBe(1);
+    expect(mine.total.played).toBe(4);
+    expect(mine.sessions).toMatchObject([{ code, you: 'X', games: 1, yourTurn: true }]);
+    expect((await store.myGames(carol)).total.played).toBe(0);
   });
 });

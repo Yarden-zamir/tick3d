@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeChat, normalizeCode, parseSessionUpdate, parseSessionView } from './protocol.ts';
+import { replay } from './game.ts';
+import {
+  normalizeChat,
+  normalizeCode,
+  parsePlayerInfo,
+  parseResultUpload,
+  parseSessionUpdate,
+  parseSessionView,
+  toRecord,
+} from './protocol.ts';
 
 describe('normalizeCode', () => {
   it('accepts 4 characters from the alphabet in any case', () => {
@@ -24,6 +33,8 @@ describe('parseSessionView', () => {
     now: 30,
     version: 2,
     chat: [{ id: 7, from: 'O', text: 'good luck', at: 1_700_000_000_000 }],
+    presence: { X: true, O: false },
+    players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' }, O: null },
   };
 
   it('accepts a valid view', () => {
@@ -66,5 +77,37 @@ describe('normalizeChat', () => {
 
   it.each(['', '   ', 'x'.repeat(201), 42, null])('rejects %j', (input) => {
     expect(normalizeChat(input)).toBeUndefined();
+  });
+});
+
+describe('parsePlayerInfo', () => {
+  it('accepts a GitHub login with a GitHub avatar only', () => {
+    const avatar = 'https://avatars.githubusercontent.com/u/7?v=4';
+    expect(parsePlayerInfo({ login: 'octo-cat', avatar })).toEqual({ login: 'octo-cat', avatar });
+    expect(parsePlayerInfo({ login: 'octo', avatar: 'https://evil.example.org/a.png' })).toBeUndefined();
+    expect(parsePlayerInfo({ login: '<script>', avatar })).toBeUndefined();
+    expect(parsePlayerInfo({ login: 'x'.repeat(40), avatar })).toBeUndefined();
+  });
+});
+
+describe('parseResultUpload', () => {
+  const X_WINS = [0, 1, 16, 2, 32, 3, 48];
+  const finished = toRecord(replay(X_WINS));
+  const valid = { id: 'aaaaaaaa-0000-4000-8000-000000000001-ab3k-0', mode: 'computer', game: finished, you: 'X', difficulty: 'hard', finishedAt: 5 };
+
+  it('accepts a finished game with a matching mode, seat and level', () => {
+    expect(parseResultUpload(valid)).toEqual(valid);
+    expect(parseResultUpload({ ...valid, mode: 'friend', you: null, difficulty: null })).toBeDefined();
+  });
+
+  it.each([
+    ['an unfinished game', { ...valid, game: toRecord(replay([0, 1])) }],
+    ['an illegal game', { ...valid, game: { ...finished, moves: [0, 0, 1, 2, 3, 4, 5] } }],
+    ['a friend game with a seat', { ...valid, mode: 'friend', you: 'X', difficulty: null }],
+    ['a computer game without a level', { ...valid, difficulty: null }],
+    ['an online game', { ...valid, mode: 'online' }],
+    ['a short id', { ...valid, id: 'short' }],
+  ])('refuses %s', (_, value) => {
+    expect(parseResultUpload(value)).toBeUndefined();
   });
 });
