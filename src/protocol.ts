@@ -1,5 +1,6 @@
 // Contract between the page and the online API. Both sides import this file.
-import { CELL_COUNT, type Player } from './game.ts';
+import { type TimeControl, parseClock } from './clock.ts';
+import { CELL_COUNT, type Game, type Player, replay, timeOut } from './game.ts';
 
 // Letters and digits without the look-alikes 0/O and 1/I, so a code read aloud is not ambiguous.
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -19,22 +20,37 @@ export type PlayerToken = string & { readonly __brand: 'PlayerToken' };
 export type MatchOptions = { hideBoard: boolean; hideHistory: boolean };
 
 export type ChatMessage = { id: number; from: Player; text: string; at: number };
+// One game as stored: moves, the time of each move, its time limit, and whether the player to move ran out of time.
+export type GameRecord = { moves: number[]; times: number[]; clock: TimeControl; timedOut: boolean };
 
 export type SessionView = {
   code: Code;
   name: string;
-  games: number[][];
+  games: GameRecord[];
   seats: Record<Player, boolean>;
   you: Player | null;
   options: MatchOptions;
   // True while a lock holds: from the lock until the live game ends.
   locked: boolean;
+  // The time limit for the next game. Each game keeps the limit it started with.
+  clock: TimeControl;
+  // Server time when the view was made. Pages use it to correct their own clock.
+  now: number;
   version: number;
   // Oldest first. Only the two players can write, everybody with the code can read.
   chat: ChatMessage[];
 };
 
-export type SessionUpdate = { name?: string } & Partial<MatchOptions>;
+export type SessionUpdate = { name?: string; clock?: TimeControl } & Partial<MatchOptions>;
+
+export function toGame(record: GameRecord): Game {
+  const game = replay(record.moves, { times: record.times, clock: record.clock });
+  return record.timedOut ? timeOut(game) : game;
+}
+
+export function toRecord(game: Game): GameRecord {
+  return { moves: [...game.moves], times: [...game.times], clock: game.clock, timedOut: game.status.kind === 'timeout' };
+}
 
 export type MoveRequest = { game: number; moveCount: number; cell: number };
 
@@ -85,6 +101,19 @@ export function isMoveList(value: unknown): value is number[] {
   return Array.isArray(value) && value.length <= CELL_COUNT && value.every(isCell);
 }
 
+export function isGameRecord(value: unknown): value is GameRecord {
+  if (!isRecord(value)) return false;
+  const { moves, times, timedOut, clock } = value;
+  return (
+    isMoveList(moves) &&
+    Array.isArray(times) &&
+    times.length === moves.length &&
+    times.every((time) => typeof time === 'number' && Number.isFinite(time)) &&
+    typeof timedOut === 'boolean' &&
+    parseClock(clock) !== undefined
+  );
+}
+
 export function parseMoveRequest(value: unknown): MoveRequest | undefined {
   if (!isRecord(value)) return undefined;
   const { game, moveCount, cell } = value;
@@ -96,13 +125,18 @@ export function parseMoveRequest(value: unknown): MoveRequest | undefined {
 export function parseSessionUpdate(value: unknown): SessionUpdate | undefined {
   if (!isRecord(value)) return undefined;
   const keys = Object.keys(value);
-  const known = ['name', 'hideBoard', 'hideHistory'];
+  const known = ['name', 'hideBoard', 'hideHistory', 'clock'];
   if (keys.length === 0 || !keys.every((key) => known.includes(key))) return undefined;
   const update: SessionUpdate = {};
   if ('name' in value) {
     const name = normalizeName(value.name);
     if (name === undefined) return undefined;
     update.name = name;
+  }
+  if ('clock' in value) {
+    const clock = parseClock(value.clock);
+    if (clock === undefined) return undefined;
+    update.clock = clock;
   }
   for (const option of ['hideBoard', 'hideHistory'] as const) {
     if (!(option in value)) continue;
@@ -121,16 +155,19 @@ export function parseSessionView(value: unknown): SessionView {
   if (!isRecord(value)) return fail('body');
   const code = typeof value.code === 'string' ? normalizeCode(value.code) : undefined;
   const name = normalizeName(value.name);
-  const { games, seats, you, options, locked, version, chat } = value;
+  const { games, seats, you, options, locked, now, version, chat } = value;
+  const clock = parseClock(value.clock);
   if (code === undefined) return fail('code');
   if (name === undefined) return fail('name');
-  if (!Array.isArray(games) || games.length === 0 || !games.every(isMoveList)) return fail('games');
+  if (!Array.isArray(games) || games.length === 0 || !games.every(isGameRecord)) return fail('games');
   if (!isRecord(seats) || typeof seats.X !== 'boolean' || typeof seats.O !== 'boolean') return fail('seats');
   if (you !== null && you !== 'X' && you !== 'O') return fail('you');
   if (!isRecord(options) || typeof options.hideBoard !== 'boolean' || typeof options.hideHistory !== 'boolean') {
     return fail('options');
   }
   if (typeof locked !== 'boolean') return fail('locked');
+  if (clock === undefined) return fail('clock');
+  if (typeof now !== 'number' || !Number.isFinite(now)) return fail('now');
   if (typeof version !== 'number' || !Number.isInteger(version)) return fail('version');
   if (!Array.isArray(chat) || chat.length > CHAT_KEEP || !chat.every(isChatMessage)) return fail('chat');
   return {
@@ -141,6 +178,8 @@ export function parseSessionView(value: unknown): SessionView {
     you,
     options: { hideBoard: options.hideBoard, hideHistory: options.hideHistory },
     locked,
+    clock,
+    now,
     version,
     chat: chat.map(({ id, from, text, at }) => ({ id, from, text, at })),
   };

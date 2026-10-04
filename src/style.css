@@ -244,7 +244,8 @@ input::placeholder {
 .join button,
 .coords button,
 .review button,
-.history button {
+.history button,
+.end-card-actions button {
   padding: 0.55rem 0.85rem;
   border-radius: 8px;
   border: var(--border) solid var(--line);
@@ -255,13 +256,13 @@ input::placeholder {
   transition: translate 0.08s, box-shadow 0.08s, background 0.15s;
 }
 
-:is(.actions, .toggles, .online, .join, .coords, .review, .history) button:hover:not(:disabled),
+:is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:hover:not(:disabled),
 .lock:hover:not(:disabled) {
   translate: -1px -1px;
   box-shadow: 4px 4px 0 var(--shadow);
 }
 
-:is(.actions, .toggles, .online, .join, .coords, .review, .history) button:active:not(:disabled),
+:is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:active:not(:disabled),
 .lock:active:not(:disabled) {
   translate: 3px 3px;
   box-shadow: 0 0 0 var(--shadow);
@@ -290,6 +291,51 @@ input:disabled {
 
 .brand {
   grid-area: brand;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* Rules and the link to the source sit together at the right of the title row. */
+.brand-links {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* Small buttons in the brutalist style, one height. Rules is an icon that opens the rules banner. */
+.repo-link,
+.rules-button {
+  flex: none;
+  box-sizing: border-box;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.8rem;
+  border: var(--border) solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--shadow);
+  color: var(--ink);
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+  transition: translate 0.08s, box-shadow 0.08s;
+}
+
+.repo-link:hover,
+.rules-button:hover {
+  translate: -1px -1px;
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+.repo-link:active,
+.rules-button:active {
+  translate: 3px 3px;
+  box-shadow: 0 0 0 var(--shadow);
 }
 
 .brand h1 {
@@ -313,10 +359,68 @@ input:disabled {
   rotate: -5deg;
 }
 
-.brand p {
-  margin: 0.6rem 0 0;
-  color: var(--muted);
+/* The icon-only buttons are square. */
+.rules-button {
+  justify-content: center;
+  width: 2.5rem;
+  padding: 0;
+}
+
+/* Narrow phones: the source link keeps its icon only, so the title row fits. */
+@media (max-width: 30rem) {
+  .repo-link span {
+    display: none;
+  }
+
+  .repo-link {
+    justify-content: center;
+    width: 2.5rem;
+    padding: 0;
+  }
+}
+
+.rules-banner {
+  position: fixed;
+  z-index: 11;
+  top: max(0.75rem, env(safe-area-inset-top));
+  left: 50%;
+  translate: -50% 0;
+  display: grid;
+  gap: 0.25rem;
+  width: min(calc(100vw - 2rem), 26rem);
+  padding: 0.7rem 0.9rem;
+  border: var(--border) solid #000;
+  border-radius: 12px;
+  background: var(--primary);
+  color: var(--on-color);
+  box-shadow: 5px 5px 0 #000;
+  text-align: left;
+  line-height: 1.4;
+  cursor: pointer;
+  animation: banner-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.rules-banner b {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.rules-banner span {
+  font-size: 0.9rem;
   font-weight: 600;
+}
+
+.rules-banner small {
+  justify-self: end;
+  font-size: 0.75rem;
+  font-weight: 700;
+  opacity: 0.75;
+}
+
+@keyframes banner-in {
+  from {
+    translate: -50% -150%;
+  }
 }
 
 /* ---- Segmented controls and the theme switch ---- */
@@ -493,7 +597,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--on-color);
 }
 
-.status[data-state='won'] {
+.status[data-state='won'],
+.status[data-state='timeout'] {
   background: var(--win);
   color: var(--on-color);
   animation: pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -543,39 +648,148 @@ body[data-turn='O'] .status[data-state='playing'] {
   box-shadow: 6px 6px 0 var(--shadow);
 }
 
-/* Tower: the four layers as tilted planes stacked from layer 1 (bottom) to layer 4 (top). */
+/* Tower: the four layers as tilted planes stacked from layer 1 (bottom) to layer 4 (top).
+   main.ts sets the transform of each grid and plate: a fixed tilt, and the spin from a drag. */
 .board.tower {
   flex-direction: column-reverse;
   align-items: center;
+  cursor: grab;
+  /* Touch: a sideways swipe turns the tower, a vertical one still scrolls the page. */
+  touch-action: pan-y;
+  user-select: none;
   /* The lowest plane draws below its box, so the padding keeps it clear of the controls under the board. */
   padding-block: 0 calc(var(--side) * 0.3);
 }
 
+.board.tower[data-dragging] {
+  cursor: grabbing;
+}
+
 /* A plane tilted by 62deg and turned by 45deg projects to about 0.66 of its side in height.
-   The layer height keeps a small gap, so no plane covers cells of another plane. */
+   That is its tallest turn, so the layer height keeps a small gap at any turn and no plane
+   covers cells of another plane.
+   Speed: nothing in the tower is preserve-3d. The plate and the grid are each drawn flat once,
+   then projected with the layer's perspective, plate first. Turning the tower moves 8 ready
+   pictures on the GPU and repaints nothing, however many marks the board holds. */
 .tower .layer {
   height: calc(var(--side) * 0.72);
   pointer-events: none;
   width: calc(var(--side) * 1.5);
   display: grid;
   place-items: center;
-  transform-style: preserve-3d;
   /* Each layer has its own vanishing point, so all four planes show the same tilt. */
   perspective: 1400px;
 }
 
-/* The tilted plane is a diamond, so the box is empty above its left corner.
-   The label sits there, beside the upper left edge of its own plane. */
+/* The tower needs no labels: layer 1 is at the bottom and layer 4 at the top, and a label
+   would float beside a plane that turns under it. */
 .tower .layer-label {
-  position: absolute;
-  left: 0;
-  top: 30%;
-  translate: 0 -50%;
+  display: none;
 }
 
+.tower .grid,
+.tower .plate {
+  will-change: transform;
+  /* Eases a reset back to the resting view. A drag follows the pointer with no delay. */
+  transition: transform 0.35s cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+
+.board[data-dragging] .grid,
+.board[data-dragging] .plate {
+  transition: none;
+}
+
+/* An offset shadow lies in the plane and swings to the wrong side when the tower turns, so
+   the tower shows thickness with sheets at different heights in 3D instead (main.ts). */
 .tower .grid {
-  transform: rotateX(62deg) rotateZ(45deg);
-  transform-style: preserve-3d;
+  box-shadow: none;
+}
+
+.plate {
+  display: none;
+}
+
+/* All sheets of a layer share one grid area, so they line up exactly and turn around the same
+   center. They paint in markup order, bottom sheet first. */
+.tower .plate,
+.tower .grid {
+  grid-area: 1 / 1;
+}
+
+.tower .plate {
+  display: block;
+  /* The grid's border box: the side plus its border on both edges. */
+  width: calc(var(--side) + var(--border) * 2);
+  height: calc(var(--side) + var(--border) * 2);
+  border-radius: calc(var(--cell) * 0.22);
+  background: var(--shadow);
+}
+
+.tower .cell,
+.tower .cell:hover,
+.tower .cell:focus-visible,
+.tower .cell:active {
+  box-shadow: none;
+}
+
+/* The base and the marks exist for the tower only. */
+.board:not(.tower) :is(.base, .marks) {
+  display: none;
+}
+
+/* The tiles and the marks float above the board's top, so they show the board through them:
+   no fill and no border of their own. They keep the grid's border width, so every sheet has the
+   same geometry and the cells line up. */
+.tower .grid:not(.base) {
+  background: none;
+  border-color: transparent;
+}
+
+/* A footprint under each tile: it shows as the tile's edge below the raised tile. */
+.foot {
+  width: var(--cell);
+  height: var(--cell);
+  border-radius: calc(var(--cell) * 0.16);
+  background: var(--line);
+}
+
+.mark {
+  position: relative;
+  width: var(--cell);
+  height: var(--cell);
+}
+
+/* In the tower the marks sheet draws the pieces, so the cells show none. */
+.tower .cell .piece {
+  visibility: hidden;
+}
+
+/* The raised pieces keep a thin even outline, with no offset shadow. */
+.tower .mark.x .piece,
+.tower .mark.o .piece {
+  filter: drop-shadow(1px 0 0 var(--line)) drop-shadow(-1px 0 0 var(--line)) drop-shadow(0 1px 0 var(--line))
+    drop-shadow(0 -1px 0 var(--line));
+}
+
+.angle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.angle-row button {
+  flex: none;
+  padding: 0.35rem 0.7rem;
+  border-radius: 8px;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  box-shadow: 2px 2px 0 var(--shadow);
+  font-weight: 700;
+  cursor: pointer;
 }
 
 /* Flat: the four layers as plain grids, in one of four layouts. */
@@ -634,7 +848,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   background: var(--surface);
   box-shadow: 2px 2px 0 var(--shadow);
   cursor: pointer;
-  transform-style: preserve-3d;
   transition: background 0.15s, translate 0.08s, box-shadow 0.08s;
 }
 
@@ -670,8 +883,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   transition: scale 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.cell.x .piece,
-.cell.o .piece {
+:is(.cell, .mark).x .piece,
+:is(.cell, .mark).o .piece {
   scale: 1;
   /* A thin outline plus a hard drop, drawn around the shape the ::before cuts out. */
   filter: drop-shadow(1px 0 0 var(--line)) drop-shadow(-1px 0 0 var(--line)) drop-shadow(0 1px 0 var(--line))
@@ -684,12 +897,12 @@ body[data-turn='O'] .status[data-state='playing'] {
   inset: 0;
 }
 
-.cell.x .piece::before {
+:is(.cell, .mark).x .piece::before {
   background: var(--x);
   clip-path: polygon(20% 0, 50% 30%, 80% 0, 100% 20%, 70% 50%, 100% 80%, 80% 100%, 50% 70%, 20% 100%, 0 80%, 30% 50%, 0 20%);
 }
 
-.cell.o .piece::before {
+:is(.cell, .mark).o .piece::before {
   inset: 4%;
   border-radius: 50%;
   border: calc(var(--cell) * 0.13) solid var(--o);
@@ -700,13 +913,14 @@ body[data-turn='O'] .status[data-state='playing'] {
   animation: win-blink 0.9s steps(1) infinite;
 }
 
-.board.finished .cell:not(.win) .piece {
+.board.finished :is(.cell, .mark):not(.win) .piece {
   opacity: 0.35;
 }
 
+/* A refused move: the cell shakes and flashes red, then fades back. The red lives in the
+   animation only, so it can never stay on the cell. main.ts removes the class at the end. */
 .cell.shake {
-  animation: shake 0.35s;
-  background: var(--danger);
+  animation: reject 0.9s ease-out;
 }
 
 /* ---- Side panel ---- */
@@ -1215,7 +1429,8 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .history li {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  /* Name, result, then the Replay and Card buttons. */
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 0.6rem;
   padding: 0.35rem 0.5rem;
@@ -1243,6 +1458,312 @@ body[data-turn='O'] .status[data-state='playing'] {
   box-shadow: 2px 2px 0 var(--shadow);
 }
 
+/* ---- Time limit editor ---- */
+
+/* One box like the segmented controls, one row per limit, a line between the rows. */
+.limits {
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+.limit {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+}
+
+.limit + .limit {
+  border-top: 2px solid var(--line);
+}
+
+.limit-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* A square switch drawn from the native checkbox, so it keeps keyboard and screen reader support.
+   Sizes are in px so track and knob round the same way: the inside is 40 x 20, the knob 16 x 16,
+   so it sits 2px from every edge and travels 20px. */
+.limit-switch input {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  box-shadow: 2px 2px 0 var(--shadow);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.limit-switch input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface-2);
+  transition: translate 0.15s, background 0.15s;
+}
+
+.limit-switch input:checked {
+  background: var(--toggle-on);
+}
+
+.limit-switch input:checked::after {
+  background: var(--surface);
+  translate: 20px 0;
+}
+
+/* The choices: quick picks and a custom box, as one segmented control. */
+.limit-options {
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.limit-options button,
+.limit-custom {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.2rem;
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.limit-options button:hover:not(:disabled):not([aria-pressed='true']) {
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.limit-options button[aria-pressed='true'],
+.limit-custom.active {
+  background: var(--ink);
+  color: var(--surface);
+  font-weight: 800;
+}
+
+.limit-custom {
+  flex: 1.6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding-inline: 0.35rem;
+  border: 2px dashed var(--line);
+  cursor: text;
+}
+
+/* A value is about 4 characters wide, so value and unit sit together in the middle. */
+.limit-custom input {
+  width: 4ch;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+}
+
+.limit-custom input::-webkit-inner-spin-button,
+.limit-custom input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.limit-custom input:focus-visible {
+  outline: none;
+}
+
+.limit-custom:focus-within {
+  border-style: solid;
+  color: var(--ink);
+  background: var(--peer);
+}
+
+.limit-custom span {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.limit-custom input:placeholder-shown {
+  width: 100%;
+}
+
+.limit-custom input::placeholder {
+  color: var(--muted);
+  font-weight: 600;
+  text-align: center;
+}
+
+/* An empty custom box shows only its placeholder, without the unit. */
+.limit-custom input:placeholder-shown + span {
+  display: none;
+}
+
+.clock-summary {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* ---- Clocks ---- */
+
+.clocks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.clock {
+  padding: 0.3rem 0.8rem;
+  border: var(--border) solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--shadow);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.clock.x.active {
+  background: var(--x);
+  color: var(--on-color);
+}
+
+.clock.o.active {
+  background: var(--o);
+  color: var(--on-color);
+}
+
+/* The last 10 seconds: the clock blinks in the danger color, like the winning cells blink. */
+.clock.low {
+  animation: clock-blink 1s steps(1) infinite;
+}
+
+.clock.out {
+  background: var(--danger);
+  color: var(--on-color);
+  text-decoration: line-through;
+}
+
+.clock-note {
+  width: 100%;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+@keyframes clock-blink {
+  50% {
+    background: var(--danger);
+    color: var(--on-color);
+  }
+}
+
+/* ---- End card ---- */
+
+.end-card {
+  width: min(92vw, 30rem);
+  max-height: 96dvh;
+  padding: 1rem;
+  border: var(--border) solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 8px 8px 0 var(--shadow);
+  overflow-y: auto;
+}
+
+.end-card[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  animation: pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.end-card::backdrop {
+  background: rgb(0 0 0 / 0.55);
+}
+
+.end-card img {
+  width: 100%;
+  height: auto;
+  max-height: 70dvh;
+  object-fit: contain;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+}
+
+.include-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+}
+
+.end-card .include {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.end-card .include input {
+  width: 1.2rem;
+  height: 1.2rem;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--toggle-on);
+}
+
+.end-card-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.end-card-actions button {
+  flex: 1;
+}
+
+.end-card-actions .primary {
+  flex: 1.5;
+  background: var(--primary);
+  color: var(--on-color);
+  font-weight: 800;
+}
+
 /* ---- Feedback ---- */
 
 .toast {
@@ -1263,20 +1784,30 @@ body[data-turn='O'] .status[data-state='playing'] {
   transition: opacity 0.2s, translate 0.2s;
 }
 
+/* Information gets the O color as its shadow. A refused action keeps the X color. */
+.toast[data-tone='info'] {
+  box-shadow: 5px 5px 0 var(--o);
+}
+
 .toast.show {
   opacity: 1;
   translate: -50% 0;
 }
 
+/* The win confetti flies inside a layer the size of the screen that clips it, so a spark past
+   the edge never widens the page (which let a phone scroll sideways after a win). */
 .burst {
-  position: absolute;
-  top: 45%;
-  left: 50%;
+  position: fixed;
+  z-index: 5;
+  inset: 0;
+  overflow: hidden;
   pointer-events: none;
 }
 
 .burst span {
   position: absolute;
+  top: 40%;
+  left: 50%;
   width: 11px;
   height: 11px;
   border: 2px solid #000;
@@ -1303,10 +1834,13 @@ body[data-turn='O'] .status[data-state='playing'] {
   }
 }
 
-@keyframes shake {
-  0%, 100% { translate: 0; }
-  25% { translate: -4px 0; }
-  75% { translate: 4px 0; }
+@keyframes reject {
+  0% { translate: 0; background: var(--danger); }
+  10% { translate: -4px 0; }
+  20% { translate: 4px 0; }
+  30% { translate: -3px 0; }
+  40% { translate: 0; background: var(--danger); }
+  100% { translate: 0; }
 }
 
 @keyframes pop {
@@ -1324,10 +1858,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   /* One column: the tower may use the full width. A layer box is 6.75 cells wide. */
   :root {
     --cell: clamp(30px, 11.5vw, 50px);
-  }
-
-  .brand p {
-    font-size: 0.9rem;
   }
 }
 

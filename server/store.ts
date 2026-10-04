@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { type Game, type Player, play, replay } from '../src/game.ts';
+import { LIMIT_RANGE, NO_LIMIT, type TimeControl, isFlagged, parseClock } from '../src/clock.ts';
+import { type Game, type Player, other, play, timeOut } from '../src/game.ts';
 import {
   CHAT_KEEP,
   CHAT_MAX_LENGTH,
@@ -8,6 +9,7 @@ import {
   CODE_ALPHABET,
   CODE_LENGTH,
   type Code,
+  type GameRecord,
   MAX_GAMES_PER_SESSION,
   MAX_SESSIONS,
   NAME_MAX_LENGTH,
@@ -15,9 +17,12 @@ import {
   type PlayerToken,
   type SessionUpdate,
   type SessionView,
+  isGameRecord,
   isMoveList,
   normalizeChat,
   normalizeName,
+  toGame,
+  toRecord,
 } from '../src/protocol.ts';
 
 export class StoreError extends Error {
@@ -37,6 +42,8 @@ type Row = {
   hide_board: number;
   hide_history: number;
   locked_game: number | null;
+  clock_move: number | null;
+  clock_game: number | null;
   version: number;
 };
 
@@ -53,12 +60,17 @@ function isRow(value: unknown): value is Row {
     typeof row.hide_board === 'number' &&
     typeof row.hide_history === 'number' &&
     (row.locked_game === null || typeof row.locked_game === 'number') &&
+    (row.clock_move === null || typeof row.clock_move === 'number') &&
+    (row.clock_game === null || typeof row.clock_game === 'number') &&
     typeof row.version === 'number'
   );
 }
 
+const emptyRecord = (clock: TimeControl): GameRecord => ({ moves: [], times: [], clock, timedOut: false });
+
 function schema(maxSessions: number): string {
   if (!Number.isInteger(maxSessions) || maxSessions < 1) throw new RangeError(`maxSessions must be >= 1: ${maxSessions}`);
+  const { perMove, perGame } = LIMIT_RANGE;
   return `
     CREATE TABLE IF NOT EXISTS sessions (
       code TEXT PRIMARY KEY CHECK (length(code) = ${CODE_LENGTH}),
@@ -70,6 +82,9 @@ function schema(maxSessions: number): string {
       hide_history INTEGER NOT NULL DEFAULT 0 CHECK (hide_history IN (0, 1)),
       -- Index of the game that the lock holds. The lock ends when that game ends.
       locked_game INTEGER CHECK (locked_game >= 0),
+      -- The time limit for the next game, in seconds. NULL means no limit of that kind.
+      clock_move INTEGER CHECK (clock_move BETWEEN ${perMove.min} AND ${perMove.max}),
+      clock_game INTEGER CHECK (clock_game BETWEEN ${perGame.min} AND ${perGame.max}),
       version INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -130,42 +145,50 @@ function seatOf(row: Row, player: PlayerToken | undefined): Player | null {
   return null;
 }
 
-function parseGames(row: Row): number[][] {
+function parseGames(row: Row): GameRecord[] {
   const games: unknown = JSON.parse(row.games);
-  if (!Array.isArray(games) || games.length === 0 || !games.every(isMoveList)) {
+  if (!Array.isArray(games) || games.length === 0 || !games.every(isGameRecord)) {
     throw new Error(`stored games are not valid for session ${row.code}`);
   }
   return games;
 }
 
-function currentGame(games: number[][]): Game {
-  const moves = games.at(-1);
-  if (moves === undefined) throw new Error('session has no games');
-  return replay(moves);
+function clockOf(row: Row): TimeControl {
+  const clock = parseClock({ perMove: row.clock_move, perGame: row.clock_game });
+  if (clock === undefined) throw new Error(`stored clock is not valid for session ${row.code}`);
+  return clock;
 }
 
-function isLocked(row: Row, games: number[][]): boolean {
+function currentGame(games: GameRecord[]): Game {
+  const record = games.at(-1);
+  if (record === undefined) throw new Error('session has no games');
+  return toGame(record);
+}
+
+function isLocked(row: Row, games: GameRecord[]): boolean {
   return row.locked_game === games.length - 1 && currentGame(games).status.kind === 'playing';
 }
 
 // node:sqlite is synchronous and Node runs one request handler at a time, so each
 // read-check-write below is atomic without an explicit transaction.
 // Revisit this if the API ever runs more than one process against the same file.
-export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
+export function openStore(path: string, maxSessions: number = MAX_SESSIONS, now: () => number = Date.now) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(schema(maxSessions));
 
   const select = db.prepare(
-    'SELECT code, name, games, seat_x, seat_o, hide_board, hide_history, locked_game, version FROM sessions WHERE code = ?',
+    `SELECT code, name, games, seat_x, seat_o, hide_board, hide_history, locked_game, clock_move, clock_game, version
+     FROM sessions WHERE code = ?`,
   );
   const insert = db.prepare(
-    'INSERT INTO sessions (code, name, games, seat_x, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    `INSERT INTO sessions (code, name, games, seat_x, clock_move, clock_game, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const update = db.prepare(
     `UPDATE sessions SET name = ?, games = ?, seat_x = ?, seat_o = ?, hide_board = ?, hide_history = ?, locked_game = ?,
-     version = version + 1, updated_at = ? WHERE code = ?`,
+     clock_move = ?, clock_game = ?, version = version + 1, updated_at = ? WHERE code = ?`,
   );
 
   const selectChat = db.prepare('SELECT id, seat, text, created_at FROM messages WHERE code = ? ORDER BY id');
@@ -180,11 +203,22 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
     });
   }
 
-  function load(code: Code): Row {
+  function loadRaw(code: Code): Row {
     const row: unknown = select.get(code);
     if (row === undefined) throw new StoreError(404, `No game with code ${code}.`);
     if (!isRow(row)) throw new Error(`unexpected row shape for session ${code}`);
     return row;
+  }
+
+  // Loads a session and records a timeout that happened since the last write. The result of a
+  // flagged clock never depends on a page reporting it, so every read and write sees the same game.
+  function load(code: Code): Row {
+    const row = loadRaw(code);
+    const games = parseGames(row);
+    const game = currentGame(games);
+    if (!isFlagged(game, now())) return row;
+    games[games.length - 1] = toRecord(timeOut(game));
+    return save(row, { games: JSON.stringify(games) });
   }
 
   type Changes = Partial<Omit<Row, 'code' | 'version'>>;
@@ -199,10 +233,12 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
       next.hide_board,
       next.hide_history,
       next.locked_game,
-      Date.now(),
+      next.clock_move,
+      next.clock_game,
+      now(),
       row.code,
     );
-    return load(row.code);
+    return loadRaw(row.code);
   }
 
   function view(row: Row, player: PlayerToken | undefined): SessionView {
@@ -215,6 +251,8 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
       you: seatOf(row, player),
       options: { hideBoard: row.hide_board === 1, hideHistory: row.hide_history === 1 },
       locked: isLocked(row, games),
+      clock: clockOf(row),
+      now: now(),
       version: row.version,
       chat: chatOf(row.code),
     };
@@ -228,14 +266,15 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
 
   return {
     // The creator takes seat X, so the creator moves first in the first game.
-    create(player: PlayerToken, name: string): SessionView {
+    create(player: PlayerToken, name: string, clock: TimeControl = NO_LIMIT): SessionView {
       const validName = normalizeName(name);
       if (validName === undefined) throw new StoreError(400, 'A name needs 1 to 40 characters.');
       for (let attempt = 0; attempt < 20; attempt++) {
         const code = newCode();
         try {
-          const now = Date.now();
-          insert.run(code, validName, '[[]]', player, now, now);
+          const time = now();
+          const games = JSON.stringify([emptyRecord(clock)]);
+          insert.run(code, validName, games, player, clock.perMove, clock.perGame, time, time);
           return view(load(code), player);
         } catch (error) {
           const duplicate = error instanceof Error && 'errcode' in error && error.errcode === 1555;
@@ -266,12 +305,13 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
       if (request.game !== games.length - 1 || request.moveCount !== game.moves.length) {
         throw new StoreError(409, 'The board changed. It now shows the latest moves.');
       }
+      if (game.status.kind === 'timeout') throw new StoreError(409, `Time is up. ${other(game.status.winner)} ran out of time.`);
       if (game.status.kind === 'playing' && game.turn !== seat) throw new StoreError(409, 'It is not your turn.');
-      const result = play(game, request.cell);
+      const result = play(game, request.cell, now());
       if (!result.ok) {
         throw new StoreError(409, result.error === 'occupied' ? 'That cell is taken.' : 'This game is over.');
       }
-      games[games.length - 1] = [...result.game.moves];
+      games[games.length - 1] = toRecord(result.game);
       return view(save(row, { games: JSON.stringify(games) }), player);
     },
 
@@ -283,21 +323,31 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
       if (games.length >= MAX_GAMES_PER_SESSION) {
         throw new StoreError(409, `A session holds ${MAX_GAMES_PER_SESSION} games. Start a new code.`);
       }
-      return view(save(row, { games: JSON.stringify([...games, []]) }), player);
+      return view(save(row, { games: JSON.stringify([...games, emptyRecord(clockOf(row))]) }), player);
     },
 
-    // The name stays open during a lock. The match options do not.
+    // The name stays open during a lock. The match options and the clock do not.
     update(code: Code, player: PlayerToken, changes: SessionUpdate): SessionView {
       const row = load(code);
       seated(row, player);
-      const changesOptions = changes.hideBoard !== undefined || changes.hideHistory !== undefined;
-      if (changesOptions && isLocked(row, parseGames(row))) {
-        throw new StoreError(409, 'Settings are locked until this game ends.');
-      }
+      const games = parseGames(row);
+      const changesMatch =
+        changes.hideBoard !== undefined || changes.hideHistory !== undefined || changes.clock !== undefined;
+      if (changesMatch && isLocked(row, games)) throw new StoreError(409, 'Settings are locked until this game ends.');
       const next: Changes = {};
       if (changes.name !== undefined) next.name = changes.name;
       if (changes.hideBoard !== undefined) next.hide_board = changes.hideBoard ? 1 : 0;
       if (changes.hideHistory !== undefined) next.hide_history = changes.hideHistory ? 1 : 0;
+      if (changes.clock !== undefined) {
+        next.clock_move = changes.clock.perMove;
+        next.clock_game = changes.clock.perGame;
+        // A game keeps the limit it started with. A game without moves has not started yet.
+        const live = games.at(-1);
+        if (live !== undefined && live.moves.length === 0 && !live.timedOut) {
+          games[games.length - 1] = emptyRecord(changes.clock);
+          next.games = JSON.stringify(games);
+        }
+      }
       return view(save(row, next), player);
     },
 
@@ -316,9 +366,9 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
       const seat = seated(row, player);
       const message = normalizeChat(text);
       if (message === undefined) throw new StoreError(400, `A message needs 1 to ${CHAT_MAX_LENGTH} characters.`);
-      const now = Date.now();
-      insertChat.run(code, seat, message, now);
-      touch.run(now, code);
+      const time = now();
+      insertChat.run(code, seat, message, time);
+      touch.run(time, code);
       return view(load(code), player);
     },
 

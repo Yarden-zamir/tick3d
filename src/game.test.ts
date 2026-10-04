@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { CELL_COUNT, LINES, type Game, newGame, parseCoordinates, play, replay, toCell, undo } from './game.ts';
+import { CELL_COUNT, LINES, type Game, newGame, parseCoordinates, play, replay, timeOut, toCell, undo } from './game.ts';
 
+// Move i happens at time i, so results compare equal across calls.
 function playAll(cells: number[], game: Game = newGame()): Game {
-  return cells.reduce((current, cell) => {
-    const result = play(current, cell);
+  return cells.reduce((current, cell, i) => {
+    const result = play(current, cell, i);
     if (!result.ok) throw new Error(`move ${cell} failed: ${result.error}`);
     return result.game;
   }, game);
@@ -71,5 +72,14 @@ describe('parseCoordinates', () => {
 describe('replay', () => {
   it('throws on an illegal history', () => {
     expect(() => replay([0, 0])).toThrow();
+  });
+});
+
+describe('timeOut', () => {
+  it('gives the win to the player who did not run out of time', () => {
+    const game = timeOut(playAll([0, 1, 2]));
+    expect(game.status).toEqual({ kind: 'timeout', winner: 'X' });
+    expect(play(game, 5)).toEqual({ ok: false, error: 'game-over' });
+    expect(() => timeOut(game)).toThrow();
   });
 });
