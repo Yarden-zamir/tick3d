@@ -209,6 +209,10 @@ const digitButtons = document.querySelectorAll<HTMLButtonElement>('[data-digit]'
 const historyEl = element('#history', HTMLOListElement);
 const onlineCodeEl = element('#online-code', HTMLElement);
 const shareButton = element('#share', HTMLButtonElement);
+const shareQrButton = element('#share-qr', HTMLButtonElement);
+const onlineQr = element('#online-qr', HTMLDivElement);
+const onlineQrImage = element('#online-qr-image', HTMLDivElement);
+const onlineQrCaption = element('#online-qr-caption', HTMLSpanElement);
 const sessionNameInput = element('#session-name', HTMLInputElement);
 const joinForm = element('#join', HTMLFormElement);
 const joinCodeInput = element('#join-code', HTMLInputElement);
@@ -1537,6 +1541,8 @@ function render(): void {
   const onlineSession = session?.mode === 'online' ? session : undefined;
   onlineCodeEl.textContent = onlineSession?.code ?? '····';
   shareButton.disabled = onlineSession === undefined;
+  shareQrButton.disabled = onlineSession === undefined;
+  renderOnlineQr(onlineSession?.code);
   if (document.activeElement !== sessionNameInput) sessionNameInput.value = onlineSession?.name ?? '';
   sessionNameInput.disabled = onlineSession?.you == null || busy;
   joinCodeInput.disabled = frozen || busy;
@@ -2189,6 +2195,27 @@ newCodeButton.addEventListener('click', () => {
 });
 
 shareButton.addEventListener('click', () => void shareLink());
+
+// The game's link as a QR code: a friend's phone camera opens the online game directly.
+let onlineQrShown: Code | undefined;
+function renderOnlineQr(code: Code | undefined): void {
+  const open = shareQrButton.getAttribute('aria-expanded') === 'true' && code !== undefined;
+  onlineQr.hidden = !open;
+  if (!open || code === onlineQrShown) return;
+  onlineQrShown = code;
+  onlineQrCaption.textContent = `Scan with a phone camera to join ${code}.`;
+  const link = `${location.origin}/?code=${code}`;
+  void renderQr(link).then((svg) => {
+    if (onlineQrShown === code) onlineQrImage.replaceChildren(svg);
+  });
+}
+shareQrButton.addEventListener('click', () => {
+  sounds.click();
+  const open = shareQrButton.getAttribute('aria-expanded') !== 'true';
+  shareQrButton.setAttribute('aria-expanded', String(open));
+  shareQrButton.textContent = open ? 'Hide QR code' : 'QR code';
+  renderOnlineQr(session?.mode === 'online' ? session.code : undefined);
+});
 
 sessionNameInput.addEventListener('change', () => {
   if (session === undefined) return;

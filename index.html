@@ -137,7 +137,14 @@
               <span class="label">Game code</span>
               <b id="online-code">····</b>
             </div>
-            <button type="button" id="share">Share link</button>
+            <div class="share-buttons">
+              <button type="button" id="share">Share link</button>
+              <button type="button" id="share-qr" aria-expanded="false" aria-controls="online-qr">QR code</button>
+            </div>
+          </div>
+          <div class="online-qr" id="online-qr" hidden>
+            <div class="nearby-qr" id="online-qr-image"></div>
+            <span id="online-qr-caption"></span>
           </div>
           <label class="field">
             <span class="label">Session name</span>

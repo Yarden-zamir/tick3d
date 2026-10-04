@@ -2267,3 +2267,17 @@ body[data-turn='O'] .status[data-state='playing'] {
   text-transform: none;
   letter-spacing: normal;
 }
+
+/* Share link and QR code, one above the other next to the game code. */
+.share-buttons {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.online-qr {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  font-weight: 700;
+  text-align: center;
+}
