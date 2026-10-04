@@ -2,13 +2,14 @@ FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY tsconfig.json index.html ./
+COPY tsconfig.json index.html vite.config.ts ./
+COPY public public
 COPY src src
 COPY server server
 # A failing test or type error stops the image build, so a broken game never deploys.
 RUN npm test && npm run build
 
-# The API runs its TypeScript directly: Node 24 strips the types. It has no runtime dependencies.
+# The API runs its TypeScript directly: Node 24 strips the types. DuckDB is its only runtime package.
 FROM node:24-alpine AS api
 WORKDIR /app
 COPY package.json package-lock.json ./
