@@ -143,7 +143,7 @@ const REFUSAL_TEXT: Record<Refusal, string> = {
   'not-your-turn': 'It is not your turn.',
   spectator: 'You are watching. Both seats are taken.',
   reviewing: 'You are looking at an old position. Go back to the live game first.',
-  'no-session': 'Create an session game or join one with a code first.',
+  'no-session': 'Start a game, or join one with a code, first.',
   locked: 'Settings are locked until this game ends.',
 };
 
@@ -207,7 +207,7 @@ const coordsBack = element('#coords-back', HTMLButtonElement);
 const coordsPlace = element('#coords-place', HTMLButtonElement);
 const digitButtons = document.querySelectorAll<HTMLButtonElement>('[data-digit]');
 const historyEl = element('#history', HTMLOListElement);
-const onlineCodeEl = element('#session-code', HTMLElement);
+const onlineCodeEl = element('#online-code', HTMLElement);
 const shareButton = element('#share', HTMLButtonElement);
 const sessionNameInput = element('#session-name', HTMLInputElement);
 const joinForm = element('#join', HTMLFormElement);
