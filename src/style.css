@@ -291,6 +291,37 @@ input:disabled {
 
 .brand {
   grid-area: brand;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* The link to the source, as a small button in the brutalist style. */
+.repo-link {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.8rem;
+  border: var(--border) solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--shadow);
+  color: var(--ink);
+  font-weight: 800;
+  text-decoration: none;
+  transition: translate 0.08s, box-shadow 0.08s;
+}
+
+.repo-link:hover {
+  translate: -1px -1px;
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+.repo-link:active {
+  translate: 3px 3px;
+  box-shadow: 0 0 0 var(--shadow);
 }
 
 .brand h1 {

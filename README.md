@@ -27,6 +27,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - Two views: a 3D tower of tilted layers and a flat view. The flat view has four layouts: grid, side by side, top to bottom, and steps.
 - Twelve neo-brutalist themes in a folding menu in the panel: Light (the default), Dark, Snow, Candy, Mint, Retro, Midnight, Synthwave, Bloodmoon, Dark coffee, Batman (dark, no color) and Mono. Like the mute button, the theme stays open during a lock.
 - Point at a cell to light up the cells above and below it.
+- A GitHub button in the header links to this repository.
 - The browser keeps the settings in `localStorage`. The app checks each stored value and uses the default for a value that is not valid.
 
 ## Online play
