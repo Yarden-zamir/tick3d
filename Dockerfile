@@ -12,8 +12,9 @@ RUN npm test && npm run build
 FROM node:24-alpine AS api
 WORKDIR /app
 COPY package.json ./
-COPY --from=build /app/src/game.ts /app/src/protocol.ts src/
-COPY --from=build /app/server/main.ts /app/server/store.ts server/
+# Copy whole folders: a list of single files missed a new shared module once (src/clock.ts).
+COPY --from=build /app/src src/
+COPY --from=build /app/server server/
 # A new named volume copies this owner, so the node user can write the database.
 RUN mkdir /data && chown node:node /data
 USER node
