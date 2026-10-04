@@ -1,3 +1,4 @@
+// jsQR reads the rendered code back, to prove the code is scannable. It is a test-only dependency.
 import jsQR from 'jsqr';
 import { describe, expect, it } from 'vitest';
 import { qrModules } from './qr.ts';

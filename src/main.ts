@@ -32,7 +32,7 @@ import {
 import { type LocalBackend, createLocalBackend } from './local.ts';
 import { DEVICE_ICONS, deviceLabel, detectDevice } from './nearby/device.ts';
 import { type Channel, answerOffer, createOffer } from './nearby/peer.ts';
-import { renderQr, startScanner } from './nearby/qr.ts';
+import { renderQr } from './nearby/qr.ts';
 import { type NearbyGuest, type NearbyHost, createNearbyGuest, createNearbyHost } from './nearby/session.ts';
 import { type Hello, decodeSignal } from './nearby/signal.ts';
 import { setupPwa } from './pwa.ts';
@@ -276,9 +276,7 @@ const nearbyQr = element('#nearby-qr', HTMLDivElement);
 const nearbyText = element('#nearby-text', HTMLDetailsElement);
 const nearbyCodeOut = element('#nearby-code-out', HTMLTextAreaElement);
 const nearbyCopy = element('#nearby-copy', HTMLButtonElement);
-const nearbyVideo = element('#nearby-video', HTMLVideoElement);
 const nearbyInput = element('#nearby-input', HTMLDivElement);
-const nearbyScan = element('#nearby-scan', HTMLButtonElement);
 const nearbyCodeIn = element('#nearby-code-in', HTMLInputElement);
 const nearbyUseCode = element('#nearby-use-code', HTMLButtonElement);
 const nearbyCancel = element('#nearby-cancel', HTMLButtonElement);
@@ -904,7 +902,6 @@ type NearbyState =
   | { kind: 'guest'; guest: NearbyGuest; hostHello: Hello };
 
 let nearby: NearbyState = { kind: 'idle' };
-let stopScanner: (() => void) | undefined;
 let wakeLock: { release(): Promise<void> } | undefined;
 const thisDevice = detectDevice();
 
@@ -987,21 +984,15 @@ function showNearbyStep(text: string, options: { code?: string; input?: boolean 
 }
 
 function hideNearbyStep(): void {
-  stopScanner?.();
-  stopScanner = undefined;
-  nearbyVideo.hidden = true;
   nearbyStep.hidden = true;
 }
 
-// Runs a code from the camera or the text box through the current step.
+// Runs a code from the text box, or from a link that a camera opened, through the current step.
 let onNearbyCode: ((code: string) => Promise<void>) | undefined;
 
 async function useNearbyCode(code: string): Promise<void> {
   const handler = onNearbyCode;
   if (handler === undefined) return;
-  stopScanner?.();
-  stopScanner = undefined;
-  nearbyVideo.hidden = true;
   try {
     await handler(nearbyCodeOf(code));
   } catch (error) {
@@ -1015,7 +1006,7 @@ async function inviteGuest(): Promise<void> {
   const state = nearby;
   const invite = await createOffer(nearbyHello());
   nearby = { ...state, invite };
-  showNearbyStep('1. Scan this code with the other device\'s camera. 2. Then scan the code that device shows, with this device\'s camera or the button below.', {
+  showNearbyStep('1. Scan this code with the other device\'s camera. 2. Then scan the code that device shows with this device\'s camera, or paste it below.', {
     code: invite.code,
     input: true,
   });
@@ -1046,7 +1037,7 @@ async function hostNearby(): Promise<void> {
 
 async function joinNearby(code?: string): Promise<void> {
   nearby = { kind: 'joining' };
-  showNearbyStep("Scan the code on the host's screen.", { input: true });
+  showNearbyStep("Scan the host's code with this device's camera, or paste it below.", { input: true });
   onNearbyCode = async (code) => {
     const answer = await answerOffer(code, nearbyHello());
     nearby = { kind: 'joining', answer: answer.code };
@@ -1141,16 +1132,6 @@ nearbyCopy.addEventListener('click', () => {
   void navigator.clipboard.writeText(nearbyCodeOut.value).then(
     () => showToast('Code copied.'),
     () => showProblem('Copy did not work. Select the code and copy it.'),
-  );
-});
-nearbyScan.addEventListener('click', () => {
-  nearbyVideo.hidden = false;
-  void startScanner(nearbyVideo, (code) => void useNearbyCode(code)).then(
-    (stop) => (stopScanner = stop),
-    () => {
-      nearbyVideo.hidden = true;
-      showProblem('The camera is not available. Paste the code instead.');
-    },
   );
 });
 
@@ -1304,7 +1285,14 @@ setupPwa({
   },
   onNeedRefresh(reload) {
     updateBar.hidden = false;
-    updateReload.onclick = () => void reload();
+    updateReload.disabled = false;
+    updateReload.textContent = 'Reload';
+    updateReload.onclick = () => {
+      // Feedback at once: the new version can take a moment to take over.
+      updateReload.disabled = true;
+      updateReload.textContent = 'Updating…';
+      void reload();
+    };
   },
 });
 // A worker that is already active means this device had the game ready offline before.

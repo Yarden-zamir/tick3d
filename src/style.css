@@ -2187,12 +2187,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   word-break: break-all;
 }
 
-.nearby-video {
-  width: 100%;
-  border: var(--border) solid var(--line);
-  border-radius: 10px;
-}
-
 .nearby-input {
   display: grid;
   gap: 0.5rem;

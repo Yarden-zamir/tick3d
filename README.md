@@ -56,7 +56,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 ## Nearby
 
 - Choose Nearby to play with devices on the same Wi-Fi, without the internet. One device hosts, the others join.
-- The host shows a QR code. The guest scans it and shows its own code, which the host scans. Each code also has a text form to copy and paste, for a device without a camera.
+- The host shows a QR code. The guest scans it with the phone's own camera, which opens the game, and shows its own code, which the host scans the same way. On the host, the answer opens in a new tab that hands the code to the hosting tab. Each code also has a text form to copy and paste, for a device without a camera.
 - The devices then talk directly over WebRTC. The host's device holds the session and checks every move with the same rules as the server, so a guest can never move for the host.
 - The panel lists the connected devices with an icon for each kind: phone, tablet or computer. The first guest plays O, later guests watch.
 - The host's screen stays on while it hosts. When the host ends the game or closes the page, the guests see a message.
