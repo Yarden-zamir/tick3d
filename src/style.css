@@ -1934,6 +1934,11 @@ body[data-turn='O'] .status[data-state='playing'] {
   font: inherit;
 }
 
+/* The trophy stands in for the player until a GitHub avatar shows. On narrow phones it is all that shows. */
+.account-button img:not([hidden]) + svg {
+  display: none;
+}
+
 .avatar {
   width: 1.4rem;
   height: 1.4rem;
