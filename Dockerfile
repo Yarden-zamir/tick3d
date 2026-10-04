@@ -3,6 +3,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json index.html ./
+# Vite copies public/ (the favicons and the web manifest) into dist as is.
+COPY public public
 COPY src src
 COPY server server
 # A failing test or type error stops the image build, so a broken game never deploys.
