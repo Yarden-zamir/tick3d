@@ -397,6 +397,13 @@ function reject(cell: number | undefined, reason: Refusal): void {
   button.classList.add('shake');
 }
 
+// The refusal flash ends by itself. Removing the class lets the next refusal play it again.
+for (const button of cells) {
+  button.addEventListener('animationend', (event) => {
+    if (event.animationName === 'reject') button.classList.remove('shake');
+  });
+}
+
 // The player at this screen, if there is exactly one.
 function me(): Player | null {
   if (settings.mode === 'computer') return settings.human;

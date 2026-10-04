@@ -860,9 +860,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   opacity: 0.35;
 }
 
+/* A refused move: the cell shakes and flashes red, then fades back. The red lives in the
+   animation only, so it can never stay on the cell. main.ts removes the class at the end. */
 .cell.shake {
-  animation: shake 0.35s;
-  background: var(--danger);
+  animation: reject 0.9s ease-out;
 }
 
 /* ---- Side panel ---- */
@@ -1293,10 +1294,13 @@ body[data-turn='O'] .status[data-state='playing'] {
   }
 }
 
-@keyframes shake {
-  0%, 100% { translate: 0; }
-  25% { translate: -4px 0; }
-  75% { translate: 4px 0; }
+@keyframes reject {
+  0% { translate: 0; background: var(--danger); }
+  10% { translate: -4px 0; }
+  20% { translate: 4px 0; }
+  30% { translate: -3px 0; }
+  40% { translate: 0; background: var(--danger); }
+  100% { translate: 0; }
 }
 
 @keyframes pop {
