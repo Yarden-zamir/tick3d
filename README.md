@@ -61,7 +61,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - The panel lists the connected devices with an icon for each kind: phone, tablet or computer. The first guest plays O, later guests watch.
 - The host's screen stays on while it hosts. When the host ends the game or closes the page, the guests see a message.
 - Chat, the lock, the hide options and time limits work as in an online game.
-- Host on a laptop: `docker compose -f compose.lan.yml up --build` runs the full game server on a computer. Others on the same network open `http://<that computer's address>:8080` and play the Online mode, with no codes to scan. The online box shows the host with a server icon. Without HTTPS, a browser gives that page no offline cache and no camera; the game itself works. Set `LAN_HOST_NAME` for the name it shows.
+- Host on a laptop: `docker compose -f compose.lan.yml up --build` runs the full game server on a computer. Others on the same network open `http://<that computer's address>:8080` and play the Online mode, with no codes to scan. The online box shows the host with a server icon. Without HTTPS, a browser gives that page no offline cache and no camera; the game itself works. Set `LAN_HOST_NAME` for the name it shows, and `LAN_PORT` when port 8080 is taken.
 
 ## Accounts and My games
 
