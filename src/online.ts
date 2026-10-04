@@ -1,4 +1,12 @@
-import { type Code, type MoveRequest, type PlayerToken, type SessionView, asPlayerToken, parseSessionView } from './protocol.ts';
+import {
+  type Code,
+  type MoveRequest,
+  type PlayerToken,
+  type SessionUpdate,
+  type SessionView,
+  asPlayerToken,
+  parseSessionView,
+} from './protocol.ts';
 
 const TOKEN_KEY = 'tick3d.player';
 
@@ -54,7 +62,8 @@ export const api = {
   join: (code: Code) => request('POST', `/${code}/join`),
   move: (code: Code, move: MoveRequest) => request('POST', `/${code}/moves`, move),
   newGame: (code: Code) => request('POST', `/${code}/games`),
-  rename: (code: Code, name: string) => request('PATCH', `/${code}`, { name }),
+  update: (code: Code, changes: SessionUpdate) => request('PATCH', `/${code}`, changes),
+  lock: (code: Code) => request('POST', `/${code}/lock`),
 
   // Calls onChange after every change, and after each reconnect in case a change was missed.
   subscribe(code: Code, onChange: () => void): () => void {

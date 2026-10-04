@@ -12,14 +12,22 @@ export const MAX_GAMES_PER_SESSION = 500;
 export type Code = string & { readonly __brand: 'Code' };
 export type PlayerToken = string & { readonly __brand: 'PlayerToken' };
 
+// Match options apply to both players and to watchers. View and layout stay per screen.
+export type MatchOptions = { hideBoard: boolean; hideHistory: boolean };
+
 export type SessionView = {
   code: Code;
   name: string;
   games: number[][];
   seats: Record<Player, boolean>;
   you: Player | null;
+  options: MatchOptions;
+  // True while a lock holds: from the lock until the live game ends.
+  locked: boolean;
   version: number;
 };
+
+export type SessionUpdate = { name?: string } & Partial<MatchOptions>;
 
 export type MoveRequest = { game: number; moveCount: number; cell: number };
 
@@ -58,6 +66,27 @@ export function parseMoveRequest(value: unknown): MoveRequest | undefined {
   return isCount(game) && isCount(moveCount) && isCell(cell) ? { game, moveCount, cell } : undefined;
 }
 
+// Returns undefined for an unknown field, a wrong type, an invalid name, or an empty update.
+export function parseSessionUpdate(value: unknown): SessionUpdate | undefined {
+  if (!isRecord(value)) return undefined;
+  const keys = Object.keys(value);
+  const known = ['name', 'hideBoard', 'hideHistory'];
+  if (keys.length === 0 || !keys.every((key) => known.includes(key))) return undefined;
+  const update: SessionUpdate = {};
+  if ('name' in value) {
+    const name = normalizeName(value.name);
+    if (name === undefined) return undefined;
+    update.name = name;
+  }
+  for (const option of ['hideBoard', 'hideHistory'] as const) {
+    if (!(option in value)) continue;
+    const flag = value[option];
+    if (typeof flag !== 'boolean') return undefined;
+    update[option] = flag;
+  }
+  return update;
+}
+
 // Throws on any unexpected shape, so a server change can never half-render on the page.
 export function parseSessionView(value: unknown): SessionView {
   const fail = (field: string): never => {
@@ -66,12 +95,25 @@ export function parseSessionView(value: unknown): SessionView {
   if (!isRecord(value)) return fail('body');
   const code = typeof value.code === 'string' ? normalizeCode(value.code) : undefined;
   const name = normalizeName(value.name);
-  const { games, seats, you, version } = value;
+  const { games, seats, you, options, locked, version } = value;
   if (code === undefined) return fail('code');
   if (name === undefined) return fail('name');
   if (!Array.isArray(games) || games.length === 0 || !games.every(isMoveList)) return fail('games');
   if (!isRecord(seats) || typeof seats.X !== 'boolean' || typeof seats.O !== 'boolean') return fail('seats');
   if (you !== null && you !== 'X' && you !== 'O') return fail('you');
+  if (!isRecord(options) || typeof options.hideBoard !== 'boolean' || typeof options.hideHistory !== 'boolean') {
+    return fail('options');
+  }
+  if (typeof locked !== 'boolean') return fail('locked');
   if (typeof version !== 'number' || !Number.isInteger(version)) return fail('version');
-  return { code, name, games, seats: { X: seats.X, O: seats.O }, you, version };
+  return {
+    code,
+    name,
+    games,
+    seats: { X: seats.X, O: seats.O },
+    you,
+    options: { hideBoard: options.hideBoard, hideHistory: options.hideHistory },
+    locked,
+    version,
+  };
 }

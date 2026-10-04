@@ -10,6 +10,7 @@ import {
   NAME_MAX_LENGTH,
   type MoveRequest,
   type PlayerToken,
+  type SessionUpdate,
   type SessionView,
   isMoveList,
   normalizeName,
@@ -29,6 +30,9 @@ type Row = {
   games: string;
   seat_x: string | null;
   seat_o: string | null;
+  hide_board: number;
+  hide_history: number;
+  locked_game: number | null;
   version: number;
 };
 
@@ -42,6 +46,9 @@ function isRow(value: unknown): value is Row {
     typeof row.games === 'string' &&
     (row.seat_x === null || typeof row.seat_x === 'string') &&
     (row.seat_o === null || typeof row.seat_o === 'string') &&
+    typeof row.hide_board === 'number' &&
+    typeof row.hide_history === 'number' &&
+    (row.locked_game === null || typeof row.locked_game === 'number') &&
     typeof row.version === 'number'
   );
 }
@@ -55,6 +62,10 @@ function schema(maxSessions: number): string {
       games TEXT NOT NULL CHECK (json_valid(games) AND json_type(games) = 'array'),
       seat_x TEXT,
       seat_o TEXT,
+      hide_board INTEGER NOT NULL DEFAULT 0 CHECK (hide_board IN (0, 1)),
+      hide_history INTEGER NOT NULL DEFAULT 0 CHECK (hide_history IN (0, 1)),
+      -- Index of the game that the lock holds. The lock ends when that game ends.
+      locked_game INTEGER CHECK (locked_game >= 0),
       version INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -97,6 +108,10 @@ function currentGame(games: number[][]): Game {
   return replay(moves);
 }
 
+function isLocked(row: Row, games: number[][]): boolean {
+  return row.locked_game === games.length - 1 && currentGame(games).status.kind === 'playing';
+}
+
 // node:sqlite is synchronous and Node runs one request handler at a time, so each
 // read-check-write below is atomic without an explicit transaction.
 // Revisit this if the API ever runs more than one process against the same file.
@@ -105,12 +120,15 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec(schema(maxSessions));
 
-  const select = db.prepare('SELECT code, name, games, seat_x, seat_o, version FROM sessions WHERE code = ?');
+  const select = db.prepare(
+    'SELECT code, name, games, seat_x, seat_o, hide_board, hide_history, locked_game, version FROM sessions WHERE code = ?',
+  );
   const insert = db.prepare(
     'INSERT INTO sessions (code, name, games, seat_x, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
   );
   const update = db.prepare(
-    'UPDATE sessions SET name = ?, games = ?, seat_x = ?, seat_o = ?, version = version + 1, updated_at = ? WHERE code = ?',
+    `UPDATE sessions SET name = ?, games = ?, seat_x = ?, seat_o = ?, hide_board = ?, hide_history = ?, locked_game = ?,
+     version = version + 1, updated_at = ? WHERE code = ?`,
   );
 
   function load(code: Code): Row {
@@ -120,19 +138,34 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
     return row;
   }
 
-  function save(row: Row, changes: Partial<Pick<Row, 'name' | 'games' | 'seat_x' | 'seat_o'>>): Row {
+  type Changes = Partial<Omit<Row, 'code' | 'version'>>;
+
+  function save(row: Row, changes: Changes): Row {
     const next = { ...row, ...changes };
-    update.run(next.name, next.games, next.seat_x, next.seat_o, Date.now(), row.code);
+    update.run(
+      next.name,
+      next.games,
+      next.seat_x,
+      next.seat_o,
+      next.hide_board,
+      next.hide_history,
+      next.locked_game,
+      Date.now(),
+      row.code,
+    );
     return load(row.code);
   }
 
   function view(row: Row, player: PlayerToken | undefined): SessionView {
+    const games = parseGames(row);
     return {
       code: row.code,
       name: row.name,
-      games: parseGames(row),
+      games,
       seats: { X: row.seat_x !== null, O: row.seat_o !== null },
       you: seatOf(row, player),
+      options: { hideBoard: row.hide_board === 1, hideHistory: row.hide_history === 1 },
+      locked: isLocked(row, games),
       version: row.version,
     };
   }
@@ -203,12 +236,29 @@ export function openStore(path: string, maxSessions: number = MAX_SESSIONS) {
       return view(save(row, { games: JSON.stringify([...games, []]) }), player);
     },
 
-    rename(code: Code, player: PlayerToken, name: unknown): SessionView {
+    // The name stays open during a lock. The match options do not.
+    update(code: Code, player: PlayerToken, changes: SessionUpdate): SessionView {
       const row = load(code);
       seated(row, player);
-      const validName = normalizeName(name);
-      if (validName === undefined) throw new StoreError(400, 'A name needs 1 to 40 characters.');
-      return view(save(row, { name: validName }), player);
+      const changesOptions = changes.hideBoard !== undefined || changes.hideHistory !== undefined;
+      if (changesOptions && isLocked(row, parseGames(row))) {
+        throw new StoreError(409, 'Settings are locked until this game ends.');
+      }
+      const next: Changes = {};
+      if (changes.name !== undefined) next.name = changes.name;
+      if (changes.hideBoard !== undefined) next.hide_board = changes.hideBoard ? 1 : 0;
+      if (changes.hideHistory !== undefined) next.hide_history = changes.hideHistory ? 1 : 0;
+      return view(save(row, next), player);
+    },
+
+    // Locks the match options, and every screen's own settings, for both players until the live game ends.
+    lock(code: Code, player: PlayerToken): SessionView {
+      const row = load(code);
+      seated(row, player);
+      const games = parseGames(row);
+      if (isLocked(row, games)) return view(row, player);
+      if (currentGame(games).status.kind !== 'playing') throw new StoreError(409, 'This game is over. Start a new game first.');
+      return view(save(row, { locked_game: games.length - 1 }), player);
     },
 
     close(): void {

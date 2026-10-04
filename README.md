@@ -18,7 +18,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
   - Hard: takes a win, blocks your win, otherwise searches ahead with alpha-beta pruning for up to 600 ms.
 - Move validation: an occupied cell, a move after the game ends, a move out of turn, or a move by a spectator is refused with a sound and a message. The server checks online moves again with the same rules.
 - Hide the board, or hide all marks except the last move. Play by coordinates: type the layer, row and column, for example `2 3 4`. Hidden marks show again when the game ends.
-- Lock settings: after a lock, no setting (the view included) changes until the game ends. The lock does not survive a page reload.
+- Lock settings: after a lock, no setting (the view included) changes until the game ends. In a local game, a page reload ends the lock. In an online session, either player can lock, the server keeps the lock, and it holds for both players.
 - Session history: the panel lists the games of the session. Replay steps through a finished game move by move.
 - Sound effects made with Web Audio. Each layer has its own note. A mute button keeps the choice.
 - Two views: a 3D tower of tilted layers and a flat view. The flat view has four layouts: grid, side by side, top to bottom, and steps.
@@ -32,6 +32,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - The creator plays X. The first other browser that opens the code plays O. Further browsers watch.
 - A browser keeps its seat through a random token in `localStorage`.
 - A code loads the full session, finished games included. Either player can name the session and start the next game after a game ends.
+- Hide board and Hide all but last move belong to the session. A change by either player applies to both players and to watchers. View and layout stay per screen.
 - The server keeps the newest 10,000 sessions. A SQLite trigger deletes the oldest session (by creation time) when a new session goes past that limit.
 
 ## Code
