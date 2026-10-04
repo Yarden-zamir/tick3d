@@ -751,7 +751,7 @@ function applyView(view: SessionView): void {
       showToast(`Time limit${startsLater ? ' for the next game' : ''}: ${describeClock(session.clock)}.`);
     }
     if (session.locked && !previous.locked) showToast('Settings are locked for both players until this game ends.');
-    for (const [option, label] of [['hideBoard', 'Hide board'], ['hideHistory', 'Hide all but last move']] as const) {
+    for (const [option, label] of [['hideBoard', 'Hide board'], ['hideHistory', 'Hide history']] as const) {
       if (session.options[option] !== previous.options[option]) {
         showToast(`${label} is ${session.options[option] ? 'on' : 'off'} for both players.`);
       }
@@ -936,7 +936,7 @@ async function renderNearby(): Promise<void> {
   nearbyStart.hidden = state.kind !== 'idle';
   nearbyActions.hidden = state.kind !== 'hosting' && state.kind !== 'guest';
   nearbyAdd.hidden = state.kind !== 'hosting';
-  nearbyStop.textContent = state.kind === 'guest' ? 'Leave Nearby game' : 'End Nearby game';
+  nearbyStop.textContent = state.kind === 'guest' ? 'Leave' : 'End';
   nearbyDeviceIcon.innerHTML = DEVICE_ICONS[thisDevice];
   if (state.kind === 'hosting') {
     const hostSeat = session?.you ?? 'X';
@@ -1617,7 +1617,8 @@ function render(): void {
   renderClocks();
   lockButton.disabled = frozen || busy || !isLive() || review !== undefined || !canChangeMatch();
   const lockScope = shared() ? ' for both players' : '';
-  lockButton.textContent = frozen ? `🔒 Locked${lockScope} until this game ends` : `🔓 Lock settings${lockScope}`;
+  lockButton.textContent = frozen ? '🔒 Locked' : '🔓 Lock';
+  lockButton.title = frozen ? `Settings are locked${lockScope} until this game ends.` : `Lock every setting${lockScope} until this game ends.`;
   lockButton.setAttribute('aria-pressed', String(frozen));
   renderAccount();
   soundButton.innerHTML = settings.muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
@@ -2213,7 +2214,6 @@ shareQrButton.addEventListener('click', () => {
   sounds.click();
   const open = shareQrButton.getAttribute('aria-expanded') !== 'true';
   shareQrButton.setAttribute('aria-expanded', String(open));
-  shareQrButton.textContent = open ? 'Hide QR code' : 'QR code';
   renderOnlineQr(session?.mode === 'online' ? session.code : undefined);
 });
 

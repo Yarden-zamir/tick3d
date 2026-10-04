@@ -2281,3 +2281,9 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 700;
   text-align: center;
 }
+
+/* The QR code button stays pressed while its code shows. */
+#share-qr[aria-expanded='true'] {
+  background: var(--ink);
+  color: var(--surface);
+}

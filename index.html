@@ -71,7 +71,7 @@
             <button type="button" data-review="prev" aria-label="Previous move">◀</button>
             <button type="button" data-review="next" aria-label="Next move">▶</button>
             <button type="button" data-review="last" aria-label="Last move">⏭</button>
-            <button type="button" data-review="exit">Back to live game</button>
+            <button type="button" data-review="exit">Live game</button>
           </div>
         </div>
         <form class="coords" id="coords" aria-labelledby="coords-title">
@@ -138,7 +138,7 @@
               <b id="online-code">····</b>
             </div>
             <div class="share-buttons">
-              <button type="button" id="share">Share link</button>
+              <button type="button" id="share">Link</button>
               <button type="button" id="share-qr" aria-expanded="false" aria-controls="online-qr">QR code</button>
             </div>
           </div>
@@ -159,34 +159,34 @@
             <input id="nearby-name" maxlength="24" placeholder="This device's name" aria-label="This device's name" />
           </label>
           <div class="nearby-start" id="nearby-start">
-            <button type="button" id="nearby-host">Host a game</button>
-            <button type="button" id="nearby-join">Join a game</button>
+            <button type="button" id="nearby-host">Host</button>
+            <button type="button" id="nearby-join">Join</button>
           </div>
           <div class="nearby-step" id="nearby-step" hidden>
             <p class="nearby-step-text" id="nearby-step-text"></p>
             <div class="nearby-qr" id="nearby-qr" hidden></div>
             <details class="nearby-text" id="nearby-text" hidden>
-              <summary>No camera? Use the code as text</summary>
+              <summary>Code as text</summary>
               <textarea id="nearby-code-out" readonly rows="3"></textarea>
-              <button type="button" id="nearby-copy">Copy code</button>
+              <button type="button" id="nearby-copy">Copy</button>
             </details>
             <video class="nearby-video" id="nearby-video" playsinline muted hidden></video>
             <div class="nearby-input" id="nearby-input" hidden>
-              <button type="button" id="nearby-scan">Scan with camera</button>
+              <button type="button" id="nearby-scan">Scan</button>
               <div class="join-row">
                 <input id="nearby-code-in" placeholder="Or paste a code" autocomplete="off" />
-                <button type="button" id="nearby-use-code">Use code</button>
+                <button type="button" id="nearby-use-code">Use</button>
               </div>
             </div>
             <button type="button" class="nearby-cancel" id="nearby-cancel">Cancel</button>
           </div>
           <ul class="nearby-devices" id="nearby-devices" hidden></ul>
           <div class="nearby-actions" id="nearby-actions" hidden>
-            <button type="button" id="nearby-add">Add a device</button>
-            <button type="button" id="nearby-stop">End Nearby game</button>
+            <button type="button" id="nearby-add">Add device</button>
+            <button type="button" id="nearby-stop">End</button>
           </div>
           <details class="nearby-laptop">
-            <summary>Host on a laptop instead</summary>
+            <summary>Laptop host</summary>
             <p>A laptop can run the full game server for the local network. Others then open its address and play the Online mode, with no codes to scan. See "Host on a laptop" in the README on GitHub.</p>
           </details>
         </div>
@@ -274,7 +274,7 @@
           <span class="label">Hide</span>
           <div class="toggles">
             <button type="button" data-toggle="hideBoard">Board</button>
-            <button type="button" data-toggle="hideHistory">All but last move</button>
+            <button type="button" data-toggle="hideHistory">History</button>
           </div>
         </div>
 
@@ -317,7 +317,7 @@
       </div>
       <div class="end-card-actions">
         <button type="button" class="primary" id="end-card-share">Share</button>
-        <button type="button" id="end-card-save">Save image</button>
+        <button type="button" id="end-card-save">Save</button>
         <button type="button" id="end-card-close">Close</button>
       </div>
     </dialog>

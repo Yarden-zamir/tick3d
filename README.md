@@ -39,7 +39,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - A browser keeps its seat through a random token in `localStorage`.
 - A code loads the full session, finished games included. Either player can name the session and start the next game after a game ends.
 - Chat: on a wide screen a column at the left, on a narrower one a box under the board. It sends messages to the other player in real time, online and over Nearby. Only the two players can write, watchers read along. A session keeps its newest 50 messages of up to 200 characters.
-- Hide board and Hide all but last move belong to the session. A change by either player applies to both players and to watchers. View and layout stay per screen.
+- Hide board and Hide history belong to the session. A change by either player applies to both players and to watchers. View and layout stay per screen.
 - The time limit also belongs to the session. A new session takes the time limit of the screen that creates it. Either player can change it at any time, except during a lock. The change reaches both players and starts with the next game. The server records the move times and decides a timeout, so a page that closes cannot avoid a loss on time.
 - A session never expires, so the same two players can keep playing for as long as they like. After the first join, a player can leave and come back later: the game waits for their move. The other player sees them as away (a dimmed score tile and "is away" in the status), so a game can also run asynchronously. A clock keeps running while a player is away.
 - There is no limit on sessions or on games per session. Add one when storage use calls for it.
