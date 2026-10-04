@@ -23,9 +23,12 @@ const MODES = ['computer', 'friend', 'online'] as const;
 const VIEWS = ['tower', 'flat'] as const;
 const LAYOUTS = ['grid', 'row', 'column', 'steps'] as const;
 const PLAYERS = ['X', 'O'] as const;
+// 'system' follows the device setting until the player picks light or dark.
+const THEMES = ['system', 'light', 'dark'] as const;
 type Mode = (typeof MODES)[number];
 type View = (typeof VIEWS)[number];
 type Layout = (typeof LAYOUTS)[number];
+type Theme = (typeof THEMES)[number];
 
 type Settings = {
   mode: Mode;
@@ -36,6 +39,7 @@ type Settings = {
   hideBoard: boolean;
   hideHistory: boolean;
   muted: boolean;
+  theme: Theme;
 };
 type Toggle = 'hideBoard' | 'hideHistory';
 
@@ -48,8 +52,13 @@ const DEFAULTS: Settings = {
   hideBoard: false,
   hideHistory: false,
   muted: false,
+  theme: 'system',
 };
 const STORAGE_KEY = 'tick3d.settings';
+// Inline icons draw in the text color, so they follow the theme. Emoji do not.
+const SPEAKER = '<path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>';
+const SOUND_ON_ICON = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">${SPEAKER}<path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/></svg>`;
+const SOUND_OFF_ICON = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">${SPEAKER}<path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>`;
 const COMPUTER_DELAY_MS = 450;
 
 type Refusal = MoveError | 'wait' | 'not-your-turn' | 'spectator' | 'reviewing' | 'no-session' | 'locked';
@@ -88,6 +97,7 @@ function loadSettings(): Settings {
     hideBoard: bool(stored.hideBoard, DEFAULTS.hideBoard),
     hideHistory: bool(stored.hideHistory, DEFAULTS.hideHistory),
     muted: bool(stored.muted, DEFAULTS.muted),
+    theme: oneOf(THEMES, stored.theme, DEFAULTS.theme),
   };
 }
 
@@ -126,6 +136,9 @@ const newGameButton = element('#new-game', HTMLButtonElement);
 const undoButton = element('#undo', HTMLButtonElement);
 const soundButton = element('#sound', HTMLButtonElement);
 const lockButton = element('#lock', HTMLButtonElement);
+const themeColorMeta = element('meta[name="theme-color"]', HTMLMetaElement);
+const themeButtons = document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]');
+const darkQuery = matchMedia('(prefers-color-scheme: dark)');
 
 type Online = {
   code: Code;
@@ -266,7 +279,8 @@ function announce(game: Game): void {
 }
 
 function celebrate(): void {
-  const colors = ['#ff6b8b', '#ffb36b', '#46d9ff', '#9b8cff', '#7dffb2'];
+  const css = getComputedStyle(document.documentElement);
+  const colors = ['--x', '--primary', '--o', '--toggle-on', '--win'].map((name) => css.getPropertyValue(name).trim());
   burstEl.replaceChildren(
     ...Array.from({ length: 36 }, (_, i) => {
       const spark = document.createElement('span');
@@ -651,7 +665,7 @@ function render(): void {
   const lockScope = online ? ' for both players' : '';
   lockButton.textContent = frozen ? `🔒 Locked${lockScope} until this game ends` : `🔓 Lock settings${lockScope}`;
   lockButton.setAttribute('aria-pressed', String(frozen));
-  soundButton.textContent = settings.muted ? '🔇' : '🔊';
+  soundButton.innerHTML = settings.muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
   soundButton.setAttribute('aria-pressed', String(!settings.muted));
 }
 
@@ -676,6 +690,33 @@ function stepReview(action: string | undefined): void {
   sounds.click();
   render();
 }
+
+// ---- Theme ----
+
+const resolvedTheme = (): 'light' | 'dark' =>
+  settings.theme === 'system' ? (darkQuery.matches ? 'dark' : 'light') : settings.theme;
+
+// The theme is a per-screen look like the sound, so the settings lock does not hold it.
+function applyTheme(): void {
+  if (settings.theme === 'system') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = settings.theme;
+  const theme = resolvedTheme();
+  themeButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.themeChoice === theme)));
+  themeColorMeta.content = getComputedStyle(document.documentElement).getPropertyValue('--page').trim();
+}
+
+themeButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const theme = oneOf(THEMES, button.dataset.themeChoice, settings.theme);
+    if (theme === resolvedTheme()) return;
+    settings.theme = theme;
+    saveSettings();
+    sounds.click();
+    applyTheme();
+  });
+});
+
+darkQuery.addEventListener('change', applyTheme);
 
 // ---- Settings ----
 
@@ -839,6 +880,7 @@ soundButton.addEventListener('click', () => {
 // ---- Start ----
 
 setMuted(settings.muted);
+applyTheme();
 const linkCode = new URLSearchParams(location.search).get('code');
 if (linkCode !== null) {
   const code = normalizeCode(linkCode);
