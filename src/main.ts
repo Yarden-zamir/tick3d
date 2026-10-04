@@ -537,6 +537,10 @@ function finish(game: Game): void {
   }, CARD_DELAY_MS);
 }
 
+// The confetti animation lasts 1.4 s after a delay of up to 0.12 s.
+const CONFETTI_MS = 1600;
+let confettiTimer: ReturnType<typeof setTimeout> | undefined;
+
 function celebrate(): void {
   const css = getComputedStyle(document.documentElement);
   const colors = ['--x', '--primary', '--o', '--toggle-on', '--win'].map((name) => css.getPropertyValue(name).trim());
@@ -552,6 +556,9 @@ function celebrate(): void {
       return spark;
     }),
   );
+  // Spent sparks would stay in the page, invisible, so remove them.
+  clearTimeout(confettiTimer);
+  confettiTimer = setTimeout(() => burstEl.replaceChildren(), CONFETTI_MS);
 }
 
 // ---- Local play ----

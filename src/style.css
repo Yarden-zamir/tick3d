@@ -1628,15 +1628,20 @@ body[data-turn='O'] .status[data-state='playing'] {
   translate: -50% 0;
 }
 
+/* The win confetti flies inside a layer the size of the screen that clips it, so a spark past
+   the edge never widens the page (which let a phone scroll sideways after a win). */
 .burst {
-  position: absolute;
-  top: 45%;
-  left: 50%;
+  position: fixed;
+  z-index: 5;
+  inset: 0;
+  overflow: hidden;
   pointer-events: none;
 }
 
 .burst span {
   position: absolute;
+  top: 40%;
+  left: 50%;
   width: 11px;
   height: 11px;
   border: 2px solid #000;
