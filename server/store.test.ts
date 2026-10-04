@@ -1,6 +1,10 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { TimeControl } from '../src/clock.ts';
-import { CODE_ALPHABET, type Code, MAX_SESSIONS, type PlayerToken } from '../src/protocol.ts';
+import { CHAT_KEEP, CODE_ALPHABET, type Code, MAX_SESSIONS, type PlayerToken } from '../src/protocol.ts';
 import { type Store, StoreError, openStore } from './store.ts';
 
 const alice = 'aaaaaaaa-0000-4000-8000-000000000001' as PlayerToken;
@@ -181,5 +185,48 @@ describe('retention', () => {
     expect(status(() => store.get(codes[0]!, alice))).toBe(404);
     expect(status(() => store.get(codes[1]!, alice))).toBe(404);
     for (const code of codes.slice(2)) expect(store.get(code, alice).code).toBe(code);
+  });
+});
+
+describe('chat', () => {
+  it('sends a message to the other player and watchers, from players only', () => {
+    const code = playedSession();
+    const before = store.get(code, alice).version;
+    const view = store.chat(code, alice, '  good luck ');
+    expect(view.chat).toMatchObject([{ from: 'X', text: 'good luck' }]);
+    expect(view.version).toBeGreaterThan(before);
+    store.chat(code, bob, 'you too');
+    expect(store.get(code, carol).chat.map((m) => [m.from, m.text])).toEqual([
+      ['X', 'good luck'],
+      ['O', 'you too'],
+    ]);
+    expect(status(() => store.chat(code, carol, 'hi'))).toBe(403);
+    expect(status(() => store.chat(code, alice, '   '))).toBe(400);
+    expect(status(() => store.chat(code, alice, 'x'.repeat(201)))).toBe(400);
+    expect(status(() => store.chat(code, alice, 5))).toBe(400);
+  });
+
+  it('keeps the newest messages only', () => {
+    const code = playedSession();
+    for (let i = 0; i < CHAT_KEEP + 5; i++) store.chat(code, alice, `message ${i}`);
+    const chat = store.get(code, bob).chat;
+    expect(chat).toHaveLength(CHAT_KEEP);
+    expect(chat[0]?.text).toBe('message 5');
+    expect(chat.at(-1)?.text).toBe(`message ${CHAT_KEEP + 4}`);
+  });
+
+  it('deletes the messages of a deleted session', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tick3d-'));
+    const path = join(dir, 'chat.db');
+    store = openStore(path, 1);
+    const first = store.create(alice, 'First').code;
+    store.chat(first, alice, 'hello');
+    store.chat(first, alice, 'anyone?');
+    const second = store.create(bob, 'Second').code;
+    expect(status(() => store.get(first, alice))).toBe(404);
+    store.chat(second, bob, 'fresh');
+    const db = new DatabaseSync(path);
+    expect(db.prepare('SELECT code, text FROM messages').all()).toEqual([{ code: second, text: 'fresh' }]);
+    db.close();
   });
 });

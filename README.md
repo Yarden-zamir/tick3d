@@ -38,6 +38,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - The creator plays X. The first other browser that opens the code plays O. Further browsers watch.
 - A browser keeps its seat through a random token in `localStorage`.
 - A code loads the full session, finished games included. Either player can name the session and start the next game after a game ends.
+- Chat: a box under the coordinate keypad sends messages to the other player in real time. Only the two players can write, watchers read along. A session keeps its newest 50 messages of up to 200 characters, and its messages go when the session goes.
 - Hide board and Hide all but last move belong to the session. A change by either player applies to both players and to watchers. View and layout stay per screen.
 - The time limit also belongs to the session. A new session takes the time limit of the screen that creates it. Either player can change it at any time, except during a lock. The change reaches both players and starts with the next game. The server records the move times and decides a timeout, so a page that closes cannot avoid a loss on time.
 - The server keeps the newest 10,000 sessions. A SQLite trigger deletes the oldest session (by creation time) when a new session goes past that limit.

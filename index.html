@@ -84,6 +84,14 @@
             <button type="submit" class="place" id="coords-place">Place</button>
           </div>
         </form>
+        <section class="chat" id="chat" aria-labelledby="chat-title" hidden>
+          <span class="chat-title" id="chat-title">Chat</span>
+          <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
+          <form class="chat-form" id="chat-form" autocomplete="off">
+            <input id="chat-input" maxlength="200" placeholder="Message your opponent" enterkeyhint="send" aria-label="Message" />
+            <button type="submit" id="chat-send">Send</button>
+          </form>
+        </section>
         <div class="burst" id="burst" aria-hidden="true"></div>
       </section>
 
@@ -259,6 +267,11 @@
       </div>
     </dialog>
     <div class="toast" id="toast" role="alert"></div>
+    <button type="button" class="chat-notice" id="chat-notice" hidden>
+      <span class="chat-notice-icon" aria-hidden="true">💬</span>
+      <span class="chat-notice-body"><b id="chat-notice-from"></b><span id="chat-notice-text" dir="auto"></span></span>
+      <small>Reply</small>
+    </button>
     <button type="button" class="rules-banner" id="rules-banner" hidden aria-label="Rules. Tap to close.">
       <b>How to win</b>
       <span>Take turns placing X and O. Get four of yours in a straight line: along a row or column, up through the layers, or diagonally through the cube. There are 76 lines.</span>
