@@ -1,4 +1,4 @@
-import type { Player } from './game';
+import type { Player } from './game.ts';
 
 // All sounds are synthesized with Web Audio, so the app ships no audio files.
 let context: AudioContext | undefined;

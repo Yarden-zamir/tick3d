@@ -24,6 +24,25 @@
       <section class="stage">
         <div class="status" id="status" aria-live="polite"></div>
         <div class="board" id="board" role="grid" aria-label="Game board"></div>
+        <div class="board-hidden" id="board-hidden" hidden>
+          <strong>Board hidden</strong>
+          <span>Type the layer, row and column of your move below.</span>
+        </div>
+        <div class="review" id="review" hidden>
+          <span id="review-label"></span>
+          <div class="review-buttons">
+            <button type="button" data-review="first" aria-label="First move">⏮</button>
+            <button type="button" data-review="prev" aria-label="Previous move">◀</button>
+            <button type="button" data-review="next" aria-label="Next move">▶</button>
+            <button type="button" data-review="last" aria-label="Last move">⏭</button>
+            <button type="button" data-review="exit">Back to live game</button>
+          </div>
+        </div>
+        <form class="coords" id="coords" autocomplete="off">
+          <label for="coords-input">Move by coordinates</label>
+          <input id="coords-input" inputmode="numeric" maxlength="7" placeholder="layer row column · 2 3 4" />
+          <button type="submit">Place</button>
+        </form>
         <div class="burst" id="burst" aria-hidden="true"></div>
       </section>
 
@@ -33,10 +52,11 @@
           <div class="segmented" data-setting="mode">
             <button type="button" data-value="computer">Computer</button>
             <button type="button" data-value="friend">Friend</button>
+            <button type="button" data-value="online">Online</button>
           </div>
         </div>
 
-        <div class="field" data-computer-only>
+        <div class="field" data-show-mode="computer">
           <span class="label">Difficulty</span>
           <div class="segmented" data-setting="difficulty">
             <button type="button" data-value="easy">Easy</button>
@@ -45,12 +65,34 @@
           </div>
         </div>
 
-        <div class="field" data-computer-only>
+        <div class="field" data-show-mode="computer">
           <span class="label">You play</span>
           <div class="segmented" data-setting="human">
             <button type="button" data-value="X">X · first</button>
             <button type="button" data-value="O">O · second</button>
           </div>
+        </div>
+
+        <div class="online" data-show-mode="online">
+          <div class="online-code" id="online-session">
+            <div>
+              <span class="label">Game code</span>
+              <b id="online-code">····</b>
+            </div>
+            <button type="button" id="share">Share link</button>
+          </div>
+          <label class="field">
+            <span class="label">Session name</span>
+            <input id="session-name" maxlength="40" placeholder="Name this session" />
+          </label>
+          <form class="field" id="join">
+            <span class="label">Join a friend</span>
+            <div class="join-row">
+              <input id="join-code" maxlength="4" placeholder="Code" autocapitalize="characters" autocomplete="off" />
+              <button type="submit">Join</button>
+              <button type="button" id="new-code">New code</button>
+            </div>
+          </form>
         </div>
 
         <div class="field">
@@ -61,6 +103,24 @@
           </div>
         </div>
 
+        <div class="field" data-show-view="flat">
+          <span class="label">Layout</span>
+          <div class="segmented" data-setting="layout">
+            <button type="button" data-value="grid">Grid</button>
+            <button type="button" data-value="row">Side by side</button>
+            <button type="button" data-value="column">Top to bottom</button>
+            <button type="button" data-value="steps">Steps</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="label">Hide</span>
+          <div class="toggles">
+            <button type="button" data-toggle="hideBoard">Board</button>
+            <button type="button" data-toggle="hideHistory">All but last move</button>
+          </div>
+        </div>
+
         <div class="score" id="score"></div>
 
         <div class="actions">
@@ -68,12 +128,19 @@
           <button type="button" id="undo">Undo</button>
           <button type="button" id="sound" aria-label="Sound"></button>
         </div>
+        <button type="button" class="lock" id="lock"></button>
+
+        <details class="history" id="history-box">
+          <summary>Games in this session</summary>
+          <ol id="history"></ol>
+        </details>
 
         <details class="help">
           <summary>How to play</summary>
           <p>Take turns to place a mark. Get four in a straight line to win.</p>
           <p>Lines can run along a layer, up through the layers, or diagonally through the cube. There are 76 lines.</p>
           <p>Point at a cell to light up the cells above and below it.</p>
+          <p>Lock settings keeps every setting, the view included, until the game ends.</p>
         </details>
       </aside>
     </div>

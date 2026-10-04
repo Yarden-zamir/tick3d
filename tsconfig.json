@@ -3,8 +3,15 @@
     "target": "es2023",
     "module": "esnext",
     "moduleResolution": "bundler",
-    "lib": ["es2023", "dom", "dom.iterable"],
-    "types": ["vite/client"],
+    "lib": [
+      "es2023",
+      "dom",
+      "dom.iterable"
+    ],
+    "types": [
+      "vite/client",
+      "node"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -13,7 +20,12 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "server"
+  ]
 }

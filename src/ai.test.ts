@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { chooseMove, DIFFICULTIES } from './ai';
-import { type Board, CELL_COUNT, type Mark, newGame, play } from './game';
+import { chooseMove, DIFFICULTIES } from './ai.ts';
+import { type Board, CELL_COUNT, type Mark, newGame, play } from './game.ts';
 
 function boardWith(marks: Record<number, Mark>): Board {
   return Array.from({ length: CELL_COUNT }, (_, cell) => marks[cell] ?? null);

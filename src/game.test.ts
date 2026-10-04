@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CELL_COUNT, LINES, type Game, newGame, play, toCell, undo } from './game';
+import { CELL_COUNT, LINES, type Game, newGame, parseCoordinates, play, replay, toCell, undo } from './game.ts';
 
 function playAll(cells: number[], game: Game = newGame()): Game {
   return cells.reduce((current, cell) => {
@@ -55,5 +55,21 @@ describe('undo', () => {
     const game = playAll([0, 1, 2]);
     expect(undo(game, 2)).toEqual(playAll([0]));
     expect(undo(game, 10)).toEqual(newGame());
+  });
+});
+
+describe('parseCoordinates', () => {
+  it.each(['234', '2 3 4', '2,3,4', ' 2, 3, 4 '])('reads %j as layer 2, row 3, column 4', (text) => {
+    expect(parseCoordinates(text)).toEqual({ layer: 1, row: 2, column: 3 });
+  });
+
+  it.each(['', '23', '2345', '054', '2 3 5', 'abc', '2.3.4'])('rejects %j', (text) => {
+    expect(parseCoordinates(text)).toBeUndefined();
+  });
+});
+
+describe('replay', () => {
+  it('throws on an illegal history', () => {
+    expect(() => replay([0, 0])).toThrow();
   });
 });

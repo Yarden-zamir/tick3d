@@ -1,4 +1,4 @@
-import { type Board, type Mark, type Player, emptyCells, LINES, linesThrough, other, winningLine } from './game';
+import { type Board, type Mark, type Player, emptyCells, LINES, linesThrough, other, winningLine } from './game.ts';
 
 export const DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
 export type Difficulty = (typeof DIFFICULTIES)[number];

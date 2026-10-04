@@ -9,33 +9,31 @@ http:// {
 	# Caddy binds the KitSHn socket directly and removes a stale socket file left by a
 	# previous container, so no socat sidecar is needed. 0666 lets the host Caddy connect.
 	bind unix/{$KITSHN_DEFAULT_SOCKET}|0666
-	root * /srv
 
-	# encode only compresses its default MIME types. A custom Content-Type set with `header`
-	# is not in that list, and `header` runs before encode sees the type, so list every type
-	# to compress here explicitly.
-	encode zstd gzip {
-		match {
-			header Content-Type text/*
-			header Content-Type application/json*
-			header Content-Type application/javascript*
-			header Content-Type application/xml*
-			header Content-Type application/manifest+json*
-			header Content-Type image/svg+xml*
-		}
+	# Online sessions. Caddy flushes the text/event-stream responses at once, so live updates are not held back.
+	handle /api/* {
+		reverse_proxy api:8080
 	}
 
-	# Vite puts a content hash in every asset file name, so assets never change.
-	header /assets/* Cache-Control "public, max-age=31536000, immutable"
-	header / Cache-Control "no-cache"
+	# The page. `encode` sits in this block only, so it never buffers the API event streams.
+	handle {
+		root * /srv
 
-	# Examples. Uncomment and adapt.
-	# @sw path /sw.js
-	# header @sw Cache-Control "no-cache"
-	# header /assets/* Cache-Control "public, max-age=604800"
-	# @gpx path *.gpx
-	# header @gpx Content-Type application/gpx+xml
-	# header @gpx Content-Disposition attachment
+		# Compress the text files of the page.
+		encode zstd gzip {
+			match {
+				header Content-Type text/html*
+				header Content-Type text/css*
+				header Content-Type application/javascript*
+				header Content-Type text/javascript*
+				header Content-Type image/svg+xml*
+			}
+		}
 
-	file_server
+		# Vite puts a content hash in every asset file name, so assets never change.
+		header /assets/* Cache-Control "public, max-age=31536000, immutable"
+		header / Cache-Control "no-cache"
+
+		file_server
+	}
 }
