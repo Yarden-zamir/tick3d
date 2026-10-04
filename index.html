@@ -190,10 +190,16 @@
     </div>
     <dialog class="end-card" id="end-card" aria-label="Game result">
       <img id="end-card-image" alt="" width="1080" height="1350" />
-      <label class="include">
-        <input type="checkbox" id="end-card-include" checked />
-        <span id="end-card-include-label">Include the game code and link</span>
-      </label>
+      <div class="include-options">
+        <label class="include" id="end-card-code-option">
+          <input type="checkbox" id="end-card-code" checked />
+          <span>Include the game code</span>
+        </label>
+        <label class="include">
+          <input type="checkbox" id="end-card-link" checked />
+          <span>Include the link</span>
+        </label>
+      </div>
       <div class="end-card-actions">
         <button type="button" class="primary" id="end-card-share">Share</button>
         <button type="button" id="end-card-save">Save image</button>

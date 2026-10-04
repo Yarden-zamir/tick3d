@@ -160,8 +160,9 @@ const clockNote = element('#clock-note', HTMLSpanElement);
 const showCardButton = element('#show-card', HTMLButtonElement);
 const cardDialog = element('#end-card', HTMLDialogElement);
 const cardImage = element('#end-card-image', HTMLImageElement);
-const cardInclude = element('#end-card-include', HTMLInputElement);
-const cardIncludeLabel = element('#end-card-include-label', HTMLSpanElement);
+const cardCodeOption = element('#end-card-code-option', HTMLLabelElement);
+const cardCode = element('#end-card-code', HTMLInputElement);
+const cardLink = element('#end-card-link', HTMLInputElement);
 const cardShareButton = element('#end-card-share', HTMLButtonElement);
 const cardSaveButton = element('#end-card-save', HTMLButtonElement);
 const cardCloseButton = element('#end-card-close', HTMLButtonElement);
@@ -936,14 +937,17 @@ function cardInput(game: Game, index: number): CardInput {
     matchup,
     details: `Game ${index + 1} · ${describeClock(game.clock)}${duration}`,
     date: new Date(last > 0 ? last - serverOffset : Date.now()),
-    footer: cardInclude.checked ? (online ? `Code ${online.code} · ${link}` : link) : '',
+    footer: [online && cardCode.checked ? `Code ${online.code}` : '', cardLink.checked ? link : '']
+      .filter((part) => part !== '')
+      .join(' · '),
   };
 }
 
 async function openCard(index: number): Promise<void> {
   const game = games[index];
   if (game === undefined || game.status.kind === 'playing') throw new Error(`game ${index} has no result to show`);
-  cardIncludeLabel.textContent = online ? 'Include the game code and link' : 'Include the link';
+  // A local game has no code, so only the link option applies.
+  cardCodeOption.hidden = online === undefined;
   const input = cardInput(game, index);
   const canvas = await drawCard(input);
   card = { index, canvas };
@@ -962,8 +966,8 @@ cardShareButton.addEventListener('click', () => {
   const game = games[index];
   if (game === undefined) return;
   const input = cardInput(game, index);
-  const url = cardInclude.checked ? (online ? location.href : location.origin) : undefined;
-  const code = cardInclude.checked && online ? ` Code ${online.code}.` : '';
+  const url = cardLink.checked ? (online ? location.href : location.origin) : undefined;
+  const code = cardCode.checked && online ? ` Code ${online.code}.` : '';
   void shareImage(canvas, cardFilename(), `${input.title}: ${input.subtitle} on tick3d.${code}`, url).then((outcome) => {
     if (outcome === 'copied') showToast('Image copied. Paste it anywhere.');
     if (outcome === 'saved') showToast('Image saved.');
@@ -974,9 +978,11 @@ cardSaveButton.addEventListener('click', () => {
   if (card !== undefined) void saveImage(card.canvas, cardFilename());
 });
 cardCloseButton.addEventListener('click', () => cardDialog.close());
-cardInclude.addEventListener('change', () => {
-  if (card !== undefined) void openCard(card.index);
-});
+for (const option of [cardCode, cardLink]) {
+  option.addEventListener('change', () => {
+    if (card !== undefined) void openCard(card.index);
+  });
+}
 // A click on the dimmed backdrop lands on the dialog element itself.
 cardDialog.addEventListener('click', (event) => {
   if (event.target === cardDialog) cardDialog.close();

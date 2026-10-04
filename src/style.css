@@ -806,6 +806,12 @@ body[data-turn='O'] .status[data-state='playing'] {
   border-radius: 0.8rem;
 }
 
+.include-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+}
+
 .end-card .include {
   display: flex;
   align-items: center;
