@@ -84,6 +84,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - `src/nearby/`: WebRTC connections, QR codes, the messages between host and guests, device kinds, and the host and guest sessions.
 - `src/pwa.ts` and `vite.config.ts`: the service worker and the manifest.
 - `src/main.ts`, `src/style.css`, `index.html`: the page.
+- `public/`: the favicons and touch icons, copied into the build as is. The service worker plugin writes the web manifest.
 - `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login.
 
 The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs on Node 24, which runs TypeScript directly, and stores sessions in [DuckDB](https://duckdb.org) through `@duckdb/node-api`.

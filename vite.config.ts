@@ -21,9 +21,9 @@ export default defineConfig({
         background_color: '#e4e7ff',
         theme_color: '#e4e7ff',
         icons: [
-          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml' },
-          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'android-chrome-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'android-chrome-512x512.png', sizes: '512x512', type: 'image/png' },
+          // Tom's 512 artwork at 62% on the page colour, inside the safe zone that Android crops to.
           { src: 'maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },

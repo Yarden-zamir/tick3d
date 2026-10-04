@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json index.html vite.config.ts ./
+# Vite copies public/ (the favicons and icons) into dist as is. The PWA plugin writes the manifest.
 COPY public public
 COPY src src
 COPY server server
