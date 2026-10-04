@@ -1,0 +1,7 @@
+{% if environment == "prod" -%}
+tick3d.yarden-zamir.com
+{%- else -%}
+pr.{{ environment.removeprefix("pr-") }}.tick3d.yarden-zamir.com
+{%- endif %} {
+    reverse_proxy unix//{{ paths.default_socket }}
+}

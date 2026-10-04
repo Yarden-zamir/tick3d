@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0d1a" />
+    <title>tick3d · 3D tic-tac-toe</title>
+    <meta name="description" content="3D tic-tac-toe on a 4×4×4 cube. Play a friend or the computer on three levels." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0d1a'/%3E%3Ccircle cx='11' cy='11' r='5' fill='%23ff6b8b'/%3E%3Ccircle cx='21' cy='21' r='5' fill='none' stroke='%2346d9ff' stroke-width='3'/%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="brand">
+        <h1>tick<span>3d</span></h1>
+        <p>Four in a row, in any direction, through a 4×4×4 cube.</p>
+      </header>
+
+      <section class="stage">
+        <div class="status" id="status" aria-live="polite"></div>
+        <div class="board" id="board" role="grid" aria-label="Game board"></div>
+        <div class="burst" id="burst" aria-hidden="true"></div>
+      </section>
+
+      <aside class="panel">
+        <div class="field">
+          <span class="label">Opponent</span>
+          <div class="segmented" data-setting="mode">
+            <button type="button" data-value="computer">Computer</button>
+            <button type="button" data-value="friend">Friend</button>
+          </div>
+        </div>
+
+        <div class="field" data-computer-only>
+          <span class="label">Difficulty</span>
+          <div class="segmented" data-setting="difficulty">
+            <button type="button" data-value="easy">Easy</button>
+            <button type="button" data-value="medium">Medium</button>
+            <button type="button" data-value="hard">Hard</button>
+          </div>
+        </div>
+
+        <div class="field" data-computer-only>
+          <span class="label">You play</span>
+          <div class="segmented" data-setting="human">
+            <button type="button" data-value="X">X · first</button>
+            <button type="button" data-value="O">O · second</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="label">View</span>
+          <div class="segmented" data-setting="view">
+            <button type="button" data-value="tower">Tower</button>
+            <button type="button" data-value="flat">Flat</button>
+          </div>
+        </div>
+
+        <div class="score" id="score"></div>
+
+        <div class="actions">
+          <button type="button" class="primary" id="new-game">New game</button>
+          <button type="button" id="undo">Undo</button>
+          <button type="button" id="sound" aria-label="Sound"></button>
+        </div>
+
+        <details class="help">
+          <summary>How to play</summary>
+          <p>Take turns to place a mark. Get four in a straight line to win.</p>
+          <p>Lines can run along a layer, up through the layers, or diagonally through the cube. There are 76 lines.</p>
+          <p>Point at a cell to light up the cells above and below it.</p>
+        </details>
+      </aside>
+    </div>
+    <div class="toast" id="toast" role="alert"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
