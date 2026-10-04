@@ -168,7 +168,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   flex-direction: column-reverse;
   align-items: center;
   perspective: 1400px;
-  padding-block: 0 calc(var(--side) * 0.12);
+  /* The lowest plane draws below its box, so the padding keeps it clear of the controls under the board. */
+  padding-block: 0 calc(var(--side) * 0.3);
 }
 
 /* A plane tilted by 62deg and turned by 45deg projects to about 0.66 of its side in height.
@@ -212,6 +213,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .flat.layout-row {
   grid-template-columns: repeat(4, auto);
+  --cell: clamp(20px, 3.4vw, 36px);
 }
 
 .flat.layout-column {
@@ -511,11 +513,12 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .join-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
 }
 
 .join-row input {
-  flex: 1;
+  flex: 1 1 5rem;
   text-transform: uppercase;
   letter-spacing: 0.2em;
 }
