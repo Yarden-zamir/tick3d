@@ -13,8 +13,10 @@ FROM node:24-alpine AS api
 WORKDIR /app
 COPY package.json ./
 # Copy whole folders: a list of single files missed a new shared module once (src/clock.ts).
+# Page-only modules come along but Node never loads them. Tests do not belong in a runtime image.
 COPY --from=build /app/src src/
 COPY --from=build /app/server server/
+RUN find src server -name '*.test.ts' -delete
 # A new named volume copies this owner, so the node user can write the database.
 RUN mkdir /data && chown node:node /data
 USER node
