@@ -8,7 +8,6 @@ import {
   type Player,
   newGame,
   other,
-  parseCoordinates,
   play,
   replay,
   toCell,
@@ -23,9 +22,39 @@ const MODES = ['computer', 'friend', 'online'] as const;
 const VIEWS = ['tower', 'flat'] as const;
 const LAYOUTS = ['grid', 'row', 'column', 'steps'] as const;
 const PLAYERS = ['X', 'O'] as const;
+// Palettes in style.css, in menu order. index.html repeats the names for its pre-paint script.
+const THEMES = [
+  'light',
+  'dark',
+  'snow',
+  'candy',
+  'mint',
+  'retro',
+  'midnight',
+  'synthwave',
+  'bloodmoon',
+  'coffee',
+  'batman',
+  'mono',
+] as const;
 type Mode = (typeof MODES)[number];
 type View = (typeof VIEWS)[number];
 type Layout = (typeof LAYOUTS)[number];
+type Theme = (typeof THEMES)[number];
+const THEME_NAMES: Record<Theme, string> = {
+  light: 'Light',
+  dark: 'Dark',
+  snow: 'Snow',
+  candy: 'Candy',
+  mint: 'Mint',
+  retro: 'Retro',
+  midnight: 'Midnight',
+  synthwave: 'Synthwave',
+  bloodmoon: 'Bloodmoon',
+  coffee: 'Dark coffee',
+  batman: 'Batman',
+  mono: 'Mono',
+};
 
 type Settings = {
   mode: Mode;
@@ -36,6 +65,7 @@ type Settings = {
   hideBoard: boolean;
   hideHistory: boolean;
   muted: boolean;
+  theme: Theme;
 };
 type Toggle = 'hideBoard' | 'hideHistory';
 
@@ -48,8 +78,13 @@ const DEFAULTS: Settings = {
   hideBoard: false,
   hideHistory: false,
   muted: false,
+  theme: 'light',
 };
 const STORAGE_KEY = 'tick3d.settings';
+// Inline icons draw in the text color, so they follow the theme. Emoji do not.
+const SPEAKER = '<path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>';
+const SOUND_ON_ICON = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">${SPEAKER}<path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/></svg>`;
+const SOUND_OFF_ICON = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">${SPEAKER}<path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>`;
 const COMPUTER_DELAY_MS = 450;
 
 type Refusal = MoveError | 'wait' | 'not-your-turn' | 'spectator' | 'reviewing' | 'no-session' | 'locked';
@@ -88,6 +123,7 @@ function loadSettings(): Settings {
     hideBoard: bool(stored.hideBoard, DEFAULTS.hideBoard),
     hideHistory: bool(stored.hideHistory, DEFAULTS.hideHistory),
     muted: bool(stored.muted, DEFAULTS.muted),
+    theme: oneOf(THEMES, stored.theme, DEFAULTS.theme),
   };
 }
 
@@ -114,7 +150,11 @@ const burstEl = element('#burst', HTMLDivElement);
 const reviewEl = element('#review', HTMLDivElement);
 const reviewLabel = element('#review-label', HTMLSpanElement);
 const coordsForm = element('#coords', HTMLFormElement);
-const coordsInput = element('#coords-input', HTMLInputElement);
+const coordsSlotsEl = element('#coords-slots', HTMLDivElement);
+const coordsSlots = [...coordsSlotsEl.querySelectorAll('b')];
+const coordsBack = element('#coords-back', HTMLButtonElement);
+const coordsPlace = element('#coords-place', HTMLButtonElement);
+const digitButtons = document.querySelectorAll<HTMLButtonElement>('[data-digit]');
 const historyEl = element('#history', HTMLOListElement);
 const onlineCodeEl = element('#online-code', HTMLElement);
 const shareButton = element('#share', HTMLButtonElement);
@@ -126,6 +166,12 @@ const newGameButton = element('#new-game', HTMLButtonElement);
 const undoButton = element('#undo', HTMLButtonElement);
 const soundButton = element('#sound', HTMLButtonElement);
 const lockButton = element('#lock', HTMLButtonElement);
+const themeColorMeta = element('meta[name="theme-color"]', HTMLMetaElement);
+const themeMenu = element('#theme-menu', HTMLDetailsElement);
+const themeSwatch = element('#theme-swatch', HTMLSpanElement);
+const themeName = element('#theme-name', HTMLSpanElement);
+const themePicker = element('#theme-picker', HTMLDivElement);
+const coordsTitle = element('#coords-title', HTMLSpanElement);
 
 type Online = {
   code: Code;
@@ -150,6 +196,8 @@ let busy = false;
 // Increments on every new local game, so a computer move scheduled for an old game is dropped.
 let round = 0;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+// The keypad entry: layer, row, column, each 1..4. A tap fills the next one.
+let coordDigits: number[] = [];
 
 function current(): Game {
   const game = games.at(-1);
@@ -266,7 +314,8 @@ function announce(game: Game): void {
 }
 
 function celebrate(): void {
-  const colors = ['#ff6b8b', '#ffb36b', '#46d9ff', '#9b8cff', '#7dffb2'];
+  const css = getComputedStyle(document.documentElement);
+  const colors = ['--x', '--primary', '--o', '--toggle-on', '--win'].map((name) => css.getPropertyValue(name).trim());
   burstEl.replaceChildren(
     ...Array.from({ length: 36 }, (_, i) => {
       const spark = document.createElement('span');
@@ -584,6 +633,7 @@ function render(): void {
   reviewEl.hidden = review === undefined;
   if (review) reviewLabel.textContent = statusText();
   coordsForm.hidden = review !== undefined;
+  renderCoords();
 
   document.querySelectorAll<HTMLElement>('[data-show-mode]').forEach((field) => {
     field.hidden = field.dataset.showMode !== settings.mode;
@@ -651,7 +701,7 @@ function render(): void {
   const lockScope = online ? ' for both players' : '';
   lockButton.textContent = frozen ? `🔒 Locked${lockScope} until this game ends` : `🔓 Lock settings${lockScope}`;
   lockButton.setAttribute('aria-pressed', String(frozen));
-  soundButton.textContent = settings.muted ? '🔇' : '🔊';
+  soundButton.innerHTML = settings.muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
   soundButton.setAttribute('aria-pressed', String(!settings.muted));
 }
 
@@ -675,6 +725,37 @@ function stepReview(action: string | undefined): void {
   } else throw new Error(`unknown review action ${action}`);
   sounds.click();
   render();
+}
+
+// ---- Theme ----
+
+// One preview tile per theme. Each swatch carries data-theme, so it draws with that theme's tokens.
+const themeButtons = THEMES.map((theme) => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.dataset.themeChoice = theme;
+  button.innerHTML = `<span class="swatch" data-theme="${theme}"><span></span></span>${THEME_NAMES[theme]}`;
+  button.addEventListener('click', () => {
+    themeMenu.open = false;
+    if (theme === settings.theme) return;
+    settings.theme = theme;
+    saveSettings();
+    sounds.click();
+    applyTheme();
+  });
+  return button;
+});
+themePicker.replaceChildren(...themeButtons);
+
+// The theme is a per-screen look like the sound, so the settings lock does not hold it.
+function applyTheme(): void {
+  document.documentElement.dataset.theme = settings.theme;
+  themeButtons.forEach((button) =>
+    button.setAttribute('aria-pressed', String(button.dataset.themeChoice === settings.theme)),
+  );
+  themeSwatch.dataset.theme = settings.theme;
+  themeName.textContent = THEME_NAMES[settings.theme];
+  themeColorMeta.content = getComputedStyle(document.documentElement).getPropertyValue('--page').trim();
 }
 
 // ---- Settings ----
@@ -748,16 +829,70 @@ document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) =
 
 // ---- Other controls ----
 
+// The cell the keypad points at once layer, row and column are all chosen.
+function coordTarget(): number | undefined {
+  const [layer, row, column] = coordDigits;
+  if (layer === undefined || row === undefined || column === undefined) return undefined;
+  return toCell({ layer: layer - 1, row: row - 1, column: column - 1 });
+}
+
+// Until the player taps a number, the slots show the last move of the game, so its
+// coordinates stay readable with the board hidden. A tap starts the player's own entry.
+function renderCoords(): void {
+  const game = current();
+  const last = game.moves.at(-1);
+  const showLast = coordDigits.length === 0 && last !== undefined;
+  const lastPlayer = other(game.turn);
+  let digits = coordDigits;
+  if (showLast) {
+    const { layer, row, column } = toCoords(last);
+    digits = [layer + 1, row + 1, column + 1];
+  }
+  coordsSlots.forEach((slot, i) => {
+    slot.textContent = String(digits[i] ?? '');
+    slot.parentElement?.classList.toggle('next', !showLast && i === coordDigits.length);
+  });
+  coordsSlotsEl.classList.toggle('played-x', showLast && lastPlayer === 'X');
+  coordsSlotsEl.classList.toggle('played-o', showLast && lastPlayer === 'O');
+  const name = playerName(lastPlayer);
+  const mark = name === `Player ${lastPlayer}` ? '' : ` (${lastPlayer})`;
+  coordsTitle.textContent = showLast ? `${name} played${mark}` : 'Move by coordinates';
+  const target = coordTarget();
+  cells.forEach((button, cell) => button.classList.toggle('aim', cell === target));
+  const full = coordDigits.length === 3;
+  digitButtons.forEach((button) => (button.disabled = full));
+  coordsBack.disabled = coordDigits.length === 0;
+  coordsPlace.disabled = !full;
+}
+
+digitButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const digit = Number(button.dataset.digit);
+    if (!Number.isInteger(digit) || digit < 1 || digit > SIZE) throw new Error(`bad keypad digit ${button.dataset.digit}`);
+    if (coordDigits.length >= 3) return;
+    coordDigits = [...coordDigits, digit];
+    sounds.click();
+    renderCoords();
+  });
+});
+
+coordsBack.addEventListener('click', () => {
+  coordDigits = coordDigits.slice(0, -1);
+  sounds.click();
+  renderCoords();
+});
+
 coordsForm.addEventListener('submit', (event) => {
   event.preventDefault();
-  const coords = parseCoordinates(coordsInput.value);
-  if (coords === undefined) {
+  const target = coordTarget();
+  if (target === undefined) {
     sounds.invalid();
-    showToast('Type three numbers from 1 to 4: layer, row, column.');
+    showToast('Tap a layer, a row and a column first.');
     return;
   }
-  coordsInput.value = '';
-  humanMove(toCell(coords));
+  coordDigits = [];
+  humanMove(target);
+  renderCoords();
 });
 
 joinForm.addEventListener('submit', (event) => {
@@ -839,6 +974,7 @@ soundButton.addEventListener('click', () => {
 // ---- Start ----
 
 setMuted(settings.muted);
+applyTheme();
 const linkCode = new URLSearchParams(location.search).get('code');
 if (linkCode !== null) {
   const code = normalizeCode(linkCode);
