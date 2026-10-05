@@ -5,11 +5,11 @@
 // arguments of each method with the protocol parsers (src/protocol.ts); here they stay unknown.
 import type { Channel } from './peer.ts';
 
-export const RPC_METHODS = ['get', 'join', 'move', 'newGame', 'update', 'lock', 'chat'] as const;
+const RPC_METHODS = ['get', 'join', 'move', 'newGame', 'update', 'lock', 'chat'] as const;
 export type RpcMethod = (typeof RPC_METHODS)[number];
 
-export type GuestMessage = { t: 'call'; id: number; method: RpcMethod; args: unknown };
-export type HostMessage =
+type GuestMessage = { t: 'call'; id: number; method: RpcMethod; args: unknown };
+type HostMessage =
   | { t: 'result'; id: number; view: unknown }
   | { t: 'error'; id: number; status: number; message: string }
   | { t: 'changed' }
@@ -75,13 +75,13 @@ export function rpcClient(channel: Channel) {
   let nextId = 1;
   let closed = false;
   const pending = new Map<number, { resolve(view: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
-  const changedHandlers: (() => void)[] = [];
+  const changedHandlers = new Set<() => void>();
   const byeHandlers: ((reason: string) => void)[] = [];
 
   const failAll = (error: Error) => {
-    for (const { reject, timer } of pending.values()) {
-      clearTimeout(timer);
-      reject(error);
+    for (const call of pending.values()) {
+      clearTimeout(call.timer);
+      call.reject(error);
     }
     pending.clear();
   };
@@ -130,8 +130,10 @@ export function rpcClient(channel: Channel) {
         }
       });
     },
-    onChanged(handler: () => void): void {
-      changedHandlers.push(handler);
+    // Returns a function that removes the handler.
+    onChanged(handler: () => void): () => void {
+      changedHandlers.add(handler);
+      return () => changedHandlers.delete(handler);
     },
     onBye(handler: (reason: string) => void): void {
       byeHandlers.push(handler);
@@ -150,12 +152,20 @@ export function rpcServer(channel: Channel, handle: (method: RpcMethod, args: un
     }
   };
 
+  // After a goodbye the host ignores the guest, while the close waits.
+  let leaving = false;
+  // Closing at once can drop the goodbye that is still in the send queue, so the close waits a moment.
+  const bye = (reason: string): void => {
+    if (leaving) return;
+    leaving = true;
+    send({ t: 'bye', reason: reason.slice(0, MAX_TEXT_LENGTH) });
+    setTimeout(() => channel.close(), BYE_CLOSE_DELAY_MS);
+  };
+
   channel.onMessage((value) => {
+    if (leaving) return;
     const message = parseGuestMessage(value);
-    if (message === undefined) {
-      send({ t: 'bye', reason: 'The host received an invalid message.' });
-      return channel.close();
-    }
+    if (message === undefined) return bye('The host received an invalid message.');
     handle(message.method, message.args).then(
       (view) => send({ t: 'result', id: message.id, view }),
       (error: unknown) => {
@@ -175,10 +185,6 @@ export function rpcServer(channel: Channel, handle: (method: RpcMethod, args: un
     notifyChanged(): void {
       send({ t: 'changed' });
     },
-    // Closing at once can drop the goodbye that is still in the send queue, so the close waits a moment.
-    bye(reason: string): void {
-      send({ t: 'bye', reason: reason.slice(0, MAX_TEXT_LENGTH) });
-      setTimeout(() => channel.close(), BYE_CLOSE_DELAY_MS);
-    },
+    bye,
   };
 }

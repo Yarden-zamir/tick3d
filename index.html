@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -33,6 +33,7 @@
         <div class="brand-links">
           <span class="offline-badge" id="offline-badge" hidden title="This game works without a network on this device">Offline ready</span>
           <button type="button" class="repo-link account-button" id="account-button" aria-haspopup="dialog" aria-label="My games">
+            <!-- [html-validate-disable-next element-required-attributes: the page sets src after login] -->
             <img class="avatar" id="account-avatar" alt="" hidden />
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0V4ZM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 13v3M8 20h8l-1-4H9l-1 4Z"/></svg>
             <span id="account-name">My games</span>
@@ -60,7 +61,7 @@
           <span class="clock o" data-clock="O"></span>
           <span class="clock-note" id="clock-note">The clock starts after the first move of each player.</span>
         </div>
-        <div class="board" id="board" role="grid" aria-label="Game board"></div>
+        <div class="board" id="board" role="group" aria-label="Game board"></div>
         <div class="board-hidden" id="board-hidden" hidden>
           <strong>Board hidden</strong>
           <span>Tap the layer, row and column of your move below.</span>
@@ -98,7 +99,7 @@
         <span class="chat-title" id="chat-title">Chat</span>
         <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
         <form class="chat-form" id="chat-form" autocomplete="off">
-          <input id="chat-input" maxlength="200" placeholder="Message your opponent" enterkeyhint="send" aria-label="Message" />
+          <input type="text" id="chat-input" maxlength="200" placeholder="Message your opponent" enterkeyhint="send" aria-label="Message" />
           <button type="submit" id="chat-send">Send</button>
         </form>
       </section>
@@ -149,7 +150,7 @@
           </div>
           <label class="field">
             <span class="label">Session name</span>
-            <input id="session-name" maxlength="40" placeholder="Name this session" />
+            <input type="text" id="session-name" maxlength="40" placeholder="Name this session" />
           </label>
         </div>
 
@@ -157,7 +158,7 @@
           <p class="nearby-intro">Play with devices on the same Wi-Fi, without the internet. One device hosts, the others join.</p>
           <label class="nearby-me">
             <span class="device-icon" id="nearby-device-icon"></span>
-            <input id="nearby-name" maxlength="24" placeholder="This device's name" aria-label="This device's name" />
+            <input type="text" id="nearby-name" maxlength="24" placeholder="This device's name" aria-label="This device's name" />
           </label>
           <div class="nearby-start" id="nearby-start">
             <button type="button" id="nearby-host">Host</button>
@@ -168,12 +169,12 @@
             <div class="nearby-qr" id="nearby-qr" hidden></div>
             <details class="nearby-text" id="nearby-text" hidden>
               <summary>Code as text</summary>
-              <textarea id="nearby-code-out" readonly rows="3"></textarea>
+              <textarea id="nearby-code-out" readonly rows="3" aria-label="Code for the other device"></textarea>
               <button type="button" id="nearby-copy">Copy</button>
             </details>
             <div class="nearby-input" id="nearby-input" hidden>
               <div class="join-row">
-                <input id="nearby-code-in" placeholder="Or paste a code" autocomplete="off" />
+                <input type="text" id="nearby-code-in" placeholder="Or paste a code" aria-label="Code from the other device" autocomplete="off" />
                 <button type="button" id="nearby-use-code">Use</button>
               </div>
             </div>
@@ -193,7 +194,7 @@
         <form class="field join" id="join">
           <span class="label">Join a friend</span>
           <div class="join-row">
-            <input id="join-code" maxlength="4" placeholder="Code" autocapitalize="characters" autocomplete="off" />
+            <input type="text" id="join-code" maxlength="4" placeholder="Code" aria-label="Game code" autocapitalize="characters" autocomplete="off" />
             <button type="submit">Join</button>
             <button type="button" id="new-code" title="Create an online game with a new code" aria-label="New code: create an online game">New code</button>
           </div>
@@ -272,8 +273,8 @@
         <div class="field">
           <span class="label">Hide</span>
           <div class="toggles">
-            <button type="button" data-toggle="hideBoard">Board</button>
-            <button type="button" data-toggle="hideHistory">History</button>
+            <button type="button" data-toggle="hideBoard" aria-label="Hide board">Board</button>
+            <button type="button" data-toggle="hideHistory" aria-label="Hide history">History</button>
           </div>
         </div>
 
@@ -284,7 +285,7 @@
           <button type="button" id="undo">Undo</button>
           <button type="button" id="sound" aria-label="Sound"></button>
         </div>
-        <button type="button" class="lock" id="lock"></button>
+        <button type="button" class="lock" id="lock">🔓 Lock</button>
         <button type="button" class="lock" id="show-card" hidden>🏆 Result card</button>
 
         <details class="history" id="history-box">
@@ -310,6 +311,7 @@
       </aside>
     </div>
     <dialog class="end-card" id="end-card" aria-label="Game result">
+      <!-- [html-validate-disable-next element-required-attributes: the page draws the card and sets src] -->
       <img id="end-card-image" alt="" width="1080" height="1350" />
       <div class="include-options">
         <label class="include" id="end-card-code-option">

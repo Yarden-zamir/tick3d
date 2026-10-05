@@ -35,12 +35,12 @@ function winningCells(board: Board, player: Player): number[] {
 }
 
 // The cell that completes a line of `player` now, if one exists.
-export function findWin(board: Board, player: Player): number | undefined {
+function findWin(board: Board, player: Player): number | undefined {
   return emptyCells(board).find((cell) => winningLine(board.with(cell, player), cell, player));
 }
 
 // Cells that give `player` two winning cells at once. The opponent can block only one of them.
-export function forkCells(board: Board, player: Player): number[] {
+function forkCells(board: Board, player: Player): number[] {
   return emptyCells(board).filter((cell) => {
     const threats = new Set<number>();
     for (const line of linesThrough(cell)) {
@@ -54,7 +54,7 @@ export function forkCells(board: Board, player: Player): number[] {
 
 // How much a move helps `player`: lines it builds, enemy lines it blocks, and the value of the cell.
 // A player who does not see the opponent's winning cell (`blind`) gives a block no value.
-export function moveScore(
+function moveScore(
   board: Board,
   cell: number,
   player: Player,
@@ -72,7 +72,7 @@ export function moveScore(
 }
 
 // Static value of a position for `player`: open lines for them minus open lines for the opponent.
-export function evaluate(board: Board, player: Player): number {
+function evaluate(board: Board, player: Player): number {
   let score = 0;
   for (const line of LINES) {
     const { mine, theirs } = countLine(board, line, player);

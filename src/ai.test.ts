@@ -90,6 +90,20 @@ describe('chooseMove', () => {
     for (const cell of firsts) expect(linesThrough(cell)).toHaveLength(7);
   });
 
+  it('hard answers within its thinking time on a busy board', () => {
+    const board = boardWith({ 0: 'X', 21: 'X', 63: 'O', 42: 'O', 5: 'X', 26: 'O', 47: 'X', 16: 'O', 37: 'X', 58: 'O' });
+    const start = performance.now();
+    chooseMove(board, 'X', 'hard', fixed, budget(200));
+    // The budget is checked at every search step, so one step of work is the only overrun.
+    expect(performance.now() - start).toBeLessThan(200 + 150);
+  });
+
+  it('works when the level considers more cells than are empty', () => {
+    const marks = Object.fromEntries(Array.from({ length: 60 }, (_, cell) => [cell, cell % 3 === 0 ? 'X' : 'O'] as const));
+    const tuning = { ...DEFAULT_TUNING, easy: { ...DEFAULT_TUNING.easy, candidates: 64 } };
+    expect([60, 61, 62, 63]).toContain(chooseMove(boardWith(marks), 'X', 'easy', fixed, tuning));
+  });
+
   it('throws on a full board', () => {
     expect(() => chooseMove(boardWith(Object.fromEntries(Array.from({ length: CELL_COUNT }, (_, c) => [c, 'X']))), 'O', 'easy')).toThrow();
   });

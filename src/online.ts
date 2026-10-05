@@ -46,7 +46,17 @@ function playerToken(): PlayerToken {
 export const token = playerToken();
 
 // A refused or failed server call. The message is fit to show to the player.
-export class OnlineError extends Error {}
+// `status` is the HTTP status of an error answer from the server. It is undefined when no usable
+// answer arrived: the request did not reach the server, or a success answer had no JSON body.
+export class OnlineError extends Error {
+  readonly status: number | undefined;
+  constructor(message: string, status?: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const NOT_JSON = Symbol('not JSON');
 
 async function call(method: string, path: string, body?: unknown): Promise<unknown> {
   let response: Response;
@@ -59,14 +69,16 @@ async function call(method: string, path: string, body?: unknown): Promise<unkno
   } catch {
     throw new OnlineError('Cannot reach the server. Check the connection.');
   }
-  const data: unknown = await response.json().catch(() => undefined);
+  const data: unknown = await response.json().catch(() => NOT_JSON);
   if (!response.ok) {
     const message =
       typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string'
         ? data.error
         : `Server error (${response.status}).`;
-    throw new OnlineError(message);
+    throw new OnlineError(message, response.status);
   }
+  // A proxy or a captive portal can answer 200 with an HTML page.
+  if (data === NOT_JSON) throw new OnlineError('The server sent an answer that the game cannot read.');
   return data;
 }
 

@@ -6,9 +6,9 @@ import type { Code, ResultUpload, SessionView } from './protocol.ts';
 // `doc` is the stored document, read through parseDoc on every load like on the server.
 export type DeviceSession = { code: Code; doc: unknown; version: number; updatedAt: number };
 // A finished game waiting for upload, or already sent.
-export type DeviceResult = { id: string; upload: ResultUpload; sent: boolean };
+type DeviceResult = { id: string; upload: ResultUpload; sent: boolean };
 // The last view of an online session, so it opens read-only without a network.
-export type CachedView = { code: Code; view: SessionView; savedAt: number };
+type CachedView = { code: Code; view: SessionView; savedAt: number };
 
 type Stores = { sessions: DeviceSession; results: DeviceResult; remote: CachedView };
 type StoreName = keyof Stores;
@@ -40,7 +40,13 @@ export async function openDeviceDb(factory: IDBFactory = indexedDB, name: string
       if (!db.objectStoreNames.contains(store)) db.createObjectStore(store, { keyPath: KEYS[store] });
     }
   };
-  const db = await request(open);
+  // Another tab holds the database open at an older version and does not close it.
+  const blocked = new Promise<never>((_, reject) => {
+    open.onblocked = () => reject(new Error('Another tick3d tab uses an older version of the game. Close that tab and reload.'));
+  });
+  const db = await Promise.race([request(open), blocked]);
+  // A newer version in another tab needs this connection closed before it can upgrade.
+  db.onversionchange = () => db.close();
   // Ask the browser to keep this data under storage pressure. Safari still clears it after
   // 7 days without a visit, unless the game is added to the home screen.
   void navigator.storage?.persist?.().catch(() => false);
@@ -65,13 +71,13 @@ export function memoryDeviceDb(): DeviceDb {
   const keyOf = <S extends StoreName>(name: S, value: Stores[S]): string => String((value as Record<string, unknown>)[KEYS[name]]);
   return {
     async get(name, key) {
-      return structuredClone(stores[name].get(key)) as never;
+      return structuredClone(stores[name].get(key));
     },
     async put(name, value) {
       (stores[name] as Map<string, typeof value>).set(keyOf(name, value), structuredClone(value));
     },
     async all(name) {
-      return [...stores[name].values()].map((value) => structuredClone(value)) as never;
+      return [...stores[name].values()].map((value) => structuredClone(value));
     },
   };
 }

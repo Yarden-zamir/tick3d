@@ -97,6 +97,15 @@ describe('encodeSignal and decodeSignal', () => {
     await expect(decodeSignal(tampered)).rejects.toThrow();
   });
 
+  it.each([
+    ['fingerprint', ['Hv7d', '8m2KxQd0yYc6p1oB9tS3vL4w', '!!!!', 'a', [['1.2.3.4', 5000, 1]], 'p', 'A']],
+    ['mDNS address', ['Hv7d', '8m2KxQd0yYc6p1oB9tS3vL4w', 'A'.repeat(43), 'a', [['~!!!!', 5000, 1]], 'p', 'A']],
+  ])('calls a code with a broken %s field damaged', async (_, fields) => {
+    const deflated = await new Response(new Blob([JSON.stringify(fields)]).stream().pipeThrough(new CompressionStream('deflate-raw'))).bytes();
+    const base64 = btoa(String.fromCharCode(...deflated)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+    await expect(decodeSignal(`T3A1.${base64}`)).rejects.toThrow('This code is damaged.');
+  });
+
   it('refuses a description with no network candidates', async () => {
     const noCandidates = CHROME_OFFER.split('\r\n').filter((line) => !line.startsWith('a=candidate:')).join('\r\n');
     await expect(encodeSignal({ type: 'offer', sdp: noCandidates }, { device: 'phone', name: 'Alice' })).rejects.toThrow('candidates');

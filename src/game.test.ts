@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CELL_COUNT, LINES, type Game, newGame, parseCoordinates, play, replay, timeOut, toCell, undo } from './game.ts';
+import { CELL_COUNT, LINES, type Game, linesThrough, newGame, parseCoordinates, play, replay, timeOut, toCell, undo } from './game.ts';
 
 // Move i happens at time i, so results compare equal across calls.
 function playAll(cells: number[], game: Game = newGame()): Game {
@@ -9,6 +9,37 @@ function playAll(cells: number[], game: Game = newGame()): Game {
     return result.game;
   }, game);
 }
+
+// Plays a full board in X-first turn order: X marks and O marks alternate, with `last` as the final move.
+function fullGame(board: string, last?: number): Game {
+  const cellsOf = (mark: string) => [...board].flatMap((value, cell) => (value === mark && cell !== last ? [cell] : []));
+  const xs = cellsOf('X');
+  const os = last === undefined ? cellsOf('O') : [...cellsOf('O'), last];
+  return playAll(xs.flatMap((x, i) => [x, os[i] ?? -1]));
+}
+
+describe('a full cube', () => {
+  // Found by a local search: 32 X and 32 O with no line of one mark.
+  const DRAW = 'XXOXOOXOXOXXXXOXOOXOOXOXXOXXXOOXOOXOXXXOXOOXOXOOOOXXOXOOOXXOXOXO';
+  // Exactly one line of O, and cell 54 is on it: no line exists until the 64th move.
+  const WIN_ON_LAST = 'XXXOXOOXOOOXXXOXXOOXOXOOXXOOOXXOOXXOXOOXOOXXXOXXOXXOOXOXXOOOXOXO';
+
+  it('is a draw when no line is complete', () => {
+    expect(fullGame(DRAW).status.kind).toBe('draw');
+  });
+
+  it('is a win, not a draw, when the 64th move completes a line', () => {
+    const game = fullGame(WIN_ON_LAST, 54);
+    expect(game.moves).toHaveLength(CELL_COUNT);
+    expect(game.status).toMatchObject({ kind: 'won', winner: 'O' });
+  });
+
+  it('puts every cell on 4 or 7 lines, with 16 strong cells on 7', () => {
+    const counts = Array.from({ length: CELL_COUNT }, (_, cell) => linesThrough(cell).length);
+    expect(counts.every((count) => count === 4 || count === 7)).toBe(true);
+    expect(counts.filter((count) => count === 7)).toHaveLength(16);
+  });
+});
 
 describe('lines', () => {
   it('has all 76 distinct lines of 4 distinct cells', () => {

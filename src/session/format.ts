@@ -21,6 +21,7 @@ import {
   isChatMessage,
   isMoveList,
   normalizeName,
+  toGame,
 } from '../protocol.ts';
 
 export const CURRENT_FORMAT = 1;
@@ -48,7 +49,7 @@ type RawDoc = Record<string, unknown>;
 export type Upgrade = (doc: RawDoc) => RawDoc;
 
 // UPGRADES[n] turns a format n document into format n + 1. Empty until the first breaking change.
-export const UPGRADES: Readonly<Record<number, Upgrade>> = {};
+const UPGRADES: Readonly<Record<number, Upgrade>> = {};
 
 export class FormatError extends Error {}
 
@@ -63,7 +64,14 @@ function readGame(value: unknown, index: number): GameRecord {
   }
   const clock = value.clock === undefined ? NO_LIMIT : parseClock(value.clock);
   if (clock === undefined) throw new FormatError(`game ${index} has an invalid clock`);
-  return { moves, times, clock, timedOut: value.timedOut === true };
+  const record: GameRecord = { moves, times, clock, timedOut: value.timedOut === true };
+  // Replay the game, so a stored game with an illegal move or a timeout after its end never loads.
+  try {
+    toGame(record);
+  } catch (error) {
+    throw new FormatError(`game ${index} does not replay: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return record;
 }
 
 function readSeat(value: unknown): string | null {
@@ -78,7 +86,7 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
   if (!isRecord(stored)) throw new FormatError('a session document must be an object');
   let doc = stored;
   let format = doc.format === undefined ? 1 : doc.format;
-  if (typeof format !== 'number' || !Number.isInteger(format) || format < 1) throw new FormatError(`unknown format ${String(format)}`);
+  if (typeof format !== 'number' || !Number.isInteger(format) || format < 1) throw new FormatError(`unknown format ${JSON.stringify(format)}`);
   if (format > current) throw new FormatError(`format ${format} is newer than this server (${current})`);
   while (format < current) {
     const upgrade = upgrades[format];

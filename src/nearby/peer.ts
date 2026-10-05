@@ -24,7 +24,7 @@ const MAX_MESSAGE_CHARS = 4_000_000;
 
 // Frames: "M" + a whole message, or "P" + one part of a long message and "E" + its last part.
 // The channel is ordered and reliable, so the parts arrive in order.
-function wrapChannel(dc: RTCDataChannel, pc: RTCPeerConnection): Channel {
+export function wrapChannel(dc: RTCDataChannel, pc: RTCPeerConnection): Channel {
   const messageHandlers: ((message: unknown) => void)[] = [];
   const closeHandlers: (() => void)[] = [];
   let parts: string[] = [];
@@ -46,6 +46,8 @@ function wrapChannel(dc: RTCDataChannel, pc: RTCPeerConnection): Channel {
     const kind = frame[0];
     const body = frame.slice(1);
     if (kind === 'P' || kind === 'E') {
+      // The sender never sends an empty part, and empty parts would grow `parts` with no limit.
+      if (body.length === 0) return close();
       partChars += body.length;
       if (partChars > MAX_MESSAGE_CHARS) return close();
       parts.push(body);
@@ -116,58 +118,136 @@ function localCode(pc: RTCPeerConnection, hello: Hello): Promise<string> {
   return encodeSignal(desc, hello);
 }
 
-function openChannel(dc: RTCDataChannel, pc: RTCPeerConnection): Promise<Channel> {
+// Close() of an offer or an answer rejects its pending promise with this error.
+const cancelled = () => new DOMException('The connection attempt was cancelled.', 'AbortError');
+
+function openChannel(dc: RTCDataChannel, pc: RTCPeerConnection, signal: AbortSignal): Promise<Channel> {
   return new Promise((resolve, reject) => {
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', aborted);
+      dc.removeEventListener('open', opened);
+    };
     const timer = setTimeout(() => {
+      finish();
       pc.close();
       reject(new Error('The devices did not connect. Check that both are on the same network.'));
     }, CONNECT_TIMEOUT_MS);
+    const aborted = () => {
+      finish();
+      reject(signal.reason);
+    };
     const opened = () => {
-      clearTimeout(timer);
+      finish();
       resolve(wrapChannel(dc, pc));
     };
-    if (dc.readyState === 'open') opened();
-    else dc.addEventListener('open', opened, { once: true });
+    signal.addEventListener('abort', aborted);
+    dc.addEventListener('open', opened);
+    if (signal.aborted) aborted();
+    else if (dc.readyState === 'open') opened();
   });
 }
 
 // Host side: makes the offer code to show, then accepts the guest's answer code.
-export async function createOffer(hello: Hello): Promise<{ code: string; accept(answerCode: string): Promise<{ channel: Channel; peer: Hello }> }> {
+// close() ends the attempt: it closes the connection, and a pending accept() rejects with an
+// AbortError. After accept() returns a channel, close() does nothing: the channel owns the connection.
+export async function createOffer(hello: Hello): Promise<{
+  code: string;
+  accept(answerCode: string): Promise<{ channel: Channel; peer: Hello }>;
+  close(): void;
+}> {
   const pc = new RTCPeerConnection({ iceServers: [] });
-  const dc = pc.createDataChannel(CHANNEL_LABEL, { ordered: true });
-  await pc.setLocalDescription(await pc.createOffer());
-  await gatherCandidates(pc);
-  const code = await localCode(pc, hello);
+  const abort = new AbortController();
+  let opened = false;
+  let code: string;
+  let dc: RTCDataChannel;
+  try {
+    dc = pc.createDataChannel(CHANNEL_LABEL, { ordered: true });
+    await pc.setLocalDescription(await pc.createOffer());
+    await gatherCandidates(pc);
+    code = await localCode(pc, hello);
+  } catch (error) {
+    pc.close();
+    throw error;
+  }
   return {
     code,
     async accept(answerCode) {
+      abort.signal.throwIfAborted();
       const answer = await decodeSignal(answerCode);
       if (answer.kind !== 'answer') throw new Error('This is a host code. Scan the code on the joining device.');
+      abort.signal.throwIfAborted();
       await pc.setRemoteDescription(answer.desc);
-      return { channel: await openChannel(dc, pc), peer: answer.hello };
+      const channel = await openChannel(dc, pc, abort.signal);
+      opened = true;
+      return { channel, peer: answer.hello };
+    },
+    close() {
+      if (opened || abort.signal.aborted) return;
+      abort.abort(cancelled());
+      pc.close();
     },
   };
 }
 
 // Guest side: reads the host's offer code and makes the answer code to show to the host.
-export async function answerOffer(offerCode: string, hello: Hello): Promise<{ code: string; peer: Hello; connected: Promise<Channel> }> {
+// close() ends the attempt: it closes the connection, and `connected` rejects with an AbortError.
+// After `connected` resolves, close() does nothing: the channel owns the connection.
+export async function answerOffer(
+  offerCode: string,
+  hello: Hello,
+): Promise<{ code: string; peer: Hello; connected: Promise<Channel>; close(): void }> {
   const offer = await decodeSignal(offerCode);
   if (offer.kind !== 'offer') throw new Error('This is a joining code. Scan the code on the hosting device.');
   const pc = new RTCPeerConnection({ iceServers: [] });
+  const abort = new AbortController();
+  let opened = false;
+  const close = () => {
+    if (opened || abort.signal.aborted) return;
+    abort.abort(cancelled());
+    pc.close();
+  };
+  // The listener starts before the answer exists, so no data channel event can come first.
   const channel = new Promise<RTCDataChannel>((resolve, reject) => {
+    const finish = () => {
+      clearTimeout(timer);
+      abort.signal.removeEventListener('abort', aborted);
+      pc.removeEventListener('datachannel', arrived);
+    };
     const timer = setTimeout(() => {
+      finish();
       pc.close();
       reject(new Error('The host did not scan the code in time. Start again.'));
     }, GUEST_WAIT_MS);
-    pc.addEventListener('datachannel', (event) => {
+    const aborted = () => {
+      finish();
+      reject(abort.signal.reason);
+    };
+    const arrived = (event: RTCDataChannelEvent) => {
       if (event.channel.label !== CHANNEL_LABEL) return;
-      clearTimeout(timer);
+      finish();
       resolve(event.channel);
-    });
+    };
+    abort.signal.addEventListener('abort', aborted);
+    pc.addEventListener('datachannel', arrived);
   });
-  await pc.setRemoteDescription(offer.desc);
-  await pc.setLocalDescription(await pc.createAnswer());
-  await gatherCandidates(pc);
-  const code = await localCode(pc, hello);
-  return { code, peer: offer.hello, connected: channel.then((dc) => openChannel(dc, pc)) };
+  let code: string;
+  try {
+    await pc.setRemoteDescription(offer.desc);
+    await pc.setLocalDescription(await pc.createAnswer());
+    await gatherCandidates(pc);
+    code = await localCode(pc, hello);
+  } catch (error) {
+    // Nobody awaits `channel` yet, so its AbortError must not become an unhandled rejection.
+    channel.catch(() => undefined);
+    close();
+    throw error;
+  }
+  const connected = channel
+    .then((dc) => openChannel(dc, pc, abort.signal))
+    .then((opening) => {
+      opened = true;
+      return opening;
+    });
+  return { code, peer: offer.hello, connected, close };
 }

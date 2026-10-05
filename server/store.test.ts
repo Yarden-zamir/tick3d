@@ -87,6 +87,22 @@ describe('sessions', () => {
     // returns, check the time per store call first: a slow call is a real problem.
   }, 20_000);
 
+  it('reports every write, also a timeout that a read records', async () => {
+    let time = 1_000_000;
+    const changed: Code[] = [];
+    store = await openStore(':memory:', { now: () => time, onChange: (code) => changed.push(code) });
+    const { code } = await store.create(alice, 'Blitz', { perMove: 3, perGame: null });
+    await store.join(code, bob);
+    await playMoves(code, [0, 1]);
+    expect(changed).toEqual([code, code, code]);
+    time += 10_000;
+    const view = await store.get(code, bob);
+    expect(view.games[0]?.timedOut).toBe(true);
+    expect(changed).toHaveLength(4);
+    await store.get(code, bob);
+    expect(changed).toHaveLength(4);
+  });
+
   it('reports presence from the HTTP layer', async () => {
     store = await openStore(':memory:', { presence: () => ({ X: true, O: false }) });
     const { code } = await store.create(alice, 'Present');
@@ -105,6 +121,17 @@ describe('accounts', () => {
     expect(fromPhone.players).toEqual({ X: { login: 'alice', avatar: ALICE_GITHUB.avatar }, O: null });
     await store.move(code, alicePhone, { game: 0, moveCount: 0, cell: 9 });
     expect((await store.get(code, bob)).games[0]?.moves).toEqual([9]);
+  });
+
+  it('stops a logged-out browser from acting for the account, and keeps the other devices', async () => {
+    const code = await session();
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.unlinkToken(alicePhone);
+    expect((await store.get(code, alicePhone)).you).toBeNull();
+    expect(await status(() => store.move(code, alicePhone, { game: 0, moveCount: 0, cell: 9 }))).toBe(403);
+    expect((await store.myGames(alicePhone)).user).toBeNull();
+    expect((await store.get(code, alice)).players.X?.login).toBe('alice');
   });
 
   it('refreshes a renamed account', async () => {
@@ -129,6 +156,7 @@ describe('results', () => {
     const unfinished = { ...result('22222222-0000-4000-8000-000000000001'), game: toRecord(replay([0, 1])) };
     expect(await status(() => store.addResults(alice, [result('22222222-0000-4000-8000-000000000002'), unfinished]))).toBe(400);
     expect(await status(() => store.addResults(alice, [{ id: 'short' }]))).toBe(400);
+    expect(await status(() => store.addResults(alice, [result('22222222-0000-4000-8000-000000000003', { finishedAt: 1e300 })]))).toBe(400);
     expect((await store.myGames(alice)).total.played).toBe(0);
   });
 });

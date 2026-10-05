@@ -6,7 +6,7 @@ export type TimeControl = { perMove: number | null; perGame: number | null };
 
 export const NO_LIMIT: TimeControl = { perMove: null, perGame: null };
 
-// The database CHECK constraints in server/store.ts use the same ranges.
+// The server checks every stored clock with parseClock, through parseDoc in src/session/format.ts.
 export const LIMIT_RANGE = {
   perMove: { min: 3, max: 600 },
   perGame: { min: 30, max: 7200 },

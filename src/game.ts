@@ -40,7 +40,7 @@ export function winnerOf(status: Status): Player | null {
   return status.kind === 'won' || status.kind === 'timeout' ? status.winner : null;
 }
 
-export function assertCell(cell: number): void {
+function assertCell(cell: number): void {
   if (!Number.isInteger(cell) || cell < 0 || cell >= CELL_COUNT) {
     throw new RangeError(`cell must be an integer in 0..${CELL_COUNT - 1}, got ${cell}`);
   }
@@ -93,7 +93,7 @@ function buildLines(): Line[] {
 
 export const LINES: readonly Line[] = buildLines();
 
-export const LINES_THROUGH: readonly (readonly Line[])[] = Array.from({ length: CELL_COUNT }, (_, cell) =>
+const LINES_THROUGH: readonly (readonly Line[])[] = Array.from({ length: CELL_COUNT }, (_, cell) =>
   LINES.filter((line) => line.includes(cell)),
 );
 
