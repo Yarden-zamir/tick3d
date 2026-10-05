@@ -27,7 +27,7 @@ async function call(request: APIRequestContext, player: string, method: 'GET' | 
   return (await response.json()) as View;
 }
 
-test('the OpenAPI document and its Swagger UI page load', async ({ request, open, baseURL }) => {
+test('the OpenAPI document and its Swagger UI page load', async ({ request, page, baseURL }) => {
   const response = await request.get('/api/openapi.json');
   const doc = (await response.json()) as { openapi: string; info: { description: string }; servers: { url: string }[]; paths: Record<string, unknown> };
   expect(doc.openapi).toBe('3.1.0');
@@ -36,9 +36,13 @@ test('the OpenAPI document and its Swagger UI page load', async ({ request, open
   expect(doc.info.description).toContain('## Quick start');
   expect((await request.get('/api/docs.md')).status()).toBe(404);
 
-  const { page } = await open({ path: '/api/docs' });
+  // The plain page fixture: `open` watches the game page for toasts, and this page is not the game.
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('/api/docs');
   await expect(page.locator('.swagger-ui .info .title')).toContainText('tick3d HTTP API');
   await expect(page.locator('.opblock-summary-path', { hasText: '/api/sessions/{code}/moves' })).toBeVisible();
+  expect(errors).toEqual([]);
 });
 
 test('two agents play and chat over the API with long polls, and a person watches the link', async ({ request, open }) => {
