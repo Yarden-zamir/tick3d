@@ -21,7 +21,6 @@ import {
   scoreEl,
   historyEl,
   newGameButton,
-  advancedBox,
   tuningEl,
   undoButton,
   showCardButton,
@@ -113,6 +112,17 @@ function statusText(): string {
   }
 }
 
+// A panel control shows only where it applies (see the table in README "Controls per mode").
+// data-show-mode lists the modes of a control, and such a control is for play, so a game from a link
+// hides it. data-needs-session marks a control of an open game, which online and Nearby mode have
+// only after a create, a join or a host.
+function applies(field: HTMLElement): boolean {
+  const modes = field.dataset.showMode;
+  if (modes !== undefined && (page.viewing !== undefined || !modes.split(' ').includes(settings.mode))) return false;
+  const waiting = page.session === undefined && page.viewing === undefined && (settings.mode === 'online' || settings.mode === 'nearby');
+  return !(field.dataset.needsSession !== undefined && waiting);
+}
+
 function shownGame(): Game {
   if (page.review === undefined) return current();
   const reviewed = page.games[page.review.game];
@@ -165,8 +175,8 @@ export function render(): void {
   renderChat();
   renderGameView();
 
-  document.querySelectorAll<HTMLElement>('[data-show-mode]').forEach((field) => {
-    field.hidden = field.dataset.showMode !== settings.mode;
+  document.querySelectorAll<HTMLElement>('[data-show-mode], [data-needs-session]').forEach((field) => {
+    field.hidden = !applies(field);
   });
   document.querySelectorAll<HTMLElement>('[data-show-view]').forEach((field) => {
     field.hidden = field.dataset.showView !== settings.view;
@@ -259,9 +269,7 @@ export function render(): void {
   const sharedLive = shared() && isLive() && current().moves.length > 0;
   // A game from a link: New game goes back to play.
   newGameButton.disabled = page.viewing === undefined && (frozen || page.busy || page.thinking || page.session?.you == null || sharedLive);
-  advancedBox.hidden = settings.mode !== 'computer';
   for (const input of tuningEl.querySelectorAll('input')) input.disabled = frozen;
-  undoButton.hidden = settings.mode === 'online' || settings.mode === 'nearby';
   undoButton.disabled =
     frozen || page.thinking || page.review !== undefined || !isLive() || current().moves.length === 0 || hasLimit(current().clock);
   showCardButton.hidden = isLive() || page.review !== undefined;

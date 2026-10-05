@@ -2290,6 +2290,35 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
+.nearby-lobby {
+  display: grid;
+  gap: 0.5rem;
+}
+
+/* A listed game: the icon, the name over the age, and Join at the right. */
+.nearby-hosts li {
+  grid-template-columns: auto 1fr auto;
+}
+
+.nearby-hosts li > :is(b, small) {
+  grid-column: 2;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.nearby-hosts li > button {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  background: var(--primary);
+  color: var(--on-color);
+}
+
+.nearby-note {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .nearby-laptop summary,
 .nearby-text summary {
   cursor: pointer;

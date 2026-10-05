@@ -173,15 +173,21 @@
         </div>
 
         <div class="nearby" data-show-mode="nearby">
-          <p class="nearby-intro">Play with devices on the same Wi-Fi, without the internet. One device hosts, the others join.</p>
+          <p class="nearby-intro">Play with devices on the same Wi-Fi. One device hosts, the others join.</p>
           <label class="nearby-me">
             <span class="device-icon" id="nearby-device-icon"></span>
             <input type="text" id="nearby-name" maxlength="24" placeholder="This device's name" aria-label="This device's name" />
           </label>
           <div class="nearby-start" id="nearby-start">
             <button type="button" id="nearby-host">Host</button>
-            <button type="button" id="nearby-join">Join</button>
+            <button type="button" id="nearby-join">Join with a code</button>
           </div>
+          <section class="nearby-lobby" id="nearby-lobby" aria-labelledby="nearby-lobby-title" hidden>
+            <span class="label" id="nearby-lobby-title">Games near you</span>
+            <ul class="nearby-devices nearby-hosts" id="nearby-hosts"></ul>
+            <p class="nearby-note" id="nearby-hosts-empty">Games that devices on the same Wi-Fi host show up here.</p>
+          </section>
+          <p class="nearby-note" id="nearby-offline" hidden>You are offline, so the list of games near you is off. Host and Join with a code still work.</p>
           <div class="nearby-step" id="nearby-step" hidden>
             <p class="nearby-step-text" id="nearby-step-text"></p>
             <div class="nearby-qr" id="nearby-qr" hidden></div>
@@ -199,6 +205,7 @@
             <button type="button" class="nearby-cancel" id="nearby-cancel">Cancel</button>
           </div>
           <ul class="nearby-devices" id="nearby-devices" hidden></ul>
+          <p class="nearby-note" id="nearby-visible" hidden>Visible to devices on this network.</p>
           <div class="nearby-actions" id="nearby-actions" hidden>
             <button type="button" id="nearby-add">Add device</button>
             <button type="button" id="nearby-stop">End</button>
@@ -209,7 +216,8 @@
           </details>
         </div>
 
-        <form class="field join" id="join">
+        <!-- A shortcut into online play from every mode except Nearby. -->
+        <form class="field join" id="join" data-show-mode="computer friend online">
           <span class="label">Join a friend</span>
           <div class="join-row">
             <input type="text" id="join-code" maxlength="4" placeholder="Code" aria-label="Game code" autocapitalize="characters" autocomplete="off" />
@@ -241,7 +249,7 @@
           </div>
         </div>
 
-        <div class="field clock-editor">
+        <div class="field clock-editor" data-show-mode="computer friend online nearby">
           <span class="label">Time limit</span>
           <div class="limits">
             <div class="limit" data-limit="perGame">
@@ -288,7 +296,7 @@
           </details>
         </div>
 
-        <div class="field">
+        <div class="field" data-show-mode="computer friend online nearby" data-needs-session>
           <span class="label">Hide</span>
           <div class="toggles">
             <button type="button" data-toggle="hideBoard" aria-label="Hide board">Board</button>
@@ -296,17 +304,17 @@
           </div>
         </div>
 
-        <div class="score" id="score"></div>
+        <div class="score" id="score" data-needs-session></div>
 
         <div class="actions">
-          <button type="button" class="primary" id="new-game">New game</button>
-          <button type="button" id="undo">Undo</button>
+          <button type="button" class="primary" id="new-game" data-needs-session>New game</button>
+          <button type="button" id="undo" data-show-mode="computer friend">Undo</button>
           <button type="button" id="sound" aria-label="Sound"></button>
         </div>
-        <button type="button" class="lock" id="lock">🔓 Lock</button>
+        <button type="button" class="lock" id="lock" data-show-mode="computer friend online nearby" data-needs-session>🔓 Lock</button>
         <button type="button" class="lock" id="show-card" hidden>🏆 Result card</button>
 
-        <details class="history" id="history-box">
+        <details class="history" id="history-box" data-needs-session>
           <summary>Games in this session</summary>
           <ol id="history"></ol>
         </details>
@@ -320,7 +328,7 @@
           <p>Lock settings keeps every setting, the view included, until the game ends. Online, the lock and the hide options apply to both players.</p>
         </details>
 
-        <details class="help advanced" id="advanced" hidden>
+        <details class="help advanced" id="advanced" data-show-mode="computer" hidden>
           <summary>Advanced: computer player</summary>
           <p>Every number behind the computer. Easy and medium tire in a long game: each value moves from fresh to tired between two moves. A changed computer keeps its own records.</p>
           <div class="tuning" id="tuning"></div>

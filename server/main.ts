@@ -14,10 +14,21 @@ import {
   parseNewSession,
   parseSessionUpdate,
 } from '../src/protocol.ts';
+import { asHostId, parseAnnounce, parseAnswerRequest } from '../src/nearby/lobby.ts';
+import { type Hello, decodeSignal } from '../src/nearby/signal.ts';
 import { SessionError } from '../src/session/core.ts';
-import { CREATES_PER_HOUR, EVENTS_PER_10_MINUTES, WAIT_MS, matchRoute } from './api-docs.ts';
+import {
+  CREATES_PER_HOUR,
+  EVENTS_PER_10_MINUTES,
+  NEARBY_CALLS_PER_10_MINUTES,
+  NEARBY_GRACE_MS,
+  NEARBY_HOSTS_PER_NETWORK,
+  WAIT_MS,
+  matchRoute,
+} from './api-docs.ts';
 import { openApi, swaggerHtml } from './api-docs-render.ts';
 import { type Auth, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
+import { LobbyError, createLobby, networkOf } from './lobby.ts';
 import { openStore } from './store.ts';
 import { createWaiters } from './waiters.ts';
 
@@ -40,6 +51,11 @@ const allowCreate = createLimiter(CREATES_PER_HOUR, 3_600_000, 10_000);
 // Fault reports from pages: 30 per 10 minutes per address is plenty for a page that works, and
 // keeps a broken or hostile page from filling the events table. Same limits as allowCreate.
 const allowEvent = createLimiter(EVENTS_PER_10_MINUTES, 600_000, 10_000);
+// Nearby lobby calls (announce and answer) per network. A host sends one announce per WAIT_MS and
+// one per guest, so the limit leaves room for several hosts on one home network. Same limits as allowCreate.
+const allowNearby = createLimiter(NEARBY_CALLS_PER_10_MINUTES, 600_000, 10_000);
+// Each entry holds at most one open request, so `total` also caps the open announce requests.
+const lobby = createLobby({ perNetwork: NEARBY_HOSTS_PER_NETWORK, total: 1000, waitMs: WAIT_MS, graceMs: NEARBY_GRACE_MS });
 
 class HttpError extends Error {
   status: number;
@@ -124,6 +140,24 @@ function sessionCode(value: string | undefined): Code {
   const code = normalizeCode(value ?? '');
   if (code === undefined) throw new HttpError(400, 'A code has 4 letters or digits.');
   return code;
+}
+
+// The lobby only shows a host to requests from its own network, so a request without a known address gets nothing.
+function requireNetwork(req: IncomingMessage): string {
+  const network = networkOf(clientOf(req));
+  if (network === undefined) throw new HttpError(400, 'The server cannot tell the network of this request.');
+  return network;
+}
+
+function requireNearbyCall(network: string): void {
+  if (!allowNearby(network, Date.now())) throw new HttpError(429, 'Too many Nearby calls from this network. Try again later.');
+}
+
+// Decodes a signal code fully, so the lobby never holds a code that a device cannot read.
+async function signalHello(code: string, kind: 'offer' | 'answer'): Promise<Hello> {
+  const signal = await decodeSignal(code).catch(() => undefined);
+  if (signal?.kind !== kind) throw new HttpError(400, `This is not a valid tick3d ${kind} code.`);
+  return signal.hello;
 }
 
 // GET /api/sessions/{code}?wait=<version> holds the request until the version is greater, or WAIT_MS pass.
@@ -301,6 +335,41 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const text = typeof body === 'object' && body !== null && 'text' in body ? body.text : undefined;
       return send(res, 200, await store.chat(code(), requirePlayer(req), text));
     }
+
+    case 'GET /api/nearby/hosts':
+      return send(res, 200, { hosts: lobby.list(requireNetwork(req), asPlayerToken(req.headers['x-player'])) });
+    case 'POST /api/nearby/hosts': {
+      const token = requirePlayer(req);
+      const network = requireNetwork(req);
+      requireNearbyCall(network);
+      const body = parseAnnounce(await readJson(req));
+      if (body === undefined) throw new HttpError(400, 'An announcement needs an offer code, and an id from an earlier answer or none.');
+      const hello = await signalHello(body.offer, 'offer');
+      const left = new AbortController();
+      // The response closes before it ends only when the host goes away.
+      const onClose = () => left.abort();
+      res.on('close', onClose);
+      try {
+        const { id, answer } = lobby.announce({ id: body.id, token, network, hello, offer: body.offer }, left.signal);
+        const code = await answer;
+        if (res.destroyed) return;
+        return send(res, 200, { id, answer: code });
+      } finally {
+        res.off('close', onClose);
+      }
+    }
+    case 'POST /api/nearby/hosts/{host}/answer': {
+      const id = asHostId(match.params.host);
+      if (id === undefined) throw new HttpError(400, 'A host id has 16 characters.');
+      requirePlayer(req);
+      const network = requireNetwork(req);
+      requireNearbyCall(network);
+      const body = parseAnswerRequest(await readJson(req));
+      if (body === undefined) throw new HttpError(400, 'An answer needs an answer code and the offer code that it answers.');
+      await signalHello(body.answer, 'answer');
+      lobby.answer(id, network, body.offer, body.answer);
+      return send(res, 200, { ok: true });
+    }
     default: {
       const unhandled: never = match.route;
       throw new Error(`no handler for the documented route ${String(unhandled)}`);
@@ -310,7 +379,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
 const server = createServer((req, res) => {
   route(req, res).catch((error: unknown) => {
-    if (error instanceof SessionError || error instanceof HttpError) return send(res, error.status, { error: error.message });
+    if (error instanceof SessionError || error instanceof HttpError || error instanceof LobbyError) return send(res, error.status, { error: error.message });
     console.error(error);
     if (!res.headersSent) send(res, 500, { error: 'Server error.' });
     else res.end();

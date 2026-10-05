@@ -1,4 +1,5 @@
 import type { TimeControl } from './clock.ts';
+import { type Announced, type HostId, type LobbyHost, parseAnnounced, parseLobbyHosts } from './nearby/lobby.ts';
 import { type Records, parseRecords } from './records.ts';
 import {
   type ClientEvent,
@@ -67,13 +68,14 @@ export class OnlineError extends Error {
 
 const NOT_JSON = Symbol('not JSON');
 
-async function call(method: string, path: string, body?: unknown): Promise<unknown> {
+async function call(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(`/api${path}`, {
       method,
       headers: { 'content-type': 'application/json', 'x-player': token },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(signal === undefined ? {} : { signal }),
     });
   } catch {
     throw new OnlineError('Cannot reach the server. Check the connection.');
@@ -158,6 +160,12 @@ export const api = {
   gameMetrics: (id: GameId, metrics: Metrics) => call('POST', `/games/${id}/metrics`, metrics),
   // A fault report for the stats page. The caller ignores a failure: a report must never cause another fault.
   event: (event: ClientEvent) => call('POST', '/events', event),
+
+  // The Nearby lobby (server/lobby.ts). The server holds an announcement until a guest answers, or for about 25 s.
+  announceNearby: async (offer: string, id: HostId | undefined, signal: AbortSignal): Promise<Announced> =>
+    parseAnnounced(await call('POST', '/nearby/hosts', { offer, ...(id === undefined ? {} : { id }) }, signal)),
+  nearbyHosts: async (): Promise<LobbyHost[]> => parseLobbyHosts(await call('GET', '/nearby/hosts')),
+  answerNearby: (id: HostId, offer: string, answer: string) => call('POST', `/nearby/hosts/${id}/answer`, { answer, offer }),
 
   // Calls onChange after every change, and after each reconnect in case a change was missed.
   // The token marks this page's seats as present, so the other player sees "here" or "away".

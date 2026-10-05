@@ -18,7 +18,7 @@ const ANSWER_TAG = 'T3B1.';
 // The longest device name in a Hello. Shorter than a session name (protocol.ts), to keep codes short.
 export const HELLO_NAME_MAX_LENGTH = 24;
 // Limits for codes from an unknown device: the text, and the JSON after inflation.
-const MAX_CODE_LENGTH = 2000;
+export const MAX_CODE_LENGTH = 2000;
 const MAX_INFLATED_BYTES = 4000;
 const MAX_CANDIDATES = 8;
 
