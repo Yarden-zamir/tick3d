@@ -118,7 +118,7 @@
 - `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login. `server/stats.ts`: the SQL of the stats page.
 - `stats.html`, `src/stats/`: the hidden stats page.
 
-The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs on Node 24, which runs TypeScript directly, and stores sessions in [DuckDB](https://duckdb.org) through `@duckdb/node-api`.
+The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs on Node 26, which runs TypeScript directly, and stores sessions in [DuckDB](https://duckdb.org) through `@duckdb/node-api`.
 
 ## Stored data and format changes
 
@@ -161,8 +161,8 @@ The page is plain TypeScript built with Vite, with no runtime dependencies. The 
 Node is not necessary on the host. Run the commands in a container:
 
 ```sh
-docker run --rm -v "$PWD":/app -w /app node:24-alpine sh -c 'npm ci && npm run check && npm run build'
-docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:24-alpine npx vite --host
+docker run --rm -v "$PWD":/app -w /app node:26-alpine sh -c 'npm ci && npm run check && npm run build'
+docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:26-alpine npx vite --host
 ```
 
 `npm run check` runs the type check, every linter and the tests. `npm run build` runs the type check (`tsc`) before the Vite build. `npm run api` starts the API on port 8080 with `./dev.duckdb`.
@@ -181,7 +181,7 @@ docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr.17.
 ```
 
 - The image tag must match the `@playwright/test` version in `package.json`. Update both together.
-- `npm ci` in the Playwright image installs packages for glibc. Run `npm ci` again before you use `node:24-alpine`.
+- `npm ci` in the Playwright image installs packages for glibc. Run `npm ci` again before you use `node:26-alpine`.
 - Each test opens fresh browser contexts, and the tests run in parallel. The HTML report goes to `e2e/playwright-report/`. A failed test keeps a trace in `e2e/test-results/`.
 - One run creates 6 online sessions. The server allows 60 new sessions per hour from one address.
 - The `e2e` workflow runs the suite after a successful pull request preview deploy. When a test fails, the workflow uploads the HTML report.
