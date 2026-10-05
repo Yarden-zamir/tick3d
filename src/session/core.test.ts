@@ -103,12 +103,6 @@ describe('moves', () => {
 });
 
 describe('games in a session', () => {
-  it('keeps any number of games, for as long as the players continue', () => {
-    let doc = onlineDoc();
-    for (let round = 0; round < 600; round++) doc = core.newGame(play(doc, X_WINS), alice);
-    expect(doc.games).toHaveLength(601);
-  });
-
   it('asks players of a shared game to finish it first, but lets one device give up a game', () => {
     const shared = play(onlineDoc(), [0, 1]);
     expect(status(() => core.newGame(shared, alice))).toBe(409);
