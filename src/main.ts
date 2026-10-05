@@ -31,6 +31,7 @@ import {
 } from './game.ts';
 import { type LocalBackend, createLocalBackend } from './local.ts';
 import { type RecordNews, type Records, addLoss, parseRecords } from './records.ts';
+import { DEFAULT_TUNING, type Tuning, TUNING_FIELDS, fieldValue, isDefaultTuning, parseTuning } from './tuning.ts';
 import { DEVICE_ICONS, deviceLabel, detectDevice } from './nearby/device.ts';
 import { type Channel, answerOffer, createOffer } from './nearby/peer.ts';
 import { renderQr } from './nearby/qr.ts';
@@ -238,6 +239,9 @@ const cardShareButton = element('#end-card-share', HTMLButtonElement);
 const cardSaveButton = element('#end-card-save', HTMLButtonElement);
 const cardCloseButton = element('#end-card-close', HTMLButtonElement);
 const cardNewGameButton = element('#end-card-new-game', HTMLButtonElement);
+const advancedBox = element('#advanced', HTMLDetailsElement);
+const tuningEl = element('#tuning', HTMLDivElement);
+const tuningReset = element('#tuning-reset', HTMLButtonElement);
 const themeColorMeta = element('meta[name="theme-color"]', HTMLMetaElement);
 const themeMenu = element('#theme-menu', HTMLDetailsElement);
 const themeSwatch = element('#theme-swatch', HTMLSpanElement);
@@ -700,7 +704,7 @@ function scheduleComputer(): void {
     // The hard level searches on the main thread for up to 600 ms. CSS animations keep running,
     // but input waits. Move the search to a Web Worker if the budget grows past about one second.
     const game = current();
-    const cell = chooseMove(game.board, game.turn, settings.difficulty);
+    const cell = chooseMove(game.board, game.turn, settings.difficulty, Math.random, tuning);
     const request = { game: games.length - 1, moveCount: game.moves.length, cell };
     void (async () => {
       try {
@@ -1607,6 +1611,8 @@ function render(): void {
   // With another device, a game must end before the next one starts.
   const sharedLive = shared() && isLive() && current().moves.length > 0;
   newGameButton.disabled = frozen || busy || thinking || session?.you == null || sharedLive;
+  advancedBox.hidden = settings.mode !== 'computer';
+  for (const input of tuningEl.querySelectorAll('input')) input.disabled = frozen;
   undoButton.hidden = shared() || settings.mode === 'online' || settings.mode === 'nearby';
   undoButton.disabled =
     frozen || thinking || review !== undefined || !isLive() || current().moves.length === 0 || hasLimit(current().clock);
@@ -1783,6 +1789,68 @@ for (const kind of ['perGame', 'perMove'] as const) {
   }
 }
 
+// ---- Advanced settings of the computer ----
+
+const TUNING_KEY = 'tick3d.tuning';
+
+function loadTuning(): Tuning {
+  try {
+    return parseTuning(JSON.parse(localStorage.getItem(TUNING_KEY) ?? 'null'));
+  } catch {
+    return DEFAULT_TUNING;
+  }
+}
+
+let tuning = loadTuning();
+
+function saveTuning(next: Tuning): void {
+  tuning = next;
+  try {
+    if (isDefaultTuning(next)) localStorage.removeItem(TUNING_KEY);
+    else localStorage.setItem(TUNING_KEY, JSON.stringify(next));
+  } catch {
+    // Storage is blocked (private mode). The settings then last for this visit only.
+  }
+}
+
+// One box per level, one number per field. A change applies from the computer's next move.
+function buildTuning(): void {
+  const groups = new Map<string, HTMLFieldSetElement>();
+  for (const field of TUNING_FIELDS) {
+    let group = groups.get(field.group);
+    if (group === undefined) {
+      group = document.createElement('fieldset');
+      const legend = document.createElement('legend');
+      legend.textContent = field.group;
+      group.append(legend);
+      groups.set(field.group, group);
+    }
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    Object.assign(input, { type: 'number', min: String(field.min), max: String(field.max), step: String(field.step) });
+    input.value = String(field.get(tuning));
+    input.addEventListener('change', () => {
+      const value = fieldValue(field, input.valueAsNumber);
+      if (value === undefined) showToast(`${field.label}: use a number from ${field.min} to ${field.max}.`);
+      else saveTuning(field.set(tuning, value));
+      input.value = String(field.get(tuning));
+    });
+    label.append(field.label, input);
+    group.append(label);
+  }
+  tuningEl.replaceChildren(...groups.values());
+}
+
+tuningReset.addEventListener('click', () => {
+  if (settingsLocked()) return reject(undefined, 'locked');
+  saveTuning(DEFAULT_TUNING);
+  buildTuning();
+  render();
+  showToast('The computer plays with the default settings again.');
+});
+
+buildTuning();
+
 // ---- Survival records ----
 
 const RECORDS_KEY = 'tick3d.records';
@@ -1803,7 +1871,7 @@ function loadRecords(): Records {
 // The hide options count as they are at the end of the game.
 function noteSurvival(open: Session, game: Game, index: number): void {
   const { hideBoard, hideHistory } = open.options;
-  const { records, news } = addLoss(loadRecords(), { difficulty: settings.difficulty, clock: game.clock, hideBoard, hideHistory }, game.moves.length);
+  const { records, news } = addLoss(loadRecords(), { difficulty: settings.difficulty, clock: game.clock, hideBoard, hideHistory, tuned: !isDefaultTuning(tuning) }, game.moves.length);
   try {
     localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
   } catch {
@@ -1842,7 +1910,7 @@ function cardInput(game: Game, index: number): CardInput {
       : game.status.kind === 'timeout'
         ? `${other(game.status.winner)} ran out of time after ${game.moves.length} moves`
         : 'The cube is full. Nobody got four in a row.';
-  const level = `${settings.difficulty.charAt(0).toUpperCase()}${settings.difficulty.slice(1)}`;
+  const level = `${settings.difficulty.charAt(0).toUpperCase()}${settings.difficulty.slice(1)}${isDefaultTuning(tuning) ? '' : ' (tuned)'}`;
   const matchup =
     session?.mode === 'computer'
       ? `vs Computer · ${level} · You played ${session.you ?? settings.human}`
