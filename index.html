@@ -8,7 +8,7 @@
       // Apply a stored theme before the first paint, so the page never flashes the other theme.
       try {
         const theme = JSON.parse(localStorage.getItem('tick3d.settings') ?? 'null')?.theme;
-        // Keep this list in step with THEMES in src/main.ts.
+        // Keep this list in step with THEMES in src/page/settings.ts.
         const themes = ['light', 'dark', 'snow', 'candy', 'mint', 'retro', 'midnight', 'synthwave', 'bloodmoon', 'coffee', 'batman', 'mono'];
         if (themes.includes(theme)) {
           document.documentElement.dataset.theme = theme;
@@ -265,7 +265,7 @@
           <span class="label" id="theme-label">Theme</span>
           <details class="theme-menu" id="theme-menu">
             <summary aria-describedby="theme-label"><span class="swatch" id="theme-swatch"><span></span></span><span id="theme-name"></span></summary>
-            <!-- main.ts fills this from its THEMES list. -->
+            <!-- src/page/theme.ts fills this from the THEMES list. -->
             <div class="theme-picker" id="theme-picker" role="group" aria-labelledby="theme-label"></div>
           </details>
         </div>
