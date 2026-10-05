@@ -28,7 +28,8 @@ export function applyTheme(): void {
   );
   themeSwatch.dataset.theme = settings.theme;
   themeName.textContent = THEME_NAMES[settings.theme];
-  themeColorMeta.content = getComputedStyle(document.documentElement).getPropertyValue('--page').trim();
+  // The browser bar takes the board color, the strongest color of each theme (see index.html).
+  themeColorMeta.content = getComputedStyle(document.documentElement).getPropertyValue('--slab').trim();
 }
 
 export function setupTheme(): void {
