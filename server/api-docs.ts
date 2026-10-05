@@ -1,5 +1,5 @@
 // The public HTTP API in one place. The server dispatches requests with matchRoute, and
-// /api/openapi.json, /api/docs and /api/docs.md come from this file (see server/api-docs-render.ts).
+// /api/openapi.json and its Swagger UI page /api/docs come from this file (see server/api-docs-render.ts).
 // To add a route, add one entry to ROUTES and one case to the switch in server/main.ts.
 // The type checker refuses a case without an entry, and a switch without a case for an entry.
 // server/api-docs.test.ts runs every example through the real parsers in src/protocol.ts.
@@ -724,18 +724,10 @@ export const ROUTES = {
     response: { status: 200, description: 'The server is up.', schema: 'Health', example: { ok: true, lan: null } },
     errors: [],
   },
-  'GET /api/docs.md': {
-    operationId: 'docsMarkdown',
-    tag: 'Docs',
-    summary: 'This guide and reference as Markdown.',
-    player: 'none',
-    response: { status: 200, description: 'Markdown.', contentType: 'text/markdown' },
-    errors: [],
-  },
   'GET /api/docs': {
     operationId: 'docsHtml',
     tag: 'Docs',
-    summary: 'This guide and reference as a web page.',
+    summary: 'This document as a Swagger UI web page, with "Try it out".',
     player: 'none',
     response: { status: 200, description: 'HTML.', contentType: 'text/html' },
     errors: [],
@@ -743,7 +735,7 @@ export const ROUTES = {
   'GET /api/openapi.json': {
     operationId: 'openApi',
     tag: 'Docs',
-    summary: 'The OpenAPI 3.1 description of this API.',
+    summary: 'This OpenAPI 3.1 document. Its info.description holds the guide.',
     player: 'none',
     response: { status: 200, description: 'An OpenAPI document.', contentType: 'application/json' },
     errors: [],
@@ -752,7 +744,7 @@ export const ROUTES = {
     operationId: 'me',
     tag: 'Account',
     summary: 'Your GitHub login state. The page uses it.',
-    description: 'A login cookie from the page links your player id to a GitHub account. An agent has no login, so user is null.',
+    description: 'A login cookie from the page links your player id to a GitHub account. A client without a page login gets null.',
     player: 'required',
     response: { status: 200, description: 'Your login state.', schema: 'Me', example: { loginAvailable: true, user: null } },
     errors: [BAD_PLAYER],

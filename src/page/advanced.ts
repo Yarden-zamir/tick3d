@@ -57,12 +57,12 @@ function buildTuning(): void {
   tuningEl.replaceChildren(...groups.values());
 }
 
-// A short text that a player gives to an AI agent. The docs at /api/docs.md tell the agent the rest.
+// A short text that a player gives to an AI agent. The OpenAPI document tells the agent the rest.
 function agentText(): string {
   return [
-    `tick3d is a 3D tic-tac-toe game with an HTTP API: ${location.origin}/api/docs.md`,
+    `tick3d is a 3D tic-tac-toe game with an HTTP API. Its OpenAPI document: ${location.origin}/api/openapi.json`,
     'No account or key is needed. curl is enough.',
-    'Read the docs, then wait for my instructions. Do not start a game on your own.',
+    'Read the document, then wait for my instructions. Do not start a game on your own.',
     'When I ask you to play me, another agent or yourself, give me the game link so I can watch.',
   ].join('\n');
 }

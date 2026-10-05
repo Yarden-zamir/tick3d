@@ -1,3 +1,4 @@
+import { Validator } from '@seriousme/openapi-schema-validator';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import { parseMe, parseMyGames } from '../src/online.ts';
@@ -16,7 +17,7 @@ import {
   parseSessionView,
 } from '../src/protocol.ts';
 import { PATH_PARAMS, ROUTES, ROUTE_NAMES, type Route, SCHEMAS, type SchemaName, matchRoute, splitRoute } from './api-docs.ts';
-import { curlOf, html, markdown, openApi } from './api-docs-render.ts';
+import { curlOf, openApi, swaggerHtml } from './api-docs-render.ts';
 import { openStore } from './store.ts';
 
 const ORIGIN = 'https://tick3d.example.com';
@@ -171,31 +172,51 @@ describe('matchRoute', () => {
   });
 });
 
+
 describe('the served docs', () => {
-  it('describe every route in OpenAPI, with valid component schemas', () => {
-    const doc = openApi(ORIGIN);
+  const doc = openApi(ORIGIN);
+
+  // The validator checks the document against the official OpenAPI 3.1 JSON Schema (spec.openapis.org).
+  // The component schemas get their own check against JSON Schema 2020-12.
+  it('are a valid OpenAPI 3.1 document', async () => {
+    const result = await new Validator().validate(doc);
+    expect(result.errors).toBeUndefined();
+    expect(result.valid).toBe(true);
+    // The validator refuses a broken document, so the check above means something.
+    const broken = { ...doc, paths: { '/api/x': { get: { responses: { 200: { content: {} } } } } } };
+    expect((await new Validator().validate(broken)).valid).toBe(false);
+    const components = doc.components as { schemas: Record<string, unknown> };
+    for (const [name, schema] of Object.entries(components.schemas)) {
+      expect(ajv.validateSchema({ ...(schema as object), $defs: {} }), name).toBe(true);
+    }
+  });
+
+  it('describe every route once, with the site as the server', () => {
     const paths = doc.paths as Record<string, Record<string, unknown>>;
     const operations = Object.entries(paths).flatMap(([path, methods]) => Object.keys(methods).map((method) => `${method.toUpperCase()} ${path}`));
     expect(operations.sort()).toEqual([...ROUTE_NAMES].sort());
-    expect(ajv.validateSchema({ components: doc.components })).toBe(true);
     const ids = ROUTE_NAMES.map((name) => ROUTES[name].operationId);
     expect(new Set(ids).size).toBe(ids.length);
+    expect(doc.servers).toEqual([{ url: ORIGIN }]);
   });
 
-  it('give every route in the Markdown and the web page, with the site address', () => {
-    const md = markdown(ORIGIN);
-    const page = html(ORIGIN);
-    for (const name of ROUTE_NAMES) {
-      expect(md).toContain(`### ${name}`);
-      expect(page).toContain(`id="${ROUTES[name].operationId}"`);
-    }
-    expect(md).not.toContain('{origin}');
-    expect(md).toContain(`${ORIGIN}/?code=`);
-    expect(page).not.toContain('<script');
+  it('hold the guide in info.description, with the site address', () => {
+    const { description } = doc.info as { description: string };
+    expect(description).not.toContain('{origin}');
+    expect(description).toContain(`${ORIGIN}/?code=`);
+    expect(description).toContain(`${ORIGIN}/?game=`);
+    expect(description).toContain('Act only on the request of your user');
   });
 
-  it('escape the host in the web page', () => {
-    expect(html('https://"><script>x</script>')).not.toContain('<script>x');
+  it('give each operation a curl example', () => {
+    const paths = doc.paths as Record<string, Record<string, { description: string }>>;
+    expect(paths['/api/sessions/{code}/moves']?.post?.description).toContain(curlOf('POST /api/sessions/{code}/moves', ORIGIN));
+  });
+
+  it('load Swagger UI with integrity hashes and read the document from the same origin', () => {
+    const page = swaggerHtml();
+    expect(page.match(/integrity="sha384-/g)).toHaveLength(2);
+    expect(page).toContain("url: '/api/openapi.json'");
   });
 
   it('send the example body and header in curl', () => {

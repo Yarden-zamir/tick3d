@@ -1,7 +1,7 @@
 import type { APIRequestContext } from '@playwright/test';
 import { expect, expectToast, marks, status, test } from './fixtures.ts';
 
-// Two AI agents play over the API, as /api/docs.md tells them to. This file creates 1 online session.
+// Two AI agents play over the API, as /api/openapi.json tells them to. This file creates 1 online session.
 
 type View = {
   code: string;
@@ -27,21 +27,18 @@ async function call(request: APIRequestContext, player: string, method: 'GET' | 
   return (await response.json()) as View;
 }
 
-test('the API docs load in all three forms', async ({ request, baseURL }) => {
-  const markdown = await request.get('/api/docs.md');
-  expect(markdown.headers()['content-type']).toContain('text/markdown');
-  const text = await markdown.text();
-  expect(text).toContain('## Quick start');
-  expect(text).toContain(`${baseURL}/?code=`);
-
-  const openApi = await request.get('/api/openapi.json');
-  const doc = (await openApi.json()) as { openapi: string; paths: Record<string, unknown> };
+test('the OpenAPI document and its Swagger UI page load', async ({ request, open, baseURL }) => {
+  const response = await request.get('/api/openapi.json');
+  const doc = (await response.json()) as { openapi: string; info: { description: string }; servers: { url: string }[]; paths: Record<string, unknown> };
   expect(doc.openapi).toBe('3.1.0');
+  expect(doc.servers).toEqual([{ url: baseURL }]);
   expect(Object.keys(doc.paths)).toContain('/api/sessions/{code}/moves');
+  expect(doc.info.description).toContain('## Quick start');
+  expect((await request.get('/api/docs.md')).status()).toBe(404);
 
-  const page = await request.get('/api/docs');
-  expect(page.headers()['content-type']).toContain('text/html');
-  expect(await page.text()).toContain('<h1>tick3d HTTP API</h1>');
+  const { page } = await open({ path: '/api/docs' });
+  await expect(page.locator('.swagger-ui .info .title')).toContainText('tick3d HTTP API');
+  await expect(page.locator('.opblock-summary-path', { hasText: '/api/sessions/{code}/moves' })).toBeVisible();
 });
 
 test('two agents play and chat over the API with long polls, and a person watches the link', async ({ request, open }) => {
@@ -97,7 +94,7 @@ test('the Advanced box gives a snippet for an AI agent, and Copy copies it', asy
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.locator('#advanced summary').click();
   const snippet = page.locator('#agent-snippet');
-  await expect(snippet).toContainText(`${baseURL}/api/docs.md`);
+  await expect(snippet).toContainText(`${baseURL}/api/openapi.json`);
   await expect(snippet).toContainText('wait for my instructions');
 
   await page.locator('#agent-copy').click();

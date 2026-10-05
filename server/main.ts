@@ -16,7 +16,7 @@ import {
 } from '../src/protocol.ts';
 import { SessionError } from '../src/session/core.ts';
 import { CREATES_PER_HOUR, EVENTS_PER_10_MINUTES, WAIT_MS, matchRoute } from './api-docs.ts';
-import { html, markdown, openApi } from './api-docs-render.ts';
+import { openApi, swaggerHtml } from './api-docs-render.ts';
 import { type Auth, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
 import { openStore } from './store.ts';
 import { createWaiters } from './waiters.ts';
@@ -186,10 +186,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return send(res, 200, { ok: true, lan: lanHost });
     case 'GET /api/openapi.json':
       return sendText(res, 'application/json', JSON.stringify(openApi(docsOrigin(req)), null, 2));
-    case 'GET /api/docs.md':
-      return sendText(res, 'text/markdown; charset=utf-8', markdown(docsOrigin(req)));
     case 'GET /api/docs':
-      return sendText(res, 'text/html; charset=utf-8', html(docsOrigin(req)));
+      return sendText(res, 'text/html; charset=utf-8', swaggerHtml());
 
     case 'GET /api/auth/login': {
       if (auth === undefined) throw new HttpError(404, 'Login is not available on this server.');

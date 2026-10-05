@@ -18,6 +18,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
+    "@seriousme/openapi-schema-validator": "^2.11.0",
     "@types/node": "^26.6.4",
     "@types/pngjs": "^6.0.5",
     "ajv": "^8.20.0",
