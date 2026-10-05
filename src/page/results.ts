@@ -70,6 +70,14 @@ async function guestOf(code: Code, you: Player): Promise<PlayerToken | null> {
   return guest;
 }
 
+// The game links that a Nearby host gave this guest, by session code and game index. The host's
+// result names both players, so both devices show and share the host's link. The guest still
+// uploads its own copy for its stats. Limit: the links last for this visit only, so a reload shows
+// the guest's own link again. Revisit this if players miss the shared link after a reload.
+const hostLinks = new Map<string, GameId>();
+export const setHostLink = (code: Code, index: number, id: GameId) => hostLinks.set(`${code}:${index}`, id);
+export const hostLinkOf = (code: Code, index: number) => hostLinks.get(`${code}:${index}`);
+
 // Sends the metrics of this device for a finished online game that it played. A failure drops them:
 // online games have no upload queue. Revisit this if the stats page shows few online reports.
 export function sendOnlineMetrics(open: Session, index: number): void {
@@ -83,6 +91,8 @@ export function sendOnlineMetrics(open: Session, index: number): void {
 // The id of the link of a finished game in the open session, or undefined when it has none.
 export async function gameIdOf(open: Session, index: number): Promise<GameId | undefined> {
   if (open.mode === 'online') return onlineGameId(open.code, index);
+  const shared = open.mode === 'nearby' ? hostLinkOf(open.code, index) : undefined;
+  if (shared !== undefined) return shared;
   return (await page.deviceDb?.get('results', resultIdOf(open.code, index)))?.upload.publicId ?? undefined;
 }
 

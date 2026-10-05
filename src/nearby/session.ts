@@ -5,6 +5,7 @@ import type { Player } from '../game.ts';
 import type { LocalBackend } from '../local.ts';
 import {
   type Code,
+  type GameId,
   type PlayerToken,
   type SessionView,
   asPlayerToken,
@@ -117,6 +118,11 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
       return () => changeListeners.delete(listener);
     },
 
+    // Gives every guest the public id of a finished game, so all devices share the host's game link.
+    shareLink(game: number, id: GameId): void {
+      for (const guest of guests) guest.server.link(game, id);
+    },
+
     stop(reason: string): void {
       stopped = true;
       for (const guest of guests) guest.server.bye(reason);
@@ -153,6 +159,7 @@ export function createNearbyGuest(channel: Channel, token: PlayerToken, onBye: (
     chat: (_code: Code, text: string) => view('chat', { text }),
     // One channel carries one session, so every change notice is for this session.
     subscribe: (_code: Code, onChange: () => void): (() => void) => rpc.onChanged(() => onChange()),
+    onLink: (handler: (game: number, id: GameId) => void) => rpc.onLink(handler),
     // A guest that leaves on purpose gets no goodbye message.
     close(): void {
       ended = true;

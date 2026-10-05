@@ -9,7 +9,7 @@ import { type NearbyHost, type NearbyGuest, createNearbyHost, createNearbyGuest 
 import { type Hello, HELLO_NAME_MAX_LENGTH, decodeSignal } from '../nearby/signal.ts';
 import { nameOf } from '../names.ts';
 import { OnlineError, api, token } from '../online.ts';
-import type { Code, Metrics } from '../protocol.ts';
+import type { Code, GameId, Metrics } from '../protocol.ts';
 import { sounds } from '../sound.ts';
 import {
   nearbyNameInput,
@@ -37,6 +37,7 @@ import {
   nearbyOffline,
   nearbyVisible,
 } from './dom.ts';
+import { useHostLink } from './end-card.ts';
 import { copyText, showProblem, showToast, showError } from './feedback.ts';
 import { render } from './render.ts';
 import { defaultSessionName, openSession, leaveSession } from './sessions.ts';
@@ -103,13 +104,13 @@ async function renderNearby(): Promise<void> {
     const hostSeat = page.session?.you ?? 'X';
     const guests = await state.host.guests();
     nearbyDevices.replaceChildren(
-      deviceItem(nearbyHello(), `You · host · plays ${hostSeat}`),
+      deviceItem(nearbyHello(), `You · Host · Plays ${hostSeat}`),
       ...guests.map((guest) => deviceItem(guest.hello, seatRole(guest.seat))),
     );
   } else if (state.kind === 'guest') {
     nearbyDevices.replaceChildren(
       deviceItem(state.hostHello, 'Host'),
-      deviceItem(nearbyHello(), `You · ${seatRole(page.session?.you ?? null).toLowerCase()}`),
+      deviceItem(nearbyHello(), `You · ${seatRole(page.session?.you ?? null)}`),
     );
   } else nearbyDevices.replaceChildren();
   nearbyDevices.hidden = nearbyDevices.childElementCount === 0;
@@ -396,6 +397,10 @@ async function connectGuest(joining: JoiningState, offerCode: string, deliver: (
     showToast(reason);
     endNearby(false);
   });
+  guest.onLink((game, id) => {
+    if (nearby.kind !== 'guest' || nearby.guest !== guest || page.session?.mode !== 'nearby') return;
+    useHostLink(page.session, game, id);
+  });
   nearby = { kind: 'guest', guest, hostHello: answer.peer };
   hideNearbyStep();
   let view = await guest.load('' as Code);
@@ -532,6 +537,11 @@ export function setupNearby(): void {
       () => showProblem('Copy did not work. Select the code and copy it.'),
     );
   });
+}
+
+// The host gives the link of a finished game to its guests (see useHostLink in end-card.ts).
+export function shareGameLink(game: number, id: GameId): void {
+  if (nearby.kind === 'hosting') nearby.host.shareLink(game, id);
 }
 
 // This device's part in the live Nearby game and the kind of the other player's device, for the game metrics.

@@ -107,6 +107,7 @@ The docs of the tick3d HTTP API come from one file, `server/api-docs.ts`:
 - The host's screen stays on while it hosts. When the host ends the game or closes the page, the guests see a message.
 - Chat, the lock, the hide options and time limits work as in an online game.
 - At the end of a game, the host sends the result with both players. The game link then shows both names, and the game is in the history of the guest too.
+- The host also gives that game link to every connected device, so the end card and the address show the same link on all devices. A guest still keeps its own copy of the result for its stats. The link opens once the host's result reaches the server.
 - Host on a laptop: `docker compose -f compose.lan.yml up --build` runs the full game server on a computer. Others on the same network open `http://<that computer's address>:8080` and play the Online mode, with no codes to scan. The online box shows the host with a server icon. Without HTTPS, a browser gives that page no offline cache and no camera; the game itself works. Set `LAN_HOST_NAME` for the name it shows, and `LAN_PORT` when port 8080 is taken.
 
 ![A laptop hosts a Nearby game, a phone joins](docs/screenshots/nearby.png)

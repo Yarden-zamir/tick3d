@@ -1,4 +1,5 @@
 // The chat with the other player in a game with another device.
+import { other } from '../game.ts';
 import { type ChatMessage, normalizeChat } from '../protocol.ts';
 import { sounds } from '../sound.ts';
 import { chatEl, chatInput, chatSend, chatLog, chatNoticeFrom, chatNoticeText, chatNotice, chatForm } from './dom.ts';
@@ -25,7 +26,8 @@ export function renderChat(): void {
   const canWrite = page.session.you !== null;
   chatInput.disabled = !canWrite;
   chatSend.disabled = !canWrite || chatSending;
-  chatInput.placeholder = canWrite ? 'Message your opponent' : 'Only the two players can chat';
+  const you = page.session.you;
+  chatInput.placeholder = you === null ? 'Only the two players can chat' : `Message ${playerName(other(you))}`;
 
   const shown = `${page.session.code}:${page.session.chat.map((message) => message.id).join(',')}`;
   if (shown === chatShown) return;

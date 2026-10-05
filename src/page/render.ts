@@ -31,6 +31,7 @@ import { openCard } from './end-card.ts';
 import { renderGameView, viewerName } from './game-view.ts';
 import { renderCoords } from './keypad.ts';
 import { renderAccount } from './my-games.ts';
+import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
 import { settings, type Settings, type Toggle } from './settings.ts';
 import { me, page, shared, current, isLive, matchOptions, settingsLocked, canChangeMatch } from './state.ts';
@@ -76,6 +77,16 @@ function resultText(game: Game): string {
   }
 }
 
+// The status in Nearby mode before a game opens, by the Nearby step of this device.
+const NEARBY_STEPS: Record<ReturnType<typeof nearbyKind>, string> = {
+  idle: 'Host a game, or join one.',
+  starting: 'Starting the game…',
+  joining: 'Connecting to the host…',
+  guest: 'Joining the game…',
+  // The host opens its session before it counts as hosting, so this shows only for a moment.
+  hosting: 'Starting the game…',
+};
+
 function statusText(): string {
   const game = current();
   if (page.review) {
@@ -85,6 +96,7 @@ function statusText(): string {
   if (settings.mode === 'online' && page.session === undefined) {
     return navigator.onLine ? 'Create a game or enter a code' : 'You are offline. Online games need a connection.';
   }
+  if (settings.mode === 'nearby' && page.session === undefined) return NEARBY_STEPS[nearbyKind()];
   if (page.session === undefined) return 'Getting the game ready…';
   const mine = me();
   switch (game.status.kind) {
