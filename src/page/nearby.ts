@@ -78,6 +78,17 @@ function seatRole(seat: Player | null): string {
   return seat === null ? 'Watching' : `Plays ${seat}`;
 }
 
+// The device names of the seats in the live Nearby game, for playerName. The host plays X (hostNearby).
+let seatNames: Partial<Record<Player, string>> = {};
+
+export const nearbySeatName = (seat: Player): string | undefined => seatNames[seat];
+
+function setSeatNames(next: Partial<Record<Player, string>>): void {
+  if (next.X === seatNames.X && next.O === seatNames.O) return;
+  seatNames = next;
+  render();
+}
+
 async function renderNearby(): Promise<void> {
   const state = nearby;
   nearbyStart.hidden = state.kind !== 'idle';
@@ -88,16 +99,24 @@ async function renderNearby(): Promise<void> {
   if (state.kind === 'hosting') {
     const hostSeat = page.session?.you ?? 'X';
     const guests = await state.host.guests();
+    const names: Partial<Record<Player, string>> = { [hostSeat]: nearbyHello().name };
+    for (const guest of guests) if (guest.seat !== null) names[guest.seat] = guest.hello.name;
+    setSeatNames(names);
     nearbyDevices.replaceChildren(
       deviceItem(nearbyHello(), `You · host · plays ${hostSeat}`),
       ...guests.map((guest) => deviceItem(guest.hello, seatRole(guest.seat))),
     );
   } else if (state.kind === 'guest') {
+    const you = page.session?.you ?? null;
+    setSeatNames({ X: state.hostHello.name, ...(you === 'O' ? { O: nearbyHello().name } : {}) });
     nearbyDevices.replaceChildren(
       deviceItem(state.hostHello, 'Host'),
       deviceItem(nearbyHello(), `You · ${seatRole(page.session?.you ?? null).toLowerCase()}`),
     );
-  } else nearbyDevices.replaceChildren();
+  } else {
+    setSeatNames({});
+    nearbyDevices.replaceChildren();
+  }
   nearbyDevices.hidden = nearbyDevices.childElementCount === 0;
 }
 

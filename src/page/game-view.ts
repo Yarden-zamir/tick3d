@@ -72,7 +72,8 @@ export async function closeGameView(): Promise<void> {
 
 export function viewerName(shown: PublicGame, seat: Player): string {
   if (shown.computer === seat) return 'Computer';
-  return shown.players[seat]?.login ?? (shown.mode === 'friend' ? `Player ${seat}` : 'Anonymous');
+  // The same fallback as playerName: a player without a GitHub login is "Player X" or "Player O".
+  return shown.players[seat]?.login ?? `Player ${seat}`;
 }
 
 function modeLabel(shown: PublicGame): string {

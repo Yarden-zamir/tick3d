@@ -50,7 +50,7 @@ test('two players play a full game, and a watcher replays it', async ({ open, ba
 
   await playTurns(xWins(alice, bob).slice(1));
   await expect(status(alice)).toHaveText('You win!');
-  await expect(status(bob)).toHaveText('Your opponent wins.');
+  await expect(status(bob)).toHaveText('Opponent wins!');
   await expect(bob.locator('.cell.win')).toHaveCount(4);
   for (const page of [alice, bob]) {
     await expect(page.locator('#end-card')).toHaveAttribute('open');
@@ -128,7 +128,7 @@ test('hide options and the lock belong to the session', async ({ open }) => {
   expect(refused, 'the server refuses an option change during a lock').toBe(409);
 
   await playTurns(xWins(alice, bob));
-  await expect(status(bob)).toHaveText('Your opponent wins.');
+  await expect(status(bob)).toHaveText('Opponent wins!');
   await expect(bob.locator('#lock')).not.toContainText('Locked');
   await expect(hideBoard(bob)).toBeEnabled();
   await expect(alice.getByRole('button', { name: 'Tower' })).toBeEnabled();

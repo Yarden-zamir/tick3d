@@ -25,6 +25,7 @@ import { showToast } from './feedback.ts';
 import { type GameId, onlineGameId } from '../protocol.ts';
 import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnlineMetrics } from './results.ts';
 import { setUrlGame, startNewGame } from './sessions.ts';
+import { playerName } from './render.ts';
 import { settings } from './settings.ts';
 import { type Session, me, page, isLive, matchOptions } from './state.ts';
 
@@ -96,21 +97,13 @@ function celebrate(): void {
 function cardInput(game: Game, index: number, gameId: GameId | undefined): CardInput {
   const winner = winnerOf(game.status);
   const mine = me();
-  const title =
-    winner === null
-      ? 'Draw'
-      : mine === null
-        ? `${winner} wins`
-        : winner === mine
-          ? 'You win!'
-          : settings.mode === 'computer'
-            ? 'Computer wins'
-            : 'You lost';
+  // The same names as the rest of the page (playerName), so the card matches the score and the chat.
+  const title = winner === null ? 'Draw' : winner === mine ? 'You win!' : `${playerName(winner)} wins`;
   const subtitle =
     game.status.kind === 'won'
       ? `Four in a row in ${game.moves.length} moves`
       : game.status.kind === 'timeout'
-        ? `${other(game.status.winner)} ran out of time after ${game.moves.length} moves`
+        ? `${playerName(other(game.status.winner))} ran out of time after ${game.moves.length} moves`
         : 'The cube is full. Nobody got four in a row.';
   const level = `${settings.difficulty.charAt(0).toUpperCase()}${settings.difficulty.slice(1)}${isDefaultTuning(computerTuning()) ? '' : ' (tuned)'}`;
   const matchup =

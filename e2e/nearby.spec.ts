@@ -18,6 +18,8 @@ async function useCode(page: Page, code: string): Promise<void> {
 test('host and guest connect with text codes, play and chat', async ({ open }) => {
   const { page: host } = await open(nearby);
   const { page: guest } = await open(nearby);
+  await host.locator('#nearby-name').fill('Living room laptop');
+  await guest.locator('#nearby-name').fill('Couch phone');
   await host.locator('#nearby-host').click();
   await expect(host.locator('#nearby-qr svg')).toHaveCount(1);
   const offer = await signalCode(host);
@@ -37,6 +39,10 @@ test('host and guest connect with text codes, play and chat', async ({ open }) =
   await guest.locator('#chat-input').fill('hi from the couch');
   await guest.locator('#chat-input').press('Enter');
   await expect(host.locator('#chat-log')).toContainText('hi from the couch');
+  // One name per player across the page: the device name shows in the score and the chat.
+  await expect(host.locator('#chat-log')).toContainText('Couch phone');
+  await expect(host.locator('#score')).toContainText('Couch phone');
+  await expect(guest.locator('#score')).toContainText('Living room laptop');
 
   await host.locator('#nearby-stop').click();
   await expectToast(guest, 'host ended');
