@@ -136,6 +136,20 @@ docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:24-alpine npx vite 
 - [html-validate](https://html-validate.org) (`.htmlvalidate.json`): invalid markup and accessibility faults in `index.html`, such as a button without a name or an input without a type.
 - [Knip](https://knip.dev): files, exports and packages that nothing uses.
 
+`npm run e2e` runs the Playwright tests in `e2e/` against a deployed site in Chromium. Set `E2E_BASE_URL` to the site, for example a pull request preview. Without it, the run stops at once. Run the tests in the Playwright image:
+
+```sh
+docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr.17.tick3d.yarden-zamir.com mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'npm ci && npm run e2e'
+```
+
+- The image tag must match the `@playwright/test` version in `package.json`. Update both together.
+- `npm ci` in the Playwright image installs packages for glibc. Run `npm ci` again before you use `node:24-alpine`.
+- Each test opens fresh browser contexts, and the tests run in parallel. The HTML report goes to `e2e/playwright-report/`. A failed test keeps a trace in `e2e/test-results/`.
+- One run creates 6 online sessions. The server allows 60 new sessions per hour from one address.
+- The `e2e` workflow runs the suite after a successful pull request preview deploy. When a test fails, the workflow uploads the HTML report.
+- Knip finds the tests through its `entry` setting in `package.json`. Its Playwright plugin is off, because the plugin loads the config, and the config stops without `E2E_BASE_URL`.
+- The laptop host (`compose.lan.yml`) has no automatic test. It needs a local Docker host and a second device on the network.
+
 ## Deploy
 
 See [kitshn.md](kitshn.md). A push to `main` deploys production.
