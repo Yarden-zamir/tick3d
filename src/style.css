@@ -1773,6 +1773,15 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .end-card-actions button {
   flex: 1;
+  white-space: nowrap;
+}
+
+/* Narrow phones: the four buttons sit in two rows of two. */
+@media (max-width: 30rem) {
+  .end-card-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .end-card-actions .primary {
