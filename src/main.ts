@@ -2409,7 +2409,13 @@ async function start(): Promise<void> {
     setUrlCode(undefined);
     showToast(`The link code "${linkCode}" is not valid.`);
   }
-  if (code !== undefined) return joinSession(code);
+  if (code !== undefined) {
+    await joinSession(code);
+    if (session?.code === code) return;
+    // The code opened no game (none with that code, or no network), and the error shows already.
+    // The address drops the code, so a reload does not repeat the error, and the page starts as usual.
+    setUrlCode(undefined);
+  }
   const nearbyCode = params.get('nearby');
   if (nearbyCode !== null) return openNearbyLink(nearbyCode);
   if (settings.mode === 'online') return render();
