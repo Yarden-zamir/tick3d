@@ -3,6 +3,8 @@
 3D tic-tac-toe on a 4×4×4 cube, at [tick3d.yarden-zamir.com](https://tick3d.yarden-zamir.com).
 It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden-zamir.com) ([voice-quad-checkers-arena](https://github.com/Yarden-zamir/voice-quad-checkers-arena)).
 
+![A game against the computer in the tower view](docs/screenshots/tower.png)
+
 ## Rules
 
 - Two players take turns. X moves first.
@@ -31,9 +33,15 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - A GitHub button in the header links to this repository.
 - The browser keeps the settings in `localStorage`. The app checks each stored value and uses the default for a value that is not valid.
 
+![The flat view in the grid layout, Midnight theme](docs/screenshots/flat.png)
+
+![Synthwave, Candy and Mono themes on a phone](docs/screenshots/themes.png)
+
+<img src="docs/screenshots/end-card.png" alt="The end card of a won game" width="360">
+
 ## Online play
 
-- Choose Online to create a session. The page shows a 4 character code and puts it in the link (`?code=AB3K`). Share link sends the link, or copies it when the device cannot share.
+- Choose Online to create a session. The page shows a 4 character code and puts it in the link (`?code=AB3K`). Link sends the link, or copies it when the device cannot share. QR code shows the link as a QR code, which a phone camera opens directly.
 - Codes use letters and digits without `0`, `O`, `1` and `I`, so a code read aloud is not ambiguous.
 - The creator plays X. The first other browser that opens the code plays O. Further browsers watch.
 - A browser keeps its seat through a random token in `localStorage`.
@@ -43,6 +51,8 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - The time limit also belongs to the session. A new session takes the time limit of the screen that creates it. Either player can change it at any time, except during a lock. The change reaches both players and starts with the next game. The server records the move times and decides a timeout, so a page that closes cannot avoid a loss on time.
 - A session never expires, so the same two players can keep playing for as long as they like. After the first join, a player can leave and come back later: the game waits for their move. The other player sees them as away (a dimmed score tile and "is away" in the status), so a game can also run asynchronously. A clock keeps running while a player is away.
 - There is no limit on sessions or on games per session. Add one when storage use calls for it.
+
+![An online game with chat, while the other player is away](docs/screenshots/online.png)
 
 ## Offline play
 
@@ -63,6 +73,8 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - Chat, the lock, the hide options and time limits work as in an online game.
 - Host on a laptop: `docker compose -f compose.lan.yml up --build` runs the full game server on a computer. Others on the same network open `http://<that computer's address>:8080` and play the Online mode, with no codes to scan. The online box shows the host with a server icon. Without HTTPS, a browser gives that page no offline cache and no camera; the game itself works. Set `LAN_HOST_NAME` for the name it shows, and `LAN_PORT` when port 8080 is taken.
 
+![A laptop hosts a Nearby game, a phone joins](docs/screenshots/nearby.png)
+
 ## Accounts and My games
 
 - Login with GitHub is optional. Every browser plays with a random token either way.
@@ -70,6 +82,8 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - The score shows a player's GitHub name and avatar, and the chat uses the name.
 - My games (the button in the header) shows the account, stats per mode and per computer level, the online sessions with a "Your turn" mark and a Continue button, and every session on this device. Offline, it shows the games on this device.
 - The login runs on the production address. Its cookie is signed and valid for `tick3d.yarden-zamir.com` and its subdomains, so pull request previews see it too. Without the GitHub settings, login is off and the page hides it.
+
+<img src="docs/screenshots/my-games.png" alt="My games: stats and sessions" width="480">
 
 ## Code
 
