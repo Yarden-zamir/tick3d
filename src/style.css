@@ -667,7 +667,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* Tower: the four layers as tilted planes stacked from layer 1 (bottom) to layer 4 (top).
-   main.ts sets the transform of each grid and plate: a fixed tilt, and the spin from a drag. */
+   src/page/board.ts sets the transform of each grid and plate: a fixed tilt, and the spin from a drag. */
 .board.tower {
   flex-direction: column-reverse;
   align-items: center;
@@ -721,7 +721,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* An offset shadow lies in the plane and swings to the wrong side when the tower turns, so
-   the tower shows thickness with sheets at different heights in 3D instead (main.ts). */
+   the tower shows thickness with sheets at different heights in 3D instead (src/page/board.ts). */
 .tower .grid {
   box-shadow: none;
 }
@@ -932,7 +932,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* A refused move: the cell shakes and flashes red, then fades back. The red lives in the
-   animation only, so it can never stay on the cell. main.ts removes the class at the end. */
+   animation only, so it can never stay on the cell. src/page/board.ts removes the class at the end. */
 .cell.shake {
   animation: reject 0.9s ease-out;
 }
