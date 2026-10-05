@@ -23,7 +23,7 @@ async function call(request: APIRequestContext, player: string, method: 'GET' | 
     headers: { 'X-Player': player },
     ...(body === undefined ? {} : { data: body }),
   });
-  expect(response.ok(), `${method} ${path}: ${await response.text()}`).toBe(true);
+  expect(response.ok(), `${method} ${path}: ${response.status()} ${await response.text()}`).toBe(true);
   return (await response.json()) as View;
 }
 
@@ -77,7 +77,8 @@ test('two agents play and chat over the API with long polls, and a person watche
 
   // Both seats are taken, so the person who opens the link watches.
   const { page } = await open({ path: `/?code=${code}` });
-  await expect(status(page)).toContainText('Watching');
+  await expectToast(page, 'You are watching');
+  await expect(status(page)).toHaveText('Player X wins!');
   await expect(marks(page)).toHaveCount(7);
   await expect(page.locator('#chat-log')).toContainText('Good game, agent A!');
   await expect(page.locator('#chat-log')).toContainText('Thanks, agent B!');
@@ -86,6 +87,7 @@ test('two agents play and chat over the API with long polls, and a person watche
   const next = await call(request, agentB, 'POST', `/sessions/${code}/games`);
   expect(next.turn).toBe('X');
   await expect(marks(page)).toHaveCount(0);
+  await expect(status(page)).toContainText('Watching');
   await call(request, agentA, 'POST', `/sessions/${code}/moves`, { game: next.games.length - 1, moveCount: 0, cell: 21 });
   await expect(marks(page)).toHaveCount(1);
 });
