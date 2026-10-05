@@ -185,6 +185,12 @@ const seatTokens = (token: string, you: Player | null): Record<Player, string | 
   O: you === 'X' ? null : token,
 });
 
+// A seat token column of a result row: a token, or null for a seat without a known player.
+function tokenOf(value: unknown): string | null {
+  if (value === null || typeof value === 'string') return value;
+  throw new Error('a stored seat token is not text');
+}
+
 function accountOf(login: unknown, avatar: unknown): PlayerInfo | null {
   if (login === null) return null;
   if (typeof login !== 'string' || typeof avatar !== 'string') throw new Error('a stored account has no login or avatar');
@@ -401,6 +407,7 @@ export async function openStore(
       tuned: false,
       computer: null,
       players: await playersOf(row.doc),
+      names: { X: core.seatName(row.doc.seats.X), O: core.seatName(row.doc.seats.O) },
       finishedAt: game.times.at(-1) ?? now(),
     });
   }
@@ -504,7 +511,8 @@ export async function openStore(
     game: (id: GameId): Promise<PublicGame> =>
       serialized(async () => {
         const [row] = await rows(
-          `FROM results ${SEAT_ACCOUNTS} SELECT doc::JSON AS doc, epoch_ms(finished_at) AS finished, ${SEAT_ACCOUNT_COLUMNS}
+          `FROM results ${SEAT_ACCOUNTS} SELECT doc::JSON AS doc, epoch_ms(finished_at) AS finished, ${SEAT_ACCOUNT_COLUMNS},
+             ${SEAT_X} AS token_x, ${SEAT_O} AS token_o
            WHERE public_id = $id`,
           { id },
         );
@@ -520,6 +528,7 @@ export async function openStore(
           tuned: stored.tuned,
           computer: stored.mode === 'computer' && stored.you !== null ? other(stored.you) : null,
           players: { X: accountOf(row.x_login, row.x_avatar), O: accountOf(row.o_login, row.o_avatar) },
+          names: { X: core.seatName(tokenOf(row.token_x)), O: core.seatName(tokenOf(row.token_o)) },
           finishedAt: Number(row.finished),
         });
       }),
@@ -536,7 +545,8 @@ export async function openStore(
              results.winner, results.ending, CASE WHEN results.ending IS NULL THEN results.doc::JSON END AS old_doc,
              len(results.doc.game.moves::INTEGER[]) AS moves, epoch_ms(results.finished_at) AS finished,
              coalesce(list_contains($tokens, ${SEAT_X}), false) AS mine_x,
-             coalesce(list_contains($tokens, ${SEAT_O}), false) AS mine_o, ${SEAT_ACCOUNT_COLUMNS}
+             coalesce(list_contains($tokens, ${SEAT_O}), false) AS mine_o, ${SEAT_ACCOUNT_COLUMNS},
+             ${SEAT_X} AS token_x, ${SEAT_O} AS token_o
            WHERE (list_contains($tokens, ${SEAT_X}) AND results.hidden_x IS NOT TRUE)
               OR (list_contains($tokens, ${SEAT_O}) AND results.hidden_o IS NOT TRUE)
            ORDER BY results.finished_at DESC, results.id
@@ -557,6 +567,7 @@ export async function openStore(
             result: outcomeOf(winner, you),
             moves: Number(row.moves),
             opponent: you === 'X' ? accountOf(row.o_login, row.o_avatar) : you === 'O' ? accountOf(row.x_login, row.x_avatar) : null,
+            opponentName: you === 'X' ? core.seatName(tokenOf(row.token_o)) : you === 'O' ? core.seatName(tokenOf(row.token_x)) : null,
             finishedAt: Number(row.finished),
           };
         });
@@ -670,6 +681,7 @@ export async function openStore(
             games: doc.games.filter((record) => record.moves.length > 0).length,
             you,
             opponent: (await playersOf(doc))[other(you)],
+            opponentName: core.seatName(doc.seats[other(you)]),
             yourTurn: live.status.kind === 'playing' && live.turn === you && doc.seats[other(you)] !== null,
             updatedAt: Number(row.updated),
           });

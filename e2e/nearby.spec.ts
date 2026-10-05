@@ -1,4 +1,4 @@
-import { cell, expect, expectMyMove, expectToast, marks, readQr, test, toasts } from './fixtures.ts';
+import { cell, expect, expectMyMove, expectToast, marks, ownName, readQr, test, toasts } from './fixtures.ts';
 import type { Page } from '@playwright/test';
 
 const nearby = { settings: { mode: 'nearby' } };
@@ -18,8 +18,7 @@ async function useCode(page: Page, code: string): Promise<void> {
 test('host and guest connect with text codes, play and chat', async ({ open }) => {
   const { page: host } = await open(nearby);
   const { page: guest } = await open(nearby);
-  await host.locator('#nearby-name').fill('Living room laptop');
-  await guest.locator('#nearby-name').fill('Couch phone');
+  const guestName = await ownName(guest);
   await host.locator('#nearby-host').click();
   await expect(host.locator('#nearby-qr svg')).toHaveCount(1);
   const offer = await signalCode(host);
@@ -39,10 +38,10 @@ test('host and guest connect with text codes, play and chat', async ({ open }) =
   await guest.locator('#chat-input').fill('hi from the couch');
   await guest.locator('#chat-input').press('Enter');
   await expect(host.locator('#chat-log')).toContainText('hi from the couch');
-  // One name per player across the page: the device name shows in the score and the chat.
-  await expect(host.locator('#chat-log')).toContainText('Couch phone');
-  await expect(host.locator('#score')).toContainText('Couch phone');
-  await expect(guest.locator('#score')).toContainText('Living room laptop');
+  // The host shows the guest by the generated name of the guest: in the device list, the score and the chat.
+  await expect(host.locator('#nearby-devices')).toContainText(guestName);
+  await expect(host.locator('.tally.O')).toContainText(guestName);
+  await expect(host.locator('#chat-log')).toContainText(guestName);
 
   await host.locator('#nearby-stop').click();
   await expectToast(guest, 'host ended');

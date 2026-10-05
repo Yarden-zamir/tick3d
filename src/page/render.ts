@@ -30,7 +30,6 @@ import {
 } from './dom.ts';
 import { openCard } from './end-card.ts';
 import { renderGameView, viewerName } from './game-view.ts';
-import { nearbySeatName } from './nearby.ts';
 import { renderCoords } from './keypad.ts';
 import { renderAccount } from './my-games.ts';
 import { renderOnlineQr } from './online-box.ts';
@@ -43,19 +42,19 @@ const SOUND_ON_ICON = `<svg viewBox="0 0 24 24" width="22" height="22" fill="non
 const SOUND_OFF_ICON = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">${SPEAKER}<path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>`;
 
 // One name per seat, the same in the score, status, chat, clocks, keypad, history and end card.
-// This screen's own seat is "You". Then come the GitHub login, "Computer" and the name of a Nearby
-// device. Else the other player is "Opponent", and a watcher or a shared screen sees "Player X".
+// This screen's own seat is "You". Then come "Computer", the GitHub login and the generated name.
+// A friend game has one player id on both seats, so its seats are "Player X" and "Player O".
+// An older server or Nearby host sends no generated names: then the seat is "Player X" or "Player O".
 export function playerName(player: Player): string {
   if (page.viewing !== undefined) return viewerName(page.viewing, player);
   const session = page.session;
   if (session === undefined || session.mode === 'friend') return `Player ${player}`;
-  const mine = me();
-  if (player === mine) return 'You';
+  if (player === me()) return 'You';
   if (session.mode === 'computer') return 'Computer';
-  return session.players[player]?.login ?? nearbySeatName(player) ?? (mine === null ? `Player ${player}` : 'Opponent');
+  return session.players[player]?.login ?? session.names[player] ?? `Player ${player}`;
 }
 
-// "You win!", or the winner's name: "Computer wins!", "Opponent wins!", "Player X wins!".
+// "You win!", or the winner's name: "Computer wins!", "Brave Otter wins!", "Player X wins!".
 const winText = (winner: Player) => (winner === me() ? 'You win!' : `${playerName(winner)} wins!`);
 
 // The other player in a game with another device, when they took a seat but closed the game.

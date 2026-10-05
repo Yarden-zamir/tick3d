@@ -2,7 +2,8 @@
 // controls, the players and the game details. No moves, and no next game.
 import { describeClock } from '../clock.ts';
 import { type Player, other, winnerOf } from '../game.ts';
-import { api, OnlineError } from '../online.ts';
+import { nameOf } from '../names.ts';
+import { api, OnlineError, token } from '../online.ts';
 import { type GameId, type PublicGame, parseResultUpload, toGame } from '../protocol.ts';
 import { gameViewEl, gameViewTitle, gameViewPlayers, gameViewDetails, gameViewPlay, reviewExit } from './dom.ts';
 import { showError, showProblem } from './feedback.ts';
@@ -20,7 +21,10 @@ async function deviceCopy(id: GameId): Promise<PublicGame | undefined> {
     // The same check as on the server, so a result from an older version gets its defaults.
     const result = parseResultUpload(upload, Infinity);
     if (result === undefined) throw new Error(`the stored result of game ${id} does not parse`);
-    const seatInfo = (seat: Player) => (result.you === null || result.you === seat ? page.account.user : null);
+    // The same seats as on the server: this device's player holds `you`, or both seats in a friend game.
+    const mine = (seat: Player) => result.you === null || result.you === seat;
+    const seatInfo = (seat: Player) => (mine(seat) ? page.account.user : null);
+    const seatName = (seat: Player) => (mine(seat) ? nameOf(token) : null);
     return {
       id,
       mode: result.mode,
@@ -30,6 +34,7 @@ async function deviceCopy(id: GameId): Promise<PublicGame | undefined> {
       tuned: result.tuned,
       computer: result.mode === 'computer' && result.you !== null ? other(result.you) : null,
       players: { X: seatInfo('X'), O: seatInfo('O') },
+      names: { X: seatName('X'), O: seatName('O') },
       finishedAt: result.finishedAt,
     };
   }
@@ -70,10 +75,11 @@ export async function closeGameView(): Promise<void> {
   await openLocalSession(settings.mode);
 }
 
+// The same rule as playerName in render.ts, for a game from a link: no seat is "You".
 export function viewerName(shown: PublicGame, seat: Player): string {
   if (shown.computer === seat) return 'Computer';
-  // The same fallback as playerName: a player without a GitHub login is "Player X" or "Player O".
-  return shown.players[seat]?.login ?? `Player ${seat}`;
+  if (shown.mode === 'friend') return `Player ${seat}`;
+  return shown.players[seat]?.login ?? shown.names[seat] ?? `Player ${seat}`;
 }
 
 function modeLabel(shown: PublicGame): string {

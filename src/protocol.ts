@@ -26,6 +26,9 @@ export type MatchOptions = { hideBoard: boolean; hideHistory: boolean };
 export type ChatMessage = { id: number; from: Player; text: string; at: number };
 // A GitHub account linked to a seat. Shown next to the seat, never required to play.
 export type PlayerInfo = { login: string; avatar: string };
+// The generated name of each seat's player (src/names.ts). The server computes it from the seat's
+// token, so the token never leaves the server. Null for an empty seat, the computer, or an unknown player.
+type SeatNames = Record<Player, string | null>;
 export const SESSION_MODES = ['online', 'computer', 'friend', 'nearby'] as const;
 export type SessionMode = (typeof SESSION_MODES)[number];
 // One game as stored: moves, the time of each move, its time limit, and whether the player to move ran out of time.
@@ -51,6 +54,8 @@ export type SessionView = {
   presence: Record<Player, boolean>;
   // The GitHub account behind each seat, when its player logged in.
   players: Record<Player, PlayerInfo | null>;
+  // The generated name of each seat's player (src/names.ts). Null for an empty seat and for the computer.
+  names: SeatNames;
   // The live game (the last one in `games`), so an API client needs no rules of its own.
   // `turn` is the player to move, or null when the game is over.
   turn: Player | null;
@@ -182,6 +187,8 @@ export function parseSessionView(value: unknown): SessionView {
   const code = typeof value.code === 'string' ? normalizeCode(value.code) : undefined;
   const name = normalizeName(value.name);
   const { games, seats, you, options, locked, now, version, chat, presence, players } = value;
+  // An older server, an older Nearby host or a cached view sends no names.
+  const names = value.names === undefined ? { X: null, O: null } : parseSeatNames(value.names);
   const clock = parseClock(value.clock);
   if (code === undefined) return fail('code');
   if (name === undefined) return fail('name');
@@ -201,6 +208,7 @@ export function parseSessionView(value: unknown): SessionView {
   const playerX = players.X === null ? null : parsePlayerInfo(players.X);
   const playerO = players.O === null ? null : parsePlayerInfo(players.O);
   if (playerX === undefined || playerO === undefined) return fail('players');
+  if (names === undefined) return fail('names');
   // The rules give the live status. A sender without these fields (an older server, a Nearby host
   // or a cached view) is fine. A sender with fields that disagree with the moves is not.
   const last: unknown = games.at(-1);
@@ -228,6 +236,7 @@ export function parseSessionView(value: unknown): SessionView {
     chat: chat.map(({ id, from, text, at }) => ({ id, from, text, at })),
     presence: { X: presence.X, O: presence.O },
     players: { X: playerX, O: playerO },
+    names,
     turn,
     status: live.status,
   };
@@ -242,6 +251,13 @@ function sameStatus(value: unknown, status: Status): boolean {
 }
 
 const GITHUB_LOGIN_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
+
+const isSeatName = (value: unknown): value is string | null =>
+  value === null || (typeof value === 'string' && value.length >= 1 && value.length <= NAME_MAX_LENGTH);
+
+function parseSeatNames(value: unknown): SeatNames | undefined {
+  return isRecord(value) && isSeatName(value.X) && isSeatName(value.O) ? { X: value.X, O: value.O } : undefined;
+}
 
 export function parsePlayerInfo(value: unknown): PlayerInfo | undefined {
   if (!isRecord(value)) return undefined;
@@ -491,6 +507,7 @@ export type PublicGame = {
   computer: Player | null;
   // The GitHub account behind each seat, when its player logged in.
   players: Record<Player, PlayerInfo | null>;
+  names: SeatNames;
   finishedAt: number;
 };
 
@@ -499,7 +516,7 @@ export function parsePublicGame(value: unknown): PublicGame {
   const fail = (field: string): never => {
     throw new Error(`invalid game from server: ${field}`);
   };
-  if (!isRecord(value) || !hasOnlyKeys(value, ['id', 'mode', 'game', 'options', 'difficulty', 'tuned', 'computer', 'players', 'finishedAt'])) {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['id', 'mode', 'game', 'options', 'difficulty', 'tuned', 'computer', 'players', 'names', 'finishedAt'])) {
     return fail('body');
   }
   const id = parseGameId(value.id);
@@ -518,6 +535,8 @@ export function parsePublicGame(value: unknown): PublicGame {
   const playerX = players.X === null ? null : parsePlayerInfo(players.X);
   const playerO = players.O === null ? null : parsePlayerInfo(players.O);
   if (playerX === undefined || playerO === undefined) return fail('players');
+  const names = parseSeatNames(value.names);
+  if (names === undefined) return fail('names');
   if (typeof finishedAt !== 'number' || !Number.isFinite(finishedAt)) return fail('finishedAt');
   return {
     id,
@@ -528,6 +547,7 @@ export function parsePublicGame(value: unknown): PublicGame {
     tuned,
     computer,
     players: { X: playerX, O: playerO },
+    names,
     finishedAt,
   };
 }
@@ -545,6 +565,8 @@ export type HistoryEntry = {
   moves: number;
   // The GitHub account of the other player, when there is one.
   opponent: PlayerInfo | null;
+  // The generated name of the other player, when the server knows their seat.
+  opponentName: string | null;
   finishedAt: number;
 };
 export type HistoryPage = { games: HistoryEntry[]; more: boolean };
@@ -564,12 +586,12 @@ export function parseHistoryPage(value: unknown): HistoryPage {
     const difficulty = entry.difficulty === null ? null : oneOf(DIFFICULTIES, entry.difficulty);
     const result = oneOf(OUTCOMES, entry.result);
     const opponent = entry.opponent === null ? null : parsePlayerInfo(entry.opponent);
-    const { moves, finishedAt } = entry;
+    const { moves, finishedAt, opponentName } = entry;
     if (id === undefined || mode === undefined || difficulty === undefined || result === undefined || opponent === undefined) {
       return fail('entry');
     }
-    if (!isCount(moves) || typeof finishedAt !== 'number' || !Number.isFinite(finishedAt)) return fail('entry');
-    return { id, mode, difficulty, result, moves, opponent, finishedAt };
+    if (!isCount(moves) || typeof finishedAt !== 'number' || !Number.isFinite(finishedAt) || !isSeatName(opponentName)) return fail('entry');
+    return { id, mode, difficulty, result, moves, opponent, opponentName, finishedAt };
   });
   return { games, more: value.more };
 }
@@ -600,6 +622,8 @@ export type SessionSummary = {
   games: number;
   you: Player;
   opponent: PlayerInfo | null;
+  // The generated name of the other player. Null while their seat is empty.
+  opponentName: string | null;
   yourTurn: boolean;
   updatedAt: number;
 };
@@ -613,8 +637,8 @@ export type MyGames = {
 
 // ---- Stats ----
 
-// The aggregates of the stats page (/stats). Only counts and GitHub logins: never a token, a
-// result id or a game id. `player` is a GitHub login, or null for a player without a login.
+// The aggregates of the stats page (/stats). Only counts and player names: never a token, a
+// result id or a game id. `player` is a GitHub login, or the generated name of a player without a login.
 export type Count = { key: string; count: number };
 export type Stats = {
   generatedAt: number;
@@ -627,14 +651,14 @@ export type Stats = {
   // Against the computer, from the player's side.
   levels: { level: Difficulty; games: number; won: number; drawn: number; lost: number; avgMoves: number; medianMoves: number; tuned: number }[];
   // The longest games that the computer won, per level and player. Default computer only.
-  survival: { level: Difficulty; rank: number; player: string | null; moves: number }[];
+  survival: { level: Difficulty; rank: number; player: string; moves: number }[];
   lengthByMode: { mode: SessionMode; games: number; avg: number; median: number; p90: number }[];
   // Time between two moves, in buckets (MOVE_TIME_BUCKETS).
   moveTimes: { bucket: number; human: number; computer: number }[];
   // Median time per move in milliseconds, per computer level and per other mode. `searchMs` is the
   // computer's own thinking time that devices report, without the pause before its move.
   thinkTimes: { key: string; humanMs: number | null; computerMs: number | null; searchMs: number | null }[];
-  slowest: { player: string | null; medianMs: number; moves: number }[];
+  slowest: { player: string; medianMs: number; moves: number }[];
   firstPlayer: { mode: SessionMode; x: number; o: number; draws: number }[];
   // CELL_COUNT counts each: first moves, and all moves.
   openings: number[];

@@ -43,7 +43,6 @@ function rect(x: number, y: number, width: number, height: number, fill: string,
 const number = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 const percent = (part: number, whole: number) => (whole === 0 ? '–' : `${Math.round((part / whole) * 100)}%`);
 const seconds = (ms: number | null) => (ms === null ? '–' : ms < 10_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 1000)} s`);
-const who = (player: string | null) => player ?? 'Anonymous';
 const capital = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
 function card(title: string, wide = false, hint = ''): HTMLElement {
@@ -285,7 +284,7 @@ function draw(stats: Stats): void {
     const rows = stats.survival.filter((entry) => entry.level === level);
     if (rows.length === 0) continue;
     survival.append(el('h3', '', capital(level)));
-    table(survival, ['#', 'Player', 'Moves'], rows.map((entry) => [entry.rank, who(entry.player), entry.moves]));
+    table(survival, ['#', 'Player', 'Moves'], rows.map((entry) => [entry.rank, entry.player, entry.moves]));
   }
   if (stats.survival.length === 0) empty(survival);
 
@@ -309,7 +308,7 @@ function draw(stats: Stats): void {
   table(
     card('Slowest thinkers', false, 'Median time per move, players with 20 moves or more.'),
     ['Player', 'Median', 'Moves'],
-    stats.slowest.map((row) => [who(row.player), seconds(row.medianMs), row.moves]),
+    stats.slowest.map((row) => [row.player, seconds(row.medianMs), row.moves]),
   );
 
   stacked(

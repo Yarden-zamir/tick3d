@@ -61,6 +61,7 @@ export type SchemaName =
   | 'Status'
   | 'ChatMessage'
   | 'PlayerInfo'
+  | 'SeatNames'
   | 'SessionView'
   | 'NewSession'
   | 'SessionUpdate'
@@ -104,6 +105,7 @@ const limit = (kind: keyof typeof LIMIT_RANGE, description: string): Schema => (
   description,
 });
 const name: Schema = { type: 'string', minLength: 1, maxLength: NAME_MAX_LENGTH, description: 'The session name. The server trims spaces.' };
+const seatName: Schema = { type: 'string', minLength: 1, maxLength: NAME_MAX_LENGTH, description: 'A generated name: an adjective and an animal.' };
 const chatText: Schema = { type: 'string', minLength: 1, maxLength: CHAT_MAX_LENGTH, description: `1 to ${CHAT_MAX_LENGTH} characters. The server trims spaces.` };
 const DEVICE_KINDS = ['phone', 'tablet', 'computer'];
 const strings = (values: readonly string[], description?: string): Schema => ({ type: 'string', enum: values, ...(description === undefined ? {} : { description }) });
@@ -153,6 +155,10 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     login: { type: 'string', minLength: 1, maxLength: 39 },
     avatar: { type: 'string', pattern: '^https://avatars\\.githubusercontent\\.com/' },
   }),
+  SeatNames: object('The generated name of the player on each seat, such as "Brave Otter". null for an empty seat and for the computer.', {
+    X: nullable(seatName),
+    O: nullable(seatName),
+  }),
   SessionView: object('A session as the caller sees it: every game, the seats, the chat and the live game state.', {
     code: { type: 'string', pattern: `^[${CODE_ALPHABET}]{${CODE_LENGTH}}$`, description: 'The session code. The link is /?code=<code>.' },
     name,
@@ -170,6 +176,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       O: { type: 'boolean' },
     }),
     players: object('The GitHub account behind each seat, or null.', { X: nullable(ref('PlayerInfo')), O: nullable(ref('PlayerInfo')) }),
+    names: ref('SeatNames'),
     turn: { ...nullable(ref('Player')), description: 'The player to move in the live game. null when the live game is over.' },
     status: ref('Status'),
   }),
@@ -215,6 +222,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     games: { type: 'integer', minimum: 0 },
     you: ref('Player'),
     opponent: nullable(ref('PlayerInfo')),
+    opponentName: { ...nullable(seatName), description: 'The generated name of the other player. null while the other seat is empty.' },
     yourTurn: { type: 'boolean' },
     updatedAt: { type: 'number' },
   }),
@@ -263,6 +271,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     tuned: { type: 'boolean', description: 'A computer with changed advanced settings.' },
     computer: { ...nullable(ref('Player')), description: 'The seat of the computer, in a computer game.' },
     players: object('The GitHub account behind each seat, or null.', { X: nullable(ref('PlayerInfo')), O: nullable(ref('PlayerInfo')) }),
+    names: ref('SeatNames'),
     finishedAt: { type: 'number', description: 'Epoch milliseconds.' },
   }),
   HistoryEntry: object('One finished game of yours.', {
@@ -272,6 +281,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     result: strings(['won', 'lost', 'drawn', 'played'], 'Your result. A friend game on one device is only "played".'),
     moves: count('Moves in the game.'),
     opponent: nullable(ref('PlayerInfo')),
+    opponentName: { ...nullable(seatName), description: 'The generated name of the other player. null when the server does not know the other seat.' },
     finishedAt: { type: 'number' },
   }),
   HistoryPage: object(`Up to ${HISTORY_PAGE_SIZE} finished games, newest first.`, {
@@ -307,18 +317,18 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     version: { type: 'string', minLength: 1, maxLength: 64, description: 'The name of the page script file.' },
   }),
   Count: object('A count by key.', { key: { type: 'string' }, count: count() }),
-  Stats: object('The aggregates of the stats page: counts and GitHub logins only. The server computes them at most once a minute. src/protocol.ts (Stats) has every field.', {
+  Stats: object('The aggregates of the stats page: counts and player names only. The server computes them at most once a minute. src/protocol.ts (Stats) has every field.', {
     generatedAt: { type: 'number' },
     totals: { type: 'object', description: 'games, moves, players, accounts, sessions, gamesLast7Days.' },
     perDay: list('The last 60 days, oldest first, UTC.'),
     hours: list('Games per weekday (0 is Monday) and hour, UTC.'),
     byMode: list('Games per mode.', ref('Count')),
     levels: list('Results against each computer level.'),
-    survival: list('The longest games that the computer won, per level.'),
+    survival: list('The longest games that the computer won, per level. `player` is a GitHub login or a generated name.'),
     lengthByMode: list('Game length per mode.'),
     moveTimes: list('Time between two moves, in buckets.'),
     thinkTimes: list('Median time per move.'),
-    slowest: list('The slowest players.'),
+    slowest: list('The slowest players. `player` is a GitHub login or a generated name.'),
     firstPlayer: list('Wins of X and O per mode.'),
     openings: list('First moves, per cell.', count()),
     cells: list('All moves, per cell.', count()),
@@ -350,12 +360,14 @@ const T0 = 1_791_200_000_000;
 const NO_LIMIT = { perMove: null, perGame: null };
 
 // A view of the example session. Each route changes only the fields that its call changes.
+// A taken seat has a generated name.
 function view(fields: Record<string, unknown>): Record<string, unknown> {
+  const seats = (fields.seats ?? { X: true, O: false }) as Record<'X' | 'O', boolean>;
   return {
     code: EXAMPLE_CODE,
     name: 'Agent match',
     games: [{ moves: [], times: [], clock: NO_LIMIT, timedOut: false }],
-    seats: { X: true, O: false },
+    seats,
     you: 'X',
     options: { hideBoard: false, hideHistory: false },
     locked: false,
@@ -365,6 +377,7 @@ function view(fields: Record<string, unknown>): Record<string, unknown> {
     chat: [],
     presence: { X: false, O: false },
     players: { X: null, O: null },
+    names: { X: seats.X ? 'Brave Otter' : null, O: seats.O ? 'Clever Heron' : null },
     turn: 'X',
     status: { kind: 'playing' },
     ...fields,
@@ -614,6 +627,7 @@ export const ROUTES = {
         tuned: false,
         computer: null,
         players: { X: null, O: null },
+        names: { X: 'Brave Otter', O: 'Clever Heron' },
         finishedAt: T0 + 70_000,
       },
     },
@@ -663,7 +677,7 @@ export const ROUTES = {
       description: 'One page of your history.',
       schema: 'HistoryPage',
       example: {
-        games: [{ id: `${EXAMPLE_CODE}-1`, mode: 'online', difficulty: null, result: 'won', moves: 7, opponent: null, finishedAt: T0 + 70_000 }],
+        games: [{ id: `${EXAMPLE_CODE}-1`, mode: 'online', difficulty: null, result: 'won', moves: 7, opponent: null, opponentName: 'Clever Heron', finishedAt: T0 + 70_000 }],
         more: false,
       },
     },
@@ -773,7 +787,7 @@ export const ROUTES = {
           medium: { played: 0, won: 0, lost: 0, drawn: 0 },
           hard: { played: 0, won: 0, lost: 0, drawn: 0 },
         },
-        sessions: [{ code: EXAMPLE_CODE, name: 'Agent match', games: 1, you: 'X', opponent: null, yourTurn: false, updatedAt: T0 + 70_000 }],
+        sessions: [{ code: EXAMPLE_CODE, name: 'Agent match', games: 1, you: 'X', opponent: null, opponentName: 'Clever Heron', yourTurn: false, updatedAt: T0 + 70_000 }],
       },
     },
     errors: [BAD_PLAYER],
@@ -946,6 +960,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
           '`games`: every game, oldest first. The last one is the live game. `moves` lists its cells in order: X played moves 0, 2, 4 and so on, O played moves 1, 3, 5.',
           '`version`: grows with every change.',
           '`chat`: the newest messages, oldest first.',
+          '`players` and `names`: who plays each seat. `players` holds the GitHub account of a player who logged in on the page. A player without a GitHub login gets a generated name in `names`, such as "Brave Otter". The same player id always gets the same name, so you also get one.',
         ],
       },
     ],

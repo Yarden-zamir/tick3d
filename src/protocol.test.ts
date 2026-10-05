@@ -43,12 +43,18 @@ describe('parseSessionView', () => {
     chat: [{ id: 7, from: 'O', text: 'good luck', at: 1_700_000_000_000 }],
     presence: { X: true, O: false },
     players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' }, O: null },
+    names: { X: 'Brave Otter', O: null },
     turn: 'X',
     status: { kind: 'playing' },
   };
 
   it('accepts a valid view', () => {
     expect(parseSessionView(valid)).toEqual(valid);
+  });
+
+  it('gives no names when a sender has no names field', () => {
+    const { names: _names, ...older } = valid;
+    expect(parseSessionView(older).names).toEqual({ X: null, O: null });
   });
 
   it('fills turn and status from the moves when a sender has no such fields', () => {
@@ -74,6 +80,10 @@ describe('parseSessionView', () => {
     ['status', { ...valid, status: { kind: 'won', winner: 'X', line: [0, 1, 2, 3] } }],
     ['status', { ...valid, status: { kind: 'playing', winner: 'X' } }],
     ['games', { ...valid, games: [{ ...valid.games[0], moves: [0, 0], times: [1, 2] }] }],
+    ['names', { ...valid, names: { X: '', O: null } }],
+    ['names', { ...valid, names: { X: 'a'.repeat(41), O: null } }],
+    ['names', { ...valid, names: { X: 'Brave Otter' } }],
+    ['names', { ...valid, names: null }],
   ])('throws on a bad %s field', (_, input) => {
     expect(() => parseSessionView(input)).toThrow();
   });
@@ -232,6 +242,7 @@ describe('parsePublicGame', () => {
     tuned: false,
     computer: 'O',
     players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' }, O: null },
+    names: { X: 'Brave Otter', O: null },
     finishedAt: 1_700_000_000_000,
   };
 
@@ -244,13 +255,15 @@ describe('parsePublicGame', () => {
     ['an unfinished game', { ...valid, game: toRecord(replay([0, 1])) }],
     ['a computer game without the computer seat', { ...valid, computer: null }],
     ['a lower-case id', { ...valid, id: 'abcdefgh' }],
+    ['no names', { ...valid, names: undefined }],
+    ['an empty name', { ...valid, names: { X: '', O: null } }],
   ])('throws on %s', (_, value) => {
     expect(() => parsePublicGame(value)).toThrow();
   });
 });
 
 describe('parseHistoryPage', () => {
-  const entry = { id: 'AB3K-2', mode: 'online', difficulty: null, result: 'won', moves: 7, opponent: null, finishedAt: 5 };
+  const entry = { id: 'AB3K-2', mode: 'online', difficulty: null, result: 'won', moves: 7, opponent: null, opponentName: 'Brave Otter', finishedAt: 5 };
 
   it('accepts a page of games', () => {
     expect(parseHistoryPage({ games: [entry], more: false })).toEqual({ games: [entry], more: false });
@@ -259,6 +272,7 @@ describe('parseHistoryPage', () => {
   it.each([
     ['an unknown result', { games: [{ ...entry, result: 'maybe' }], more: false }],
     ['no more flag', { games: [entry] }],
+    ['an empty opponent name', { games: [{ ...entry, opponentName: '' }], more: false }],
   ])('throws on %s', (_, value) => {
     expect(() => parseHistoryPage(value)).toThrow();
   });

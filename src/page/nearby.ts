@@ -5,6 +5,7 @@ import { type Channel, createOffer, answerOffer } from '../nearby/peer.ts';
 import { renderQr } from '../nearby/qr.ts';
 import { type NearbyHost, type NearbyGuest, createNearbyHost, createNearbyGuest } from '../nearby/session.ts';
 import { type Hello, HELLO_NAME_MAX_LENGTH, decodeSignal } from '../nearby/signal.ts';
+import { nameOf } from '../names.ts';
 import { token } from '../online.ts';
 import type { Code, Metrics } from '../protocol.ts';
 import { sounds } from '../sound.ts';
@@ -55,8 +56,13 @@ export const nearbyKind = () => nearby.kind;
 let wakeLock: { release(): Promise<void> } | undefined;
 const thisDevice = detectDevice();
 
+// The name that the other players see for this player, so the device list matches the score by default.
+// Limit: 28 of the 67348 generated names are longer than HELLO_NAME_MAX_LENGTH, and the device list cuts
+// them. Revisit this when the word lists grow, or when the limit changes in a new signal format.
+const ownName = () => page.account.user?.login ?? nameOf(token);
+
 function nearbyHello(): Hello {
-  const name = nearbyNameInput.value.trim() || page.account.user?.login || deviceLabel(thisDevice);
+  const name = nearbyNameInput.value.trim() || ownName();
   return { device: thisDevice, name: name.slice(0, HELLO_NAME_MAX_LENGTH) };
 }
 
@@ -78,17 +84,6 @@ function seatRole(seat: Player | null): string {
   return seat === null ? 'Watching' : `Plays ${seat}`;
 }
 
-// The device names of the seats in the live Nearby game, for playerName. The host plays X (hostNearby).
-let seatNames: Partial<Record<Player, string>> = {};
-
-export const nearbySeatName = (seat: Player): string | undefined => seatNames[seat];
-
-function setSeatNames(next: Partial<Record<Player, string>>): void {
-  if (next.X === seatNames.X && next.O === seatNames.O) return;
-  seatNames = next;
-  render();
-}
-
 async function renderNearby(): Promise<void> {
   const state = nearby;
   nearbyStart.hidden = state.kind !== 'idle';
@@ -99,24 +94,16 @@ async function renderNearby(): Promise<void> {
   if (state.kind === 'hosting') {
     const hostSeat = page.session?.you ?? 'X';
     const guests = await state.host.guests();
-    const names: Partial<Record<Player, string>> = { [hostSeat]: nearbyHello().name };
-    for (const guest of guests) if (guest.seat !== null) names[guest.seat] = guest.hello.name;
-    setSeatNames(names);
     nearbyDevices.replaceChildren(
       deviceItem(nearbyHello(), `You · host · plays ${hostSeat}`),
       ...guests.map((guest) => deviceItem(guest.hello, seatRole(guest.seat))),
     );
   } else if (state.kind === 'guest') {
-    const you = page.session?.you ?? null;
-    setSeatNames({ X: state.hostHello.name, ...(you === 'O' ? { O: nearbyHello().name } : {}) });
     nearbyDevices.replaceChildren(
       deviceItem(state.hostHello, 'Host'),
       deviceItem(nearbyHello(), `You · ${seatRole(page.session?.you ?? null).toLowerCase()}`),
     );
-  } else {
-    setSeatNames({});
-    nearbyDevices.replaceChildren();
-  }
+  } else nearbyDevices.replaceChildren();
   nearbyDevices.hidden = nearbyDevices.childElementCount === 0;
 }
 
@@ -291,7 +278,7 @@ export function endNearby(sayBye = true): void {
 
 // Opens the Nearby panel. A session starts when this device hosts or joins.
 export function openNearby(): void {
-  if (nearbyNameInput.value === '') nearbyNameInput.value = page.account.user?.login ?? deviceLabel(thisDevice);
+  if (nearbyNameInput.value === '') nearbyNameInput.value = ownName();
   render();
   void renderNearby();
 }
