@@ -14,10 +14,10 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 ## Features
 
 - Play against the computer, a friend on the same device, a friend online, or devices on the same Wi-Fi with Nearby.
-- The computer has three levels:
-  - Easy: takes a win when it sees one, otherwise plays a random cell.
-  - Medium: takes a win, blocks your win, otherwise picks one of its three best cells.
-  - Hard: takes a win, blocks your win, otherwise searches ahead with alpha-beta pruning for up to 600 ms.
+- The computer has three levels. Each level plays a different game each time: the first move goes to a random strong cell, and later choices are weighted by how good a cell is, not fixed. A strong cell is one of the 8 corners or the 8 inner cells, which each sit on 7 lines.
+  - Easy: takes a win when it sees one. It blocks your win about half the time and cares more about its own lines than yours, so it leaves openings.
+  - Medium: takes a win and always blocks your win. Sometimes it makes a double threat (two winning cells at once), or takes the cell where you could make one. Otherwise it picks one of its best cells by weight.
+  - Hard: takes a win and blocks your win. It looks for a win by threats in a row, and avoids a move that gives you one. Otherwise it searches ahead with alpha-beta pruning for up to 600 ms and picks among the moves that score about the same as the best.
 - Move validation: an occupied cell, a move after the game ends, a move out of turn, or a move by a spectator is refused with a sound and a message. Every mode runs the same session rules (`src/session/core.ts`): the server for online games, the device for computer and friend games, the host's device for Nearby games.
 - Hide the board, or hide all marks except the last move. Play by coordinates: tap the layer, row and column on the 1 to 4 keypad, for example `2 3 4`. The target cell is outlined before you place. Until you tap a number, the keypad shows the coordinates of the last move, yours or the other player's, so you can follow the game with the board hidden. Hidden marks show again when the game ends.
 - Lock settings: after a lock, no setting (the view included) changes until the game ends. The session keeps the lock, so a reload does not end it. With another device, either player can lock, and the lock holds for both players.
