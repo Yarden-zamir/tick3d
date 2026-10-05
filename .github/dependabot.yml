@@ -12,6 +12,8 @@ updates:
     # The DuckDB client version must match the database file format. Update it on purpose, not weekly.
     ignore:
       - dependency-name: "@duckdb/node-api"
+      # The e2e workflow runs in the Playwright image with the same version tag. Update both together.
+      - dependency-name: "@playwright/test"
   - package-ecosystem: github-actions
     directory: /
     schedule:
