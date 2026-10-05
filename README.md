@@ -17,7 +17,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - The computer has three levels. Each level plays a different game each time: the first move goes to a random strong cell, and later choices are weighted by how good a cell is, not fixed. A strong cell is one of the 8 corners or the 8 inner cells, which each sit on 7 lines.
   - Easy: takes a win when it sees one. It blocks your win a bit more than half the time early in a game, and cares more about its own lines than yours, so it leaves openings.
   - Medium: takes a win and always blocks your win early in a game. Sometimes it makes a double threat (two winning cells at once), or takes the cell where you could make one. Otherwise it picks one of its best cells by weight.
-  - Hard: takes a win and blocks your win. It looks for a win by threats in a row, and avoids a move that gives you one. Otherwise it searches ahead with alpha-beta pruning for up to 600 ms and picks among the moves that score about the same as the best.
+  - Hard: takes a win and blocks your win. It looks for a win by threats in a row, and avoids a move that gives you one. Otherwise it searches ahead with alpha-beta pruning for up to 600 ms (at most 1000 ms in the advanced settings) and picks among the moves that score about the same as the best.
   - Easy and medium tire in a long game, like a person under more and more load. From a set move on, they block less often, see fewer double threats, and choose more randomly. A missed block means that the computer did not see your threat at all. Medium starts to tire at move 20 and is fully tired at move 60, when it blocks 85% of the time. Hard does not tire.
 - Advanced settings: in computer mode, "Advanced: computer player" at the bottom of the panel lists every number behind the computer, for each level. Easy and medium have a fresh and a tired value for each chance and for the randomness, and the moves where tiring starts and ends. Hard has its thinking time, search width, threat depth and equal-move margin. A change applies from the next computer move, and "Reset to defaults" restores the tested values. A lock also locks these settings. A changed computer keeps its own survival records, and its end card says "(tuned)".
 - Move validation: an occupied cell, a move after the game ends, a move out of turn, or a move by a spectator is refused with a sound and a message. Every mode runs the same session rules (`src/session/core.ts`): the server for online games, the device for computer and friend games, the host's device for Nearby games.
@@ -93,6 +93,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 
 - `src/game.ts`: board, lines, move validation, win and draw detection, undo.
 - `src/ai.ts`: the three computer levels.
+- `src/ai-worker.ts` and `src/move-search.ts`: every level searches in a Web Worker, so the page stays responsive while the computer thinks. The service worker precaches the worker, so the computer also plays offline.
 - `src/sound.ts`: synthesized sounds.
 - `src/clock.ts`: time limits and the time left for each player.
 - `src/card.ts`: draws the end card on a canvas and shares it.
@@ -135,6 +136,20 @@ docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:24-alpine npx vite 
 - [stylelint](https://stylelint.io) with `stylelint-config-recommended` (`.stylelintrc.json`): unknown properties, invalid values and duplicate selectors in the CSS. No style rules.
 - [html-validate](https://html-validate.org) (`.htmlvalidate.json`): invalid markup and accessibility faults in `index.html`, such as a button without a name or an input without a type.
 - [Knip](https://knip.dev): files, exports and packages that nothing uses.
+
+`npm run e2e` runs the Playwright tests in `e2e/` against a deployed site in Chromium. Set `E2E_BASE_URL` to the site, for example a pull request preview. Without it, the run stops at once. Run the tests in the Playwright image:
+
+```sh
+docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr.17.tick3d.yarden-zamir.com mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'npm ci && npm run e2e'
+```
+
+- The image tag must match the `@playwright/test` version in `package.json`. Update both together.
+- `npm ci` in the Playwright image installs packages for glibc. Run `npm ci` again before you use `node:24-alpine`.
+- Each test opens fresh browser contexts, and the tests run in parallel. The HTML report goes to `e2e/playwright-report/`. A failed test keeps a trace in `e2e/test-results/`.
+- One run creates 6 online sessions. The server allows 60 new sessions per hour from one address.
+- The `e2e` workflow runs the suite after a successful pull request preview deploy. When a test fails, the workflow uploads the HTML report.
+- Knip finds the tests through its `entry` setting in `package.json`. Its Playwright plugin is off, because the plugin loads the config, and the config stops without `E2E_BASE_URL`.
+- The laptop host (`compose.lan.yml`) has no automatic test. It needs a local Docker host and a second device on the network.
 
 ## Deploy
 

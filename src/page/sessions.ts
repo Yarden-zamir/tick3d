@@ -117,6 +117,7 @@ export function openSession(view: SessionView, backend: SessionBackend, mode: Mo
   page.coordDigits = [];
   page.session?.unsubscribe();
   page.round++; // drops a computer move scheduled for the previous session
+  page.computerThinkMs = [];
   page.thinking = false;
   if (settings.mode !== mode) {
     settings.mode = mode;
@@ -259,6 +260,7 @@ export function startNewGame(): void {
   if (page.session === undefined) return reject(undefined, 'no-session');
   sounds.click();
   page.round++; // drops a computer move for the game that ends here
+  page.computerThinkMs = [];
   page.thinking = false;
   const { code, backend } = page.session;
   void withBusy(async () => {

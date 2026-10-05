@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -17,9 +18,10 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        // The page color of the light theme (--page in src/style.css).
+        // The page color and the board color of the light theme (--page and --slab in src/style.css).
+        // An installed app starts with these, then the page sets the bar to the saved theme.
         background_color: '#e4e7ff',
-        theme_color: '#e4e7ff',
+        theme_color: '#ffe14d',
         icons: [
           { src: 'android-chrome-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'android-chrome-512x512.png', sizes: '512x512', type: 'image/png' },
@@ -58,4 +60,6 @@ export default defineConfig({
       },
     }),
   ],
+  // Vitest runs the unit tests only. Playwright runs the e2e/ tests against a deployed site (npm run e2e).
+  test: { include: ['{src,server}/**/*.test.ts'] },
 });

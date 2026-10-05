@@ -7,3 +7,5 @@ Caddyfile.j2
 node_modules
 dist
 dev.duckdb*
+e2e/test-results
+e2e/playwright-report

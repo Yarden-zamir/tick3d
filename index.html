@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#e4e7ff" />
+    <!-- The browser bar takes the board color of the theme (--slab), like a brand color. The page script follows theme changes. -->
+    <meta name="theme-color" content="#ffe14d" />
     <script>
       // Apply a stored theme before the first paint, so the page never flashes the other theme.
       try {
@@ -27,6 +28,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet" />
   </head>
   <body>
+    <script>
+      // The stylesheets have loaded at this point, so the board color of the saved theme is known.
+      // The browser bar takes it before the first paint. Vite dev injects CSS later, so dev keeps the default.
+      {
+        const color = getComputedStyle(document.documentElement).getPropertyValue('--slab').trim();
+        if (color !== '') document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
+      }
+    </script>
     <div class="app">
       <header class="brand">
         <h1><a href="/" class="home-link" id="home-link" title="Home">tick<span>3d</span></a></h1>
