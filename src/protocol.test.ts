@@ -35,10 +35,19 @@ describe('parseSessionView', () => {
     chat: [{ id: 7, from: 'O', text: 'good luck', at: 1_700_000_000_000 }],
     presence: { X: true, O: false },
     players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' }, O: null },
+    turn: 'X',
+    status: { kind: 'playing' },
   };
 
   it('accepts a valid view', () => {
     expect(parseSessionView(valid)).toEqual(valid);
+  });
+
+  it('fills turn and status from the moves when a sender has no such fields', () => {
+    const { turn: _turn, status: _status, ...older } = valid;
+    expect(parseSessionView(older)).toEqual(valid);
+    const won = { ...older, games: [{ ...valid.games[0], moves: [0, 1, 16, 2, 32, 3, 48], times: [1, 2, 3, 4, 5, 6, 7] }] };
+    expect(parseSessionView(won)).toMatchObject({ turn: null, status: { kind: 'won', winner: 'X', line: [0, 16, 32, 48] } });
   });
 
   it.each([
@@ -53,6 +62,10 @@ describe('parseSessionView', () => {
     ['chat', { ...valid, chat: undefined }],
     ['chat', { ...valid, chat: [{ id: 1, from: 'Z', text: 'hi', at: 0 }] }],
     ['chat', { ...valid, chat: [{ id: 1, from: 'X', text: '', at: 0 }] }],
+    ['turn', { ...valid, turn: 'O' }],
+    ['status', { ...valid, status: { kind: 'won', winner: 'X', line: [0, 1, 2, 3] } }],
+    ['status', { ...valid, status: { kind: 'playing', winner: 'X' } }],
+    ['games', { ...valid, games: [{ ...valid.games[0], moves: [0, 0], times: [1, 2] }] }],
   ])('throws on a bad %s field', (_, input) => {
     expect(() => parseSessionView(input)).toThrow();
   });

@@ -194,6 +194,7 @@ type ViewContext = {
 };
 
 export function viewOf(doc: SessionDoc, { code, version, identity, now, presence, players }: ViewContext): SessionView {
+  const live = currentGame(doc);
   return {
     code,
     name: doc.name,
@@ -208,5 +209,7 @@ export function viewOf(doc: SessionDoc, { code, version, identity, now, presence
     chat: doc.chat,
     presence,
     players,
+    turn: live.status.kind === 'playing' ? live.turn : null,
+    status: live.status,
   };
 }

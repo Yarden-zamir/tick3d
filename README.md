@@ -60,6 +60,23 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 
 ![An online game with chat, while the other player is away](docs/screenshots/online.png)
 
+## Play with an AI agent
+
+- An AI agent can play through the HTTP API, with plain HTTP or curl. It needs no account and no key.
+- In computer mode, open "Advanced: computer player". The "Play with your AI agent" part has a short text and a Copy button. Give the text to your agent.
+- The text points the agent to the docs at `/api/docs.md`. The docs tell the agent how to create or join a game, take a seat from a link, move, chat and wait for changes.
+- The agent can play you or another agent. In a game between two agents, the agent gives you the game link, and you watch.
+- A browser that opens the link while a seat is free takes that seat. So an agent gives the link for watching after both seats are taken.
+- A player that uses the API has no open page, so the page shows that player as away. The game goes on as usual.
+
+The API docs come from one file, `server/api-docs.ts`:
+
+- `GET /api/docs.md`: a guide for AI agents, then every route. Markdown.
+- `GET /api/docs`: the same guide and reference as a web page.
+- `GET /api/openapi.json`: OpenAPI 3.1.
+- `GET /api/sessions/<code>?wait=<version>`: a long poll. The server holds the request until the session version is greater than `<version>`, or for about 25 s. Then it returns the session. At most 2000 requests wait at the same time.
+- Every session answer has `turn` (the player to move, or null after the game ends) and `status` (playing, won with the line, timeout or draw), so an agent needs no rules of its own.
+
 ## Offline play
 
 - After the first visit, the game opens without a network: a service worker keeps the page, the fonts and the icons. "Offline ready" shows in the header, and the game is installable on a phone.
@@ -106,7 +123,9 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - `src/pwa.ts` and `vite.config.ts`: the service worker and the manifest.
 - `src/main.ts`, `src/style.css`, `index.html`: the page. `src/main.ts` starts the page; `src/page/` holds the page script, one module per feature (board, sessions, Nearby, My games, clocks, chat and more). `src/page/state.ts` holds the state that more than one module changes.
 - `public/`: the favicons and touch icons, copied into the build as is. The service worker plugin writes the web manifest.
-- `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login.
+- `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login. `server/waiters.ts`: the long polls.
+- `server/api-docs.ts`: every API route with its shapes, examples and errors, and the guide for AI agents. The server finds the route of a request in this list, so a route without docs cannot exist. `server/api-docs-render.ts` makes the Markdown, the web page and the OpenAPI document. A test runs every example through the real parsers in `src/protocol.ts`.
+- To add a route: add one entry to `ROUTES` in `server/api-docs.ts` and one case to the switch in `server/main.ts`. The type check fails when one of the two is missing.
 
 The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs on Node 24, which runs TypeScript directly, and stores sessions in [DuckDB](https://duckdb.org) through `@duckdb/node-api`.
 
@@ -148,7 +167,7 @@ docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr.17.
 - The image tag must match the `@playwright/test` version in `package.json`. Update both together.
 - `npm ci` in the Playwright image installs packages for glibc. Run `npm ci` again before you use `node:24-alpine`.
 - Each test opens fresh browser contexts, and the tests run in parallel. The HTML report goes to `e2e/playwright-report/`. A failed test keeps a trace in `e2e/test-results/`.
-- One run creates 6 online sessions. The server allows 60 new sessions per hour from one address.
+- One run creates 7 online sessions. The server allows 60 new sessions per hour from one address.
 - The `e2e` workflow runs the suite after a successful pull request preview deploy. When a test fails, the workflow uploads the HTML report.
 - Knip finds the tests through its `entry` setting in `package.json`. Its Playwright plugin is off, because the plugin loads the config, and the config stops without `E2E_BASE_URL`.
 - The laptop host (`compose.lan.yml`) has no automatic test. It needs a local Docker host and a second device on the network.

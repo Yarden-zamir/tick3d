@@ -1,7 +1,6 @@
 import { hostname } from 'node:os';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Player } from '../src/game.ts';
-import { NO_LIMIT, parseClock } from '../src/clock.ts';
 import {
   type Code,
   type PlayerToken,
@@ -9,11 +8,15 @@ import {
   asPlayerToken,
   normalizeCode,
   parseMoveRequest,
+  parseNewSession,
   parseSessionUpdate,
 } from '../src/protocol.ts';
 import { SessionError } from '../src/session/core.ts';
+import { CREATES_PER_HOUR, WAIT_MS, matchRoute } from './api-docs.ts';
+import { html, markdown, openApi } from './api-docs-render.ts';
 import { type Auth, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
 import { openStore } from './store.ts';
+import { createWaiters } from './waiters.ts';
 
 const PORT = 8080;
 const MAX_BODY_BYTES = 4096;
@@ -21,11 +24,14 @@ const MAX_BODY_BYTES = 4096;
 const MAX_RESULTS_BODY_BYTES = 256 * 1024;
 // Each open page holds one event stream. This cap keeps a flood of streams from exhausting memory.
 const MAX_STREAMS = 2000;
+// Each long poll (GET /api/sessions/{code}?wait=) holds one request. The same reason caps them.
+const MAX_WAITERS = 2000;
+const waiters = createWaiters(MAX_WAITERS);
 // Session codes are never freed, so one client must not use them all up: 60 new sessions per hour.
 // Limit: the counts live in this process only and reset on a restart. An IPv6 client can change
 // its address. Revisit this with more than one API process, a real attack, or real players that
 // share one address and hit the limit (a school, for example).
-const allowCreate = createLimiter(60, 3_600_000, 10_000);
+const allowCreate = createLimiter(CREATES_PER_HOUR, 3_600_000, 10_000);
 
 class HttpError extends Error {
   status: number;
@@ -56,14 +62,21 @@ function presenceOf(code: Code): Record<Player, boolean> {
 
 const store = await openStore(dbPath, { presence: presenceOf, onChange: notify });
 
-// Tells every open page of a session to fetch it again.
+// Tells every open page of a session to fetch it again, and wakes its long polls.
 function notify(code: Code): void {
   for (const stream of streams.get(code) ?? []) stream.res.write('data: changed\n\n');
+  waiters.wake(code);
 }
 
 function send(res: ServerResponse, status: number, body: unknown, headers: Record<string, string | string[]> = {}): void {
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers });
   res.end(JSON.stringify(body));
+}
+
+function sendText(res: ServerResponse, contentType: string, body: string): void {
+  // The docs are public, so any site and any agent may read them.
+  res.writeHead(200, { 'content-type': contentType, 'cache-control': 'no-cache', 'access-control-allow-origin': '*' });
+  res.end(body);
 }
 
 function redirect(res: ServerResponse, location: string, cookies: string[]): void {
@@ -95,6 +108,32 @@ function requirePlayer(req: IncomingMessage): PlayerToken {
 
 // The host Caddy terminates TLS and keeps the Host header, so every public request is https.
 const originOf = (req: IncomingMessage) => `https://${req.headers.host ?? ''}`;
+// The address that the docs show. A LAN host (compose.lan.yml) serves plain HTTP, and its Caddy says so.
+const docsOrigin = (req: IncomingMessage) =>
+  req.headers['x-forwarded-proto'] === 'http' ? `http://${req.headers.host ?? ''}` : originOf(req);
+
+function sessionCode(value: string | undefined): Code {
+  const code = normalizeCode(value ?? '');
+  if (code === undefined) throw new HttpError(400, 'A code has 4 letters or digits.');
+  return code;
+}
+
+// GET /api/sessions/{code}?wait=<version> holds the request until the version is greater, or WAIT_MS pass.
+async function waitForChange(res: ServerResponse, code: Code, wait: string, token: PlayerToken | undefined): Promise<void> {
+  const since = Number(wait);
+  if (wait === '' || !Number.isInteger(since) || since < 0) throw new HttpError(400, 'wait needs a version: a whole number of 0 or more.');
+  const left = new AbortController();
+  // The response closes before it ends only when the client goes away.
+  const onClose = () => left.abort();
+  res.on('close', onClose);
+  try {
+    const waiting = waiters.until(code, since, async () => (await store.get(code, token)).version, left.signal, WAIT_MS);
+    if (waiting === undefined) throw new HttpError(503, 'Too many requests wait now. Try again in a few seconds.');
+    await waiting;
+  } finally {
+    res.off('close', onClose);
+  }
+}
 
 // EventSource cannot send headers, so the stream takes the player token from the query string.
 // Caddy keeps no access log for this site; revisit this if logging is ever turned on.
@@ -120,16 +159,32 @@ async function openStream(req: IncomingMessage, res: ServerResponse, code: Code,
   if (seats.length > 0) notify(code);
 }
 
-async function authRoute(req: IncomingMessage, res: ServerResponse, url: URL, action: string | undefined): Promise<void> {
-  if (auth === undefined) throw new HttpError(404, 'Login is not available on this server.');
-  switch (`${req.method} ${action ?? ''}`) {
-    case 'GET login': {
+async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  const method = req.method ?? 'GET';
+  // Every route goes through matchRoute, so every route that the server handles has docs.
+  const match = matchRoute(method, url.pathname);
+  if (match === undefined) throw new HttpError(404, 'Not found.');
+  if (match === 'wrong-method') throw new HttpError(405, 'Method not allowed.');
+  const code = () => sessionCode(match.params.code);
+
+  switch (match.route) {
+    case 'GET /api/health':
+      return send(res, 200, { ok: true, lan: lanHost });
+    case 'GET /api/openapi.json':
+      return sendText(res, 'application/json', JSON.stringify(openApi(docsOrigin(req)), null, 2));
+    case 'GET /api/docs.md':
+      return sendText(res, 'text/markdown; charset=utf-8', markdown(docsOrigin(req)));
+    case 'GET /api/docs':
+      return sendText(res, 'text/html; charset=utf-8', html(docsOrigin(req)));
+
+    case 'GET /api/auth/login': {
+      if (auth === undefined) throw new HttpError(404, 'Login is not available on this server.');
       const { location, cookies } = auth.start(originOf(req), url.searchParams.get('return'));
       return redirect(res, location, cookies);
     }
-    case 'GET github': {
-      // /api/auth/github/callback
-      if (!url.pathname.endsWith('/callback')) throw new HttpError(404, 'Not found.');
+    case 'GET /api/auth/github/callback': {
+      if (auth === undefined) throw new HttpError(404, 'Login is not available on this server.');
       try {
         const { location, cookies } = await auth.finish(req, url.searchParams.get('code'), url.searchParams.get('state'));
         return redirect(res, location, cookies);
@@ -138,92 +193,75 @@ async function authRoute(req: IncomingMessage, res: ServerResponse, url: URL, ac
         return redirect(res, '/?login=failed', []);
       }
     }
-    case 'POST logout': {
+    case 'POST /api/auth/logout': {
+      if (auth === undefined) throw new HttpError(404, 'Login is not available on this server.');
       // A cross-site form cannot send the X-Player header, so another site cannot log a player out.
       await store.unlinkToken(requirePlayer(req));
       return send(res, 200, { ok: true }, { 'set-cookie': auth.logoutCookie() });
     }
-    default:
-      throw new HttpError(404, 'Not found.');
-  }
-}
 
-async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const url = new URL(req.url ?? '/', 'http://localhost');
-  const [api, resource, second, action, ...rest] = url.pathname.split('/').filter(Boolean);
-  const method = req.method ?? 'GET';
-  if (api !== 'api') throw new HttpError(404, 'Not found.');
-
-  if (resource === 'health' && method === 'GET') return send(res, 200, { ok: true, lan: lanHost });
-  if (resource === 'auth') return authRoute(req, res, url, second);
-
-  if (resource === 'me') {
-    if (method !== 'GET' || (second !== undefined && second !== 'games') || action !== undefined) {
-      throw new HttpError(404, 'Not found.');
+    case 'GET /api/me':
+    case 'GET /api/me/games': {
+      const token = requirePlayer(req);
+      const user = auth?.user(req);
+      // Every visit with a login links this browser to the account, so a new device joins at once.
+      if (user !== undefined) await store.linkToken(token, user);
+      if (match.route === 'GET /api/me/games') return send(res, 200, await store.myGames(token));
+      return send(res, 200, { loginAvailable: auth !== undefined, user: user === undefined ? null : { login: user.login, avatar: user.avatar } });
     }
-    const token = requirePlayer(req);
-    const user = auth?.user(req);
-    // Every visit with a login links this browser to the account, so a new device joins at once.
-    if (user !== undefined) await store.linkToken(token, user);
-    if (second === 'games') return send(res, 200, await store.myGames(token));
-    return send(res, 200, { loginAvailable: auth !== undefined, user: user === undefined ? null : { login: user.login, avatar: user.avatar } });
-  }
 
-  if (resource === 'results' && second === undefined && method === 'POST') {
-    const body = await readJson(req, MAX_RESULTS_BODY_BYTES);
-    const results = typeof body === 'object' && body !== null && 'results' in body ? body.results : undefined;
-    if (!Array.isArray(results) || results.length > RESULTS_PER_UPLOAD) {
-      throw new HttpError(400, `An upload needs a results list of at most ${RESULTS_PER_UPLOAD}.`);
+    case 'POST /api/results': {
+      const body = await readJson(req, MAX_RESULTS_BODY_BYTES);
+      const results = typeof body === 'object' && body !== null && 'results' in body ? body.results : undefined;
+      if (!Array.isArray(results) || results.length > RESULTS_PER_UPLOAD) {
+        throw new HttpError(400, `An upload needs a results list of at most ${RESULTS_PER_UPLOAD}.`);
+      }
+      return send(res, 200, { stored: await store.addResults(requirePlayer(req), results) });
     }
-    return send(res, 200, { stored: await store.addResults(requirePlayer(req), results) });
-  }
 
-  if (resource !== 'sessions' || rest.length > 0) throw new HttpError(404, 'Not found.');
-
-  if (second === undefined) {
-    if (method !== 'POST') throw new HttpError(405, 'Method not allowed.');
-    if (!allowCreate(clientOf(req), Date.now())) throw new HttpError(429, 'Too many new games from this address. Try again later.');
-    const body = await readJson(req);
-    const fields: Record<string, unknown> = typeof body === 'object' && body !== null ? { ...body } : {};
-    const clock = fields.clock === undefined ? NO_LIMIT : parseClock(fields.clock);
-    if (clock === undefined) throw new HttpError(400, 'The time limit is out of range.');
-    const name = typeof fields.name === 'string' ? fields.name : '';
-    return send(res, 201, await store.create(requirePlayer(req), name, clock));
-  }
-
-  const code = normalizeCode(second);
-  if (code === undefined) throw new HttpError(400, 'A code has 4 letters or digits.');
-
-  switch (`${method} ${action ?? ''}`) {
-    case 'GET ':
-      return send(res, 200, await store.get(code, asPlayerToken(req.headers['x-player'])));
-    case 'GET events':
-      return openStream(req, res, code, asPlayerToken(url.searchParams.get('player')));
-    case 'PATCH ': {
+    case 'POST /api/sessions': {
+      if (!allowCreate(clientOf(req), Date.now())) throw new HttpError(429, 'Too many new games from this address. Try again later.');
+      const body = parseNewSession(await readJson(req));
+      if (body === undefined) throw new HttpError(400, 'A new game needs a name of 1 to 40 characters, and a valid clock or none.');
+      return send(res, 201, await store.create(requirePlayer(req), body.name, body.clock));
+    }
+    case 'GET /api/sessions/{code}': {
+      const token = asPlayerToken(req.headers['x-player']);
+      const wait = url.searchParams.get('wait');
+      if (wait !== null) await waitForChange(res, code(), wait, token);
+      // The client left during the wait, so nobody reads an answer.
+      if (res.destroyed) return;
+      return send(res, 200, await store.get(code(), token));
+    }
+    case 'GET /api/sessions/{code}/events':
+      return openStream(req, res, code(), asPlayerToken(url.searchParams.get('player')));
+    case 'PATCH /api/sessions/{code}': {
       const changes = parseSessionUpdate(await readJson(req));
       if (changes === undefined) {
         throw new HttpError(400, 'An update needs a name of 1 to 40 characters, hideBoard, hideHistory or a valid clock.');
       }
-      return send(res, 200, await store.update(code, requirePlayer(req), changes));
+      return send(res, 200, await store.update(code(), requirePlayer(req), changes));
     }
-    case 'POST lock':
-      return send(res, 200, await store.lock(code, requirePlayer(req)));
-    case 'POST join':
-      return send(res, 200, await store.join(code, requirePlayer(req)));
-    case 'POST moves': {
+    case 'POST /api/sessions/{code}/lock':
+      return send(res, 200, await store.lock(code(), requirePlayer(req)));
+    case 'POST /api/sessions/{code}/join':
+      return send(res, 200, await store.join(code(), requirePlayer(req)));
+    case 'POST /api/sessions/{code}/moves': {
       const move = parseMoveRequest(await readJson(req));
       if (move === undefined) throw new HttpError(400, 'A move needs game, moveCount and cell.');
-      return send(res, 200, await store.move(code, requirePlayer(req), move));
+      return send(res, 200, await store.move(code(), requirePlayer(req), move));
     }
-    case 'POST games':
-      return send(res, 200, await store.newGame(code, requirePlayer(req)));
-    case 'POST chat': {
+    case 'POST /api/sessions/{code}/games':
+      return send(res, 200, await store.newGame(code(), requirePlayer(req)));
+    case 'POST /api/sessions/{code}/chat': {
       const body = await readJson(req);
       const text = typeof body === 'object' && body !== null && 'text' in body ? body.text : undefined;
-      return send(res, 200, await store.chat(code, requirePlayer(req), text));
+      return send(res, 200, await store.chat(code(), requirePlayer(req), text));
     }
-    default:
-      throw new HttpError(404, 'Not found.');
+    default: {
+      const unhandled: never = match.route;
+      throw new Error(`no handler for the documented route ${String(unhandled)}`);
+    }
   }
 }
 
