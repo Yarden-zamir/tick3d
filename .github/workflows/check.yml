@@ -1,0 +1,17 @@
+# The type check, the linters, the unit tests and the build, on every pull request.
+# The image build runs the same checks before a deploy. This workflow also covers PRs that do not deploy.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container: node:24-alpine
+    steps:
+      - uses: actions/checkout@v7
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
