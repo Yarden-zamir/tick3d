@@ -1,4 +1,4 @@
-import { cell, createOnline, expect, expectMyMove, expectToast, joinAsO, marks, readQr, status, test } from './fixtures.ts';
+import { cell, createOnline, expect, expectMyMove, expectToast, joinAsO, marks, ownName, readQr, status, test } from './fixtures.ts';
 import type { Page } from '@playwright/test';
 
 // Each test here creates one online session. The server allows 60 new sessions per hour for one
@@ -26,6 +26,7 @@ const xWins = (alice: Page, bob: Page) =>
 
 test('two players play a full game, and a watcher replays it', async ({ open, baseURL }) => {
   const { page: alice } = await open();
+  const aliceName = await ownName(alice);
   const code = await createOnline(alice);
   await expect(alice.locator('#online-code')).toHaveText(code);
   await expect(status(alice)).toContainText('Waiting');
@@ -48,9 +49,14 @@ test('two players play a full game, and a watcher replays it', async ({ open, ba
   await cell(bob, 0).click();
   await expectToast(bob, 'That cell is taken');
 
+  // Bob sees Alice by her generated name: in the score, the chat and the status.
+  await expect(bob.locator('.tally.X')).toContainText(aliceName);
+  await alice.locator('#chat-input').fill('good luck');
+  await alice.locator('#chat-input').press('Enter');
+  await expect(bob.locator('#chat-log')).toContainText(aliceName);
   await playTurns(xWins(alice, bob).slice(1));
   await expect(status(alice)).toHaveText('You win!');
-  await expect(status(bob)).toHaveText('Your opponent wins.');
+  await expect(status(bob)).toHaveText(`${aliceName} wins!`);
   await expect(bob.locator('.cell.win')).toHaveCount(4);
   for (const page of [alice, bob]) {
     await expect(page.locator('#end-card')).toHaveAttribute('open');
@@ -82,7 +88,7 @@ test('two players play a full game, and a watcher replays it', async ({ open, ba
   await expectToast(carol, 'You are watching');
 
   await bob.reload();
-  await expect(status(bob)).toContainText("Opponent's move");
+  await expect(status(bob)).toContainText(`${aliceName}'s move`);
 });
 
 test('hide options and the lock belong to the session', async ({ open }) => {
@@ -128,7 +134,10 @@ test('hide options and the lock belong to the session', async ({ open }) => {
   expect(refused, 'the server refuses an option change during a lock').toBe(409);
 
   await playTurns(xWins(alice, bob));
-  await expect(status(bob)).toHaveText('Your opponent wins.');
+  // The winner's name is the one in the other player's score tile.
+  const aliceName = await bob.locator('.tally.X span').innerText();
+  expect(aliceName).not.toMatch(/^(You|Player X)$/);
+  await expect(status(bob)).toHaveText(`${aliceName} wins!`);
   await expect(bob.locator('#lock')).not.toContainText('Locked');
   await expect(hideBoard(bob)).toBeEnabled();
   await expect(alice.getByRole('button', { name: 'Tower' })).toBeEnabled();
@@ -165,7 +174,7 @@ test('the session clock reaches both players, and the server decides a timeout',
   await perMove(alice).locator('[data-limit-value]').press('Tab');
   const code = await createOnline(alice);
   const { page: bob } = await joinAsO(open, `/?code=${code}`);
-  await expect(bob.locator('#clock-summary')).toHaveText('5 s per move');
+  await expect(bob.locator('#clock-summary')).toContainText('5 s per move');
   await expect(bob.locator('#clocks')).toBeVisible();
 
   await cell(alice, 0).click();
@@ -197,7 +206,7 @@ test('the session clock reaches both players, and the server decides a timeout',
     await page.locator('#end-card-close').click();
   }
   await perMove(alice).locator('[data-limit-on]').uncheck();
-  await expect(bob.locator('#clock-summary')).toHaveText('5 min per player');
+  await expect(bob.locator('#clock-summary')).toContainText('5 min per player');
   await bob.locator('#new-game').click();
   await expect(alice.locator('#history li')).toHaveCount(2);
   await expect(alice.locator('[data-clock="X"]')).toContainText('5:00');

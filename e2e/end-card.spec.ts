@@ -10,7 +10,7 @@ const ORDER = [...SCATTERED, ...Array.from({ length: 64 }, (_, i) => i).filter((
 
 async function loseToComputer(page: Page): Promise<void> {
   await playComputerUntilEnd(page, ORDER);
-  await expect(status(page)).toHaveText('The computer wins.');
+  await expect(status(page)).toHaveText('Computer wins!');
   await expect(page.locator('#end-card')).toHaveAttribute('open');
 }
 

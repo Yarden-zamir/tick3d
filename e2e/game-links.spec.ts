@@ -36,7 +36,7 @@ const callApi = (page: Page, path: string) =>
 test('a computer loss gets a link, a server record and a History entry', async ({ open }) => {
   const { page } = await open({ settings: { mode: 'computer', difficulty: 'hard', human: 'X' } });
   await playComputerUntilEnd(page, ORDER);
-  await expect(status(page)).toHaveText('The computer wins.');
+  await expect(status(page)).toHaveText('Computer wins!');
   const moves = await marks(page).count();
   const id = await gameLink(page);
   expect(id).toMatch(/^[A-Z2-9]{8}$/);

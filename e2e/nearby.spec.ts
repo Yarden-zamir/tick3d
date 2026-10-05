@@ -1,4 +1,4 @@
-import { cell, expect, expectMyMove, expectToast, marks, readQr, test, toasts } from './fixtures.ts';
+import { cell, expect, expectMyMove, expectToast, marks, ownName, readQr, test, toasts } from './fixtures.ts';
 import type { Page } from '@playwright/test';
 
 const nearby = { settings: { mode: 'nearby' } };
@@ -15,9 +15,11 @@ async function useCode(page: Page, code: string): Promise<void> {
   await page.locator('#nearby-use-code').click();
 }
 
-test('host and guest connect with text codes, play and chat', async ({ open }) => {
+test('host and guest connect with text codes, play a game and chat, and both see the names', async ({ open }) => {
   const { page: host } = await open(nearby);
   const { page: guest } = await open(nearby);
+  const hostName = await ownName(host);
+  const guestName = await ownName(guest);
   await host.locator('#nearby-host').click();
   await expect(host.locator('#nearby-qr svg')).toHaveCount(1);
   const offer = await signalCode(host);
@@ -37,7 +39,36 @@ test('host and guest connect with text codes, play and chat', async ({ open }) =
   await guest.locator('#chat-input').fill('hi from the couch');
   await guest.locator('#chat-input').press('Enter');
   await expect(host.locator('#chat-log')).toContainText('hi from the couch');
+  // The host shows the guest by the generated name of the guest: in the device list, the score and the chat.
+  await expect(host.locator('#nearby-devices')).toContainText(guestName);
+  await expect(host.locator('.tally.O')).toContainText(guestName);
+  await expect(host.locator('#chat-log')).toContainText(guestName);
 
+  // The host finishes the game: X on 0, 16, 32, 48, O on 1, 2, 3.
+  for (const [page, index] of [[host, 16], [guest, 2], [host, 32], [guest, 3], [host, 48]] as const) {
+    await expectMyMove(page);
+    await cell(page, index).click();
+    await expect(page.locator('#status')).not.toContainText('Your move');
+  }
+  await expect(host.locator('#status')).toHaveText('You win!');
+  await expect(guest.locator('#status')).toHaveText(`${hostName} wins!`);
+  await expect(host).toHaveURL(/[?&]game=[A-Z2-9]{8}/);
+  const id = new URL(host.url()).searchParams.get('game');
+
+  // The host's result names both seats: the link shows both players, and the guest's history has the
+  // game with the host as the opponent.
+  const { page: viewer } = await open({ path: `/?game=${id ?? ''}` });
+  await expect(viewer.locator('#game-view')).toContainText(`${hostName} (X) vs ${guestName} (O)`);
+  const guestHistory = () =>
+    guest.evaluate(async () => {
+      const response = await fetch('/api/me/history', { headers: { 'x-player': localStorage.getItem('tick3d.player') ?? '' } });
+      return JSON.stringify(await response.json());
+    });
+  await expect.poll(guestHistory).toContain(`"opponentName":"${hostName}"`);
+  // The guest's own copy of the game stays out of the history: the game shows once.
+  expect(JSON.parse(await guestHistory())).toMatchObject({ games: [{ mode: 'nearby', result: 'lost' }] });
+
+  await host.locator('#end-card-close').click();
   await host.locator('#nearby-stop').click();
   await expectToast(guest, 'host ended');
 });

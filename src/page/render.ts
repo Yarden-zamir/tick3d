@@ -40,15 +40,21 @@ const SPEAKER = '<path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>';
 const SOUND_ON_ICON = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">${SPEAKER}<path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/></svg>`;
 const SOUND_OFF_ICON = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">${SPEAKER}<path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>`;
 
-// "You", "Computer", the GitHub name of a logged-in player, or the seat.
+// One name per seat, the same in the score, status, chat, clocks, keypad, history and end card.
+// This screen's own seat is "You". Then come "Computer", the GitHub login and the generated name.
+// A friend game has one player id on both seats, so its seats are "Player X" and "Player O".
+// An older server or Nearby host sends no generated names: then the seat is "Player X" or "Player O".
 export function playerName(player: Player): string {
   if (page.viewing !== undefined) return viewerName(page.viewing, player);
-  const mine = me();
-  if (page.session === undefined || page.session.mode === 'friend') return `Player ${player}`;
-  if (player === mine) return 'You';
-  if (page.session.mode === 'computer') return 'Computer';
-  return page.session.players[player]?.login ?? (mine === null ? `Player ${player}` : 'Opponent');
+  const session = page.session;
+  if (session === undefined || session.mode === 'friend') return `Player ${player}`;
+  if (player === me()) return 'You';
+  if (session.mode === 'computer') return 'Computer';
+  return session.players[player]?.login ?? session.names[player] ?? `Player ${player}`;
 }
+
+// "You win!", or the winner's name: "Computer wins!", "braveOtter wins!", "Player X wins!".
+const winText = (winner: Player) => (winner === me() ? 'You win!' : `${playerName(winner)} wins!`);
 
 // The other player in a game with another device, when they took a seat but closed the game.
 function awayPlayer(): Player | undefined {
@@ -60,9 +66,9 @@ function awayPlayer(): Player | undefined {
 function resultText(game: Game): string {
   switch (game.status.kind) {
     case 'won':
-      return `${game.status.winner} won`;
+      return `${playerName(game.status.winner)} won`;
     case 'timeout':
-      return `${game.status.winner} won on time`;
+      return `${playerName(game.status.winner)} won on time`;
     case 'draw':
       return 'Draw';
     case 'playing':
@@ -83,14 +89,10 @@ function statusText(): string {
   const mine = me();
   switch (game.status.kind) {
     case 'won':
-      if (mine === null) return `Player ${game.status.winner} wins!`;
-      if (game.status.winner === mine) return 'You win!';
-      return settings.mode === 'computer' ? 'The computer wins.' : 'Your opponent wins.';
+      return winText(game.status.winner);
     case 'timeout': {
-      const loser = other(game.status.winner);
-      if (mine === null) return `${loser} ran out of time. Player ${game.status.winner} wins!`;
-      if (game.status.winner !== mine) return 'You ran out of time.';
-      return `${settings.mode === 'computer' ? 'The computer' : 'Your opponent'} ran out of time. You win!`;
+      if (mine !== null && game.status.winner !== mine) return 'You ran out of time.';
+      return `${playerName(other(game.status.winner))} ran out of time. ${winText(game.status.winner)}`;
     }
     case 'draw':
       return 'Draw. The cube is full.';
@@ -98,7 +100,7 @@ function statusText(): string {
       if (page.thinking) return 'Computer is thinking…';
       if (settings.mode === 'friend') return `Player ${game.turn} to move`;
       if (shared()) {
-        if (page.session.you === null) return `Watching · ${game.turn} to move`;
+        if (page.session.you === null) return `Watching · ${playerName(game.turn)} to move`;
         const opponent = other(page.session.you);
         if (!page.session.seats[opponent]) {
           return page.session.mode === 'online' ? 'Waiting for a second player. Share the code.' : 'Waiting for a second device to join.';

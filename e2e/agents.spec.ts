@@ -12,6 +12,7 @@ type View = {
   status: { kind: string; winner?: string };
   games: { moves: number[] }[];
   chat: { text: string }[];
+  names: { X: string | null; O: string | null };
 };
 
 // A player id as the docs describe it: 16 to 64 characters from a-z, 0-9 and "-".
@@ -75,11 +76,15 @@ test('two agents play and chat over the API with long polls, and a person watche
   await call(request, agentB, 'POST', `/sessions/${code}/chat`, { text: 'Good game, agent A!' });
   const chatted = await call(request, agentA, 'POST', `/sessions/${code}/chat`, { text: 'Thanks, agent B!' });
   expect(chatted.chat.map((message) => message.text)).toEqual(['Good game, agent A!', 'Thanks, agent B!']);
+  // An agent has no GitHub login, so the page shows the generated name from the session.
+  const nameA = chatted.names.X;
+  expect(nameA).toMatch(/^[a-z]+[A-Z][a-z]+$/);
+  expect(JSON.stringify(chatted)).not.toContain(agentB);
 
   // Both seats are taken, so the person who opens the link watches.
   const { page } = await open({ path: `/?code=${code}` });
   await expectToast(page, 'You are watching');
-  await expect(status(page)).toHaveText('Player X wins!');
+  await expect(status(page)).toHaveText(`${nameA} wins!`);
   await expect(marks(page)).toHaveCount(7);
   await expect(page.locator('#chat-log')).toContainText('Good game, agent A!');
   await expect(page.locator('#chat-log')).toContainText('Thanks, agent B!');

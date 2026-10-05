@@ -7,6 +7,7 @@ import { type Channel, createOffer, answerOffer } from '../nearby/peer.ts';
 import { renderQr } from '../nearby/qr.ts';
 import { type NearbyHost, type NearbyGuest, createNearbyHost, createNearbyGuest } from '../nearby/session.ts';
 import { type Hello, HELLO_NAME_MAX_LENGTH, decodeSignal } from '../nearby/signal.ts';
+import { nameOf } from '../names.ts';
 import { OnlineError, api, token } from '../online.ts';
 import type { Code, Metrics } from '../protocol.ts';
 import { sounds } from '../sound.ts';
@@ -63,8 +64,13 @@ export const nearbyKind = () => nearby.kind;
 let wakeLock: { release(): Promise<void> } | undefined;
 const thisDevice = detectDevice();
 
+// The name that the other players see for this player, so the device list matches the score by default.
+// Limit: 9 of the 67348 generated names are longer than HELLO_NAME_MAX_LENGTH, and the device list cuts
+// them. Revisit this when the word lists grow, or when the limit changes in a new signal format.
+const ownName = () => page.account.user?.login ?? nameOf(token);
+
 function nearbyHello(): Hello {
-  const name = nearbyNameInput.value.trim() || page.account.user?.login || deviceLabel(thisDevice);
+  const name = nearbyNameInput.value.trim() || ownName();
   return { device: thisDevice, name: name.slice(0, HELLO_NAME_MAX_LENGTH) };
 }
 
@@ -483,7 +489,7 @@ export function endNearby(sayBye = true): void {
 
 // Opens the Nearby panel. A session starts when this device hosts or joins.
 export function openNearby(): void {
-  if (nearbyNameInput.value === '') nearbyNameInput.value = page.account.user?.login ?? deviceLabel(thisDevice);
+  if (nearbyNameInput.value === '') nearbyNameInput.value = ownName();
   render();
   void renderNearby();
 }
