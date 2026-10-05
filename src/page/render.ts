@@ -29,6 +29,7 @@ import {
   soundButton,
 } from './dom.ts';
 import { openCard } from './end-card.ts';
+import { renderGameView, viewerName } from './game-view.ts';
 import { renderCoords } from './keypad.ts';
 import { renderAccount } from './my-games.ts';
 import { renderOnlineQr } from './online-box.ts';
@@ -42,6 +43,7 @@ const SOUND_OFF_ICON = `<svg viewBox="0 0 24 24" width="22" height="22" fill="no
 
 // "You", "Computer", the GitHub name of a logged-in player, or the seat.
 export function playerName(player: Player): string {
+  if (page.viewing !== undefined) return viewerName(page.viewing, player);
   const mine = me();
   if (page.session === undefined || page.session.mode === 'friend') return `Player ${player}`;
   if (player === mine) return 'You';
@@ -161,6 +163,7 @@ export function render(): void {
   coordsForm.hidden = page.review !== undefined;
   renderCoords();
   renderChat();
+  renderGameView();
 
   document.querySelectorAll<HTMLElement>('[data-show-mode]').forEach((field) => {
     field.hidden = field.dataset.showMode !== settings.mode;
@@ -239,7 +242,8 @@ export function render(): void {
         button.addEventListener('click', () => startReview(index));
         item.append(button);
       }
-      if (g.status.kind !== 'playing') {
+      // A game from a link has no session for the card to describe.
+      if (g.status.kind !== 'playing' && page.viewing === undefined) {
         const cardButton = document.createElement('button');
         cardButton.type = 'button';
         cardButton.textContent = 'Card';
@@ -253,7 +257,8 @@ export function render(): void {
 
   // With another device, a game must end before the next one starts.
   const sharedLive = shared() && isLive() && current().moves.length > 0;
-  newGameButton.disabled = frozen || page.busy || page.thinking || page.session?.you == null || sharedLive;
+  // A game from a link: New game goes back to play.
+  newGameButton.disabled = page.viewing === undefined && (frozen || page.busy || page.thinking || page.session?.you == null || sharedLive);
   advancedBox.hidden = settings.mode !== 'computer';
   for (const input of tuningEl.querySelectorAll('input')) input.disabled = frozen;
   undoButton.hidden = settings.mode === 'online' || settings.mode === 'nearby';

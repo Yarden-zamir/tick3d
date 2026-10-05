@@ -4,7 +4,7 @@ import type { DeviceDb } from '../device-db.ts';
 import { type Game, type Player, newGame } from '../game.ts';
 import type { LocalBackend } from '../local.ts';
 import type { Me } from '../online.ts';
-import type { SessionView, MatchOptions, Code, MoveRequest, SessionUpdate } from '../protocol.ts';
+import type { SessionView, MatchOptions, Code, MoveRequest, SessionUpdate, PublicGame } from '../protocol.ts';
 import { type Mode, settings } from './settings.ts';
 
 // The open session: its latest view, the backend that holds it, and its mode.
@@ -34,6 +34,8 @@ type PageState = {
   // nothing, so a quick Easy → Hard or Online → Computer ends on the last choice. A switch also ends
   // a Nearby game, so a host never serves guests in the background.
   navigation: number;
+  // A finished game opened from its link (/?game=<id>), read-only. No session is open meanwhile.
+  viewing: PublicGame | undefined;
 };
 
 export const page: PageState = {
@@ -49,6 +51,7 @@ export const page: PageState = {
   serverOffset: 0,
   coordDigits: [],
   navigation: 0,
+  viewing: undefined,
 };
 
 export function current(): Game {

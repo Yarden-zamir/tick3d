@@ -1,7 +1,7 @@
 // The account button and the My games dialog.
 import { winnerOf } from '../game.ts';
 import { api, OnlineError } from '../online.ts';
-import { type Tally, toGame } from '../protocol.ts';
+import { type GameId, HISTORY_PAGE_SIZE, type HistoryEntry, type Outcome, type SessionMode, type Tally, outcomeOf, toGame } from '../protocol.ts';
 import {
   accountAvatar,
   accountName,
@@ -9,6 +9,8 @@ import {
   myGamesDialog,
   accountBox,
   myGamesDevice,
+  myGamesHistory,
+  myGamesMore,
   myGamesStats,
   myGamesOnline,
   myGamesNote,
@@ -16,7 +18,9 @@ import {
   myGamesClose,
 } from './dom.ts';
 import { showError, reject } from './feedback.ts';
+import { openGameView } from './game-view.ts';
 import { render } from './render.ts';
+import { syncRecords } from './results.ts';
 import { openDeviceSession, joinSession } from './sessions.ts';
 import { page, settingsLocked } from './state.ts';
 
@@ -77,13 +81,64 @@ async function deviceTallies(): Promise<Tally> {
   for (const { upload } of (await page.deviceDb?.all('results')) ?? []) {
     tally.played++;
     if (upload.you === null) continue;
-    const winner = winnerOf(toGame(upload.game).status);
-    tally[winner === null ? 'drawn' : winner === upload.you ? 'won' : 'lost']++;
+    const outcome = outcomeOf(winnerOf(toGame(upload.game).status), upload.you);
+    if (outcome !== 'played') tally[outcome]++;
   }
   return tally;
 }
 
 const gameCount = (count: number) => `${count} ${count === 1 ? 'game' : 'games'}`;
+
+const MODE_NAMES: Record<SessionMode, string> = { computer: 'Computer', friend: 'Friend', online: 'Online', nearby: 'Nearby' };
+const OUTCOME_NAMES: Record<Outcome, string> = { won: 'Won', lost: 'Lost', drawn: 'Draw', played: 'Played' };
+
+function viewGame(id: GameId): void {
+  if (settingsLocked()) return reject(undefined, 'locked');
+  void openGameView(id).catch(showError);
+}
+
+function historyItem(entry: HistoryEntry): HTMLLIElement {
+  const level = entry.difficulty === null ? '' : `, ${entry.difficulty}`;
+  const opponent = entry.opponent === null ? '' : ` · vs ${entry.opponent.login}`;
+  const title = `${OUTCOME_NAMES[entry.result]} · ${MODE_NAMES[entry.mode]}${level}`;
+  return listItem(title, `${entry.moves} moves${opponent} · ${ago(entry.finishedAt)}`, 'View', () => viewGame(entry.id));
+}
+
+// The finished games on this device that have a link, newest first, for when the server is out of reach.
+async function deviceHistory(): Promise<HistoryEntry[]> {
+  const entries: HistoryEntry[] = [];
+  for (const { upload } of (await page.deviceDb?.all('results')) ?? []) {
+    // A result from a version before game links has no id until the server gives it one.
+    if (upload.publicId === null || upload.publicId === undefined) continue;
+    entries.push({
+      id: upload.publicId,
+      mode: upload.mode,
+      difficulty: upload.difficulty,
+      result: outcomeOf(winnerOf(toGame(upload.game).status), upload.you),
+      moves: upload.game.moves.length,
+      opponent: null,
+      finishedAt: upload.finishedAt,
+    });
+  }
+  return entries.sort((a, b) => b.finishedAt - a.finishedAt).slice(0, HISTORY_PAGE_SIZE);
+}
+
+function showHistory(entries: HistoryEntry[], append: boolean): void {
+  if (!append) myGamesHistory.replaceChildren();
+  myGamesHistory.append(...entries.map(historyItem));
+  if (myGamesHistory.childElementCount === 0) myGamesHistory.innerHTML = '<li class="empty">No finished games yet.</li>';
+}
+
+let historyOffset = 0;
+
+// The next page of the history from the server.
+async function loadHistory(request: number, append: boolean): Promise<void> {
+  const next = await api.history(append ? historyOffset : 0);
+  if (request !== myGamesRequest) return;
+  historyOffset = (append ? historyOffset : 0) + next.games.length;
+  showHistory(next.games, append);
+  myGamesMore.hidden = !next.more;
+}
 
 // Opening the dialog again while a list loads starts over, so a late answer never adds a second copy.
 let myGamesRequest = 0;
@@ -156,6 +211,7 @@ async function openMyGames(): Promise<void> {
     );
     if (mine.sessions.length === 0) myGamesOnline.innerHTML = '<li class="empty">No online sessions yet.</li>';
     myGamesOnlineBox.hidden = false;
+    await loadHistory(request, false);
   } catch (error) {
     if (!(error instanceof OnlineError)) throw error;
     const tallies = await deviceTallies();
@@ -163,6 +219,8 @@ async function openMyGames(): Promise<void> {
     myGamesNote.textContent = 'You are offline. These are the games on this device.';
     myGamesStats.append(tallyBox('Games on this device', tallies));
     myGamesOnlineBox.hidden = true;
+    showHistory(await deviceHistory(), false);
+    myGamesMore.hidden = true;
   }
 }
 
@@ -171,6 +229,7 @@ export async function refreshAccount(): Promise<void> {
   if (!navigator.onLine) return;
   try {
     page.account = await api.me();
+    void syncRecords();
   } catch (error) {
     if (!(error instanceof OnlineError)) throw error;
   }
@@ -180,6 +239,7 @@ export async function refreshAccount(): Promise<void> {
 export function setupMyGames(): void {
   accountButton.addEventListener('click', () => void openMyGames().catch(showError));
   myGamesClose.addEventListener('click', () => myGamesDialog.close());
+  myGamesMore.addEventListener('click', () => void loadHistory(myGamesRequest, true).catch(showError));
   myGamesDialog.addEventListener('click', (event) => {
     if (event.target === myGamesDialog) myGamesDialog.close();
   });

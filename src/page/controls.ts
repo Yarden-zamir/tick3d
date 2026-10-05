@@ -7,7 +7,8 @@ import { reject, showError } from './feedback.ts';
 import { nearbyKind, endNearby, openNearby } from './nearby.ts';
 import { render } from './render.ts';
 import { leaveSession, createSession, openLocalSession, withBusy, applyView, startNewGame } from './sessions.ts';
-import { settings, oneOf, VIEWS, LAYOUTS, MODES, PLAYERS, saveSettings } from './settings.ts';
+import { LAYOUTS, VIEWS } from '../protocol.ts';
+import { settings, oneOf, MODES, PLAYERS, saveSettings } from './settings.ts';
 import { page, settingsLocked, isLive } from './state.ts';
 
 // The Rules button opens a short rules banner, which closes on a tap or after a while.

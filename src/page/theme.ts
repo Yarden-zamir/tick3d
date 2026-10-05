@@ -1,7 +1,8 @@
 // The theme menu.
 import { sounds } from '../sound.ts';
 import { themeMenu, themePicker, themeSwatch, themeName, themeColorMeta } from './dom.ts';
-import { THEMES, THEME_NAMES, settings, saveSettings } from './settings.ts';
+import { THEMES } from '../protocol.ts';
+import { THEME_NAMES, settings, saveSettings } from './settings.ts';
 
 // One preview tile per theme. Each swatch carries data-theme, so it draws with that theme's tokens.
 const themeButtons = THEMES.map((theme) => {

@@ -2354,3 +2354,56 @@ body[data-turn='O'] .status[data-state='playing'] {
   background: var(--ink);
   color: var(--surface);
 }
+
+/* ---- A finished game from a link ---- */
+.game-view {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem 1rem;
+  width: min(100%, 36rem);
+  padding: 0.7rem 0.9rem;
+  border: var(--border) solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+.game-view-text {
+  display: grid;
+  flex: 1 1 14rem;
+  gap: 0.15rem;
+}
+
+.game-view-text strong {
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+
+.game-view-text small {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.game-view button {
+  padding: 0.55rem 1.2rem;
+  border: var(--border) solid var(--line);
+  border-radius: 8px;
+  background: var(--primary);
+  box-shadow: 3px 3px 0 var(--shadow);
+  color: var(--on-color);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.my-games-more {
+  margin-top: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 2px 2px 0 var(--shadow);
+  color: var(--ink);
+  font-weight: 800;
+  cursor: pointer;
+}

@@ -22,13 +22,14 @@ import {
   showCardButton,
 } from './dom.ts';
 import { showToast } from './feedback.ts';
-import { recordResult, noteSurvival, recordNews, hideLabel } from './results.ts';
-import { startNewGame } from './sessions.ts';
+import { type GameId, onlineGameId } from '../protocol.ts';
+import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf } from './results.ts';
+import { setUrlGame, startNewGame } from './sessions.ts';
 import { settings } from './settings.ts';
-import { me, page, isLive, matchOptions } from './state.ts';
+import { type Session, me, page, isLive, matchOptions } from './state.ts';
 
 const CARD_DELAY_MS = 1400;
-let card: { index: number; canvas: HTMLCanvasElement } | undefined;
+let card: { index: number; canvas: HTMLCanvasElement; gameId: GameId | undefined } | undefined;
 
 // Plays the sound for the last move of the live game, and the result if the move ended it.
 export function announce(game: Game): void {
@@ -49,7 +50,7 @@ export function finish(game: Game): void {
     celebrate();
   }
   const index = page.games.length - 1;
-  if (page.session !== undefined) void recordResult(page.session, game, index);
+  if (page.session !== undefined) void linkGame(page.session, game, index);
   if (page.session?.mode === 'computer' && winner !== null && mine !== null && winner !== mine) noteSurvival(page.session, game, index);
   setTimeout(() => {
     // Show the card only if that game is still the finished live game and nothing else is open.
@@ -57,6 +58,14 @@ export function finish(game: Game): void {
     if (cardDialog.open || myGamesDialog.open || homeConfirm.open) return;
     void openCard(index);
   }, CARD_DELAY_MS);
+}
+
+// Saves the result of a game that just ended and puts the link of the game in the address.
+async function linkGame(open: Session, game: Game, index: number): Promise<void> {
+  const id = open.mode === 'online' ? onlineGameId(open.code, index) : await recordResult(open, game, index);
+  // The player can move on while the result saves. Only the same finished game gets the link.
+  const same = page.session?.code === open.code && page.games.length - 1 === index && !isLive();
+  if (id !== undefined && same) setUrlGame(id);
 }
 
 // The confetti animation lasts 1.4 s after a delay of up to 0.12 s.
@@ -83,7 +92,7 @@ function celebrate(): void {
   confettiTimer = setTimeout(() => burstEl.replaceChildren(), CONFETTI_MS);
 }
 
-function cardInput(game: Game, index: number): CardInput {
+function cardInput(game: Game, index: number, gameId: GameId | undefined): CardInput {
   const winner = winnerOf(game.status);
   const mine = me();
   const title =
@@ -116,7 +125,8 @@ function cardInput(game: Game, index: number): CardInput {
   const duration = first > 0 && last > first ? ` · Game time ${formatClock(last - first)}` : '';
   const onlineCode = page.session?.mode === 'online' ? page.session.code : undefined;
   const news = page.session === undefined ? undefined : recordNews.get(`${page.session.code}:${index}`);
-  const link = onlineCode ? `${location.host}/?code=${onlineCode}` : location.host;
+  // The link of this game, else the session, else the site.
+  const link = gameId ? `${location.host}/?game=${gameId}` : onlineCode ? `${location.host}/?code=${onlineCode}` : location.host;
   return {
     game,
     title,
@@ -136,9 +146,10 @@ export async function openCard(index: number): Promise<void> {
   if (game === undefined || game.status.kind === 'playing') throw new Error(`game ${index} has no result to show`);
   // A local game has no code, so only the link option applies.
   cardCodeOption.hidden = page.session?.mode !== 'online';
-  const input = cardInput(game, index);
+  const gameId = page.session === undefined ? undefined : await gameIdOf(page.session, index);
+  const input = cardInput(game, index, gameId);
   const canvas = await drawCard(input);
-  card = { index, canvas };
+  card = { index, canvas, gameId };
   cardImage.src = canvas.toDataURL('image/png');
   cardImage.alt = `${input.title}. ${input.subtitle}.${input.record ? ` New record: ${input.record.moves} moves.` : ''}`;
   // Only the newest game can start the next one. A card of an older game has no New game button.
@@ -154,12 +165,13 @@ function cardFilename(): string {
 export function setupEndCard(): void {
   cardShareButton.addEventListener('click', () => {
     if (card === undefined) return;
-    const { canvas, index } = card;
+    const { canvas, index, gameId } = card;
     const game = page.games[index];
     if (game === undefined) return;
-    const input = cardInput(game, index);
+    const input = cardInput(game, index, gameId);
     const isOnline = page.session?.mode === 'online';
-    const url = cardLink.checked ? (isOnline ? location.href : location.origin) : undefined;
+    const gameLink = gameId === undefined ? undefined : `${location.origin}/?game=${gameId}`;
+    const url = cardLink.checked ? (gameLink ?? (isOnline ? location.href : location.origin)) : undefined;
     const code = cardCode.checked && isOnline && page.session ? ` Code ${page.session.code}.` : '';
     void shareImage(canvas, cardFilename(), `${input.title}: ${input.subtitle} on tick3d.${code}`, url).then((outcome) => {
       if (outcome === 'copied') showToast('Image copied. Paste it anywhere.');
