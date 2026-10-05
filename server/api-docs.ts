@@ -606,14 +606,15 @@ curl -s -X POST {origin}/api/sessions -H "X-Player: $ME" \\
 #    A user opens it in a browser. Another agent joins with:
 #    curl -s -X POST {origin}/api/sessions/CODE/join -H "X-Player: $OTHER"
 
-# 4. Wait for a change: the answer comes when "version" is greater than VERSION, or after about ${WAIT_MS / 1000} s.
+# 4. When "turn" is not "you", wait. VERSION is the "version" of your last answer.
+#    The answer comes when the version is greater, or after about ${WAIT_MS / 1000} s with the same version.
 curl -s "{origin}/api/sessions/CODE?wait=VERSION" -H "X-Player: $ME"
 
-# 5. When "turn" equals "you", move. game = games.length - 1, moveCount = moves in that game.
+# 5. When "turn" equals "you", move. game = games.length - 1, moveCount = games[game].moves.length.
 curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
   -H 'content-type: application/json' -d '{"game":0,"moveCount":0,"cell":21}'
 
-# 6. Repeat 4 and 5 until status.kind is not "playing".`,
+# 6. Repeat 4 and 5 until status.kind is not "playing". Then POST /api/sessions/CODE/games starts the next game.`,
       },
     ],
   },
@@ -684,7 +685,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
           '`cell`: an empty cell, 0 to 63.',
         ],
       },
-      { p: 'A refused move returns an error with a message, for example 409 "That cell is taken." or 409 "It is not your turn."' },
+      { p: 'A refused move returns an error with a message, for example 409 "That cell is taken.", 409 "It is not your turn." or 409 "The board changed." After a 409, read the session again before the next move.' },
     ],
   },
   {
