@@ -95,7 +95,12 @@
           </div>
         </div>
         <form class="coords" id="coords" aria-labelledby="coords-title">
-          <span class="coords-title" id="coords-title">Move by coordinates</span>
+          <div class="coords-head">
+            <span class="coords-title" id="coords-title">Move by coordinates</span>
+            <button type="button" class="coords-hear" id="coords-hear" hidden aria-label="Hear this cell" title="Hear this cell">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16.5 9a4 4 0 0 1 0 6"/></svg>
+            </button>
+          </div>
           <div class="coords-slots" id="coords-slots" aria-live="polite">
             <span class="slot"><small>Layer</small><b></b></span>
             <span class="slot"><small>Row</small><b></b></span>
@@ -324,6 +329,7 @@
           <p>Take turns to place a mark. Get four in a straight line to win.</p>
           <p>Lines can run along a layer, up through the layers, or diagonally through the cube. There are 76 lines.</p>
           <p>Point at a cell to light up the cells above and below it.</p>
+          <p>Every cell has its own sound, so you can follow a game by ear. A move plays three quick rising notes: the layer (low), the row (middle) and the column (high). In each, the lowest note is 1 and the highest is 4. On headphones the column also comes from the left (1) to the right (4). X sounds bright and O sounds round. The speaker button by the keypad plays the last move again, or the cell you typed.</p>
           <p>Time limits work like a chess clock. Set a limit for each player's whole game, a limit per move, or both. A player who runs out of either limit loses. The first move of each player is untimed. A change during a game starts with the next game.</p>
           <p>Lock settings keeps every setting, the view included, until the game ends. Online, the lock and the hide options apply to both players.</p>
         </details>

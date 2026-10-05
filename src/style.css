@@ -1201,9 +1201,30 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.55rem;
 }
 
+.coords-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .coords-title {
   font-size: 0.9rem;
   font-weight: 800;
+}
+
+.coords-hear {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 2px 2px 0 var(--shadow);
+  color: var(--ink);
+  cursor: pointer;
 }
 
 /* Three read-only slots: layer, row, column. The next one to fill is highlighted. */

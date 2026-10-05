@@ -1,7 +1,7 @@
 // The end of a game: sounds, confetti, and the end card.
 import { type CardInput, drawCard, shareImage, saveImage } from '../card.ts';
 import { formatClock, describeClock } from '../clock.ts';
-import { type Game, other, toCoords, winnerOf } from '../game.ts';
+import { type Game, other, winnerOf } from '../game.ts';
 import { isDefaultTuning } from '../tuning.ts';
 import { sounds } from '../sound.ts';
 import { computerTuning } from './advanced.ts';
@@ -37,7 +37,7 @@ let card: { index: number; canvas: HTMLCanvasElement; gameId: GameId | undefined
 export function announce(game: Game): void {
   const last = game.moves.at(-1);
   if (last === undefined) return;
-  sounds.place(other(game.turn), toCoords(last).layer);
+  sounds.place(other(game.turn), last);
   if (game.status.kind !== 'playing') finish(game);
 }
 
