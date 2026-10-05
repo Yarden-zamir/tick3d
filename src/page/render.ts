@@ -21,7 +21,6 @@ import {
   scoreEl,
   historyEl,
   newGameButton,
-  advancedBox,
   tuningEl,
   undoButton,
   showCardButton,
@@ -32,6 +31,7 @@ import { openCard } from './end-card.ts';
 import { renderGameView, viewerName } from './game-view.ts';
 import { renderCoords } from './keypad.ts';
 import { renderAccount } from './my-games.ts';
+import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
 import { settings, type Settings, type Toggle } from './settings.ts';
 import { me, page, shared, current, isLive, matchOptions, settingsLocked, canChangeMatch } from './state.ts';
@@ -77,6 +77,16 @@ function resultText(game: Game): string {
   }
 }
 
+// The status in Nearby mode before a game opens, by the Nearby step of this device.
+const NEARBY_STEPS: Record<ReturnType<typeof nearbyKind>, string> = {
+  idle: 'Host a game, or join one.',
+  starting: 'Starting the game…',
+  joining: 'Connecting to the host…',
+  guest: 'Joining the game…',
+  // The host opens its session before it counts as hosting, so this shows only for a moment.
+  hosting: 'Starting the game…',
+};
+
 function statusText(): string {
   const game = current();
   if (page.review) {
@@ -86,6 +96,7 @@ function statusText(): string {
   if (settings.mode === 'online' && page.session === undefined) {
     return navigator.onLine ? 'Create a game or enter a code' : 'You are offline. Online games need a connection.';
   }
+  if (settings.mode === 'nearby' && page.session === undefined) return NEARBY_STEPS[nearbyKind()];
   if (page.session === undefined) return 'Getting the game ready…';
   const mine = me();
   switch (game.status.kind) {
@@ -113,6 +124,17 @@ function statusText(): string {
       }
       return `Your move (${game.turn})`;
   }
+}
+
+// A panel control shows only where it applies (see the table in README "Controls per mode").
+// data-show-mode lists the modes of a control, and such a control is for play, so a game from a link
+// hides it. data-needs-session marks a control of an open game, which online and Nearby mode have
+// only after a create, a join or a host.
+function applies(field: HTMLElement): boolean {
+  const modes = field.dataset.showMode;
+  if (modes !== undefined && (page.viewing !== undefined || !modes.split(' ').includes(settings.mode))) return false;
+  const waiting = page.session === undefined && page.viewing === undefined && (settings.mode === 'online' || settings.mode === 'nearby');
+  return !(field.dataset.needsSession !== undefined && waiting);
 }
 
 function shownGame(): Game {
@@ -167,8 +189,8 @@ export function render(): void {
   renderChat();
   renderGameView();
 
-  document.querySelectorAll<HTMLElement>('[data-show-mode]').forEach((field) => {
-    field.hidden = field.dataset.showMode !== settings.mode;
+  document.querySelectorAll<HTMLElement>('[data-show-mode], [data-needs-session]').forEach((field) => {
+    field.hidden = !applies(field);
   });
   document.querySelectorAll<HTMLElement>('[data-show-view]').forEach((field) => {
     field.hidden = field.dataset.showView !== settings.view;
@@ -261,9 +283,7 @@ export function render(): void {
   const sharedLive = shared() && isLive() && current().moves.length > 0;
   // A game from a link: New game goes back to play.
   newGameButton.disabled = page.viewing === undefined && (frozen || page.busy || page.thinking || page.session?.you == null || sharedLive);
-  advancedBox.hidden = settings.mode !== 'computer';
   for (const input of tuningEl.querySelectorAll('input')) input.disabled = frozen;
-  undoButton.hidden = settings.mode === 'online' || settings.mode === 'nearby';
   undoButton.disabled =
     frozen || page.thinking || page.review !== undefined || !isLive() || current().moves.length === 0 || hasLimit(current().clock);
   showCardButton.hidden = isLive() || page.review !== undefined;

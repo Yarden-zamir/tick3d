@@ -1,5 +1,6 @@
 // The kind of device a player uses, so the Nearby screens can show a fitting icon.
-export type DeviceKind = 'phone' | 'tablet' | 'computer';
+export const DEVICE_KINDS = ['phone', 'tablet', 'computer'] as const;
+export type DeviceKind = (typeof DEVICE_KINDS)[number];
 
 type NavigatorLike = Pick<Navigator, 'userAgent' | 'maxTouchPoints'> & { userAgentData?: { mobile?: boolean } };
 

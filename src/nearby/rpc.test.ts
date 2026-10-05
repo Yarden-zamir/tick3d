@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { GameId } from '../protocol.ts';
 import { channelPair } from './testing.ts';
 import { RpcError, parseGuestMessage, parseHostMessage, rpcClient, rpcServer } from './rpc.ts';
 
@@ -35,6 +36,11 @@ describe('parsers', () => {
     [{ t: 'changed', extra: true }, false],
     [{ t: 'bye', reason: 'The host left.' }, true],
     [{ t: 'bye' }, false],
+    [{ t: 'link', game: 0, id: 'K7P2QX9M' }, true],
+    [{ t: 'link', game: 0, id: 'k7p2qx9m' }, false],
+    [{ t: 'link', game: 0, id: 'AB3K-1' }, false],
+    [{ t: 'link', game: -1, id: 'K7P2QX9M' }, false],
+    [{ t: 'link', game: 0, id: 'K7P2QX9M', extra: 1 }, false],
     [{ t: 'call', id: 1, method: 'get', args: null }, false],
   ])('host message %j is valid: %s', (value, valid) => {
     expect(parseHostMessage(value) !== undefined).toBe(valid);
@@ -70,6 +76,16 @@ describe('rpcClient and rpcServer', () => {
     await settle();
     expect(bye).toHaveBeenCalledWith('The host stopped the game.');
     await expect(client.call('get', null)).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('passes the link of a finished game to the guest', async () => {
+    const [guestSide, hostSide] = channelPair();
+    const server = rpcServer(hostSide, async () => ({}));
+    const link = vi.fn();
+    rpcClient(guestSide).onLink(link);
+    server.link(2, 'K7P2QX9M' as GameId);
+    await settle();
+    expect(link).toHaveBeenCalledWith(2, 'K7P2QX9M');
   });
 
   it('rejects a call that times out', async () => {

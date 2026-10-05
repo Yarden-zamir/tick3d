@@ -1,8 +1,9 @@
 // The messages between a Nearby host and its guests. A guest calls a session method on the host;
 // the host answers with the guest's view of the session, or with an error. The host also tells
-// every guest when the session changed, and says goodbye when it stops.
+// every guest when the session changed, gives the link of each finished game, and says goodbye when it stops.
 // Both sides check every message, because the other device is not trusted. The host checks the
 // arguments of each method with the protocol parsers (src/protocol.ts); here they stay unknown.
+import { type GameId, parseGameId } from '../protocol.ts';
 import type { Channel } from './peer.ts';
 
 const RPC_METHODS = ['get', 'join', 'move', 'newGame', 'update', 'lock', 'chat'] as const;
@@ -13,6 +14,8 @@ type HostMessage =
   | { t: 'result'; id: number; view: unknown }
   | { t: 'error'; id: number; status: number; message: string }
   | { t: 'changed' }
+  // The public id of a finished game, so a guest shares the host's game link (it names both players).
+  | { t: 'link'; game: number; id: GameId }
   | { t: 'bye'; reason: string };
 
 const CALL_TIMEOUT_MS = 10_000;
@@ -63,6 +66,20 @@ export function parseHostMessage(value: unknown): HostMessage | undefined {
     }
     case 'changed':
       return hasKeys(value, ['t']) ? { t: 'changed' } : undefined;
+    case 'link': {
+      // Only a device game id (8 characters) fits: a Nearby game has no session code on the server.
+      const id = parseGameId(value.id);
+      const game = value.game;
+      const valid =
+        hasKeys(value, ['t', 'game', 'id']) &&
+        typeof game === 'number' &&
+        Number.isSafeInteger(game) &&
+        game >= 0 &&
+        id !== undefined &&
+        id === value.id &&
+        !id.includes('-');
+      return valid ? { t: 'link', game, id } : undefined;
+    }
     case 'bye':
       return hasKeys(value, ['t', 'reason']) && isText(value.reason) ? { t: 'bye', reason: value.reason } : undefined;
     default:
@@ -76,6 +93,7 @@ export function rpcClient(channel: Channel) {
   let closed = false;
   const pending = new Map<number, { resolve(view: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
   const changedHandlers = new Set<() => void>();
+  const linkHandlers: ((game: number, id: GameId) => void)[] = [];
   const byeHandlers: ((reason: string) => void)[] = [];
 
   const failAll = (error: Error) => {
@@ -92,6 +110,10 @@ export function rpcClient(channel: Channel) {
     if (message === undefined) return channel.close();
     if (message.t === 'changed') {
       for (const handler of changedHandlers) handler();
+      return;
+    }
+    if (message.t === 'link') {
+      for (const handler of linkHandlers) handler(message.game, message.id);
       return;
     }
     if (message.t === 'bye') {
@@ -134,6 +156,9 @@ export function rpcClient(channel: Channel) {
     onChanged(handler: () => void): () => void {
       changedHandlers.add(handler);
       return () => changedHandlers.delete(handler);
+    },
+    onLink(handler: (game: number, id: GameId) => void): void {
+      linkHandlers.push(handler);
     },
     onBye(handler: (reason: string) => void): void {
       byeHandlers.push(handler);
@@ -184,6 +209,9 @@ export function rpcServer(channel: Channel, handle: (method: RpcMethod, args: un
   return {
     notifyChanged(): void {
       send({ t: 'changed' });
+    },
+    link(game: number, id: GameId): void {
+      send({ t: 'link', game, id });
     },
     bye,
   };

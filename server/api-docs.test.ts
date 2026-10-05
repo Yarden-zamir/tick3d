@@ -1,6 +1,7 @@
 import { Validator } from '@seriousme/openapi-schema-validator';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
+import { parseAnnounce, parseAnnounced, parseAnswerRequest, parseLobbyHosts } from '../src/nearby/lobby.ts';
 import { parseMe, parseMyGames } from '../src/online.ts';
 import {
   type PlayerToken,
@@ -47,6 +48,10 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   HistoryPage: parseHistoryPage,
   Metrics: parseMetrics,
   ClientEvent: parseClientEvent,
+  NearbyAnnounce: parseAnnounce,
+  NearbyAnnounced: parseAnnounced,
+  NearbyHosts: parseLobbyHosts,
+  NearbyAnswer: parseAnswerRequest,
 };
 
 function parses(name: SchemaName, value: unknown): boolean {
@@ -152,8 +157,10 @@ describe('the SessionView schema', () => {
 describe('matchRoute', () => {
   it.each(ROUTE_NAMES)('finds %s', (name) => {
     const { method, path } = splitRoute(name);
-    const concrete = path.replaceAll('{code}', 'ab3k').replaceAll('{id}', 'ab3k-2');
-    const params = { ...(path.includes('{code}') ? { code: 'ab3k' } : {}), ...(path.includes('{id}') ? { id: 'ab3k-2' } : {}) };
+    const values = { code: 'ab3k', id: 'ab3k-2', host: 'q8Zr2Lx0Vb7Nc4Mw' };
+    const used = Object.entries(values).filter(([key]) => path.includes(`{${key}}`));
+    const concrete = used.reduce((result, [key, value]) => result.replaceAll(`{${key}}`, value), path);
+    const params = Object.fromEntries(used);
     expect(matchRoute(method, concrete)).toEqual({ route: name, params });
   });
 

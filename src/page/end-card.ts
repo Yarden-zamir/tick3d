@@ -23,7 +23,8 @@ import {
 } from './dom.ts';
 import { showToast } from './feedback.ts';
 import { type GameId, onlineGameId } from '../protocol.ts';
-import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnlineMetrics } from './results.ts';
+import { nearbyKind, shareGameLink } from './nearby.ts';
+import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnlineMetrics, hostLinkOf, setHostLink } from './results.ts';
 import { setUrlGame, startNewGame } from './sessions.ts';
 import { playerName } from './render.ts';
 import { settings } from './settings.ts';
@@ -64,10 +65,21 @@ export function finish(game: Game): void {
 // Saves the result of a game that just ended and puts the link of the game in the address.
 async function linkGame(open: Session, game: Game, index: number): Promise<void> {
   sendOnlineMetrics(open, index);
-  const id = open.mode === 'online' ? onlineGameId(open.code, index) : await recordResult(open, game, index);
+  const own = open.mode === 'online' ? onlineGameId(open.code, index) : await recordResult(open, game, index);
+  // A Nearby host gives its link to the guests. A guest uses the host's link when it came already.
+  if (own !== undefined && open.mode === 'nearby' && nearbyKind() === 'hosting') shareGameLink(index, own);
+  const id = (open.mode === 'nearby' ? hostLinkOf(open.code, index) : undefined) ?? own;
   // The player can move on while the result saves. Only the same finished game gets the link.
-  const same = page.session?.code === open.code && page.games.length - 1 === index && !isLive();
-  if (id !== undefined && same) setUrlGame(id);
+  if (id !== undefined && showsFinished(open, index)) setUrlGame(id);
+}
+
+const showsFinished = (open: Session, index: number) => page.session?.code === open.code && page.games.length - 1 === index && !isLive();
+
+// A Nearby guest got the link of a finished game from the host: the address and the end card use it.
+export function useHostLink(open: Session, index: number, id: GameId): void {
+  setHostLink(open.code, index, id);
+  if (showsFinished(open, index)) setUrlGame(id);
+  if (card?.index === index && cardDialog.open) void openCard(index);
 }
 
 // The confetti animation lasts 1.4 s after a delay of up to 0.12 s.

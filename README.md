@@ -96,16 +96,42 @@ The docs of the tick3d HTTP API come from one file, `server/api-docs.ts`:
 
 ## Nearby
 
-- Choose Nearby to play with devices on the same Wi-Fi, without the internet. One device hosts, the others join.
-- The host shows a QR code. The guest scans it with the phone's own camera, which opens the game, and shows its own code, which the host scans the same way. On the host, the answer opens in a new tab that hands the code to the hosting tab. Each code also has a text form to copy and paste, for a device without a camera.
+- Choose Nearby to play with devices on the same Wi-Fi. One device hosts, the others join.
+- Games near you: while a device is online, its hosted game shows up in a list on the other devices of the same network. The list updates every 3 seconds. Each game shows the device icon, the name and a Join button, and one tap joins it. The host's panel says "Visible to devices on this network". The list never shows the game of this device.
+- A web page cannot broadcast or discover on a local network: browsers have no UDP and no mDNS API. So the host announces its game through the server, and the list works only while both devices are online. The server lists a game only for requests from the same network: the same IPv4 address, or the same IPv6 /64 prefix. A home where one device uses IPv4 and another IPv6 is two networks for the server, so the two devices do not see each other in the list.
+- A game leaves the list within seconds when the host ends it, closes the page, goes offline or switches mode. A host that loses the network without a word leaves the list after 35 seconds at most.
+- Without internet, the list is off, and the codes below connect the devices.
+- Join with a code: the host shows a QR code. The guest scans it with the phone's own camera, which opens the game, and shows its own code, which the host scans the same way. On the host, the answer opens in a new tab that hands the code to the hosting tab. Each code also has a text form to copy and paste, for a device without a camera.
 - The devices then talk directly over WebRTC. The host's device holds the session and checks every move with the same rules as the server, so a guest can never move for the host.
 - The panel lists the connected devices with an icon for each kind: phone, tablet or computer. The device name starts as the player's name, and the player can change it. The first guest plays O, later guests watch.
 - The host's screen stays on while it hosts. When the host ends the game or closes the page, the guests see a message.
 - Chat, the lock, the hide options and time limits work as in an online game.
 - At the end of a game, the host sends the result with both players. The game link then shows both names, and the game is in the history of the guest too.
+- The host also gives that game link to every connected device, so the end card and the address show the same link on all devices. A guest still keeps its own copy of the result for its stats. The link opens once the host's result reaches the server.
 - Host on a laptop: `docker compose -f compose.lan.yml up --build` runs the full game server on a computer. Others on the same network open `http://<that computer's address>:8080` and play the Online mode, with no codes to scan. The online box shows the host with a server icon. Without HTTPS, a browser gives that page no offline cache and no camera; the game itself works. Set `LAN_HOST_NAME` for the name it shows, and `LAN_PORT` when port 8080 is taken.
 
 ![A laptop hosts a Nearby game, a phone joins](docs/screenshots/nearby.png)
+
+## Controls per mode
+
+The panel shows a control only in the modes where it applies (`data-show-mode` and `data-needs-session` in `index.html`). A finished game from a link shows only the controls for looking at it.
+
+| Control | Computer | Friend | Online | Nearby | Game from a link |
+| --- | --- | --- | --- | --- | --- |
+| Opponent, view, layout, theme, sound, How to play | yes | yes | yes | yes | yes |
+| Difficulty, You play, Advanced | yes | no | no | no | no |
+| Game code, Link, QR code, session name | no | no | yes | no | no |
+| Host, Join with a code, Games near you, device list | no | no | no | yes | no |
+| Join a friend (code and New code) | yes | yes | yes | no | no |
+| Time limit | yes | yes | yes | yes | no |
+| Hide board and history, Lock | yes | yes | in a game | in a game | no |
+| Score, New game, Games in this session | yes | yes | in a game | in a game | yes |
+| Undo | yes | yes | no | no | no |
+| Chat | no | no | yes | yes | no |
+
+- "In a game" means after a create or a join (Online), or after Host or Join (Nearby).
+- Join a friend stays in computer and friend mode as a shortcut: a code from a friend opens the online game at once. A switch to Online first would create a new session for nothing.
+- Nearby has no Join a friend: a code there is an online game, and Nearby has its own Join.
 
 ## Accounts and My games
 
@@ -134,7 +160,7 @@ The docs of the tick3d HTTP API come from one file, `server/api-docs.ts`:
 - `src/pwa.ts` and `vite.config.ts`: the service worker and the manifest.
 - `src/main.ts`, `src/style.css`, `index.html`: the page. `src/main.ts` starts the page; `src/page/` holds the page script, one module per feature (board, sessions, Nearby, My games, clocks, chat and more). `src/page/state.ts` holds the state that more than one module changes.
 - `public/`: the favicons and touch icons, copied into the build as is. The service worker plugin writes the web manifest.
-- `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login. `server/stats.ts`: the SQL of the stats page. `server/waiters.ts`: the long polls.
+- `server/main.ts`: the HTTP API and server-sent events. `server/lobby.ts`: the list of open Nearby games. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login. `server/stats.ts`: the SQL of the stats page. `server/waiters.ts`: the long polls.
 - `stats.html`, `src/stats/`: the hidden stats page.
 - `server/api-docs.ts`: every API route with its shapes, examples and errors, and the guide. The server finds the route of a request in this list, so a route without docs cannot exist. `server/api-docs-render.ts` makes the OpenAPI document and the Swagger UI page. A test runs every example through the real parsers in `src/protocol.ts`, and checks the document against the official OpenAPI 3.1 JSON Schema with `@seriousme/openapi-schema-validator`.
 - To add a route: add one entry to `ROUTES` in `server/api-docs.ts` and one case to the switch in `server/main.ts`. The type check fails when one of the two is missing.
@@ -168,6 +194,9 @@ The full reference, with every shape, error and a curl example, is the OpenAPI 3
 | `GET /api/me/records` | The survival records of the player, with the same keys as on the device (`src/records.ts`). |
 | `DELETE /api/me/history` | Clears the history of the player. Needs the X-Player header. |
 | `POST /api/games/:id/metrics` | The metrics of a player's device for a finished online game. Only a player of that game may send them, once per seat. |
+| `GET /api/nearby/hosts` | The open Nearby games on the network of the caller, without its own. |
+| `POST /api/nearby/hosts` | A host puts its Nearby game in the list, and gets its id at once. With the id, the server holds the request until a guest answers, or for about 25 s. Needs the X-Player header. |
+| `POST /api/nearby/hosts/:id/answer` | A guest sends its answer to the offer of a host. Needs the X-Player header. |
 | `POST /api/events` | A fault report from a page. At most 1 kB, 30 per 10 minutes per address. |
 | `GET /api/stats` | The aggregates of the stats page. The server computes them at most once a minute. |
 

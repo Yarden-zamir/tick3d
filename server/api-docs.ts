@@ -6,6 +6,8 @@
 import { DIFFICULTIES } from '../src/ai.ts';
 import { LIMIT_RANGE } from '../src/clock.ts';
 import { CELL_COUNT } from '../src/game.ts';
+import { DEVICE_KINDS } from '../src/nearby/device.ts';
+import { HELLO_NAME_MAX_LENGTH, MAX_CODE_LENGTH } from '../src/nearby/signal.ts';
 import {
   CHAT_KEEP,
   CHAT_MAX_LENGTH,
@@ -27,6 +29,12 @@ export const WAIT_MS = 25_000;
 export const CREATES_PER_HOUR = 60;
 // Fault reports per 10 minutes from one address. server/main.ts enforces it.
 export const EVENTS_PER_10_MINUTES = 30;
+// Nearby lobby calls (announce and answer) per 10 minutes from one network. server/main.ts enforces it.
+export const NEARBY_CALLS_PER_10_MINUTES = 120;
+// Games in the Nearby list from one network. server/lobby.ts enforces it.
+export const NEARBY_HOSTS_PER_NETWORK = 10;
+// A Nearby host stays in the list for this long after its announce request ends.
+export const NEARBY_GRACE_MS = 10_000;
 
 // ---- Shapes (JSON Schema 2020-12, as OpenAPI 3.1 uses) ----
 
@@ -87,7 +95,12 @@ export type SchemaName =
   | 'MetricsResponse'
   | 'ClientEvent'
   | 'Count'
-  | 'Stats';
+  | 'Stats'
+  | 'NearbyAnnounce'
+  | 'NearbyAnnounced'
+  | 'NearbyHost'
+  | 'NearbyHosts'
+  | 'NearbyAnswer';
 
 export const ref = (name: SchemaName): Schema => ({ $ref: `#/components/schemas/${name}` });
 const nullable = (schema: Schema): Schema => ({ oneOf: [schema, { type: 'null' }] });
@@ -107,7 +120,8 @@ const limit = (kind: keyof typeof LIMIT_RANGE, description: string): Schema => (
 const name: Schema = { type: 'string', minLength: 1, maxLength: NAME_MAX_LENGTH, description: 'The session name. The server trims spaces.' };
 const seatName: Schema = { type: 'string', minLength: 1, maxLength: NAME_MAX_LENGTH, description: 'A generated name: an adjective and an animal in camelCase.' };
 const chatText: Schema = { type: 'string', minLength: 1, maxLength: CHAT_MAX_LENGTH, description: `1 to ${CHAT_MAX_LENGTH} characters. The server trims spaces.` };
-const DEVICE_KINDS = ['phone', 'tablet', 'computer'];
+const signalCode: Schema = { type: 'string', minLength: 1, maxLength: MAX_CODE_LENGTH };
+const hostId: Schema = { type: 'string', pattern: '^[A-Za-z0-9_-]{16}$', description: 'The id of a Nearby host in the list.' };
 const strings = (values: readonly string[], description?: string): Schema => ({ type: 'string', enum: values, ...(description === undefined ? {} : { description }) });
 const list = (description: string, items?: Schema): Schema => ({ type: 'array', description, ...(items === undefined ? {} : { items }) });
 const count = (description?: string): Schema => ({ type: 'integer', minimum: 0, ...(description === undefined ? {} : { description }) });
@@ -353,6 +367,32 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     nearbyMixes: list('Nearby device mixes.', ref('Count')),
     errors: list('Page faults.'),
   }),
+  NearbyAnnounce: object(
+    'An open Nearby game. The offer code holds the device name and kind of the host.',
+    {
+      offer: { ...signalCode, pattern: '^T3A1\\.', description: 'A fresh offer code (src/nearby/signal.ts). The server decodes it, and refuses a code that a device cannot read.' },
+      id: { ...hostId, description: 'The id from the answer to your last announcement. Leave it out to announce a new game.' },
+    },
+    ['id'],
+  ),
+  NearbyAnnounced: object('Your game is in the list.', {
+    id: hostId,
+    answer: { ...nullable({ ...signalCode, pattern: '^T3B1\\.' }), description: 'The answer code of a guest, or null when no guest came. After an answer, announce again with a fresh offer: an offer takes one answer.' },
+  }),
+  NearbyHost: object('An open Nearby game on your network.', {
+    id: hostId,
+    name: { type: 'string', minLength: 1, maxLength: HELLO_NAME_MAX_LENGTH, description: 'The device name of the host.' },
+    device: strings(DEVICE_KINDS, 'The kind of device of the host.'),
+    age: count('Seconds since the host announced the game.'),
+    offer: { ...signalCode, pattern: '^T3A1\\.', description: 'The offer code of the host. Answer it, and send the answer code to the host.' },
+  }),
+  NearbyHosts: object('The open Nearby games on your network, without your own.', {
+    hosts: list('The games.', ref('NearbyHost')),
+  }),
+  NearbyAnswer: object('The answer of a guest to the offer of a host.', {
+    offer: { ...signalCode, pattern: '^T3A1\\.', description: 'The offer code from the list that you answered. A host makes a fresh offer after each guest, so an older offer gets 409.' },
+    answer: { ...signalCode, pattern: '^T3B1\\.', description: 'The answer code (src/nearby/signal.ts). The server decodes it, and refuses a code that a device cannot read.' },
+  }),
 };
 
 // ---- Examples ----
@@ -362,6 +402,12 @@ const AGENT_A = 'agent-7f3k9q2m4x8w1z5c';
 const AGENT_B = 'agent-b2c8n4v6x1q9w3e7';
 const T0 = 1_791_200_000_000;
 const NO_LIMIT = { perMove: null, perGame: null };
+// Real signal codes: a laptop's offer and a phone's answer (server/lobby.test.ts decodes them).
+const EXAMPLE_OFFER =
+  'T3A1.BcHRCoIwFADQX4n7PKG5qflYaQmKKUYWIrK0bNnaqDH1pW_vnAoi43WAYCXseMq75XxpXYXlxtcFMQkdAUHB51ubH-i5bPieTVEfmNNVhdl9y4fSSnWomvVj17pGhICAAaoq-AWYfsunTo_CisU06mzwGRsBOZTYGNkYE5942MF1jaAFBAk3_N0vPlKKxYspLRXUfw';
+const EXAMPLE_ANSWER =
+  'T3B1.BcFdD0JQHAfg7_K7_tucw1EuJbHVvCyrlpkhojJnJdRFn73nSRBNWgXC-SkGt1netg_e-YU-2rPxtV7mBYR9-6nKKNBPx6x189m7rsdDIZ2wttv7UfEHR2ZWsymNsXNAKEFJgl-9Ut-hKovY5UEt-p1nq0o8gYSucUacMc3UFkywNCVIEPw-R_oH';
+const EXAMPLE_HOST = 'q8Zr2Lx0Vb7Nc4Mw';
 
 // A view of the example session. Each route changes only the fields that its call changes.
 // A taken seat has a generated name.
@@ -440,7 +486,7 @@ type Response =
 
 export type Route = {
   operationId: string;
-  tag: 'Play' | 'Docs' | 'Account';
+  tag: 'Play' | 'Nearby' | 'Docs' | 'Account';
   summary: string;
   description?: string;
   // The X-Player header: your player id. It is your seat.
@@ -464,6 +510,11 @@ export const PATH_PARAMS: Record<string, { description: string; schema: Schema; 
     description: 'The id of a finished game: <CODE>-<n> for an online game (n counts from 1), or 8 characters for another game.',
     schema: { type: 'string' },
     example: `${EXAMPLE_CODE}-1`,
+  },
+  host: {
+    description: 'The id of a Nearby host, from GET /api/nearby/hosts.',
+    schema: { type: 'string', pattern: '^[A-Za-z0-9_-]{16}$' },
+    example: EXAMPLE_HOST,
   },
 };
 
@@ -868,6 +919,57 @@ export const ROUTES = {
     response: { status: 200, description: 'Logged out.', schema: 'Ok', example: { ok: true } },
     errors: [BAD_PLAYER, { status: 404, when: 'This server has no GitHub login.' }],
     examplePlayer: AGENT_A,
+  },
+  'GET /api/nearby/hosts': {
+    operationId: 'nearbyHosts',
+    tag: 'Nearby',
+    summary: 'The open Nearby games on your network. The page uses it.',
+    description: 'The list holds only the games that hosts announced from your network: the same IPv4 address, or the same IPv6 /64 prefix. It never holds your own games (by your X-Player id), and it holds no player ids. To join a game, answer its offer code and send the answer with POST /api/nearby/hosts/{host}/answer. The page reads the list every few seconds.',
+    player: 'optional',
+    response: {
+      status: 200,
+      description: 'The games, oldest first. Empty when no host on your network announced a game.',
+      schema: 'NearbyHosts',
+      example: { hosts: [{ id: EXAMPLE_HOST, name: 'Living room laptop', device: 'computer', age: 42, offer: EXAMPLE_OFFER }] },
+    },
+    errors: [{ status: 400, when: 'The server cannot tell the network of your request.' }],
+    examplePlayer: AGENT_B,
+  },
+  'POST /api/nearby/hosts': {
+    operationId: 'announceNearbyHost',
+    tag: 'Nearby',
+    summary: 'Put your open Nearby game in the list of your network, and wait for a guest. The page uses it.',
+    description: `A web page cannot find other devices on a local network, so a host announces its game here. Without an id, the answer comes at once with the id of your game. Send the next request at once, with that id: the server holds it until a guest sends an answer, or for about ${WAIT_MS / 1000} s. Then send the next one, and so on. Your game stays in the list while a request is open, and for ${NEARBY_GRACE_MS / 1000} s after one ends. When the request closes early (you left), your game leaves the list at once. An offer takes one answer: after an answer, send a fresh offer. One network can have ${NEARBY_HOSTS_PER_NETWORK} games in the list, and send ${NEARBY_CALLS_PER_10_MINUTES} announcements and answers per 10 minutes.`,
+    player: 'required',
+    body: { schema: 'NearbyAnnounce', example: { offer: EXAMPLE_OFFER, id: EXAMPLE_HOST } },
+    response: { status: 200, description: 'Your game is in the list (without an id), a guest answered, or the wait ended.', schema: 'NearbyAnnounced', example: { id: EXAMPLE_HOST, answer: EXAMPLE_ANSWER } },
+    errors: [
+      BAD_PLAYER,
+      { status: 400, when: 'The body is not valid JSON, the offer is not a valid offer code, or the server cannot tell the network of your request.' },
+      { status: 404, when: 'The id is not in the list any more, or it is not yours. Announce again without an id.' },
+      TOO_BIG,
+      { status: 429, when: `Your network has ${NEARBY_HOSTS_PER_NETWORK} games in the list, or sent ${NEARBY_CALLS_PER_10_MINUTES} Nearby calls in the last 10 minutes.` },
+      { status: 503, when: 'Too many games are in the list on this server.' },
+    ],
+    examplePlayer: AGENT_A,
+  },
+  'POST /api/nearby/hosts/{host}/answer': {
+    operationId: 'answerNearbyHost',
+    tag: 'Nearby',
+    summary: 'Send your answer to the offer of a Nearby host. The page uses it.',
+    description: 'The server passes the answer to the open request of the host. The host then connects to you directly over WebRTC. The game leaves the list until the host announces a fresh offer.',
+    player: 'required',
+    body: { schema: 'NearbyAnswer', example: { answer: EXAMPLE_ANSWER, offer: EXAMPLE_OFFER } },
+    response: { status: 200, description: 'The answer is on its way to the host.', schema: 'Ok', example: { ok: true } },
+    errors: [
+      BAD_PLAYER,
+      { status: 400, when: 'The host id is not 16 characters, the body is not valid JSON or misses a code, the answer is not a valid answer code, or the server cannot tell the network of your request.' },
+      { status: 404, when: 'No host on your network has this id.' },
+      { status: 409, when: 'Another device answered this offer first, or the host has a newer offer. Read the list again in a few seconds.' },
+      TOO_BIG,
+      { status: 429, when: `Your network sent ${NEARBY_CALLS_PER_10_MINUTES} Nearby calls in the last 10 minutes.` },
+    ],
+    examplePlayer: AGENT_B,
   },
 } as const satisfies Record<RouteId, Route>;
 
