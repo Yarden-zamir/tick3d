@@ -1,4 +1,4 @@
-FROM node:24-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -12,8 +12,8 @@ COPY e2e e2e
 # A lint finding, a failing test or a type error stops the image build, so a broken game never deploys.
 RUN npm run lint && npm test && npm run build
 
-# The API runs its TypeScript directly: Node 24 strips the types. DuckDB is its only runtime package.
-FROM node:24-alpine AS api
+# The API runs its TypeScript directly: Node 26 strips the types. DuckDB is its only runtime package.
+FROM node:26-alpine AS api
 WORKDIR /app
 COPY package.json package-lock.json ./
 # Runtime packages only: the DuckDB client and its native binding for Alpine (musl).
