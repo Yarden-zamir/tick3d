@@ -254,6 +254,8 @@ async function acceptListedGuest(host: NearbyHost, invite: Invite, answer: strin
   try {
     const { channel, peer } = await invite.accept(answer);
     if (nearby.kind !== 'hosting' || nearby.host !== host) return channel.close();
+    // Like a guest with codes: the open code step closes, and Add device opens a new one.
+    cancelNearbyStep();
     welcomeGuest(host, channel, peer);
   } catch (error) {
     invite.close();

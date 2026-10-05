@@ -37,6 +37,7 @@ test('a hosted game shows in the list of another device, which joins it with one
   await listed(guest, name).getByRole('button', { name: `Join ${name}` }).click();
   await expectToast(guest, 'as O');
   await expectToast(host, 'joined');
+  await expect(host.locator('#nearby-step')).toBeHidden();
   await expect(guest.locator('#nearby-lobby')).toBeHidden();
   await expect(host.locator('#nearby-devices')).toContainText(`${guestName}Plays O`);
   await expect(guest.locator('#nearby-devices')).toContainText(`${guestName}You · Plays O`);
