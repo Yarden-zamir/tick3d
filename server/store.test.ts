@@ -319,7 +319,8 @@ describe('match history', () => {
       result('dddddddd-1111-4000-8000-000000000001', { ...nearby, you: 'X', publicId: id, guest: bob, metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } }),
     ]);
     await store.addResults(bob, [
-      result('dddddddd-1111-4000-8000-000000000002', { ...nearby, you: 'O', metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } }),
+      // The guest's copy can have a slightly later time for the last move.
+      result('dddddddd-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: 2_034, metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } }),
     ]);
     const theirs = await store.history(bob, 0);
     expect(theirs.games).toMatchObject([{ id, mode: 'nearby', result: 'lost', opponentName: nameOf(alice) }]);

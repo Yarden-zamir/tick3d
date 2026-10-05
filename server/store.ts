@@ -200,12 +200,15 @@ function accountOf(login: unknown, avatar: unknown): PlayerInfo | null {
 
 // True for the result of a Nearby guest when the host's result of the same game names the guest.
 // Both devices send a result, so the guest's history then lists the host's row only: it knows both players.
+// The two copies can differ in the time of the last move by some milliseconds, so the match uses the
+// moves and a finish within 10 minutes. Two games of the same two players with the same moves inside
+// 10 minutes then count as one. Revisit this if a result ever carries a shared game id from the host.
 const HOST_HAS_GAME = `(results.metrics.nearby.role::VARCHAR = 'guest' AND EXISTS (
   FROM results host SELECT 1
   WHERE host.doc.mode::VARCHAR = 'nearby' AND host.metrics.nearby.role::VARCHAR = 'host'
     AND results.token IN (host.player_x, host.player_o) AND host.token <> results.token
     AND host.doc.game.moves::INTEGER[] = results.doc.game.moves::INTEGER[]
-    AND host.doc.game.times::DOUBLE[] = results.doc.game.times::DOUBLE[]))`;
+    AND abs(epoch_ms(host.finished_at) - epoch_ms(results.finished_at)) < 600000))`;
 
 // Joins the GitHub account of each seat of a result row: x_login, x_avatar, o_login, o_avatar.
 const SEAT_ACCOUNTS = `

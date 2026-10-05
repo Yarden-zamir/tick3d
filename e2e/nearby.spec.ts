@@ -65,6 +65,8 @@ test('host and guest connect with text codes, play a game and chat, and both see
       return JSON.stringify(await response.json());
     });
   await expect.poll(guestHistory).toContain(`"opponentName":"${hostName}"`);
+  // The guest's own copy of the game stays out of the history: the game shows once.
+  expect(JSON.parse(await guestHistory())).toMatchObject({ games: [{ mode: 'nearby', result: 'lost' }] });
 
   await host.locator('#end-card-close').click();
   await host.locator('#nearby-stop').click();
