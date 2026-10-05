@@ -48,6 +48,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - Codes use letters and digits without `0`, `O`, `1` and `I`, so a code read aloud is not ambiguous.
 - The creator plays X. The first other browser that opens the code plays O. Further browsers watch.
 - A browser keeps its seat through a random token in `localStorage`.
+- A link with a code that opens no game (no game with that code, or no network for a new game) shows the error, drops the code from the address, and starts the page as usual.
 - A code loads the full session, finished games included. Either player can name the session and start the next game after a game ends.
 - Chat: on a wide screen a column at the left, on a narrower one a box under the board. It sends messages to the other player in real time, online and over Nearby. Only the two players can write, watchers read along. A session keeps its newest 50 messages of up to 200 characters.
 - Hide board and Hide history belong to the session. A change by either player applies to both players and to watchers. View and layout stay per screen.
