@@ -64,8 +64,8 @@
 - Chat: on a wide screen a column at the left, on a narrower one a box under the board. It sends messages to the other player in real time, online and over Nearby. Only the two players can write, watchers read along. A session keeps its newest 50 messages of up to 200 characters.
 - Hide board and Hide history belong to the session. A change by either player applies to both players and to watchers. View and layout stay per screen.
 - The time limit also belongs to the session. A new session takes the time limit of the screen that creates it. Either player can change it at any time, except during a lock. The change reaches both players and starts with the next game. The server records the move times and decides a timeout, so a page that closes cannot avoid a loss on time.
-- A session never expires, so the same two players can keep playing for as long as they like. After the first join, a player can leave and come back later: the game waits for their move. The other player sees them as away (a dimmed score tile and "is away" in the status), so a game can also run asynchronously. A clock keeps running while a player is away.
-- There is no limit on sessions or on games per session. Add one when storage use calls for it.
+- A session with moves never expires, so the same two players can keep playing for as long as they like. A session where no game has a move goes away after 9 hours without a change, unless a player has it open. After the first join, a player can leave and come back later: the game waits for their move. The other player sees them as away (a dimmed score tile and "is away" in the status), so a game can also run asynchronously. A clock keeps running while a player is away.
+- There is no limit on played sessions or on games per session. Add one when storage use calls for it.
 
 ![An online game with chat, while the other player is away](docs/screenshots/online.png)
 
@@ -88,7 +88,7 @@ The docs of the tick3d HTTP API come from one file, `server/api-docs.ts`:
 ## Offline play
 
 - After the first visit, the game opens without a network: a service worker keeps the page, the fonts and the icons. "Offline ready" shows in the header, and the game is installable on a phone.
-- Computer and friend games run on the device and are stored in its IndexedDB. Every session stays on the device, with no limit. A reload or a restart continues the game.
+- Computer and friend games run on the device and are stored in its IndexedDB. Every played session stays on the device, with no limit. A session with no move goes away 9 hours after its last change, when the game next starts. A reload or a restart continues the game.
 - An online game this device saw before opens read-only without a network, as last seen.
 - When a computer, friend or Nearby game ends and the network is up, the device sends the result to the server. Results from games played offline go along with it. A result has an id from the device, so the server stores it once.
 - After a deploy, a returning player sees "A new version of tick3d is ready" with a Reload button. The page never reloads by itself in the middle of a game.

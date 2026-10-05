@@ -124,6 +124,12 @@ export function undo(doc: SessionDoc, identity: Identity, count: number): Sessio
   return replaceCurrent(doc, undoGame(game, count));
 }
 
+// An empty session: no game in it has a move. The server and the device prune these after a while.
+export const isEmptySession = (doc: SessionDoc): boolean => doc.games.every((game) => game.moves.length === 0);
+
+// How long an empty session stays: a session someone made and never played is gone after this.
+export const EMPTY_SESSION_TTL_MS = 9 * 3_600_000;
+
 // A session holds any number of games: the same players can keep playing for as long as they like.
 export function newGame(doc: SessionDoc, identity: Identity): SessionDoc {
   requireSeat(doc, identity);

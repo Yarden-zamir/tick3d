@@ -45,6 +45,30 @@ function result(id: string, overrides: Partial<ResultUpload> = {}): ResultUpload
   return { id, mode: 'computer', game, you: 'X', difficulty: 'hard', finishedAt: 2_000, publicId: null, options, tuned: false, metrics: null, ...overrides };
 }
 
+describe('pruning empty sessions', () => {
+  it('deletes old sessions without a move, and keeps played, fresh and watched ones', async () => {
+    const hour = 3_600_000;
+    let later = 0;
+    let watched: Code | undefined;
+    store = await openStore(':memory:', {
+      // The clock runs `later` ahead, so rows written now count as old.
+      now: () => Date.now() + later,
+      presence: (code) => ({ X: code === watched, O: false }),
+    });
+    const empty = (await store.create(alice, 'Never played')).code;
+    const played = (await store.create(alice, 'Played')).code;
+    await store.move(played, alice, { game: 0, moveCount: 0, cell: 5 });
+    watched = (await store.create(alice, 'Open on a page')).code;
+
+    expect(await store.pruneEmpty(9 * hour)).toEqual([]);
+    later = 10 * hour;
+    expect(await store.pruneEmpty(9 * hour)).toEqual([empty]);
+    expect(await status(() => store.get(empty, alice))).toBe(404);
+    expect((await store.get(played, alice)).code).toBe(played);
+    expect((await store.get(watched, alice)).code).toBe(watched);
+  });
+});
+
 describe('sessions', () => {
   it('creates a session with a 4 character code and the creator as X', async () => {
     store = await openStore(':memory:');
