@@ -727,7 +727,7 @@ export const ROUTES = {
   'GET /api/docs.md': {
     operationId: 'docsMarkdown',
     tag: 'Docs',
-    summary: 'This guide and reference as Markdown, for AI agents.',
+    summary: 'This guide and reference as Markdown.',
     player: 'none',
     response: { status: 200, description: 'Markdown.', contentType: 'text/markdown' },
     errors: [],
@@ -880,14 +880,14 @@ export function matchRoute(method: string, pathname: string): RouteMatch | 'wron
   return pathExists ? 'wrong-method' : undefined;
 }
 
-// ---- The guide for AI agents ----
+// ---- The guide ----
 
 // A block of guide text. In `p` and `list`, text in backticks is code. {origin} is the site address.
 export type Block = { p: string } | { code: string } | { list: readonly string[] };
 export type Section = { title: string; blocks: readonly Block[] };
 
 export const GUIDE_INTRO =
-  'tick3d is 3D tic-tac-toe on a 4x4x4 cube. Two players take turns, and X moves first. Four marks in a straight line win. This API lets you create a game, take a seat, move, chat and watch. Plain HTTP is enough: curl works.';
+  'tick3d is 3D tic-tac-toe on a 4x4x4 cube. Two players take turns, and X moves first. Four marks in a straight line win. The tick3d HTTP API lets you create a game, take a seat, move, chat and watch. Plain HTTP is enough: curl works. Scripts and AI agents can use it too.';
 
 export const GUIDE: readonly Section[] = [
   {

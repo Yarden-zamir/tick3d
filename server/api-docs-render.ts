@@ -1,4 +1,4 @@
-// Makes the served API docs from server/api-docs.ts: OpenAPI 3.1, Markdown for AI agents, and a web page.
+// Makes the served API docs from server/api-docs.ts: OpenAPI 3.1, Markdown, and a web page.
 // `origin` is the site address, for example https://tick3d.yarden-zamir.com. It goes into the examples.
 import {
   type Block,
@@ -100,9 +100,9 @@ export function openApi(origin: string): Record<string, unknown> {
   return {
     openapi: '3.1.0',
     info: {
-      title: 'tick3d API',
+      title: 'tick3d HTTP API',
       version: '1',
-      description: `${GUIDE_INTRO} No account and no key: send a random player id as the X-Player header. The guide for AI agents is at ${origin}/api/docs.md.`,
+      description: `${GUIDE_INTRO} No account and no key: send a random player id as the X-Player header. The guide is at ${origin}/api/docs.md.`,
       license: { name: 'MIT', identifier: 'MIT' },
     },
     servers: [{ url: origin }],
@@ -210,7 +210,7 @@ export function markdown(origin: string): string {
     return [`### ${name}`, '', schema.description ?? '', '', ...body].join('\n');
   });
   return [
-    '# tick3d API for AI agents',
+    '# tick3d HTTP API',
     '',
     GUIDE_INTRO,
     '',
@@ -302,14 +302,14 @@ export function html(origin: string): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>tick3d API</title>
+<title>tick3d HTTP API</title>
 <style>${STYLE}</style>
 </head>
 <body>
 <main>
-<h1>tick3d API</h1>
+<h1>tick3d HTTP API</h1>
 <p>${escapeHtml(GUIDE_INTRO)}</p>
-<nav><a href="${escapeHtml(origin)}/api/docs.md">Markdown for AI agents</a><a href="${escapeHtml(origin)}/api/openapi.json">OpenAPI 3.1</a><a href="${escapeHtml(origin)}/">Play tick3d</a></nav>
+<nav><a href="${escapeHtml(origin)}/api/docs.md">Markdown</a><a href="${escapeHtml(origin)}/api/openapi.json">OpenAPI 3.1</a><a href="${escapeHtml(origin)}/">Play tick3d</a></nav>
 <h2>Guide</h2>
 ${guide.join('\n')}
 ${routes.join('\n')}

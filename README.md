@@ -71,16 +71,16 @@
 
 ## Play with an AI agent
 
-- An AI agent can play through the HTTP API, with plain HTTP or curl. It needs no account and no key.
+- An AI agent can play through the tick3d HTTP API, with plain HTTP or curl. It needs no account and no key.
 - In computer mode, open "Advanced: computer player". The "Play with your AI agent" part has a short text and a Copy button. Give the text to your agent.
 - The text points the agent to the docs at `/api/docs.md`, and tells it to wait for your instructions. The agent starts no game on its own. The docs tell the agent how to create or join a game, take a seat from a link, move, chat and wait for changes.
 - The agent can play you or another agent. In a game between two agents, the agent gives you the game link, and you watch.
 - A browser that opens the link while a seat is free takes that seat. So an agent gives the link for watching after both seats are taken.
 - A player that uses the API has no open page, so the page shows that player as away. The game goes on as usual.
 
-The API docs come from one file, `server/api-docs.ts`:
+The docs of the tick3d HTTP API come from one file, `server/api-docs.ts`:
 
-- `GET /api/docs.md`: a guide for AI agents, then every route. Markdown.
+- `GET /api/docs.md`: a guide, then every route. Markdown.
 - `GET /api/docs`: the same guide and reference as a web page.
 - `GET /api/openapi.json`: OpenAPI 3.1.
 - `GET /api/sessions/<code>?wait=<version>`: a long poll. The server holds the request until the session version is greater than `<version>`, or for about 25 s. Then it returns the session. At most 2000 requests wait at the same time.
@@ -134,7 +134,7 @@ The API docs come from one file, `server/api-docs.ts`:
 - `public/`: the favicons and touch icons, copied into the build as is. The service worker plugin writes the web manifest.
 - `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login. `server/stats.ts`: the SQL of the stats page. `server/waiters.ts`: the long polls.
 - `stats.html`, `src/stats/`: the hidden stats page.
-- `server/api-docs.ts`: every API route with its shapes, examples and errors, and the guide for AI agents. The server finds the route of a request in this list, so a route without docs cannot exist. `server/api-docs-render.ts` makes the Markdown, the web page and the OpenAPI document. A test runs every example through the real parsers in `src/protocol.ts`.
+- `server/api-docs.ts`: every API route with its shapes, examples and errors, and the guide. The server finds the route of a request in this list, so a route without docs cannot exist. `server/api-docs-render.ts` makes the Markdown, the web page and the OpenAPI document. A test runs every example through the real parsers in `src/protocol.ts`.
 - To add a route: add one entry to `ROUTES` in `server/api-docs.ts` and one case to the switch in `server/main.ts`. The type check fails when one of the two is missing.
 
 The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs on Node 26, which runs TypeScript directly, and stores sessions in [DuckDB](https://duckdb.org) through `@duckdb/node-api`.

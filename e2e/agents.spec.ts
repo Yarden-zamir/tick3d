@@ -41,7 +41,7 @@ test('the API docs load in all three forms', async ({ request, baseURL }) => {
 
   const page = await request.get('/api/docs');
   expect(page.headers()['content-type']).toContain('text/html');
-  expect(await page.text()).toContain('<h1>tick3d API</h1>');
+  expect(await page.text()).toContain('<h1>tick3d HTTP API</h1>');
 });
 
 test('two agents play and chat over the API with long polls, and a person watches the link', async ({ request, open }) => {
