@@ -21,7 +21,7 @@ import {
   myGamesOnlineBox,
   myGamesClose,
 } from './dom.ts';
-import { showError, showToast, reject } from './feedback.ts';
+import { showError, reject } from './feedback.ts';
 import { openGameView } from './game-view.ts';
 import { render } from './render.ts';
 import { flushResults, syncRecords } from './results.ts';
@@ -248,10 +248,10 @@ async function clearHistory(): Promise<void> {
     if (db !== undefined) for (const result of await db.all('results')) if (result.sent) await db.delete('results', result.id);
     clearConfirm.close();
     historyOffset = 0;
-    showHistory([], false);
+    // The dialog covers the toasts, so the list itself says what happened.
+    myGamesHistory.innerHTML = '<li class="empty">History cleared. Your survival records stay.</li>';
     myGamesMore.hidden = true;
     myGamesClear.hidden = true;
-    showToast('Your history is clear. Your survival records stay.');
   } finally {
     clearConfirmYes.disabled = false;
   }

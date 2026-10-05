@@ -106,8 +106,7 @@ test('an online game gets the link <CODE>-<n>, which anybody can open, and a cle
   await alice.locator('#my-games-clear').click();
   await expect(alice.locator('#clear-confirm')).toHaveAttribute('open');
   await alice.locator('#clear-confirm-yes').click();
-  await expectToast(alice, 'Your history is clear');
-  await expect(alice.locator('#my-games-history')).toHaveText('No finished games yet.');
+  await expect(alice.locator('#my-games-history')).toHaveText('History cleared. Your survival records stay.');
   await alice.locator('#my-games-close').click();
   await alice.locator('#account-button').click();
   await expect(alice.locator('#my-games-history')).toHaveText('No finished games yet.');
