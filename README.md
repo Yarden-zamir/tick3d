@@ -69,6 +69,22 @@
 
 ![An online game with chat, while the other player is away](docs/screenshots/online.png)
 
+## Play with an AI agent
+
+- An AI agent can play through the tick3d HTTP API, with plain HTTP or curl. It needs no account and no key.
+- In computer mode, open "Advanced: computer player". The "Play with your AI agent" part has a short text and a Copy button. Give the text to your agent.
+- The text points the agent to the OpenAPI document at `/api/openapi.json`, and tells it to wait for your instructions. The agent starts no game on its own. The document tells the agent how to create or join a game, take a seat from a link, move, chat and wait for changes.
+- The agent can play you or another agent. In a game between two agents, the agent gives you the game link, and you watch.
+- A browser that opens the link while a seat is free takes that seat. So an agent gives the link for watching after both seats are taken.
+- A player that uses the API has no open page, so the page shows that player as away. The game goes on as usual.
+
+The docs of the tick3d HTTP API come from one file, `server/api-docs.ts`:
+
+- `GET /api/openapi.json`: the OpenAPI 3.1 document. `info.description` holds the guide: the quick start, the player id, the cell numbers, waiting, refused moves, game links and limits. Each operation has a description and a curl example.
+- `GET /api/docs`: the document in Swagger UI, with "Try it out". The page loads Swagger UI from jsDelivr, pinned to one version with integrity hashes.
+- `GET /api/sessions/<code>?wait=<version>`: a long poll. The server holds the request until the session version is greater than `<version>`, or for about 25 s. Then it returns the session. At most 2000 requests wait at the same time.
+- Every session answer has `turn` (the player to move, or null after the game ends) and `status` (playing, won with the line, timeout or draw), so an agent needs no rules of its own.
+
 ## Offline play
 
 - After the first visit, the game opens without a network: a service worker keeps the page, the fonts and the icons. "Offline ready" shows in the header, and the game is installable on a phone.
@@ -115,8 +131,10 @@
 - `src/pwa.ts` and `vite.config.ts`: the service worker and the manifest.
 - `src/main.ts`, `src/style.css`, `index.html`: the page. `src/main.ts` starts the page; `src/page/` holds the page script, one module per feature (board, sessions, Nearby, My games, clocks, chat and more). `src/page/state.ts` holds the state that more than one module changes.
 - `public/`: the favicons and touch icons, copied into the build as is. The service worker plugin writes the web manifest.
-- `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login. `server/stats.ts`: the SQL of the stats page.
+- `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login. `server/stats.ts`: the SQL of the stats page. `server/waiters.ts`: the long polls.
 - `stats.html`, `src/stats/`: the hidden stats page.
+- `server/api-docs.ts`: every API route with its shapes, examples and errors, and the guide. The server finds the route of a request in this list, so a route without docs cannot exist. `server/api-docs-render.ts` makes the OpenAPI document and the Swagger UI page. A test runs every example through the real parsers in `src/protocol.ts`, and checks the document against the official OpenAPI 3.1 JSON Schema with `@seriousme/openapi-schema-validator`.
+- To add a route: add one entry to `ROUTES` in `server/api-docs.ts` and one case to the switch in `server/main.ts`. The type check fails when one of the two is missing.
 
 The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs on Node 26, which runs TypeScript directly, and stores sessions in [DuckDB](https://duckdb.org) through `@duckdb/node-api`.
 
@@ -135,9 +153,11 @@ The page is plain TypeScript built with Vite, with no runtime dependencies. The 
 
 ## API
 
+The full reference, with every shape, error and a curl example, is the OpenAPI 3.1 document at `/api/openapi.json`. `/api/docs` shows it in Swagger UI. It comes from `server/api-docs.ts`. This table is a summary.
+
 | Route | What it does |
 | --- | --- |
-| `POST /api/sessions`, `GET /api/sessions/:code` and the other session routes | Online play (see `server/main.ts`). |
+| `POST /api/sessions`, `GET /api/sessions/:code` and the other session routes | Online play. `GET /api/sessions/:code?wait=<version>` waits for a change. |
 | `POST /api/results` | Finished games from a device. The answer holds the new public id of each result that the server renamed. |
 | `GET /api/games/:id` | One finished game, read-only. No token and no result id. |
 | `GET /api/me/games` | My games: tallies and online sessions. |
@@ -183,7 +203,7 @@ docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr.17.
 - The image tag must match the `@playwright/test` version in `package.json`. Update both together.
 - `npm ci` in the Playwright image installs packages for glibc. Run `npm ci` again before you use `node:26-alpine`.
 - Each test opens fresh browser contexts, and the tests run in parallel. The HTML report goes to `e2e/playwright-report/`. A failed test keeps a trace in `e2e/test-results/`.
-- One run creates 6 online sessions. The server allows 60 new sessions per hour from one address.
+- One run creates 8 online sessions. The server allows 60 new sessions per hour from one address.
 - The `e2e` workflow runs the suite after a successful pull request preview deploy. When a test fails, the workflow uploads the HTML report.
 - Knip finds the tests through its `entry` setting in `package.json`. Its Playwright plugin is off, because the plugin loads the config, and the config stops without `E2E_BASE_URL`.
 - The laptop host (`compose.lan.yml`) has no automatic test. It needs a local Docker host and a second device on the network.

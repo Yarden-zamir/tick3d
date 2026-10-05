@@ -29,7 +29,7 @@ import {
   nearbyUseCode,
   nearbyCopy,
 } from './dom.ts';
-import { showProblem, showToast, showError } from './feedback.ts';
+import { copyText, showProblem, showToast, showError } from './feedback.ts';
 import { render } from './render.ts';
 import { defaultSessionName, openSession, leaveSession } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
@@ -326,9 +326,7 @@ export function setupNearby(): void {
   });
   nearbyUseCode.addEventListener('click', () => void useNearbyCode(nearbyCodeIn.value));
   nearbyCopy.addEventListener('click', () => {
-    // Plain HTTP (a laptop host) has no clipboard API.
-    const copied = navigator.clipboard?.writeText(nearbyCodeOut.value) ?? Promise.reject(new Error('no clipboard'));
-    void copied.then(
+    void copyText(nearbyCodeOut.value).then(
       () => showToast('Code copied.'),
       () => showProblem('Copy did not work. Select the code and copy it.'),
     );

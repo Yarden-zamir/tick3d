@@ -30,6 +30,11 @@ export function showToast(text: string, tone: 'info' | 'problem' = 'info'): void
   toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
 }
 
+// Plain HTTP (a laptop host) has no clipboard API. The copy then fails, and the caller says so.
+export function copyText(text: string): Promise<void> {
+  return navigator.clipboard?.writeText(text) ?? Promise.reject(new Error('no clipboard'));
+}
+
 // A refused action: the error sound and a message in the problem style.
 export function showProblem(text: string): void {
   sounds.invalid();

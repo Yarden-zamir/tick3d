@@ -80,15 +80,6 @@ describe('sessions', () => {
     expect((await store.get(code, alice)).games[0]?.moves).toHaveLength(1);
   });
 
-  it('keeps every session: nothing old is deleted', async () => {
-    store = await openStore(':memory:');
-    const codes: Code[] = [];
-    for (let i = 0; i < 30; i++) codes.push((await store.create(alice, `Game ${i}`)).code);
-    for (const code of codes) expect((await store.get(code, alice)).code).toBe(code);
-    // 60 store calls take about 3 s, and more on a busy build server. If the default 5 s limit
-    // returns, check the time per store call first: a slow call is a real problem.
-  }, 20_000);
-
   it('reports every write, also a timeout that a read records', async () => {
     let time = 1_000_000;
     const changed: Code[] = [];

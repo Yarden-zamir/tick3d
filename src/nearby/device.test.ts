@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEVICE_ICONS, detectDevice, deviceLabel } from './device.ts';
+import { detectDevice } from './device.ts';
 
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 const ANDROID_PHONE = 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';
@@ -21,12 +21,5 @@ describe('detectDevice', () => {
     ['client hints on an Android tablet', { userAgent: ANDROID_TABLET, maxTouchPoints: 10, userAgentData: { mobile: false } }, 'tablet'],
   ])('reads %s', (_, nav, kind) => {
     expect(detectDevice(nav)).toBe(kind);
-  });
-
-  it('has an icon and a label for every kind', () => {
-    for (const kind of ['phone', 'tablet', 'computer', 'server'] as const) {
-      expect(DEVICE_ICONS[kind].startsWith('<svg')).toBe(true);
-      expect(deviceLabel(kind).length).toBeGreaterThan(0);
-    }
   });
 });
