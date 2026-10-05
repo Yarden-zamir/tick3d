@@ -8,21 +8,25 @@
     "dev": "vite",
     "check": "tsc && npm run lint && vitest run",
     "test": "vitest run",
-    "lint": "oxlint --type-aware --deny-warnings src server vite.config.ts && stylelint \"src/**/*.css\" && html-validate index.html && knip",
+    "lint": "oxlint --type-aware --deny-warnings src server e2e vite.config.ts && stylelint \"src/**/*.css\" && html-validate index.html && knip",
     "build": "tsc && vite build",
-    "api": "DB_PATH=./dev.duckdb node server/main.ts"
+    "api": "DB_PATH=./dev.duckdb node server/main.ts",
+    "e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
     "@duckdb/node-api": "1.5.6-r.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/node": "^24.9.2",
+    "@types/pngjs": "^6.0.5",
     "fake-indexeddb": "^6.2.5",
     "html-validate": "^11.16.2",
     "jsqr": "^1.4.0",
     "knip": "^6.39.0",
     "oxlint": "^1.86.0",
     "oxlint-tsgolint": "^7.0.2003",
+    "pngjs": "^7.0.0",
     "qrcode-generator": "^2.0.4",
     "stylelint": "^17.16.0",
     "stylelint-config-recommended": "^18.0.0",
@@ -31,5 +35,11 @@
     "vite-plugin-pwa": "^2.0.0",
     "vitest": "^5.0.3",
     "workbox-window": "^7.4.1"
+  },
+  "knip": {
+    "entry": [
+      "e2e/*.spec.ts"
+    ],
+    "playwright": false
   }
 }

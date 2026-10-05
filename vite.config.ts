@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -59,4 +60,6 @@ export default defineConfig({
       },
     }),
   ],
+  // Vitest runs the unit tests only. Playwright runs the e2e/ tests against a deployed site (npm run e2e).
+  test: { include: ['{src,server}/**/*.test.ts'] },
 });

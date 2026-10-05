@@ -7,6 +7,8 @@ COPY tsconfig.json index.html vite.config.ts .oxlintrc.json .stylelintrc.json .h
 COPY public public
 COPY src src
 COPY server server
+# The end-to-end tests only go through the type check and the linters here. They run against a deployed site.
+COPY e2e e2e
 # A lint finding, a failing test or a type error stops the image build, so a broken game never deploys.
 RUN npm run lint && npm test && npm run build
 
