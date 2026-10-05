@@ -43,7 +43,7 @@ async function playMoves(code: Code, cells: number[], game = 0): Promise<void> {
 function result(id: string, overrides: Partial<ResultUpload> = {}): ResultUpload {
   const game = toRecord(replay(X_WINS, { times: X_WINS.map((_, i) => 1_000 + i) }));
   const options = { hideBoard: false, hideHistory: false };
-  return { id, mode: 'computer', game, you: 'X', difficulty: 'hard', finishedAt: 2_000, publicId: null, options, tuned: false, metrics: null, ...overrides };
+  return { id, mode: 'computer', game, you: 'X', difficulty: 'hard', finishedAt: 2_000, publicId: null, options, tuned: false, metrics: null, guest: null, ...overrides };
 }
 
 describe('sessions', () => {
@@ -308,6 +308,31 @@ describe('match history', () => {
     expect(JSON.stringify(mine)).not.toContain(bob);
     expect(JSON.stringify(theirs)).not.toContain(alice);
     expect((await store.history(carol, 0)).games).toEqual([]);
+  });
+
+  it('gives the guest of a Nearby game the result of the host, with the host as opponent, and returns no token', async () => {
+    store = await openStore(':memory:');
+    const nearby = { mode: 'nearby', difficulty: null, game: finishedGame(X_WINS) } as const;
+    const id = gameId('NEARBY23');
+    // Both devices send a result. The host (Alice, X) names the guest (Bob, O).
+    await store.addResults(alice, [
+      result('dddddddd-1111-4000-8000-000000000001', { ...nearby, you: 'X', publicId: id, guest: bob, metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } }),
+    ]);
+    await store.addResults(bob, [
+      result('dddddddd-1111-4000-8000-000000000002', { ...nearby, you: 'O', metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } }),
+    ]);
+    const theirs = await store.history(bob, 0);
+    expect(theirs.games).toMatchObject([{ id, mode: 'nearby', result: 'lost', opponentName: nameOf(alice) }]);
+    expect((await store.history(alice, 0)).games).toMatchObject([{ id, result: 'won', opponentName: nameOf(bob) }]);
+    const shown = await store.game(id);
+    expect(shown.names).toEqual({ X: nameOf(alice), O: nameOf(bob) });
+    for (const answer of [theirs, shown]) {
+      expect(JSON.stringify(answer)).not.toContain(alice);
+      expect(JSON.stringify(answer)).not.toContain(bob);
+    }
+    // A host cannot name itself as the guest.
+    const self = result('dddddddd-1111-4000-8000-000000000003', { ...nearby, you: 'X', guest: alice });
+    expect(await status(() => store.addResults(alice, [self]))).toBe(400);
   });
 
   it('pages through the history', async () => {

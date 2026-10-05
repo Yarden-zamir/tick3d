@@ -98,7 +98,7 @@ function cardInput(game: Game, index: number, gameId: GameId | undefined): CardI
   const winner = winnerOf(game.status);
   const mine = me();
   // The same names as the rest of the page (playerName), so the card matches the score and the chat.
-  const title = winner === null ? 'Draw' : winner === mine ? 'You win!' : `${playerName(winner)} wins`;
+  const title = winner === null ? 'Draw' : winner === mine ? 'You win!' : `${playerName(winner)} wins!`;
   const subtitle =
     game.status.kind === 'won'
       ? `Four in a row in ${game.moves.length} moves`
@@ -145,7 +145,9 @@ export async function openCard(index: number): Promise<void> {
   const canvas = await drawCard(input);
   card = { index, canvas, gameId };
   cardImage.src = canvas.toDataURL('image/png');
-  cardImage.alt = `${input.title}. ${input.subtitle}.${input.record ? ` New record: ${input.record.moves} moves.` : ''}`;
+  // A title such as "You win!" ends with its own mark.
+  const titleText = input.title.endsWith('!') ? input.title : `${input.title}.`;
+  cardImage.alt = `${titleText} ${input.subtitle}.${input.record ? ` New record: ${input.record.moves} moves.` : ''}`;
   // Only the newest game can start the next one. A card of an older game has no New game button.
   cardNewGameButton.hidden = index !== page.games.length - 1;
   cardNewGameButton.disabled = newGameButton.disabled;

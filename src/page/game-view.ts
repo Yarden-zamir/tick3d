@@ -24,7 +24,8 @@ async function deviceCopy(id: GameId): Promise<PublicGame | undefined> {
     // The same seats as on the server: this device's player holds `you`, or both seats in a friend game.
     const mine = (seat: Player) => result.you === null || result.you === seat;
     const seatInfo = (seat: Player) => (mine(seat) ? page.account.user : null);
-    const seatName = (seat: Player) => (mine(seat) ? nameOf(token) : null);
+    // A Nearby host also knows the guest on the other seat.
+    const seatName = (seat: Player) => (mine(seat) ? nameOf(token) : result.guest === null ? null : nameOf(result.guest));
     return {
       id,
       mode: result.mode,

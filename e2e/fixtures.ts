@@ -99,7 +99,7 @@ export async function ownName(page: Page): Promise<string> {
   await expect(page.locator('#account-box')).toContainText('You play as');
   const name = await page.locator('#account-box b').innerText();
   await page.locator('#my-games-close').click();
-  expect(name).toMatch(/^\S+ \S+$/);
+  expect(name).toMatch(/^[a-z]+[A-Z][a-z]+$/);
   return name;
 }
 

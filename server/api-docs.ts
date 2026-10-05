@@ -105,7 +105,7 @@ const limit = (kind: keyof typeof LIMIT_RANGE, description: string): Schema => (
   description,
 });
 const name: Schema = { type: 'string', minLength: 1, maxLength: NAME_MAX_LENGTH, description: 'The session name. The server trims spaces.' };
-const seatName: Schema = { type: 'string', minLength: 1, maxLength: NAME_MAX_LENGTH, description: 'A generated name: an adjective and an animal.' };
+const seatName: Schema = { type: 'string', minLength: 1, maxLength: NAME_MAX_LENGTH, description: 'A generated name: an adjective and an animal in camelCase.' };
 const chatText: Schema = { type: 'string', minLength: 1, maxLength: CHAT_MAX_LENGTH, description: `1 to ${CHAT_MAX_LENGTH} characters. The server trims spaces.` };
 const DEVICE_KINDS = ['phone', 'tablet', 'computer'];
 const strings = (values: readonly string[], description?: string): Schema => ({ type: 'string', enum: values, ...(description === undefined ? {} : { description }) });
@@ -155,7 +155,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     login: { type: 'string', minLength: 1, maxLength: 39 },
     avatar: { type: 'string', pattern: '^https://avatars\\.githubusercontent\\.com/' },
   }),
-  SeatNames: object('The generated name of the player on each seat, such as "Brave Otter". null for an empty seat and for the computer.', {
+  SeatNames: object('The generated name of the player on each seat, such as "braveOtter". null for an empty seat and for the computer.', {
     X: nullable(seatName),
     O: nullable(seatName),
   }),
@@ -244,7 +244,11 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     options: { ...object('The hide settings at the end of the game. Optional.', { hideBoard: { type: 'boolean' }, hideHistory: { type: 'boolean' } }) },
     tuned: { type: 'boolean', description: 'A computer game with changed advanced settings. Optional.' },
     metrics: { ...nullable(ref('Metrics')), description: 'What the device saw during the game. Optional.' },
-  }, ['publicId', 'options', 'tuned', 'metrics']),
+    guest: {
+      ...nullable({ type: 'string', minLength: 16, maxLength: 64, pattern: '^[a-z0-9-]+$' }),
+      description: 'Only a Nearby host: the player id of the guest on the other seat. The guest then has the game in their history. The server never returns it. Optional.',
+    },
+  }, ['publicId', 'options', 'tuned', 'metrics', 'guest']),
   ResultsRequest: object('Finished games from this device.', {
     results: { type: 'array', items: ref('ResultUpload'), maxItems: RESULTS_PER_UPLOAD },
   }),
@@ -377,7 +381,7 @@ function view(fields: Record<string, unknown>): Record<string, unknown> {
     chat: [],
     presence: { X: false, O: false },
     players: { X: null, O: null },
-    names: { X: seats.X ? 'Brave Otter' : null, O: seats.O ? 'Clever Heron' : null },
+    names: { X: seats.X ? 'braveOtter' : null, O: seats.O ? 'cleverHeron' : null },
     turn: 'X',
     status: { kind: 'playing' },
     ...fields,
@@ -627,7 +631,7 @@ export const ROUTES = {
         tuned: false,
         computer: null,
         players: { X: null, O: null },
-        names: { X: 'Brave Otter', O: 'Clever Heron' },
+        names: { X: 'braveOtter', O: 'cleverHeron' },
         finishedAt: T0 + 70_000,
       },
     },
@@ -677,7 +681,7 @@ export const ROUTES = {
       description: 'One page of your history.',
       schema: 'HistoryPage',
       example: {
-        games: [{ id: `${EXAMPLE_CODE}-1`, mode: 'online', difficulty: null, result: 'won', moves: 7, opponent: null, opponentName: 'Clever Heron', finishedAt: T0 + 70_000 }],
+        games: [{ id: `${EXAMPLE_CODE}-1`, mode: 'online', difficulty: null, result: 'won', moves: 7, opponent: null, opponentName: 'cleverHeron', finishedAt: T0 + 70_000 }],
         more: false,
       },
     },
@@ -787,7 +791,7 @@ export const ROUTES = {
           medium: { played: 0, won: 0, lost: 0, drawn: 0 },
           hard: { played: 0, won: 0, lost: 0, drawn: 0 },
         },
-        sessions: [{ code: EXAMPLE_CODE, name: 'Agent match', games: 1, you: 'X', opponent: null, opponentName: 'Clever Heron', yourTurn: false, updatedAt: T0 + 70_000 }],
+        sessions: [{ code: EXAMPLE_CODE, name: 'Agent match', games: 1, you: 'X', opponent: null, opponentName: 'cleverHeron', yourTurn: false, updatedAt: T0 + 70_000 }],
       },
     },
     errors: [BAD_PLAYER],
@@ -814,6 +818,19 @@ export const ROUTES = {
             tuned: false,
             metrics: null,
           },
+          {
+            id: 'result-8b3e1f6a0c7d2945',
+            mode: 'nearby',
+            game: game(X_WINS),
+            you: 'X',
+            difficulty: null,
+            finishedAt: T0 + 90_000,
+            publicId: 'R4NW8HCZ',
+            options: { hideBoard: false, hideHistory: false },
+            tuned: false,
+            metrics: null,
+            guest: AGENT_B,
+          },
         ],
       },
     },
@@ -821,9 +838,9 @@ export const ROUTES = {
       status: 200,
       description: 'How many results were new, and the public ids that the server changed.',
       schema: 'ResultsResponse',
-      example: { stored: 1, renamed: {} },
+      example: { stored: 2, renamed: {} },
     },
-    errors: [BAD_PLAYER, { status: 400, when: `There is no results list, it has more than ${RESULTS_PER_UPLOAD} results, or a result is not a valid finished game.` }, { status: 413, when: 'The body is larger than 256 kB.' }],
+    errors: [BAD_PLAYER, { status: 400, when: `There is no results list, it has more than ${RESULTS_PER_UPLOAD} results, a result is not a valid finished game, or a guest is your own player id.` }, { status: 413, when: 'The body is larger than 256 kB.' }],
     examplePlayer: AGENT_A,
   },
   'GET /api/auth/login': {
@@ -960,7 +977,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
           '`games`: every game, oldest first. The last one is the live game. `moves` lists its cells in order: X played moves 0, 2, 4 and so on, O played moves 1, 3, 5.',
           '`version`: grows with every change.',
           '`chat`: the newest messages, oldest first.',
-          '`players` and `names`: who plays each seat. `players` holds the GitHub account of a player who logged in on the page. A player without a GitHub login gets a generated name in `names`, such as "Brave Otter". The same player id always gets the same name, so you also get one.',
+          '`players` and `names`: who plays each seat. `players` holds the GitHub account of a player who logged in on the page. A player without a GitHub login gets a generated name in `names`, such as "braveOtter". The same player id always gets the same name, so you also get one.',
         ],
       },
     ],

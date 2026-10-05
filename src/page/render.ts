@@ -54,7 +54,7 @@ export function playerName(player: Player): string {
   return session.players[player]?.login ?? session.names[player] ?? `Player ${player}`;
 }
 
-// "You win!", or the winner's name: "Computer wins!", "Brave Otter wins!", "Player X wins!".
+// "You win!", or the winner's name: "Computer wins!", "braveOtter wins!", "Player X wins!".
 const winText = (winner: Player) => (winner === me() ? 'You win!' : `${playerName(winner)} wins!`);
 
 // The other player in a game with another device, when they took a seat but closed the game.

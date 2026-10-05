@@ -180,9 +180,10 @@ function readStored(json: unknown): StoredGame {
 }
 
 // The seat tokens of a result from a device. Its player holds `you`, or both seats in a friend game.
-const seatTokens = (token: string, you: Player | null): Record<Player, string | null> => ({
-  X: you === 'O' ? null : token,
-  O: you === 'X' ? null : token,
+// A Nearby host also names the guest on the other seat.
+const seatTokens = (token: string, you: Player | null, guest: string | null): Record<Player, string | null> => ({
+  X: you === 'O' ? guest : token,
+  O: you === 'X' ? guest : token,
 });
 
 // A seat token column of a result row: a token, or null for a seat without a known player.
@@ -196,6 +197,15 @@ function accountOf(login: unknown, avatar: unknown): PlayerInfo | null {
   if (typeof login !== 'string' || typeof avatar !== 'string') throw new Error('a stored account has no login or avatar');
   return { login, avatar };
 }
+
+// True for the result of a Nearby guest when the host's result of the same game names the guest.
+// Both devices send a result, so the guest's history then lists the host's row only: it knows both players.
+const HOST_HAS_GAME = `(results.metrics.nearby.role::VARCHAR = 'guest' AND EXISTS (
+  FROM results host SELECT 1
+  WHERE host.doc.mode::VARCHAR = 'nearby' AND host.metrics.nearby.role::VARCHAR = 'host'
+    AND results.token IN (host.player_x, host.player_o) AND host.token <> results.token
+    AND host.doc.game.moves::INTEGER[] = results.doc.game.moves::INTEGER[]
+    AND host.doc.game.times::DOUBLE[] = results.doc.game.times::DOUBLE[]))`;
 
 // Joins the GitHub account of each seat of a result row: x_login, x_avatar, o_login, o_avatar.
 const SEAT_ACCOUNTS = `
@@ -480,6 +490,7 @@ export async function openStore(
         if (!results.every((result): result is ResultUpload => result !== undefined)) {
           throw new SessionError(400, 'A result is not a valid finished game.');
         }
+        if (results.some((result) => result.guest === token)) throw new SessionError(400, 'The guest of a Nearby game needs its own player token.');
         let stored = 0;
         const renamed: Record<string, GameId> = {};
         for (const result of results) {
@@ -488,12 +499,12 @@ export async function openStore(
           if (existing !== undefined && existing.public_id === null) continue;
           let publicId = existing === undefined ? (result.publicId ?? newGameId()) : (String(existing.public_id) as GameId);
           if (existing === undefined) {
-            // The metrics go to their own column, not into the stored game.
-            const { metrics, ...upload } = result;
+            // The metrics go to their own column, and the guest's token to its seat column, not into the stored game.
+            const { metrics, guest, ...upload } = result;
             for (let attempt = 1; ; attempt++) {
               try {
                 const doc = { ...upload, publicId };
-                await insertResult({ id: result.id, token, doc, finishedAt: result.finishedAt, publicId, seats: seatTokens(token, result.you), game: result.game, metrics });
+                await insertResult({ id: result.id, token, doc, finishedAt: result.finishedAt, publicId, seats: seatTokens(token, result.you, guest), game: result.game, metrics });
                 break;
               } catch (error) {
                 if (!isDuplicateKey(error) || attempt >= MAX_ID_ATTEMPTS) throw error;
@@ -547,8 +558,9 @@ export async function openStore(
              coalesce(list_contains($tokens, ${SEAT_X}), false) AS mine_x,
              coalesce(list_contains($tokens, ${SEAT_O}), false) AS mine_o, ${SEAT_ACCOUNT_COLUMNS},
              ${SEAT_X} AS token_x, ${SEAT_O} AS token_o
-           WHERE (list_contains($tokens, ${SEAT_X}) AND results.hidden_x IS NOT TRUE)
-              OR (list_contains($tokens, ${SEAT_O}) AND results.hidden_o IS NOT TRUE)
+           WHERE ((list_contains($tokens, ${SEAT_X}) AND results.hidden_x IS NOT TRUE)
+              OR (list_contains($tokens, ${SEAT_O}) AND results.hidden_o IS NOT TRUE))
+             AND NOT ${HOST_HAS_GAME}
            ORDER BY results.finished_at DESC, results.id
            LIMIT $limit OFFSET $offset`,
           { tokens, limit: HISTORY_PAGE_SIZE + 1, offset },

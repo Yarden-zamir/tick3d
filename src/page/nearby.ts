@@ -57,7 +57,7 @@ let wakeLock: { release(): Promise<void> } | undefined;
 const thisDevice = detectDevice();
 
 // The name that the other players see for this player, so the device list matches the score by default.
-// Limit: 28 of the 67348 generated names are longer than HELLO_NAME_MAX_LENGTH, and the device list cuts
+// Limit: 9 of the 67348 generated names are longer than HELLO_NAME_MAX_LENGTH, and the device list cuts
 // them. Revisit this when the word lists grow, or when the limit changes in a new signal format.
 const ownName = () => page.account.user?.login ?? nameOf(token);
 

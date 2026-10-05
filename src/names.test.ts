@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { nameOf } from './names.ts';
 
 describe('generated player names', () => {
-  it('gives one player the same name every time, as two capitalized words', () => {
+  it('gives one player the same name every time, as an adjective and an animal in camelCase', () => {
     const name = nameOf('player-1234567890abcdef');
     expect(nameOf('player-1234567890abcdef')).toBe(name);
-    expect(name).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+$/);
+    expect(name).toMatch(/^[a-z]+[A-Z][a-z]+$/);
   });
 
   it('spreads similar ids over many names', () => {

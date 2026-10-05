@@ -432,6 +432,9 @@ export type ResultUpload = {
   // True for a computer game against changed advanced settings.
   tuned: boolean;
   metrics: Metrics | null;
+  // A Nearby game from the host: the player token of the guest on the other seat, else null. The
+  // server stores it as that seat, so the guest's history has the game. It never leaves the server.
+  guest: PlayerToken | null;
 };
 
 // One upload carries at most this many results. A device sends more in several requests.
@@ -442,14 +445,14 @@ const RESULT_ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789-';
 // A result can finish at most this far in the future, to allow for a device clock that runs fast.
 const FUTURE_SLACK_MS = 86_400_000;
 
-const RESULT_KEYS = ['id', 'mode', 'game', 'you', 'difficulty', 'finishedAt', 'publicId', 'options', 'tuned', 'metrics'];
+const RESULT_KEYS = ['id', 'mode', 'game', 'you', 'difficulty', 'finishedAt', 'publicId', 'options', 'tuned', 'metrics', 'guest'];
 
 export const isMatchOptions = (value: unknown): value is MatchOptions =>
   isRecord(value) && typeof value.hideBoard === 'boolean' && typeof value.hideHistory === 'boolean';
 
 // `now` is the time of the reader. The database can store finishedAt only inside a bounded range.
-// A device version before game links sends no publicId, options, tuned or metrics. Those get
-// their defaults, so its waiting results still upload.
+// A device version before game links sends no publicId, options, tuned or metrics, and a version
+// before generated names sends no guest. Those get their defaults, so its waiting results still upload.
 export function parseResultUpload(value: unknown, now: number): ResultUpload | undefined {
   if (!isRecord(value) || !hasOnlyKeys(value, RESULT_KEYS)) return undefined;
   const { id, mode, game, you, difficulty, finishedAt } = value;
@@ -479,6 +482,9 @@ export function parseResultUpload(value: unknown, now: number): ResultUpload | u
   if (typeof tuned !== 'boolean' || (tuned && mode !== 'computer')) return undefined;
   const metrics = value.metrics === undefined || value.metrics === null ? null : parseMetrics(value.metrics);
   if (metrics === undefined) return undefined;
+  // Only a Nearby host names a second seat: the guest's.
+  const guest = value.guest === undefined || value.guest === null ? null : asPlayerToken(value.guest);
+  if (guest === undefined || (guest !== null && (mode !== 'nearby' || you === null))) return undefined;
   return {
     id,
     mode,
@@ -490,6 +496,7 @@ export function parseResultUpload(value: unknown, now: number): ResultUpload | u
     options: { hideBoard: options.hideBoard, hideHistory: options.hideHistory },
     tuned,
     metrics,
+    guest,
   };
 }
 

@@ -78,7 +78,7 @@ test('two agents play and chat over the API with long polls, and a person watche
   expect(chatted.chat.map((message) => message.text)).toEqual(['Good game, agent A!', 'Thanks, agent B!']);
   // An agent has no GitHub login, so the page shows the generated name from the session.
   const nameA = chatted.names.X;
-  expect(nameA).toMatch(/^\S+ \S+$/);
+  expect(nameA).toMatch(/^[a-z]+[A-Z][a-z]+$/);
   expect(JSON.stringify(chatted)).not.toContain(agentB);
 
   // Both seats are taken, so the person who opens the link watches.

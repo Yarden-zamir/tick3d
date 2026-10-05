@@ -54,7 +54,7 @@ test('a lock holds through a reload and ends with the game; the local end card h
   await expect(status(page)).toHaveAttribute('data-state', 'won');
   await expect(page.getByRole('button', { name: 'Flat' })).toBeEnabled();
   await expect(page.locator('#end-card')).toHaveAttribute('open');
-  await expect(page.locator('#end-card-image')).toHaveAttribute('alt', /^Player X wins/);
+  await expect(page.locator('#end-card-image')).toHaveAttribute('alt', /^Player X wins! /);
   await expect(page.locator('#end-card-code-option')).toBeHidden();
   await expect(page.locator('#end-card-link')).toBeChecked();
 });

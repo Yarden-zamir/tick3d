@@ -1,4 +1,4 @@
-// Names for players without a GitHub login: an adjective and an animal, such as "Brave Otter".
+// Names for players without a GitHub login: an adjective and an animal in camelCase, such as "braveOtter".
 // The same player id always gives the same name, so the server, the device and every other player
 // show one name without storing it. A GitHub login replaces it.
 //
@@ -87,5 +87,5 @@ export function nameOf(playerId: string): string {
   const adjective = ADJECTIVES[value % ADJECTIVES.length];
   const animal = ANIMALS[Math.floor(value / ADJECTIVES.length) % ANIMALS.length];
   if (adjective === undefined || animal === undefined) throw new Error('the name lists are empty');
-  return `${capital(adjective)} ${capital(animal)}`;
+  return `${adjective}${capital(animal)}`;
 }

@@ -1,13 +1,23 @@
 // Results of games away from the server, game ids, and the survival records against the computer.
-import type { Game } from '../game.ts';
+import { type Game, type Player, other } from '../game.ts';
 import { type RecordNews, type Records, parseRecords, addLoss, mergeRecords } from '../records.ts';
 import { isDefaultTuning } from '../tuning.ts';
 import { token, api, OnlineError } from '../online.ts';
-import { type Code, type GameId, type ResultUpload, type MatchOptions, newGameId, onlineGameId, toRecord } from '../protocol.ts';
+import {
+  type Code,
+  type GameId,
+  type PlayerToken,
+  type ResultUpload,
+  type MatchOptions,
+  asPlayerToken,
+  newGameId,
+  onlineGameId,
+  toRecord,
+} from '../protocol.ts';
 import { computerTuning } from './advanced.ts';
 import { showToast } from './feedback.ts';
 import { gameMetrics } from './metrics.ts';
-import { nearbyMetrics } from './nearby.ts';
+import { nearbyKind, nearbyMetrics } from './nearby.ts';
 import { settings } from './settings.ts';
 import { type Session, page } from './state.ts';
 
@@ -26,6 +36,7 @@ export async function recordResult(open: Session, game: Game, index: number): Pr
   const tuned = open.mode === 'computer' && !isDefaultTuning(computerTuning());
   // Read the counts before the first wait: the player can start the next game meanwhile.
   const metrics = gameMetrics(open.code, index, tuned);
+  const hosting = open.mode === 'nearby' && nearbyKind() === 'hosting';
   const existing = await page.deviceDb.get('results', id);
   // A device version before game links stored results without an id. The server gives those one.
   if (existing !== undefined) return existing.upload.publicId ?? undefined;
@@ -40,10 +51,23 @@ export async function recordResult(open: Session, game: Game, index: number): Pr
     options: open.options,
     tuned,
     metrics: { ...metrics, nearby: open.mode === 'nearby' ? await nearbyMetrics() : null },
+    guest: hosting && you !== null ? await guestOf(open.code, you) : null,
   };
   await page.deviceDb.put('results', { id, upload, sent: false });
   await flushResults();
   return upload.publicId ?? undefined;
+}
+
+// The token of the guest on the other seat of a Nearby game that this device hosts. The host holds
+// the session document, so it knows the token. Null while the other seat is empty.
+async function guestOf(code: Code, you: Player): Promise<PlayerToken | null> {
+  const summary = await page.local?.summary(code);
+  if (summary === undefined || summary.doc.mode !== 'nearby') throw new Error(`the hosted Nearby session ${code} is not on this device`);
+  const seat = summary.doc.seats[other(you)] ?? null;
+  if (seat === null) return null;
+  const guest = asPlayerToken(seat);
+  if (guest === undefined || guest === token) throw new Error(`the guest seat of ${code} holds no guest token`);
+  return guest;
 }
 
 // Sends the metrics of this device for a finished online game that it played. A failure drops them:
