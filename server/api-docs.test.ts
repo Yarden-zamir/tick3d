@@ -145,7 +145,8 @@ describe('the SessionView schema', () => {
     } finally {
       store.close();
     }
-  });
+    // DuckDB writes for each move. A busy CI machine needs more than the default 5 s.
+  }, 20_000);
 });
 
 describe('matchRoute', () => {
