@@ -936,7 +936,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
   {
     title: 'Read the state',
     blocks: [
-      { p: 'Every call that changes a game returns the full session (`SessionView`). `GET /api/sessions/<code>` reads it. The fields that you need most:' },
+      { p: 'Every call that changes a game returns the full session: `SessionView` in `components.schemas` of this document. `GET /api/sessions/<code>` reads it. The fields that you need most:' },
       {
         list: [
           '`you`: your seat, "X" or "O". null means that you only watch.',
