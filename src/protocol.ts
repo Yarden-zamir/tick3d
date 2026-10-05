@@ -1,7 +1,7 @@
 // Contract between the page and the online API. Both sides import this file.
 import { DIFFICULTIES, type Difficulty } from './ai.ts';
-import { type TimeControl, parseClock } from './clock.ts';
-import { CELL_COUNT, type Game, type Player, replay, timeOut } from './game.ts';
+import { NO_LIMIT, type TimeControl, parseClock } from './clock.ts';
+import { CELL_COUNT, type Game, type Player, type Status, replay, timeOut } from './game.ts';
 import type { DeviceKind } from './nearby/device.ts';
 import { type Tuning, isTuning, parseTuning } from './tuning.ts';
 
@@ -11,7 +11,7 @@ export const CODE_LENGTH = 4;
 // Stored session documents pass the same checks when they are read (see src/session/format.ts).
 // So NAME_MAX_LENGTH and CHAT_MAX_LENGTH may only grow. To make one smaller, first make parseDoc
 // cut longer stored values, or old sessions stop loading.
-const NAME_MAX_LENGTH = 40;
+export const NAME_MAX_LENGTH = 40;
 // Sessions and games per session have no limit. Add one when storage use calls for it.
 export const CHAT_MAX_LENGTH = 200;
 // A session keeps its newest messages only.
@@ -51,6 +51,10 @@ export type SessionView = {
   presence: Record<Player, boolean>;
   // The GitHub account behind each seat, when its player logged in.
   players: Record<Player, PlayerInfo | null>;
+  // The live game (the last one in `games`), so an API client needs no rules of its own.
+  // `turn` is the player to move, or null when the game is over.
+  turn: Player | null;
+  status: Status;
 };
 
 export type SessionUpdate = { name?: string; clock?: TimeControl } & Partial<MatchOptions>;
@@ -65,6 +69,16 @@ export function toRecord(game: Game): GameRecord {
 }
 
 export type MoveRequest = { game: number; moveCount: number; cell: number };
+
+// The body of POST /api/sessions. The clock is optional and defaults to no limit.
+export type NewSession = { name: string; clock: TimeControl };
+
+export function parseNewSession(value: unknown): NewSession | undefined {
+  if (!isRecord(value)) return undefined;
+  const name = normalizeName(value.name);
+  const clock = value.clock === undefined ? NO_LIMIT : parseClock(value.clock);
+  return name === undefined || clock === undefined ? undefined : { name, clock };
+}
 
 export function normalizeCode(input: string): Code | undefined {
   const code = input.trim().toUpperCase();
@@ -187,6 +201,19 @@ export function parseSessionView(value: unknown): SessionView {
   const playerX = players.X === null ? null : parsePlayerInfo(players.X);
   const playerO = players.O === null ? null : parsePlayerInfo(players.O);
   if (playerX === undefined || playerO === undefined) return fail('players');
+  // The rules give the live status. A sender without these fields (an older server, a Nearby host
+  // or a cached view) is fine. A sender with fields that disagree with the moves is not.
+  const last: unknown = games.at(-1);
+  if (!isGameRecord(last)) return fail('games');
+  let live: Game;
+  try {
+    live = toGame(last);
+  } catch {
+    return fail('games');
+  }
+  const turn = live.status.kind === 'playing' ? live.turn : null;
+  if ('turn' in value && value.turn !== turn) return fail('turn');
+  if ('status' in value && !sameStatus(value.status, live.status)) return fail('status');
   return {
     code,
     name,
@@ -201,7 +228,17 @@ export function parseSessionView(value: unknown): SessionView {
     chat: chat.map(({ id, from, text, at }) => ({ id, from, text, at })),
     presence: { X: presence.X, O: presence.O },
     players: { X: playerX, O: playerO },
+    turn,
+    status: live.status,
   };
+}
+
+function sameStatus(value: unknown, status: Status): boolean {
+  if (!isRecord(value) || value.kind !== status.kind) return false;
+  const winner = status.kind === 'won' || status.kind === 'timeout' ? status.winner : undefined;
+  const line = status.kind === 'won' ? status.line : undefined;
+  const sameLine = Array.isArray(value.line) && line !== undefined && value.line.join() === line.join();
+  return value.winner === winner && (line === undefined ? !('line' in value) : sameLine);
 }
 
 const GITHUB_LOGIN_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';

@@ -2,7 +2,7 @@
 import { sameClock, describeClock } from '../clock.ts';
 import { play, newGame, type Player, other } from '../game.ts';
 import { OnlineError, api } from '../online.ts';
-import { type Code, type GameId, type SessionView, toGame } from '../protocol.ts';
+import { type Code, type GameId, type SessionView, parseSessionView, toGame } from '../protocol.ts';
 import type { SessionDoc } from '../session/format.ts';
 import { sounds } from '../sound.ts';
 import { notifyChat } from './chat.ts';
@@ -242,7 +242,8 @@ export const joinSession = (code: Code) =>
       const cached = await page.deviceDb?.get('remote', code);
       if (!(error instanceof OnlineError) || error.status !== undefined || cached === undefined) throw error;
       if (switchNumber !== page.navigation) return;
-      openSession(cached.view, api, 'online');
+      // The parse also fills fields that a view cached by an older version lacks.
+      openSession(parseSessionView(cached.view), api, 'online');
       showToast('You are offline. This is the game as you last saw it.');
       return;
     }

@@ -96,7 +96,7 @@ const request = async (method: string, path: string, body?: unknown): Promise<Se
 
 export type Me = { loginAvailable: boolean; user: PlayerInfo | null };
 
-function parseMe(value: unknown): Me {
+export function parseMe(value: unknown): Me {
   if (typeof value !== 'object' || value === null) throw new Error('invalid answer from /api/me');
   const { loginAvailable, user } = value as Record<string, unknown>;
   const info = user === null ? null : parsePlayerInfo(user);
@@ -105,7 +105,7 @@ function parseMe(value: unknown): Me {
 }
 
 // The page reads "My games" only to display it, so a light shape check is enough here.
-function parseMyGames(value: unknown): MyGames {
+export function parseMyGames(value: unknown): MyGames {
   if (typeof value !== 'object' || value === null || !('total' in value) || !('sessions' in value)) {
     throw new Error('invalid answer from /api/me/games');
   }
