@@ -161,7 +161,9 @@ function heatmap(box: HTMLElement, hours: Stats['hours']): void {
     chart.append(text);
   }
   chart.classList.add('stats-heatmap');
-  box.append(chart);
+  const scroll = el('div', 'stats-scroll');
+  scroll.append(chart);
+  box.append(scroll);
 }
 
 // A 100% bar per row, split into parts. The legend names each part; the table below gives the numbers.

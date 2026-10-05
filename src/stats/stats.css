@@ -9,6 +9,11 @@
   margin-bottom: 1.2rem;
 }
 
+.stats-head h1 {
+  font-size: clamp(2rem, 9vw, 3.2rem);
+  white-space: nowrap;
+}
+
 .stats-head p {
   margin: 0.8rem 0 0;
   color: var(--muted);
@@ -124,8 +129,14 @@
   text-align: center;
 }
 
+.stats-scroll {
+  overflow-x: auto;
+}
+
+/* Below this width the labels get too small to read, so the heatmap scrolls instead. */
 .stats-heatmap {
   width: 100%;
+  min-width: 30rem;
   max-width: 48rem;
 }
 
