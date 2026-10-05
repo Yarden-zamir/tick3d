@@ -3,6 +3,11 @@
 {
 	auto_https off
 	admin off
+	# Only the host Caddy reaches the socket, so its X-Forwarded-For is true. Without this, Caddy
+	# drops the header on a socket connection, and the API sees one address for every player.
+	servers {
+		trusted_proxies_unix
+	}
 }
 
 http:// {

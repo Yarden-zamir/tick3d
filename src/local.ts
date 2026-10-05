@@ -17,9 +17,9 @@ import {
 import * as core from './session/core.ts';
 import { CURRENT_FORMAT, type SessionDoc, parseDoc } from './session/format.ts';
 
-export type LocalMode = 'computer' | 'friend' | 'nearby';
+type LocalMode = 'computer' | 'friend' | 'nearby';
 
-export type NewLocalSession = {
+type NewLocalSession = {
   mode: LocalMode;
   name: string;
   clock: TimeControl;
@@ -28,7 +28,20 @@ export type NewLocalSession = {
   difficulty?: Difficulty;
 };
 
-export type LocalSummary = { code: Code; mode: LocalMode; name: string; games: number; updatedAt: number; doc: SessionDoc };
+type LocalSummary = { code: Code; mode: LocalMode; name: string; games: number; updatedAt: number; doc: SessionDoc };
+
+// Undefined for an online document: the device does not hold online sessions in this store.
+function summaryOf(row: DeviceSession, doc: SessionDoc): LocalSummary | undefined {
+  if (doc.mode === 'online') return undefined;
+  return {
+    code: row.code,
+    mode: doc.mode,
+    name: doc.name,
+    games: doc.games.filter((game) => game.moves.length > 0).length,
+    updatedAt: row.updatedAt,
+    doc,
+  };
+}
 
 function randomCode(): Code {
   const bytes = crypto.getRandomValues(new Uint8Array(CODE_LENGTH));
@@ -93,8 +106,8 @@ export function createLocalBackend(
     });
   }
 
-  // Loads, records a timeout, writes an older format back, applies one rule, and returns the view.
-  function change(code: Code, rule: (doc: SessionDoc) => SessionDoc, withComputer = false): Promise<SessionView> {
+  // Loads, records a timeout, writes an older format back, and applies one rule.
+  function apply(code: Code, rule: (doc: SessionDoc) => SessionDoc): Promise<{ row: DeviceSession; doc: SessionDoc }> {
     return serialized(async () => {
       const loaded = await read(code);
       let row: DeviceSession = loaded;
@@ -106,8 +119,13 @@ export function createLocalBackend(
         row = await write(row, next);
         doc = next;
       }
-      return view(row, doc, withComputer);
+      return { row, doc };
     });
+  }
+
+  async function change(code: Code, rule: (doc: SessionDoc) => SessionDoc, withComputer = false): Promise<SessionView> {
+    const { row, doc } = await apply(code, rule);
+    return view(row, doc, withComputer);
   }
 
   return {
@@ -157,31 +175,38 @@ export function createLocalBackend(
     },
 
     // Every session on this device, newest first.
+    // A row that fails parseDoc stays out of the list, so one damaged row does not hide the others.
+    // Opening that row by its code still throws, so the damage stays visible there.
     async list(): Promise<LocalSummary[]> {
-      const rows = await db.all('sessions');
-      return rows
-        .map((row) => ({ row, doc: parseDoc(row.doc) }))
-        .filter((entry): entry is { row: DeviceSession; doc: SessionDoc & { mode: LocalMode } } => entry.doc.mode !== 'online')
-        .map(({ row, doc }) => ({
-          code: row.code,
-          mode: doc.mode,
-          name: doc.name,
-          games: doc.games.filter((game) => game.moves.length > 0).length,
-          updatedAt: row.updatedAt,
-          doc,
-        }))
-        .sort((a, b) => b.updatedAt - a.updatedAt);
+      const summaries: LocalSummary[] = [];
+      const damaged: Code[] = [];
+      for (const row of await db.all('sessions')) {
+        let doc: SessionDoc;
+        try {
+          doc = parseDoc(row.doc);
+        } catch {
+          damaged.push(row.code);
+          continue;
+        }
+        const summary = summaryOf(row, doc);
+        if (summary !== undefined) summaries.push(summary);
+      }
+      if (damaged.length > 0) console.warn('Sessions on this device that do not parse:', damaged);
+      return summaries.sort((a, b) => b.updatedAt - a.updatedAt);
+    },
+
+    // One session on this device, or undefined when the device does not hold it.
+    // Throws when the stored document does not parse.
+    async summary(code: Code): Promise<LocalSummary | undefined> {
+      const row = await db.get('sessions', code);
+      return row === undefined ? undefined : summaryOf(row, parseDoc(row.doc));
     },
 
     // The raw document, for the Nearby host. It answers guests with the same rules as the server.
-    change: (code: Code, rule: (doc: SessionDoc) => SessionDoc) =>
-      serialized(async () => {
-        const row = await read(code);
-        const doc = core.settle(row.parsed, Date.now()) ?? row.parsed;
-        const next = rule(doc);
-        const saved = next === row.parsed ? row : await write(row, next);
-        return { code, doc: next, version: saved.version };
-      }),
+    async change(code: Code, rule: (doc: SessionDoc) => SessionDoc): Promise<{ code: Code; doc: SessionDoc; version: number }> {
+      const { row, doc } = await apply(code, rule);
+      return { code, doc, version: row.version };
+    },
   };
 }
 

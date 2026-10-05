@@ -71,7 +71,7 @@ function verify(config: AuthConfig, value: string | undefined, now: number): Rec
   return typeof fields.exp === 'number' && fields.exp > now ? fields : undefined;
 }
 
-export function readCookie(req: IncomingMessage, name: string): string | undefined {
+function readCookie(req: IncomingMessage, name: string): string | undefined {
   for (const part of (req.headers.cookie ?? '').split(';')) {
     const [key, ...value] = part.trim().split('=');
     if (key === name) return value.join('=');
@@ -176,3 +176,33 @@ export function createAuth(config: AuthConfig, fetchImpl: typeof fetch = fetch, 
 }
 
 export type Auth = ReturnType<typeof createAuth>;
+
+// ---- Request limits ----
+
+// The address of the client. Caddy writes the client address as the last X-Forwarded-For entry.
+// Without that header, the client connects directly, for example in local development.
+export function clientOf(req: IncomingMessage): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  const last = (Array.isArray(forwarded) ? forwarded.join(',') : (forwarded ?? '')).split(',').at(-1)?.trim();
+  return last || req.socket.remoteAddress || 'unknown';
+}
+
+// Allows each client `limit` actions per window, and returns false for more.
+// It keeps at most `maxClients` windows: when full, it forgets the client with the oldest window.
+export function createLimiter(limit: number, windowMs: number, maxClients: number) {
+  if (!(limit >= 1 && windowMs > 0 && maxClients >= 1)) throw new RangeError('a limiter needs positive settings');
+  const windows = new Map<string, { count: number; endsAt: number }>();
+  return (client: string, now: number): boolean => {
+    let window = windows.get(client);
+    if (window === undefined || window.endsAt <= now) {
+      // Delete first, so the new window goes to the end of the map's insertion order.
+      windows.delete(client);
+      const oldest = windows.size >= maxClients ? windows.keys().next().value : undefined;
+      if (oldest !== undefined) windows.delete(oldest);
+      window = { count: 0, endsAt: now + windowMs };
+      windows.set(client, window);
+    }
+    window.count++;
+    return window.count <= limit;
+  };
+}

@@ -15,7 +15,8 @@ export type Hello = { device: DeviceKind; name: string };
 
 const OFFER_TAG = 'T3A1.';
 const ANSWER_TAG = 'T3B1.';
-export const NAME_MAX_LENGTH = 24;
+// The longest device name in a Hello. Shorter than a session name (protocol.ts), to keep codes short.
+export const HELLO_NAME_MAX_LENGTH = 24;
 // Limits for codes from an unknown device: the text, and the JSON after inflation.
 const MAX_CODE_LENGTH = 2000;
 const MAX_INFLATED_BYTES = 4000;
@@ -26,7 +27,7 @@ const SETUP_CODES = { actpass: 'a', active: 'c', passive: 'p' } as const;
 type Setup = keyof typeof SETUP_CODES;
 
 // The fields of a data channel description that change from one connection to the next.
-export type SdpFields = {
+type SdpFields = {
   ufrag: string;
   pwd: string;
   fingerprint: Uint8Array;
@@ -34,10 +35,10 @@ export type SdpFields = {
   candidates: { address: string; port: number; priority: number }[];
 };
 
-export function normalizeHelloName(name: unknown): string | undefined {
+function normalizeHelloName(name: unknown): string | undefined {
   if (typeof name !== 'string') return undefined;
   const trimmed = name.trim();
-  return trimmed.length >= 1 && trimmed.length <= NAME_MAX_LENGTH ? trimmed : undefined;
+  return trimmed.length >= 1 && trimmed.length <= HELLO_NAME_MAX_LENGTH ? trimmed : undefined;
 }
 
 // ---- SDP fields ----
@@ -162,10 +163,10 @@ async function pipeBytes(bytes: Uint8Array<ArrayBuffer>, transform: CompressionS
 // ---- Codes ----
 
 export async function encodeSignal(desc: RTCSessionDescriptionInit, hello: Hello): Promise<string> {
-  if (desc.type !== 'offer' && desc.type !== 'answer') throw new Error(`cannot encode a ${String(desc.type)} description`);
+  if (desc.type !== 'offer' && desc.type !== 'answer') throw new Error(`cannot encode a ${desc.type} description`);
   if (typeof desc.sdp !== 'string' || desc.sdp === '') throw new Error('the description has no SDP');
   const name = normalizeHelloName(hello.name);
-  if (name === undefined) throw new Error(`a device name needs 1 to ${NAME_MAX_LENGTH} characters`);
+  if (name === undefined) throw new Error(`a device name needs 1 to ${HELLO_NAME_MAX_LENGTH} characters`);
   const fields = readSdp(desc.sdp);
   if (fields.candidates.length === 0) throw new Error('the description has no network candidates');
   const packed = [
@@ -199,21 +200,27 @@ export async function decodeSignal(text: string): Promise<{ kind: 'offer' | 'ans
   if (code.length > MAX_CODE_LENGTH) throw new Error('This code is too long to be a tick3d code.');
   const kind = code.startsWith(OFFER_TAG) ? 'offer' : code.startsWith(ANSWER_TAG) ? 'answer' : undefined;
   if (kind === undefined) throw new Error('This is not a tick3d code, or it comes from another version.');
-  let value: unknown;
-  try {
-    const inflated = await pipeBytes(fromBase64Url(code.slice(OFFER_TAG.length)), new DecompressionStream('deflate-raw'), MAX_INFLATED_BYTES);
-    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(inflated));
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith('This code is too long')) throw error;
-    throw new Error(DAMAGED);
-  }
-  if (!Array.isArray(value) || value.length !== 7) throw new Error(DAMAGED);
-  const [ufrag, pwd, fingerprint, setupCode, rawCandidates, deviceCode, rawName] = value as unknown[];
+  // Every step that reads bytes is inside the try: a damaged field gives the DAMAGED message.
+  const { value, fingerprintBytes, candidates } = await (async () => {
+    try {
+      const inflated = await pipeBytes(fromBase64Url(code.slice(OFFER_TAG.length)), new DecompressionStream('deflate-raw'), MAX_INFLATED_BYTES);
+      const parsed: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(inflated));
+      if (!Array.isArray(parsed) || parsed.length !== 7) throw new Error('the code is not an array of 7 fields');
+      const [, , fingerprint, , rawCandidates] = parsed as unknown[];
+      return {
+        value: parsed as unknown[],
+        fingerprintBytes: typeof fingerprint === 'string' ? fromBase64Url(fingerprint) : undefined,
+        candidates: Array.isArray(rawCandidates) ? rawCandidates.map(readCandidate) : [],
+      };
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('This code is too long')) throw error;
+      throw new Error(DAMAGED, { cause: error });
+    }
+  })();
+  const [ufrag, pwd, , setupCode, , deviceCode, rawName] = value;
   const setup = (Object.keys(SETUP_CODES) as Setup[]).find((role) => SETUP_CODES[role] === setupCode);
   const device = (Object.keys(DEVICE_CODES) as DeviceKind[]).find((kindName) => DEVICE_CODES[kindName] === deviceCode);
   const name = normalizeHelloName(rawName);
-  const fingerprintBytes = typeof fingerprint === 'string' ? fromBase64Url(fingerprint) : undefined;
-  const candidates = Array.isArray(rawCandidates) ? rawCandidates.map(readCandidate) : [];
   const valid =
     typeof ufrag === 'string' && ufrag.length >= 4 && ufrag.length <= 256 && onlyChars(ufrag, ICE_CHARS) &&
     typeof pwd === 'string' && pwd.length >= 22 && pwd.length <= 256 && onlyChars(pwd, ICE_CHARS) &&
@@ -224,6 +231,6 @@ export async function decodeSignal(text: string): Promise<{ kind: 'offer' | 'ans
     candidates.length >= 1 && candidates.length <= MAX_CANDIDATES &&
     candidates.every((candidate) => candidate !== undefined);
   if (!valid) throw new Error(DAMAGED);
-  const sdp = buildSdp({ ufrag, pwd, fingerprint: fingerprintBytes, setup, candidates: candidates as SdpFields['candidates'] });
+  const sdp = buildSdp({ ufrag, pwd, fingerprint: fingerprintBytes, setup, candidates });
   return { kind, desc: { type: kind, sdp }, hello: { device, name } };
 }

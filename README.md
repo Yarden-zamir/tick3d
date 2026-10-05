@@ -123,11 +123,18 @@ The page is plain TypeScript built with Vite, with no runtime dependencies. The 
 Node is not necessary on the host. Run the commands in a container:
 
 ```sh
-docker run --rm -v "$PWD":/app -w /app node:24-alpine sh -c 'npm ci && npm test && npm run build'
+docker run --rm -v "$PWD":/app -w /app node:24-alpine sh -c 'npm ci && npm run check && npm run build'
 docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:24-alpine npx vite --host
 ```
 
-`npm run build` runs the type check (`tsc`) before the Vite build. `npm run api` starts the API on port 8080 with `./dev.duckdb`.
+`npm run check` runs the type check, every linter and the tests. `npm run build` runs the type check (`tsc`) before the Vite build. `npm run api` starts the API on port 8080 with `./dev.duckdb`.
+
+`npm run lint` runs these checks. Each one catches faults that the type check does not:
+
+- [oxlint](https://oxc.rs) with type-aware rules (`.oxlintrc.json`). It runs on the TypeScript 7 checker through `oxlint-tsgolint`. typescript-eslint does not support TypeScript 7. The rules catch promises that nobody awaits or catches, promises passed where a function must return nothing, switches that miss a case, and needless type assertions. Style rules are off.
+- [stylelint](https://stylelint.io) with `stylelint-config-recommended` (`.stylelintrc.json`): unknown properties, invalid values and duplicate selectors in the CSS. No style rules.
+- [html-validate](https://html-validate.org) (`.htmlvalidate.json`): invalid markup and accessibility faults in `index.html`, such as a button without a name or an input without a type.
+- [Knip](https://knip.dev): files, exports and packages that nothing uses.
 
 ## Deploy
 

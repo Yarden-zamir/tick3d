@@ -19,7 +19,7 @@ import { RpcError, type RpcMethod, rpcClient, rpcServer } from './rpc.ts';
 import type { Hello } from './signal.ts';
 
 type Guest = { hello: Hello; token: PlayerToken | undefined; server: ReturnType<typeof rpcServer> };
-export type GuestSummary = { hello: Hello; seat: Player | null };
+type GuestSummary = { hello: Hello; seat: Player | null };
 
 const argsOf = (args: unknown): Record<string, unknown> =>
   typeof args === 'object' && args !== null && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
@@ -27,6 +27,8 @@ const argsOf = (args: unknown): Record<string, unknown> =>
 export function createNearbyHost(local: LocalBackend, code: Code, hostToken: PlayerToken) {
   const guests = new Set<Guest>();
   const changeListeners = new Set<() => void>();
+  // Calls that arrive after stop() get a refusal, also in the moment before each channel closes.
+  let stopped = false;
 
   // The host's own seat is present while it hosts. A guest's seat is present while its channel is open.
   function presence(doc: SessionDoc): Record<Player, boolean> {
@@ -47,6 +49,7 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
   // Runs one guest call with the guest's identity. A guest proves nothing but its token,
   // exactly like a browser on the server, so a guest can never act for the host's seat.
   async function handle(guest: Guest, method: RpcMethod, args: unknown): Promise<SessionView> {
+    if (stopped) throw new RpcError(410, 'The host ended the game.');
     const fields = argsOf(args);
     if (method === 'join') {
       const token = asPlayerToken(fields.token);
@@ -115,6 +118,7 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
     },
 
     stop(reason: string): void {
+      stopped = true;
       for (const guest of guests) guest.server.bye(reason);
       guests.clear();
       unsubscribe();
@@ -148,16 +152,12 @@ export function createNearbyGuest(channel: Channel, token: PlayerToken, onBye: (
     lock: (_code: Code) => view('lock'),
     chat: (_code: Code, text: string) => view('chat', { text }),
     // One channel carries one session, so every change notice is for this session.
-    subscribe(_code: Code, onChange: () => void): () => void {
-      let open = true;
-      rpc.onChanged(() => {
-        if (open) onChange();
-      });
-      return () => {
-        open = false;
-      };
+    subscribe: (_code: Code, onChange: () => void): (() => void) => rpc.onChanged(() => onChange()),
+    // A guest that leaves on purpose gets no goodbye message.
+    close(): void {
+      ended = true;
+      channel.close();
     },
-    close: () => channel.close(),
   };
 }
 

@@ -11,8 +11,14 @@ export function setMuted(value: boolean): void {
 function audio(): AudioContext | undefined {
   if (muted || typeof AudioContext === 'undefined') return undefined;
   context ??= new AudioContext();
-  // Browsers start the context suspended until a user gesture. Every sound follows a gesture.
-  if (context.state === 'suspended') void context.resume();
+  // Browsers start the context suspended until a user gesture. A sound without a gesture (a chat
+  // message or the other player's move before the first tap) is skipped: a suspended context would
+  // queue it and play it late, together with the next sounds.
+  if (context.state === 'suspended') {
+    // Safari before 16.4 has no userActivation, and then plays the sound as before.
+    if (navigator.userActivation && !navigator.userActivation.isActive) return undefined;
+    void context.resume();
+  }
   return context;
 }
 

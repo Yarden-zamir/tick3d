@@ -57,7 +57,7 @@ function requireSeat(doc: SessionDoc, identity: Identity): Player[] {
   return seats;
 }
 
-export function isLocked(doc: SessionDoc): boolean {
+function isLocked(doc: SessionDoc): boolean {
   return doc.lockedGame === doc.games.length - 1 && currentGame(doc).status.kind === 'playing';
 }
 

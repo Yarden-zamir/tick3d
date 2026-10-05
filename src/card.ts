@@ -93,14 +93,24 @@ function text(ctx: CanvasRenderingContext2D, value: string, x: number, y: number
 }
 
 // Shrinks the text until it fits `maxWidth`, so a long line never runs off the card.
-function fittedText(ctx: CanvasRenderingContext2D, value: string, x: number, y: number, size: number, weight: number, color: string, maxWidth: number): void {
+function fittedText(
+  ctx: CanvasRenderingContext2D,
+  value: string,
+  x: number,
+  y: number,
+  size: number,
+  weight: number,
+  color: string,
+  maxWidth: number,
+  align: CanvasTextAlign = 'left',
+): void {
   let fitted = size;
   ctx.font = `${weight} ${fitted}px ${FONT}`;
   while (fitted > 16 && ctx.measureText(value).width > maxWidth) {
     fitted--;
     ctx.font = `${weight} ${fitted}px ${FONT}`;
   }
-  text(ctx, value, x, y, fitted, weight, color);
+  text(ctx, value, x, y, fitted, weight, color, align);
 }
 
 // A sticker in the gap between the wordmark and the date, tilted like the "3d" of the wordmark.
@@ -138,10 +148,12 @@ function brand(ctx: CanvasRenderingContext2D, t: Theme, date: Date): void {
   text(ctx, '3d', 0, 30, 84, 800, t.onColor, 'center');
   ctx.restore();
   const day = date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  // A long localized date shrinks, so its box never reaches the record sticker at x 720.
+  const maxText = 236;
   ctx.font = `700 30px ${FONT}`;
-  const dayWidth = ctx.measureText(day).width + 44;
+  const dayWidth = Math.min(ctx.measureText(day).width, maxText) + 44;
   block(ctx, t, { x: WIDTH - 80 - dayWidth, y: 80, w: dayWidth, h: 64, fill: t.surface, radius: 10, border: 4, shadow: 6 });
-  text(ctx, day, WIDTH - 80 - dayWidth / 2, 123, 30, 700, t.ink, 'center');
+  fittedText(ctx, day, WIDTH - 80 - dayWidth / 2, 123, 30, 700, t.ink, maxText, 'center');
 }
 
 // `outline` is the line color, or the on-color on a winning cell, so a piece never melts into its cell.
@@ -229,15 +241,15 @@ export async function drawCard(input: CardInput): Promise<HTMLCanvasElement> {
   const decided = input.game.status.kind !== 'draw';
   const bannerText = decided ? t.onColor : t.ink;
   block(ctx, t, { x: 80, y: 210, w: WIDTH - 160, h: 200, fill: decided ? t.win : t.surface, radius: 16, border: 6, shadow: 12 });
-  text(ctx, input.title, WIDTH / 2, 322, 104, 800, bannerText, 'center');
-  text(ctx, input.subtitle, WIDTH / 2, 378, 38, 600, bannerText, 'center');
+  fittedText(ctx, input.title, WIDTH / 2, 322, 104, 800, bannerText, WIDTH - 220, 'center');
+  fittedText(ctx, input.subtitle, WIDTH / 2, 378, 38, 600, bannerText, WIDTH - 220, 'center');
   if (input.record !== undefined) recordSticker(ctx, t, input.record);
   // Board rows: 490 + 2 slabs of 277 + 84 between them ends at 1128, clear of the box at 1170.
   board(ctx, t, input.game, 490);
   block(ctx, t, { x: 80, y: 1170, w: WIDTH - 160, h: input.footer === '' ? 104 : 140, fill: t.surface, radius: 14, border: 5, shadow: 10 });
   fittedText(ctx, input.matchup, 110, 1220, 38, 800, t.ink, WIDTH - 220);
   fittedText(ctx, input.details, 110, 1258, 26, 600, t.muted, WIDTH - 220);
-  if (input.footer !== '') text(ctx, input.footer, 110, 1294, 28, 800, t.ink);
+  if (input.footer !== '') fittedText(ctx, input.footer, 110, 1294, 28, 800, t.ink, WIDTH - 220);
   return canvas;
 }
 

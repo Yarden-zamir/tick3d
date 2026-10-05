@@ -90,9 +90,15 @@ type StoreOptions = {
   now?: () => number;
   // Which seats of a session have it open now. The HTTP layer knows; tests pass nothing.
   presence?: (code: Code) => Record<Player, boolean>;
+  // Runs after every write to a session, also a write during a read (a timeout, a format upgrade).
+  // The HTTP layer tells the open pages of the session to fetch it again.
+  onChange?: (code: Code) => void;
 };
 
-export async function openStore(path: string, { now = Date.now, presence = () => ({ X: false, O: false }) }: StoreOptions = {}) {
+export async function openStore(
+  path: string,
+  { now = Date.now, presence = () => ({ X: false, O: false }), onChange = () => undefined }: StoreOptions = {},
+) {
   // The API container is small, so cap memory and threads below DuckDB's defaults (80% of RAM, all cores).
   // A new file defaults to the v1.0 storage format for old readers, but VARIANT needs v1.5 storage.
   const instance = await DuckDBInstance.create(path, {
@@ -131,6 +137,7 @@ export async function openStore(path: string, { now = Date.now, presence = () =>
       'UPDATE sessions SET doc = $doc::JSON::VARIANT, version = version + 1, updated_at = now() WHERE code = $code',
       { code: row.code, doc: serialize(doc) },
     );
+    onChange(row.code);
     return loadRaw(row.code);
   }
 
@@ -240,11 +247,17 @@ export async function openStore(path: string, { now = Date.now, presence = () =>
         );
       }),
 
+    // Logout: this browser no longer acts for its account. The other devices of the account stay linked.
+    unlinkToken: (token: PlayerToken): Promise<void> =>
+      serialized(async () => {
+        await db.run('DELETE FROM player_tokens WHERE token = $token', { token });
+      }),
+
     // Stores finished games from a device. A result already stored (same id) is skipped, so a
     // device can send again after a lost answer. Returns how many results were new.
     addResults: (token: PlayerToken, uploads: readonly unknown[]): Promise<number> =>
       serialized(async () => {
-        const results = uploads.map((upload) => parseResultUpload(upload));
+        const results = uploads.map((upload) => parseResultUpload(upload, now()));
         if (!results.every((result): result is ResultUpload => result !== undefined)) {
           throw new SessionError(400, 'A result is not a valid finished game.');
         }
@@ -262,6 +275,9 @@ export async function openStore(path: string, { now = Date.now, presence = () =>
       }),
 
     // Every session and result of this player, on all their linked devices.
+    // Limit: the session query reads every document in the table, and other requests wait in the
+    // queue meanwhile. Revisit this when the sessions table holds about 100,000 rows, or when this
+    // call takes more than about 100 ms. A list of seat tokens in its own indexed table then helps.
     myGames: (token: PlayerToken): Promise<MyGames> =>
       serialized(async () => {
         const identity = await identityOf(token);
@@ -303,7 +319,7 @@ export async function openStore(path: string, { now = Date.now, presence = () =>
 
         const resultRows = await rows('FROM results SELECT doc::JSON AS doc WHERE list_contains($tokens, token)', { tokens });
         for (const row of resultRows) {
-          const result = parseResultUpload(JSON.parse(String(row.doc)));
+          const result = parseResultUpload(JSON.parse(String(row.doc)), now());
           if (result === undefined) throw new Error('a stored result does not parse');
           const winner = winnerOf(toGame(result.game).status);
           // A friend game has no "you": both seats played on one device, so it only counts as played.

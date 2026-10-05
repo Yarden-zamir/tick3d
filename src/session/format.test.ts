@@ -46,10 +46,18 @@ describe('parseDoc', () => {
     expect(() => parseDoc({ ...(formatOne as object), format: CURRENT_FORMAT + 1 })).toThrow(FormatError);
   });
 
+  it('refuses a stored game that does not replay, so it never breaks every later load', () => {
+    const doc = formatOne as { games: object[] };
+    const [won, ...rest] = doc.games;
+    // The first game of the fixture is won by X. A timeout after the end is impossible.
+    expect(() => parseDoc({ ...doc, games: [{ ...won, timedOut: true }, ...rest] })).toThrow(FormatError);
+  });
+
   it.each([
     ['no name', { games: [{ moves: [] }] }],
     ['no games', { name: 'x', games: [] }],
     ['an illegal move list', { name: 'x', games: [{ moves: [64] }] }],
+    ['a cell played twice', { name: 'x', games: [{ moves: [5, 5] }] }],
     ['an invalid clock', { name: 'x', games: [{ moves: [] }], clock: { perMove: 1, perGame: null } }],
   ])('throws on %s', (_, doc) => {
     expect(() => parseDoc(doc)).toThrow(FormatError);

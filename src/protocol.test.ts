@@ -94,10 +94,13 @@ describe('parseResultUpload', () => {
   const X_WINS = [0, 1, 16, 2, 32, 3, 48];
   const finished = toRecord(replay(X_WINS));
   const valid = { id: 'aaaaaaaa-0000-4000-8000-000000000001-ab3k-0', mode: 'computer', game: finished, you: 'X', difficulty: 'hard', finishedAt: 5 };
+  const now = 1_000_000;
+  const day = 86_400_000;
 
   it('accepts a finished game with a matching mode, seat and level', () => {
-    expect(parseResultUpload(valid)).toEqual(valid);
-    expect(parseResultUpload({ ...valid, mode: 'friend', you: null, difficulty: null })).toBeDefined();
+    expect(parseResultUpload(valid, now)).toEqual(valid);
+    expect(parseResultUpload({ ...valid, mode: 'friend', you: null, difficulty: null }, now)).toBeDefined();
+    expect(parseResultUpload({ ...valid, finishedAt: now + day }, now)).toBeDefined();
   });
 
   it.each([
@@ -107,7 +110,10 @@ describe('parseResultUpload', () => {
     ['a computer game without a level', { ...valid, difficulty: null }],
     ['an online game', { ...valid, mode: 'online' }],
     ['a short id', { ...valid, id: 'short' }],
+    ['a finish time of zero', { ...valid, finishedAt: 0 }],
+    ['a finish time more than a day ahead', { ...valid, finishedAt: now + day + 1 }],
+    ['a finish time the database cannot store', { ...valid, finishedAt: 1e300 }],
   ])('refuses %s', (_, value) => {
-    expect(parseResultUpload(value)).toBeUndefined();
+    expect(parseResultUpload(value, now)).toBeUndefined();
   });
 });

@@ -73,4 +73,34 @@ describe('Nearby host and guest', () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(first.bye()).toBe('The host ended the game.');
   });
+
+  it('does not run a guest call that arrives after the host stops', async () => {
+    const { local, nearby, code, connect } = await setup();
+    const first = connect(guest);
+    await first.backend.join(code);
+    nearby.stop('The host ended the game.');
+    await expect(first.backend.chat(code, 'too late')).rejects.toMatchObject({ status: 503 });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect((await local.load(code)).chat.some((message) => message.text === 'too late')).toBe(false);
+  });
+
+  it('does not report a goodbye when the guest leaves on purpose', async () => {
+    const { code, connect } = await setup();
+    const first = connect(guest);
+    await first.backend.join(code);
+    first.backend.close();
+    expect(first.bye()).toBe('');
+  });
+
+  it('stops change notices after unsubscribe', async () => {
+    const { local, code, connect } = await setup();
+    const first = connect(guest);
+    await first.backend.join(code);
+    let changes = 0;
+    const unsubscribe = first.backend.subscribe(code, () => changes++);
+    unsubscribe();
+    await local.chat(code, 'nobody hears this');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(changes).toBe(0);
+  });
 });

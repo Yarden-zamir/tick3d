@@ -136,7 +136,9 @@ const hardField = (key: keyof HardTuning, label: string, min: number, max: numbe
 export const TUNING_FIELDS: readonly TuningField[] = [
   ...styleFields('easy'),
   ...styleFields('medium'),
-  hardField('budgetMs', 'Thinking time (ms)', 50, 5000, 50),
+  // The search runs on the page's main thread, and a timed game counts its time. More than one
+  // second freezes the page and can lose on a 3 s move limit.
+  hardField('budgetMs', 'Thinking time (ms)', 50, 1000, 50),
   hardField('branching', 'Moves searched per position', 2, 30, 1),
   hardField('threatDepth', 'Threats in a row it looks for', 1, 12, 1),
   hardField('nearBest', 'Equal-move margin', 0, 100, 1),

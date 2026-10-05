@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'node:http';
 import { describe, expect, it } from 'vitest';
-import { type AuthConfig, authConfigFromEnv, createAuth } from './auth.ts';
+import { type AuthConfig, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
 
 const config: AuthConfig = {
   clientId: 'client-id',
@@ -21,8 +21,8 @@ function cookieValue(setCookie: string): string {
 function fakeGitHub(profile: object = { id: 7, login: 'octo', avatar_url: 'https://avatars.githubusercontent.com/u/7?v=4' }) {
   const calls: string[] = [];
   const impl = (async (url: string) => {
-    calls.push(String(url));
-    const body = String(url).includes('access_token') ? { access_token: 'gho_test' } : profile;
+    calls.push(url);
+    const body = url.includes('access_token') ? { access_token: 'gho_test' } : profile;
     return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
   }) as typeof fetch;
   return { impl, calls };
@@ -91,5 +91,33 @@ describe('login settings', () => {
     expect(() =>
       authConfigFromEnv({ GITHUB_CLIENT_ID: 'a', GITHUB_CLIENT_SECRET: 'b', AUTH_SECRET: 'short', AUTH_ORIGIN: 'https://x', COOKIE_DOMAIN: 'x' }),
     ).toThrow();
+  });
+});
+
+describe('request limits', () => {
+  const from = (headers: Record<string, string>, remoteAddress = '10.0.0.9') =>
+    ({ headers, socket: { remoteAddress } }) as unknown as IncomingMessage;
+
+  it('takes the client address from the last X-Forwarded-For entry, else from the socket', () => {
+    expect(clientOf(from({ 'x-forwarded-for': '203.0.113.7' }))).toBe('203.0.113.7');
+    expect(clientOf(from({ 'x-forwarded-for': '198.51.100.1, 203.0.113.7' }))).toBe('203.0.113.7');
+    expect(clientOf(from({}))).toBe('10.0.0.9');
+  });
+
+  it('allows a client the limit per window, and again after the window', () => {
+    const allow = createLimiter(2, 1_000, 10);
+    expect([allow('a', 0), allow('a', 1), allow('a', 2)]).toEqual([true, true, false]);
+    expect(allow('b', 2)).toBe(true);
+    expect(allow('a', 1_000)).toBe(true);
+  });
+
+  it('keeps a bounded number of clients and forgets the oldest first', () => {
+    const allow = createLimiter(1, 1_000, 2);
+    allow('a', 0);
+    allow('b', 1);
+    expect(allow('b', 2)).toBe(false);
+    allow('c', 3);
+    expect(allow('a', 4)).toBe(true);
+    expect(allow('c', 5)).toBe(false);
   });
 });

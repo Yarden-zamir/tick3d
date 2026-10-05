@@ -6,7 +6,10 @@ import { CELL_COUNT, type Game, type Player, replay, timeOut } from './game.ts';
 // Letters and digits without the look-alikes 0/O and 1/I, so a code read aloud is not ambiguous.
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const CODE_LENGTH = 4;
-export const NAME_MAX_LENGTH = 40;
+// Stored session documents pass the same checks when they are read (see src/session/format.ts).
+// So NAME_MAX_LENGTH and CHAT_MAX_LENGTH may only grow. To make one smaller, first make parseDoc
+// cut longer stored values, or old sessions stop loading.
+const NAME_MAX_LENGTH = 40;
 // Sessions and games per session have no limit. Add one when storage use calls for it.
 export const CHAT_MAX_LENGTH = 200;
 // A session keeps its newest messages only.
@@ -108,7 +111,7 @@ export function isMoveList(value: unknown): value is number[] {
   return Array.isArray(value) && value.length <= CELL_COUNT && value.every(isCell);
 }
 
-export function isGameRecord(value: unknown): value is GameRecord {
+function isGameRecord(value: unknown): value is GameRecord {
   if (!isRecord(value)) return false;
   const { moves, times, timedOut, clock } = value;
   return (
@@ -230,7 +233,11 @@ export const RESULTS_PER_UPLOAD = 100;
 
 const RESULT_ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789-';
 
-export function parseResultUpload(value: unknown): ResultUpload | undefined {
+// A result can finish at most this far in the future, to allow for a device clock that runs fast.
+const FUTURE_SLACK_MS = 86_400_000;
+
+// `now` is the time of the reader. The database can store finishedAt only inside a bounded range.
+export function parseResultUpload(value: unknown, now: number): ResultUpload | undefined {
   if (!isRecord(value)) return undefined;
   const { id, mode, game, you, difficulty, finishedAt } = value;
   if (typeof id !== 'string' || id.length < 16 || id.length > 64 || ![...id].every((c) => RESULT_ID_CHARS.includes(c))) {
@@ -250,7 +257,7 @@ export function parseResultUpload(value: unknown): ResultUpload | undefined {
   if (mode === 'friend' ? you !== null : you === null) return undefined;
   const level = difficulty === null ? null : DIFFICULTIES.find((d) => d === difficulty);
   if (level === undefined || (mode === 'computer') !== (level !== null)) return undefined;
-  if (typeof finishedAt !== 'number' || !Number.isFinite(finishedAt)) return undefined;
+  if (typeof finishedAt !== 'number' || !(finishedAt > 0 && finishedAt <= now + FUTURE_SLACK_MS)) return undefined;
   return { id, mode, game, you, difficulty: level, finishedAt };
 }
 

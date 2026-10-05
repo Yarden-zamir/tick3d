@@ -35,8 +35,9 @@ import { DEFAULT_TUNING, type Tuning, TUNING_FIELDS, fieldValue, isDefaultTuning
 import { DEVICE_ICONS, deviceLabel, detectDevice } from './nearby/device.ts';
 import { type Channel, answerOffer, createOffer } from './nearby/peer.ts';
 import { renderQr } from './nearby/qr.ts';
+import { RpcError } from './nearby/rpc.ts';
 import { type NearbyGuest, type NearbyHost, createNearbyGuest, createNearbyHost } from './nearby/session.ts';
-import { type Hello, decodeSignal } from './nearby/signal.ts';
+import { HELLO_NAME_MAX_LENGTH, type Hello, decodeSignal } from './nearby/signal.ts';
 import { setupPwa } from './pwa.ts';
 import { type Me, OnlineError, api, token } from './online.ts';
 import {
@@ -472,6 +473,8 @@ boardEl.addEventListener('pointerdown', (event) => {
 
 boardEl.addEventListener('pointermove', (event) => {
   if (drag === undefined || event.pointerId !== drag.pointer) return;
+  // The button came up outside the board, where pointerup does not reach it.
+  if (event.buttons === 0) return endDrag(event);
   const dx = event.clientX - drag.x;
   if (!drag.moved) {
     if (Math.abs(dx) < DRAG_THRESHOLD) return;
@@ -560,8 +563,9 @@ function showProblem(text: string): void {
   showToast(text, 'problem');
 }
 
+// Errors from the server, the device rules and the Nearby host are fit to show. Anything else is a bug.
 function showError(error: unknown): void {
-  if (!(error instanceof OnlineError) && !(error instanceof SessionError)) throw error;
+  if (!(error instanceof OnlineError) && !(error instanceof SessionError) && !(error instanceof RpcError)) throw error;
   showProblem(error.message);
 }
 
@@ -610,7 +614,8 @@ function finish(game: Game): void {
   if (session?.mode === 'computer' && winner !== null && mine !== null && winner !== mine) noteSurvival(session, game, index);
   setTimeout(() => {
     // Show the card only if that game is still the finished live game and nothing else is open.
-    if (games.length - 1 !== index || isLive() || review !== undefined || cardDialog.open) return;
+    if (games.length - 1 !== index || isLive() || review !== undefined) return;
+    if (cardDialog.open || myGamesDialog.open || homeConfirm.open) return;
     void openCard(index);
   }, CARD_DELAY_MS);
 }
@@ -701,8 +706,9 @@ function scheduleComputer(): void {
       thinking = false;
       return render();
     }
-    // The hard level searches on the main thread for up to 600 ms. CSS animations keep running,
-    // but input waits. Move the search to a Web Worker if the budget grows past about one second.
+    // The hard level searches on the main thread for its thinking time: 600 ms by default, at most
+    // 1000 ms in the advanced settings. CSS animations keep running, but input waits. Move the search
+    // to a Web Worker if that limit grows past about one second.
     const game = current();
     const cell = chooseMove(game.board, game.turn, settings.difficulty, Math.random, tuning);
     const request = { game: games.length - 1, moveCount: game.moves.length, cell };
@@ -788,6 +794,7 @@ function applyView(view: SessionView): void {
 }
 
 function openSession(view: SessionView, backend: SessionBackend, mode: Mode): void {
+  coordDigits = [];
   session?.unsubscribe();
   round++; // drops a computer move scheduled for the previous session
   thinking = false;
@@ -809,6 +816,7 @@ function openSession(view: SessionView, backend: SessionBackend, mode: Mode): vo
 }
 
 function leaveSession(): void {
+  coordDigits = [];
   session?.unsubscribe();
   session = undefined;
   games = [newGame('X', settings.clock)];
@@ -825,8 +833,10 @@ async function refresh(code: Code): Promise<void> {
   }
 }
 
+const BUSY_TEXT = 'Wait a moment: the last action is still running.';
+
 async function withBusy(task: () => Promise<void>): Promise<void> {
-  if (busy) return;
+  if (busy) return showToast(BUSY_TEXT);
   busy = true;
   render();
   try {
@@ -848,8 +858,19 @@ function defaultSessionName(mode: Mode = 'online'): string {
 // The seat of the player in a computer game: the one the computer does not hold.
 const humanSeatOf = (doc: SessionDoc): Player | undefined => (doc.computer ? other(doc.computer.seat) : undefined);
 
+// Every switch to another session takes a new number. A slow load of an older switch then opens
+// nothing, so a quick Easy → Hard or Online → Computer ends on the last choice. A switch also ends
+// a Nearby game, so a host never serves guests in the background.
+let navigation = 0;
+
+function beginSwitch(): number {
+  if (nearby.kind !== 'idle') endNearby();
+  return ++navigation;
+}
+
 // Opens the newest session on this device for the chosen match-up, or starts one.
 async function openLocalSession(mode: 'computer' | 'friend'): Promise<void> {
+  const switchNumber = beginSwitch();
   const backend = local;
   if (backend === undefined) throw new Error('the device backend is not ready');
   const latest = (await backend.list()).find(
@@ -861,43 +882,52 @@ async function openLocalSession(mode: 'computer' | 'friend'): Promise<void> {
     latest !== undefined
       ? await backend.load(latest.code)
       : await backend.create({ mode, name: defaultSessionName(mode), clock: settings.clock, human: settings.human, difficulty: settings.difficulty });
-  openSession(view, backend, mode);
+  if (switchNumber === navigation) openSession(view, backend, mode);
 }
 
 // Reopens any session on this device, for example from My games.
 async function openDeviceSession(code: Code): Promise<void> {
+  const switchNumber = beginSwitch();
   const backend = local;
   if (backend === undefined) throw new Error('the device backend is not ready');
-  const entry = (await backend.list()).find((item) => item.code === code);
+  const entry = await backend.summary(code);
   if (entry === undefined || entry.mode === 'nearby') return showProblem('That game is not on this device any more.');
+  const view = await backend.load(code);
+  if (switchNumber !== navigation) return;
   if (entry.doc.computer) {
     settings.difficulty = entry.doc.computer.difficulty;
     settings.human = humanSeatOf(entry.doc) ?? settings.human;
     saveSettings();
   }
-  openSession(await backend.load(code), backend, entry.mode);
+  openSession(view, backend, entry.mode);
 }
 
 const createSession = () =>
   withBusy(async () => {
     if (!navigator.onLine) throw new OnlineError('You are offline. Online games need a connection.');
-    openSession(await api.create(defaultSessionName(), settings.clock), api, 'online');
+    const switchNumber = beginSwitch();
+    const view = await api.create(defaultSessionName(), settings.clock);
+    if (switchNumber === navigation) openSession(view, api, 'online');
   });
 
 const joinSession = (code: Code) =>
   withBusy(async () => {
+    const switchNumber = beginSwitch();
     let view: SessionView;
     try {
       view = await api.load(code);
     } catch (error) {
-      // Without a network, an online game this device saw before opens read-only.
+      // Without a network, an online game this device saw before opens as last seen.
+      // A move then fails with the network error until the network comes back.
       const cached = await deviceDb?.get('remote', code);
-      if (!(error instanceof OnlineError) || cached === undefined) throw error;
+      if (!(error instanceof OnlineError) || error.status !== undefined || cached === undefined) throw error;
+      if (switchNumber !== navigation) return;
       openSession(cached.view, api, 'online');
       showToast('You are offline. This is the game as you last saw it.');
       return;
     }
     if (view.you === null && (!view.seats.X || !view.seats.O)) view = await api.join(code);
+    if (switchNumber !== navigation) return;
     openSession(view, api, 'online');
     sounds.click();
     showToast(view.you === null ? 'Both seats are taken. You are watching.' : `Joined ${view.name} as ${view.you}.`);
@@ -907,11 +937,17 @@ const joinSession = (code: Code) =>
 
 type NearbyState =
   | { kind: 'idle' }
+  // Starting to host: the session is being made. Host and Join are hidden, so a second tap does nothing.
+  | { kind: 'starting' }
   // Hosting: the open session is this device's, guests connect over WebRTC.
-  | { kind: 'hosting'; host: NearbyHost; invite?: { accept(code: string): Promise<{ channel: Channel; peer: Hello }> } }
+  | { kind: 'hosting'; host: NearbyHost; invite?: { accept(code: string): Promise<{ channel: Channel; peer: Hello }>; close(): void } }
   // Joining: waiting for the host's code, then showing our answer until the host connects.
-  | { kind: 'joining'; answer?: string }
+  | JoiningState
   | { kind: 'guest'; guest: NearbyGuest; hostHello: Hello };
+type JoiningState = { kind: 'joining'; answer?: { code: string; close(): void } };
+
+// Each Nearby step checks after every wait that its state is still the current one. A player who
+// cancelled or left in the meantime then gets nothing back, and a late connection closes.
 
 let nearby: NearbyState = { kind: 'idle' };
 let wakeLock: { release(): Promise<void> } | undefined;
@@ -919,7 +955,7 @@ const thisDevice = detectDevice();
 
 function nearbyHello(): Hello {
   const name = nearbyNameInput.value.trim() || account.user?.login || deviceLabel(thisDevice);
-  return { device: thisDevice, name: name.slice(0, 24) };
+  return { device: thisDevice, name: name.slice(0, HELLO_NAME_MAX_LENGTH) };
 }
 
 function deviceItem(hello: Hello | { device: 'server'; name: string }, role: string): HTMLLIElement {
@@ -1008,6 +1044,8 @@ async function useNearbyCode(code: string): Promise<void> {
   try {
     await handler(nearbyCodeOf(code));
   } catch (error) {
+    // Cancel, End and Leave stop an attempt on purpose, so they need no message.
+    if (error instanceof DOMException && error.name === 'AbortError') return;
     showProblem(error instanceof Error ? error.message : 'That code did not work.');
   }
 }
@@ -1016,14 +1054,19 @@ async function useNearbyCode(code: string): Promise<void> {
 async function inviteGuest(): Promise<void> {
   if (nearby.kind !== 'hosting') return;
   const state = nearby;
+  state.invite?.close();
   const invite = await createOffer(nearbyHello());
-  nearby = { ...state, invite };
+  // The host ended, or another invite started, while the code was made.
+  if (nearby !== state) return invite.close();
+  const current = { ...state, invite };
+  nearby = current;
   showNearbyStep('1. Scan this code with the other device\'s camera. 2. Then scan the code that device shows with this device\'s camera, or paste it below.', {
     code: invite.code,
     input: true,
   });
   onNearbyCode = async (code) => {
     const { channel, peer } = await invite.accept(code);
+    if (nearby !== current) return channel.close();
     state.host.addGuest(channel, peer);
     onNearbyCode = undefined;
     hideNearbyStep();
@@ -1034,28 +1077,41 @@ async function inviteGuest(): Promise<void> {
 }
 
 async function hostNearby(): Promise<void> {
+  navigation++; // a slow load of another session must not replace this one
   const backend = local;
   if (backend === undefined) throw new Error('the device backend is not ready');
+  const starting: NearbyState = { kind: 'starting' };
+  nearby = starting;
+  void renderNearby();
   const view = await backend.create({ mode: 'nearby', name: defaultSessionName('nearby'), clock: settings.clock, human: 'X' });
+  if (nearby !== starting) return;
   openSession(view, backend, 'nearby');
   const host = createNearbyHost(backend, view.code, token);
   host.onGuestsChanged(() => void renderNearby());
-  nearby = { kind: 'hosting', host };
+  const hosting: NearbyState = { kind: 'hosting', host };
+  nearby = hosting;
   // Keep the host's screen on: guests lose the game when the host's page sleeps.
-  wakeLock = await navigator.wakeLock?.request('screen').catch(() => undefined);
+  const lock = await navigator.wakeLock?.request('screen').catch(() => undefined);
+  if (nearby !== hosting) return void lock?.release().catch(() => undefined);
+  wakeLock = lock;
   await inviteGuest();
   void renderNearby();
 }
 
 async function joinNearby(code?: string): Promise<void> {
-  nearby = { kind: 'joining' };
+  navigation++; // a slow load of another session must not replace the joined one
+  const joining: JoiningState = { kind: 'joining' };
+  nearby = joining;
+  void renderNearby();
   showNearbyStep("Scan the host's code with this device's camera, or paste it below.", { input: true });
   onNearbyCode = async (code) => {
     const answer = await answerOffer(code, nearbyHello());
-    nearby = { kind: 'joining', answer: answer.code };
+    if (nearby !== joining) return answer.close();
+    joining.answer = answer;
     showNearbyStep(`Show this code to ${answer.peer.name}, the host, to scan.`, { code: answer.code });
     onNearbyCode = undefined;
     const channel = await answer.connected;
+    if (nearby !== joining) return channel.close();
     const guest = createNearbyGuest(channel, token, (reason) => {
       if (nearby.kind !== 'guest' || nearby.guest !== guest) return;
       showToast(reason);
@@ -1065,6 +1121,8 @@ async function joinNearby(code?: string): Promise<void> {
     hideNearbyStep();
     let view = await guest.load('' as Code);
     if (view.you === null && (!view.seats.X || !view.seats.O)) view = await guest.join(view.code);
+    // The player left while the game loaded. endNearby closed the connection already.
+    if (nearby.kind !== 'guest' || nearby.guest !== guest) return;
     openSession(view, guest, 'nearby');
     sounds.sent();
     showToast(view.you === null ? 'Both seats are taken. You are watching.' : `Joined the game hosted on ${answer.peer.name} as ${view.you}.`);
@@ -1101,6 +1159,8 @@ async function openNearbyLink(code: string): Promise<void> {
 // Leaves Nearby play. The host says goodbye to its guests; a guest closes its connection.
 function endNearby(sayBye = true): void {
   const state = nearby;
+  if (state.kind === 'hosting') state.invite?.close();
+  if (state.kind === 'joining') state.answer?.close();
   if (state.kind === 'hosting') state.host.stop('The host ended the game.');
   if (state.kind === 'guest' && sayBye) state.guest.close();
   void wakeLock?.release().catch(() => undefined);
@@ -1134,6 +1194,8 @@ nearbyJoinButton.addEventListener('click', () => {
 nearbyAdd.addEventListener('click', () => void inviteGuest().catch(showError));
 nearbyStop.addEventListener('click', () => endNearby());
 nearbyCancel.addEventListener('click', () => {
+  if (nearby.kind === 'hosting') nearby.invite?.close();
+  if (nearby.kind === 'joining') nearby.answer?.close();
   hideNearbyStep();
   onNearbyCode = undefined;
   if (nearby.kind === 'joining') nearby = { kind: 'idle' };
@@ -1141,7 +1203,9 @@ nearbyCancel.addEventListener('click', () => {
 });
 nearbyUseCode.addEventListener('click', () => void useNearbyCode(nearbyCodeIn.value));
 nearbyCopy.addEventListener('click', () => {
-  void navigator.clipboard.writeText(nearbyCodeOut.value).then(
+  // Plain HTTP (a laptop host) has no clipboard API.
+  const copied = navigator.clipboard?.writeText(nearbyCodeOut.value) ?? Promise.reject(new Error('no clipboard'));
+  void copied.then(
     () => showToast('Code copied.'),
     () => showProblem('Copy did not work. Select the code and copy it.'),
   );
@@ -1154,6 +1218,8 @@ function renderAccount(): void {
   accountAvatar.hidden = user === null;
   if (user !== null) accountAvatar.src = `${user.avatar}&s=48`;
   accountName.textContent = user?.login ?? 'My games';
+  // On narrow phones only the icon shows, so the spoken name carries the login too.
+  accountButton.setAttribute('aria-label', user === null ? 'My games' : `My games, logged in as ${user.login}`);
 }
 
 function tallyBox(label: string, tally: Tally): HTMLElement {
@@ -1212,7 +1278,11 @@ async function deviceTallies(): Promise<Tally> {
 
 const gameCount = (count: number) => `${count} ${count === 1 ? 'game' : 'games'}`;
 
+// Opening the dialog again while a list loads starts over, so a late answer never adds a second copy.
+let myGamesRequest = 0;
+
 async function openMyGames(): Promise<void> {
+  const request = ++myGamesRequest;
   myGamesDialog.showModal();
   // Account
   accountBox.replaceChildren();
@@ -1239,11 +1309,13 @@ async function openMyGames(): Promise<void> {
   }
   // Device sessions
   const deviceSessions = (await local?.list()) ?? [];
+  if (request !== myGamesRequest) return;
   myGamesDevice.replaceChildren(
     ...deviceSessions
       .filter((entry) => entry.mode !== 'nearby')
       .map((entry) =>
         listItem(entry.name, `${entry.mode === 'computer' ? 'Computer' : 'Friend'} · ${gameCount(entry.games)} · ${ago(entry.updatedAt)}`, 'Open', () => {
+          if (settingsLocked()) return reject(undefined, 'locked');
           void openDeviceSession(entry.code).catch(showError);
         }),
       ),
@@ -1255,6 +1327,7 @@ async function openMyGames(): Promise<void> {
   try {
     if (!navigator.onLine) throw new OnlineError('offline');
     const mine = await api.myGames();
+    if (request !== myGamesRequest) return;
     myGamesNote.textContent = mine.user ? 'Your games on every device you logged in with.' : 'Your games on this browser.';
     myGamesStats.append(
       tallyBox('All games', mine.total),
@@ -1269,7 +1342,7 @@ async function openMyGames(): Promise<void> {
           summary.name,
           `vs ${summary.opponent?.login ?? 'Opponent'} · ${gameCount(summary.games)} · ${ago(summary.updatedAt)}`,
           'Continue',
-          () => void joinSession(summary.code),
+          () => (settingsLocked() ? reject(undefined, 'locked') : void joinSession(summary.code)),
           summary.yourTurn ? 'Your turn' : undefined,
         ),
       ),
@@ -1278,8 +1351,10 @@ async function openMyGames(): Promise<void> {
     myGamesOnlineBox.hidden = false;
   } catch (error) {
     if (!(error instanceof OnlineError)) throw error;
+    const tallies = await deviceTallies();
+    if (request !== myGamesRequest) return;
     myGamesNote.textContent = 'You are offline. These are the games on this device.';
-    myGamesStats.append(tallyBox('Games on this device', await deviceTallies()));
+    myGamesStats.append(tallyBox('Games on this device', tallies));
     myGamesOnlineBox.hidden = true;
   }
 }
@@ -1528,7 +1603,9 @@ function render(): void {
     field.hidden = field.dataset.showView !== settings.view;
   });
   document.querySelectorAll<HTMLElement>('.segmented').forEach((group) => {
-    const value = String(settings[group.dataset.setting as keyof Settings]);
+    const value = settings[group.dataset.setting as keyof Settings];
+    // Segmented controls exist for the text settings only (mode, level, view and the like).
+    if (typeof value !== 'string') throw new Error(`segmented control for a setting that is not text: ${group.dataset.setting}`);
     group.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
       button.setAttribute('aria-pressed', String(button.dataset.value === value));
       button.disabled = frozen;
@@ -1613,7 +1690,7 @@ function render(): void {
   newGameButton.disabled = frozen || busy || thinking || session?.you == null || sharedLive;
   advancedBox.hidden = settings.mode !== 'computer';
   for (const input of tuningEl.querySelectorAll('input')) input.disabled = frozen;
-  undoButton.hidden = shared() || settings.mode === 'online' || settings.mode === 'nearby';
+  undoButton.hidden = settings.mode === 'online' || settings.mode === 'nearby';
   undoButton.disabled =
     frozen || thinking || review !== undefined || !isLive() || current().moves.length === 0 || hasLimit(current().clock);
   showCardButton.hidden = isLive() || review !== undefined;
@@ -2273,12 +2350,14 @@ chatForm.addEventListener('submit', (event) => {
     return;
   }
   const { code, backend } = session;
+  const typed = chatInput.value;
   chatSending = true;
   render();
   void (async () => {
     try {
       const view = await backend.chat(code, text);
-      chatInput.value = '';
+      // A message typed during the send stays in the box.
+      if (chatInput.value === typed) chatInput.value = '';
       sounds.sent();
       if (session?.code === code) applyView(view);
     } catch (error) {
@@ -2298,6 +2377,8 @@ joinForm.addEventListener('submit', (event) => {
     showProblem('A code has 4 letters or digits.');
     return;
   }
+  // Keep the typed code while another action runs, so the player can try again.
+  if (busy) return showToast(BUSY_TEXT);
   joinCodeInput.value = '';
   void joinSession(code);
 });

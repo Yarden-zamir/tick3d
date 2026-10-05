@@ -91,14 +91,28 @@ describe('rpcClient and rpcServer', () => {
     await expect(pending).rejects.toMatchObject({ status: 503 });
   });
 
-  it('closes on a malformed message from the guest', async () => {
+  it('says goodbye with the reason, then closes, on a malformed message from the guest', async () => {
     const [guestSide, hostSide] = channelPair();
     const closed = vi.fn();
+    const bye = vi.fn();
     guestSide.onClose(closed);
     rpcServer(hostSide, async () => ({}));
+    rpcClient(guestSide).onBye(bye);
     guestSide.send({ t: 'call', id: -1, method: 'get', args: null });
-    await settle();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(bye).toHaveBeenCalledWith('The host received an invalid message.');
     expect(closed).toHaveBeenCalled();
+  });
+
+  it('stops calling a change handler after its remover runs', async () => {
+    const [guestSide, hostSide] = channelPair();
+    const server = rpcServer(hostSide, async () => ({}));
+    const changed = vi.fn();
+    const remove = rpcClient(guestSide).onChanged(changed);
+    remove();
+    server.notifyChanged();
+    await settle();
+    expect(changed).not.toHaveBeenCalled();
   });
 
   it('closes on a malformed message from the host', async () => {
