@@ -26,8 +26,8 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - Session history: the panel lists the games of the session. Replay steps through a finished game move by move. A session holds any number of games.
 - Time limits, like a chess clock: a limit per player for the whole game (30 s to 120 min), a limit per move (3 s to 10 min), or both. Each limit has a switch, a number box and quick picks. A player who runs out of either limit loses. The first move of each player is untimed, so the clock starts after both players moved once. A clock ticks in the last 10 seconds. A timed game has no undo.
 - A game keeps the time limit it started with. A change during a game starts with the next game, and the panel shows both limits until then.
-- End card: at the end of a game, a card shows the result, the final board and the game details, the hide settings included. New game on the card starts the next game. The card uses the active theme. Share sends the image through the system share sheet. Without file sharing (most desktop browsers), Share copies the image, and Save image downloads it. Two check boxes, both on by default, add the game code and the link to the card and the share text. A local game has no code, so it shows only the link option.
-- Survival records: when the computer wins, the number of moves that the game lasted can be a new record. Each level, time limit and hide setting keeps its own record. A new record shows as a message and as a sticker on the end card, with the old best. The first loss of a setup sets the record without a message. The records stay on the device.
+- End card: at the end of a game, a card shows the result, the final board and the game details, the hide settings included. New game on the card starts the next game. The card uses the active theme. Share sends the image through the system share sheet. Without file sharing (most desktop browsers), Share copies the image, and Save image downloads it. Two check boxes, both on by default, add the game code and the link of the game (see Game links) to the card and the share text. A local game has no code, so it shows only the link option.
+- Survival records: when the computer wins, the number of moves that the game lasted can be a new record. Each level, time limit and hide setting keeps its own record. A new record shows as a message and as a sticker on the end card, with the old best. The first loss of a setup sets the record without a message. The device keeps its records for offline play, and the server keeps the records of every game it received. On each visit the page takes the higher record of each setup from the server, so a new record must beat the best of every device of the account.
 - Sound effects made with Web Audio. Each layer has its own note. A mute button keeps the choice.
 - Drag the tower sideways to turn it all the way round. The tilt stays at the resting view. On a touch screen, a vertical swipe still scrolls the page. Reset angle returns to the resting view, and the browser keeps the angle. A drag never places a mark. Boards and tiles have real 3D depth in the tower, so they look solid at any turn. Layer 1 is the bottom plane and layer 4 the top one; the flat view labels each layer.
 - Two views: a 3D tower of tilted layers and a flat view. The flat view has four layouts: grid, side by side, top to bottom, and steps.
@@ -41,6 +41,14 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 ![Synthwave, Candy and Mono themes on a phone](docs/screenshots/themes.png)
 
 <img src="docs/screenshots/end-card.png" alt="The end card of a won game" width="360">
+
+## Game links and match history
+
+- Every finished game gets an id and a read-only link. An online game uses its session code and game number (`/?game=AB3K-2`). Any other game gets 8 random characters from the device that played it (`/?game=K7P2QX9M`). The server keeps each id unique and gives a new id when two devices pick the same one.
+- At the end of a game the address shows the link, and the end card shares it. A new game, a switch to another game or Home removes it from the address. An online game keeps its `?code` too.
+- The link shows the final board with the replay controls, the players (the GitHub name of a player with a login, else "Anonymous"), the mode, the level, the time limit, the hide settings, the date and the result. Nobody can move in it, and it has no next game. Play goes back to a game of your own.
+- A game that this device did not upload yet opens from the device copy, also offline.
+- My games has a History list of every finished game in every mode, newest first, 50 at a time, with a View button. Offline, it lists the games on this device.
 
 ## Online play
 
@@ -84,7 +92,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - Login with GitHub is optional. Every browser plays with a random token either way.
 - A login links the browser's token to the GitHub account. Sessions then follow the player: a seat taken on a laptop also plays from a phone that logged in to the same account, so an async game can continue on another device.
 - The score shows a player's GitHub name and avatar, and the chat uses the name.
-- My games (the button in the header) shows the account, stats per mode and per computer level, the online sessions with a "Your turn" mark and a Continue button, and every session on this device. Offline, it shows the games on this device.
+- My games (the button in the header) shows the account, stats per mode and per computer level, the match history, the online sessions with a "Your turn" mark and a Continue button, and every session on this device. Offline, it shows the games on this device.
 - The login runs on the production address. Its cookie is signed and valid for `tick3d.yarden-zamir.com` and its subdomains, so pull request previews see it too. Without the GitHub settings, login is off and the page hides it.
 
 <img src="docs/screenshots/my-games.png" alt="My games: stats and sessions" width="480">
@@ -104,13 +112,15 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - `src/pwa.ts` and `vite.config.ts`: the service worker and the manifest.
 - `src/main.ts`, `src/style.css`, `index.html`: the page. `src/main.ts` starts the page; `src/page/` holds the page script, one module per feature (board, sessions, Nearby, My games, clocks, chat and more). `src/page/state.ts` holds the state that more than one module changes.
 - `public/`: the favicons and touch icons, copied into the build as is. The service worker plugin writes the web manifest.
-- `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login.
+- `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login. `server/stats.ts`: the SQL of the stats page.
+- `stats.html`, `src/stats/`: the hidden stats page.
 
 The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs on Node 24, which runs TypeScript directly, and stores sessions in [DuckDB](https://duckdb.org) through `@duckdb/node-api`.
 
 ## Stored data and format changes
 
-- The `sessions` table has one row per session: the code, a creation order, a version, timestamps, and the session as one `VARIANT` document. `users` and `player_tokens` link browsers to GitHub accounts. `results` holds finished games that devices sent.
+- The `sessions` table has one row per session: the code, a creation order, a version, timestamps, and the session as one `VARIANT` document. `users` and `player_tokens` link browsers to GitHub accounts. `results` holds every finished game, one row per game: the games that devices sent, and the online games, which the server records when they end. Its columns hold the public game id, the token of each seat, the winner, how the game ended and the game metrics. `events` holds the faults that pages report.
+- On every start the server gives older `results` rows their new columns, and records online games that ended before it recorded them.
 - A device stores its sessions in the same document format in IndexedDB, so the same rules read and upgrade them on a phone.
 - The document carries a `format` number. `src/session/format.ts` reads every known format, upgrades old documents step by step, and writes the current format back on the first read.
 - A new optional field needs only a default in `parseDoc`. A breaking change needs a new `CURRENT_FORMAT` and one `UPGRADES` step. Neither needs a database reset or a manual migration.
@@ -118,6 +128,27 @@ The page is plain TypeScript built with Vite, with no runtime dependencies. The 
 - Every write goes through the same check as every read, so the table never holds a document that cannot be read back.
 - `src/session/fixtures/` holds a stored document of each released format. A test reads each one, so old data keeps working.
 - Table changes are append-only statements such as `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS`, which run on every start.
+
+## API
+
+| Route | What it does |
+| --- | --- |
+| `POST /api/sessions`, `GET /api/sessions/:code` and the other session routes | Online play (see `server/main.ts`). |
+| `POST /api/results` | Finished games from a device. The answer holds the new public id of each result that the server renamed. |
+| `GET /api/games/:id` | One finished game, read-only. No token and no result id. |
+| `GET /api/me/games` | My games: tallies and online sessions. |
+| `GET /api/me/history?offset=0` | The match history of the player (by account, else by browser token), 50 games per page, newest first. |
+| `GET /api/me/records` | The survival records of the player, with the same keys as on the device (`src/records.ts`). |
+| `POST /api/events` | A fault report from a page. At most 1 kB, 30 per 10 minutes per address. |
+| `GET /api/stats` | The aggregates of the stats page. The server computes them at most once a minute. |
+
+## Stats page and what is logged
+
+- `/stats` is a page that nothing links to. It shows games per day, players per day, a weekday and hour heatmap, games by mode, results and survival leaderboards per computer level, game length, time per move (players and computer), the slowest thinkers, first-player advantage, opening moves and all moves over the 4 layers, how games end, hide setting and time limit use, tuned computers, devices, views, layouts, themes, app versions, board and keypad input, refusals, undo use, offline games, Nearby device mixes and page faults. It uses the saved theme. Search engines are told not to list it.
+- The page shows counts only. A leaderboard shows the GitHub name of a player with a login, else "Anonymous". It never shows a token, a result id or a game id.
+- What a finished game sends, besides the game itself: the kind of device (phone, tablet or computer), the view, the layout, the theme, how many moves came from the board and from the keypad, the refused actions by reason, the number of undos, the thinking time of each computer move, whether the device was offline, the app version (the file name of the page script), the computer settings of a tuned computer, and for Nearby the role of the device and the kind of the other device.
+- A fault report holds the error message with the file name and line, or the reason of a burst of refused moves, and the app version. It holds no token and no address. A page sends at most 10 per visit.
+- Online games send no metrics: the server records them from the session.
 
 ## Develop
 

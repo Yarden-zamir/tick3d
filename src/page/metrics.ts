@@ -2,7 +2,7 @@
 // fault reports. Nothing here holds a name, a chat message or an address.
 import { detectDevice } from '../nearby/device.ts';
 import { api } from '../online.ts';
-import { type ClientEvent, type Code, type Metrics, type Refusal, toVersion } from '../protocol.ts';
+import { type ClientEvent, type Code, MAX_COUNT, MAX_THINK_MS, type Metrics, type Refusal, toVersion } from '../protocol.ts';
 import { computerTuning } from './advanced.ts';
 import { settings } from './settings.ts';
 import { page } from './state.ts';
@@ -53,17 +53,19 @@ export function countRefusal(reason: Refusal): void {
 // The metrics of a game that just ended. The caller adds the Nearby part, which needs a wait.
 export function gameMetrics(code: Code, index: number, tuned: boolean): Metrics {
   const counted = counters.key === keyOf(code, index) ? counters : fresh('');
+  // The server refuses a whole result with a value out of range, so cap each value here.
+  const cap = (count: number) => Math.min(count, MAX_COUNT);
+  const refused = Object.fromEntries(Object.entries(counted.refused).map(([reason, count]) => [reason, cap(count)]));
   return {
     device: thisDevice,
     view: settings.view,
     layout: settings.layout,
     theme: settings.theme,
-    input: { ...counted.input },
-    refused: { ...counted.refused },
-    undos: counted.undos,
-    // TODO(computer worker PR): send page.computerThinkMs here when src/page/state.ts has it.
-    // Until then the stats page takes the computer's time from the move times.
-    thinkMs: [],
+    input: { board: cap(counted.input.board), keypad: cap(counted.input.keypad) },
+    refused,
+    undos: cap(counted.undos),
+    // A tab in the background can stretch a search far past its budget.
+    thinkMs: page.computerThinkMs.slice(0, 64).map((ms) => Math.min(ms, MAX_THINK_MS)),
     offline: counted.offline || !navigator.onLine,
     version: APP_VERSION,
     tuning: tuned ? computerTuning() : null,

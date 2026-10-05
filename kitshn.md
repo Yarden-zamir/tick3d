@@ -9,7 +9,7 @@ This repository deploys tick3d to `tick3d.yarden-zamir.com` with KitSHn.
 - Each environment has its own `sessions` volume, so a pull request preview never touches production sessions.
 - GitHub login needs the repository variable `KITSHN_GITHUB_CLIENT_ID` and the secrets `KITSHN_GITHUB_CLIENT_SECRET` and `KITSHN_AUTH_SECRET` (at least 32 random characters). Without all three, login is off. With only some of them, the API stops at start, so a half setup never goes unnoticed.
 - The GitHub App [`tick3d-game`](https://github.com/apps/tick3d-game) handles the login. It is public and asks for no permissions. Its callback is `https://tick3d.yarden-zamir.com/api/auth/github/callback`. Previews send a login to production and read its cookie, which is valid for every subdomain.
-- Files in `/assets/` have a content hash in the name, so Caddy caches them for one year. `index.html` is not cached.
+- Files in `/assets/` have a content hash in the name, so Caddy caches them for one year. `index.html` and `stats.html` are not cached. Caddy serves `stats.html` at `/stats` with an `X-Robots-Tag: noindex` header.
 - The login values are repository-wide, so previews get them too. Only people who can open pull requests from this repository get them.
 
 ## Files

@@ -1,0 +1,202 @@
+/* The stats page. It uses the theme tokens of style.css, so it follows the saved theme. */
+.stats {
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: max(1rem, env(safe-area-inset-top)) 1rem 3rem;
+}
+
+.stats-head {
+  margin-bottom: 1.2rem;
+}
+
+.stats-head p {
+  margin: 0.8rem 0 0;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr));
+  gap: 1rem;
+}
+
+.stats-card {
+  display: grid;
+  align-content: start;
+  gap: 0.6rem;
+  min-width: 0;
+  padding: 0.9rem 1rem;
+  border: var(--border) solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+.stats-card.wide {
+  grid-column: 1 / -1;
+}
+
+.stats-card h2,
+.stats-card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.stats-card h3 {
+  font-size: 0.95rem;
+}
+
+.stats-hint,
+.stats-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.stats-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: 0.6rem;
+}
+
+.stats-tile {
+  display: grid;
+  padding: 0.5rem 0.7rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.stats-tile b {
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.stats-tile span {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.stats-bars {
+  display: grid;
+  grid-template-columns: minmax(5rem, max-content) 1fr max-content;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.stats-bars svg {
+  width: 100%;
+  height: 0.9rem;
+}
+
+.stats-bar-label {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.stats-bar-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-columns {
+  width: 100%;
+  height: 9rem;
+  border-bottom: 2px solid var(--line);
+}
+
+.stats-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.stats-axis.spread span {
+  flex: 1;
+  text-align: center;
+}
+
+.stats-heatmap {
+  width: 100%;
+  max-width: 48rem;
+}
+
+.stats-heatmap text {
+  fill: var(--muted);
+  font-size: 6px;
+  font-weight: 600;
+}
+
+.stats-cube {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  gap: 0.8rem;
+}
+
+.stats-cube figure {
+  margin: 0;
+  text-align: center;
+}
+
+.stats-cube svg {
+  width: 100%;
+  max-width: 12rem;
+}
+
+.stats-cube figcaption {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.stats-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.stats-legend i {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-right: 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  vertical-align: -0.1rem;
+}
+
+.stats-table {
+  overflow-x: auto;
+}
+
+.stats-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.stats-table th,
+.stats-table td {
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid var(--dot);
+  text-align: left;
+}
+
+.stats-table th {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.stats-table td {
+  font-variant-numeric: tabular-nums;
+}

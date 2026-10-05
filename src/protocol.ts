@@ -299,8 +299,8 @@ export type Metrics = {
 };
 
 // Size limits. A game has at most 64 moves, so no honest count comes near these.
-const MAX_COUNT = 10_000;
-const MAX_THINK_MS = 120_000;
+export const MAX_COUNT = 10_000;
+export const MAX_THINK_MS = 120_000;
 const VERSION_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.';
 
 const isCount = (value: unknown): value is number =>

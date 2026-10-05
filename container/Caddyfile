@@ -39,6 +39,13 @@ http:// {
 		header /assets/* Cache-Control "public, max-age=31536000, immutable"
 		header / Cache-Control "no-cache"
 
+		# The hidden stats page. Search engines must not list it.
+		# Caddy sets headers before the rewrite, so the matcher names both paths.
+		@stats path /stats /stats.html
+		rewrite /stats /stats.html
+		header @stats Cache-Control "no-cache"
+		header @stats X-Robots-Tag "noindex, nofollow"
+
 		# The service worker, its Workbox runtime and the manifest have fixed names. A browser must
 		# check them on every visit, or a new version never reaches a player who has the old one.
 		@pwa path /sw.js /workbox-*.js /manifest.webmanifest

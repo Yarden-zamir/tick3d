@@ -2,7 +2,7 @@ FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY tsconfig.json index.html vite.config.ts .oxlintrc.json .stylelintrc.json .htmlvalidate.json ./
+COPY tsconfig.json index.html stats.html vite.config.ts .oxlintrc.json .stylelintrc.json .htmlvalidate.json ./
 # Vite copies public/ (the favicons and icons) into dist as is. The PWA plugin writes the manifest.
 COPY public public
 COPY src src
