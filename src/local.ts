@@ -195,6 +195,23 @@ export function createLocalBackend(
       return summaries.sort((a, b) => b.updatedAt - a.updatedAt);
     },
 
+    // Deletes sessions on this device that no game has a move in and that nobody changed for `ageMs`,
+    // except `keep`. A row that does not parse stays, so damage stays visible.
+    pruneEmpty: (ageMs: number, keep?: Code) =>
+      serialized(async () => {
+        const cutoff = Date.now() - ageMs;
+        for (const row of await db.all('sessions')) {
+          if (row.code === keep || row.updatedAt >= cutoff) continue;
+          let doc: SessionDoc;
+          try {
+            doc = parseDoc(row.doc);
+          } catch {
+            continue;
+          }
+          if (core.isEmptySession(doc)) await db.delete('sessions', row.code);
+        }
+      }),
+
     // One session on this device, or undefined when the device does not hold it.
     // Throws when the stored document does not parse.
     async summary(code: Code): Promise<LocalSummary | undefined> {

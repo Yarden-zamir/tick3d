@@ -27,6 +27,27 @@ describe('createLocalBackend', () => {
     expect(warn).toHaveBeenCalledOnce();
   });
 
+  it('prunes old sessions without a move, except played, fresh and kept ones', async () => {
+    const { db, local } = await setup();
+    const age = 9 * 3_600_000;
+    const make = async (moves: boolean, old: boolean) => {
+      const view = await local.create({ mode: 'friend', name: 'Friend game', clock, human: 'X' });
+      if (moves) await local.move(view.code, { game: 0, moveCount: 0, cell: 5 });
+      const row = await db.get('sessions', view.code);
+      if (row === undefined) throw new Error('the session was not stored');
+      if (old) await db.put('sessions', { ...row, updatedAt: Date.now() - age - 1000 });
+      return view.code;
+    };
+    const emptyOld = await make(false, true);
+    const playedOld = await make(true, true);
+    const emptyFresh = await make(false, false);
+    const kept = await make(false, true);
+    await local.pruneEmpty(age, kept);
+    const left = (await local.list()).map((entry) => entry.code).sort();
+    expect(left).toEqual([playedOld, emptyFresh, kept].sort());
+    expect(left).not.toContain(emptyOld);
+  });
+
   it('finds one session by its code', async () => {
     const { local } = await setup();
     const computer = await local.create({ mode: 'computer', name: 'Computer game', clock, human: 'O', difficulty: 'easy' });
