@@ -1,16 +1,25 @@
 import type { TimeControl } from './clock.ts';
+import { type Records, parseRecords } from './records.ts';
 import {
+  type ClientEvent,
   type Code,
+  type GameId,
+  type HistoryPage,
+  type Metrics,
   type MoveRequest,
   type MyGames,
   type PlayerInfo,
   type PlayerToken,
+  type PublicGame,
   RESULTS_PER_UPLOAD,
   type ResultUpload,
   type SessionUpdate,
   type SessionView,
   asPlayerToken,
+  parseGameId,
+  parseHistoryPage,
   parsePlayerInfo,
+  parsePublicGame,
   parseSessionView,
 } from './protocol.ts';
 
@@ -119,17 +128,36 @@ export const api = {
   // Login is a full page visit to GitHub and back to this page.
   loginUrl: () => `/api/auth/login?return=${encodeURIComponent(location.href)}`,
 
-  // Sends finished games in batches. Returns how many the server stored as new.
-  async uploadResults(results: readonly ResultUpload[]): Promise<number> {
-    let stored = 0;
+  // Sends finished games in batches. Returns the public id of each result (by result id) that
+  // the server keeps under another public id than the device sent.
+  async uploadResults(results: readonly ResultUpload[]): Promise<Map<string, GameId>> {
+    const renamed = new Map<string, GameId>();
     for (let start = 0; start < results.length; start += RESULTS_PER_UPLOAD) {
       const answer = await call('POST', '/results', { results: results.slice(start, start + RESULTS_PER_UPLOAD) });
-      const count = typeof answer === 'object' && answer !== null && 'stored' in answer ? answer.stored : undefined;
-      if (typeof count !== 'number') throw new Error('invalid answer from /api/results');
-      stored += count;
+      const ids = typeof answer === 'object' && answer !== null && 'renamed' in answer ? answer.renamed : undefined;
+      if (typeof ids !== 'object' || ids === null) throw new Error('invalid answer from /api/results');
+      for (const [resultId, value] of Object.entries(ids)) {
+        const id = parseGameId(value);
+        if (id === undefined) throw new Error('invalid game id from /api/results');
+        renamed.set(resultId, id);
+      }
     }
-    return stored;
+    return renamed;
   },
+
+  game: async (id: GameId): Promise<PublicGame> => parsePublicGame(await call('GET', `/games/${id}`)),
+  history: async (offset: number): Promise<HistoryPage> => parseHistoryPage(await call('GET', `/me/history?offset=${offset}`)),
+  async records(): Promise<Records> {
+    const answer = await call('GET', '/me/records');
+    if (typeof answer !== 'object' || answer === null || !('records' in answer)) throw new Error('invalid answer from /api/me/records');
+    return parseRecords(answer.records);
+  },
+  // Hides every finished game of this player from their history on the server.
+  clearHistory: () => call('DELETE', '/me/history'),
+  // The metrics of this device for a finished online game that it played.
+  gameMetrics: (id: GameId, metrics: Metrics) => call('POST', `/games/${id}/metrics`, metrics),
+  // A fault report for the stats page. The caller ignores a failure: a report must never cause another fault.
+  event: (event: ClientEvent) => call('POST', '/events', event),
 
   // Calls onChange after every change, and after each reconnect in case a change was missed.
   // The token marks this page's seats as present, so the other player sees "here" or "away".

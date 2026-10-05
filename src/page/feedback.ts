@@ -1,20 +1,13 @@
 // Toasts, problem messages and refused moves.
-import type { MoveError } from '../game.ts';
 import { RpcError } from '../nearby/rpc.ts';
 import { OnlineError } from '../online.ts';
+import type { Refusal } from '../protocol.ts';
 import { SessionError } from '../session/core.ts';
 import { sounds } from '../sound.ts';
 import { cellButton } from './board.ts';
 import { toastEl } from './dom.ts';
+import { countRefusal } from './metrics.ts';
 
-type Refusal =
-  | MoveError
-  | 'wait'
-  | 'not-your-turn'
-  | 'spectator'
-  | 'reviewing'
-  | 'no-session'
-  | 'locked';
 const REFUSAL_TEXT: Record<Refusal, string> = {
   occupied: 'That cell is taken. Pick an empty cell.',
   'game-over': 'The game is over. Start a new game.',
@@ -22,6 +15,7 @@ const REFUSAL_TEXT: Record<Refusal, string> = {
   'not-your-turn': 'It is not your turn.',
   spectator: 'You are watching. Both seats are taken.',
   reviewing: 'You are looking at an old position. Go back to the live game first.',
+  viewing: 'This is a finished game from a link. Tap Play to start a game of your own.',
   'no-session': 'Start a game, or join one with a code, first.',
   locked: 'Settings are locked until this game ends.',
 };
@@ -49,6 +43,7 @@ export function showError(error: unknown): void {
 }
 
 export function reject(cell: number | undefined, reason: Refusal): void {
+  countRefusal(reason);
   showProblem(REFUSAL_TEXT[reason]);
   if (cell === undefined) return;
   const button = cellButton(cell);

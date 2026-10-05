@@ -2,7 +2,7 @@
 import { sameClock, describeClock } from '../clock.ts';
 import { play, newGame, type Player, other } from '../game.ts';
 import { OnlineError, api } from '../online.ts';
-import { type Code, type SessionView, toGame } from '../protocol.ts';
+import { type Code, type GameId, type SessionView, toGame } from '../protocol.ts';
 import type { SessionDoc } from '../session/format.ts';
 import { sounds } from '../sound.ts';
 import { notifyChat } from './chat.ts';
@@ -10,17 +10,20 @@ import { scheduleComputer } from './computer.ts';
 import { burstEl } from './dom.ts';
 import { announce, finish } from './end-card.ts';
 import { reject, showToast, showError, showProblem } from './feedback.ts';
+import { closeGameView } from './game-view.ts';
+import { countMove, countUndo } from './metrics.ts';
 import { nearbyKind, endNearby } from './nearby.ts';
 import { render } from './render.ts';
 import { type Mode, settings, saveSettings } from './settings.ts';
 import { page, current, nowMs, setCurrent, shared, type SessionBackend, settingsLocked } from './state.ts';
 
-export function humanMove(cell: number): void {
+export function humanMove(cell: number, via: 'board' | 'keypad'): void {
+  if (page.viewing) return reject(cell, 'viewing');
   if (page.review) return reject(cell, 'reviewing');
-  void playMove(cell);
+  void playMove(cell, via);
 }
 
-async function playMove(cell: number): Promise<void> {
+async function playMove(cell: number, via: 'board' | 'keypad'): Promise<void> {
   if (page.session === undefined) return reject(cell, 'no-session');
   if (page.session.you === null) return reject(cell, 'spectator');
   const waitReason = page.session.mode === 'computer' ? 'wait' : 'not-your-turn';
@@ -32,6 +35,7 @@ async function playMove(cell: number): Promise<void> {
   if (page.session.mode !== 'friend' && game.turn !== page.session.you) return reject(cell, waitReason);
   const { code, backend } = page.session;
   const request = { game: page.games.length - 1, moveCount: game.moves.length, cell };
+  countMove(via);
   // Show the move at once. The answer replaces it, or a refresh undoes it on an error.
   setCurrent(result.game);
   announce(result.game);
@@ -50,6 +54,14 @@ export function setUrlCode(code: Code | undefined): void {
   const url = new URL(location.href);
   if (code === undefined) url.searchParams.delete('code');
   else url.searchParams.set('code', code);
+  history.replaceState(null, '', url);
+}
+
+// The link of a finished game in the address (`?game=<id>`). A new game, a session switch or Home removes it.
+export function setUrlGame(id: GameId | undefined): void {
+  const url = new URL(location.href);
+  if (id === undefined) url.searchParams.delete('game');
+  else url.searchParams.set('game', id);
   history.replaceState(null, '', url);
 }
 
@@ -85,6 +97,10 @@ export function applyView(view: SessionView): void {
   const timedOutNow = page.games.length === beforeCount && before.status.kind === 'playing' && after.status.kind === 'timeout';
   if (isNewMove) announce(after);
   else if (timedOutNow) finish(after);
+  // Undo takes moves back from the same game.
+  if (page.games.length === beforeCount && after.moves.length < before.moves.length) countUndo();
+  // A live game is not the finished game that the address links to.
+  if (after.status.kind === 'playing' && new URLSearchParams(location.search).has('game')) setUrlGame(undefined);
   const lastSeen = previous.chat.at(-1)?.id ?? -1;
   const incoming = page.session.chat.filter((message) => message.id > lastSeen && message.from !== page.session?.you);
   const newest = incoming.at(-1);
@@ -109,12 +125,14 @@ export function openSession(view: SessionView, backend: SessionBackend, mode: Mo
   }
   page.review = undefined;
   burstEl.replaceChildren();
+  page.viewing = undefined;
   page.session = { ...view, backend, mode, unsubscribe: () => undefined };
   page.games = view.games.map(toGame);
   page.serverOffset = view.now - Date.now();
   const code = view.code;
   page.session.unsubscribe = backend.subscribe(code, () => void refresh(code));
   setUrlCode(mode === 'online' ? code : undefined);
+  setUrlGame(undefined);
   if (mode === 'online') void page.deviceDb?.put('remote', { code, view, savedAt: Date.now() });
   render();
   scheduleComputer();
@@ -124,8 +142,10 @@ export function leaveSession(): void {
   page.coordDigits = [];
   page.session?.unsubscribe();
   page.session = undefined;
+  page.viewing = undefined;
   page.games = [newGame('X', settings.clock)];
   setUrlCode(undefined);
+  setUrlGame(undefined);
 }
 
 export async function refresh(code: Code): Promise<void> {
@@ -163,7 +183,7 @@ export function defaultSessionName(mode: Mode = 'online'): string {
 // The seat of the player in a computer game: the one the computer does not hold.
 const humanSeatOf = (doc: SessionDoc): Player | undefined => (doc.computer ? other(doc.computer.seat) : undefined);
 
-function beginSwitch(): number {
+export function beginSwitch(): number {
   if (nearbyKind() !== 'idle') endNearby();
   return ++page.navigation;
 }
@@ -234,6 +254,8 @@ export const joinSession = (code: Code) =>
   });
 
 export function startNewGame(): void {
+  // A game from a link has no next game: New game goes back to play.
+  if (page.viewing !== undefined) return void closeGameView().catch(showError);
   if (settingsLocked()) return reject(undefined, 'locked');
   if (page.session === undefined) return reject(undefined, 'no-session');
   sounds.click();

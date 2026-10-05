@@ -2,26 +2,10 @@
 import { type Difficulty, DIFFICULTIES } from '../ai.ts';
 import { type TimeControl, NO_LIMIT, parseClock } from '../clock.ts';
 import type { Player } from '../game.ts';
+import { LAYOUTS, THEMES, VIEWS } from '../protocol.ts';
 
 export const MODES = ['computer', 'friend', 'online', 'nearby'] as const;
-export const VIEWS = ['tower', 'flat'] as const;
-export const LAYOUTS = ['grid', 'row', 'column', 'steps'] as const;
 export const PLAYERS = ['X', 'O'] as const;
-// Palettes in style.css, in menu order. index.html repeats the names for its pre-paint script.
-export const THEMES = [
-  'light',
-  'dark',
-  'snow',
-  'candy',
-  'mint',
-  'retro',
-  'midnight',
-  'synthwave',
-  'bloodmoon',
-  'coffee',
-  'batman',
-  'mono',
-] as const;
 export type Mode = (typeof MODES)[number];
 type View = (typeof VIEWS)[number];
 type Layout = (typeof LAYOUTS)[number];

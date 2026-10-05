@@ -70,7 +70,7 @@ export function setupKeypad(): void {
       return;
     }
     page.coordDigits = [];
-    humanMove(target);
+    humanMove(target, 'keypad');
     renderCoords();
   });
 }

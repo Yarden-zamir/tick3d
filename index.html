@@ -64,6 +64,15 @@
       </header>
 
       <section class="stage">
+        <div class="game-view" id="game-view" hidden>
+          <div class="game-view-text">
+            <small>Finished game from a link</small>
+            <strong id="game-view-title"></strong>
+            <span id="game-view-players"></span>
+            <small id="game-view-details"></small>
+          </div>
+          <button type="button" class="primary" id="game-view-play">Play</button>
+        </div>
         <div class="status" id="status" aria-live="polite"></div>
         <div class="clocks" id="clocks" hidden>
           <span class="clock x" data-clock="X"></span>
@@ -82,7 +91,7 @@
             <button type="button" data-review="prev" aria-label="Previous move">◀</button>
             <button type="button" data-review="next" aria-label="Next move">▶</button>
             <button type="button" data-review="last" aria-label="Last move">⏭</button>
-            <button type="button" data-review="exit">Live game</button>
+            <button type="button" data-review="exit" id="review-exit">Live game</button>
           </div>
         </div>
         <form class="coords" id="coords" aria-labelledby="coords-title">
@@ -347,6 +356,14 @@
       <div class="account" id="account-box"></div>
       <p class="my-games-note" id="my-games-note"></p>
       <div class="my-games-stats" id="my-games-stats"></div>
+      <section>
+        <h3>History</h3>
+        <ul class="my-games-list" id="my-games-history"></ul>
+        <div class="my-games-history-actions">
+          <button type="button" class="my-games-more" id="my-games-more" hidden>More games</button>
+          <button type="button" class="my-games-more" id="my-games-clear" hidden>Clear history</button>
+        </div>
+      </section>
       <section id="my-games-online-box">
         <h3>Online sessions</h3>
         <ul class="my-games-list" id="my-games-online"></ul>
@@ -361,6 +378,13 @@
       <div class="end-card-actions">
         <button type="button" class="primary" id="home-confirm-leave">Leave</button>
         <button type="button" id="home-confirm-stay">Stay</button>
+      </div>
+    </dialog>
+    <dialog class="end-card home-confirm" id="clear-confirm" aria-labelledby="clear-confirm-text">
+      <p id="clear-confirm-text">Clear your match history on every device? Your survival records and your totals stay. Opponents keep their copy of your online games, and the games still count in the site stats.</p>
+      <div class="end-card-actions">
+        <button type="button" class="primary" id="clear-confirm-yes">Clear history</button>
+        <button type="button" id="clear-confirm-no">Keep</button>
       </div>
     </dialog>
     <div class="update-bar" id="update-bar" hidden role="status">
