@@ -30,6 +30,7 @@ import {
   winnerOf,
 } from './game.ts';
 import { type LocalBackend, createLocalBackend } from './local.ts';
+import { type RecordNews, type Records, addLoss, parseRecords } from './records.ts';
 import { DEVICE_ICONS, deviceLabel, detectDevice } from './nearby/device.ts';
 import { type Channel, answerOffer, createOffer } from './nearby/peer.ts';
 import { renderQr } from './nearby/qr.ts';
@@ -236,6 +237,7 @@ const cardLink = element('#end-card-link', HTMLInputElement);
 const cardShareButton = element('#end-card-share', HTMLButtonElement);
 const cardSaveButton = element('#end-card-save', HTMLButtonElement);
 const cardCloseButton = element('#end-card-close', HTMLButtonElement);
+const cardNewGameButton = element('#end-card-new-game', HTMLButtonElement);
 const themeColorMeta = element('meta[name="theme-color"]', HTMLMetaElement);
 const themeMenu = element('#theme-menu', HTMLDetailsElement);
 const themeSwatch = element('#theme-swatch', HTMLSpanElement);
@@ -601,6 +603,7 @@ function finish(game: Game): void {
   }
   const index = games.length - 1;
   if (session !== undefined) void recordResult(session, game, index);
+  if (session?.mode === 'computer' && winner !== null && mine !== null && winner !== mine) noteSurvival(session, game, index);
   setTimeout(() => {
     // Show the card only if that game is still the finished live game and nothing else is open.
     if (games.length - 1 !== index || isLive() || review !== undefined || cardDialog.open) return;
@@ -1780,6 +1783,44 @@ for (const kind of ['perGame', 'perMove'] as const) {
   }
 }
 
+// ---- Survival records ----
+
+const RECORDS_KEY = 'tick3d.records';
+// Records that a game broke in this visit, by session code and game index, for its end card.
+const recordNews = new Map<string, RecordNews>();
+
+// Records stay on this device, like the settings. Move them to the account when players
+// ask to keep their records across devices.
+function loadRecords(): Records {
+  try {
+    return parseRecords(JSON.parse(localStorage.getItem(RECORDS_KEY) ?? 'null'));
+  } catch {
+    return {};
+  }
+}
+
+// A game that the computer won: the moves it lasted can beat the record of its setup.
+// The hide options count as they are at the end of the game.
+function noteSurvival(open: Session, game: Game, index: number): void {
+  const { hideBoard, hideHistory } = open.options;
+  const { records, news } = addLoss(loadRecords(), { difficulty: settings.difficulty, clock: game.clock, hideBoard, hideHistory }, game.moves.length);
+  try {
+    localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
+  } catch {
+    // Storage is blocked (private mode). Records then last for this visit only.
+  }
+  if (news === undefined) return;
+  recordNews.set(`${open.code}:${index}`, news);
+  showToast(`New record: you lasted ${news.moves} moves. Your best was ${news.previous}.`);
+}
+
+function hideLabel({ hideBoard, hideHistory }: MatchOptions): string | undefined {
+  if (hideBoard && hideHistory) return 'Board and history hidden';
+  if (hideBoard) return 'Board hidden';
+  if (hideHistory) return 'History hidden';
+  return undefined;
+}
+
 // ---- End card ----
 
 function cardInput(game: Game, index: number): CardInput {
@@ -1814,17 +1855,19 @@ function cardInput(game: Game, index: number): CardInput {
   const last = game.times.at(-1) ?? 0;
   const duration = first > 0 && last > first ? ` · Game time ${formatClock(last - first)}` : '';
   const onlineCode = session?.mode === 'online' ? session.code : undefined;
+  const news = session === undefined ? undefined : recordNews.get(`${session.code}:${index}`);
   const link = onlineCode ? `${location.host}/?code=${onlineCode}` : location.host;
   return {
     game,
     title,
     subtitle,
     matchup,
-    details: `Game ${index + 1} · ${describeClock(game.clock)}${duration}`,
+    details: [`Game ${index + 1}`, describeClock(game.clock), hideLabel(matchOptions())].filter((part) => part !== undefined).join(' · ') + duration,
     date: new Date(last > 0 ? last - serverOffset : Date.now()),
     footer: [onlineCode && cardCode.checked ? `Code ${onlineCode}` : '', cardLink.checked ? link : '']
       .filter((part) => part !== '')
       .join(' · '),
+    ...(news === undefined ? {} : { record: news }),
   };
 }
 
@@ -1837,7 +1880,10 @@ async function openCard(index: number): Promise<void> {
   const canvas = await drawCard(input);
   card = { index, canvas };
   cardImage.src = canvas.toDataURL('image/png');
-  cardImage.alt = `${input.title}. ${input.subtitle}.`;
+  cardImage.alt = `${input.title}. ${input.subtitle}.${input.record ? ` New record: ${input.record.moves} moves.` : ''}`;
+  // Only the newest game can start the next one. A card of an older game has no New game button.
+  cardNewGameButton.hidden = index !== games.length - 1;
+  cardNewGameButton.disabled = newGameButton.disabled;
   if (!cardDialog.open) cardDialog.showModal();
 }
 
@@ -1864,6 +1910,10 @@ cardSaveButton.addEventListener('click', () => {
   if (card !== undefined) void saveImage(card.canvas, cardFilename());
 });
 cardCloseButton.addEventListener('click', () => cardDialog.close());
+cardNewGameButton.addEventListener('click', () => {
+  cardDialog.close();
+  startNewGame();
+});
 for (const option of [cardCode, cardLink]) {
   option.addEventListener('change', () => {
     if (card !== undefined) void openCard(card.index);
@@ -2231,7 +2281,9 @@ reviewEl.querySelectorAll<HTMLButtonElement>('[data-review]').forEach((button) =
   button.addEventListener('click', () => stepReview(button.dataset.review));
 });
 
-newGameButton.addEventListener('click', () => {
+newGameButton.addEventListener('click', startNewGame);
+
+function startNewGame(): void {
   if (settingsLocked()) return reject(undefined, 'locked');
   if (session === undefined) return reject(undefined, 'no-session');
   sounds.click();
@@ -2243,7 +2295,7 @@ newGameButton.addEventListener('click', () => {
     burstEl.replaceChildren();
     applyView(await backend.newGame(code));
   }).then(scheduleComputer);
-});
+}
 
 undoButton.addEventListener('click', undoMove);
 

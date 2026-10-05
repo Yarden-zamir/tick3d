@@ -1768,15 +1768,17 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .end-card-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.6rem;
 }
 
+/* Four buttons share a row. On a narrow phone they wrap to two rows of two. */
 .end-card-actions button {
-  flex: 1;
+  flex: 1 1 5.5rem;
 }
 
 .end-card-actions .primary {
-  flex: 1.5;
+  flex: 1.5 1 7rem;
   background: var(--primary);
   color: var(--on-color);
   font-weight: 800;
