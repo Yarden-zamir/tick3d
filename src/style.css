@@ -1768,17 +1768,24 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .end-card-actions {
   display: flex;
-  flex-wrap: wrap;
   gap: 0.6rem;
 }
 
-/* Four buttons share a row. On a narrow phone they wrap to two rows of two. */
 .end-card-actions button {
-  flex: 1 1 5.5rem;
+  flex: 1;
+  white-space: nowrap;
+}
+
+/* Narrow phones: the four buttons sit in two rows of two. */
+@media (max-width: 30rem) {
+  .end-card-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .end-card-actions .primary {
-  flex: 1.5 1 7rem;
+  flex: 1.5;
   background: var(--primary);
   color: var(--on-color);
   font-weight: 800;

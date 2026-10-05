@@ -103,14 +103,14 @@ function fittedText(ctx: CanvasRenderingContext2D, value: string, x: number, y: 
   text(ctx, value, x, y, fitted, weight, color);
 }
 
-// A sticker on the corner of the result banner, tilted like the "3d" of the wordmark.
+// A sticker in the gap between the wordmark and the date, tilted like the "3d" of the wordmark.
 function recordSticker(ctx: CanvasRenderingContext2D, t: Theme, record: RecordNews): void {
   ctx.save();
-  ctx.translate(WIDTH - 210, 196);
+  ctx.translate(WIDTH / 2 + 55, 150);
   ctx.rotate((4 * Math.PI) / 180);
   block(ctx, t, { x: -125, y: -44, w: 250, h: 88, fill: t.o, radius: 12, border: 5, shadow: 7 });
   text(ctx, 'New record', 0, -4, 36, 800, t.onColor, 'center');
-  text(ctx, `best was ${record.previous} moves`, 0, 28, 22, 700, t.onColor, 'center');
+  text(ctx, `best was ${record.previous} ${record.previous === 1 ? 'move' : 'moves'}`, 0, 28, 22, 700, t.onColor, 'center');
   ctx.restore();
 }
 
@@ -231,7 +231,6 @@ export async function drawCard(input: CardInput): Promise<HTMLCanvasElement> {
   block(ctx, t, { x: 80, y: 210, w: WIDTH - 160, h: 200, fill: decided ? t.win : t.surface, radius: 16, border: 6, shadow: 12 });
   text(ctx, input.title, WIDTH / 2, 322, 104, 800, bannerText, 'center');
   text(ctx, input.subtitle, WIDTH / 2, 378, 38, 600, bannerText, 'center');
-  // Drawn after the banner, so it sits on top of its edge. It ends below the date and above the title.
   if (input.record !== undefined) recordSticker(ctx, t, input.record);
   // Board rows: 490 + 2 slabs of 277 + 84 between them ends at 1128, clear of the box at 1170.
   board(ctx, t, input.game, 490);
