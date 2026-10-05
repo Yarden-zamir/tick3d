@@ -31,7 +31,7 @@ export type Game = {
   clock: TimeControl;
 };
 
-export type MoveError = 'occupied' | 'game-over';
+type MoveError = 'occupied' | 'game-over';
 export type MoveResult = { ok: true; game: Game } | { ok: false; error: MoveError };
 
 export const other = (player: Player): Player => (player === 'X' ? 'O' : 'X');
@@ -180,4 +180,15 @@ export function parseCoordinates(text: string): Coords | undefined {
   if (!values.every((value) => Number.isInteger(value) && value >= 1 && value <= SIZE)) return undefined;
   const [layer, row, column] = values as [number, number, number];
   return { layer: layer - 1, row: row - 1, column: column - 1 };
+}
+
+export type LineKind = 'axis' | 'plane' | 'space';
+
+// How a line runs: along one axis, diagonally inside a plane, or diagonally through the cube.
+// The number of coordinates that change from one cell of the line to the next tells which.
+export function lineKind(line: Line): LineKind {
+  const a = toCoords(line[0]);
+  const b = toCoords(line[1]);
+  const changes = [a.layer !== b.layer, a.row !== b.row, a.column !== b.column].filter(Boolean).length;
+  return changes === 1 ? 'axis' : changes === 2 ? 'plane' : 'space';
 }

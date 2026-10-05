@@ -181,3 +181,18 @@ export function parseTuning(value: unknown): Tuning {
 }
 
 export const isDefaultTuning = (tuning: Tuning) => TUNING_FIELDS.every((field) => field.get(tuning) === field.get(DEFAULT_TUNING));
+
+// True when every field holds a number inside its range. Unlike parseTuning, this never falls back
+// to a default, so an upload with a broken value is refused instead of quietly fixed.
+export function isTuning(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  return TUNING_FIELDS.every((field) => {
+    let stored: unknown;
+    try {
+      stored = field.get(value as Tuning);
+    } catch {
+      return false;
+    }
+    return typeof stored === 'number' && fieldValue(field, stored) === stored;
+  });
+}

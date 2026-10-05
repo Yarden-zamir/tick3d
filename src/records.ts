@@ -39,3 +39,10 @@ export function addLoss(records: Records, setup: RecordSetup, moves: number): { 
   const next = { ...records, [key]: moves };
   return previous === undefined ? { records: next } : { records: next, news: { moves, previous } };
 }
+
+// The higher record of each setup, for example this device's records and the account's records on the server.
+export function mergeRecords(a: Records, b: Records): Records {
+  const merged: Record<string, number> = { ...a };
+  for (const [key, moves] of Object.entries(b)) merged[key] = Math.max(merged[key] ?? 0, moves);
+  return merged;
+}

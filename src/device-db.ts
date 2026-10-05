@@ -30,6 +30,7 @@ export type DeviceDb = {
   get<S extends StoreName>(store: S, key: string): Promise<Stores[S] | undefined>;
   put<S extends StoreName>(store: S, value: Stores[S]): Promise<void>;
   all<S extends StoreName>(store: S): Promise<Stores[S][]>;
+  delete(store: StoreName, key: string): Promise<void>;
 };
 
 export async function openDeviceDb(factory: IDBFactory = indexedDB, name: string = DB_NAME): Promise<DeviceDb> {
@@ -62,6 +63,9 @@ export async function openDeviceDb(factory: IDBFactory = indexedDB, name: string
     async all(name) {
       return (await request(store(name, 'readonly').getAll())) as never;
     },
+    async delete(name, key) {
+      await request(store(name, 'readwrite').delete(key));
+    },
   };
 }
 
@@ -78,6 +82,9 @@ export function memoryDeviceDb(): DeviceDb {
     },
     async all(name) {
       return [...stores[name].values()].map((value) => structuredClone(value));
+    },
+    async delete(name, key) {
+      stores[name].delete(key);
     },
   };
 }

@@ -7,12 +7,15 @@ import {
   RESULTS_PER_UPLOAD,
   asPlayerToken,
   normalizeCode,
+  parseClientEvent,
+  parseGameId,
+  parseMetrics,
   parseMoveRequest,
   parseNewSession,
   parseSessionUpdate,
 } from '../src/protocol.ts';
 import { SessionError } from '../src/session/core.ts';
-import { CREATES_PER_HOUR, WAIT_MS, matchRoute } from './api-docs.ts';
+import { CREATES_PER_HOUR, EVENTS_PER_10_MINUTES, WAIT_MS, matchRoute } from './api-docs.ts';
 import { html, markdown, openApi } from './api-docs-render.ts';
 import { type Auth, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
 import { openStore } from './store.ts';
@@ -22,6 +25,8 @@ const PORT = 8080;
 const MAX_BODY_BYTES = 4096;
 // A result upload carries up to RESULTS_PER_UPLOAD finished games of about 1 kB each.
 const MAX_RESULTS_BODY_BYTES = 256 * 1024;
+// An event is a short message, its kind and the app version.
+const MAX_EVENT_BODY_BYTES = 1024;
 // Each open page holds one event stream. This cap keeps a flood of streams from exhausting memory.
 const MAX_STREAMS = 2000;
 // Each long poll (GET /api/sessions/{code}?wait=) holds one request. The same reason caps them.
@@ -32,6 +37,9 @@ const waiters = createWaiters(MAX_WAITERS);
 // its address. Revisit this with more than one API process, a real attack, or real players that
 // share one address and hit the limit (a school, for example).
 const allowCreate = createLimiter(CREATES_PER_HOUR, 3_600_000, 10_000);
+// Fault reports from pages: 30 per 10 minutes per address is plenty for a page that works, and
+// keeps a broken or hostile page from filling the events table. Same limits as allowCreate.
+const allowEvent = createLimiter(EVENTS_PER_10_MINUTES, 600_000, 10_000);
 
 class HttpError extends Error {
   status: number;
@@ -167,6 +175,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (match === undefined) throw new HttpError(404, 'Not found.');
   if (match === 'wrong-method') throw new HttpError(405, 'Method not allowed.');
   const code = () => sessionCode(match.params.code);
+  const gameId = () => {
+    const id = parseGameId(match.params.id ?? '');
+    if (id === undefined) throw new HttpError(400, 'A game id is 8 letters or digits, or a code and a game number.');
+    return id;
+  };
 
   switch (match.route) {
     case 'GET /api/health':
@@ -201,12 +214,23 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     }
 
     case 'GET /api/me':
-    case 'GET /api/me/games': {
+    case 'GET /api/me/games':
+    case 'GET /api/me/history':
+    case 'DELETE /api/me/history':
+    case 'GET /api/me/records': {
       const token = requirePlayer(req);
       const user = auth?.user(req);
       // Every visit with a login links this browser to the account, so a new device joins at once.
       if (user !== undefined) await store.linkToken(token, user);
       if (match.route === 'GET /api/me/games') return send(res, 200, await store.myGames(token));
+      // A cross-site form cannot send the X-Player header, so another site cannot clear a history.
+      if (match.route === 'DELETE /api/me/history') return send(res, 200, { hidden: await store.clearHistory(token) });
+      if (match.route === 'GET /api/me/history') {
+        const offset = Number(url.searchParams.get('offset') ?? '0');
+        if (!Number.isInteger(offset) || offset < 0) throw new HttpError(400, 'The offset is not a whole number of games.');
+        return send(res, 200, await store.history(token, offset));
+      }
+      if (match.route === 'GET /api/me/records') return send(res, 200, { records: await store.records(token) });
       return send(res, 200, { loginAvailable: auth !== undefined, user: user === undefined ? null : { login: user.login, avatar: user.avatar } });
     }
 
@@ -216,8 +240,29 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       if (!Array.isArray(results) || results.length > RESULTS_PER_UPLOAD) {
         throw new HttpError(400, `An upload needs a results list of at most ${RESULTS_PER_UPLOAD}.`);
       }
-      return send(res, 200, { stored: await store.addResults(requirePlayer(req), results) });
+      return send(res, 200, await store.addResults(requirePlayer(req), results));
     }
+
+    // A read-only game link. Anybody with the id may read the game, so the answer holds no token.
+    case 'GET /api/games/{id}':
+      return send(res, 200, await store.game(gameId()));
+    // The metrics of one player's device for a finished online game.
+    case 'POST /api/games/{id}/metrics': {
+      const id = gameId();
+      const metrics = parseMetrics(await readJson(req));
+      if (metrics === undefined) throw new HttpError(400, 'The metrics are not valid.');
+      return send(res, 200, { stored: await store.addSeatMetrics(id, requirePlayer(req), metrics) });
+    }
+    case 'POST /api/events': {
+      if (!allowEvent(clientOf(req), Date.now())) throw new HttpError(429, 'Too many reports from this address. Try again later.');
+      const event = parseClientEvent(await readJson(req, MAX_EVENT_BODY_BYTES));
+      if (event === undefined) throw new HttpError(400, 'An event needs a kind, a message of 1 to 300 characters and a version.');
+      await store.addEvent(event);
+      return send(res, 200, { ok: true });
+    }
+    // Aggregates only (see server/stats.ts), so the hidden stats page needs no login.
+    case 'GET /api/stats':
+      return send(res, 200, await store.stats());
 
     case 'POST /api/sessions': {
       if (!allowCreate(clientOf(req), Date.now())) throw new HttpError(429, 'Too many new games from this address. Try again later.');

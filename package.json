@@ -8,7 +8,7 @@
     "dev": "vite",
     "check": "tsc && npm run lint && vitest run",
     "test": "vitest run",
-    "lint": "oxlint --type-aware --deny-warnings src server e2e vite.config.ts && stylelint \"src/**/*.css\" && html-validate index.html && knip",
+    "lint": "oxlint --type-aware --deny-warnings src server e2e vite.config.ts && stylelint \"src/**/*.css\" && html-validate index.html stats.html && knip",
     "build": "tsc && vite build",
     "api": "DB_PATH=./dev.duckdb node server/main.ts",
     "e2e": "playwright test -c e2e/playwright.config.ts"
@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
-    "@types/node": "^24.9.2",
+    "@types/node": "^26.6.4",
     "@types/pngjs": "^6.0.5",
     "ajv": "^8.20.0",
     "fake-indexeddb": "^6.2.5",

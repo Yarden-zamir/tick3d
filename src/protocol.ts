@@ -2,6 +2,8 @@
 import { DIFFICULTIES, type Difficulty } from './ai.ts';
 import { NO_LIMIT, type TimeControl, parseClock } from './clock.ts';
 import { CELL_COUNT, type Game, type Player, type Status, replay, timeOut } from './game.ts';
+import type { DeviceKind } from './nearby/device.ts';
+import { type Tuning, isTuning, parseTuning } from './tuning.ts';
 
 // Letters and digits without the look-alikes 0/O and 1/I, so a code read aloud is not ambiguous.
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -125,7 +127,7 @@ export function isMoveList(value: unknown): value is number[] {
   return Array.isArray(value) && value.length <= CELL_COUNT && value.every(isCell);
 }
 
-function isGameRecord(value: unknown): value is GameRecord {
+export function isGameRecord(value: unknown): value is GameRecord {
   if (!isRecord(value)) return false;
   const { moves, times, timedOut, clock } = value;
   return (
@@ -251,10 +253,154 @@ export function parsePlayerInfo(value: unknown): PlayerInfo | undefined {
   return { login, avatar };
 }
 
-// ---- Results of games played away from the server ----
+// ---- Game links ----
+
+// The public id of one finished game, for its read-only link (`/?game=<id>`).
+// An online game: "<CODE>-<n>", where n is its 1-based number in the session.
+// Any other game: DEVICE_GAME_ID_LENGTH random characters that the device makes at the end of the game.
+// The id of a stored result holds a player token, so only this id may leave the server.
+export type GameId = string & { readonly __brand: 'GameId' };
+const DEVICE_GAME_ID_LENGTH = 8;
+// Game numbers above this are not real: a session of a million games has never happened.
+const MAX_GAME_NUMBER = 1_000_000;
+
+export function newGameId(): GameId {
+  // 256 is a multiple of the 32 characters, so every character is equally likely.
+  const bytes = crypto.getRandomValues(new Uint8Array(DEVICE_GAME_ID_LENGTH));
+  return Array.from(bytes, (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length]).join('') as GameId;
+}
+
+export const onlineGameId = (code: Code, index: number): GameId => `${code}-${index + 1}` as GameId;
+
+// A device id has no dash; an online id always has one.
+const isDeviceGameId = (id: GameId) => !id.includes('-');
+
+// Accepts either form in any case, and returns it in upper case.
+export function parseGameId(input: unknown): GameId | undefined {
+  if (typeof input !== 'string') return undefined;
+  const id = input.trim().toUpperCase();
+  if (id.length === DEVICE_GAME_ID_LENGTH && [...id].every((char) => CODE_ALPHABET.includes(char))) return id as GameId;
+  const [code, number, ...rest] = id.split('-');
+  if (code === undefined || number === undefined || rest.length > 0 || normalizeCode(code) !== code) return undefined;
+  const n = Number(number);
+  // String(n) === number refuses leading zeros, signs and exponents.
+  return Number.isInteger(n) && n >= 1 && n <= MAX_GAME_NUMBER && String(n) === number ? (id as GameId) : undefined;
+}
+
+// ---- Game metrics ----
+
+// The page settings that a result reports. The page reads its choices from these lists too.
+export const VIEWS = ['tower', 'flat'] as const;
+export const LAYOUTS = ['grid', 'row', 'column', 'steps'] as const;
+// Palettes in style.css, in menu order. index.html and stats.html repeat the names for their pre-paint scripts.
+export const THEMES = [
+  'light',
+  'dark',
+  'snow',
+  'candy',
+  'mint',
+  'retro',
+  'midnight',
+  'synthwave',
+  'bloodmoon',
+  'coffee',
+  'batman',
+  'mono',
+] as const;
+// Why the page refused a move or an action of the player.
+export const REFUSALS = ['occupied', 'game-over', 'wait', 'not-your-turn', 'spectator', 'reviewing', 'viewing', 'no-session', 'locked'] as const;
+export type Refusal = (typeof REFUSALS)[number];
+const DEVICE_KINDS = ['phone', 'tablet', 'computer'] as const satisfies readonly DeviceKind[];
+
+// What the device saw during one game, for the stats page. Every field is required, so the
+// server can tell a missing value from a zero.
+export type Metrics = {
+  device: DeviceKind;
+  view: (typeof VIEWS)[number];
+  layout: (typeof LAYOUTS)[number];
+  theme: (typeof THEMES)[number];
+  // Moves of the player at this device, by how they were placed.
+  input: { board: number; keypad: number };
+  refused: Partial<Record<Refusal, number>>;
+  undos: number;
+  // The thinking time of each computer move, in milliseconds.
+  thinkMs: number[];
+  // True when the device was offline at any move of the game.
+  offline: boolean;
+  // The name of the page script file, which carries the build hash, for example "index-B2x9kQ".
+  version: string;
+  // The computer settings of a tuned computer game, else null.
+  tuning: Tuning | null;
+  // A Nearby game: the role of this device and the kind of the other player's device.
+  nearby: { role: 'host' | 'guest'; other: DeviceKind | null } | null;
+};
+
+// Size limits. A game has at most 64 moves, so no honest count comes near these.
+export const MAX_COUNT = 10_000;
+export const MAX_THINK_MS = 120_000;
+const VERSION_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.';
+
+const isCount = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= MAX_COUNT;
+const hasOnlyKeys = (value: Record<string, unknown>, keys: readonly string[]) => Object.keys(value).every((key) => keys.includes(key));
+const isVersion = (value: unknown): value is string =>
+  typeof value === 'string' && value.length >= 1 && value.length <= 64 && [...value].every((char) => VERSION_CHARS.includes(char));
+
+// A version text that isVersion accepts: unknown characters dropped, at most 64 characters.
+export function toVersion(text: string): string {
+  const kept = [...text].filter((char) => VERSION_CHARS.includes(char)).join('').slice(0, 64);
+  return kept === '' ? 'unknown' : kept;
+}
+const oneOf = <T extends string>(options: readonly T[], value: unknown): T | undefined => options.find((option) => option === value);
+
+const METRIC_KEYS = ['device', 'view', 'layout', 'theme', 'input', 'refused', 'undos', 'thinkMs', 'offline', 'version', 'tuning', 'nearby'];
+
+// Refuses an unknown key, a missing key, a wrong type or a value out of range.
+export function parseMetrics(value: unknown): Metrics | undefined {
+  if (!isRecord(value) || !hasOnlyKeys(value, METRIC_KEYS) || !METRIC_KEYS.every((key) => key in value)) return undefined;
+  const { input, refused, undos, thinkMs, offline, version, tuning, nearby } = value;
+  const device = oneOf(DEVICE_KINDS, value.device);
+  const view = oneOf(VIEWS, value.view);
+  const layout = oneOf(LAYOUTS, value.layout);
+  const theme = oneOf(THEMES, value.theme);
+  if (device === undefined || view === undefined || layout === undefined || theme === undefined) return undefined;
+  if (!isRecord(input) || !hasOnlyKeys(input, ['board', 'keypad']) || !isCount(input.board) || !isCount(input.keypad)) return undefined;
+  if (!isRecord(refused) || !Object.entries(refused).every(([key, count]) => oneOf(REFUSALS, key) !== undefined && isCount(count))) {
+    return undefined;
+  }
+  if (!isCount(undos) || typeof offline !== 'boolean' || !isVersion(version)) return undefined;
+  const validThink = (time: unknown) => typeof time === 'number' && Number.isFinite(time) && time >= 0 && time <= MAX_THINK_MS;
+  if (!Array.isArray(thinkMs) || thinkMs.length > CELL_COUNT || !thinkMs.every(validThink)) return undefined;
+  if (tuning !== null && !isTuning(tuning)) return undefined;
+  let nearbyInfo: Metrics['nearby'] = null;
+  if (nearby !== null) {
+    if (!isRecord(nearby) || !hasOnlyKeys(nearby, ['role', 'other'])) return undefined;
+    const role = oneOf(['host', 'guest'] as const, nearby.role);
+    const other = nearby.other === null ? null : oneOf(DEVICE_KINDS, nearby.other);
+    if (role === undefined || other === undefined) return undefined;
+    nearbyInfo = { role, other };
+  }
+  return {
+    device,
+    view,
+    layout,
+    theme,
+    input: { board: input.board, keypad: input.keypad },
+    refused,
+    undos,
+    thinkMs: thinkMs as number[],
+    offline,
+    version,
+    tuning: tuning === null ? null : parseTuning(tuning),
+    nearby: nearbyInfo,
+  };
+}
+
+// ---- Results ----
 
 // A finished computer, friend or Nearby game, sent by the device that played it.
-// `id` is made on the device, so sending the same result twice stores it once.
+// `id` is made on the device, so sending the same result twice stores it once. It holds the
+// player token, so it never leaves the server. `publicId` is the id for the game link.
 export type ResultUpload = {
   id: string;
   mode: Exclude<SessionMode, 'online'>;
@@ -263,6 +409,13 @@ export type ResultUpload = {
   you: Player | null;
   difficulty: Difficulty | null;
   finishedAt: number;
+  // Null from a device version before game links. The server then makes an id.
+  publicId: GameId | null;
+  // The hide settings at the end of the game.
+  options: MatchOptions;
+  // True for a computer game against changed advanced settings.
+  tuned: boolean;
+  metrics: Metrics | null;
 };
 
 // One upload carries at most this many results. A device sends more in several requests.
@@ -273,9 +426,16 @@ const RESULT_ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789-';
 // A result can finish at most this far in the future, to allow for a device clock that runs fast.
 const FUTURE_SLACK_MS = 86_400_000;
 
+const RESULT_KEYS = ['id', 'mode', 'game', 'you', 'difficulty', 'finishedAt', 'publicId', 'options', 'tuned', 'metrics'];
+
+export const isMatchOptions = (value: unknown): value is MatchOptions =>
+  isRecord(value) && typeof value.hideBoard === 'boolean' && typeof value.hideHistory === 'boolean';
+
 // `now` is the time of the reader. The database can store finishedAt only inside a bounded range.
+// A device version before game links sends no publicId, options, tuned or metrics. Those get
+// their defaults, so its waiting results still upload.
 export function parseResultUpload(value: unknown, now: number): ResultUpload | undefined {
-  if (!isRecord(value)) return undefined;
+  if (!isRecord(value) || !hasOnlyKeys(value, RESULT_KEYS)) return undefined;
   const { id, mode, game, you, difficulty, finishedAt } = value;
   if (typeof id !== 'string' || id.length < 16 || id.length > 64 || ![...id].every((c) => RESULT_ID_CHARS.includes(c))) {
     return undefined;
@@ -295,7 +455,140 @@ export function parseResultUpload(value: unknown, now: number): ResultUpload | u
   const level = difficulty === null ? null : DIFFICULTIES.find((d) => d === difficulty);
   if (level === undefined || (mode === 'computer') !== (level !== null)) return undefined;
   if (typeof finishedAt !== 'number' || !(finishedAt > 0 && finishedAt <= now + FUTURE_SLACK_MS)) return undefined;
-  return { id, mode, game, you, difficulty: level, finishedAt };
+  const publicId = value.publicId === undefined || value.publicId === null ? null : parseGameId(value.publicId);
+  if (publicId === undefined || (publicId !== null && (!isDeviceGameId(publicId) || publicId !== value.publicId))) return undefined;
+  const options = value.options ?? { hideBoard: false, hideHistory: false };
+  if (!isMatchOptions(options)) return undefined;
+  const tuned = value.tuned ?? false;
+  if (typeof tuned !== 'boolean' || (tuned && mode !== 'computer')) return undefined;
+  const metrics = value.metrics === undefined || value.metrics === null ? null : parseMetrics(value.metrics);
+  if (metrics === undefined) return undefined;
+  return {
+    id,
+    mode,
+    game,
+    you,
+    difficulty: level,
+    finishedAt,
+    publicId,
+    options: { hideBoard: options.hideBoard, hideHistory: options.hideHistory },
+    tuned,
+    metrics,
+  };
+}
+
+// ---- One game, read-only ----
+
+// A finished game as anybody with its link sees it. It has no tokens and no result id.
+export type PublicGame = {
+  id: GameId;
+  mode: SessionMode;
+  game: GameRecord;
+  options: MatchOptions;
+  difficulty: Difficulty | null;
+  tuned: boolean;
+  // The computer's seat, in a computer game.
+  computer: Player | null;
+  // The GitHub account behind each seat, when its player logged in.
+  players: Record<Player, PlayerInfo | null>;
+  finishedAt: number;
+};
+
+// Throws on any unexpected shape. The server checks its own answer with this too.
+export function parsePublicGame(value: unknown): PublicGame {
+  const fail = (field: string): never => {
+    throw new Error(`invalid game from server: ${field}`);
+  };
+  if (!isRecord(value) || !hasOnlyKeys(value, ['id', 'mode', 'game', 'options', 'difficulty', 'tuned', 'computer', 'players', 'finishedAt'])) {
+    return fail('body');
+  }
+  const id = parseGameId(value.id);
+  const mode = oneOf(SESSION_MODES, value.mode);
+  const { game, options, tuned, computer, players, finishedAt } = value;
+  const difficulty = value.difficulty === null ? null : oneOf(DIFFICULTIES, value.difficulty);
+  if (id === undefined || id !== value.id) return fail('id');
+  if (mode === undefined) return fail('mode');
+  if (!isGameRecord(game) || toGame(game).status.kind === 'playing') return fail('game');
+  if (!isMatchOptions(options)) return fail('options');
+  if (difficulty === undefined || (mode === 'computer') !== (difficulty !== null)) return fail('difficulty');
+  if (typeof tuned !== 'boolean') return fail('tuned');
+  if (computer !== null && computer !== 'X' && computer !== 'O') return fail('computer');
+  if ((mode === 'computer') !== (computer !== null)) return fail('computer');
+  if (!isRecord(players)) return fail('players');
+  const playerX = players.X === null ? null : parsePlayerInfo(players.X);
+  const playerO = players.O === null ? null : parsePlayerInfo(players.O);
+  if (playerX === undefined || playerO === undefined) return fail('players');
+  if (typeof finishedAt !== 'number' || !Number.isFinite(finishedAt)) return fail('finishedAt');
+  return {
+    id,
+    mode,
+    game: { moves: game.moves, times: game.times, clock: game.clock, timedOut: game.timedOut },
+    options: { hideBoard: options.hideBoard, hideHistory: options.hideHistory },
+    difficulty,
+    tuned,
+    computer,
+    players: { X: playerX, O: playerO },
+    finishedAt,
+  };
+}
+
+// ---- Match history ----
+
+// The result of a game for the player who asks. A friend game is only "played": one device held both seats.
+export type Outcome = 'won' | 'lost' | 'drawn' | 'played';
+export type HistoryEntry = {
+  // Null for a game stored before game links: it has no link.
+  id: GameId | null;
+  mode: SessionMode;
+  difficulty: Difficulty | null;
+  result: Outcome;
+  moves: number;
+  // The GitHub account of the other player, when there is one.
+  opponent: PlayerInfo | null;
+  finishedAt: number;
+};
+export type HistoryPage = { games: HistoryEntry[]; more: boolean };
+export const HISTORY_PAGE_SIZE = 50;
+
+const OUTCOMES = ['won', 'lost', 'drawn', 'played'] as const;
+
+export function parseHistoryPage(value: unknown): HistoryPage {
+  const fail = (field: string): never => {
+    throw new Error(`invalid history from server: ${field}`);
+  };
+  if (!isRecord(value) || !Array.isArray(value.games) || typeof value.more !== 'boolean') return fail('body');
+  const games = value.games.map((entry: unknown): HistoryEntry => {
+    if (!isRecord(entry)) return fail('entry');
+    const id = entry.id === null ? null : parseGameId(entry.id);
+    const mode = oneOf(SESSION_MODES, entry.mode);
+    const difficulty = entry.difficulty === null ? null : oneOf(DIFFICULTIES, entry.difficulty);
+    const result = oneOf(OUTCOMES, entry.result);
+    const opponent = entry.opponent === null ? null : parsePlayerInfo(entry.opponent);
+    const { moves, finishedAt } = entry;
+    if (id === undefined || mode === undefined || difficulty === undefined || result === undefined || opponent === undefined) {
+      return fail('entry');
+    }
+    if (!isCount(moves) || typeof finishedAt !== 'number' || !Number.isFinite(finishedAt)) return fail('entry');
+    return { id, mode, difficulty, result, moves, opponent, finishedAt };
+  });
+  return { games, more: value.more };
+}
+
+// ---- Client events ----
+
+// A fault on a page, for the failures list of the stats page: an uncaught error, a promise that
+// nobody caught, or a burst of refused moves (a sign of a confusing screen).
+const EVENT_KINDS = ['error', 'rejection', 'refusals'] as const;
+export type ClientEvent = { kind: (typeof EVENT_KINDS)[number]; message: string; version: string };
+const EVENT_MESSAGE_MAX_LENGTH = 300;
+
+export function parseClientEvent(value: unknown): ClientEvent | undefined {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['kind', 'message', 'version'])) return undefined;
+  const kind = oneOf(EVENT_KINDS, value.kind);
+  const { message, version } = value;
+  if (kind === undefined || !isVersion(version)) return undefined;
+  if (typeof message !== 'string' || message.length < 1 || message.length > EVENT_MESSAGE_MAX_LENGTH) return undefined;
+  return { kind, message, version };
 }
 
 // ---- My games ----
@@ -317,3 +610,58 @@ export type MyGames = {
   byDifficulty: Record<Difficulty, Tally>;
   sessions: SessionSummary[];
 };
+
+// ---- Stats ----
+
+// The aggregates of the stats page (/stats). Only counts and GitHub logins: never a token, a
+// result id or a game id. `player` is a GitHub login, or null for a player without a login.
+export type Count = { key: string; count: number };
+export type Stats = {
+  generatedAt: number;
+  totals: { games: number; moves: number; players: number; accounts: number; sessions: number; gamesLast7Days: number };
+  // The last 60 days, oldest first, in UTC.
+  perDay: { day: string; games: number; players: number }[];
+  // Day 0 is Monday. UTC.
+  hours: { day: number; hour: number; games: number }[];
+  byMode: Count[];
+  // Against the computer, from the player's side.
+  levels: { level: Difficulty; games: number; won: number; drawn: number; lost: number; avgMoves: number; medianMoves: number; tuned: number }[];
+  // The longest games that the computer won, per level and player. Default computer only.
+  survival: { level: Difficulty; rank: number; player: string | null; moves: number }[];
+  lengthByMode: { mode: SessionMode; games: number; avg: number; median: number; p90: number }[];
+  // Time between two moves, in buckets (MOVE_TIME_BUCKETS).
+  moveTimes: { bucket: number; human: number; computer: number }[];
+  // Median time per move in milliseconds, per computer level and per other mode. `searchMs` is the
+  // computer's own thinking time that devices report, without the pause before its move.
+  thinkTimes: { key: string; humanMs: number | null; computerMs: number | null; searchMs: number | null }[];
+  slowest: { player: string | null; medianMs: number; moves: number }[];
+  firstPlayer: { mode: SessionMode; x: number; o: number; draws: number }[];
+  // CELL_COUNT counts each: first moves, and all moves.
+  openings: number[];
+  cells: number[];
+  // How games end: axis, plane, space (the kind of the winning line), timeout or draw.
+  endings: Count[];
+  hide: { setting: 'none' | 'board' | 'history' | 'both'; games: number; computerGames: number; humanWins: number }[];
+  timeLimits: { perGame: number | null; perMove: number | null; games: number }[];
+  tuned: { tuned: boolean; games: number; humanWins: number }[];
+  // From game metrics: device results, and each player of an online game (one report per seat).
+  metricsGames: number;
+  devices: Count[];
+  views: Count[];
+  layouts: Count[];
+  themes: Count[];
+  versions: Count[];
+  input: { board: number; keypad: number };
+  refusals: Count[];
+  undo: { gamesWithUndo: number; undos: number };
+  offlineGames: number;
+  nearbyMixes: Count[];
+  errors: { kind: string; message: string; count: number; lastAt: number }[];
+};
+
+export const MOVE_TIME_BUCKETS = ['< 1 s', '1–2 s', '2–5 s', '5–10 s', '10–30 s', '30–60 s', '1–5 min', '5 min +'] as const;
+
+export function outcomeOf(winner: Player | null, you: Player | null): Outcome {
+  if (you === null) return 'played';
+  return winner === null ? 'drawn' : winner === you ? 'won' : 'lost';
+}

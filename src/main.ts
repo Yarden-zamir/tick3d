@@ -3,7 +3,7 @@ import { openDeviceDb, memoryDeviceDb } from './device-db.ts';
 import { createLocalBackend } from './local.ts';
 import { setupPwa } from './pwa.ts';
 import { token } from './online.ts';
-import { normalizeCode } from './protocol.ts';
+import { normalizeCode, parseGameId } from './protocol.ts';
 import { setMuted } from './sound.ts';
 import { setupAdvanced } from './page/advanced.ts';
 import { applyCamera, setupBoard } from './page/board.ts';
@@ -13,14 +13,16 @@ import { setupControls } from './page/controls.ts';
 import { offlineBadge, updateBar, updateReload } from './page/dom.ts';
 import { setupEndCard } from './page/end-card.ts';
 import { showToast, showProblem, showError } from './page/feedback.ts';
+import { openGameView, setupGameView } from './page/game-view.ts';
 import { setupHome } from './page/home.ts';
 import { setupKeypad } from './page/keypad.ts';
+import { setupReports } from './page/metrics.ts';
 import { refreshAccount, setupMyGames } from './page/my-games.ts';
 import { openNearbyLink, openNearby, setupNearby } from './page/nearby.ts';
 import { checkLanHost, setupOnlineBox } from './page/online-box.ts';
 import { render } from './page/render.ts';
 import { flushResults } from './page/results.ts';
-import { refresh, setUrlCode, joinSession, openLocalSession } from './page/sessions.ts';
+import { refresh, setUrlCode, setUrlGame, joinSession, openLocalSession } from './page/sessions.ts';
 import { settings } from './page/settings.ts';
 import { page } from './page/state.ts';
 import { applyTheme, setupTheme } from './page/theme.ts';
@@ -62,6 +64,8 @@ setupKeypad();
 setupChat();
 setupOnlineBox();
 setupHome();
+setupGameView();
+setupReports();
 
 async function start(): Promise<void> {
   try {
@@ -102,6 +106,14 @@ async function start(): Promise<void> {
     // The code opened no game (none with that code, or no network), and the error shows already.
     // The address drops the code, so a reload does not repeat the error, and the page starts as usual.
     setUrlCode(undefined);
+  }
+  // A game link opens that game read-only. With a code too, the session opens instead.
+  const gameLink = params.get('game');
+  if (gameLink !== null && linkCode === null) {
+    const id = parseGameId(gameLink);
+    if (id === undefined) showToast(`The game link "${gameLink}" is not valid.`);
+    else if (await openGameView(id)) return;
+    setUrlGame(undefined);
   }
   const nearbyCode = params.get('nearby');
   if (nearbyCode !== null) return openNearbyLink(nearbyCode);

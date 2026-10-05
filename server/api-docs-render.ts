@@ -279,7 +279,7 @@ code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; background: #
 pre { background: #15122b; color: #f3f0ff; padding: 0.8rem 1rem; border: 3px solid var(--ink); border-radius: 10px; overflow-x: auto; }
 pre code { background: none; padding: 0; color: inherit; }
 .method { display: inline-block; min-width: 4.2rem; text-align: center; padding: 0.1rem 0.4rem; border: 2px solid var(--ink); border-radius: 6px; font: 800 0.85rem ui-monospace, monospace; }
-.get { background: var(--o); } .post { background: var(--win); } .patch { background: var(--x); }
+.get { background: var(--o); } .post { background: var(--win); } .patch, .delete { background: var(--x); }
 nav a, a { color: var(--ink); font-weight: 700; }
 nav { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
 summary { cursor: pointer; font-weight: 700; }

@@ -6,7 +6,7 @@ import { renderQr } from '../nearby/qr.ts';
 import { type NearbyHost, type NearbyGuest, createNearbyHost, createNearbyGuest } from '../nearby/session.ts';
 import { type Hello, HELLO_NAME_MAX_LENGTH, decodeSignal } from '../nearby/signal.ts';
 import { token } from '../online.ts';
-import type { Code } from '../protocol.ts';
+import type { Code, Metrics } from '../protocol.ts';
 import { sounds } from '../sound.ts';
 import {
   nearbyNameInput,
@@ -312,4 +312,13 @@ export function setupNearby(): void {
       () => showProblem('Copy did not work. Select the code and copy it.'),
     );
   });
+}
+
+// This device's part in the live Nearby game and the kind of the other player's device, for the game metrics.
+export async function nearbyMetrics(): Promise<Metrics['nearby']> {
+  const state = nearby;
+  if (state.kind === 'guest') return { role: 'guest', other: state.hostHello.device };
+  if (state.kind !== 'hosting') return null;
+  const player = (await state.host.guests()).find((guest) => guest.seat !== null);
+  return { role: 'host', other: player?.hello.device ?? null };
 }

@@ -3,8 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { parseMe, parseMyGames } from '../src/online.ts';
 import {
   type PlayerToken,
+  parseGameId,
   normalizeChat,
+  parseClientEvent,
+  parseHistoryPage,
+  parseMetrics,
   parseMoveRequest,
+  parsePublicGame,
   parseNewSession,
   parseResultUpload,
   parseSessionUpdate,
@@ -15,10 +20,13 @@ import { curlOf, html, markdown, openApi } from './api-docs-render.ts';
 import { openStore } from './store.ts';
 
 const ORIGIN = 'https://tick3d.example.com';
+const fail = (id: string): never => {
+  throw new Error(`not a game id: ${id}`);
+};
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
 // The real parsers of the page and the server, by shape. A parser returns undefined or throws on a bad value.
-// Shapes without a parser (Health, ResultsResponse, Ok, ...) are read inline by their only caller,
+// Shapes without a parser (Health, ResultsResponse, Records, Stats, ...) are read inline by their only caller,
 // so the JSON Schema check below is their only check.
 const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   SessionView: parseSessionView,
@@ -34,6 +42,10 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
       : undefined,
   Me: parseMe,
   MyGames: parseMyGames,
+  PublicGame: parsePublicGame,
+  HistoryPage: parseHistoryPage,
+  Metrics: parseMetrics,
+  ClientEvent: parseClientEvent,
 };
 
 function parses(name: SchemaName, value: unknown): boolean {
@@ -124,6 +136,11 @@ describe('the SessionView schema', () => {
       expect(schemaErrors('SessionView', next)).toBe('');
       expect(next.turn).toBe('X');
       expect(schemaErrors('MyGames', await store.myGames(alice))).toBe('');
+      const id = `${code}-1`;
+      expect(schemaErrors('PublicGame', await store.game(parseGameId(id) ?? fail(id)))).toBe('');
+      expect(schemaErrors('HistoryPage', await store.history(alice, 0))).toBe('');
+      expect(schemaErrors('Records', { records: await store.records(alice) })).toBe('');
+      expect(schemaErrors('Stats', await store.stats())).toBe('');
     } finally {
       store.close();
     }
@@ -133,8 +150,9 @@ describe('the SessionView schema', () => {
 describe('matchRoute', () => {
   it.each(ROUTE_NAMES)('finds %s', (name) => {
     const { method, path } = splitRoute(name);
-    const concrete = path.replaceAll('{code}', 'ab3k');
-    expect(matchRoute(method, concrete)).toEqual({ route: name, params: path.includes('{code}') ? { code: 'ab3k' } : {} });
+    const concrete = path.replaceAll('{code}', 'ab3k').replaceAll('{id}', 'ab3k-2');
+    const params = { ...(path.includes('{code}') ? { code: 'ab3k' } : {}), ...(path.includes('{id}') ? { id: 'ab3k-2' } : {}) };
+    expect(matchRoute(method, concrete)).toEqual({ route: name, params });
   });
 
   it('says when a path exists with another method', () => {

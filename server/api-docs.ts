@@ -12,14 +12,21 @@ import {
   CODE_ALPHABET,
   CODE_LENGTH,
   NAME_MAX_LENGTH,
+  HISTORY_PAGE_SIZE,
+  LAYOUTS,
+  REFUSALS,
   RESULTS_PER_UPLOAD,
   SESSION_MODES,
+  THEMES,
+  VIEWS,
 } from '../src/protocol.ts';
 
 // Long polls wait at most this long. Proxies keep an idle request open for longer.
 export const WAIT_MS = 25_000;
 // New sessions per hour from one address. server/main.ts enforces it.
 export const CREATES_PER_HOUR = 60;
+// Fault reports per 10 minutes from one address. server/main.ts enforces it.
+export const EVENTS_PER_10_MINUTES = 30;
 
 // ---- Shapes (JSON Schema 2020-12, as OpenAPI 3.1 uses) ----
 
@@ -30,7 +37,7 @@ export type Schema = {
   description?: string;
   properties?: Record<string, Schema>;
   required?: readonly string[];
-  additionalProperties?: boolean;
+  additionalProperties?: boolean | Schema;
   minProperties?: number;
   items?: Schema;
   minItems?: number;
@@ -68,7 +75,18 @@ export type SchemaName =
   | 'ResultUpload'
   | 'ResultsRequest'
   | 'ResultsResponse'
-  | 'Ok';
+  | 'Ok'
+  | 'GameId'
+  | 'PublicGame'
+  | 'HistoryEntry'
+  | 'HistoryPage'
+  | 'Hidden'
+  | 'Records'
+  | 'Metrics'
+  | 'MetricsResponse'
+  | 'ClientEvent'
+  | 'Count'
+  | 'Stats';
 
 export const ref = (name: SchemaName): Schema => ({ $ref: `#/components/schemas/${name}` });
 const nullable = (schema: Schema): Schema => ({ oneOf: [schema, { type: 'null' }] });
@@ -87,6 +105,10 @@ const limit = (kind: keyof typeof LIMIT_RANGE, description: string): Schema => (
 });
 const name: Schema = { type: 'string', minLength: 1, maxLength: NAME_MAX_LENGTH, description: 'The session name. The server trims spaces.' };
 const chatText: Schema = { type: 'string', minLength: 1, maxLength: CHAT_MAX_LENGTH, description: `1 to ${CHAT_MAX_LENGTH} characters. The server trims spaces.` };
+const DEVICE_KINDS = ['phone', 'tablet', 'computer'];
+const strings = (values: readonly string[], description?: string): Schema => ({ type: 'string', enum: values, ...(description === undefined ? {} : { description }) });
+const list = (description: string, items?: Schema): Schema => ({ type: 'array', description, ...(items === undefined ? {} : { items }) });
+const count = (description?: string): Schema => ({ type: 'integer', minimum: 0, ...(description === undefined ? {} : { description }) });
 const tally = (description: string, keys: readonly string[]): Schema =>
   object(description, Object.fromEntries(keys.map((key) => [key, ref('Tally')])));
 
@@ -210,12 +232,113 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     you: nullable(ref('Player')),
     difficulty: { type: ['string', 'null'], enum: [...DIFFICULTIES, null] },
     finishedAt: { type: 'number' },
-  }),
+    publicId: { ...nullable(ref('GameId')), description: 'An id of 8 characters that the device made, for the game link. Optional.' },
+    options: { ...object('The hide settings at the end of the game. Optional.', { hideBoard: { type: 'boolean' }, hideHistory: { type: 'boolean' } }) },
+    tuned: { type: 'boolean', description: 'A computer game with changed advanced settings. Optional.' },
+    metrics: { ...nullable(ref('Metrics')), description: 'What the device saw during the game. Optional.' },
+  }, ['publicId', 'options', 'tuned', 'metrics']),
   ResultsRequest: object('Finished games from this device.', {
     results: { type: 'array', items: ref('ResultUpload'), maxItems: RESULTS_PER_UPLOAD },
   }),
-  ResultsResponse: object('The upload result.', { stored: { type: 'integer', minimum: 0, description: 'How many results were new.' } }),
+  ResultsResponse: object('The upload result.', {
+    stored: count('How many results were new.'),
+    renamed: {
+      type: 'object',
+      additionalProperties: ref('GameId'),
+      description: 'By result id: the public id that the server keeps for a result, when it differs from the one that the device sent.',
+    },
+  }),
   Ok: object('Done.', { ok: { const: true } }),
+  GameId: {
+    type: 'string',
+    pattern: `^([${CODE_ALPHABET}]{8}|[${CODE_ALPHABET}]{${CODE_LENGTH}}-[1-9][0-9]*)$`,
+    description: 'The id of a finished game. An online game: <CODE>-<n>, where n is the game number in the session, from 1. Other games: 8 characters. The link is /?game=<id>. Lower case also works.',
+  },
+  PublicGame: object('A finished game as anybody with its link sees it.', {
+    id: ref('GameId'),
+    mode: strings(SESSION_MODES),
+    game: ref('GameRecord'),
+    options: object('The hide settings at the end of the game.', { hideBoard: { type: 'boolean' }, hideHistory: { type: 'boolean' } }),
+    difficulty: { type: ['string', 'null'], enum: [...DIFFICULTIES, null], description: 'The computer level, in a computer game.' },
+    tuned: { type: 'boolean', description: 'A computer with changed advanced settings.' },
+    computer: { ...nullable(ref('Player')), description: 'The seat of the computer, in a computer game.' },
+    players: object('The GitHub account behind each seat, or null.', { X: nullable(ref('PlayerInfo')), O: nullable(ref('PlayerInfo')) }),
+    finishedAt: { type: 'number', description: 'Epoch milliseconds.' },
+  }),
+  HistoryEntry: object('One finished game of yours.', {
+    id: { ...nullable(ref('GameId')), description: 'null for an old game without a link.' },
+    mode: strings(SESSION_MODES),
+    difficulty: { type: ['string', 'null'], enum: [...DIFFICULTIES, null] },
+    result: strings(['won', 'lost', 'drawn', 'played'], 'Your result. A friend game on one device is only "played".'),
+    moves: count('Moves in the game.'),
+    opponent: nullable(ref('PlayerInfo')),
+    finishedAt: { type: 'number' },
+  }),
+  HistoryPage: object(`Up to ${HISTORY_PAGE_SIZE} finished games, newest first.`, {
+    games: list('The games of this page.', ref('HistoryEntry')),
+    more: { type: 'boolean', description: 'True when an older page exists. Ask again with a larger offset.' },
+  }),
+  Hidden: object('The cleared history.', { hidden: count('How many games left your history.') }),
+  Records: object('Your survival records against the computer.', {
+    records: {
+      type: 'object',
+      additionalProperties: { type: 'integer', minimum: 1 },
+      description: 'The most moves before the computer won, per setup. A key looks like "hard|game:none|move:none|board:false|history:false".',
+    },
+  }),
+  Metrics: object('What one device saw during one game, for the stats page. Every field is required.', {
+    device: strings(DEVICE_KINDS),
+    view: strings(VIEWS),
+    layout: strings(LAYOUTS),
+    theme: strings(THEMES),
+    input: object('Moves of this player by how they were placed.', { board: count(), keypad: count() }),
+    refused: { type: 'object', additionalProperties: count(), description: `Refused actions by reason: ${REFUSALS.join(', ')}.` },
+    undos: count(),
+    thinkMs: list('The thinking time of each computer move, in milliseconds.', { type: 'number', minimum: 0 }),
+    offline: { type: 'boolean' },
+    version: { type: 'string', minLength: 1, maxLength: 64, description: 'The name of the page script file.' },
+    tuning: { type: ['object', 'null'], description: 'The computer settings of a tuned computer game (see src/tuning.ts), else null.' },
+    nearby: nullable(object('A Nearby game.', { role: strings(['host', 'guest']), other: { type: ['string', 'null'], enum: [...DEVICE_KINDS, null] } })),
+  }),
+  MetricsResponse: object('The metrics result.', { stored: { type: 'boolean', description: 'False when this seat sent metrics for the game before.' } }),
+  ClientEvent: object('A fault on a page.', {
+    kind: strings(['error', 'rejection', 'refusals']),
+    message: { type: 'string', minLength: 1, maxLength: 300 },
+    version: { type: 'string', minLength: 1, maxLength: 64, description: 'The name of the page script file.' },
+  }),
+  Count: object('A count by key.', { key: { type: 'string' }, count: count() }),
+  Stats: object('The aggregates of the stats page: counts and GitHub logins only. The server computes them at most once a minute. src/protocol.ts (Stats) has every field.', {
+    generatedAt: { type: 'number' },
+    totals: { type: 'object', description: 'games, moves, players, accounts, sessions, gamesLast7Days.' },
+    perDay: list('The last 60 days, oldest first, UTC.'),
+    hours: list('Games per weekday (0 is Monday) and hour, UTC.'),
+    byMode: list('Games per mode.', ref('Count')),
+    levels: list('Results against each computer level.'),
+    survival: list('The longest games that the computer won, per level.'),
+    lengthByMode: list('Game length per mode.'),
+    moveTimes: list('Time between two moves, in buckets.'),
+    thinkTimes: list('Median time per move.'),
+    slowest: list('The slowest players.'),
+    firstPlayer: list('Wins of X and O per mode.'),
+    openings: list('First moves, per cell.', count()),
+    cells: list('All moves, per cell.', count()),
+    endings: list('How games end.', ref('Count')),
+    hide: list('Hide settings in use.'),
+    timeLimits: list('Time limits in use.'),
+    tuned: list('Tuned computer games.'),
+    metricsGames: count(),
+    devices: list('Device kinds.', ref('Count')),
+    views: list('Views.', ref('Count')),
+    layouts: list('Layouts.', ref('Count')),
+    themes: list('Themes.', ref('Count')),
+    versions: list('App versions.', ref('Count')),
+    input: object('Moves by input.', { board: count(), keypad: count() }),
+    refusals: list('Refused actions.', ref('Count')),
+    undo: object('Undo use.', { gamesWithUndo: count(), undos: count() }),
+    offlineGames: count(),
+    nearbyMixes: list('Nearby device mixes.', ref('Count')),
+    errors: list('Page faults.'),
+  }),
 };
 
 // ---- Examples ----
@@ -252,9 +375,44 @@ const game = (moves: number[]) => ({ moves, times: moves.map((_, i) => T0 + 10_0
 // X wins with the vertical line 0, 16, 32, 48. O plays 1, 2, 3.
 const X_WINS = [0, 1, 16, 2, 32, 3, 48];
 
+const zeroCount = () => ({ key: 'online', count: 0 });
+// The stats of a new server, shortened to one day.
+const STATS_EXAMPLE = {
+  generatedAt: T0,
+  totals: { games: 0, moves: 0, players: 0, accounts: 0, sessions: 0, gamesLast7Days: 0 },
+  perDay: [{ day: '2026-10-05', games: 0, players: 0 }],
+  hours: [],
+  byMode: [zeroCount()],
+  levels: [],
+  survival: [],
+  lengthByMode: [],
+  moveTimes: [{ bucket: 0, human: 0, computer: 0 }],
+  thinkTimes: [],
+  slowest: [],
+  firstPlayer: [],
+  openings: Array<number>(CELL_COUNT).fill(0),
+  cells: Array<number>(CELL_COUNT).fill(0),
+  endings: [],
+  hide: [],
+  timeLimits: [],
+  tuned: [],
+  metricsGames: 0,
+  devices: [],
+  views: [],
+  layouts: [],
+  themes: [],
+  versions: [],
+  input: { board: 0, keypad: 0 },
+  refusals: [],
+  undo: { gamesWithUndo: 0, undos: 0 },
+  offlineGames: 0,
+  nearbyMixes: [],
+  errors: [],
+};
+
 // ---- Routes ----
 
-type Method = 'GET' | 'POST' | 'PATCH';
+type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 type RouteId = `${Method} /api/${string}`;
 
 type Query = { description: string; required: boolean; schema: Schema; example: string };
@@ -284,6 +442,11 @@ export const PATH_PARAMS: Record<string, { description: string; schema: Schema; 
     description: `The session code: ${CODE_LENGTH} letters or digits. Lower case also works.`,
     schema: { type: 'string', pattern: `^[${CODE_ALPHABET}${CODE_ALPHABET.toLowerCase()}]{${CODE_LENGTH}}$` },
     example: EXAMPLE_CODE,
+  },
+  id: {
+    description: 'The id of a finished game: <CODE>-<n> for an online game (n counts from 1), or 8 characters for another game.',
+    schema: { type: 'string' },
+    example: `${EXAMPLE_CODE}-1`,
   },
 };
 
@@ -432,6 +595,127 @@ export const ROUTES = {
     response: { status: 200, description: 'A text/event-stream that stays open.', contentType: 'text/event-stream' },
     errors: [BAD_CODE, NO_GAME, { status: 503, when: 'Too many open streams.' }],
   },
+  'GET /api/games/{id}': {
+    operationId: 'getGame',
+    tag: 'Play',
+    summary: 'Read one finished game, read-only.',
+    description: 'Anybody with the id can read it. The game link for a person is /?game=<id>. For game n of an online session (n counts from 1), the id is <CODE>-<n>.',
+    player: 'none',
+    response: {
+      status: 200,
+      description: 'The finished game.',
+      schema: 'PublicGame',
+      example: {
+        id: `${EXAMPLE_CODE}-1`,
+        mode: 'online',
+        game: game(X_WINS),
+        options: { hideBoard: false, hideHistory: false },
+        difficulty: null,
+        tuned: false,
+        computer: null,
+        players: { X: null, O: null },
+        finishedAt: T0 + 70_000,
+      },
+    },
+    errors: [{ status: 400, when: 'The id is not 8 letters or digits, or a code and a game number.' }, { status: 404, when: 'No finished game has this id.' }],
+  },
+  'POST /api/games/{id}/metrics': {
+    operationId: 'sendGameMetrics',
+    tag: 'Account',
+    summary: 'Send what your device saw during a finished online game. The page uses it for the stats page.',
+    description: 'Only a player of the game can send, and only the first report of each seat counts.',
+    player: 'required',
+    body: {
+      schema: 'Metrics',
+      example: {
+        device: 'computer',
+        view: 'tower',
+        layout: 'grid',
+        theme: 'light',
+        input: { board: 4, keypad: 0 },
+        refused: { occupied: 1 },
+        undos: 0,
+        thinkMs: [],
+        offline: false,
+        version: 'index-B2x9kQ',
+        tuning: null,
+        nearby: null,
+      },
+    },
+    response: { status: 200, description: 'Whether the server kept the report.', schema: 'MetricsResponse', example: { stored: true } },
+    errors: [
+      BAD_PLAYER,
+      { status: 400, when: 'The id is not an online game id, or the metrics are not valid.' },
+      { status: 403, when: 'You did not play this game.' },
+      { status: 404, when: 'No finished game has this id.' },
+    ],
+    examplePlayer: AGENT_A,
+  },
+  'GET /api/me/history': {
+    operationId: 'myHistory',
+    tag: 'Account',
+    summary: `Your finished games, ${HISTORY_PAGE_SIZE} per page, newest first.`,
+    description: 'The history follows your GitHub account when you log in on the page, else your player id.',
+    player: 'required',
+    query: { offset: { description: 'How many newer games to skip. Default 0.', required: false, schema: { type: 'integer', minimum: 0 }, example: '0' } },
+    response: {
+      status: 200,
+      description: 'One page of your history.',
+      schema: 'HistoryPage',
+      example: {
+        games: [{ id: `${EXAMPLE_CODE}-1`, mode: 'online', difficulty: null, result: 'won', moves: 7, opponent: null, finishedAt: T0 + 70_000 }],
+        more: false,
+      },
+    },
+    errors: [BAD_PLAYER, { status: 400, when: 'The offset is not a whole number of 0 or more.' }],
+    examplePlayer: AGENT_A,
+  },
+  'DELETE /api/me/history': {
+    operationId: 'clearHistory',
+    tag: 'Account',
+    summary: 'Clear your history.',
+    description: 'Your games leave your history. They stay for the other player and in the stats.',
+    player: 'required',
+    response: { status: 200, description: 'How many games left your history.', schema: 'Hidden', example: { hidden: 1 } },
+    errors: [BAD_PLAYER],
+    examplePlayer: AGENT_A,
+  },
+  'GET /api/me/records': {
+    operationId: 'myRecords',
+    tag: 'Account',
+    summary: 'Your survival records against the computer.',
+    player: 'required',
+    response: {
+      status: 200,
+      description: 'The most moves before the computer won, per setup.',
+      schema: 'Records',
+      example: { records: { 'hard|game:none|move:none|board:false|history:false': 23 } },
+    },
+    errors: [BAD_PLAYER],
+    examplePlayer: AGENT_A,
+  },
+  'POST /api/events': {
+    operationId: 'reportFault',
+    tag: 'Account',
+    summary: 'Report a fault on a page, for the stats page. The page uses it.',
+    description: `At most 1 kB. One address can send ${EVENTS_PER_10_MINUTES} reports per 10 minutes.`,
+    player: 'none',
+    body: { schema: 'ClientEvent', example: { kind: 'error', message: 'TypeError: x is undefined (index-B2x9kQ.js:1:200)', version: 'index-B2x9kQ' } },
+    response: { status: 200, description: 'Stored.', schema: 'Ok', example: { ok: true } },
+    errors: [
+      { status: 400, when: 'The event needs a kind, a message of 1 to 300 characters and a version.' },
+      { status: 413, when: 'The body is larger than 1 kB.' },
+      { status: 429, when: `This address sent ${EVENTS_PER_10_MINUTES} reports in the last 10 minutes.` },
+    ],
+  },
+  'GET /api/stats': {
+    operationId: 'stats',
+    tag: 'Account',
+    summary: 'The aggregates of the hidden stats page at /stats.',
+    player: 'none',
+    response: { status: 200, description: 'Counts only. No token, result id or game id.', schema: 'Stats', example: STATS_EXAMPLE },
+    errors: [],
+  },
   'GET /api/health': {
     operationId: 'health',
     tag: 'Docs',
@@ -512,11 +796,27 @@ export const ROUTES = {
       schema: 'ResultsRequest',
       example: {
         results: [
-          { id: 'result-5d1c9e7a3b2f4086', mode: 'computer', game: game(X_WINS), you: 'X', difficulty: 'easy', finishedAt: T0 + 70_000 },
+          {
+            id: 'result-5d1c9e7a3b2f4086',
+            mode: 'computer',
+            game: game(X_WINS),
+            you: 'X',
+            difficulty: 'easy',
+            finishedAt: T0 + 70_000,
+            publicId: 'Q7MZ4KTB',
+            options: { hideBoard: false, hideHistory: false },
+            tuned: false,
+            metrics: null,
+          },
         ],
       },
     },
-    response: { status: 200, description: 'How many results were new.', schema: 'ResultsResponse', example: { stored: 1 } },
+    response: {
+      status: 200,
+      description: 'How many results were new, and the public ids that the server changed.',
+      schema: 'ResultsResponse',
+      example: { stored: 1, renamed: {} },
+    },
     errors: [BAD_PLAYER, { status: 400, when: `There is no results list, it has more than ${RESULTS_PER_UPLOAD} results, or a result is not a valid finished game.` }, { status: 413, when: 'The body is larger than 256 kB.' }],
     examplePlayer: AGENT_A,
   },
@@ -698,6 +998,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
   {
     title: 'After a game, and chat',
     blocks: [
+      { p: 'A finished game has its own read-only link: `{origin}/?game=<CODE>-<n>`, where n is the game number in the session, counted from 1 (`games.length` for the live game). It shows the final board and a replay. After a game, this is the best link to give your user. `GET /api/games/<CODE>-<n>` returns the same game as JSON.' },
       { p: 'A game ends when `status.kind` is "won", "timeout" or "draw". Either player starts the next game with `POST /api/sessions/<code>/games`. The new game is the last item of `games`, and X moves first again. A session keeps every game.' },
       { p: `Chat with \`POST /api/sessions/<code>/chat\` and \`{"text":"Good luck!"}\`. A message has 1 to ${CHAT_MAX_LENGTH} characters. Only the two players can write. Watchers read along. The session keeps the newest ${CHAT_KEEP} messages.` },
     ],
@@ -719,7 +1020,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
   {
     title: 'Agent against agent',
     blocks: [
-      { p: 'One agent creates a game and gives the code to the other agent. The other agent joins. When both seats are taken, give your user the link `{origin}/?code=<code>`, so they can watch the game live.' },
+      { p: 'One agent creates a game and gives the code to the other agent. The other agent joins. When both seats are taken, give your user the link `{origin}/?code=<code>`, so they can watch the game live. After the game, give them the link of the finished game, `{origin}/?game=<CODE>-<n>`.' },
     ],
   },
   {

@@ -100,7 +100,7 @@ export function setupBoard(): void {
         button.type = 'button';
         button.className = 'cell';
         button.innerHTML = '<span class="piece"></span>';
-        button.addEventListener('click', () => humanMove(cell));
+        button.addEventListener('click', () => humanMove(cell, 'board'));
         button.addEventListener('pointerenter', () => highlightColumn(cell));
         button.addEventListener('focus', () => highlightColumn(cell));
         button.addEventListener('pointerleave', () => highlightColumn(undefined));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TUNING, TUNING_FIELDS, feelAt, isDefaultTuning, parseTuning } from './tuning.ts';
+import { DEFAULT_TUNING, TUNING_FIELDS, feelAt, isDefaultTuning, isTuning, parseTuning } from './tuning.ts';
 
 describe('tiring', () => {
   it('stays fresh until tireFrom, is fully tired from tireTo, and moves steadily between', () => {
@@ -48,5 +48,15 @@ describe('stored advanced settings', () => {
       expect(value, field.label).toBeGreaterThanOrEqual(field.min);
       expect(value, field.label).toBeLessThanOrEqual(field.max);
     }
+  });
+});
+
+describe('isTuning', () => {
+  it('accepts full settings in range and refuses anything it would have to fix', () => {
+    expect(isTuning(DEFAULT_TUNING)).toBe(true);
+    expect(isTuning({ ...DEFAULT_TUNING, hard: { ...DEFAULT_TUNING.hard, budgetMs: 5000 } })).toBe(false);
+    expect(isTuning({ ...DEFAULT_TUNING, easy: undefined })).toBe(false);
+    expect(isTuning({ ...DEFAULT_TUNING, strongCellBonus: '3' })).toBe(false);
+    expect(isTuning(null)).toBe(false);
   });
 });

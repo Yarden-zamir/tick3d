@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NO_LIMIT } from './clock.ts';
-import { type RecordSetup, addLoss, parseRecords, recordKey } from './records.ts';
+import { type RecordSetup, addLoss, mergeRecords, parseRecords, recordKey } from './records.ts';
 
 const setup: RecordSetup = { difficulty: 'hard', clock: NO_LIMIT, hideBoard: false, hideHistory: false, tuned: false };
 
@@ -43,5 +43,11 @@ describe('survival records', () => {
 
   it('refuses a game without moves', () => {
     expect(() => addLoss({}, setup, 0)).toThrow(RangeError);
+  });
+});
+
+describe('mergeRecords', () => {
+  it('keeps the higher record of each setup and every setup of both', () => {
+    expect(mergeRecords({ a: 5, b: 9 }, { a: 7, c: 3 })).toEqual({ a: 7, b: 9, c: 3 });
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CELL_COUNT, LINES, type Game, linesThrough, newGame, parseCoordinates, play, replay, timeOut, toCell, undo } from './game.ts';
+import { CELL_COUNT, LINES, type Game, lineKind, linesThrough, newGame, parseCoordinates, play, replay, timeOut, toCell, undo } from './game.ts';
 
 // Move i happens at time i, so results compare equal across calls.
 function playAll(cells: number[], game: Game = newGame()): Game {
@@ -112,5 +112,14 @@ describe('timeOut', () => {
     expect(game.status).toEqual({ kind: 'timeout', winner: 'X' });
     expect(play(game, 5)).toEqual({ ok: false, error: 'game-over' });
     expect(() => timeOut(game)).toThrow();
+  });
+});
+
+describe('lineKind', () => {
+  it('finds 48 axis lines, 24 plane diagonals and 4 space diagonals', () => {
+    const kinds = LINES.map(lineKind);
+    expect(kinds.filter((kind) => kind === 'axis')).toHaveLength(48);
+    expect(kinds.filter((kind) => kind === 'plane')).toHaveLength(24);
+    expect(kinds.filter((kind) => kind === 'space')).toHaveLength(4);
   });
 });

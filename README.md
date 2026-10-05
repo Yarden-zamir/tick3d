@@ -3,7 +3,6 @@
 [![kitshn](https://kitshn.yarden-zamir.com/b/Yarden-zamir/tick3d.svg)](https://tick3d.yarden-zamir.com)
 
 3D tic-tac-toe on a 4×4×4 cube, at [tick3d.yarden-zamir.com](https://tick3d.yarden-zamir.com).
-It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden-zamir.com) ([voice-quad-checkers-arena](https://github.com/Yarden-zamir/voice-quad-checkers-arena)).
 
 ![A game against the computer in the tower view](docs/screenshots/tower.png)
 
@@ -28,8 +27,8 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - Session history: the panel lists the games of the session. Replay steps through a finished game move by move. A session holds any number of games.
 - Time limits, like a chess clock: a limit per player for the whole game (30 s to 120 min), a limit per move (3 s to 10 min), or both. Each limit has a switch, a number box and quick picks. A player who runs out of either limit loses. The first move of each player is untimed, so the clock starts after both players moved once. A clock ticks in the last 10 seconds. A timed game has no undo.
 - A game keeps the time limit it started with. A change during a game starts with the next game, and the panel shows both limits until then.
-- End card: at the end of a game, a card shows the result, the final board and the game details, the hide settings included. New game on the card starts the next game. The card uses the active theme. Share sends the image through the system share sheet. Without file sharing (most desktop browsers), Share copies the image, and Save image downloads it. Two check boxes, both on by default, add the game code and the link to the card and the share text. A local game has no code, so it shows only the link option.
-- Survival records: when the computer wins, the number of moves that the game lasted can be a new record. Each level, time limit and hide setting keeps its own record. A new record shows as a message and as a sticker on the end card, with the old best. The first loss of a setup sets the record without a message. The records stay on the device.
+- End card: at the end of a game, a card shows the result, the final board and the game details, the hide settings included. New game on the card starts the next game. The card uses the active theme. Share sends the image through the system share sheet. Without file sharing (most desktop browsers), Share copies the image, and Save image downloads it. Two check boxes, both on by default, add the game code and the link of the game (see Game links) to the card and the share text. A local game has no code, so it shows only the link option.
+- Survival records: when the computer wins, the number of moves that the game lasted can be a new record. Each level, time limit and hide setting keeps its own record. A new record shows as a message and as a sticker on the end card, with the old best. The first loss of a setup sets the record without a message. The device keeps its records for offline play, and the server keeps the records of every game it received. On each visit the page takes the higher record of each setup from the server, so a new record must beat the best of every device of the account.
 - Sound effects made with Web Audio. Each layer has its own note. A mute button keeps the choice.
 - Drag the tower sideways to turn it all the way round. The tilt stays at the resting view. On a touch screen, a vertical swipe still scrolls the page. Reset angle returns to the resting view, and the browser keeps the angle. A drag never places a mark. Boards and tiles have real 3D depth in the tower, so they look solid at any turn. Layer 1 is the bottom plane and layer 4 the top one; the flat view labels each layer.
 - Two views: a 3D tower of tilted layers and a flat view. The flat view has four layouts: grid, side by side, top to bottom, and steps.
@@ -43,6 +42,16 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 ![Synthwave, Candy and Mono themes on a phone](docs/screenshots/themes.png)
 
 <img src="docs/screenshots/end-card.png" alt="The end card of a won game" width="360">
+
+## Game links and match history
+
+- Every finished game gets an id and a read-only link. An online game uses its session code and game number (`/?game=AB3K-2`). Any other game gets 8 random characters from the device that played it (`/?game=K7P2QX9M`). The server keeps each id unique and gives a new id when two devices pick the same one.
+- At the end of a game the address shows the link, and the end card shares it. A new game, a switch to another game or Home removes it from the address. An online game keeps its `?code` too.
+- The link shows the final board with the replay controls, the players (the GitHub name of a player with a login, else "Anonymous"), the mode, the level, the time limit, the hide settings, the date and the result. Nobody can move in it, and it has no next game. Play goes back to a game of your own.
+- A game that this device did not upload yet opens from the device copy, also offline.
+- My games has a History list of every finished game in every mode, newest first, 50 at a time, with a View button. Offline, it lists the games on this device.
+- Clear history in My games asks first, then removes every finished game from the player's history: on the server for every device of the account (or for this browser without a login), and from the uploaded results on this device. The survival records and the totals stay. An online game stays in the opponent's history, and every game still counts in the site stats.
+- A game stored before game links shows in the history without a View button, until a one-off migration gives it an id.
 
 ## Online play
 
@@ -103,7 +112,7 @@ The API docs come from one file, `server/api-docs.ts`:
 - Login with GitHub is optional. Every browser plays with a random token either way.
 - A login links the browser's token to the GitHub account. Sessions then follow the player: a seat taken on a laptop also plays from a phone that logged in to the same account, so an async game can continue on another device.
 - The score shows a player's GitHub name and avatar, and the chat uses the name.
-- My games (the button in the header) shows the account, stats per mode and per computer level, the online sessions with a "Your turn" mark and a Continue button, and every session on this device. Offline, it shows the games on this device.
+- My games (the button in the header) shows the account, stats per mode and per computer level, the match history, the online sessions with a "Your turn" mark and a Continue button, and every session on this device. Offline, it shows the games on this device.
 - The login runs on the production address. Its cookie is signed and valid for `tick3d.yarden-zamir.com` and its subdomains, so pull request previews see it too. Without the GitHub settings, login is off and the page hides it.
 
 <img src="docs/screenshots/my-games.png" alt="My games: stats and sessions" width="480">
@@ -123,15 +132,18 @@ The API docs come from one file, `server/api-docs.ts`:
 - `src/pwa.ts` and `vite.config.ts`: the service worker and the manifest.
 - `src/main.ts`, `src/style.css`, `index.html`: the page. `src/main.ts` starts the page; `src/page/` holds the page script, one module per feature (board, sessions, Nearby, My games, clocks, chat and more). `src/page/state.ts` holds the state that more than one module changes.
 - `public/`: the favicons and touch icons, copied into the build as is. The service worker plugin writes the web manifest.
-- `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login. `server/waiters.ts`: the long polls.
+- `server/main.ts`: the HTTP API and server-sent events. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login. `server/stats.ts`: the SQL of the stats page. `server/waiters.ts`: the long polls.
+- `stats.html`, `src/stats/`: the hidden stats page.
 - `server/api-docs.ts`: every API route with its shapes, examples and errors, and the guide for AI agents. The server finds the route of a request in this list, so a route without docs cannot exist. `server/api-docs-render.ts` makes the Markdown, the web page and the OpenAPI document. A test runs every example through the real parsers in `src/protocol.ts`.
 - To add a route: add one entry to `ROUTES` in `server/api-docs.ts` and one case to the switch in `server/main.ts`. The type check fails when one of the two is missing.
 
-The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs on Node 24, which runs TypeScript directly, and stores sessions in [DuckDB](https://duckdb.org) through `@duckdb/node-api`.
+The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs on Node 26, which runs TypeScript directly, and stores sessions in [DuckDB](https://duckdb.org) through `@duckdb/node-api`.
 
 ## Stored data and format changes
 
-- The `sessions` table has one row per session: the code, a creation order, a version, timestamps, and the session as one `VARIANT` document. `users` and `player_tokens` link browsers to GitHub accounts. `results` holds finished games that devices sent.
+- The `sessions` table has one row per session: the code, a creation order, a version, timestamps, and the session as one `VARIANT` document. `users` and `player_tokens` link browsers to GitHub accounts. `results` holds every finished game, one row per game: the games that devices sent, and the online games, which the server records when they end. Its columns hold the public game id, the token of each seat, the winner, how the game ended and the game metrics. `events` holds the faults that pages report.
+- Rows from before game links have NULL in the new columns. The queries read them from `token` and `doc` instead (`SEAT_X` and `SEAT_O` in `server/stats.ts`), and a finished online game that has no row reads from its session. The server never writes data into old rows.
+- `hidden_x` and `hidden_o` mark a seat that its player cleared from the history. `seat_metrics` holds the metrics of each player of an online game, one row per seat.
 - A device stores its sessions in the same document format in IndexedDB, so the same rules read and upgrade them on a phone.
 - The document carries a `format` number. `src/session/format.ts` reads every known format, upgrades old documents step by step, and writes the current format back on the first read.
 - A new optional field needs only a default in `parseDoc`. A breaking change needs a new `CURRENT_FORMAT` and one `UPGRADES` step. Neither needs a database reset or a manual migration.
@@ -140,13 +152,38 @@ The page is plain TypeScript built with Vite, with no runtime dependencies. The 
 - `src/session/fixtures/` holds a stored document of each released format. A test reads each one, so old data keeps working.
 - Table changes are append-only statements such as `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS`, which run on every start.
 
+## API
+
+The full reference, with every shape, error and a curl example, is at `/api/docs` (and `/api/docs.md`, `/api/openapi.json`). It comes from `server/api-docs.ts`. This table is a summary.
+
+| Route | What it does |
+| --- | --- |
+| `POST /api/sessions`, `GET /api/sessions/:code` and the other session routes | Online play. `GET /api/sessions/:code?wait=<version>` waits for a change. |
+| `POST /api/results` | Finished games from a device. The answer holds the new public id of each result that the server renamed. |
+| `GET /api/games/:id` | One finished game, read-only. No token and no result id. |
+| `GET /api/me/games` | My games: tallies and online sessions. |
+| `GET /api/me/history?offset=0` | The match history of the player (by account, else by browser token), 50 games per page, newest first. |
+| `GET /api/me/records` | The survival records of the player, with the same keys as on the device (`src/records.ts`). |
+| `DELETE /api/me/history` | Clears the history of the player. Needs the X-Player header. |
+| `POST /api/games/:id/metrics` | The metrics of a player's device for a finished online game. Only a player of that game may send them, once per seat. |
+| `POST /api/events` | A fault report from a page. At most 1 kB, 30 per 10 minutes per address. |
+| `GET /api/stats` | The aggregates of the stats page. The server computes them at most once a minute. |
+
+## Stats page and what is logged
+
+- `/stats` is a page that nothing links to. It shows games per day, players per day, a weekday and hour heatmap, games by mode, results and survival leaderboards per computer level, game length, time per move (players and computer), the slowest thinkers, first-player advantage, opening moves and all moves over the 4 layers, how games end, hide setting and time limit use, tuned computers, devices, views, layouts, themes, app versions, board and keypad input, refusals, undo use, offline games, Nearby device mixes and page faults. It uses the saved theme. Search engines are told not to list it.
+- The page shows counts only. A leaderboard shows the GitHub name of a player with a login, else "Anonymous". It never shows a token, a result id or a game id.
+- What a finished game sends, besides the game itself: the kind of device (phone, tablet or computer), the view, the layout, the theme, how many moves came from the board and from the keypad, the refused actions by reason, the number of undos, the thinking time of each computer move, whether the device was offline, the app version (the file name of the page script), the computer settings of a tuned computer, and for Nearby the role of the device and the kind of the other device.
+- A fault report holds the error message with the file name and line, or the reason of a burst of refused moves, and the app version. It holds no token and no address. A page sends at most 10 per visit.
+- Each player of an online game sends the same metrics for that game, without the computer and Nearby parts.
+
 ## Develop
 
 Node is not necessary on the host. Run the commands in a container:
 
 ```sh
-docker run --rm -v "$PWD":/app -w /app node:24-alpine sh -c 'npm ci && npm run check && npm run build'
-docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:24-alpine npx vite --host
+docker run --rm -v "$PWD":/app -w /app node:26-alpine sh -c 'npm ci && npm run check && npm run build'
+docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:26-alpine npx vite --host
 ```
 
 `npm run check` runs the type check, every linter and the tests. `npm run build` runs the type check (`tsc`) before the Vite build. `npm run api` starts the API on port 8080 with `./dev.duckdb`.
@@ -165,9 +202,9 @@ docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr.17.
 ```
 
 - The image tag must match the `@playwright/test` version in `package.json`. Update both together.
-- `npm ci` in the Playwright image installs packages for glibc. Run `npm ci` again before you use `node:24-alpine`.
+- `npm ci` in the Playwright image installs packages for glibc. Run `npm ci` again before you use `node:26-alpine`.
 - Each test opens fresh browser contexts, and the tests run in parallel. The HTML report goes to `e2e/playwright-report/`. A failed test keeps a trace in `e2e/test-results/`.
-- One run creates 7 online sessions. The server allows 60 new sessions per hour from one address.
+- One run creates 8 online sessions. The server allows 60 new sessions per hour from one address.
 - The `e2e` workflow runs the suite after a successful pull request preview deploy. When a test fails, the workflow uploads the HTML report.
 - Knip finds the tests through its `entry` setting in `package.json`. Its Playwright plugin is off, because the plugin loads the config, and the config stops without `E2E_BASE_URL`.
 - The laptop host (`compose.lan.yml`) has no automatic test. It needs a local Docker host and a second device on the network.
