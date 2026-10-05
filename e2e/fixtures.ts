@@ -93,6 +93,16 @@ export async function createOnline(page: Page): Promise<string> {
   return code;
 }
 
+// The generated name of a player without a GitHub login, from their own My games dialog.
+export async function ownName(page: Page): Promise<string> {
+  await page.locator('#account-button').click();
+  await expect(page.locator('#account-box')).toContainText('You play as');
+  const name = await page.locator('#account-box b').innerText();
+  await page.locator('#my-games-close').click();
+  expect(name).toMatch(/^[a-z]+[A-Z][a-z]+$/);
+  return name;
+}
+
 // Joins with a fresh context and waits until the joiner holds the O seat.
 export async function joinAsO(open: (options?: OpenOptions) => Promise<Opened>, path: string): Promise<Opened> {
   const joined = await open({ path });

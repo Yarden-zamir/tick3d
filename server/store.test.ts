@@ -2,6 +2,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { afterEach, describe, expect, it } from 'vitest';
 import { replay } from '../src/game.ts';
+import { nameOf } from '../src/names.ts';
 import { type Code, type GameId, type Metrics, type PlayerToken, type ResultUpload, parseGameId, toRecord } from '../src/protocol.ts';
 import { SessionError } from '../src/session/core.ts';
 import { type Store, openStore } from './store.ts';
@@ -42,7 +43,7 @@ async function playMoves(code: Code, cells: number[], game = 0): Promise<void> {
 function result(id: string, overrides: Partial<ResultUpload> = {}): ResultUpload {
   const game = toRecord(replay(X_WINS, { times: X_WINS.map((_, i) => 1_000 + i) }));
   const options = { hideBoard: false, hideHistory: false };
-  return { id, mode: 'computer', game, you: 'X', difficulty: 'hard', finishedAt: 2_000, publicId: null, options, tuned: false, metrics: null, ...overrides };
+  return { id, mode: 'computer', game, you: 'X', difficulty: 'hard', finishedAt: 2_000, publicId: null, options, tuned: false, metrics: null, guest: null, ...overrides };
 }
 
 describe('pruning empty sessions', () => {
@@ -237,7 +238,14 @@ describe('game links', () => {
     expect(await store.addResults(alice, [upload])).toEqual({ stored: 1, renamed: {} });
     await store.linkToken(alice, ALICE_GITHUB);
     const shown = await store.game(id);
-    expect(shown).toMatchObject({ id, mode: 'computer', difficulty: 'hard', computer: 'O', players: { X: { login: 'alice' }, O: null } });
+    expect(shown).toMatchObject({
+      id,
+      mode: 'computer',
+      difficulty: 'hard',
+      computer: 'O',
+      players: { X: { login: 'alice' }, O: null },
+      names: { X: nameOf(alice), O: null },
+    });
     expect(shown.game.moves).toEqual(X_WINS);
     const text = JSON.stringify(shown);
     expect(text).not.toContain(alice);
@@ -272,10 +280,14 @@ describe('game links', () => {
     await store.newGame(code, bob);
     await store.get(code, bob);
     const shown = await store.game(gameId(`${code}-1`));
-    expect(shown).toMatchObject({ mode: 'online', computer: null, difficulty: null });
+    expect(shown).toMatchObject({ mode: 'online', computer: null, difficulty: null, names: { X: nameOf(alice), O: nameOf(bob) } });
     expect(shown.game.moves).toEqual(X_WINS);
+    expect(JSON.stringify(shown)).not.toContain(alice);
     expect(await status(() => store.game(gameId(`${code}-2`)))).toBe(404);
-    expect((await store.myGames(alice)).total).toEqual({ played: 1, won: 1, lost: 0, drawn: 0 });
+    const mine = await store.myGames(alice);
+    expect(mine.total).toEqual({ played: 1, won: 1, lost: 0, drawn: 0 });
+    expect(mine.sessions).toMatchObject([{ code, opponent: null, opponentName: nameOf(bob) }]);
+    expect(JSON.stringify(mine)).not.toContain(bob);
   });
 
   it('records an online game that ends on time', async () => {
@@ -311,11 +323,41 @@ describe('match history', () => {
       ['friend', 'played'],
       ['computer', 'lost'],
     ]);
-    expect(mine.games[0]).toMatchObject({ id: `${code}-1`, moves: 7, opponent: { login: 'bob' } });
+    expect(mine.games[0]).toMatchObject({ id: `${code}-1`, moves: 7, opponent: { login: 'bob' }, opponentName: nameOf(bob) });
+    // The computer and the friend game have no other player with a name.
+    expect(mine.games.slice(1).map((entry) => entry.opponentName)).toEqual([null, null]);
     const theirs = await store.history(bob, 0);
-    expect(theirs.games).toMatchObject([{ mode: 'online', result: 'lost', opponent: null }]);
+    expect(theirs.games).toMatchObject([{ mode: 'online', result: 'lost', opponent: null, opponentName: nameOf(alice) }]);
     expect(JSON.stringify(mine)).not.toContain(alice);
+    expect(JSON.stringify(mine)).not.toContain(bob);
+    expect(JSON.stringify(theirs)).not.toContain(alice);
     expect((await store.history(carol, 0)).games).toEqual([]);
+  });
+
+  it('gives the guest of a Nearby game the result of the host, with the host as opponent, and returns no token', async () => {
+    store = await openStore(':memory:');
+    const nearby = { mode: 'nearby', difficulty: null, game: finishedGame(X_WINS) } as const;
+    const id = gameId('NEARBY23');
+    // Both devices send a result. The host (Alice, X) names the guest (Bob, O).
+    await store.addResults(alice, [
+      result('dddddddd-1111-4000-8000-000000000001', { ...nearby, you: 'X', publicId: id, guest: bob, metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } }),
+    ]);
+    await store.addResults(bob, [
+      // The guest's copy can have a slightly later time for the last move.
+      result('dddddddd-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: 2_034, metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } }),
+    ]);
+    const theirs = await store.history(bob, 0);
+    expect(theirs.games).toMatchObject([{ id, mode: 'nearby', result: 'lost', opponentName: nameOf(alice) }]);
+    expect((await store.history(alice, 0)).games).toMatchObject([{ id, result: 'won', opponentName: nameOf(bob) }]);
+    const shown = await store.game(id);
+    expect(shown.names).toEqual({ X: nameOf(alice), O: nameOf(bob) });
+    for (const answer of [theirs, shown]) {
+      expect(JSON.stringify(answer)).not.toContain(alice);
+      expect(JSON.stringify(answer)).not.toContain(bob);
+    }
+    // A host cannot name itself as the guest.
+    const self = result('dddddddd-1111-4000-8000-000000000003', { ...nearby, you: 'X', guest: alice });
+    expect(await status(() => store.addResults(alice, [self]))).toBe(400);
   });
 
   it('pages through the history', async () => {
@@ -379,12 +421,12 @@ describe('rows from before game links', () => {
   it('reads an old result in the history (without a link), the records and the stats, and changes no row', async () => {
     await oldStore();
     expect((await store.history(alice, 0)).games).toEqual([
-      { id: null, mode: 'computer', difficulty: 'easy', result: 'lost', moves: 9, opponent: null, finishedAt: 5_000 },
+      { id: null, mode: 'computer', difficulty: 'easy', result: 'lost', moves: 9, opponent: null, opponentName: null, finishedAt: 5_000 },
     ]);
     expect(await store.records(alice)).toEqual({ 'easy|game:none|move:none|board:false|history:false': 9 });
     const stats = await store.stats();
     expect(stats.levels).toEqual([expect.objectContaining({ level: 'easy', games: 1, lost: 1 })]);
-    expect(stats.survival).toEqual([{ level: 'easy', rank: 1, player: null, moves: 9 }]);
+    expect(stats.survival).toEqual([{ level: 'easy', rank: 1, player: nameOf(alice), moves: 9 }]);
     expect(stats.endings).toEqual([{ key: 'won', count: 1 }]);
     // The old row stays as it was: the one-off migration fills it, not the server.
     expect((await store.history(alice, 0)).games[0]?.id).toBeNull();
@@ -449,7 +491,7 @@ describe('online game metrics', () => {
 });
 
 describe('stats', () => {
-  it('counts games, levels, records, moves and faults, with logins but no tokens', async () => {
+  it('counts games, levels, records, moves and faults, with names but no tokens', async () => {
     const code = await session();
     await playMoves(code, X_WINS);
     await store.linkToken(bob, { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' });
@@ -466,7 +508,8 @@ describe('stats', () => {
     expect(stats.levels).toEqual([expect.objectContaining({ level: 'hard', games: 3, won: 1, lost: 2, drawn: 0 })]);
     expect(stats.survival).toEqual([
       { level: 'hard', rank: 1, player: 'bob', moves: 9 },
-      { level: 'hard', rank: 2, player: null, moves: 7 },
+      // Carol has no GitHub login, so she shows with her generated name.
+      { level: 'hard', rank: 2, player: nameOf(carol), moves: 7 },
     ]);
     expect(stats.openings[0]).toBe(3);
     expect(stats.openings[5]).toBe(1);

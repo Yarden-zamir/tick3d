@@ -43,12 +43,18 @@ describe('parseSessionView', () => {
     chat: [{ id: 7, from: 'O', text: 'good luck', at: 1_700_000_000_000 }],
     presence: { X: true, O: false },
     players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' }, O: null },
+    names: { X: 'braveOtter', O: null },
     turn: 'X',
     status: { kind: 'playing' },
   };
 
   it('accepts a valid view', () => {
     expect(parseSessionView(valid)).toEqual(valid);
+  });
+
+  it('gives no names when a sender has no names field', () => {
+    const { names: _names, ...older } = valid;
+    expect(parseSessionView(older).names).toEqual({ X: null, O: null });
   });
 
   it('fills turn and status from the moves when a sender has no such fields', () => {
@@ -74,6 +80,10 @@ describe('parseSessionView', () => {
     ['status', { ...valid, status: { kind: 'won', winner: 'X', line: [0, 1, 2, 3] } }],
     ['status', { ...valid, status: { kind: 'playing', winner: 'X' } }],
     ['games', { ...valid, games: [{ ...valid.games[0], moves: [0, 0], times: [1, 2] }] }],
+    ['names', { ...valid, names: { X: '', O: null } }],
+    ['names', { ...valid, names: { X: 'a'.repeat(41), O: null } }],
+    ['names', { ...valid, names: { X: 'braveOtter' } }],
+    ['names', { ...valid, names: null }],
   ])('throws on a bad %s field', (_, input) => {
     expect(() => parseSessionView(input)).toThrow();
   });
@@ -119,7 +129,7 @@ describe('parseResultUpload', () => {
   const day = 86_400_000;
 
   it('accepts a finished game with a matching mode, seat and level', () => {
-    expect(parseResultUpload(valid, now)).toEqual({ ...valid, publicId: null, options: { hideBoard: false, hideHistory: false }, tuned: false, metrics: null });
+    expect(parseResultUpload(valid, now)).toEqual({ ...valid, publicId: null, options: { hideBoard: false, hideHistory: false }, tuned: false, metrics: null, guest: null });
     expect(parseResultUpload({ ...valid, mode: 'friend', you: null, difficulty: null }, now)).toBeDefined();
     expect(parseResultUpload({ ...valid, finishedAt: now + day }, now)).toBeDefined();
   });
@@ -202,6 +212,24 @@ describe('parseMetrics', () => {
   });
 });
 
+describe('parseResultUpload, the guest of a Nearby host', () => {
+  const game = toRecord(replay([0, 1, 16, 2, 32, 3, 48]));
+  const guest = 'bbbbbbbb-0000-4000-8000-000000000002';
+  const nearby = { id: 'aaaaaaaa-0000-4000-8000-000000000001-ab3k-0', mode: 'nearby', game, you: 'X', difficulty: null, finishedAt: 5 };
+
+  it('keeps the guest token of a Nearby game', () => {
+    expect(parseResultUpload({ ...nearby, guest }, 10)?.guest).toBe(guest);
+  });
+
+  it.each([
+    ['a guest in a computer game', { ...nearby, mode: 'computer', difficulty: 'easy', guest }],
+    ['a guest in a friend game', { ...nearby, mode: 'friend', you: null, guest }],
+    ['a guest that is not a token', { ...nearby, guest: 'Not a token!' }],
+  ])('refuses %s', (_, value) => {
+    expect(parseResultUpload(value, 10)).toBeUndefined();
+  });
+});
+
 describe('parseResultUpload, game link fields', () => {
   const game = toRecord(replay([0, 1, 16, 2, 32, 3, 48]));
   const valid = { id: 'aaaaaaaa-0000-4000-8000-000000000001-ab3k-0', mode: 'computer', game, you: 'X', difficulty: 'easy', finishedAt: 5 };
@@ -232,6 +260,7 @@ describe('parsePublicGame', () => {
     tuned: false,
     computer: 'O',
     players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' }, O: null },
+    names: { X: 'braveOtter', O: null },
     finishedAt: 1_700_000_000_000,
   };
 
@@ -244,13 +273,15 @@ describe('parsePublicGame', () => {
     ['an unfinished game', { ...valid, game: toRecord(replay([0, 1])) }],
     ['a computer game without the computer seat', { ...valid, computer: null }],
     ['a lower-case id', { ...valid, id: 'abcdefgh' }],
+    ['no names', { ...valid, names: undefined }],
+    ['an empty name', { ...valid, names: { X: '', O: null } }],
   ])('throws on %s', (_, value) => {
     expect(() => parsePublicGame(value)).toThrow();
   });
 });
 
 describe('parseHistoryPage', () => {
-  const entry = { id: 'AB3K-2', mode: 'online', difficulty: null, result: 'won', moves: 7, opponent: null, finishedAt: 5 };
+  const entry = { id: 'AB3K-2', mode: 'online', difficulty: null, result: 'won', moves: 7, opponent: null, opponentName: 'braveOtter', finishedAt: 5 };
 
   it('accepts a page of games', () => {
     expect(parseHistoryPage({ games: [entry], more: false })).toEqual({ games: [entry], more: false });
@@ -259,6 +290,7 @@ describe('parseHistoryPage', () => {
   it.each([
     ['an unknown result', { games: [{ ...entry, result: 'maybe' }], more: false }],
     ['no more flag', { games: [entry] }],
+    ['an empty opponent name', { games: [{ ...entry, opponentName: '' }], more: false }],
   ])('throws on %s', (_, value) => {
     expect(() => parseHistoryPage(value)).toThrow();
   });

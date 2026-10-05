@@ -180,16 +180,35 @@ function readStored(json: unknown): StoredGame {
 }
 
 // The seat tokens of a result from a device. Its player holds `you`, or both seats in a friend game.
-const seatTokens = (token: string, you: Player | null): Record<Player, string | null> => ({
-  X: you === 'O' ? null : token,
-  O: you === 'X' ? null : token,
+// A Nearby host also names the guest on the other seat.
+const seatTokens = (token: string, you: Player | null, guest: string | null): Record<Player, string | null> => ({
+  X: you === 'O' ? guest : token,
+  O: you === 'X' ? guest : token,
 });
+
+// A seat token column of a result row: a token, or null for a seat without a known player.
+function tokenOf(value: unknown): string | null {
+  if (value === null || typeof value === 'string') return value;
+  throw new Error('a stored seat token is not text');
+}
 
 function accountOf(login: unknown, avatar: unknown): PlayerInfo | null {
   if (login === null) return null;
   if (typeof login !== 'string' || typeof avatar !== 'string') throw new Error('a stored account has no login or avatar');
   return { login, avatar };
 }
+
+// True for the result of a Nearby guest when the host's result of the same game names the guest.
+// Both devices send a result, so the guest's history then lists the host's row only: it knows both players.
+// The two copies can differ in the time of the last move by some milliseconds, so the match uses the
+// moves and a finish within 10 minutes. Two games of the same two players with the same moves inside
+// 10 minutes then count as one. Revisit this if a result ever carries a shared game id from the host.
+const HOST_HAS_GAME = `(results.metrics.nearby.role::VARCHAR = 'guest' AND EXISTS (
+  FROM results host SELECT 1
+  WHERE host.doc.mode::VARCHAR = 'nearby' AND host.metrics.nearby.role::VARCHAR = 'host'
+    AND results.token IN (host.player_x, host.player_o) AND host.token <> results.token
+    AND host.doc.game.moves::INTEGER[] = results.doc.game.moves::INTEGER[]
+    AND abs(epoch_ms(host.finished_at) - epoch_ms(results.finished_at)) < 600000))`;
 
 // Joins the GitHub account of each seat of a result row: x_login, x_avatar, o_login, o_avatar.
 const SEAT_ACCOUNTS = `
@@ -401,6 +420,7 @@ export async function openStore(
       tuned: false,
       computer: null,
       players: await playersOf(row.doc),
+      names: { X: core.seatName(row.doc.seats.X), O: core.seatName(row.doc.seats.O) },
       finishedAt: game.times.at(-1) ?? now(),
     });
   }
@@ -473,6 +493,7 @@ export async function openStore(
         if (!results.every((result): result is ResultUpload => result !== undefined)) {
           throw new SessionError(400, 'A result is not a valid finished game.');
         }
+        if (results.some((result) => result.guest === token)) throw new SessionError(400, 'The guest of a Nearby game needs its own player token.');
         let stored = 0;
         const renamed: Record<string, GameId> = {};
         for (const result of results) {
@@ -481,12 +502,12 @@ export async function openStore(
           if (existing !== undefined && existing.public_id === null) continue;
           let publicId = existing === undefined ? (result.publicId ?? newGameId()) : (String(existing.public_id) as GameId);
           if (existing === undefined) {
-            // The metrics go to their own column, not into the stored game.
-            const { metrics, ...upload } = result;
+            // The metrics go to their own column, and the guest's token to its seat column, not into the stored game.
+            const { metrics, guest, ...upload } = result;
             for (let attempt = 1; ; attempt++) {
               try {
                 const doc = { ...upload, publicId };
-                await insertResult({ id: result.id, token, doc, finishedAt: result.finishedAt, publicId, seats: seatTokens(token, result.you), game: result.game, metrics });
+                await insertResult({ id: result.id, token, doc, finishedAt: result.finishedAt, publicId, seats: seatTokens(token, result.you, guest), game: result.game, metrics });
                 break;
               } catch (error) {
                 if (!isDuplicateKey(error) || attempt >= MAX_ID_ATTEMPTS) throw error;
@@ -504,7 +525,8 @@ export async function openStore(
     game: (id: GameId): Promise<PublicGame> =>
       serialized(async () => {
         const [row] = await rows(
-          `FROM results ${SEAT_ACCOUNTS} SELECT doc::JSON AS doc, epoch_ms(finished_at) AS finished, ${SEAT_ACCOUNT_COLUMNS}
+          `FROM results ${SEAT_ACCOUNTS} SELECT doc::JSON AS doc, epoch_ms(finished_at) AS finished, ${SEAT_ACCOUNT_COLUMNS},
+             ${SEAT_X} AS token_x, ${SEAT_O} AS token_o
            WHERE public_id = $id`,
           { id },
         );
@@ -520,6 +542,7 @@ export async function openStore(
           tuned: stored.tuned,
           computer: stored.mode === 'computer' && stored.you !== null ? other(stored.you) : null,
           players: { X: accountOf(row.x_login, row.x_avatar), O: accountOf(row.o_login, row.o_avatar) },
+          names: { X: core.seatName(tokenOf(row.token_x)), O: core.seatName(tokenOf(row.token_o)) },
           finishedAt: Number(row.finished),
         });
       }),
@@ -536,9 +559,11 @@ export async function openStore(
              results.winner, results.ending, CASE WHEN results.ending IS NULL THEN results.doc::JSON END AS old_doc,
              len(results.doc.game.moves::INTEGER[]) AS moves, epoch_ms(results.finished_at) AS finished,
              coalesce(list_contains($tokens, ${SEAT_X}), false) AS mine_x,
-             coalesce(list_contains($tokens, ${SEAT_O}), false) AS mine_o, ${SEAT_ACCOUNT_COLUMNS}
-           WHERE (list_contains($tokens, ${SEAT_X}) AND results.hidden_x IS NOT TRUE)
-              OR (list_contains($tokens, ${SEAT_O}) AND results.hidden_o IS NOT TRUE)
+             coalesce(list_contains($tokens, ${SEAT_O}), false) AS mine_o, ${SEAT_ACCOUNT_COLUMNS},
+             ${SEAT_X} AS token_x, ${SEAT_O} AS token_o
+           WHERE ((list_contains($tokens, ${SEAT_X}) AND results.hidden_x IS NOT TRUE)
+              OR (list_contains($tokens, ${SEAT_O}) AND results.hidden_o IS NOT TRUE))
+             AND NOT ${HOST_HAS_GAME}
            ORDER BY results.finished_at DESC, results.id
            LIMIT $limit OFFSET $offset`,
           { tokens, limit: HISTORY_PAGE_SIZE + 1, offset },
@@ -557,6 +582,7 @@ export async function openStore(
             result: outcomeOf(winner, you),
             moves: Number(row.moves),
             opponent: you === 'X' ? accountOf(row.o_login, row.o_avatar) : you === 'O' ? accountOf(row.x_login, row.x_avatar) : null,
+            opponentName: you === 'X' ? core.seatName(tokenOf(row.token_o)) : you === 'O' ? core.seatName(tokenOf(row.token_x)) : null,
             finishedAt: Number(row.finished),
           };
         });
@@ -670,6 +696,7 @@ export async function openStore(
             games: doc.games.filter((record) => record.moves.length > 0).length,
             you,
             opponent: (await playersOf(doc))[other(you)],
+            opponentName: core.seatName(doc.seats[other(you)]),
             yourTurn: live.status.kind === 'playing' && live.turn === you && doc.seats[other(you)] !== null,
             updatedAt: Number(row.updated),
           });

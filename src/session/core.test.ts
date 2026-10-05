@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TimeControl } from '../clock.ts';
+import { nameOf } from '../names.ts';
 import type { Code } from '../protocol.ts';
 import * as core from './core.ts';
 import type { SessionDoc } from './format.ts';
@@ -80,6 +81,28 @@ describe('seats', () => {
     expect(status(() => core.move(afterX, alice, { game: 0, moveCount: 1, cell: 1 }, 1))).toBe(409);
     const device = new Set([ALICE, core.COMPUTER_TOKEN]);
     expect(core.move(afterX, device, { game: 0, moveCount: 1, cell: 1 }, 1).games[0]?.moves).toEqual([0, 1]);
+  });
+});
+
+describe('names', () => {
+  it('names each player from their token, the same for every viewer, and never shows a token', () => {
+    const doc = onlineDoc();
+    const names = view(doc, carol).names;
+    expect(names).toEqual({ X: nameOf(ALICE), O: nameOf(BOB) });
+    expect(view(doc, alice).names).toEqual(names);
+    expect(JSON.stringify(view(doc, alice))).not.toContain(ALICE);
+  });
+
+  it('gives no name to an empty seat or to the computer', () => {
+    const waiting = core.createDoc({ name: 'Match', mode: 'online', seats: { X: ALICE, O: null } });
+    expect(view(waiting, alice).names).toEqual({ X: nameOf(ALICE), O: null });
+    const versus = core.createDoc({
+      name: 'Versus',
+      mode: 'computer',
+      seats: { X: core.COMPUTER_TOKEN, O: ALICE },
+      computer: { difficulty: 'hard', seat: 'X' },
+    });
+    expect(view(versus, alice).names).toEqual({ X: null, O: nameOf(ALICE) });
   });
 });
 

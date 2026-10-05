@@ -47,7 +47,7 @@
 
 - Every finished game gets an id and a read-only link. An online game uses its session code and game number (`/?game=AB3K-2`). Any other game gets 8 random characters from the device that played it (`/?game=K7P2QX9M`). The server keeps each id unique and gives a new id when two devices pick the same one.
 - At the end of a game the address shows the link, and the end card shares it. A new game, a switch to another game or Home removes it from the address. An online game keeps its `?code` too.
-- The link shows the final board with the replay controls, the players (the GitHub name of a player with a login, else "Anonymous"), the mode, the level, the time limit, the hide settings, the date and the result. Nobody can move in it, and it has no next game. Play goes back to a game of your own.
+- The link shows the final board with the replay controls, the players (the GitHub name of a player with a login, else the generated name), the mode, the level, the time limit, the hide settings, the date and the result. Nobody can move in it, and it has no next game. Play goes back to a game of your own.
 - A game that this device did not upload yet opens from the device copy, also offline.
 - My games has a History list of every finished game in every mode, newest first, 50 at a time, with a View button. Offline, it lists the games on this device.
 - Clear history in My games asks first, then removes every finished game from the player's history: on the server for every device of the account (or for this browser without a login), and from the uploaded results on this device. The survival records and the totals stay. An online game stays in the opponent's history, and every game still counts in the site stats.
@@ -99,9 +99,10 @@ The docs of the tick3d HTTP API come from one file, `server/api-docs.ts`:
 - Choose Nearby to play with devices on the same Wi-Fi, without the internet. One device hosts, the others join.
 - The host shows a QR code. The guest scans it with the phone's own camera, which opens the game, and shows its own code, which the host scans the same way. On the host, the answer opens in a new tab that hands the code to the hosting tab. Each code also has a text form to copy and paste, for a device without a camera.
 - The devices then talk directly over WebRTC. The host's device holds the session and checks every move with the same rules as the server, so a guest can never move for the host.
-- The panel lists the connected devices with an icon for each kind: phone, tablet or computer. The first guest plays O, later guests watch.
+- The panel lists the connected devices with an icon for each kind: phone, tablet or computer. The device name starts as the player's name, and the player can change it. The first guest plays O, later guests watch.
 - The host's screen stays on while it hosts. When the host ends the game or closes the page, the guests see a message.
 - Chat, the lock, the hide options and time limits work as in an online game.
+- At the end of a game, the host sends the result with both players. The game link then shows both names, and the game is in the history of the guest too.
 - Host on a laptop: `docker compose -f compose.lan.yml up --build` runs the full game server on a computer. Others on the same network open `http://<that computer's address>:8080` and play the Online mode, with no codes to scan. The online box shows the host with a server icon. Without HTTPS, a browser gives that page no offline cache and no camera; the game itself works. Set `LAN_HOST_NAME` for the name it shows, and `LAN_PORT` when port 8080 is taken.
 
 ![A laptop hosts a Nearby game, a phone joins](docs/screenshots/nearby.png)
@@ -111,6 +112,8 @@ The docs of the tick3d HTTP API come from one file, `server/api-docs.ts`:
 - Login with GitHub is optional. Every browser plays with a random token either way.
 - A login links the browser's token to the GitHub account. Sessions then follow the player: a seat taken on a laptop also plays from a phone that logged in to the same account, so an async game can continue on another device.
 - The score shows a player's GitHub name and avatar, and the chat uses the name.
+- A player without a GitHub login gets a generated name: an adjective and an animal in camelCase, such as "braveOtter". The server makes it from the player's token, so every screen shows the same name. A login replaces it with the GitHub name. My games shows the name to its player. The words come from unique-names-generator (MIT).
+- The score, the status, the chat, the clocks, the end card and the game links use the same name for each player. The own seat is "You", and a friend game on one screen uses "Player X" and "Player O".
 - My games (the button in the header) shows the account, stats per mode and per computer level, the match history, the online sessions with a "Your turn" mark and a Continue button, and every session on this device. Offline, it shows the games on this device.
 - The login runs on the production address. Its cookie is signed and valid for `tick3d.yarden-zamir.com` and its subdomains, so pull request previews see it too. Without the GitHub settings, login is off and the page hides it.
 
@@ -171,7 +174,7 @@ The full reference, with every shape, error and a curl example, is the OpenAPI 3
 ## Stats page and what is logged
 
 - `/stats` is a page that nothing links to. It shows games per day, players per day, a weekday and hour heatmap, games by mode, results and survival leaderboards per computer level, game length, time per move (players and computer), the slowest thinkers, first-player advantage, opening moves and all moves over the 4 layers, how games end, hide setting and time limit use, tuned computers, devices, views, layouts, themes, app versions, board and keypad input, refusals, undo use, offline games, Nearby device mixes and page faults. It uses the saved theme. Search engines are told not to list it.
-- The page shows counts only. A leaderboard shows the GitHub name of a player with a login, else "Anonymous". It never shows a token, a result id or a game id.
+- The page shows counts only. A leaderboard shows the GitHub name of a player with a login, else the generated name. It never shows a token, a result id or a game id.
 - What a finished game sends, besides the game itself: the kind of device (phone, tablet or computer), the view, the layout, the theme, how many moves came from the board and from the keypad, the refused actions by reason, the number of undos, the thinking time of each computer move, whether the device was offline, the app version (the file name of the page script), the computer settings of a tuned computer, and for Nearby the role of the device and the kind of the other device.
 - A fault report holds the error message with the file name and line, or the reason of a burst of refused moves, and the app version. It holds no token and no address. A page sends at most 10 per visit.
 - Each player of an online game sends the same metrics for that game, without the computer and Nearby parts.

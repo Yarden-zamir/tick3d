@@ -1,7 +1,18 @@
 // The account button and the My games dialog.
 import { winnerOf } from '../game.ts';
-import { api, OnlineError } from '../online.ts';
-import { type GameId, HISTORY_PAGE_SIZE, type HistoryEntry, type Outcome, type SessionMode, type Tally, outcomeOf, toGame } from '../protocol.ts';
+import { nameOf } from '../names.ts';
+import { api, OnlineError, token } from '../online.ts';
+import {
+  type GameId,
+  HISTORY_PAGE_SIZE,
+  type HistoryEntry,
+  type Outcome,
+  type SessionMode,
+  type SessionSummary,
+  type Tally,
+  outcomeOf,
+  toGame,
+} from '../protocol.ts';
 import {
   accountAvatar,
   accountName,
@@ -93,6 +104,12 @@ async function deviceTallies(): Promise<Tally> {
   return tally;
 }
 
+// The same rule as playerName in render.ts. A null name means that the other seat is still empty.
+function opponentOf(summary: SessionSummary): string {
+  const name = summary.opponent?.login ?? summary.opponentName;
+  return name === null ? 'Waiting for a second player' : `vs ${name}`;
+}
+
 const gameCount = (count: number) => `${count} ${count === 1 ? 'game' : 'games'}`;
 
 const MODE_NAMES: Record<SessionMode, string> = { computer: 'Computer', friend: 'Friend', online: 'Online', nearby: 'Nearby' };
@@ -105,7 +122,8 @@ function viewGame(id: GameId): void {
 
 function historyItem(entry: HistoryEntry): HTMLLIElement {
   const level = entry.difficulty === null ? '' : `, ${entry.difficulty}`;
-  const opponent = entry.opponent === null ? '' : ` · vs ${entry.opponent.login}`;
+  const opponentName = entry.opponent?.login ?? entry.opponentName;
+  const opponent = opponentName === null ? '' : ` · vs ${opponentName}`;
   const title = `${OUTCOME_NAMES[entry.result]} · ${MODE_NAMES[entry.mode]}${level}`;
   const detail = `${entry.moves} moves${opponent} · ${ago(entry.finishedAt)}`;
   // A game stored before game links has no link to view.
@@ -126,6 +144,7 @@ async function deviceHistory(): Promise<HistoryEntry[]> {
       result: outcomeOf(winnerOf(toGame(upload.game).status), upload.you),
       moves: upload.game.moves.length,
       opponent: null,
+      opponentName: null,
       finishedAt: upload.finishedAt,
     });
   }
@@ -169,14 +188,21 @@ async function openMyGames(): Promise<void> {
     logout.textContent = 'Log out';
     logout.addEventListener('click', () => void api.logout().then(refreshAccount).then(() => myGamesDialog.close(), showError));
     accountBox.append(avatar, name, logout);
-  } else if (page.account.loginAvailable && navigator.onLine) {
+  } else {
+    // The same generated name that the server shows to the other players (src/names.ts).
     const text = document.createElement('span');
-    text.textContent = 'Log in to keep your games and stats on every device.';
-    const login = document.createElement('a');
-    login.className = 'login-link';
-    login.href = api.loginUrl();
-    login.textContent = 'Log in with GitHub';
-    accountBox.append(text, login);
+    const name = document.createElement('b');
+    name.textContent = nameOf(token);
+    text.append('You play as ', name, '.');
+    accountBox.append(text);
+    if (page.account.loginAvailable && navigator.onLine) {
+      text.append(' Log in with GitHub to use your GitHub name.');
+      const login = document.createElement('a');
+      login.className = 'login-link';
+      login.href = api.loginUrl();
+      login.textContent = 'Log in with GitHub';
+      accountBox.append(login);
+    }
   }
   // Device sessions
   const deviceSessions = (await page.local?.list()) ?? [];
@@ -211,7 +237,7 @@ async function openMyGames(): Promise<void> {
       ...mine.sessions.map((summary) =>
         listItem(
           summary.name,
-          `vs ${summary.opponent?.login ?? 'Opponent'} · ${gameCount(summary.games)} · ${ago(summary.updatedAt)}`,
+          `${opponentOf(summary)} · ${gameCount(summary.games)} · ${ago(summary.updatedAt)}`,
           'Continue',
           () => (settingsLocked() ? reject(undefined, 'locked') : void joinSession(summary.code)),
           summary.yourTurn ? 'Your turn' : undefined,

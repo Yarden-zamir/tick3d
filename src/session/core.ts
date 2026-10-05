@@ -4,6 +4,7 @@
 import type { Difficulty } from '../ai.ts';
 import { NO_LIMIT, type TimeControl, isFlagged } from '../clock.ts';
 import { type Game, type Player, other, play, timeOut, undo as undoGame } from '../game.ts';
+import { nameOf } from '../names.ts';
 import {
   CHAT_KEEP,
   CHAT_MAX_LENGTH,
@@ -34,6 +35,9 @@ export class SessionError extends Error {
 export type Identity = ReadonlySet<string>;
 
 export const COMPUTER_TOKEN = 'computer';
+
+// The generated name of the player on a seat. Null for an empty seat, and for the computer: the page says "Computer".
+export const seatName = (token: string | null): string | null => (token === null || token === COMPUTER_TOKEN ? null : nameOf(token));
 
 const emptyRecord = (clock: TimeControl): GameRecord => ({ moves: [], times: [], clock, timedOut: false });
 
@@ -215,6 +219,7 @@ export function viewOf(doc: SessionDoc, { code, version, identity, now, presence
     chat: doc.chat,
     presence,
     players,
+    names: { X: seatName(doc.seats.X), O: seatName(doc.seats.O) },
     turn: live.status.kind === 'playing' ? live.turn : null,
     status: live.status,
   };
