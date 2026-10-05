@@ -2,8 +2,9 @@
 // A web page cannot broadcast or discover on a local network (no UDP, no mDNS API). So a host
 // announces its game through this server, and a guest finds it here. Both devices must be online.
 //
-// A host holds one announce request open. The request ends with the answer code of a guest, or
-// after `waitMs`, and the host then sends the next request at once. The entry stays while a request
+// The first announcement of a game answers at once with its id. Then the host holds one announce
+// request with that id open. The request ends with the answer code of a guest, or after `waitMs`,
+// and the host then sends the next request at once. The entry stays while a request
 // is open, and for `graceMs` after one ends. When the host closes the page or ends the game, its
 // request closes, and the entry goes at once. A host that loses the network without a word goes
 // after `waitMs + graceMs` at most.
@@ -81,8 +82,9 @@ export function createLobby(options: { perNetwork: number; total: number; waitMs
   return {
     count: () => entries.size,
 
-    // Adds or keeps the entry of a host, and holds the request. The promise resolves with the answer
-    // code of a guest, or with null after `waitMs`. An abort of `signal` (the host left) removes the entry.
+    // Adds the entry of a host and resolves at once, or keeps the entry of `host.id` and holds the
+    // request. A held request resolves with the answer code of a guest, or with null after `waitMs`.
+    // An abort of `signal` during the hold (the host left) removes the entry.
     announce(
       host: { id: HostId | undefined; token: PlayerToken; network: string; hello: Hello; offer: string },
       signal: AbortSignal,
@@ -111,6 +113,8 @@ export function createLobby(options: { perNetwork: number; total: number; waitMs
         entries.set(entry.id, entry);
       }
 
+      // The page learns its id at once, and shows that the game is in the list.
+      if (host.id === undefined) return { id: entry.id, answer: Promise.resolve(null) };
       const open = entry;
       const answer = new Promise<string | null>((resolve) => {
         if (open.answer !== undefined) {

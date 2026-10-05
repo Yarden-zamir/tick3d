@@ -76,7 +76,7 @@ test('a guest that cancels never joins, and a double tap on Host hosts once', as
   const answer = await signalCode(guest);
   await guest.locator('#nearby-cancel').click();
   await expect(guest.locator('#nearby-host')).toBeVisible();
-  await guest.getByRole('button', { name: 'Computer' }).click();
+  await guest.getByRole('button', { name: 'Computer', exact: true }).click();
 
   // The host reads the old answer anyway. Its attempt ends when the connect timeout (15 s) runs out.
   await useCode(host, answer);

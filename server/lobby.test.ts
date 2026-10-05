@@ -26,6 +26,12 @@ function announce(lobby: ReturnType<typeof newLobby>, fields: { network?: string
   return { ...held, leave: () => left.abort() };
 }
 
+// A host as the page runs it: a new announcement, then a held request with the id.
+function hold(lobby: ReturnType<typeof newLobby>, fields: { network?: string; token?: PlayerToken; offer?: string } = {}) {
+  const { id } = announce(lobby, fields);
+  return announce(lobby, { ...fields, id });
+}
+
 const status = (run: () => unknown) => {
   try {
     run();
@@ -77,9 +83,21 @@ describe('the Nearby lobby', () => {
     expect(JSON.stringify(lobby.list(HOME, GUEST))).not.toContain(HOST);
   });
 
-  it('removes a host at once when its request closes early', () => {
+  it('answers a new announcement at once with its id, and holds the next request', async () => {
     const lobby = newLobby();
-    const host = announce(lobby);
+    const first = announce(lobby);
+    expect(await first.answer).toBeNull();
+    let answered = false;
+    void announce(lobby, { id: first.id }).answer.then(() => (answered = true));
+    await vi.advanceTimersByTimeAsync(WAIT_MS - 1);
+    expect(answered).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(answered).toBe(true);
+  });
+
+  it('removes a host at once when its held request closes early', () => {
+    const lobby = newLobby();
+    const host = hold(lobby);
     host.leave();
     expect(lobby.list(HOME, GUEST)).toEqual([]);
     expect(lobby.count()).toBe(0);
@@ -87,7 +105,7 @@ describe('the Nearby lobby', () => {
 
   it('keeps a host for the grace time after a wait ends, and then removes it', async () => {
     const lobby = newLobby();
-    const host = announce(lobby);
+    const host = hold(lobby);
     vi.advanceTimersByTime(WAIT_MS);
     expect(await host.answer).toBeNull();
     vi.advanceTimersByTime(GRACE_MS - 1000);
@@ -101,7 +119,7 @@ describe('the Nearby lobby', () => {
 
   it('keeps the entry and its id while the host sends its next request in time', async () => {
     const lobby = newLobby();
-    const first = announce(lobby);
+    const first = hold(lobby);
     vi.advanceTimersByTime(WAIT_MS);
     await first.answer;
     vi.advanceTimersByTime(GRACE_MS - 1);
@@ -113,7 +131,7 @@ describe('the Nearby lobby', () => {
 
   it('passes an answer to the open request, and hides the used offer until a fresh one comes', async () => {
     const lobby = newLobby();
-    const host = announce(lobby);
+    const host = hold(lobby);
     lobby.answer(host.id, HOME, 'T3A1.offer-1', 'T3B1.answer-1');
     expect(await host.answer).toBe('T3B1.answer-1');
     expect(lobby.list(HOME, GUEST)).toEqual([]);
@@ -130,7 +148,7 @@ describe('the Nearby lobby', () => {
 
   it('keeps an answer that comes between two requests for the next request', async () => {
     const lobby = newLobby();
-    const first = announce(lobby);
+    const first = hold(lobby);
     vi.advanceTimersByTime(WAIT_MS);
     await first.answer;
     lobby.answer(first.id, HOME, 'T3A1.offer-1', 'T3B1.answer-1');
@@ -158,7 +176,7 @@ describe('the Nearby lobby', () => {
 
   it('ends an open request when the same host sends a new one', async () => {
     const lobby = newLobby();
-    const first = announce(lobby);
+    const first = hold(lobby);
     const second = announce(lobby, { id: first.id });
     expect(await first.answer).toBeNull();
     // The first request closes after the second one replaced it. That does not remove the host.

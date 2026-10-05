@@ -191,7 +191,7 @@ The full reference, with every shape, error and a curl example, is the OpenAPI 3
 | `DELETE /api/me/history` | Clears the history of the player. Needs the X-Player header. |
 | `POST /api/games/:id/metrics` | The metrics of a player's device for a finished online game. Only a player of that game may send them, once per seat. |
 | `GET /api/nearby/hosts` | The open Nearby games on the network of the caller, without its own. |
-| `POST /api/nearby/hosts` | A host puts its Nearby game in the list. The server holds the request until a guest answers, or for about 25 s. Needs the X-Player header. |
+| `POST /api/nearby/hosts` | A host puts its Nearby game in the list, and gets its id at once. With the id, the server holds the request until a guest answers, or for about 25 s. Needs the X-Player header. |
 | `POST /api/nearby/hosts/:id/answer` | A guest sends its answer to the offer of a host. Needs the X-Player header. |
 | `POST /api/events` | A fault report from a page. At most 1 kB, 30 per 10 minutes per address. |
 | `GET /api/stats` | The aggregates of the stats page. The server computes them at most once a minute. |

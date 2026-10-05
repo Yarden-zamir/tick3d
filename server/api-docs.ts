@@ -908,10 +908,10 @@ export const ROUTES = {
     operationId: 'announceNearbyHost',
     tag: 'Nearby',
     summary: 'Put your open Nearby game in the list of your network, and wait for a guest. The page uses it.',
-    description: `A web page cannot find other devices on a local network, so a host announces its game here. The server holds the request until a guest sends an answer, or for about ${WAIT_MS / 1000} s. Then send the next request at once, with the id from the answer. Your game stays in the list while a request is open, and for ${NEARBY_GRACE_MS / 1000} s after one ends. When the request closes early (you left), your game leaves the list at once. An offer takes one answer: after an answer, send a fresh offer. One network can have ${NEARBY_HOSTS_PER_NETWORK} games in the list, and send ${NEARBY_CALLS_PER_10_MINUTES} announcements and answers per 10 minutes.`,
+    description: `A web page cannot find other devices on a local network, so a host announces its game here. Without an id, the answer comes at once with the id of your game. Send the next request at once, with that id: the server holds it until a guest sends an answer, or for about ${WAIT_MS / 1000} s. Then send the next one, and so on. Your game stays in the list while a request is open, and for ${NEARBY_GRACE_MS / 1000} s after one ends. When the request closes early (you left), your game leaves the list at once. An offer takes one answer: after an answer, send a fresh offer. One network can have ${NEARBY_HOSTS_PER_NETWORK} games in the list, and send ${NEARBY_CALLS_PER_10_MINUTES} announcements and answers per 10 minutes.`,
     player: 'required',
     body: { schema: 'NearbyAnnounce', example: { offer: EXAMPLE_OFFER, id: EXAMPLE_HOST } },
-    response: { status: 200, description: 'A guest answered, or the wait ended.', schema: 'NearbyAnnounced', example: { id: EXAMPLE_HOST, answer: EXAMPLE_ANSWER } },
+    response: { status: 200, description: 'Your game is in the list (without an id), a guest answered, or the wait ended.', schema: 'NearbyAnnounced', example: { id: EXAMPLE_HOST, answer: EXAMPLE_ANSWER } },
     errors: [
       BAD_PLAYER,
       { status: 400, when: 'The body is not valid JSON, the offer is not a valid offer code, or the server cannot tell the network of your request.' },

@@ -55,7 +55,7 @@ test('Nearby has no join box, and the computer mode keeps its own controls', asy
   for (const id of ['#join', '#undo', '#advanced', '#lock', '#new-game', '#score']) await expect(page.locator(id), id).toBeHidden();
   await expect(page.locator('[data-setting="difficulty"]')).toBeHidden();
 
-  await page.getByRole('button', { name: 'Computer' }).click();
+  await page.getByRole('button', { name: 'Computer', exact: true }).click();
   await expect(page.locator('[data-setting="difficulty"]')).toBeVisible();
   for (const id of ['#join', '#undo', '#advanced', '#lock', '#new-game']) await expect(page.locator(id), id).toBeVisible();
   await expect(page.locator('#nearby-host')).toBeHidden();
