@@ -7,8 +7,16 @@ import { type Count, MOVE_TIME_BUCKETS, REFUSALS, SESSION_MODES, type Stats } fr
 
 type Rows = (sql: string, values: Record<string, DuckDBValue>) => Promise<Record<string, unknown>[]>;
 
+// The token of each seat of a result row. A row from before game links has no player columns:
+// its uploader (`token`) holds the seat `doc.you`, or both seats in a friend game.
+export const SEAT_X = `coalesce(results.player_x, CASE WHEN results.public_id IS NULL AND results.doc.you::VARCHAR IS DISTINCT FROM 'O' THEN results.token END)`;
+export const SEAT_O = `coalesce(results.player_o, CASE WHEN results.public_id IS NULL AND results.doc.you::VARCHAR IS DISTINCT FROM 'X' THEN results.token END)`;
+
 // One row per finished game, with the fields of its document as columns.
 // Both devices of a Nearby game send a result, so only the host's row counts.
+// A row from before game links has no winner, ending or line columns. The game ended with its last
+// move (a win) or on time, so the last mover won. Only a full cube can also be a draw: such an old
+// game counts as a draw, and its winning line has no kind.
 const GAMES = `WITH g AS (
   FROM results SELECT
     finished_at,
@@ -23,7 +31,11 @@ const GAMES = `WITH g AS (
     doc.game.times::DOUBLE[] AS times,
     doc.game.clock.perGame::INTEGER AS per_game,
     doc.game.clock.perMove::INTEGER AS per_move,
-    winner, ending, line, player_x, player_o, metrics
+    coalesce(winner, CASE WHEN ending IS NULL AND (len(doc.game.moves::INTEGER[]) < 64 OR coalesce(doc.game.timedOut::BOOLEAN, false))
+      THEN (CASE WHEN len(doc.game.moves::INTEGER[]) % 2 = 1 THEN 'X' ELSE 'O' END) END) AS winner,
+    coalesce(ending, CASE WHEN coalesce(doc.game.timedOut::BOOLEAN, false) THEN 'timeout'
+      WHEN len(doc.game.moves::INTEGER[]) < 64 THEN 'won' ELSE 'draw' END) AS ending,
+    line, ${SEAT_X} AS player_x, ${SEAT_O} AS player_o, metrics
   WHERE metrics.nearby.role::VARCHAR IS DISTINCT FROM 'guest'
 )`;
 
@@ -37,6 +49,9 @@ const STEPS = `${GAMES}, steps AS (
   FROM (SELECT *, unnest(range(2, len(times) + 1)) AS i FROM g)
   WHERE times[i] - times[i - 1] > 0
 )`;
+
+// The metrics of every game that has them: device results, and each player of an online game.
+const METRICS = `${GAMES}, m AS (SELECT metrics FROM g WHERE metrics IS NOT NULL UNION ALL SELECT metrics FROM seat_metrics)`;
 
 // One identity per person: the GitHub account, else the browser token. Used only to group rows.
 const PERSON = `coalesce('github:' || pt.github_id, token)`;
@@ -166,18 +181,17 @@ export async function computeStats(rows: Rows, now: number): Promise<Stats> {
 
   // The field names are fixed here, never input, so they can go into the SQL text.
   const metricCounts = (field: string) =>
-    q(`${GAMES} SELECT metrics.${field}::VARCHAR AS key, count(*)::INTEGER AS count FROM g
-      WHERE metrics IS NOT NULL GROUP BY key ORDER BY count DESC LIMIT 12`);
+    q(`${METRICS} SELECT metrics.${field}::VARCHAR AS key, count(*)::INTEGER AS count FROM m GROUP BY key ORDER BY count DESC LIMIT 12`);
 
   const refusalColumns = REFUSALS.map((reason, i) => `coalesce(sum(metrics.refused."${reason}"::INTEGER), 0)::INTEGER AS r${i}`).join(', ');
-  const [usage] = await q(`${GAMES} SELECT count(*)::INTEGER AS games,
+  const [usage] = await q(`${METRICS} SELECT count(*)::INTEGER AS games,
       coalesce(sum(metrics.input.board::INTEGER), 0)::INTEGER AS board,
       coalesce(sum(metrics.input.keypad::INTEGER), 0)::INTEGER AS keypad,
       coalesce(sum(metrics.undos::INTEGER), 0)::INTEGER AS undos,
       count(*) FILTER (metrics.undos::INTEGER > 0)::INTEGER AS games_with_undo,
       count(*) FILTER (metrics.offline::BOOLEAN)::INTEGER AS offline,
       ${refusalColumns}
-    FROM g WHERE metrics IS NOT NULL`);
+    FROM m`);
   if (usage === undefined) throw new Error('the usage query returned no row');
 
   const nearbyMixes = await q(`${GAMES} SELECT

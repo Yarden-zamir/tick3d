@@ -10,6 +10,7 @@ import {
   normalizeCode,
   parseClientEvent,
   parseGameId,
+  parseMetrics,
   parseMoveRequest,
   parseSessionUpdate,
 } from '../src/protocol.ts';
@@ -166,12 +167,15 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
   if (resource === 'me') {
     const known = [undefined, 'games', 'history', 'records'];
-    if (method !== 'GET' || !known.includes(second) || action !== undefined) throw new HttpError(404, 'Not found.');
+    // DELETE /api/me/history clears the history. A cross-site form cannot send the X-Player header.
+    const clear = method === 'DELETE' && second === 'history';
+    if ((method !== 'GET' && !clear) || !known.includes(second) || action !== undefined) throw new HttpError(404, 'Not found.');
     const token = requirePlayer(req);
     const user = auth?.user(req);
     // Every visit with a login links this browser to the account, so a new device joins at once.
     if (user !== undefined) await store.linkToken(token, user);
     if (second === 'games') return send(res, 200, await store.myGames(token));
+    if (clear) return send(res, 200, { hidden: await store.clearHistory(token) });
     if (second === 'history') {
       const offset = Number(url.searchParams.get('offset') ?? '0');
       if (!Number.isInteger(offset) || offset < 0) throw new HttpError(400, 'The offset is not a whole number of games.');
@@ -195,6 +199,15 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const id = parseGameId(second);
     if (id === undefined) throw new HttpError(400, 'A game id is 8 letters or digits, or a code and a game number.');
     return send(res, 200, await store.game(id));
+  }
+
+  // The metrics of one player's device for a finished online game.
+  if (resource === 'games' && second !== undefined && action === 'metrics' && method === 'POST') {
+    const id = parseGameId(second);
+    if (id === undefined) throw new HttpError(400, 'A game id is 8 letters or digits, or a code and a game number.');
+    const metrics = parseMetrics(await readJson(req));
+    if (metrics === undefined) throw new HttpError(400, 'The metrics are not valid.');
+    return send(res, 200, { stored: await store.addSeatMetrics(id, requirePlayer(req), metrics) });
   }
 
   if (resource === 'events' && second === undefined && method === 'POST') {

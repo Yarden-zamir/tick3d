@@ -249,6 +249,8 @@ const ENDING_NAMES: Record<string, string> = {
   space: 'Diagonal through the cube',
   timeout: 'Out of time',
   draw: 'Draw',
+  // A game stored before game links: the kind of its line is not known.
+  won: 'Line, kind not stored',
 };
 const HIDE_NAMES: Record<string, string> = { none: 'Nothing hidden', board: 'Board hidden', history: 'History hidden', both: 'Both hidden' };
 const modeName = (key: string) => MODE_NAMES[key] ?? capital(key);
@@ -342,7 +344,7 @@ function draw(stats: Stats): void {
     stats.tuned.map((row) => [row.tuned ? 'Tuned' : 'Default', row.games, percent(row.humanWins, row.games)]),
   );
 
-  const devices = card('Devices', false, `From ${number(stats.metricsGames)} games with metrics.`);
+  const devices = card('Devices', false, `From ${number(stats.metricsGames)} metric reports: one per device result, and one per player of an online game.`);
   bars(devices, stats.devices);
   const looks = card('Views and layouts');
   bars(looks, stats.views);

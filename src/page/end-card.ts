@@ -23,7 +23,7 @@ import {
 } from './dom.ts';
 import { showToast } from './feedback.ts';
 import { type GameId, onlineGameId } from '../protocol.ts';
-import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf } from './results.ts';
+import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnlineMetrics } from './results.ts';
 import { setUrlGame, startNewGame } from './sessions.ts';
 import { settings } from './settings.ts';
 import { type Session, me, page, isLive, matchOptions } from './state.ts';
@@ -62,6 +62,7 @@ export function finish(game: Game): void {
 
 // Saves the result of a game that just ended and puts the link of the game in the address.
 async function linkGame(open: Session, game: Game, index: number): Promise<void> {
+  sendOnlineMetrics(open, index);
   const id = open.mode === 'online' ? onlineGameId(open.code, index) : await recordResult(open, game, index);
   // The player can move on while the result saves. Only the same finished game gets the link.
   const same = page.session?.code === open.code && page.games.length - 1 === index && !isLive();

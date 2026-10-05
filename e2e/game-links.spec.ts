@@ -78,7 +78,7 @@ test('a friend game gets a link, and a new game clears it', async ({ open }) => 
   await expect(viewer.locator('#game-view-details')).toContainText('Two players, one screen');
 });
 
-test('an online game gets the link <CODE>-<n>, which anybody can open', async ({ open }) => {
+test('an online game gets the link <CODE>-<n>, which anybody can open, and a cleared history keeps it for the opponent', async ({ open }) => {
   const { page: alice } = await open();
   const code = await createOnline(alice);
   const { page: bob } = await joinAsO(open, `/?code=${code}`);
@@ -96,6 +96,22 @@ test('an online game gets the link <CODE>-<n>, which anybody can open', async ({
   await expect(viewer.locator('#game-view-details')).toContainText(`game 1 of session ${code}`);
 
   await bob.locator('#end-card-close').click();
+  await bob.locator('#account-button').click();
+  await expect(bob.locator('#my-games-history li').first()).toContainText('Lost · Online');
+
+  // Alice clears her history. Bob keeps the shared game.
+  await alice.locator('#end-card-close').click();
+  await alice.locator('#account-button').click();
+  await expect(alice.locator('#my-games-history li').first()).toContainText('Won · Online');
+  await alice.locator('#my-games-clear').click();
+  await expect(alice.locator('#clear-confirm')).toHaveAttribute('open');
+  await alice.locator('#clear-confirm-yes').click();
+  await expectToast(alice, 'Your history is clear');
+  await expect(alice.locator('#my-games-history')).toHaveText('No finished games yet.');
+  await alice.locator('#my-games-close').click();
+  await alice.locator('#account-button').click();
+  await expect(alice.locator('#my-games-history')).toHaveText('No finished games yet.');
+  await bob.locator('#my-games-close').click();
   await bob.locator('#account-button').click();
   await expect(bob.locator('#my-games-history li').first()).toContainText('Lost · Online');
 });

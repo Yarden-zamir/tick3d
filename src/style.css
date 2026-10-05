@@ -2396,6 +2396,12 @@ body[data-turn='O'] .status[data-state='playing'] {
   cursor: pointer;
 }
 
+.my-games-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .my-games-more {
   margin-top: 0.5rem;
   padding: 0.35rem 0.75rem;

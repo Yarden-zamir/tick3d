@@ -40,7 +40,7 @@ import {
 import { type Records, addLoss } from '../src/records.ts';
 import * as core from '../src/session/core.ts';
 import { CURRENT_FORMAT, type SessionDoc, parseDoc } from '../src/session/format.ts';
-import { computeStats } from './stats.ts';
+import { computeStats, SEAT_O, SEAT_X } from './stats.ts';
 
 const { SessionError } = core;
 
@@ -93,7 +93,8 @@ const SCHEMA = [
   "ALTER TABLE results ADD COLUMN IF NOT EXISTS ending VARCHAR",
   "ALTER TABLE results ADD COLUMN IF NOT EXISTS line VARCHAR",
   "ALTER TABLE results ADD COLUMN IF NOT EXISTS metrics VARIANT",
-  // A unique index allows many NULLs, so rows from before game links fit until fillResults runs.
+  // A unique index allows many NULLs. Rows from before game links have no public id: they show in
+  // the history without a link (see SEAT_X below for how the queries read them).
   "CREATE UNIQUE INDEX IF NOT EXISTS results_public_id ON results (public_id)",
   // Faults that pages report, for the failures list of the stats page. No token, no address.
   `CREATE TABLE IF NOT EXISTS events (
@@ -101,6 +102,17 @@ const SCHEMA = [
      kind VARCHAR NOT NULL,
      message VARCHAR NOT NULL,
      version VARCHAR NOT NULL
+   )`,
+  // Clear history: a seat that its player cleared. The game stays for the other seat and the stats.
+  "ALTER TABLE results ADD COLUMN IF NOT EXISTS hidden_x BOOLEAN",
+  "ALTER TABLE results ADD COLUMN IF NOT EXISTS hidden_o BOOLEAN",
+  // The metrics of each player's device for an online game, one row per seat (Metrics in src/protocol.ts).
+  `CREATE TABLE IF NOT EXISTS seat_metrics (
+     public_id VARCHAR NOT NULL,
+     seat VARCHAR NOT NULL CHECK (seat IN ('X', 'O')),
+     metrics VARIANT NOT NULL,
+     received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     PRIMARY KEY (public_id, seat)
    )`,
 ];
 
@@ -181,8 +193,8 @@ function accountOf(login: unknown, avatar: unknown): PlayerInfo | null {
 
 // Joins the GitHub account of each seat of a result row: x_login, x_avatar, o_login, o_avatar.
 const SEAT_ACCOUNTS = `
-  LEFT JOIN player_tokens tx ON tx.token = results.player_x LEFT JOIN users ux ON ux.github_id = tx.github_id
-  LEFT JOIN player_tokens t_o ON t_o.token = results.player_o LEFT JOIN users uo ON uo.github_id = t_o.github_id`;
+  LEFT JOIN player_tokens tx ON tx.token = ${SEAT_X} LEFT JOIN users ux ON ux.github_id = tx.github_id
+  LEFT JOIN player_tokens t_o ON t_o.token = ${SEAT_O} LEFT JOIN users uo ON uo.github_id = t_o.github_id`;
 const SEAT_ACCOUNT_COLUMNS = 'ux.login AS x_login, ux.avatar AS x_avatar, uo.login AS o_login, uo.avatar AS o_avatar';
 
 type StoreOptions = {
@@ -359,46 +371,39 @@ export async function openStore(
     });
   }
 
-  // Brings rows from before game links up to date, and records online games that ended before
-  // the server recorded them. Runs on every start, and finds nothing to do the second time.
-  // Limit: it reads every session document on each start. Revisit this when a start takes more
-  // than a few seconds, or at about 100,000 sessions: then keep a mark on each recorded session.
-  async function fillResults(): Promise<void> {
-    const old = await rows('FROM results SELECT id, token, doc::JSON AS doc WHERE public_id IS NULL OR ending IS NULL', {});
-    for (const row of old) {
-      const stored = readStored(row.doc);
-      if (stored.mode === 'online') throw new Error(`online result ${String(row.id)} has no public id`);
-      const { winner, ending, line } = endingOf(stored.game);
-      const seats = seatTokens(String(row.token), stored.you);
-      for (let attempt = 1; ; attempt++) {
-        try {
-          await db.run(
-            `UPDATE results SET public_id = coalesce(public_id, $publicId), player_x = $x, player_o = $o,
-               winner = $winner, ending = $ending, line = $line WHERE id = $id`,
-            { id: String(row.id), publicId: newGameId(), x: seats.X, o: seats.O, winner, ending, line },
-          );
-          break;
-        } catch (error) {
-          if (!isDuplicateKey(error) || attempt >= MAX_ID_ATTEMPTS) throw error;
-        }
-      }
+  // The finished game of an online id ("<CODE>-<n>") in its session, or a 404.
+  async function finishedOnlineGame(id: GameId): Promise<{ row: Row; game: GameRecord }> {
+    const notFound = new SessionError(404, 'No game with this link.');
+    const [code, number] = id.split('-');
+    if (code === undefined || number === undefined) throw notFound;
+    let row: Row;
+    try {
+      row = await loadRaw(code as Code);
+    } catch (error) {
+      if (error instanceof SessionError) throw notFound;
+      throw error;
     }
-    for (const row of await rows('FROM sessions SELECT code, doc::JSON AS doc', {})) {
-      let doc: SessionDoc;
-      try {
-        doc = parseDoc(JSON.parse(String(row.doc)));
-      } catch (error) {
-        // One damaged or newer session must not stop the server. Opening it still shows the error.
-        console.warn(`session ${String(row.code)} does not parse:`, error instanceof Error ? error.message : error);
-        continue;
-      }
-      if (doc.mode !== 'online') continue;
-      for (const [index, game] of doc.games.entries()) {
-        if (isFinished(game)) await recordOnline(row.code as Code, doc, index, game.times.at(-1) ?? now());
-      }
-    }
+    const game = row.doc.games[Number(number) - 1];
+    if (game === undefined || !isFinished(game)) throw notFound;
+    return { row, game };
   }
-  await fillResults();
+
+  // An online game that ended before the server recorded games in `results` reads from its session.
+  // The hide options are those of the session now: the session does not keep them per game.
+  async function onlineGameFromSession(id: GameId): Promise<PublicGame> {
+    const { row, game } = await finishedOnlineGame(id);
+    return parsePublicGame({
+      id,
+      mode: 'online',
+      game,
+      options: row.doc.options,
+      difficulty: null,
+      tuned: false,
+      computer: null,
+      players: await playersOf(row.doc),
+      finishedAt: game.times.at(-1) ?? now(),
+    });
+  }
 
   let statsCache: Stats | undefined;
 
@@ -472,6 +477,8 @@ export async function openStore(
         const renamed: Record<string, GameId> = {};
         for (const result of results) {
           const [existing] = await rows('FROM results SELECT public_id WHERE id = $id', { id: result.id });
+          // A row from before game links has no public id. The device then keeps the id it has.
+          if (existing !== undefined && existing.public_id === null) continue;
           let publicId = existing === undefined ? (result.publicId ?? newGameId()) : (String(existing.public_id) as GameId);
           if (existing === undefined) {
             // The metrics go to their own column, not into the stored game.
@@ -501,7 +508,7 @@ export async function openStore(
            WHERE public_id = $id`,
           { id },
         );
-        if (row === undefined) throw new SessionError(404, 'No game with this link.');
+        if (row === undefined) return onlineGameFromSession(id);
         const stored = readStored(row.doc);
         // parsePublicGame checks the answer. Its fixed list of fields keeps tokens and result ids out.
         return parsePublicGame({
@@ -522,23 +529,29 @@ export async function openStore(
       serialized(async () => {
         if (!Number.isInteger(offset) || offset < 0) throw new SessionError(400, 'The offset is not a whole number of games.');
         const tokens = listValue([...(await identityOf(token))]);
+        // A seat that its player cleared (clearHistory) is not in the history.
         const found = await rows(
           `FROM results ${SEAT_ACCOUNTS}
-           SELECT public_id, doc.mode::VARCHAR AS mode, doc.difficulty::VARCHAR AS difficulty, winner,
-             len(doc.game.moves::INTEGER[]) AS moves, epoch_ms(finished_at) AS finished,
-             coalesce(list_contains($tokens, player_x), false) AS mine_x,
-             coalesce(list_contains($tokens, player_o), false) AS mine_o, ${SEAT_ACCOUNT_COLUMNS}
-           WHERE list_contains($tokens, player_x) OR list_contains($tokens, player_o)
-           ORDER BY finished_at DESC, public_id
+           SELECT results.public_id, results.doc.mode::VARCHAR AS mode, results.doc.difficulty::VARCHAR AS difficulty,
+             results.winner, results.ending, CASE WHEN results.ending IS NULL THEN results.doc::JSON END AS old_doc,
+             len(results.doc.game.moves::INTEGER[]) AS moves, epoch_ms(results.finished_at) AS finished,
+             coalesce(list_contains($tokens, ${SEAT_X}), false) AS mine_x,
+             coalesce(list_contains($tokens, ${SEAT_O}), false) AS mine_o, ${SEAT_ACCOUNT_COLUMNS}
+           WHERE (list_contains($tokens, ${SEAT_X}) AND results.hidden_x IS NOT TRUE)
+              OR (list_contains($tokens, ${SEAT_O}) AND results.hidden_o IS NOT TRUE)
+           ORDER BY results.finished_at DESC, results.id
            LIMIT $limit OFFSET $offset`,
           { tokens, limit: HISTORY_PAGE_SIZE + 1, offset },
         );
         const games = found.slice(0, HISTORY_PAGE_SIZE).map((row): HistoryEntry => {
           // A friend game holds this player on both seats.
           const you: Player | null = row.mine_x === true && row.mine_o === true ? null : row.mine_x === true ? 'X' : 'O';
-          const winner = row.winner === 'X' || row.winner === 'O' ? row.winner : null;
+          // A row from before game links has no ending columns: replay its game.
+          const winner =
+            row.ending === null ? endingOf(readStored(row.old_doc).game).winner : row.winner === 'X' || row.winner === 'O' ? row.winner : null;
           return {
-            id: String(row.public_id) as GameId,
+            // A row from before game links has no public id, so it has no link.
+            id: row.public_id as GameId | null,
             mode: row.mode as SessionMode,
             difficulty: row.difficulty as HistoryEntry['difficulty'],
             result: outcomeOf(winner, you),
@@ -556,19 +569,55 @@ export async function openStore(
     records: (token: PlayerToken): Promise<Records> =>
       serialized(async () => {
         const tokens = listValue([...(await identityOf(token))]);
+        // A cleared game still counts: a record is a best value per setup, not a history entry.
+        // The replay below also reads rows from before game links, which have no winner column.
         const found = await rows(
           `FROM results SELECT doc::JSON AS doc
-           WHERE doc.mode::VARCHAR = 'computer' AND winner IS NOT NULL AND winner <> doc.you::VARCHAR
-             AND (list_contains($tokens, player_x) OR list_contains($tokens, player_o))`,
+           WHERE doc.mode::VARCHAR = 'computer' AND (list_contains($tokens, ${SEAT_X}) OR list_contains($tokens, ${SEAT_O}))`,
           { tokens },
         );
         let records: Records = {};
         for (const row of found) {
-          const { game, difficulty, options, tuned } = readStored(row.doc);
-          if (difficulty === null) throw new Error('a stored computer game has no level');
+          const { game, difficulty, options, tuned, you } = readStored(row.doc);
+          if (difficulty === null || you === null) throw new Error('a stored computer game has no level or no seat');
+          const { winner } = endingOf(game);
+          if (winner === null || winner === you) continue;
           records = addLoss(records, { difficulty, clock: game.clock, ...options, tuned }, game.moves.length).records;
         }
         return records;
+      }),
+
+    // Hides every finished game of this player from their history, on all linked devices.
+    // The other seat of a shared game keeps it, and the stats and survival records still count it.
+    // Returns how many seats it hid.
+    clearHistory: (token: PlayerToken): Promise<number> =>
+      serialized(async () => {
+        const tokens = listValue([...(await identityOf(token))]);
+        let hidden = 0;
+        for (const [column, seat] of [['hidden_x', SEAT_X], ['hidden_o', SEAT_O]] as const) {
+          const changed = await rows(
+            `UPDATE results SET ${column} = true WHERE list_contains($tokens, ${seat}) AND ${column} IS NOT TRUE RETURNING id`,
+            { tokens },
+          );
+          hidden += changed.length;
+        }
+        return hidden;
+      }),
+
+    // The metrics of one player's device for a finished online game. The first report per seat
+    // counts, so a page that sends again changes nothing. Returns false for a repeat.
+    addSeatMetrics: (id: GameId, token: PlayerToken, metrics: Metrics): Promise<boolean> =>
+      serialized(async () => {
+        if (!id.includes('-')) throw new SessionError(400, 'Only an online game takes metrics here. Other games send them with the result.');
+        const { row } = await finishedOnlineGame(id);
+        const seat = core.seatsOf(row.doc, await identityOf(token))[0];
+        if (seat === undefined) throw new SessionError(403, 'Only the two players can send metrics for this game.');
+        const inserted = await rows(
+          `INSERT INTO seat_metrics (public_id, seat, metrics) VALUES ($id, $seat, $metrics::JSON::VARIANT)
+           ON CONFLICT DO NOTHING RETURNING seat`,
+          { id, seat, metrics: JSON.stringify(metrics) },
+        );
+        return inserted.length > 0;
       }),
 
     addEvent: (event: ClientEvent): Promise<void> =>

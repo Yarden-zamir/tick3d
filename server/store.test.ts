@@ -336,34 +336,100 @@ describe('survival records on the server', () => {
   });
 });
 
+// A store file with rows as an older version left them: a result without the new columns, and an
+// online game that ended before the server recorded games in `results`.
+async function oldStore(): Promise<{ path: string; code: Code }> {
+  const path = `${await mkdtemp('/tmp/tick3d-store-')}/old.duckdb`;
+  store = await openStore(path);
+  const { code } = await store.create(alice, 'Old match');
+  await store.join(code, bob);
+  await playMoves(code, X_WINS);
+  store.close();
+  const instance = await DuckDBInstance.create(path);
+  const db = await instance.connect();
+  await db.run("DELETE FROM results WHERE id LIKE 'online:%'");
+  const old = { id: '99999999-0000-4000-8000-000000000001', mode: 'computer', game: finishedGame(X_WINS_LATE), you: 'O', difficulty: 'easy', finishedAt: 5_000 };
+  await db.run('INSERT INTO results (id, token, doc, finished_at) VALUES ($id, $token, $doc::JSON::VARIANT, make_timestamptz(5000000))', {
+    id: old.id,
+    token: alice,
+    doc: JSON.stringify(old),
+  });
+  db.closeSync();
+  instance.closeSync();
+  store = await openStore(path);
+  return { path, code };
+}
+
 describe('rows from before game links', () => {
-  it('gives old results an id and seats, and records old online games, when the store opens', async () => {
-    const path = `${await mkdtemp('/tmp/tick3d-store-')}/old.duckdb`;
-    store = await openStore(path);
-    const { code } = await store.create(alice, 'Old match');
-    await store.join(code, bob);
-    await playMoves(code, X_WINS);
-    store.close();
-    const instance = await DuckDBInstance.create(path);
-    const db = await instance.connect();
-    await db.run("DELETE FROM results WHERE id LIKE 'online:%'");
-    const old = { id: '99999999-0000-4000-8000-000000000001', mode: 'computer', game: finishedGame(X_WINS), you: 'O', difficulty: 'easy', finishedAt: 5_000 };
-    await db.run('INSERT INTO results (id, token, doc, finished_at) VALUES ($id, $token, $doc::JSON::VARIANT, make_timestamptz(5000000))', {
-      id: old.id,
-      token: alice,
-      doc: JSON.stringify(old),
-    });
-    db.closeSync();
-    instance.closeSync();
-    store = await openStore(path);
-    const history = await store.history(alice, 0);
-    expect(history.games.map((entry) => [entry.mode, entry.result])).toEqual([
-      ['online', 'won'],
-      ['computer', 'lost'],
+  it('reads an old result in the history (without a link), the records and the stats, and changes no row', async () => {
+    await oldStore();
+    expect((await store.history(alice, 0)).games).toEqual([
+      { id: null, mode: 'computer', difficulty: 'easy', result: 'lost', moves: 9, opponent: null, finishedAt: 5_000 },
     ]);
-    const oldId = history.games[1]?.id;
-    if (oldId === undefined) throw new Error('the old result has no id');
-    expect(await store.game(oldId)).toMatchObject({ mode: 'computer', difficulty: 'easy', options: { hideBoard: false, hideHistory: false } });
+    expect(await store.records(alice)).toEqual({ 'easy|game:none|move:none|board:false|history:false': 9 });
+    const stats = await store.stats();
+    expect(stats.levels).toEqual([expect.objectContaining({ level: 'easy', games: 1, lost: 1 })]);
+    expect(stats.survival).toEqual([{ level: 'easy', rank: 1, player: null, moves: 9 }]);
+    expect(stats.endings).toEqual([{ key: 'won', count: 1 }]);
+    // The old row stays as it was: the one-off migration fills it, not the server.
+    expect((await store.history(alice, 0)).games[0]?.id).toBeNull();
+  });
+
+  it('opens an online game that is missing from results from its session', async () => {
+    const { code } = await oldStore();
+    const shown = await store.game(gameId(`${code}-1`));
+    expect(shown).toMatchObject({ mode: 'online', computer: null });
+    expect(shown.game.moves).toEqual(X_WINS);
+    expect(await status(() => store.game(gameId(`${code}-2`)))).toBe(404);
+    expect(await status(() => store.game(gameId('ZZZZ-1')))).toBe(404);
+  });
+
+  it('clears an old result from the history too', async () => {
+    await oldStore();
+    expect(await store.clearHistory(alice)).toBe(1);
+    expect((await store.history(alice, 0)).games).toEqual([]);
+  });
+});
+
+describe('clear history', () => {
+  it('hides the games of the player on every linked device, and keeps them for the opponent, the stats and the records', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addResults(alicePhone, [
+      result('cccccccc-1111-4000-8000-000000000001', { you: 'O' }),
+      result('cccccccc-1111-4000-8000-000000000002', { mode: 'friend', you: null, difficulty: null }),
+    ]);
+    const records = await store.records(alice);
+    expect((await store.history(alice, 0)).games).toHaveLength(3);
+    expect(await store.clearHistory(alice)).toBe(4);
+    expect((await store.history(alicePhone, 0)).games).toEqual([]);
+    expect((await store.history(bob, 0)).games).toMatchObject([{ id: `${code}-1`, result: 'lost' }]);
+    expect(await store.records(alice)).toEqual(records);
+    expect((await store.stats()).totals.games).toBe(3);
+    expect(await store.clearHistory(alice)).toBe(0);
+    // A game after the clear shows again.
+    await store.addResults(alice, [result('cccccccc-1111-4000-8000-000000000003')]);
+    expect((await store.history(alice, 0)).games).toHaveLength(1);
+  });
+});
+
+describe('online game metrics', () => {
+  it('keeps one report per seat, only from the players of a finished game, and counts them in the stats', async () => {
+    const code = await session();
+    const id = gameId(`${code}-1`);
+    expect(await status(() => store.addSeatMetrics(id, alice, METRICS))).toBe(404);
+    await playMoves(code, X_WINS);
+    expect(await store.addSeatMetrics(id, alice, METRICS)).toBe(true);
+    expect(await store.addSeatMetrics(id, alice, { ...METRICS, theme: 'mono' })).toBe(false);
+    expect(await store.addSeatMetrics(id, bob, { ...METRICS, device: 'computer', theme: 'mono' })).toBe(true);
+    expect(await status(() => store.addSeatMetrics(id, carol, METRICS))).toBe(403);
+    expect(await status(() => store.addSeatMetrics(gameId('ABCDEFGH'), alice, METRICS))).toBe(400);
+    const stats = await store.stats();
+    expect(stats.metricsGames).toBe(2);
+    expect(stats.themes).toEqual(expect.arrayContaining([{ key: 'dark', count: 1 }, { key: 'mono', count: 1 }]));
+    expect(stats.input).toEqual({ board: 6, keypad: 2 });
   });
 });
 

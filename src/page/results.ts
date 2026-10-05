@@ -46,6 +46,16 @@ export async function recordResult(open: Session, game: Game, index: number): Pr
   return upload.publicId ?? undefined;
 }
 
+// Sends the metrics of this device for a finished online game that it played. A failure drops them:
+// online games have no upload queue. Revisit this if the stats page shows few online reports.
+export function sendOnlineMetrics(open: Session, index: number): void {
+  if (open.mode !== 'online' || open.you === null) return;
+  const metrics = gameMetrics(open.code, index, false);
+  void api.gameMetrics(onlineGameId(open.code, index), metrics).catch((error: unknown) => {
+    if (!(error instanceof OnlineError)) throw error;
+  });
+}
+
 // The id of the link of a finished game in the open session, or undefined when it has none.
 export async function gameIdOf(open: Session, index: number): Promise<GameId | undefined> {
   if (open.mode === 'online') return onlineGameId(open.code, index);

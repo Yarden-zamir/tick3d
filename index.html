@@ -359,7 +359,10 @@
       <section>
         <h3>History</h3>
         <ul class="my-games-list" id="my-games-history"></ul>
-        <button type="button" class="my-games-more" id="my-games-more" hidden>More games</button>
+        <div class="my-games-history-actions">
+          <button type="button" class="my-games-more" id="my-games-more" hidden>More games</button>
+          <button type="button" class="my-games-more" id="my-games-clear" hidden>Clear history</button>
+        </div>
       </section>
       <section id="my-games-online-box">
         <h3>Online sessions</h3>
@@ -375,6 +378,13 @@
       <div class="end-card-actions">
         <button type="button" class="primary" id="home-confirm-leave">Leave</button>
         <button type="button" id="home-confirm-stay">Stay</button>
+      </div>
+    </dialog>
+    <dialog class="end-card home-confirm" id="clear-confirm" aria-labelledby="clear-confirm-text">
+      <p id="clear-confirm-text">Clear your match history on every device? Your survival records and your totals stay. Opponents keep their copy of your online games, and the games still count in the site stats.</p>
+      <div class="end-card-actions">
+        <button type="button" class="primary" id="clear-confirm-yes">Clear history</button>
+        <button type="button" id="clear-confirm-no">Keep</button>
       </div>
     </dialog>
     <div class="update-bar" id="update-bar" hidden role="status">

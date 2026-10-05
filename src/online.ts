@@ -5,6 +5,7 @@ import {
   type Code,
   type GameId,
   type HistoryPage,
+  type Metrics,
   type MoveRequest,
   type MyGames,
   type PlayerInfo,
@@ -151,6 +152,10 @@ export const api = {
     if (typeof answer !== 'object' || answer === null || !('records' in answer)) throw new Error('invalid answer from /api/me/records');
     return parseRecords(answer.records);
   },
+  // Hides every finished game of this player from their history on the server.
+  clearHistory: () => call('DELETE', '/me/history'),
+  // The metrics of this device for a finished online game that it played.
+  gameMetrics: (id: GameId, metrics: Metrics) => call('POST', `/games/${id}/metrics`, metrics),
   // A fault report for the stats page. The caller ignores a failure: a report must never cause another fault.
   event: (event: ClientEvent) => call('POST', '/events', event),
 

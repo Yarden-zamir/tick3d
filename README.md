@@ -50,6 +50,8 @@
 - The link shows the final board with the replay controls, the players (the GitHub name of a player with a login, else "Anonymous"), the mode, the level, the time limit, the hide settings, the date and the result. Nobody can move in it, and it has no next game. Play goes back to a game of your own.
 - A game that this device did not upload yet opens from the device copy, also offline.
 - My games has a History list of every finished game in every mode, newest first, 50 at a time, with a View button. Offline, it lists the games on this device.
+- Clear history in My games asks first, then removes every finished game from the player's history: on the server for every device of the account (or for this browser without a login), and from the uploaded results on this device. The survival records and the totals stay. An online game stays in the opponent's history, and every game still counts in the site stats.
+- A game stored before game links shows in the history without a View button, until a one-off migration gives it an id.
 
 ## Online play
 
@@ -121,7 +123,8 @@ The page is plain TypeScript built with Vite, with no runtime dependencies. The 
 ## Stored data and format changes
 
 - The `sessions` table has one row per session: the code, a creation order, a version, timestamps, and the session as one `VARIANT` document. `users` and `player_tokens` link browsers to GitHub accounts. `results` holds every finished game, one row per game: the games that devices sent, and the online games, which the server records when they end. Its columns hold the public game id, the token of each seat, the winner, how the game ended and the game metrics. `events` holds the faults that pages report.
-- On every start the server gives older `results` rows their new columns, and records online games that ended before it recorded them.
+- Rows from before game links have NULL in the new columns. The queries read them from `token` and `doc` instead (`SEAT_X` and `SEAT_O` in `server/stats.ts`), and a finished online game that has no row reads from its session. The server never writes data into old rows.
+- `hidden_x` and `hidden_o` mark a seat that its player cleared from the history. `seat_metrics` holds the metrics of each player of an online game, one row per seat.
 - A device stores its sessions in the same document format in IndexedDB, so the same rules read and upgrade them on a phone.
 - The document carries a `format` number. `src/session/format.ts` reads every known format, upgrades old documents step by step, and writes the current format back on the first read.
 - A new optional field needs only a default in `parseDoc`. A breaking change needs a new `CURRENT_FORMAT` and one `UPGRADES` step. Neither needs a database reset or a manual migration.
@@ -140,6 +143,8 @@ The page is plain TypeScript built with Vite, with no runtime dependencies. The 
 | `GET /api/me/games` | My games: tallies and online sessions. |
 | `GET /api/me/history?offset=0` | The match history of the player (by account, else by browser token), 50 games per page, newest first. |
 | `GET /api/me/records` | The survival records of the player, with the same keys as on the device (`src/records.ts`). |
+| `DELETE /api/me/history` | Clears the history of the player. Needs the X-Player header. |
+| `POST /api/games/:id/metrics` | The metrics of a player's device for a finished online game. Only a player of that game may send them, once per seat. |
 | `POST /api/events` | A fault report from a page. At most 1 kB, 30 per 10 minutes per address. |
 | `GET /api/stats` | The aggregates of the stats page. The server computes them at most once a minute. |
 
@@ -149,7 +154,7 @@ The page is plain TypeScript built with Vite, with no runtime dependencies. The 
 - The page shows counts only. A leaderboard shows the GitHub name of a player with a login, else "Anonymous". It never shows a token, a result id or a game id.
 - What a finished game sends, besides the game itself: the kind of device (phone, tablet or computer), the view, the layout, the theme, how many moves came from the board and from the keypad, the refused actions by reason, the number of undos, the thinking time of each computer move, whether the device was offline, the app version (the file name of the page script), the computer settings of a tuned computer, and for Nearby the role of the device and the kind of the other device.
 - A fault report holds the error message with the file name and line, or the reason of a burst of refused moves, and the app version. It holds no token and no address. A page sends at most 10 per visit.
-- Online games send no metrics: the server records them from the session.
+- Each player of an online game sends the same metrics for that game, without the computer and Nearby parts.
 
 ## Develop
 

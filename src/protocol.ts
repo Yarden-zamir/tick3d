@@ -500,7 +500,8 @@ export function parsePublicGame(value: unknown): PublicGame {
 // The result of a game for the player who asks. A friend game is only "played": one device held both seats.
 export type Outcome = 'won' | 'lost' | 'drawn' | 'played';
 export type HistoryEntry = {
-  id: GameId;
+  // Null for a game stored before game links: it has no link.
+  id: GameId | null;
   mode: SessionMode;
   difficulty: Difficulty | null;
   result: Outcome;
@@ -521,7 +522,7 @@ export function parseHistoryPage(value: unknown): HistoryPage {
   if (!isRecord(value) || !Array.isArray(value.games) || typeof value.more !== 'boolean') return fail('body');
   const games = value.games.map((entry: unknown): HistoryEntry => {
     if (!isRecord(entry)) return fail('entry');
-    const id = parseGameId(entry.id);
+    const id = entry.id === null ? null : parseGameId(entry.id);
     const mode = oneOf(SESSION_MODES, entry.mode);
     const difficulty = entry.difficulty === null ? null : oneOf(DIFFICULTIES, entry.difficulty);
     const result = oneOf(OUTCOMES, entry.result);
@@ -606,7 +607,7 @@ export type Stats = {
   hide: { setting: 'none' | 'board' | 'history' | 'both'; games: number; computerGames: number; humanWins: number }[];
   timeLimits: { perGame: number | null; perMove: number | null; games: number }[];
   tuned: { tuned: boolean; games: number; humanWins: number }[];
-  // From game metrics: only games from devices that send them.
+  // From game metrics: device results, and each player of an online game (one report per seat).
   metricsGames: number;
   devices: Count[];
   views: Count[];

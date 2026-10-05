@@ -11,16 +11,20 @@ import {
   myGamesDevice,
   myGamesHistory,
   myGamesMore,
+  myGamesClear,
+  clearConfirm,
+  clearConfirmYes,
+  clearConfirmNo,
   myGamesStats,
   myGamesOnline,
   myGamesNote,
   myGamesOnlineBox,
   myGamesClose,
 } from './dom.ts';
-import { showError, reject } from './feedback.ts';
+import { showError, showToast, reject } from './feedback.ts';
 import { openGameView } from './game-view.ts';
 import { render } from './render.ts';
-import { syncRecords } from './results.ts';
+import { flushResults, syncRecords } from './results.ts';
 import { openDeviceSession, joinSession } from './sessions.ts';
 import { page, settingsLocked } from './state.ts';
 
@@ -47,7 +51,8 @@ function tallyBox(label: string, tally: Tally): HTMLElement {
   return box;
 }
 
-function listItem(title: string, detail: string, action: string, onClick: () => void, badge?: string): HTMLLIElement {
+// Without an action the item has no button.
+function listItem(title: string, detail: string, action: string | undefined, onClick: () => void, badge?: string): HTMLLIElement {
   const item = document.createElement('li');
   const text = document.createElement('div');
   const name = document.createElement('b');
@@ -62,6 +67,7 @@ function listItem(title: string, detail: string, action: string, onClick: () => 
     mark.textContent = badge;
     item.append(mark);
   }
+  if (action === undefined) return item;
   const button = document.createElement('button');
   button.type = 'button';
   button.textContent = action;
@@ -101,7 +107,10 @@ function historyItem(entry: HistoryEntry): HTMLLIElement {
   const level = entry.difficulty === null ? '' : `, ${entry.difficulty}`;
   const opponent = entry.opponent === null ? '' : ` · vs ${entry.opponent.login}`;
   const title = `${OUTCOME_NAMES[entry.result]} · ${MODE_NAMES[entry.mode]}${level}`;
-  return listItem(title, `${entry.moves} moves${opponent} · ${ago(entry.finishedAt)}`, 'View', () => viewGame(entry.id));
+  const detail = `${entry.moves} moves${opponent} · ${ago(entry.finishedAt)}`;
+  // A game stored before game links has no link to view.
+  const id = entry.id;
+  return id === null ? listItem(title, detail, undefined, () => undefined) : listItem(title, detail, 'View', () => viewGame(id));
 }
 
 // The finished games on this device that have a link, newest first, for when the server is out of reach.
@@ -212,6 +221,7 @@ async function openMyGames(): Promise<void> {
     if (mine.sessions.length === 0) myGamesOnline.innerHTML = '<li class="empty">No online sessions yet.</li>';
     myGamesOnlineBox.hidden = false;
     await loadHistory(request, false);
+    myGamesClear.hidden = historyOffset === 0;
   } catch (error) {
     if (!(error instanceof OnlineError)) throw error;
     const tallies = await deviceTallies();
@@ -221,6 +231,29 @@ async function openMyGames(): Promise<void> {
     myGamesOnlineBox.hidden = true;
     showHistory(await deviceHistory(), false);
     myGamesMore.hidden = true;
+    // Clearing needs the server.
+    myGamesClear.hidden = true;
+  }
+}
+
+// Clears the history on the server (every device of the account) and the uploaded results on this device.
+// The survival records stay: they are a best value per setup, kept apart from the history.
+async function clearHistory(): Promise<void> {
+  clearConfirmYes.disabled = true;
+  try {
+    // Upload what waits first, so a result that arrives later does not bring a cleared game back.
+    await flushResults();
+    await api.clearHistory();
+    const db = page.deviceDb;
+    if (db !== undefined) for (const result of await db.all('results')) if (result.sent) await db.delete('results', result.id);
+    clearConfirm.close();
+    historyOffset = 0;
+    showHistory([], false);
+    myGamesMore.hidden = true;
+    myGamesClear.hidden = true;
+    showToast('Your history is clear. Your survival records stay.');
+  } finally {
+    clearConfirmYes.disabled = false;
   }
 }
 
@@ -240,6 +273,15 @@ export function setupMyGames(): void {
   accountButton.addEventListener('click', () => void openMyGames().catch(showError));
   myGamesClose.addEventListener('click', () => myGamesDialog.close());
   myGamesMore.addEventListener('click', () => void loadHistory(myGamesRequest, true).catch(showError));
+  myGamesClear.addEventListener('click', () => {
+    clearConfirm.showModal();
+    clearConfirmNo.focus();
+  });
+  clearConfirmNo.addEventListener('click', () => clearConfirm.close());
+  clearConfirmYes.addEventListener('click', () => void clearHistory().catch(showError));
+  clearConfirm.addEventListener('click', (event) => {
+    if (event.target === clearConfirm) clearConfirm.close();
+  });
   myGamesDialog.addEventListener('click', (event) => {
     if (event.target === myGamesDialog) myGamesDialog.close();
   });
