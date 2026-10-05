@@ -9,9 +9,12 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    container: node:24-alpine
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
       - run: npm ci
       - run: npm run check
       - run: npm run build
