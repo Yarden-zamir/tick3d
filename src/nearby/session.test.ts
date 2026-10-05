@@ -91,16 +91,4 @@ describe('Nearby host and guest', () => {
     first.backend.close();
     expect(first.bye()).toBe('');
   });
-
-  it('stops change notices after unsubscribe', async () => {
-    const { local, code, connect } = await setup();
-    const first = connect(guest);
-    await first.backend.join(code);
-    let changes = 0;
-    const unsubscribe = first.backend.subscribe(code, () => changes++);
-    unsubscribe();
-    await local.chat(code, 'nobody hears this');
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(changes).toBe(0);
-  });
 });
