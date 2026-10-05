@@ -26,6 +26,8 @@ interface Seed {
 // changes that the app made. The toast observer keeps every message, because a later toast (for
 // example "Ready for offline play") replaces the text of an earlier one.
 function seed({ settings, records }: Seed): void {
+  // A new page starts on about:blank, which has no storage.
+  if (!location.protocol.startsWith('http')) return;
   if (settings !== undefined && localStorage.getItem('tick3d.settings') === null) {
     localStorage.setItem('tick3d.settings', JSON.stringify(settings));
   }

@@ -11,8 +11,11 @@ export default defineConfig({
   testDir: '.',
   outputDir: 'test-results',
   fullyParallel: true,
-  // The tests wait on the network and on the 3D page, not on the CPU, so more workers than cores help.
-  workers: 6,
+  workers: 4,
+  // The online and computer games play many turns, and the time limit tests wait for a timeout.
+  timeout: 90_000,
+  // Chromium draws the 3D board in software in a container, so a busy page answers slowly.
+  expect: { timeout: 15_000 },
   forbidOnly: Boolean(process.env.CI),
   reporter: [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
   use: {
