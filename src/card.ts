@@ -1,5 +1,6 @@
 // The end-of-game card. It is drawn on a canvas, so the picture on screen is the file that is shared.
 import { type Game, SIZE, toCell } from './game.ts';
+import type { RecordNews } from './records.ts';
 
 export type CardInput = {
   game: Game;
@@ -11,6 +12,8 @@ export type CardInput = {
   date: Date;
   // Printed at the bottom: the game link, or only the site address.
   footer: string;
+  // A survival record against the computer that this game broke.
+  record?: RecordNews;
 };
 
 const WIDTH = 1080;
@@ -87,6 +90,28 @@ function text(ctx: CanvasRenderingContext2D, value: string, x: number, y: number
   ctx.fillStyle = color;
   ctx.textAlign = align;
   ctx.fillText(value, x, y);
+}
+
+// Shrinks the text until it fits `maxWidth`, so a long line never runs off the card.
+function fittedText(ctx: CanvasRenderingContext2D, value: string, x: number, y: number, size: number, weight: number, color: string, maxWidth: number): void {
+  let fitted = size;
+  ctx.font = `${weight} ${fitted}px ${FONT}`;
+  while (fitted > 16 && ctx.measureText(value).width > maxWidth) {
+    fitted--;
+    ctx.font = `${weight} ${fitted}px ${FONT}`;
+  }
+  text(ctx, value, x, y, fitted, weight, color);
+}
+
+// A sticker in the gap between the wordmark and the date, tilted like the "3d" of the wordmark.
+function recordSticker(ctx: CanvasRenderingContext2D, t: Theme, record: RecordNews): void {
+  ctx.save();
+  ctx.translate(WIDTH / 2 + 55, 150);
+  ctx.rotate((4 * Math.PI) / 180);
+  block(ctx, t, { x: -125, y: -44, w: 250, h: 88, fill: t.o, radius: 12, border: 5, shadow: 7 });
+  text(ctx, 'New record', 0, -4, 36, 800, t.onColor, 'center');
+  text(ctx, `best was ${record.previous} ${record.previous === 1 ? 'move' : 'moves'}`, 0, 28, 22, 700, t.onColor, 'center');
+  ctx.restore();
 }
 
 function background(ctx: CanvasRenderingContext2D, t: Theme): void {
@@ -206,11 +231,12 @@ export async function drawCard(input: CardInput): Promise<HTMLCanvasElement> {
   block(ctx, t, { x: 80, y: 210, w: WIDTH - 160, h: 200, fill: decided ? t.win : t.surface, radius: 16, border: 6, shadow: 12 });
   text(ctx, input.title, WIDTH / 2, 322, 104, 800, bannerText, 'center');
   text(ctx, input.subtitle, WIDTH / 2, 378, 38, 600, bannerText, 'center');
+  if (input.record !== undefined) recordSticker(ctx, t, input.record);
   // Board rows: 490 + 2 slabs of 277 + 84 between them ends at 1128, clear of the box at 1170.
   board(ctx, t, input.game, 490);
   block(ctx, t, { x: 80, y: 1170, w: WIDTH - 160, h: input.footer === '' ? 104 : 140, fill: t.surface, radius: 14, border: 5, shadow: 10 });
-  text(ctx, input.matchup, 110, 1220, 38, 800, t.ink);
-  text(ctx, input.details, 110, 1258, 26, 600, t.muted);
+  fittedText(ctx, input.matchup, 110, 1220, 38, 800, t.ink, WIDTH - 220);
+  fittedText(ctx, input.details, 110, 1258, 26, 600, t.muted, WIDTH - 220);
   if (input.footer !== '') text(ctx, input.footer, 110, 1294, 28, 800, t.ink);
   return canvas;
 }

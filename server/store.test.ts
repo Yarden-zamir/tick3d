@@ -83,7 +83,9 @@ describe('sessions', () => {
     const codes: Code[] = [];
     for (let i = 0; i < 30; i++) codes.push((await store.create(alice, `Game ${i}`)).code);
     for (const code of codes) expect((await store.get(code, alice)).code).toBe(code);
-  });
+    // 60 store calls take about 3 s, and more on a busy build server. If the default 5 s limit
+    // returns, check the time per store call first: a slow call is a real problem.
+  }, 20_000);
 
   it('reports presence from the HTTP layer', async () => {
     store = await openStore(':memory:', { presence: () => ({ X: true, O: false }) });
