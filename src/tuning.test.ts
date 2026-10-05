@@ -37,6 +37,9 @@ describe('stored advanced settings', () => {
     expect(parseTuning({ easy: 'x', hard: { budgetMs: 999_999, branching: '3' } })).toEqual(DEFAULT_TUNING);
     expect(parseTuning({ hard: { budgetMs: 1000 } }).hard.budgetMs).toBe(1000);
     expect(isDefaultTuning(parseTuning({}))).toBe(true);
+    // A stored default never moves to another value, so a saved change keeps every other default.
+    expect(isDefaultTuning(parseTuning(JSON.parse(JSON.stringify(DEFAULT_TUNING))))).toBe(true);
+    expect(parseTuning({ hard: { branching: 7.6 } }).hard.branching).toBe(8);
   });
 
   it('gives every field a range that holds its default', () => {

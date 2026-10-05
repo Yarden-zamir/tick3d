@@ -1095,6 +1095,15 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .tuning-reset {
   margin-top: 0.8rem;
+  padding: 0.35rem 0.75rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 2px 2px 0 var(--shadow);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 /* ---- Online ---- */

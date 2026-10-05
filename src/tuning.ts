@@ -82,9 +82,9 @@ export type TuningField = {
 };
 
 const FEEL_LABELS: Record<keyof Feel, [label: string, min: number, max: number, step: number]> = {
-  block: ['Block chance', 0, 1, 0.05],
-  fork: ['Sees own double threat', 0, 1, 0.05],
-  forkBlock: ["Sees opponent's double threat", 0, 1, 0.05],
+  block: ['Block chance', 0, 1, 0.01],
+  fork: ['Sees own double threat', 0, 1, 0.01],
+  forkBlock: ["Sees opponent's double threat", 0, 1, 0.01],
   temperature: ['Randomness', 1, 60, 1],
 };
 
@@ -118,7 +118,7 @@ function styleFields(level: StyledLevel): TuningField[] {
     ...feelFields,
     plain('tireFrom', 'Starts to tire at move', 0, 64, 1),
     plain('tireTo', 'Fully tired at move', 0, 64, 1),
-    plain('defense', 'Defense weight', 0, 2, 0.05),
+    plain('defense', 'Defense weight', 0, 2, 0.01),
     plain('candidates', 'Cells it considers', 1, 64, 1),
   ];
 }
@@ -151,11 +151,11 @@ export const TUNING_FIELDS: readonly TuningField[] = [
   },
 ];
 
-// A value that fits the field's range and step, or undefined.
+// A value inside the field's range, or undefined. Whole-number fields round to a whole number.
+// The step only sets the size of the input arrows, so a stored value never moves to another step.
 export function fieldValue(field: TuningField, value: unknown): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < field.min || value > field.max) return undefined;
-  const steps = Math.round((value - field.min) / field.step);
-  return Number((field.min + steps * field.step).toFixed(4));
+  return Number.isInteger(field.step) ? Math.round(value) : value;
 }
 
 // Stored settings come from an older visit or a hand edit, so check every number and keep the default for a bad one.
