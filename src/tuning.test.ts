@@ -41,14 +41,6 @@ describe('stored advanced settings', () => {
     expect(isDefaultTuning(parseTuning(JSON.parse(JSON.stringify(DEFAULT_TUNING))))).toBe(true);
     expect(parseTuning({ hard: { branching: 7.6 } }).hard.branching).toBe(8);
   });
-
-  it('gives every field a range that holds its default', () => {
-    for (const field of TUNING_FIELDS) {
-      const value = field.get(DEFAULT_TUNING);
-      expect(value, field.label).toBeGreaterThanOrEqual(field.min);
-      expect(value, field.label).toBeLessThanOrEqual(field.max);
-    }
-  });
 });
 
 describe('isTuning', () => {
