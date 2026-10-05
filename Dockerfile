@@ -2,13 +2,13 @@ FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY tsconfig.json index.html vite.config.ts ./
+COPY tsconfig.json index.html vite.config.ts .oxlintrc.json .stylelintrc.json .htmlvalidate.json ./
 # Vite copies public/ (the favicons and icons) into dist as is. The PWA plugin writes the manifest.
 COPY public public
 COPY src src
 COPY server server
-# A failing test or type error stops the image build, so a broken game never deploys.
-RUN npm test && npm run build
+# A lint finding, a failing test or a type error stops the image build, so a broken game never deploys.
+RUN npm run lint && npm test && npm run build
 
 # The API runs its TypeScript directly: Node 24 strips the types. DuckDB is its only runtime package.
 FROM node:24-alpine AS api
