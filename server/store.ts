@@ -47,7 +47,7 @@ const { SessionError } = core;
 // Each statement is idempotent and runs on every start, in order. To change a table, append a
 // statement such as `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ... DEFAULT ...`. Never edit one.
 // A session is a VARIANT document (see src/session/format.ts), so most format changes need no SQL at all.
-// Nothing here deletes old rows: sessions, games and results have no limit until storage calls for one.
+// Only pruneEmpty deletes rows: sessions where no game has a move. Games and results have no limit until storage calls for one.
 const SCHEMA = [
   'CREATE SEQUENCE IF NOT EXISTS session_order',
   `CREATE TABLE IF NOT EXISTS sessions (
@@ -702,6 +702,26 @@ export async function openStore(
           byDifficulty,
           sessions,
         };
+      }),
+
+    // Deletes sessions that no game has a move in and that nobody changed for `ageMs`. A session with a
+    // player on the page stays, so an open page never loses its game. Returns the codes it deleted.
+    pruneEmpty: (ageMs: number) =>
+      serialized(async () => {
+        const cutoff = now() - ageMs;
+        const old = await rows('FROM sessions SELECT code, doc::JSON AS doc WHERE updated_at < make_timestamptz($cutoff * 1000)', {
+          cutoff,
+        });
+        const deleted: Code[] = [];
+        for (const row of old) {
+          if (typeof row.code !== 'string' || typeof row.doc !== 'string') throw new Error('unexpected session row shape');
+          const code = row.code as Code;
+          const live = presence(code);
+          if (live.X || live.O || !core.isEmptySession(parseDoc(JSON.parse(row.doc)))) continue;
+          await db.run('DELETE FROM sessions WHERE code = $code', { code });
+          deleted.push(code);
+        }
+        return deleted;
       }),
 
     close(): void {

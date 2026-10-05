@@ -14,7 +14,7 @@ import {
   parseNewSession,
   parseSessionUpdate,
 } from '../src/protocol.ts';
-import { SessionError } from '../src/session/core.ts';
+import { EMPTY_SESSION_TTL_MS, SessionError } from '../src/session/core.ts';
 import { CREATES_PER_HOUR, EVENTS_PER_10_MINUTES, WAIT_MS, matchRoute } from './api-docs.ts';
 import { openApi, swaggerHtml } from './api-docs-render.ts';
 import { type Auth, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
@@ -316,6 +316,14 @@ const server = createServer((req, res) => {
     else res.end();
   });
 });
+
+// Sessions that nobody played go after a while, at start and then every hour.
+async function pruneEmptySessions(): Promise<void> {
+  const deleted = await store.pruneEmpty(EMPTY_SESSION_TTL_MS);
+  if (deleted.length > 0) console.log(`pruned ${deleted.length} empty sessions`);
+}
+void pruneEmptySessions().catch((error: unknown) => console.error('pruning empty sessions failed', error));
+setInterval(() => void pruneEmptySessions().catch((error: unknown) => console.error('pruning empty sessions failed', error)), 3_600_000).unref();
 
 // Comments keep idle event streams open through proxies.
 setInterval(() => {

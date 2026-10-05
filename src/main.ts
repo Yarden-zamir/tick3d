@@ -1,6 +1,7 @@
 import './style.css';
 import { openDeviceDb, memoryDeviceDb } from './device-db.ts';
 import { createLocalBackend } from './local.ts';
+import { EMPTY_SESSION_TTL_MS } from './session/core.ts';
 import { setupPwa } from './pwa.ts';
 import { token } from './online.ts';
 import { normalizeCode, parseGameId } from './protocol.ts';
@@ -76,6 +77,8 @@ async function start(): Promise<void> {
     showToast('This browser does not let the game store data, so games last for this visit only.');
   }
   page.local = createLocalBackend(page.deviceDb, token, () => page.account.user);
+  // Before any session opens, so a session the start opens is never pruned under it.
+  await page.local.pruneEmpty(EMPTY_SESSION_TTL_MS);
   void refreshAccount();
   void checkLanHost();
   const params = new URLSearchParams(location.search);
