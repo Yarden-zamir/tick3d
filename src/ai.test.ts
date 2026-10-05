@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { chooseMove, DIFFICULTIES } from './ai.ts';
+import { DEFAULT_TUNING, type Tuning } from './tuning.ts';
 import { type Board, CELL_COUNT, type Mark, linesThrough, newGame, play, replay } from './game.ts';
 
 function boardWith(marks: Record<number, Mark>): Board {
@@ -7,6 +8,7 @@ function boardWith(marks: Record<number, Mark>): Board {
 }
 
 const fixed = () => 0.5;
+const budget = (budgetMs: number): Tuning => ({ ...DEFAULT_TUNING, hard: { ...DEFAULT_TUNING.hard, budgetMs } });
 
 describe('chooseMove', () => {
   it.each(DIFFICULTIES)('%s takes an immediate win', (difficulty) => {
@@ -23,13 +25,13 @@ describe('chooseMove', () => {
     // O owns two lines that cross at cell 0, each with two marks: playing 0 makes two threats.
     // X has no line with three marks, so O does not need to block.
     const board = boardWith({ 1: 'O', 2: 'O', 16: 'O', 32: 'O', 63: 'X', 60: 'X', 42: 'X', 27: 'X' });
-    expect(chooseMove(board, 'O', 'hard', fixed, 2000)).toBe(0);
+    expect(chooseMove(board, 'O', 'hard', fixed, budget(2000))).toBe(0);
   });
 
   it.each(DIFFICULTIES)('%s only plays legal moves through a full game', (difficulty) => {
     let game = newGame();
     while (game.status.kind === 'playing') {
-      const result = play(game, chooseMove(game.board, game.turn, difficulty, Math.random, 50));
+      const result = play(game, chooseMove(game.board, game.turn, difficulty, Math.random, budget(50)));
       expect(result.ok).toBe(true);
       if (!result.ok) break;
       game = result.game;
@@ -54,6 +56,17 @@ describe('chooseMove', () => {
     expect(chooseMove(board, 'O', 'easy', () => 0.99)).not.toBe(63);
   });
 
+  it('medium always blocks while fresh, and misses some blocks when tired', () => {
+    const marks = { 0: 'X', 21: 'X', 42: 'X', 5: 'O', 9: 'O' } as const;
+    const board = boardWith(marks);
+    // A roll of 0.9 is above the tired block chance (0.85) and below the fresh one (1).
+    expect(chooseMove(board, 'O', 'medium', () => 0.9)).toBe(63);
+    const fresh = { ...DEFAULT_TUNING.medium, tireFrom: 60, tireTo: 64 };
+    const tired = { ...DEFAULT_TUNING.medium, tireFrom: 0, tireTo: 1 };
+    expect(chooseMove(board, 'O', 'medium', () => 0.9, { ...DEFAULT_TUNING, medium: fresh })).toBe(63);
+    expect(chooseMove(board, 'O', 'medium', () => 0.9, { ...DEFAULT_TUNING, medium: tired })).not.toBe(63);
+  });
+
   it('hard wins by threats in a row against a player who always blocks', () => {
     // No move gives O two winning cells at once here. O needs a threat, a forced block, then a fork.
     const marks: Record<number, Mark> = { 0: 'X', 2: 'O', 3: 'X', 6: 'O', 9: 'X', 10: 'X', 14: 'O', 15: 'O', 22: 'X', 25: 'O', 26: 'O', 38: 'X', 41: 'O', 42: 'X', 54: 'X', 57: 'O', 60: 'X' };
@@ -63,7 +76,7 @@ describe('chooseMove', () => {
     game = { ...game, turn: 'O' };
     for (let turn = 0; turn < 6 && game.status.kind === 'playing'; turn++) {
       const level = game.turn === 'O' ? 'hard' : 'medium';
-      const result = play(game, chooseMove(game.board, game.turn, level, fixed, 2000));
+      const result = play(game, chooseMove(game.board, game.turn, level, fixed, budget(2000)));
       if (!result.ok) throw new Error(result.error);
       game = result.game;
     }

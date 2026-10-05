@@ -3,14 +3,23 @@
 import type { Difficulty } from './ai.ts';
 import type { TimeControl } from './clock.ts';
 
-export type RecordSetup = { difficulty: Difficulty; clock: TimeControl; hideBoard: boolean; hideHistory: boolean };
+export type RecordSetup = {
+  difficulty: Difficulty;
+  clock: TimeControl;
+  hideBoard: boolean;
+  hideHistory: boolean;
+  // A computer with changed advanced settings plays another game, so it keeps separate records.
+  tuned: boolean;
+};
 export type Records = Readonly<Record<string, number>>;
 // A record that a game just broke. The first game of a setup sets a record without news.
 export type RecordNews = { moves: number; previous: number };
 
 export function recordKey(setup: RecordSetup): string {
-  const { difficulty, clock, hideBoard, hideHistory } = setup;
-  return [difficulty, `game:${clock.perGame ?? 'none'}`, `move:${clock.perMove ?? 'none'}`, `board:${hideBoard}`, `history:${hideHistory}`].join('|');
+  const { difficulty, clock, hideBoard, hideHistory, tuned } = setup;
+  const parts = [difficulty, `game:${clock.perGame ?? 'none'}`, `move:${clock.perMove ?? 'none'}`, `board:${hideBoard}`, `history:${hideHistory}`];
+  // Only a tuned setup adds a part, so the keys of the default computer stay as they were.
+  return [...parts, ...(tuned ? ['tuned'] : [])].join('|');
 }
 
 // Stored records come from an older visit or a hand edit, so keep only whole positive move counts.
