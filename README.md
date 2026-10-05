@@ -17,7 +17,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 - The computer has three levels. Each level plays a different game each time: the first move goes to a random strong cell, and later choices are weighted by how good a cell is, not fixed. A strong cell is one of the 8 corners or the 8 inner cells, which each sit on 7 lines.
   - Easy: takes a win when it sees one. It blocks your win a bit more than half the time early in a game, and cares more about its own lines than yours, so it leaves openings.
   - Medium: takes a win and always blocks your win early in a game. Sometimes it makes a double threat (two winning cells at once), or takes the cell where you could make one. Otherwise it picks one of its best cells by weight.
-  - Hard: takes a win and blocks your win. It looks for a win by threats in a row, and avoids a move that gives you one. Otherwise it searches ahead with alpha-beta pruning for up to 600 ms and picks among the moves that score about the same as the best.
+  - Hard: takes a win and blocks your win. It looks for a win by threats in a row, and avoids a move that gives you one. Otherwise it searches ahead with alpha-beta pruning for up to 600 ms (at most 1000 ms in the advanced settings) and picks among the moves that score about the same as the best.
   - Easy and medium tire in a long game, like a person under more and more load. From a set move on, they block less often, see fewer double threats, and choose more randomly. A missed block means that the computer did not see your threat at all. Medium starts to tire at move 20 and is fully tired at move 60, when it blocks 85% of the time. Hard does not tire.
 - Advanced settings: in computer mode, "Advanced: computer player" at the bottom of the panel lists every number behind the computer, for each level. Easy and medium have a fresh and a tired value for each chance and for the randomness, and the moves where tiring starts and ends. Hard has its thinking time, search width, threat depth and equal-move margin. A change applies from the next computer move, and "Reset to defaults" restores the tested values. A lock also locks these settings. A changed computer keeps its own survival records, and its end card says "(tuned)".
 - Move validation: an occupied cell, a move after the game ends, a move out of turn, or a move by a spectator is refused with a sound and a message. Every mode runs the same session rules (`src/session/core.ts`): the server for online games, the device for computer and friend games, the host's device for Nearby games.
@@ -93,6 +93,7 @@ It replaces the Lovable version at [3tees.yarden-zamir.com](https://3tees.yarden
 
 - `src/game.ts`: board, lines, move validation, win and draw detection, undo.
 - `src/ai.ts`: the three computer levels.
+- `src/ai-worker.ts` and `src/move-search.ts`: every level searches in a Web Worker, so the page stays responsive while the computer thinks. The service worker precaches the worker, so the computer also plays offline.
 - `src/sound.ts`: synthesized sounds.
 - `src/clock.ts`: time limits and the time left for each player.
 - `src/card.ts`: draws the end card on a canvas and shares it.

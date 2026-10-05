@@ -43,6 +43,7 @@ async function goHome(): Promise<void> {
   if (opened === undefined || current().moves.length === 0) return;
   // The newest computer session holds a game with moves: a new game gives the empty board.
   page.round++;
+  page.computerThinkMs = [];
   page.thinking = false;
   burstEl.replaceChildren();
   applyView(await opened.backend.newGame(opened.code));

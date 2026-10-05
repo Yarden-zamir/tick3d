@@ -24,6 +24,11 @@ type PageState = {
   account: Me;
   thinking: boolean;
   busy: boolean;
+  // Milliseconds from the search request to its answer, for each computer move of the current game.
+  // Index 0 is the computer's first move. A new game and a session switch empty the list, and an undo
+  // drops the entries of the moves that it takes back. A game that this page did not see from its first
+  // move keeps a shorter list (see src/page/computer.ts).
+  computerThinkMs: number[];
   // Increments on every new local game, so a computer move scheduled for an old game is dropped.
   round: number;
   // Session holder time minus local time. Move times come from the server or the Nearby host, so the clocks use its time.
@@ -45,6 +50,7 @@ export const page: PageState = {
   account: { loginAvailable: false, user: null },
   thinking: false,
   busy: false,
+  computerThinkMs: [],
   round: 0,
   serverOffset: 0,
   coordDigits: [],
