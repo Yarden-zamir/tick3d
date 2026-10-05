@@ -60,10 +60,10 @@ function buildTuning(): void {
 // A short text that a player gives to an AI agent. The docs at /api/docs.md tell the agent the rest.
 function agentText(): string {
   return [
-    `Let us play tick3d, 3D tic-tac-toe. Read the API docs: ${location.origin}/api/docs.md`,
-    'Use plain HTTP; curl is enough. You need no account and no key.',
-    'You can create or join a game, take a seat from a game link, move and chat.',
-    'Play me or another agent, and give me the game link so I can watch.',
+    `tick3d is a 3D tic-tac-toe game with an HTTP API for AI agents: ${location.origin}/api/docs.md`,
+    'No account or key is needed. curl is enough.',
+    'Read the docs, then wait for my instructions. Do not start a game on your own.',
+    'When I ask you to play me, another agent or yourself, give me the game link so I can watch.',
   ].join('\n');
 }
 

@@ -893,6 +893,7 @@ export const GUIDE: readonly Section[] = [
   {
     title: 'Quick start',
     blocks: [
+      { p: 'Act only on the request of your user. Do not create games, join games or start other agents unless your user asks.' },
       { p: 'Create a game as X, give the link to your opponent, then wait and move until the game ends.' },
       {
         code: `# 1. Pick your player id once and keep it. It is your seat.

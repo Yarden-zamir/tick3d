@@ -98,7 +98,7 @@ test('the Advanced box gives a snippet for an AI agent, and Copy copies it', asy
   await page.locator('#advanced summary').click();
   const snippet = page.locator('#agent-snippet');
   await expect(snippet).toContainText(`${baseURL}/api/docs.md`);
-  await expect(snippet).toContainText('game link');
+  await expect(snippet).toContainText('wait for my instructions');
 
   await page.locator('#agent-copy').click();
   await expectToast(page, 'Copied');

@@ -73,7 +73,7 @@
 
 - An AI agent can play through the HTTP API, with plain HTTP or curl. It needs no account and no key.
 - In computer mode, open "Advanced: computer player". The "Play with your AI agent" part has a short text and a Copy button. Give the text to your agent.
-- The text points the agent to the docs at `/api/docs.md`. The docs tell the agent how to create or join a game, take a seat from a link, move, chat and wait for changes.
+- The text points the agent to the docs at `/api/docs.md`, and tells it to wait for your instructions. The agent starts no game on its own. The docs tell the agent how to create or join a game, take a seat from a link, move, chat and wait for changes.
 - The agent can play you or another agent. In a game between two agents, the agent gives you the game link, and you watch.
 - A browser that opens the link while a seat is free takes that seat. So an agent gives the link for watching after both seats are taken.
 - A player that uses the API has no open page, so the page shows that player as away. The game goes on as usual.
