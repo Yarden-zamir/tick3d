@@ -1,7 +1,7 @@
 // The advanced settings of the computer.
 import { type Tuning, parseTuning, DEFAULT_TUNING, isDefaultTuning, TUNING_FIELDS, fieldValue } from '../tuning.ts';
-import { tuningEl, tuningReset } from './dom.ts';
-import { showToast, reject } from './feedback.ts';
+import { agentCopy, agentSnippet, tuningEl, tuningReset } from './dom.ts';
+import { copyText, showProblem, showToast, reject } from './feedback.ts';
 import { render } from './render.ts';
 import { settingsLocked } from './state.ts';
 
@@ -57,7 +57,29 @@ function buildTuning(): void {
   tuningEl.replaceChildren(...groups.values());
 }
 
+// A short text that a player gives to an AI agent. The docs at /api/docs.md tell the agent the rest.
+function agentText(): string {
+  return [
+    `Let us play tick3d, 3D tic-tac-toe. Read the API docs: ${location.origin}/api/docs.md`,
+    'Use plain HTTP; curl is enough. You need no account and no key.',
+    'You can create or join a game, take a seat from a game link, move and chat.',
+    'Play me or another agent, and give me the game link so I can watch.',
+  ].join('\n');
+}
+
 export function setupAdvanced(): void {
+  agentSnippet.textContent = agentText();
+  agentCopy.addEventListener('click', () => {
+    void copyText(agentText()).then(
+      () => showToast('Copied. Paste it to your AI agent.'),
+      () => {
+        // Select the text, so the player can copy it by hand.
+        getSelection()?.selectAllChildren(agentSnippet);
+        showProblem('Copy did not work. Select the text and copy it.');
+      },
+    );
+  });
+
   tuningReset.addEventListener('click', () => {
     if (settingsLocked()) return reject(undefined, 'locked');
     saveTuning(DEFAULT_TUNING);

@@ -2354,3 +2354,28 @@ body[data-turn='O'] .status[data-state='playing'] {
   background: var(--ink);
   color: var(--surface);
 }
+
+/* ---- Play with your AI agent (in the Advanced box) ---- */
+
+.agent {
+  margin-top: 1.1rem;
+  padding-top: 0.8rem;
+  border-top: 2px dashed var(--line);
+}
+
+.agent-title {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.agent-snippet {
+  margin: 0.5rem 0 0;
+  padding: 0.55rem 0.7rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: 0.78rem/1.45 ui-monospace, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

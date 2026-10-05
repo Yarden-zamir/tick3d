@@ -55,6 +55,8 @@ export const cardNewGameButton = element('#end-card-new-game', HTMLButtonElement
 export const advancedBox = element('#advanced', HTMLDetailsElement);
 export const tuningEl = element('#tuning', HTMLDivElement);
 export const tuningReset = element('#tuning-reset', HTMLButtonElement);
+export const agentSnippet = element('#agent-snippet', HTMLPreElement);
+export const agentCopy = element('#agent-copy', HTMLButtonElement);
 export const themeColorMeta = element('meta[name="theme-color"]', HTMLMetaElement);
 export const themeMenu = element('#theme-menu', HTMLDetailsElement);
 export const themeSwatch = element('#theme-swatch', HTMLSpanElement);
