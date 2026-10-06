@@ -12,9 +12,8 @@ permissions:
   deployments: write
 
 jobs:
-  # The type check, the linters, the unit tests and the build run first, in about half a minute.
-  # A failure stops the run before a deploy starts. A teardown of a closed PR needs no check, and a
-  # push to a branch other than main deploys nothing, so their check is skipped.
+  # The type check, the linters, the unit tests and the build, in about half a minute.
+  # A push to a branch other than main deploys nothing, and a closed PR only tears down, so both skip it.
   check:
     if: >-
       (github.event_name == 'pull_request' && github.event.action != 'closed') ||
@@ -33,13 +32,21 @@ jobs:
       - run: npm run check
       - run: npm run build
 
-  call:
+  # Production and manual deploys wait for a passing check.
+  deploy:
     needs: check
-    # Deploy only after a passing check, or when the check does not apply (teardown, other branches).
-    # Dependabot runs get no deploy secrets, so their deploy would fail; the check still runs for them.
     if: >-
-      always() &&
-      (needs.check.result == 'success' || needs.check.result == 'skipped') &&
-      github.actor != 'dependabot[bot]'
+      always() && needs.check.result == 'success' &&
+      github.event_name != 'pull_request'
+    uses: Yarden-zamir/kitshn/.github/workflows/deploy.yml@main
+    secrets: inherit
+
+  # A PR preview (and its teardown) starts at once, next to the check, so it is ready sooner.
+  # A failing check still marks the PR red. Pushes to other branches deploy nothing (kitshn resolves that).
+  # Dependabot runs get no deploy secrets, so they skip the preview.
+  preview:
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main'))
     uses: Yarden-zamir/kitshn/.github/workflows/deploy.yml@main
     secrets: inherit
