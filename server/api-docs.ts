@@ -977,6 +977,8 @@ export const ROUTES = {
     operationId: 'logout',
     tag: 'Account',
     summary: 'Log this browser out of its GitHub account.',
+    description:
+      'The other devices of the account stay logged in. The account keeps everything that this X-Player id played: every seat that holds the id, and every finished game that names it, also games from before the login. After the logout, the history, stats and survival records of this id are empty. The page then deletes its copies of the uploaded results, the survival records and the cached online games.',
     player: 'required',
     response: { status: 200, description: 'Logged out.', schema: 'Ok', example: { ok: true } },
     errors: [BAD_PLAYER, { status: 404, when: 'This server has no GitHub login.' }],

@@ -119,6 +119,13 @@ export async function flushResults(): Promise<void> {
   }
 }
 
+// Deletes the results on this device that the server has. Unsent results stay for the next upload.
+export async function deleteSentResults(): Promise<void> {
+  const db = page.deviceDb;
+  if (db === undefined) return;
+  for (const result of await db.all('results')) if (result.sent) await db.delete('results', result.id);
+}
+
 const RECORDS_KEY = 'tick3d.records';
 // Records that a game broke in this visit, by session code and game index, for its end card.
 export const recordNews = new Map<string, RecordNews>();
@@ -137,6 +144,15 @@ function saveRecords(records: Records): void {
     localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
   } catch {
     // Storage is blocked (private mode). Records then last for this visit only.
+  }
+}
+
+// After a logout the records belong to the account, and this browser starts again from none.
+export function forgetRecords(): void {
+  try {
+    localStorage.removeItem(RECORDS_KEY);
+  } catch {
+    // Storage is blocked (private mode), so it holds no records.
   }
 }
 
