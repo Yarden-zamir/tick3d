@@ -134,10 +134,6 @@ test('hide options and the lock belong to the session', async ({ open }) => {
   for (const control of [hideBoard(alice), alice.getByRole('button', { name: 'Tower' }), alice.getByRole('button', { name: 'Computer' }), alice.locator('#join-code'), hideHistory(bob)]) {
     await expect(control).toBeDisabled();
   }
-  // The home link waits for the end of the lock too.
-  await alice.locator('#home-link').click();
-  await expectToast(alice, 'Settings are locked');
-  expect(new URL(alice.url()).searchParams.get('code')).toBe(code);
   // A watcher sees the lock, but keeps its own settings, so the lock never traps a watcher.
   await expect(carol.locator('#lock')).toContainText('Locked');
   await expect(carol.getByRole('button', { name: 'Flat' })).toBeEnabled();

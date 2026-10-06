@@ -76,6 +76,7 @@ function listItem(title: string, detail: string, actions: readonly Action[], bad
   for (const { label, run } of actions) {
     const button = document.createElement('button');
     button.type = 'button';
+    button.className = 'btn btn-small';
     button.textContent = label;
     button.addEventListener('click', () => {
       myGamesDialog.close();
@@ -182,6 +183,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     name.textContent = page.account.user.login;
     const logout = document.createElement('button');
     logout.type = 'button';
+    logout.className = 'btn btn-small';
     logout.textContent = 'Log out';
     logout.addEventListener('click', () => void api.logout().then(refreshAccount).then(() => myGamesDialog.close(), showError));
     accountBox.append(avatar, name, logout);
@@ -195,7 +197,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     if (page.account.loginAvailable && navigator.onLine) {
       text.append(' Log in with GitHub to use your GitHub name.');
       const login = document.createElement('a');
-      login.className = 'login-link';
+      login.className = 'btn btn-small btn-primary';
       login.href = api.loginUrl(returnTo);
       login.textContent = 'Log in with GitHub';
       accountBox.append(login);

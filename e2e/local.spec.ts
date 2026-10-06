@@ -59,8 +59,10 @@ test('a lock holds through a reload and ends with the game; the local end card h
   ]) {
     await expect(control).toBeDisabled();
   }
+  // Leaving stays possible: Home asks first, as in any game with moves.
   await page.locator('#home-link').click();
-  await expectToast(page, 'Settings are locked');
+  await expect(page.locator('#home-confirm')).toHaveAttribute('open');
+  await page.locator('#home-confirm-stay').click();
   // The theme and the sound stay free.
   await page.getByRole('button', { name: 'Sound', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Sound', exact: true })).toHaveAttribute('aria-pressed', 'false');
@@ -138,4 +140,44 @@ test('time limits: range check, presets, and a change during a game starts with 
   await expect(summary).toContainText('3 min per player + 5 s per move');
   await page.reload();
   await expect(summary).toContainText('3 min per player + 5 s per move');
+});
+
+test('the lock shows its tooltip on hover and on a long press, and a short tap still locks', async ({ browser, baseURL }) => {
+  if (baseURL === undefined) throw new Error('the config sets no baseURL');
+  const context = await browser.newContext({ baseURL, hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  await context.addInitScript(() => {
+    if (localStorage.getItem('tick3d.settings') === null) localStorage.setItem('tick3d.settings', JSON.stringify({ mode: 'friend' }));
+  });
+  const page = await context.newPage();
+  await page.goto('/');
+  const lock = page.locator('#lock');
+  const tip = page.getByRole('tooltip');
+  await expect(lock).toBeEnabled();
+  await lock.scrollIntoViewIfNeeded();
+  const box = await lock.boundingBox();
+  if (box === null) throw new Error('the lock has no box');
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+
+  // A long press shows the tooltip and does not lock.
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+  await expect(tip).toContainText('no setting changes');
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect(lock).toHaveAttribute('aria-describedby', 'tip');
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+
+  // A short tap locks.
+  await page.touchscreen.tap(point.x, point.y);
+  await expect(lock).toHaveAttribute('aria-pressed', 'true');
+  await context.close();
+});
+
+test('icon buttons show their tooltip on hover', async ({ open }) => {
+  const { page } = await open(friend);
+  await page.locator('#lock').hover();
+  await expect(page.getByRole('tooltip')).toContainText('Lock: no setting changes');
+  await page.getByRole('button', { name: 'Sound set', exact: true }).hover();
+  await expect(page.getByRole('tooltip')).toContainText('Sound set');
+  await page.mouse.move(1, 1);
+  await expect(page.getByRole('tooltip')).toBeHidden();
 });

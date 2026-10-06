@@ -238,39 +238,94 @@ input::placeholder {
   font-weight: 400;
 }
 
-.actions > button,
-.toggles button,
-.lock,
-.online button,
-.join button,
-.coords button,
-.review button,
-.end-card-actions button,
-.train button:where(:not(.cell, .train-dot, .brand-links *)) {
-  padding: 0.55rem 0.85rem;
-  border-radius: 8px;
+/* Buttons. Every button and button-like link uses .btn, with at most these modifiers:
+   .btn-primary for the main action, .btn-small for a compact control, .btn-icon for an icon in a square.
+   The disabled look below and the focus ring above apply to all of them. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.6rem;
+  padding: 0.45rem 0.85rem;
   border: var(--border) solid var(--line);
+  border-radius: 8px;
   background: var(--surface);
+  color: var(--ink);
   box-shadow: 3px 3px 0 var(--shadow);
   font-weight: 700;
+  line-height: 1.15;
+  text-decoration: none;
   cursor: pointer;
   transition: translate 0.08s, box-shadow 0.08s, background 0.15s;
 }
 
-.actions > button:hover:not(:disabled),
-:is(.toggles, .online, .join, .coords, .review, .end-card-actions) button:hover:not(:disabled),
-.train button:where(:not(.cell, .train-dot, .brand-links *)):hover:not(:disabled),
-.lock:hover:not(:disabled) {
+.btn:hover:not(:disabled) {
   translate: -1px -1px;
   box-shadow: 4px 4px 0 var(--shadow);
 }
 
-.actions > button:active:not(:disabled),
-:is(.toggles, .online, .join, .coords, .review, .end-card-actions) button:active:not(:disabled),
-.train button:where(:not(.cell, .train-dot, .brand-links *)):active:not(:disabled),
-.lock:active:not(:disabled) {
+.btn:active:not(:disabled) {
   translate: 3px 3px;
   box-shadow: 0 0 0 var(--shadow);
+}
+
+.btn svg {
+  flex: none;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--on-color);
+  font-weight: 800;
+}
+
+.btn-small {
+  min-height: 2.1rem;
+  padding: 0.25rem 0.65rem;
+  border-width: 2px;
+  box-shadow: 2px 2px 0 var(--shadow);
+  font-size: 0.88rem;
+}
+
+.btn-small:hover:not(:disabled) {
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+.btn-small:active:not(:disabled) {
+  translate: 2px 2px;
+}
+
+.btn-icon {
+  width: 2.6rem;
+  padding: 0;
+}
+
+.btn-small.btn-icon {
+  width: 2.1rem;
+}
+
+/* The tooltip of an element with data-tip (src/tooltip.ts). */
+.tip {
+  position: fixed;
+  z-index: 30;
+  max-width: min(20rem, calc(100vw - 1rem));
+  padding: 0.35rem 0.6rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--surface);
+  box-shadow: 2px 2px 0 var(--shadow);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.3;
+  pointer-events: none;
+}
+
+/* A long press shows the tooltip, so the press must not select text or open the system menu. */
+[data-tip] {
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
 button:disabled,
@@ -453,12 +508,6 @@ input:disabled {
 
 .info-close {
   justify-self: end;
-  padding: 0.25rem 0.75rem;
-  border: 2px solid currentColor;
-  border-radius: 8px;
-  background: transparent;
-  font-weight: 800;
-  cursor: pointer;
 }
 
 @keyframes banner-in {
@@ -876,14 +925,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .reset-angle {
   flex: none;
-  padding: 0.35rem 0.6rem;
-  font-size: 0.85rem;
-  border-radius: 8px;
-  border: 2px solid var(--line);
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  font-weight: 700;
-  cursor: pointer;
 }
 
 /* Flat: the four layers as plain grids, in one of four layouts. */
@@ -1086,26 +1127,19 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.6rem;
 }
 
-.actions > button {
+.actions > .btn {
   flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  padding: 0.5rem 0.8rem;
 }
 
-.actions .primary {
+.actions > .btn-primary {
   flex: 1;
-  background: var(--primary);
-  color: var(--on-color);
-  font-weight: 800;
 }
 
 /* One box with two parts: the speaker turns the sound on and off, the narrow caret opens the sound sets. */
 .sound-control {
   flex: none;
   display: flex;
+  min-height: 2.6rem;
   border: var(--border) solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -1185,40 +1219,15 @@ body[data-turn='O'] .status[data-state='playing'] {
   margin-bottom: 0.5rem;
 }
 
-.sound-sets button {
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  color: inherit;
-  box-shadow: 2px 2px 0 var(--shadow);
-  font: inherit;
-  cursor: pointer;
-  transition: translate 0.08s, box-shadow 0.08s;
-}
-
-.sound-sets button:hover {
-  translate: -1px -1px;
-  box-shadow: 3px 3px 0 var(--shadow);
-}
-
-.sound-sets button:active {
-  translate: 2px 2px;
-  box-shadow: 0 0 0 var(--shadow);
-}
-
-.sound-sets-head button {
-  display: grid;
-  place-items: center;
-  width: 2.2rem;
-  height: 2.2rem;
-  padding: 0;
-}
-
+/* A set in the menu: a .btn-small that holds a name and a line of text. */
 .sound-set-choice {
   flex: 1;
   display: grid;
+  justify-content: stretch;
   gap: 0.15rem;
   padding: 0.45rem 0.6rem;
+  font-size: 1rem;
+  font-weight: 400;
   text-align: left;
 }
 
@@ -1232,10 +1241,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--on-color);
 }
 
-.sound-set-play {
-  flex: 0 0 2.8rem;
-  display: grid;
-  place-items: center;
+.btn.sound-set-play {
+  flex: none;
+  width: 2.8rem;
+  height: auto;
 }
 
 .toggles {
@@ -1245,14 +1254,14 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* Three hide options share the row of the panel, so the sides are narrow. */
-.toggles button {
+.toggles .btn {
   flex: 1;
   padding-inline: 0.5rem;
   color: var(--muted);
   font-weight: 600;
 }
 
-.toggles button[aria-pressed='true'] {
+.toggles .btn[aria-pressed='true'] {
   background: var(--toggle-on);
   color: var(--on-color);
   font-weight: 800;
@@ -1264,15 +1273,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   align-items: center;
   justify-content: space-between;
   gap: 0.6rem;
-}
-
-.lock {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.25rem 0.6rem;
-  font-size: 0.85rem;
-  box-shadow: 2px 2px 0 var(--shadow);
 }
 
 .lock svg {
@@ -1384,15 +1384,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .tuning-reset {
   margin-top: 0.8rem;
-  padding: 0.35rem 0.75rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  color: var(--ink);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
 }
 
 /* ---- Online ---- */
@@ -1410,7 +1401,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* The box keeps black lines on cyan in both themes. */
-.online button,
+.online .btn,
 .online input {
   border-color: #000;
   background: #fff;
@@ -1418,7 +1409,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   box-shadow: 3px 3px 0 #000;
 }
 
-.online button:hover:not(:disabled) {
+.online .btn:hover:not(:disabled) {
   box-shadow: 4px 4px 0 #000;
 }
 
@@ -1507,14 +1498,8 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 /* A small square icon button, like the Info button. `.coords button` gives the border, the shadow
    and the hover and press moves; this rule only makes it square and keeps the icon centered. */
-.coords .coords-hear {
-  display: grid;
+.coords-hear {
   flex: none;
-  place-items: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  padding: 0;
-  color: var(--ink);
 }
 
 /* Three read-only slots: layer, row, column. The next one to fill is highlighted. */
@@ -1578,9 +1563,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.5rem;
 }
 
-.keypad button {
-  display: inline-grid;
-  place-items: center;
+.keypad .btn {
   min-width: 2.9rem;
   min-height: 2.9rem;
   padding: 0.4rem 0.6rem;
@@ -1588,7 +1571,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 800;
 }
 
-.keypad .place {
+.keypad .btn.place {
   background: var(--win);
   color: var(--on-color);
 }
@@ -1613,11 +1596,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
-}
-
-.review-buttons button {
-  display: inline-grid;
-  place-items: center;
 }
 
 /* ---- Chat ---- */
@@ -1699,28 +1677,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .chat-form input {
   flex: 1;
-}
-
-.chat-form button {
-  padding: 0.5rem 0.9rem;
-  border-radius: 8px;
-  border: var(--border) solid var(--line);
-  background: var(--primary);
-  color: var(--on-color);
-  box-shadow: 3px 3px 0 var(--shadow);
-  font-weight: 800;
-  cursor: pointer;
-  transition: translate 0.08s, box-shadow 0.08s;
-}
-
-.chat-form button:hover:not(:disabled) {
-  translate: -1px -1px;
-  box-shadow: 4px 4px 0 var(--shadow);
-}
-
-.chat-form button:active:not(:disabled) {
-  translate: 3px 3px;
-  box-shadow: 0 0 0 var(--shadow);
 }
 
 /* A bar that slides in from the top when the other player writes. */
@@ -2087,7 +2043,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.6rem;
 }
 
-.end-card-actions button {
+.end-card-actions .btn {
   flex: 1;
   white-space: nowrap;
 }
@@ -2100,11 +2056,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   }
 }
 
-.end-card-actions .primary {
+.end-card-actions .btn-primary {
   flex: 1.5;
-  background: var(--primary);
-  color: var(--on-color);
-  font-weight: 800;
 }
 
 .home-confirm {
@@ -2289,35 +2242,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-size: 1rem;
 }
 
-.my-games-head button,
-.account button,
-.my-games-list button,
-.login-link {
-  padding: 0.35rem 0.75rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  color: var(--ink);
-  font-weight: 800;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-/* The close button of a dialog: an icon in a square. */
-.my-games-head button {
-  display: grid;
-  place-items: center;
-  width: 2.2rem;
-  height: 2.2rem;
-  padding: 0;
-}
-
-.login-link {
-  background: var(--primary);
-  color: var(--on-color);
-}
-
 .account {
   display: flex;
   flex-wrap: wrap;
@@ -2438,16 +2362,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 700;
 }
 
-.update-bar button {
-  padding: 0.35rem 0.8rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--primary);
-  color: var(--on-color);
-  font-weight: 800;
-  cursor: pointer;
-}
-
 /* ---- Nearby ---- */
 
 .nearby {
@@ -2498,20 +2412,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.5rem;
 }
 
-.nearby button {
+.nearby .btn {
   flex: 1;
-  padding: 0.5rem 0.75rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.nearby-start button:first-child {
-  background: var(--primary);
-  color: var(--on-color);
 }
 
 .nearby-step {
@@ -2588,11 +2490,9 @@ body[data-turn='O'] .status[data-state='playing'] {
   overflow-wrap: anywhere;
 }
 
-.nearby-hosts li > button {
+.nearby-hosts li > .btn {
   grid-column: 3;
   grid-row: 1 / span 2;
-  background: var(--primary);
-  color: var(--on-color);
 }
 
 .nearby-note {
@@ -2721,15 +2621,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
-.game-view button {
-  padding: 0.55rem 1.2rem;
-  border: var(--border) solid var(--line);
-  border-radius: 8px;
-  background: var(--primary);
-  box-shadow: 3px 3px 0 var(--shadow);
-  color: var(--on-color);
-  font-weight: 800;
-  cursor: pointer;
+.game-view .btn {
+  padding-inline: 1.2rem;
 }
 
 .my-games-history-actions {
@@ -2740,14 +2633,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .my-games-more {
   margin-top: 0.5rem;
-  padding: 0.35rem 0.75rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  color: var(--ink);
-  font-weight: 800;
-  cursor: pointer;
 }
 
 /* The Previews dialog (the kitshn button): one card per open pull request with a live preview. */

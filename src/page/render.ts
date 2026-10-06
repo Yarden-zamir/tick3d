@@ -267,14 +267,15 @@ export function render(): void {
   renderClocks();
   // A watcher sees the lock of the session, but the lock does not hold the watcher's own settings.
   const locked = page.session?.locked ?? false;
-  lockButton.disabled = locked || page.busy || !isLive() || page.review !== undefined || !canChangeMatch() || !bothSeated();
+  // A held lock stays enabled, so its tooltip shows on hover. A click on it changes nothing.
+  lockButton.disabled = !locked && (page.busy || !isLive() || page.review !== undefined || !canChangeMatch() || !bothSeated());
   const lockScope = shared() ? ' for both players' : '';
-  lockButton.innerHTML = locked ? `${LOCK_CLOSED_ICON}<span>Locked</span>` : `${LOCK_OPEN_ICON}<span>Lock</span>`;
-  lockButton.title = locked
-    ? `Settings are locked${lockScope} until this game ends.`
+  lockButton.dataset.tip = locked
+    ? `Locked${lockScope} until this game ends. Leaving stays possible.`
     : bothSeated()
-      ? `Lock every setting${lockScope} until this game ends.`
-      : 'A lock waits for the second player.';
+      ? `Lock${lockScope}: no setting changes (level, time limit, hide options, view) until this game ends. Leaving stays possible.`
+      : 'Lock: waits for the second player.';
+  lockButton.innerHTML = locked ? `${LOCK_CLOSED_ICON}<span>Locked</span>` : `${LOCK_OPEN_ICON}<span>Lock</span>`;
   lockButton.setAttribute('aria-pressed', String(locked));
   showAccount(page.account.user);
   soundButton.innerHTML = settings.muted ? SOUND_OFF_ICON : SOUND_ON_ICON;

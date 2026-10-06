@@ -10,14 +10,14 @@ import {
   homeConfirmStay,
   homeConfirmLeave,
 } from './dom.ts';
-import { reject, showError } from './feedback.ts';
+import { showError } from './feedback.ts';
 import { homeLink } from '../header/header.ts';
 import { previewsDialog } from '../header/previews.ts';
 import { nearbyKind, endNearby } from './nearby.ts';
 import { render } from './render.ts';
 import { leaveSession, openLocalSession, applyView } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
-import { page, isLive, current, settingsLocked } from './state.ts';
+import { page, isLive, current } from './state.ts';
 
 // What a player loses when they go home now, or undefined when there is nothing to lose.
 function homeWarning(): string | undefined {
@@ -56,8 +56,6 @@ export function setupHome(): void {
     // A modified click opens a new tab, as for any link.
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    // Home changes the mode and leaves the game, so it waits for the end of a lock, as the Opponent picker does.
-    if (settingsLocked()) return reject(undefined, 'locked');
     sounds.click();
     const warning = homeWarning();
     if (warning === undefined) return void goHome().catch(showError);

@@ -295,7 +295,7 @@ function dimensionBlock(dimension: Dimension): HTMLElement {
     const box = state === undefined ? 'new' : state.learn > 0 ? 'learn' : String(state.box + 1);
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'train-value';
+    button.className = 'btn train-value';
     button.dataset.item = item;
     button.dataset.box = box;
     // A quiz item that waits for its next card now.
@@ -313,7 +313,7 @@ function dimensionBlock(dimension: Dimension): HTMLElement {
   }
   const all = document.createElement('button');
   all.type = 'button';
-  all.className = 'train-all';
+  all.className = 'btn train-all';
   all.textContent = `Hear all four ${training.text[dimension].parts.toLowerCase()}`;
   all.addEventListener('click', () => playCells(VALUES.map((option) => withValue(card.cell, dimension, option))));
   block.append(title, bar, value, examples, all);

@@ -1,5 +1,5 @@
 /* The ear training page. It uses the theme tokens of style.css, so it follows the saved theme.
-   style.css gives the .train buttons the brutalist look, but not the board cells, the dots and the header buttons. */
+   The buttons use the .btn component of style.css. */
 .train {
   display: grid;
   gap: 1.2rem;
@@ -26,12 +26,8 @@
    on a narrow screen. */
 .train-head #sound-set {
   flex: 0 1 auto;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
   min-width: 0;
   margin-left: auto;
-  padding: 0.45rem 0.7rem;
 }
 
 .train-head #sound-set span {
@@ -80,10 +76,6 @@
 }
 
 .train .train-play {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
   min-height: 4.5rem;
   background: var(--primary);
   color: var(--on-color);
@@ -251,12 +243,6 @@
 .train-actions button {
   flex: 1;
   min-height: 3.2rem;
-}
-
-.train .primary {
-  background: var(--primary);
-  color: var(--on-color);
-  font-weight: 800;
 }
 
 .train-keys,

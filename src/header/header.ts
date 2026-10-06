@@ -5,6 +5,7 @@ import { element } from '../element.ts';
 import { api, OnlineError } from '../online.ts';
 import type { PlayerInfo } from '../protocol.ts';
 import { myGamesHref } from './my-games-link.ts';
+import { setupTooltips } from '../tooltip.ts';
 import { setupPreviews } from './previews.ts';
 
 export const homeLink = element('#home-link', HTMLAnchorElement);
@@ -23,12 +24,14 @@ export function showAccount(user: PlayerInfo | null): void {
 
 // The game page wires the account button and the wordmark itself (src/page/my-games.ts and home.ts).
 export function setupGameHeader(): void {
+  setupTooltips();
   setupPreviews();
 }
 
 // A page other than the game: the account button opens My games on the game page, and a login there
 // returns here. Offline, the button shows "My games" without the login.
 export function setupPageHeader(): void {
+  setupTooltips();
   setupPreviews();
   accountLink.href = myGamesHref(`${location.pathname}${location.search}`);
   if (!navigator.onLine) return;
