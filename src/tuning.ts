@@ -1,3 +1,5 @@
+import type { Difficulty } from './ai.ts';
+
 // Every number that shapes the computer player. The defaults are the tested levels, and the
 // advanced settings change them. Easy and medium tire during a long game, like a human player
 // under more and more load: each value moves from `fresh` to `tired` between two move counts.
@@ -181,6 +183,16 @@ export function parseTuning(value: unknown): Tuning {
 }
 
 export const isDefaultTuning = (tuning: Tuning) => TUNING_FIELDS.every((field) => field.get(tuning) === field.get(DEFAULT_TUNING));
+
+const LEVEL_GROUPS: Record<Difficulty, string> = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+
+// True when a game at `level` plays with changed settings: that level's own fields, or a field of
+// "All levels". A changed hard level does not make an easy game tuned.
+export function isTunedFor(tuning: Tuning, level: Difficulty): boolean {
+  return TUNING_FIELDS.some(
+    (field) => (field.group === LEVEL_GROUPS[level] || field.group === 'All levels') && field.get(tuning) !== field.get(DEFAULT_TUNING),
+  );
+}
 
 // True when every field holds a number inside its range. Unlike parseTuning, this never falls back
 // to a default, so an upload with a broken value is refused instead of quietly fixed.

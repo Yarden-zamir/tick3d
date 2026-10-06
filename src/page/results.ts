@@ -1,7 +1,7 @@
 // Results of games away from the server, game ids, and the survival records against the computer.
 import { type Game, type Player, other } from '../game.ts';
 import { type RecordNews, type Records, parseRecords, addLoss, mergeRecords } from '../records.ts';
-import { isDefaultTuning } from '../tuning.ts';
+import { isTunedFor } from '../tuning.ts';
 import { token, api, OnlineError } from '../online.ts';
 import {
   type Code,
@@ -33,7 +33,7 @@ export async function recordResult(open: Session, game: Game, index: number): Pr
   const you = open.mode === 'friend' ? null : open.you;
   if (open.mode !== 'friend' && you === null) return undefined;
   const id = resultIdOf(open.code, index);
-  const tuned = open.mode === 'computer' && !isDefaultTuning(computerTuning());
+  const tuned = open.mode === 'computer' && isTunedFor(computerTuning(), settings.difficulty);
   // Read the counts before the first wait: the player can start the next game meanwhile.
   const metrics = gameMetrics(open.code, index, tuned);
   const hosting = open.mode === 'nearby' && nearbyKind() === 'hosting';
@@ -155,7 +155,7 @@ export async function syncRecords(): Promise<void> {
 // A game that the computer won: the moves it lasted can beat the record of its setup.
 // The hide options count as they are at the end of the game.
 export function noteSurvival(open: Session, game: Game, index: number): void {
-  const { records, news } = addLoss(loadRecords(), { difficulty: settings.difficulty, clock: game.clock, ...open.options, tuned: !isDefaultTuning(computerTuning()) }, game.moves.length);
+  const { records, news } = addLoss(loadRecords(), { difficulty: settings.difficulty, clock: game.clock, ...open.options, tuned: isTunedFor(computerTuning(), settings.difficulty) }, game.moves.length);
   saveRecords(records);
   if (news === undefined) return;
   recordNews.set(`${open.code}:${index}`, news);
