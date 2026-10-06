@@ -14,6 +14,7 @@ import { setupSpinDrag } from '../board/spin-drag.ts';
 import { onSegmented, showSegmented } from '../board/view-controls.ts';
 import { DEFAULTS, oneOf, saveSettings, settings as gameSettings } from '../page/settings.ts';
 import { LAYOUTS, VIEWS, normalizeCode } from '../protocol.ts';
+import { readReturn } from '../return-path.ts';
 import { SOUND_SETS, type SoundSetId } from '../sound-sets.ts';
 import { setSoundSet, sounds } from '../sound.ts';
 import { isSmallRange, median, rangeFrom, type Retry, typedRange } from '../voice/calibration.ts';
@@ -85,6 +86,13 @@ type Calibration = { step: 'low' | 'high'; heard: number[]; lows: number[]; time
 
 const voice = createVoice();
 let calibration: Calibration | undefined;
+// The calibration box is open, with its own history entry, so the back button of the browser closes it.
+let calibrationOpen = false;
+// Where the close of the calibration goes: 'origin' is where the player came from (the page of the `return`
+// parameter, else the tab), 'here' stays on the tab (for example when the microphone stops).
+let closeTo: 'origin' | 'here' = 'origin';
+// The page that a link to this room asked to return to after a calibration (src/return-path.ts).
+const returnTo = readReturn(new URL(location.href));
 let tab: Tab = 'free';
 let lit: number | undefined;
 let holdDone = false;
@@ -142,7 +150,7 @@ async function startMic(): Promise<boolean> {
 function stopMic(message: string): void {
   voice.stop();
   shownLayer = undefined;
-  endCalibration();
+  closeCalibration('here');
   practice.stopped(message);
   showRailPitch(rail, null, null, 0);
   light(undefined, 0);
@@ -266,7 +274,7 @@ function light(cell: number | undefined, heldMs: number): void {
 // ---- Tabs ----
 
 function setTab(next: Tab): void {
-  if (practice.running()) return;
+  if (practice.running() || calibrationOpen) return;
   tab = next;
   for (const button of tabButtons) button.setAttribute('aria-pressed', String(button.dataset.tab === tab));
   document.body.dataset.tab = tab;
@@ -299,15 +307,38 @@ function showStep(step: Calibration['step']): void {
 async function startCalibration(): Promise<void> {
   if (practice.running()) return;
   if (!(await startMic())) return;
+  // A retry stays in the history entry of the first try.
+  if (!calibrationOpen) {
+    history.pushState({ calibration: true }, '');
+    calibrationOpen = true;
+    document.body.dataset.calibrating = '';
+  }
   calibration = { step: 'low', heard: [], lows: [], time: 0 };
   calibrateButton.disabled = true;
   showStep('low');
 }
 
-function endCalibration(): void {
+function hideCalibration(): void {
   calibration = undefined;
   calibrationEl.hidden = true;
   calibrateButton.disabled = false;
+  delete document.body.dataset.calibrating;
+}
+
+// Closes the calibration through its history entry: the popstate listener then goes to `to`. A cancel
+// changes no settings, and the entry does not stay as a trap for the back button.
+function closeCalibration(to: 'origin' | 'here'): void {
+  hideCalibration();
+  if (!calibrationOpen) return;
+  closeTo = to;
+  history.back();
+}
+
+// Back to the page of the `return` parameter. When the page before this one in the history is that page,
+// the room goes back to it, so no extra entry stays. Else the room replaces itself with it.
+function leaveToReturn(target: string): void {
+  if (document.referrer === target) history.back();
+  else location.replace(target);
 }
 
 // One clear frame of the calibration: `frequency` is its pitch, and `elapsed` the time since the frame before.
@@ -334,10 +365,10 @@ function calibrate(active: Calibration, frequency: number, elapsed: number): voi
     return;
   }
   voice.saveSettings({ ...voice.settings(), range: result });
-  calibrationEl.hidden = true;
   showRange();
   schedulePreview();
   show(`Calibrated to your voice: ${noteName(result.low)} to ${noteName(result.high)}.`);
+  closeCalibration('origin');
 }
 
 // ---- Frames ----
@@ -380,7 +411,16 @@ micButton.addEventListener('click', () => {
 });
 calibrateButton.addEventListener('click', () => void startCalibration());
 retryButton.addEventListener('click', () => void startCalibration());
-cancelButton.addEventListener('click', endCalibration);
+cancelButton.addEventListener('click', () => closeCalibration('origin'));
+// The back button of the browser, Cancel and a finished calibration all come here: the calibration entry is gone.
+addEventListener('popstate', () => {
+  if (!calibrationOpen) return;
+  calibrationOpen = false;
+  hideCalibration();
+  const to = closeTo;
+  closeTo = 'origin';
+  if (to === 'origin' && returnTo !== undefined) leaveToReturn(returnTo);
+});
 resetButton.addEventListener('click', () => {
   voice.saveSettings({ ...voice.settings(), range: null });
   showRange();

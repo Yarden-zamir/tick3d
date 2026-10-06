@@ -212,3 +212,9 @@
     animation: none;
   }
 }
+
+/* A calibration is one step on its own (main.ts): the tabs and the practice wait under it, and Cancel or the
+   back button of the browser goes back to them. */
+body[data-calibrating] :is(.voice-tabs, .practice-panel) {
+  display: none;
+}

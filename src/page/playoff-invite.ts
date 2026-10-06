@@ -2,6 +2,7 @@
 // Voice room that brings the other player along. The playoff itself runs in the Voice room (/sound-input).
 import { OnlineError, api } from '../online.ts';
 import type { SessionView } from '../protocol.ts';
+import { withReturn } from '../return-path.ts';
 import { element } from './dom.ts';
 import { showToast } from './feedback.ts';
 import { page } from './state.ts';
@@ -47,8 +48,10 @@ notNowButton.addEventListener('click', () => {
   });
 });
 
-// In a seated online game, the Voice room opens on its playoff tab for that game.
+// In a seated online game, the Voice room opens on its playoff tab for that game. The link carries this page
+// as its return, so a calibration in the Voice room comes back here.
 voiceRoomLink.addEventListener('click', () => {
   const session = page.session;
-  voiceRoomLink.href = session !== undefined && session.mode === 'online' && session.you !== null ? playoffHref(session.code) : '/sound-input';
+  const href = session !== undefined && session.mode === 'online' && session.you !== null ? playoffHref(session.code) : '/sound-input';
+  voiceRoomLink.href = withReturn(href, `${location.pathname}${location.search}`);
 });

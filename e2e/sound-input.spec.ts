@@ -157,6 +157,29 @@ test('a high sound below the low sound asks for a retry, and Cancel closes the c
   await expect(page.locator('#calibrate')).toBeEnabled();
 });
 
+test('the back button leaves a calibration on the tab of the player, with no change and no extra history entry', async ({ page }) => {
+  await oscillatorMic(page);
+  await page.goto('/sound-input?mode=echo');
+  await page.locator('#calibrate').click();
+  const calibration = page.locator('#calibration');
+  await expect(calibration).toBeVisible();
+  await expect(page.locator('#tabs')).toBeHidden();
+  await page.goBack();
+  await expect(calibration).toBeHidden();
+  await expect(page).toHaveURL(/\/sound-input\?mode=echo$/);
+  await expect(page.locator('#tabs button[data-tab="echo"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#range-mode')).toHaveText(/^Default range/);
+});
+
+test('from a link with a return, Cancel leaves the calibration back to that page', async ({ page }) => {
+  await oscillatorMic(page);
+  await page.goto(`/sound-input?${new URLSearchParams({ return: '/?from=voice' })}`);
+  await page.locator('#calibrate').click();
+  await expect(page.locator('#calibration')).toBeVisible();
+  await page.locator('#calibration-cancel').click();
+  await expect(page).toHaveURL(/\/\?from=voice$/);
+});
+
 test('the stickiness settings stay after a reload', async ({ page }) => {
   await page.goto('/sound-input');
   await page.locator('#stickiness').fill('0');
