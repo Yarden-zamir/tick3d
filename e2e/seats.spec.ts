@@ -29,6 +29,9 @@ test('players change seats, with the other player asked first, and a custom name
   // Every screen lists both seats and the watcher. A watcher sees no seat controls.
   for (const page of [alice, bob, carol]) await expect(players(page)).toHaveCount(3);
   await expect(carol.locator('#players-list button')).toHaveCount(0);
+  // The watcher sees "You" on its own row; the players do not.
+  await expect(playerRow(carol, carolName)).toContainText('You · Watching');
+  await expect(playerRow(alice, carolName)).not.toContainText('You');
 
   // Alice (X) asks to swap. Bob gets a prompt and accepts. The seats trade on all three screens.
   await playerRow(alice, 'You').getByRole('button', { name: 'Swap X and O' }).click();

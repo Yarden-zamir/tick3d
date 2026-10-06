@@ -68,6 +68,8 @@ export type SessionView = {
   names: SeatNames;
   // The devices that have the session open without a seat, as the holder of the session knows them.
   watchers: Watcher[];
+  // The watcher id of the caller, when the caller watches. Null for a player and for a caller that the holder does not see.
+  youWatcher: string | null;
   // A seat change that waits for the other player to accept, or null.
   seatRequest: SeatRequestView | null;
   // The live game (the last one in `games`), so an API client needs no rules of its own.
@@ -291,6 +293,7 @@ export function parseSessionView(value: unknown): SessionView {
   // An older server, an older Nearby host or a cached view sends no names, watchers or seat request.
   const names = value.names === undefined ? { X: null, O: null } : parseSeatNames(value.names);
   const watchers = value.watchers === undefined ? [] : Array.isArray(value.watchers) ? value.watchers.map(parseWatcher) : undefined;
+  const youWatcher = value.youWatcher === undefined || value.youWatcher === null ? null : isWatcherId(value.youWatcher) ? value.youWatcher : undefined;
   const seatRequest = value.seatRequest === undefined || value.seatRequest === null ? null : parseSeatRequestView(value.seatRequest);
   const clock = parseClock(value.clock);
   if (code === undefined) return fail('code');
@@ -313,6 +316,7 @@ export function parseSessionView(value: unknown): SessionView {
   if (names === undefined) return fail('names');
   if (watchers === undefined || !watchers.every((watcher) => watcher !== undefined)) return fail('watchers');
   if (seatRequest === undefined) return fail('seatRequest');
+  if (youWatcher === undefined) return fail('youWatcher');
   // The rules give the live status. A sender without these fields (an older server, a Nearby host
   // or a cached view) is fine. A sender with fields that disagree with the moves is not.
   const last: unknown = games.at(-1);
@@ -342,6 +346,7 @@ export function parseSessionView(value: unknown): SessionView {
     players: { X: playerX, O: playerO },
     names,
     watchers,
+    youWatcher,
     seatRequest,
     turn,
     status: live.status,

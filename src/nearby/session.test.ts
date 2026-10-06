@@ -102,6 +102,10 @@ describe('Nearby host and guest', () => {
     const [listed] = (await local.load(code)).watchers;
     expect(listed).toEqual({ id: expect.stringMatching(/^[0-9a-f]{16}$/), name: phone.name, player: null });
     expect(JSON.stringify(watching)).not.toContain(watcher);
+    // Each device sees its own watcher id only.
+    expect((await second.backend.load(code)).youWatcher).toBe(listed?.id);
+    expect((await first.backend.load(code)).youWatcher).toBeNull();
+    expect((await local.load(code)).youWatcher).toBeNull();
     // The guest on O asks to swap. The host accepts.
     expect((await first.backend.seat(code, { action: 'swap' })).seatRequest).toMatchObject({ kind: 'swap', from: 'O' });
     expect((await local.answerSeat(code, true)).you).toBe('O');

@@ -318,6 +318,7 @@ describe('seat controls', () => {
       players: { X: null, O: null },
     });
     expect(shown.watchers).toEqual([{ id: 'c0ffee0000000001', name: 'Carol', player: null }]);
+    expect(shown.youWatcher).toBeNull();
     expect(shown.seatRequest?.watcher).toEqual({ name: 'Carol', player: null });
     expect(JSON.stringify(shown)).not.toContain(CAROL);
   });

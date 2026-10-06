@@ -340,6 +340,7 @@ export function viewOf(doc: SessionDoc, { code, version, identity, now, audience
     players,
     names: { X: seatName(doc.seats.X, name), O: seatName(doc.seats.O, name) },
     watchers: watchers.map((watcher) => ({ id: watcher.id, name: name(watcher.token), player: watcher.player })),
+    youWatcher: watchers.find((watcher) => identity.has(watcher.token))?.id ?? null,
     seatRequest:
       request === null
         ? null

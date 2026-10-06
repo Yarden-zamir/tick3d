@@ -56,6 +56,7 @@ describe('parseSessionView', () => {
     players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' }, O: null },
     names: { X: 'braveOtter', O: null },
     watchers: [{ id: '0123456789abcdef', name: 'Carol', player: null }],
+    youWatcher: '0123456789abcdef',
     seatRequest: { kind: 'replace', from: 'X', watcher: { name: 'Carol', player: null }, expiresAt: 90 },
     turn: 'X',
     status: { kind: 'playing' },
@@ -76,8 +77,8 @@ describe('parseSessionView', () => {
   });
 
   it('gives no watchers and no seat request when a sender is from before seat controls', () => {
-    const { watchers: _watchers, seatRequest: _request, ...older } = valid;
-    expect(parseSessionView(older)).toMatchObject({ watchers: [], seatRequest: null });
+    const { watchers: _watchers, youWatcher: _you, seatRequest: _request, ...older } = valid;
+    expect(parseSessionView(older)).toMatchObject({ watchers: [], youWatcher: null, seatRequest: null });
   });
 
   it('fills turn and status from the moves when a sender has no such fields', () => {
@@ -112,6 +113,7 @@ describe('parseSessionView', () => {
     ['watchers', { ...valid, watchers: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Carol', player: null }] }],
     ['watchers', { ...valid, watchers: [{ id: '0123456789abcdef', name: '', player: null }] }],
     ['watchers', { ...valid, watchers: null }],
+    ['youWatcher', { ...valid, youWatcher: 'aaaaaaaa-0000-4000-8000-000000000001' }],
     ['seatRequest', { ...valid, seatRequest: { ...valid.seatRequest, kind: 'leave' } }],
     ['seatRequest', { ...valid, seatRequest: { ...valid.seatRequest, watcher: null } }],
     ['seatRequest', { ...valid, seatRequest: { kind: 'swap', from: 'X', watcher: { name: 'Carol', player: null }, expiresAt: 90 } }],

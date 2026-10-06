@@ -77,7 +77,7 @@
 - Choose Online to create a session. The page shows a 4 character code and puts it in the link (`?code=AB3K`). Link sends the link, or copies it when the device cannot share. QR code shows the link as a QR code, which a phone camera opens directly.
 - Codes use letters and digits without `0`, `O`, `1` and `I`, so a code read aloud is not ambiguous.
 - The creator plays X. The first other browser that opens the code plays O. Further browsers watch.
-- The Players box in the panel lists the X seat, the O seat and the watchers. A watcher is a browser that has the game open and holds no seat. The server shows a watcher by an id, a keyed hash of the code and the player token, so the token never leaves the server. Each row shows the name, "You" for the own seat, and "here" or "away" for a seat.
+- The Players box in the panel lists the X seat, the O seat and the watchers. A watcher is a browser that has the game open and holds no seat. The server shows a watcher by an id, a keyed hash of the code and the player token, so the token never leaves the server. Each row shows the name, "You" for the own seat or the own watcher row, and "here" or "away" for a seat.
 - Either player controls the seats. The actions and who must accept them:
 
   | Action | Button | What changes | Who accepts |

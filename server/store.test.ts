@@ -668,8 +668,18 @@ describe('seat controls', () => {
     expect(view.watchers).toEqual([{ id: expect.stringMatching(/^[0-9a-f]{16}$/), name: nameOf(carol), player: null }]);
     expect(JSON.stringify(view)).not.toContain(carol);
     expect(JSON.stringify(view)).not.toContain(alice);
-    // The id is the same for every reader, so a player can act on it.
+    // The id is the same for every reader, so a player can act on it. Only Carol sees it as her own.
     expect((await store.get(code, alice)).watchers).toEqual(view.watchers);
+    expect(view.youWatcher).toBeNull();
+    expect((await store.get(code, carol)).youWatcher).toBe(view.watchers[0]?.id);
+    // Dave watches too: each watcher gets its own id, never the id of another watcher.
+    const dave = 'eeeeeeee-0000-4000-8000-000000000005' as PlayerToken;
+    open = [alice, carol, dave];
+    const both = (await store.get(code, carol)).watchers;
+    expect(both).toHaveLength(2);
+    expect((await store.get(code, carol)).youWatcher).toBe(both[0]?.id);
+    expect((await store.get(code, dave)).youWatcher).toBe(both[1]?.id);
+    expect(both[0]?.id).not.toBe(both[1]?.id);
   });
 
   it('asks before a swap, applies it on accept, and seats a watcher without asking', async () => {

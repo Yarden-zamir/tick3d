@@ -155,7 +155,7 @@ export function renderPlayers(): void {
       actions.push(button('Give my seat', () => act({ action: 'give', watcher: watcher.id }, `${name} plays ${you} now. You watch.`)));
       if (view.seats[other(you)]) actions.push(button('Replace', () => act({ action: 'replace', watcher: watcher.id }, `${name} plays ${other(you)} now.`)));
     }
-    return row('watcher', name, 'Watching', actions);
+    return row('watcher', name, watcher.id === view.youWatcher ? 'You · Watching' : 'Watching', actions);
   });
   playersList.replaceChildren(...seatRows, ...watcherRows);
   renderRequest(view);
