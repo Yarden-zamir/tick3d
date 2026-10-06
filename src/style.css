@@ -596,7 +596,18 @@ input:disabled {
   min-width: 0;
 }
 
+/* The status sits in the header row. Below 64rem the header buttons need the row, so the status
+   takes its own line under it. A long status wraps. */
+.brand:has(> .status) {
+  flex-wrap: wrap;
+  row-gap: 0.9rem;
+}
+
 .status {
+  order: 1;
+  flex: 1 1 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 0.6rem 1.3rem;
   border: var(--border) solid var(--line);
   border-radius: 10px;
@@ -605,7 +616,16 @@ input:disabled {
   font-weight: 800;
   font-size: 1.15rem;
   text-align: center;
+  text-wrap: balance;
   transition: background 0.2s;
+}
+
+@media (min-width: 64rem) {
+  .status {
+    order: 0;
+    flex: 0 1 auto;
+    max-width: 28rem;
+  }
 }
 
 body[data-turn='X'] .status[data-state='playing'] {
