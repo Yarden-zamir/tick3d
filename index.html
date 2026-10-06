@@ -150,7 +150,7 @@
         <section class="players" id="players" aria-labelledby="players-title" data-show-mode="online nearby" data-needs-session>
           <span class="label" id="players-title">Players</span>
           <ul class="players-list" id="players-list"></ul>
-          <div class="players-request" id="players-request" hidden>
+          <div class="players-request" id="players-request" aria-live="polite" hidden>
             <p id="players-request-text"></p>
             <div class="players-request-actions" id="players-request-actions"></div>
           </div>
@@ -464,7 +464,7 @@
         <li>Time limits work like a chess clock. A player who runs out loses.</li>
         <li>Lock stops setting changes until the game ends.</li>
         <li>Online: share the code or link. Nearby: devices on the same Wi-Fi.</li>
-        <li>Players: any player manages the seats. A change that affects the other player waits until that player accepts.</li>
+        <li>Players: any player manages the seats. A change that affects the other player, and an undo, wait until that player accepts.</li>
         <li>Hover or long-press an icon to see what it does.</li>
       </ul>
       <button type="button" class="btn btn-small info-close" popovertarget="info-panel" popovertargetaction="hide">Close</button>

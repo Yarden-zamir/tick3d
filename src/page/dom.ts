@@ -122,6 +122,7 @@ export const nearbyHosts = element('#nearby-hosts', HTMLUListElement);
 export const nearbyHostsEmpty = element('#nearby-hosts-empty', HTMLParagraphElement);
 export const nearbyOffline = element('#nearby-offline', HTMLParagraphElement);
 export const nearbyVisible = element('#nearby-visible', HTMLParagraphElement);
+export const playersBox = element('#players', HTMLElement);
 export const playersList = element('#players-list', HTMLUListElement);
 export const playersRequest = element('#players-request', HTMLDivElement);
 export const playersRequestText = element('#players-request-text', HTMLParagraphElement);
