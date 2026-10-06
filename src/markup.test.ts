@@ -36,7 +36,7 @@ function block(html: string, start: string, end: string): string {
 }
 
 const GAME = '../index.html';
-const PAGES = [GAME, '../stats.html', '../sound-training.html'];
+const PAGES = [GAME, '../stats.html', '../sound-training.html', '../sound-input.html'];
 
 describe('page markup', () => {
   it('has every element id that the game page script looks up', () => {

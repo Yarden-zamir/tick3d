@@ -33,8 +33,9 @@
   opacity: 0.5;
 }
 
-/* The level meter: the fill width comes from --level (0 to 1), which main.ts sets. */
-.input-level i {
+/* The level meter and the calibration progress: the fill width comes from --level (0 to 1), which main.ts sets. */
+.input-level i,
+.input-calibration .train-bar i {
   width: calc(var(--level, 0) * 100%);
   background: var(--muted);
   transition: width 0.05s linear;
@@ -72,9 +73,70 @@
   }
 }
 
-.input-how p {
+/* One card: the Info popover of the header holds the explanation, so the page has no second column. */
+@media (min-width: 64rem) {
+  .train.input-page {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 64rem;
+  }
+}
+
+.input-intro,
+.input-mode,
+.input-hint {
   margin: 0;
+  font-weight: 600;
   line-height: 1.45;
+}
+
+.input-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+  color: var(--muted);
+}
+
+.input-hint {
+  color: var(--ink);
+}
+
+.input-mic {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 0.6rem;
+}
+
+.train .input-calibrate {
+  font-weight: 800;
+}
+
+.input-calibration {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.input-calibration p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.input-calibration[data-step='low'] .train-bar i {
+  background: var(--o);
+}
+
+.input-calibration-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.input-calibration-actions button,
+.input-mode button {
+  min-height: 2.75rem;
 }
 
 .input-actions {
@@ -93,4 +155,11 @@
 
 .input-actions button {
   min-height: 2.75rem;
+}
+
+/* A phone: the calibration button goes under the microphone button. */
+@media (max-width: 30rem) {
+  .input-mic {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

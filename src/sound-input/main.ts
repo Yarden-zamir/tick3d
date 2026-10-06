@@ -1,21 +1,34 @@
 // The sound input page (/sound-input): the pitch from the microphone lights a cell of the board, live.
-// pitch.ts finds the pitch, mapping.ts picks the cell, and the deck of the ear training draws the board.
+// pitch.ts finds the pitch, mapping.ts picks the cell, calibration.ts holds the player's own range, and the
+// deck of the ear training draws the board.
 import '../style.css';
 import '../sound-training/training.css';
 import './input.css';
+import { element } from '../element.ts';
 import { toCoords } from '../game.ts';
-import { SOUND_NAMES, sounds } from '../sound.ts';
+import { setupPageHeader } from '../header/header.ts';
+import { settings } from '../page/settings.ts';
+import { setSoundSet, sounds } from '../sound.ts';
 import { buildDeck, fitDeck } from '../sound-training/deck.ts';
-import { cellOf, noteName } from './mapping.ts';
+import { type Range, STORAGE_KEY, isSmallRange, median, parseRange, rangeFrom, storedRange } from './calibration.ts';
+import { LAYER_NAMES, cellOf, noteName } from './mapping.ts';
 import { bufferSize, detectPitch, rms } from './pitch.ts';
 
-function element<T extends HTMLElement>(selector: string, type: new () => T): T {
-  const found = document.querySelector(selector);
-  if (!(found instanceof type)) throw new Error(`sound-input.html misses ${selector}`);
-  return found;
-}
+setupPageHeader();
+// A tap on a cell plays it in the sound set of the game. The game page and the trainer change the set.
+setSoundSet(settings.soundSet);
 
 const micButton = element('#mic', HTMLButtonElement);
+const calibrateButton = element('#calibrate', HTMLButtonElement);
+const modeEl = element('#range-mode', HTMLSpanElement);
+const resetButton = element('#range-reset', HTMLButtonElement);
+const hintEl = element('#range-hint', HTMLParagraphElement);
+const calibrationEl = element('#calibration', HTMLDivElement);
+const stepEl = element('#calibration-step', HTMLParagraphElement);
+const progressEl = element('#calibration-progress', HTMLDivElement);
+const heardEl = element('#calibration-heard', HTMLParagraphElement);
+const retryButton = element('#calibration-retry', HTMLButtonElement);
+const cancelButton = element('#calibration-cancel', HTMLButtonElement);
 const readoutEl = element('#readout', HTMLDivElement);
 const frequencyEl = element('#frequency', HTMLElement);
 const noteEl = element('#note', HTMLSpanElement);
@@ -34,6 +47,10 @@ const SMOOTH_FRAMES = 5;
 const MISS_FRAMES = 6;
 // A note on one cell for this long places an X there.
 const HOLD_MS = 1000;
+// Each calibration step needs this much time with a clear pitch.
+const STEP_MS = 2000;
+// A longer gap between two frames (a slow device) counts as this much, so one gap does not end a step.
+const MAX_FRAME_MS = 100;
 
 type Listening = {
   stream: MediaStream;
@@ -41,10 +58,17 @@ type Listening = {
   analyser: AnalyserNode;
   samples: Float32Array<ArrayBuffer>;
   frame: number;
+  last: number | undefined;
 };
+
+// One calibration in progress. `heard` holds the pitches of the step now, and `lows` the pitches of the
+// low step once it is done.
+type Calibration = { step: 'low' | 'high'; heard: number[]; lows: number[]; time: number };
 
 let listening: Listening | undefined;
 let starting = false;
+let calibration: Calibration | undefined;
+let range: Range | null = loadRange();
 let recent: number[] = [];
 let misses = 0;
 let lit: number | undefined;
@@ -59,20 +83,48 @@ for (const button of deck.cells) {
   button.append(piece);
 }
 
+// A short landscape screen puts the deck beside the other card parts, as in training.css. The deck
+// fits again when a part above it shows or hides.
+const sideLayout = matchMedia('(orientation: landscape) and (max-height: 32rem)');
+const fit = (): void => fitDeck(deckEl, cardEl, sideLayout.matches);
+
+// ---- Storage ----
+
+function loadRange(): Range | null {
+  try {
+    return parseRange(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null'));
+  } catch {
+    return null;
+  }
+}
+
+function saveRange(): void {
+  try {
+    if (range === null) localStorage.removeItem(STORAGE_KEY);
+    else localStorage.setItem(STORAGE_KEY, JSON.stringify(storedRange(range)));
+  } catch {
+    // Private mode or a full storage: the range still works for this visit.
+  }
+}
+
+// ---- Display ----
+
 function show(message: string): void {
   messageEl.textContent = message;
 }
 
-function median(values: readonly number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = sorted[Math.floor(sorted.length / 2)];
-  if (middle === undefined) throw new RangeError('no values for a median');
-  return middle;
+function showRange(): void {
+  modeEl.textContent = range === null ? 'Default bands' : `Calibrated: ${Math.round(range.low)}–${Math.round(range.high)} Hz`;
+  resetButton.hidden = range === null;
+  hintEl.hidden = range === null || !isSmallRange(range);
+  fit();
 }
 
 function describeCell(cell: number): string {
   const { layer, row, column } = toCoords(cell);
-  return `Layer ${layer + 1} (${SOUND_NAMES.layer[layer as 0 | 1 | 2 | 3]}), row ${row + 1}, column ${column + 1}`;
+  // The note name of a layer holds only in the default bands.
+  const note = range === null ? ` (${LAYER_NAMES[layer as 0 | 1 | 2 | 3]})` : '';
+  return `Layer ${layer + 1}${note}, row ${row + 1}, column ${column + 1}`;
 }
 
 // `level` is the RMS of the samples. The meter shows -60 dB to 0 dB below full scale.
@@ -82,10 +134,15 @@ function showLevel(level: number): void {
   levelEl.style.setProperty('--level', String(share));
 }
 
+function showProgress(share: number): void {
+  progressEl.setAttribute('aria-valuenow', String(Math.round(share * 100)));
+  progressEl.style.setProperty('--level', String(share));
+}
+
 // Lights `cell` and lets the light of the cell before fade (input.css). undefined puts the light out.
 function light(cell: number | undefined, now: number): void {
   if (cell === lit) {
-    if (cell !== undefined && holdBox.checked && !holdDone && now - litSince >= HOLD_MS) {
+    if (cell !== undefined && holdBox.checked && calibration === undefined && !holdDone && now - litSince >= HOLD_MS) {
       holdDone = true;
       deck.cells[cell]?.classList.add('x');
     }
@@ -107,9 +164,79 @@ function light(cell: number | undefined, now: number): void {
   }
 }
 
+// ---- Calibration ----
+
+const STEP_TEXT = {
+  low: 'Step 1 of 2: make your lowest comfortable sound, and hold it.',
+  high: 'Step 2 of 2: now make your highest comfortable sound, and hold it.',
+} as const;
+
+function showStep(step: Calibration['step']): void {
+  calibrationEl.hidden = false;
+  calibrationEl.dataset.step = step;
+  stepEl.textContent = STEP_TEXT[step];
+  heardEl.textContent = 'Waiting for a clear sound…';
+  progressEl.hidden = false;
+  retryButton.hidden = true;
+  showProgress(0);
+  fit();
+}
+
+async function startCalibration(): Promise<void> {
+  if (listening === undefined) await start();
+  // The microphone did not start: start() shows why.
+  if (listening === undefined) return;
+  calibration = { step: 'low', heard: [], lows: [], time: 0 };
+  calibrateButton.disabled = true;
+  showStep('low');
+}
+
+function endCalibration(): void {
+  calibration = undefined;
+  calibrationEl.hidden = true;
+  calibrateButton.disabled = false;
+  fit();
+}
+
+// One clear frame of the calibration: `frequency` is its pitch, and `elapsed` the time since the frame before.
+function calibrate(active: Calibration, frequency: number, elapsed: number): void {
+  active.heard.push(frequency);
+  active.time += elapsed;
+  const typical = median(active.heard);
+  heardEl.textContent = `${noteName(typical)} · ${Math.round(typical)} Hz`;
+  showProgress(Math.min(1, active.time / STEP_MS));
+  if (active.time < STEP_MS) return;
+  if (active.step === 'low') {
+    calibration = { step: 'high', heard: [], lows: active.heard, time: 0 };
+    showStep('high');
+    return;
+  }
+  const result = rangeFrom(active.lows, active.heard);
+  calibration = undefined;
+  calibrateButton.disabled = false;
+  if (result === null) {
+    calibrationEl.dataset.step = 'retry';
+    stepEl.textContent = 'Your high sound was not above your low sound. Try again, with a bigger gap between the two.';
+    progressEl.hidden = true;
+    retryButton.hidden = false;
+    fit();
+    return;
+  }
+  range = result;
+  saveRange();
+  showRange();
+  calibrationEl.hidden = true;
+  fit();
+  show(`Calibrated to your voice: ${noteName(result.low)} to ${noteName(result.high)}.`);
+}
+
+// ---- Microphone ----
+
 function listen(now: number): void {
   if (listening === undefined) return;
   const { analyser, samples, context } = listening;
+  const elapsed = listening.last === undefined ? 0 : Math.min(MAX_FRAME_MS, now - listening.last);
+  listening.last = now;
   analyser.getFloatTimeDomainData(samples);
   showLevel(rms(samples));
   const pitch = detectPitch(samples, context.sampleRate);
@@ -127,7 +254,8 @@ function listen(now: number): void {
     readoutEl.dataset.state = 'heard';
     frequencyEl.textContent = `${Math.round(frequency)} Hz`;
     noteEl.textContent = noteName(frequency);
-    light(cellOf(frequency), now);
+    light(cellOf(frequency, range), now);
+    if (calibration !== undefined) calibrate(calibration, pitch.frequency, elapsed);
   }
   listening.frame = requestAnimationFrame(listen);
 }
@@ -184,7 +312,7 @@ async function start(): Promise<void> {
   analyser.fftSize = bufferSize(context.sampleRate);
   context.createMediaStreamSource(stream).connect(analyser);
   for (const track of stream.getTracks()) track.addEventListener('ended', () => stop('The microphone stopped. Turn it on again to go on.'));
-  listening = { stream, context, analyser, samples: new Float32Array(analyser.fftSize), frame: requestAnimationFrame(listen) };
+  listening = { stream, context, analyser, samples: new Float32Array(analyser.fftSize), frame: requestAnimationFrame(listen), last: undefined };
   micButton.textContent = 'Stop';
   micButton.setAttribute('aria-pressed', 'true');
   readoutEl.dataset.state = 'listening';
@@ -197,6 +325,7 @@ function stop(message = ''): void {
   for (const track of listening.stream.getTracks()) track.stop();
   void listening.context.close();
   listening = undefined;
+  endCalibration();
   recent = [];
   misses = 0;
   light(undefined, 0);
@@ -207,9 +336,20 @@ function stop(message = ''): void {
   show(message);
 }
 
+// ---- Events ----
+
 micButton.addEventListener('click', () => {
   if (listening === undefined) void start();
   else stop();
+});
+calibrateButton.addEventListener('click', () => void startCalibration());
+retryButton.addEventListener('click', () => void startCalibration());
+cancelButton.addEventListener('click', endCalibration);
+resetButton.addEventListener('click', () => {
+  range = null;
+  saveRange();
+  showRange();
+  show('Back to the default bands.');
 });
 clearButton.addEventListener('click', () => {
   for (const button of deck.cells) button.classList.remove('x');
@@ -222,11 +362,8 @@ document.addEventListener('visibilitychange', () => {
 });
 addEventListener('pagehide', () => stop());
 
-// A short landscape screen puts the deck beside the other card parts, as in training.css.
-const sideLayout = matchMedia('(orientation: landscape) and (max-height: 32rem)');
-const fit = (): void => fitDeck(deckEl, cardEl, sideLayout.matches);
 addEventListener('resize', fit);
 sideLayout.addEventListener('change', fit);
-fit();
+showRange();
 // The web font changes the height of the text above the deck, so fit again once it is in.
 void document.fonts.ready.then(fit);

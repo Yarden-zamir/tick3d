@@ -22,15 +22,58 @@
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <main class="train">
+    <main class="train input-page">
       <header class="brand train-head">
-        <h1><a href="/" class="home-link">tick<span>3d</span></a> sound input</h1>
+        <h1><a href="/" class="home-link" id="home-link" title="Home">tick<span>3d</span></a></h1>
+        <p class="page-title">Sound input</p>
+        <div class="brand-links">
+          <a class="repo-link account-button" id="account-button" href="/?open=my-games" aria-label="My games">
+            <!-- [html-validate-disable-next element-required-attributes: the page sets src after login] -->
+            <img class="avatar" id="account-avatar" alt="" hidden />
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0V4ZM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 13v3M8 20h8l-1-4H9l-1 4Z"/></svg>
+            <span id="account-name">My games</span>
+          </a>
+          <button type="button" class="info-button" id="info-button" popovertarget="info-panel" aria-label="Info" title="Info">
+            <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+              <circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" stroke-width="1.6" />
+              <circle cx="8" cy="4.9" r="1.05" fill="currentColor" />
+              <path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+            </svg>
+          </button>
+          <button type="button" class="repo-link" id="previews-button" aria-haspopup="dialog" aria-label="Previews of open pull requests">
+            <!-- The KitSHn pot, drawn inline so that it works offline. -->
+            <svg viewBox="0 0 14 14" width="18" height="18" fill="currentColor" aria-hidden="true"><rect x="6" y="1.2" width="2" height="1.6" rx="0.5"/><rect x="2.2" y="3.4" width="9.6" height="1.5" rx="0.75"/><rect x="3" y="5.6" width="8" height="6.6" rx="1.6"/><rect x="0.8" y="6.8" width="2.4" height="1.4" rx="0.7"/><rect x="10.8" y="6.8" width="2.4" height="1.4" rx="0.7"/></svg>
+            <span>kitshn</span>
+          </button>
+          <a class="repo-link" href="https://github.com/Yarden-zamir/tick3d" target="_blank" rel="noopener" aria-label="GitHub">
+            <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+              <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+            </svg>
+            <span>GitHub</span>
+          </a>
+        </div>
       </header>
 
       <section class="train-card" id="card" aria-label="Sound input">
-        <p class="train-kind">Just for fun</p>
-        <h2>Whistle, hum or sing to the board</h2>
-        <button type="button" class="train-play" id="mic">Turn on the microphone</button>
+        <p class="input-intro">Turn on the microphone, then whistle, hum or sing. Your pitch lights a cell. Info explains the board.</p>
+        <div class="input-mic">
+          <button type="button" class="train-play" id="mic">Turn on the microphone</button>
+          <button type="button" class="input-calibrate" id="calibrate">Calibrate to your voice</button>
+        </div>
+        <p class="input-mode">
+          <span id="range-mode">Default bands</span>
+          <button type="button" id="range-reset" hidden>Reset to default</button>
+        </p>
+        <p class="input-hint" id="range-hint" hidden>Your range is small: rows sit close together.</p>
+        <div class="input-calibration" id="calibration" hidden>
+          <p class="input-step" id="calibration-step" aria-live="polite"></p>
+          <div class="train-bar" id="calibration-progress" role="meter" aria-label="Calibration step: time with a clear sound" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+          <p id="calibration-heard"></p>
+          <div class="input-calibration-actions">
+            <button type="button" class="primary" id="calibration-retry" hidden>Retry</button>
+            <button type="button" id="calibration-cancel">Cancel</button>
+          </div>
+        </div>
         <div class="input-readout" id="readout" data-state="off">
           <p><span class="input-label">Pitch</span> <b id="frequency">–</b> <span id="note"></span></p>
           <p><b id="cell">No cell yet</b></p>
@@ -46,19 +89,28 @@
           <button type="button" id="clear">Clear the marks</button>
         </div>
       </section>
-
-      <section class="train-progress input-how" aria-labelledby="how-title">
-        <h2 id="how-title">How it works</h2>
-        <p class="train-intro">
-          The note picks the layer: C, D, E or G, the pitches of the game's layers. A slide up moves the light right along the
-          columns and on to the next layer. A higher octave lights a higher row, so whistle for the top rows and hum for the bottom
-          rows.
-        </p>
-        <p class="train-intro">Tap a cell to hear the game's sound for it. Headphones keep that sound out of the microphone.</p>
-        <p class="train-intro">The sound stays on your device: the page reads the microphone in the browser and sends nothing.</p>
-        <p class="train-intro"><a href="/sound-training">Train your ear</a> to learn the cell sounds of the game.</p>
-      </section>
     </main>
+    <dialog class="end-card my-games" id="previews" aria-labelledby="previews-title">
+      <div class="my-games-head">
+        <h2 id="previews-title">Previews</h2>
+        <button type="button" id="previews-close" aria-label="Close">✕</button>
+      </div>
+      <p class="my-games-note" id="previews-note"></p>
+      <ul class="my-games-list previews-list" id="previews-list"></ul>
+    </dialog>
+    <div class="info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
+      <h2 id="info-title">How sound input works</h2>
+      <p>The page listens to the microphone and finds the pitch of a steady sound: a whistle, a hum or a sung note. The sound stays in this browser.</p>
+      <ul>
+        <li>Default bands: the note picks the layer, the nearest of C, D, E and G, the notes of the game's layers. The place inside that note picks the column: a slide up moves the light right, then on to the next layer. The octave picks the row: a whistle above 905 Hz lights row 1, and a hum below 226 Hz lights row 4.</li>
+        <li>Calibrate to your voice: make your lowest comfortable sound for 2 seconds, then your highest. Only clear frames count. Then the four rows split your range in equal musical steps, the highest row on top.</li>
+        <li>Calibrated, a slide up across a row sweeps all 16 cells, from layer 1, column 1 to layer 4, column 4. The note names do not pick the layer then, because a row of your range is seldom one octave. A sound outside your range lights the nearest edge.</li>
+        <li>This browser keeps your range. Reset to default goes back to the default bands.</li>
+        <li>Hold a note on one cell for 1 second to place an X. Tap a cell to hear it in the sound set of the game. Headphones keep that sound out of the microphone.</li>
+        <li><a href="/sound-training">Train your ear</a> to learn the cell sounds of the game.</li>
+      </ul>
+      <button type="button" class="info-close" popovertarget="info-panel" popovertargetaction="hide">Close</button>
+    </div>
     <script type="module" src="/src/sound-input/main.ts"></script>
   </body>
 </html>
