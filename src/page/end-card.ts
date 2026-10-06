@@ -2,7 +2,7 @@
 import { type CardInput, drawCard, shareImage, saveImage } from '../card.ts';
 import { formatClock, describeClock } from '../clock.ts';
 import { type Game, other, winnerOf } from '../game.ts';
-import { isDefaultTuning } from '../tuning.ts';
+import { isTunedFor } from '../tuning.ts';
 import { sounds } from '../sound.ts';
 import { computerTuning } from './advanced.ts';
 import {
@@ -117,7 +117,7 @@ function cardInput(game: Game, index: number, gameId: GameId | undefined): CardI
       : game.status.kind === 'timeout'
         ? `${playerName(other(game.status.winner))} ran out of time after ${game.moves.length} moves`
         : 'The cube is full. Nobody got four in a row.';
-  const level = `${settings.difficulty.charAt(0).toUpperCase()}${settings.difficulty.slice(1)}${isDefaultTuning(computerTuning()) ? '' : ' (tuned)'}`;
+  const level = `${settings.difficulty.charAt(0).toUpperCase()}${settings.difficulty.slice(1)}${isTunedFor(computerTuning(), settings.difficulty) ? ' (tuned)' : ''}`;
   const matchup =
     page.session?.mode === 'computer'
       ? `vs Computer · ${level} · You played ${page.session.you ?? settings.human}`

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TUNING, TUNING_FIELDS, feelAt, isDefaultTuning, isTuning, parseTuning } from './tuning.ts';
+import { DEFAULT_TUNING, TUNING_FIELDS, feelAt, isDefaultTuning, isTunedFor, isTuning, parseTuning } from './tuning.ts';
 
 describe('tiring', () => {
   it('stays fresh until tireFrom, is fully tired from tireTo, and moves steadily between', () => {
@@ -50,5 +50,17 @@ describe('isTuning', () => {
     expect(isTuning({ ...DEFAULT_TUNING, easy: undefined })).toBe(false);
     expect(isTuning({ ...DEFAULT_TUNING, strongCellBonus: '3' })).toBe(false);
     expect(isTuning(null)).toBe(false);
+  });
+});
+
+describe('tuned per level', () => {
+  it('counts a game as tuned only for the level whose settings changed, or for a change to all levels', () => {
+    const hard = { ...DEFAULT_TUNING, hard: { ...DEFAULT_TUNING.hard, budgetMs: 300 } };
+    expect(isTunedFor(hard, 'hard')).toBe(true);
+    expect(isTunedFor(hard, 'easy')).toBe(false);
+    expect(isTunedFor(hard, 'medium')).toBe(false);
+    const all = { ...DEFAULT_TUNING, strongCellBonus: DEFAULT_TUNING.strongCellBonus + 1 };
+    for (const level of ['easy', 'medium', 'hard'] as const) expect(isTunedFor(all, level)).toBe(true);
+    for (const level of ['easy', 'medium', 'hard'] as const) expect(isTunedFor(DEFAULT_TUNING, level)).toBe(false);
   });
 });
