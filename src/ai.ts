@@ -290,3 +290,5 @@ export function chooseMove(
     }
   }
 }
+
+export const unusedOnPurpose = 1;
