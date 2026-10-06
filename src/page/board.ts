@@ -1,7 +1,8 @@
-// The board: its cells and sheets, the tower camera, and the drag that turns the tower.
+// The board: its cells and sheets, the tower camera, and the drag in the stage that turns the tower.
 import { SIZE, toCell, CELL_COUNT, toCoords } from '../game.ts';
 import { sounds } from '../sound.ts';
-import { boardEl, resetAngleButton } from './dom.ts';
+import { boardEl, resetAngleButton, stageEl } from './dom.ts';
+import { startsDrag } from './drag.ts';
 import { humanMove } from './sessions.ts';
 import { settings, DEFAULTS, wrapSpin, saveSettings } from './settings.ts';
 
@@ -76,7 +77,7 @@ function endDrag(event: PointerEvent): void {
     // A click follows pointerup in the same task, or not at all. Either way the flag ends here.
     swallowClick = event.type === 'pointerup';
     setTimeout(() => (swallowClick = false));
-    delete boardEl.dataset.dragging;
+    delete stageEl.dataset.dragging;
     applyCamera();
     saveSettings();
   }
@@ -120,21 +121,22 @@ export function setupBoard(): void {
   }
   if (cells.length !== CELL_COUNT) throw new Error('board build is incomplete');
 
-  boardEl.addEventListener('pointerdown', (event) => {
-    if (settings.view !== 'tower' || !event.isPrimary || event.button !== 0) return;
+  // A drag starts anywhere in the stage, so the player does not have to hit the narrow tower.
+  stageEl.addEventListener('pointerdown', (event) => {
+    if (settings.view !== 'tower' || boardEl.hidden || !event.isPrimary || event.button !== 0 || !startsDrag(event.target)) return;
     drag = { pointer: event.pointerId, x: event.clientX, spin: settings.spin, moved: false };
   });
 
-  boardEl.addEventListener('pointermove', (event) => {
+  stageEl.addEventListener('pointermove', (event) => {
     if (drag === undefined || event.pointerId !== drag.pointer) return;
-    // The button came up outside the board, where pointerup does not reach it.
+    // The button came up outside the stage, where pointerup does not reach it.
     if (event.buttons === 0) return endDrag(event);
     const dx = event.clientX - drag.x;
     if (!drag.moved) {
       if (Math.abs(dx) < DRAG_THRESHOLD) return;
       drag.moved = true;
-      boardEl.dataset.dragging = '';
-      boardEl.setPointerCapture(event.pointerId);
+      stageEl.dataset.dragging = '';
+      stageEl.setPointerCapture(event.pointerId);
       highlightColumn(undefined);
     }
     settings.spin = wrapSpin(drag.spin + dx * DRAG_SPIN);
@@ -147,11 +149,11 @@ export function setupBoard(): void {
     }
   });
 
-  boardEl.addEventListener('pointerup', endDrag);
+  stageEl.addEventListener('pointerup', endDrag);
   // The browser takes over a touch that turns into a vertical scroll.
-  boardEl.addEventListener('pointercancel', endDrag);
+  stageEl.addEventListener('pointercancel', endDrag);
 
-  boardEl.addEventListener(
+  stageEl.addEventListener(
     'click',
     (event) => {
       if (!swallowClick) return;

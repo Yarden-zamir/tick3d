@@ -23,6 +23,7 @@
     "@types/pngjs": "^6.0.5",
     "ajv": "^8.20.0",
     "fake-indexeddb": "^6.2.5",
+    "happy-dom": "^20.14.5",
     "html-validate": "^11.16.2",
     "jsqr": "^1.4.0",
     "knip": "^6.39.0",
