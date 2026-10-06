@@ -197,7 +197,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     if (page.account.loginAvailable && navigator.onLine) {
       text.append(' Log in with GitHub to use your GitHub name.');
       const login = document.createElement('a');
-      login.className = 'btn btn-small btn-primary';
+      login.className = 'btn btn-small btn-primary login-link';
       login.href = api.loginUrl(returnTo);
       login.textContent = 'Log in with GitHub';
       accountBox.append(login);

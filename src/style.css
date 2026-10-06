@@ -1136,10 +1136,12 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* One box with two parts: the speaker turns the sound on and off, the narrow caret opens the sound sets. */
+/* margin-left: auto keeps the control at the right end when it is alone in the row (Nearby before a game). */
 .sound-control {
   flex: none;
   display: flex;
   min-height: 2.6rem;
+  margin-left: auto;
   border: var(--border) solid var(--line);
   border-radius: 8px;
   background: var(--surface);
