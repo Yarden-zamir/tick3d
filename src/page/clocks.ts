@@ -95,7 +95,11 @@ const limitEditors: Record<LimitKind, ReturnType<typeof limitControls>> = {
 
 export function renderClockEditor(frozen: boolean): void {
   const next = nextClock();
-  const disabled = frozen || page.busy || !canChangeMatch();
+  // A computer or friend game opens a session as the page starts, and that session's stored limit
+  // replaces a change made before it opened. So the editor waits until the session is there.
+  // Online and Nearby without a game stay open: there the limit applies to the next game made.
+  const loading = page.session === undefined && (settings.mode === 'computer' || settings.mode === 'friend');
+  const disabled = frozen || page.busy || loading || !canChangeMatch();
   for (const kind of ['perGame', 'perMove'] as const) {
     const { on, value, options, custom, presets } = limitEditors[kind];
     const seconds = next[kind];
