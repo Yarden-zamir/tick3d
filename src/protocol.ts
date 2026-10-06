@@ -115,9 +115,13 @@ export function normalizeChat(input: unknown): string | undefined {
 
 const TOKEN_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789-';
 
+// The server keeps a seat that a logged-in player takes under the account, with this prefix and the
+// GitHub id (server/store.ts). A GitHub id is public, so no client may send such a token as its own.
+export const ACCOUNT_TOKEN_PREFIX = 'account-';
+
 // A token is a crypto.randomUUID() kept in the browser. It proves which seat a browser holds.
 export function asPlayerToken(input: unknown): PlayerToken | undefined {
-  if (typeof input !== 'string' || input.length < 16 || input.length > 64) return undefined;
+  if (typeof input !== 'string' || input.length < 16 || input.length > 64 || input.startsWith(ACCOUNT_TOKEN_PREFIX)) return undefined;
   return [...input].every((char) => TOKEN_CHARS.includes(char)) ? (input as PlayerToken) : undefined;
 }
 
