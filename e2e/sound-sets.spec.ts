@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { SOUND_SET_IDS } from '../src/sound-sets.ts';
 import { cell, expect, test } from './fixtures.ts';
 
 // Runs in the page before the app: every oscillator frequency that the page sets goes into a log.
@@ -44,7 +45,7 @@ test('the sound set menu picks a set, keeps it after a reload, and the moves use
   await page.getByRole('button', { name: 'Sound set', exact: true }).click();
   const menu = page.locator('#sound-sets');
   await expect(menu).toBeVisible();
-  await expect(menu.locator('.sound-set-play')).toHaveCount(12);
+  await expect(menu.locator('.sound-set-play')).toHaveCount(SOUND_SET_IDS.length);
   await expect(menu.locator('[data-sound-set="cells"]')).toHaveAttribute('aria-pressed', 'true');
 
   // A demo button plays four moves.
