@@ -1,5 +1,5 @@
 # Weekly update PRs. Minor and patch updates come grouped, so one PR covers most weeks.
-# Dependabot PRs get no deploy secrets, so they skip the preview (kitshn.yml) and run the check workflow only.
+# Dependabot PRs get no deploy secrets: in kitshn.yml they run the check job and skip the preview deploy.
 version: 2
 updates:
   - package-ecosystem: npm
