@@ -3,7 +3,8 @@
 This repository deploys tick3d to `tick3d.yarden-zamir.com` with KitSHn.
 
 - A push to `main` deploys `prod`. A pull request deploys to `pr.<number>.tick3d.yarden-zamir.com`.
-- The `Dockerfile` has three stages. The `build` stage runs the linters, the tests and the build. A lint finding or a failed test stops the deploy.
+- The workflow runs a `check` job first: the type check, the linters, the unit tests and the build. A failure stops the run before any deploy, so a lint or test error shows in about half a minute, not deep in the image build. A PR teardown skips the check.
+- The `Dockerfile` has three stages. The `build` stage only builds the page (`vite build`). The checks run in the workflow's `check` job before the deploy, not in the image.
 - The `site` service (`caddy:2.11-alpine`) serves `dist/` and listens on the KitSHn Unix socket (`container/Caddyfile`). The host Caddy routes the hostname to that socket (`Caddyfile.j2`).
 - The `api` service (`node:26-alpine`) serves `/api/*` for online play. The `site` Caddy proxies `/api/*` to `api:8080`. The API keeps sessions in DuckDB at `/data/tick3d.duckdb` on the `sessions` volume.
 - Each environment has its own `sessions` volume, so a pull request preview never touches production sessions.

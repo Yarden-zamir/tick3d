@@ -12,8 +12,34 @@ permissions:
   deployments: write
 
 jobs:
+  # The type check, the linters, the unit tests and the build run first, in about half a minute.
+  # A failure stops the run before a deploy starts. A teardown of a closed PR needs no check, and a
+  # push to a branch other than main deploys nothing, so their check is skipped.
+  check:
+    if: >-
+      (github.event_name == 'pull_request' && github.event.action != 'closed') ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || '' }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+
   call:
-    # Dependabot runs get no deploy secrets, so their deploy would fail. check.yml covers their PRs.
-    if: github.actor != 'dependabot[bot]'
+    needs: check
+    # Deploy only after a passing check, or when the check does not apply (teardown, other branches).
+    # Dependabot runs get no deploy secrets, so their deploy would fail; the check still runs for them.
+    if: >-
+      always() &&
+      (needs.check.result == 'success' || needs.check.result == 'skipped') &&
+      github.actor != 'dependabot[bot]'
     uses: Yarden-zamir/kitshn/.github/workflows/deploy.yml@main
     secrets: inherit
