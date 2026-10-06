@@ -13,6 +13,7 @@ import {
   parseMoveRequest,
   parsePublicGame,
   parseNewSession,
+  parsePreviews,
   parseResultUpload,
   parseSessionUpdate,
   parseSessionView,
@@ -52,6 +53,7 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   NearbyAnnounced: parseAnnounced,
   NearbyHosts: parseLobbyHosts,
   NearbyAnswer: parseAnswerRequest,
+  Previews: parsePreviews,
 };
 
 function parses(name: SchemaName, value: unknown): boolean {

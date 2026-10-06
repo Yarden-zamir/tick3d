@@ -2672,3 +2672,94 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 800;
   cursor: pointer;
 }
+
+/* The Previews dialog (the kitshn button): one card per open pull request with a live preview. */
+.previews-list .preview {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.6rem 0.7rem;
+}
+
+.previews-list .preview.here {
+  border-width: 3px;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+/* Two classes, so the flex rows win over the grid of `.my-games-list li > div`. */
+.previews-list .preview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.preview-head b {
+  flex: 1 1 12rem;
+  overflow-wrap: anywhere;
+}
+
+.preview p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.previews-list .preview-people,
+.previews-list .preview-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+}
+
+.preview-people a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* Two classes, so the small round avatar wins over `.end-card img`. */
+.preview-people .avatar {
+  width: 1.4rem;
+  height: 1.4rem;
+  max-height: none;
+  border-radius: 50%;
+}
+
+.preview-people a:hover {
+  text-decoration: underline;
+}
+
+.preview-foot small {
+  flex: 1 1 auto;
+  color: var(--muted);
+}
+
+.preview-foot a {
+  padding: 0.3rem 0.65rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 2px 2px 0 var(--shadow);
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.preview-foot a:first-of-type {
+  background: var(--primary);
+  color: var(--on-color);
+}
+
+/* Narrow phones: the time takes its own row, so both links stay together on the next row. */
+@media (max-width: 30rem) {
+  .preview-foot small {
+    flex-basis: 100%;
+  }
+}

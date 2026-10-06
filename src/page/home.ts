@@ -4,6 +4,7 @@ import { scheduleComputer } from './computer.ts';
 import {
   cardDialog,
   myGamesDialog,
+  previewsDialog,
   homeConfirm,
   burstEl,
   homeLink,
@@ -30,7 +31,7 @@ function homeWarning(): string | undefined {
 // Home is the first visit: an empty board against the computer, with no game code in the address.
 // The theme, the view and the other settings stay.
 async function goHome(): Promise<void> {
-  for (const dialog of [cardDialog, myGamesDialog, homeConfirm]) if (dialog.open) dialog.close();
+  for (const dialog of [cardDialog, myGamesDialog, previewsDialog, homeConfirm]) if (dialog.open) dialog.close();
   if (nearbyKind() !== 'idle') endNearby();
   leaveSession();
   history.replaceState(null, '', location.pathname);

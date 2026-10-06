@@ -19,6 +19,7 @@ import { setupHome } from './page/home.ts';
 import { setupKeypad } from './page/keypad.ts';
 import { setupReports } from './page/metrics.ts';
 import { refreshAccount, setupMyGames } from './page/my-games.ts';
+import { setupPreviews } from './page/previews.ts';
 import { openNearbyLink, openNearby, setupNearby } from './page/nearby.ts';
 import { checkLanHost, setupOnlineBox } from './page/online-box.ts';
 import { render } from './page/render.ts';
@@ -35,6 +36,7 @@ setupBoard();
 setupControls();
 setupNearby();
 setupMyGames();
+setupPreviews();
 
 setupPwa({
   onNeedRefresh(reload) {

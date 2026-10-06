@@ -11,6 +11,7 @@ import {
   type MyGames,
   type PlayerInfo,
   type PlayerToken,
+  type Previews,
   type PublicGame,
   RESULTS_PER_UPLOAD,
   type ResultUpload,
@@ -20,6 +21,7 @@ import {
   parseGameId,
   parseHistoryPage,
   parsePlayerInfo,
+  parsePreviews,
   parsePublicGame,
   parseSessionView,
 } from './protocol.ts';
@@ -126,6 +128,7 @@ export const api = {
 
   me: async () => parseMe(await call('GET', '/me')),
   myGames: async () => parseMyGames(await call('GET', '/me/games')),
+  previews: async (): Promise<Previews> => parsePreviews(await call('GET', '/previews')),
   logout: () => call('POST', '/auth/logout'),
   // Login is a full page visit to GitHub and back to this page.
   loginUrl: () => `/api/auth/login?return=${encodeURIComponent(location.href)}`,

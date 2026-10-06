@@ -704,3 +704,53 @@ export function outcomeOf(winner: Player | null, you: Player | null): Outcome {
   if (you === null) return 'played';
   return winner === null ? 'drawn' : winner === you ? 'won' : 'lost';
 }
+
+// ---- Previews ----
+
+// GET /api/previews: the open pull requests with a live preview (server/previews.ts).
+export type Contributor = PlayerInfo & { url: string };
+export type Preview = {
+  number: number;
+  title: string;
+  // The first paragraph of the pull request body as plain text.
+  description: string;
+  // The pull request on GitHub.
+  url: string;
+  previewUrl: string;
+  updatedAt: number;
+  draft: boolean;
+  // The author of the pull request and the commit authors, most commits first.
+  contributors: Contributor[];
+};
+// `error` says why the list is empty or old. null when the list is fresh.
+export type Previews = { previews: Preview[]; error: string | null };
+export const PREVIEW_DESCRIPTION_LENGTH = 280;
+
+function parseContributor(value: unknown): Contributor | undefined {
+  const info = parsePlayerInfo(value);
+  if (info === undefined || !isRecord(value) || value.url !== `https://github.com/${info.login}`) return undefined;
+  return { ...info, url: value.url };
+}
+
+function parsePreview(value: unknown): Preview | undefined {
+  if (!isRecord(value)) return undefined;
+  const { number, title, description, url, previewUrl, updatedAt, draft, contributors } = value;
+  if (typeof number !== 'number' || !Number.isInteger(number) || number < 1) return undefined;
+  if (typeof title !== 'string' || typeof description !== 'string' || description.length > PREVIEW_DESCRIPTION_LENGTH) return undefined;
+  // The page puts both addresses in links, so each must go to the expected kind of site.
+  if (typeof url !== 'string' || !url.startsWith('https://github.com/')) return undefined;
+  if (typeof previewUrl !== 'string' || !previewUrl.startsWith(`https://pr.${number}.`)) return undefined;
+  if (typeof updatedAt !== 'number' || !Number.isFinite(updatedAt) || typeof draft !== 'boolean' || !Array.isArray(contributors)) return undefined;
+  const people = contributors.map(parseContributor);
+  if (!people.every((person) => person !== undefined)) return undefined;
+  return { number, title, description, url, previewUrl, updatedAt, draft, contributors: people };
+}
+
+export function parsePreviews(value: unknown): Previews {
+  if (!isRecord(value) || !Array.isArray(value.previews) || !(value.error === null || typeof value.error === 'string')) {
+    throw new Error('invalid answer from /api/previews');
+  }
+  const previews = value.previews.map(parsePreview);
+  if (!previews.every((preview) => preview !== undefined)) throw new Error('invalid preview from /api/previews');
+  return { previews, error: value.error };
+}
