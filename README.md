@@ -88,7 +88,7 @@ The docs of the tick3d HTTP API come from one file, `server/api-docs.ts`:
 
 ## Offline play
 
-- After the first visit, the game opens without a network: a service worker keeps the page, the fonts and the icons. "Offline ready" shows in the header, and the game is installable on a phone.
+- After the first visit, the game opens without a network: a service worker keeps the page, the fonts and the icons. The game is installable on a phone.
 - Computer and friend games run on the device and are stored in its IndexedDB. Every played session stays on the device, with no limit. A session with no move goes away 9 hours after its last change, when the game next starts. A reload or a restart continues the game.
 - An online game this device saw before opens read-only without a network, as last seen.
 - When a computer, friend or Nearby game ends and the network is up, the device sends the result to the server. Results from games played offline go along with it. A result has an id from the device, so the server stores it once.

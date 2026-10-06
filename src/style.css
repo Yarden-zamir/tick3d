@@ -2078,16 +2078,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   object-fit: cover;
 }
 
-.offline-badge {
-  padding: 0.2rem 0.55rem;
-  border: 2px solid var(--line);
-  border-radius: 6px;
-  background: var(--win);
-  color: var(--on-color);
-  font-size: 0.8rem;
-  font-weight: 800;
-}
-
 .my-games {
   width: min(94vw, 34rem);
 }
