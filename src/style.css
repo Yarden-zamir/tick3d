@@ -603,9 +603,11 @@ input:disabled {
   row-gap: 0.9rem;
 }
 
-/* The header buttons stay at the right, also when they wrap under the wordmark. */
-.brand:has(> .status) > .brand-links {
-  margin-left: auto;
+/* Below 64rem the header buttons stay at the right, also when they wrap under the wordmark. */
+@media (width < 64rem) {
+  .brand:has(> .status) > .brand-links {
+    margin-left: auto;
+  }
 }
 
 .status {
