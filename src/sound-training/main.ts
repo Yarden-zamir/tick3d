@@ -4,8 +4,9 @@ import '../style.css';
 import './training.css';
 import { toCell, toCoords } from '../game.ts';
 import { setSoundSet, sounds } from '../sound.ts';
-import { SOUND_SETS } from '../sound-sets.ts';
+import { SOUND_SETS, type SoundSetId } from '../sound-sets.ts';
 import { settings } from '../page/settings.ts';
+import { setupSoundSets } from '../page/sound-set.ts';
 import { buildDeck, fitDeck, paint } from './deck.ts';
 import {
   type Asked,
@@ -54,20 +55,26 @@ const resetButton = element('#reset', HTMLButtonElement);
 const resetDialog = element('#reset-confirm', HTMLDialogElement);
 const resetYes = element('#reset-yes', HTMLButtonElement);
 const resetNo = element('#reset-no', HTMLButtonElement);
+const setList = element('#sound-set-list', HTMLDivElement);
+const setName = element('#sound-set-name', HTMLSpanElement);
 
-// The trainer uses the sound set of the game. Classic does not name every cell, so the trainer uses Cells then.
-const trainingId = settings.soundSet === 'classic' ? 'cells' : settings.soundSet;
-const parts = SOUND_SETS[trainingId].parts;
-if (parts === undefined) throw new Error(`the ${trainingId} sound set does not name its parts`);
-setSoundSet(trainingId);
-const SOUND_NAMES: Record<Dimension, readonly string[]> = { layer: parts.layer.names, row: parts.row.names, column: parts.column.names };
-
+// The words of a sound set for each part of a cell. Classic does not name every cell, so the trainer uses Cells then.
 // `part` is the set's own word for what the coordinate changes, for example "pitch" or "vowel".
-const TEXT: Record<Dimension, { name: string; part: string; parts: string }> = {
-  layer: { name: 'Layer', part: parts.layer.hint, parts: 'Layer sounds' },
-  row: { name: 'Row', part: parts.row.hint, parts: 'Row sounds' },
-  column: { name: 'Column', part: parts.column.hint, parts: 'Column sounds' },
-};
+function trainingOf(chosen: SoundSetId) {
+  const id = chosen === 'classic' ? 'cells' : chosen;
+  const parts = SOUND_SETS[id].parts;
+  if (parts === undefined) throw new Error(`the ${id} sound set does not name its parts`);
+  const names: Record<Dimension, readonly string[]> = { layer: parts.layer.names, row: parts.row.names, column: parts.column.names };
+  const text: Record<Dimension, { name: string; part: string; parts: string }> = {
+    layer: { name: 'Layer', part: parts.layer.hint, parts: 'Layer sounds' },
+    row: { name: 'Row', part: parts.row.hint, parts: 'Row sounds' },
+    column: { name: 'Column', part: parts.column.hint, parts: 'Column sounds' },
+  };
+  return { chosen, id, names, text };
+}
+
+// The menu (setupSoundSets at the end of this file) changes it.
+let training = trainingOf(settings.soundSet);
 
 // ---- Storage ----
 
@@ -131,7 +138,7 @@ function describe(cell: number, strong: Dimension | undefined): HTMLElement[] {
   const coords = toCoords(cell);
   return DIMENSIONS.flatMap((dimension, index) => {
     const part = document.createElement(dimension === strong ? 'strong' : 'span');
-    part.textContent = `${SOUND_NAMES[dimension][coords[dimension]]} = ${TEXT[dimension].name.toLowerCase()} ${coords[dimension] + 1}`;
+    part.textContent = `${training.names[dimension][coords[dimension]]} = ${training.text[dimension].name.toLowerCase()} ${coords[dimension] + 1}`;
     if (index === 0) return [part];
     const separator = document.createElement('span');
     separator.textContent = ' · ';
@@ -179,13 +186,13 @@ function renderCard(): void {
     const { dimension, value } = splitItem(card.item);
     const views = progress.items[card.item]?.learn;
     kindEl.textContent = views === undefined ? 'New sound' : 'Learn it again';
-    titleEl.textContent = `${TEXT[dimension].name} ${value + 1} is ${SOUND_NAMES[dimension][value]}`;
+    titleEl.textContent = `${training.text[dimension].name} ${value + 1} is ${training.names[dimension][value]}`;
     answerEl.replaceChildren(...describe(card.cell, dimension));
   } else {
     kindEl.textContent = card.kind === 'full' ? 'Full cell' : 'Quiz';
     if (card.kind === 'full') titleEl.textContent = 'Which cell? Tap it.';
     else {
-      const { name, part } = TEXT[splitItem(card.item).dimension];
+      const { name, part } = training.text[splitItem(card.item).dimension];
       titleEl.textContent = `Which ${name.toLowerCase()}? (${part}) Tap any cell in it.`;
     }
     answerEl.replaceChildren();
@@ -204,7 +211,7 @@ function describeArea(cell: number): string {
   const kind = askedOf(card);
   const coords = toCoords(cell);
   if (kind === 'cell') return `layer ${coords.layer + 1}, row ${coords.row + 1}, column ${coords.column + 1}`;
-  return `${TEXT[kind].name.toLowerCase()} ${coords[kind] + 1} (${SOUND_NAMES[kind][coords[kind]]})`;
+  return `${training.text[kind].name.toLowerCase()} ${coords[kind] + 1} (${training.names[kind][coords[kind]]})`;
 }
 
 function tap(cell: number): void {
@@ -229,9 +236,9 @@ function check(): void {
   save();
   checked = true;
   const lines = dimensions.map((dimension) => {
-    const name = TEXT[dimension].name;
-    const truth = `${actual[dimension] + 1}, ${SOUND_NAMES[dimension][actual[dimension]]}`;
-    return right(dimension) ? `${name}: right (${truth}).` : `${name}: wrong. You picked ${guess[dimension] + 1}, ${SOUND_NAMES[dimension][guess[dimension]]}. It is ${truth}.`;
+    const name = training.text[dimension].name;
+    const truth = `${actual[dimension] + 1}, ${training.names[dimension][actual[dimension]]}`;
+    return right(dimension) ? `${name}: right (${truth}).` : `${name}: wrong. You picked ${guess[dimension] + 1}, ${training.names[dimension][guess[dimension]]}. It is ${truth}.`;
   });
   feedbackEl.textContent = lines.join(' ');
   feedbackEl.classList.toggle('all-right', dimensions.every(right));
@@ -265,13 +272,13 @@ function dimensionBlock(dimension: Dimension): HTMLElement {
   const block = document.createElement('section');
   block.className = 'train-dimension';
   const title = document.createElement('h3');
-  title.textContent = `${TEXT[dimension].parts}: ${TEXT[dimension].part}`;
+  title.textContent = `${training.text[dimension].parts}: ${training.text[dimension].part}`;
   const share = accuracy(progress, dimension);
   const answers = progress.recent[dimension].length;
   const bar = document.createElement('div');
   bar.className = 'train-bar';
   bar.setAttribute('role', 'meter');
-  bar.setAttribute('aria-label', `${TEXT[dimension].parts}: right answers`);
+  bar.setAttribute('aria-label', `${training.text[dimension].parts}: right answers`);
   bar.setAttribute('aria-valuemin', '0');
   bar.setAttribute('aria-valuemax', '100');
   bar.setAttribute('aria-valuenow', String(Math.round((share ?? 0) * 100)));
@@ -297,9 +304,9 @@ function dimensionBlock(dimension: Dimension): HTMLElement {
     const due = state !== undefined && state.learn === 0 && state.due <= progress.turn;
     button.dataset.due = String(due);
     const level = box === 'new' ? 'new' : box === 'learn' ? 'in learn' : `box ${box} of ${BOX_COUNT}${due ? ', due now' : ''}`;
-    button.setAttribute('aria-label', `Play ${TEXT[dimension].name.toLowerCase()} ${option + 1}, ${SOUND_NAMES[dimension][option]}: ${level}`);
+    button.setAttribute('aria-label', `Play ${training.text[dimension].name.toLowerCase()} ${option + 1}, ${training.names[dimension][option]}: ${level}`);
     const label = document.createElement('b');
-    label.textContent = `${option + 1} ${SOUND_NAMES[dimension][option]}`;
+    label.textContent = `${option + 1} ${training.names[dimension][option]}`;
     const meter = document.createElement('small');
     meter.textContent = box === 'new' ? 'new' : box === 'learn' ? 'learn' : `${'●'.repeat(Number(box))}${'○'.repeat(BOX_COUNT - Number(box))}${due ? '\ndue' : ''}`;
     button.append(label, meter);
@@ -309,7 +316,7 @@ function dimensionBlock(dimension: Dimension): HTMLElement {
   const all = document.createElement('button');
   all.type = 'button';
   all.className = 'train-all';
-  all.textContent = `Hear all four ${TEXT[dimension].parts.toLowerCase()}`;
+  all.textContent = `Hear all four ${training.text[dimension].parts.toLowerCase()}`;
   all.addEventListener('click', () => playCells(VALUES.map((option) => withValue(card.cell, dimension, option))));
   block.append(title, bar, value, examples, all);
   return block;
@@ -320,11 +327,11 @@ function renderProgress(): void {
   const weak = weakest(progress);
   const weakShare = weak === undefined ? undefined : accuracy(progress, weak);
   if (weak === undefined || weakShare === undefined) hintEl.textContent = 'Answer a few quiz cards, and this shows what you hear well.';
-  else if (weakShare < 0.8) hintEl.textContent = `${TEXT[weak].parts} need practice: compare them below. They come more often now.`;
+  else if (weakShare < 0.8) hintEl.textContent = `${training.text[weak].parts} need practice: compare them below. They come more often now.`;
   else hintEl.textContent = 'You hear all three parts well. Full cells come more often now.';
   const seen = ITEMS.filter((item) => progress.items[item] !== undefined).length;
   const inQuiz = ITEMS.filter((item) => progress.items[item]?.learn === 0).length;
-  totalsEl.textContent = `${progress.turn} cards done · ${seen} of ${ITEMS.length} sounds seen · ${inQuiz} in the quiz · ${SOUND_SETS[trainingId].name} sound set`;
+  totalsEl.textContent = `${progress.turn} cards done · ${seen} of ${ITEMS.length} sounds seen · ${inQuiz} in the quiz · ${SOUND_SETS[training.id].name} sound set${training.chosen === 'classic' ? ': Classic does not name cells, so the trainer uses Cells' : ''}`;
 }
 
 // ---- Events ----
@@ -386,7 +393,14 @@ document.addEventListener('keydown', (event) => {
 addEventListener('resize', fit);
 sideLayout.addEventListener('change', fit);
 
-renderCard();
-renderProgress();
+// The first call draws the first card. Progress is the same for all sets.
+setupSoundSets(setList, (id) => {
+  training = trainingOf(id);
+  setSoundSet(training.id);
+  setName.textContent = SOUND_SETS[id].name;
+  // A checked card keeps its feedback until Next. A new render of it would allow a second check.
+  if (!checked) renderCard();
+  renderProgress();
+});
 // The web font changes the height of the text above the deck, so fit again once it is in.
 void document.fonts.ready.then(fit);
