@@ -2634,3 +2634,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   background: var(--primary);
   color: var(--on-color);
 }
+
+/* Narrow phones: the time takes its own row, so both links stay together on the next row. */
+@media (max-width: 30rem) {
+  .preview-foot small {
+    flex-basis: 100%;
+  }
+}
