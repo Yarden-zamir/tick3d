@@ -6,7 +6,7 @@
 import { type GameId, parseGameId } from '../protocol.ts';
 import type { Channel } from './peer.ts';
 
-const RPC_METHODS = ['get', 'join', 'move', 'newGame', 'update', 'lock', 'chat'] as const;
+const RPC_METHODS = ['get', 'join', 'move', 'newGame', 'update', 'lock', 'chat', 'seat', 'answerSeat'] as const;
 export type RpcMethod = (typeof RPC_METHODS)[number];
 
 type GuestMessage = { t: 'call'; id: number; method: RpcMethod; args: unknown };

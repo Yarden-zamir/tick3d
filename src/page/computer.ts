@@ -5,10 +5,11 @@ import { createSearch } from '../move-search.ts';
 import { sounds } from '../sound.ts';
 import { computerTuning } from './advanced.ts';
 import { showError, reject } from './feedback.ts';
+import { requestUndo } from './players.ts';
 import { render } from './render.ts';
 import { applyView, withBusy } from './sessions.ts';
 import { settings } from './settings.ts';
-import { page, isLive, current, settingsLocked } from './state.ts';
+import { page, isLive, current, settingsLocked, shared } from './state.ts';
 
 const COMPUTER_DELAY_MS = 450;
 
@@ -69,6 +70,8 @@ export function scheduleComputer(): void {
 }
 
 export function undoMove(): void {
+  // With another device, the other player must accept an undo.
+  if (shared()) return requestUndo();
   const backend = page.local;
   if (page.session === undefined || backend === undefined || (page.session.mode !== 'computer' && page.session.mode !== 'friend')) return;
   if (page.thinking || page.review || !isLive() || current().moves.length === 0) return;

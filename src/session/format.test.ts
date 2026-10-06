@@ -30,7 +30,16 @@ describe('parseDoc', () => {
       options: { hideBoard: false, hideHistory: false, hideCoordinates: false },
       lockedGame: null,
       clock: { perMove: null, perGame: null },
+      seatRequest: null,
     });
+  });
+
+  it('reads a seat request, and a stored document from before seat controls as having none', () => {
+    expect(parseDoc(formatOne).seatRequest).toBeNull();
+    const request = { kind: 'replace', from: 'X', watcher: 'cccccccc-0000-4000-8000-000000000003', at: 5 };
+    expect(parseDoc({ ...(formatOne as object), seatRequest: request }).seatRequest).toEqual(request);
+    expect(() => parseDoc({ ...(formatOne as object), seatRequest: { ...request, kind: 'leave' } })).toThrow(FormatError);
+    expect(() => parseDoc({ ...(formatOne as object), seatRequest: { ...request, watcher: null } })).toThrow(FormatError);
   });
 
   it('runs the upgrade steps in order up to the current format', () => {

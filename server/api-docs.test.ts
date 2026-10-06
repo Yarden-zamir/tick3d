@@ -17,6 +17,9 @@ import {
   parseResultUpload,
   parseSessionUpdate,
   parseSessionView,
+  parseCustomName,
+  parseSeatAction,
+  parseSeatAnswer,
 } from '../src/protocol.ts';
 import { PATH_PARAMS, ROUTES, ROUTE_NAMES, type Route, SCHEMAS, type SchemaName, matchRoute, splitRoute } from './api-docs.ts';
 import { curlOf, openApi, swaggerHtml } from './api-docs-render.ts';
@@ -54,6 +57,10 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   NearbyHosts: parseLobbyHosts,
   NearbyAnswer: parseAnswerRequest,
   Previews: parsePreviews,
+  SeatAction: parseSeatAction,
+  SeatAnswer: parseSeatAnswer,
+  // server/main.ts reads `name` and checks it with parseCustomName.
+  NameRequest: (value) => (isRecord(value) ? parseCustomName(value.name) : undefined),
 };
 
 function parses(name: SchemaName, value: unknown): boolean {
@@ -119,8 +126,9 @@ describe('the SessionView schema', () => {
   });
 
   it('marks a field required when parseSessionView needs it', () => {
-    // An older server, a Nearby host or a cached view sends no turn, status and names, so the parser fills them in.
-    const filled = ['turn', 'status', 'names'];
+    // An older server, a Nearby host or a cached view sends no turn, status, names, watchers and seat
+    // request, so the parser fills them in.
+    const filled = ['turn', 'status', 'names', 'watchers', 'youWatcher', 'seatRequest'];
     for (const key of SCHEMAS.SessionView.required ?? []) {
       expect(parses('SessionView', without(example, key)), key).toBe(filled.includes(key));
     }

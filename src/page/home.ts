@@ -5,6 +5,7 @@ import {
   cardDialog,
   myGamesDialog,
   homeConfirm,
+  seatPrompt,
   burstEl,
   homeConfirmText,
   homeConfirmStay,
@@ -31,7 +32,7 @@ function homeWarning(): string | undefined {
 // Home is the first visit: an empty board against the computer, with no game code in the address.
 // The theme, the view and the other settings stay.
 async function goHome(): Promise<void> {
-  for (const dialog of [cardDialog, myGamesDialog, previewsDialog, homeConfirm]) if (dialog.open) dialog.close();
+  for (const dialog of [cardDialog, myGamesDialog, previewsDialog, homeConfirm, seatPrompt]) if (dialog.open) dialog.close();
   if (nearbyKind() !== 'idle') endNearby();
   leaveSession();
   history.replaceState(null, '', location.pathname);

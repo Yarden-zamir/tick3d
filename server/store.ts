@@ -1,8 +1,9 @@
-import { randomInt } from 'node:crypto';
+import { createHmac, randomBytes, randomInt } from 'node:crypto';
 import { type DuckDBValue, DuckDBInstance, listValue } from '@duckdb/node-api';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { NO_LIMIT, type TimeControl } from '../src/clock.ts';
 import { type LineKind, type Player, lineKind, other, winnerOf } from '../src/game.ts';
+import { nameOf } from '../src/names.ts';
 import {
   ACCOUNT_TOKEN_PREFIX,
   CODE_ALPHABET,
@@ -21,6 +22,7 @@ import {
   type PlayerToken,
   type PublicGame,
   type ResultUpload,
+  type SeatAction,
   SESSION_MODES,
   type SessionMode,
   type SessionSummary,
@@ -28,6 +30,7 @@ import {
   type SessionView,
   type Stats,
   type Tally,
+  WATCHER_ID_LENGTH,
   isGameRecord,
   parseMatchOptions,
   newGameId,
@@ -114,6 +117,13 @@ const SCHEMA = [
      metrics VARIANT NOT NULL,
      received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
      PRIMARY KEY (public_id, seat)
+   )`,
+  // The names that players without a GitHub login chose (parseCustomName in src/protocol.ts).
+  // A player without a row shows with the generated name of the token (src/names.ts).
+  `CREATE TABLE IF NOT EXISTS player_names (
+     token VARCHAR PRIMARY KEY,
+     name VARCHAR NOT NULL,
+     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
 ];
 
@@ -228,8 +238,8 @@ const SEAT_ACCOUNT_COLUMNS = 'ux.login AS x_login, ux.avatar AS x_avatar, uo.log
 
 type StoreOptions = {
   now?: () => number;
-  // Which seats of a session have it open now. The HTTP layer knows; tests pass nothing.
-  presence?: (code: Code) => Record<Player, boolean>;
+  // The player tokens that have a session open now. The HTTP layer knows; tests pass nothing.
+  open?: (code: Code) => readonly PlayerToken[];
   // Runs after every write to a session, also a write during a read (a timeout, a format upgrade).
   // The HTTP layer tells the open pages of the session to fetch it again.
   onChange?: (code: Code) => void;
@@ -237,8 +247,13 @@ type StoreOptions = {
 
 export async function openStore(
   path: string,
-  { now = Date.now, presence = () => ({ X: false, O: false }), onChange = () => undefined }: StoreOptions = {},
+  { now = Date.now, open = () => [], onChange = () => undefined }: StoreOptions = {},
 ) {
+  // Watcher ids hide the token behind a keyed hash. The key lives in this process only, so the ids
+  // change on a restart. That is fine: pages read the list again with every change.
+  const watcherKey = randomBytes(32);
+  const watcherId = (code: Code, token: string) =>
+    createHmac('sha256', watcherKey).update(`${code}:${token}`).digest('hex').slice(0, WATCHER_ID_LENGTH);
   // The API container is small, so cap memory and threads below DuckDB's defaults (80% of RAM, all cores).
   // A new file defaults to the v1.0 storage format for old readers, but VARIANT needs v1.5 storage.
   const instance = await DuckDBInstance.create(path, {
@@ -374,11 +389,13 @@ export async function openStore(
   async function identityOf(token: PlayerToken | undefined): Promise<core.Identity> {
     if (token === undefined) return new Set();
     const linked = await rows(
-      `FROM player_tokens SELECT token
+      `FROM player_tokens SELECT token, github_id
        WHERE github_id = (FROM player_tokens SELECT github_id WHERE token = $token)`,
       { token },
     );
-    return new Set([token, ...linked.map((row) => String(row.token))]);
+    // The account token counts also before its own row exists (an account that linked before account seats).
+    const account = linked[0] === undefined ? [] : [accountToken(linked[0].github_id as number | bigint)];
+    return new Set([token, ...account, ...linked.map((row) => String(row.token))]);
   }
 
   async function playersOf(doc: SessionDoc): Promise<Record<Player, PlayerInfo | null>> {
@@ -396,23 +413,70 @@ export async function openStore(
     return { X: info(doc.seats.X), O: info(doc.seats.O) };
   }
 
+  // The display name of each token: the custom name (player_names), else the generated name.
+  // A GitHub login goes before both, through `players` or `player` in the view.
+  async function namesOf(tokens: readonly (string | null)[]): Promise<core.NameOf> {
+    const known = [...new Set(tokens.filter((token): token is string => token !== null && token !== core.COMPUTER_TOKEN))];
+    const found = known.length === 0 ? [] : await rows('FROM player_names SELECT token, name WHERE list_contains($tokens, token)', { tokens: listValue(known) });
+    const custom = new Map(found.map((row) => [String(row.token), String(row.name)]));
+    return (token) => custom.get(token) ?? nameOf(token);
+  }
+
+  // Who has the session open: the present seats, and the watchers. A token whose account holds a
+  // seat on another device counts for that seat. Two devices of one account watch as one watcher.
+  async function audience(code: Code, doc: SessionDoc): Promise<core.Audience> {
+    const tokens = [...new Set(open(code))];
+    const linked =
+      tokens.length === 0
+        ? []
+        : await rows(
+            `FROM player_tokens a JOIN player_tokens b USING (github_id) JOIN users u USING (github_id)
+             SELECT a.token AS token, b.token AS linked, u.github_id, u.login, u.avatar WHERE list_contains($tokens, a.token)`,
+            { tokens: listValue(tokens) },
+          );
+    const presence = { X: false, O: false };
+    const watchers: core.OpenWatcher[] = [];
+    const logins = new Set<string>();
+    for (const token of tokens) {
+      const own = linked.filter((row) => row.token === token);
+      const seats = core.seatsOf(doc, new Set([token, ...own.map((row) => String(row.linked))]));
+      for (const seat of seats) presence[seat] = true;
+      if (seats.length > 0) continue;
+      const player = accountOf(own[0]?.login ?? null, own[0]?.avatar ?? null);
+      if (player !== null && logins.has(player.login)) continue;
+      if (player !== null) logins.add(player.login);
+      // A logged-in watcher takes a seat for the account, like a join. The id stays from the device token.
+      const githubId = own[0]?.github_id as number | bigint | undefined;
+      watchers.push({ id: watcherId(code, token), token: githubId === undefined ? token : accountToken(githubId), player });
+    }
+    const name = await namesOf([doc.seats.X, doc.seats.O, doc.seatRequest?.watcher ?? null, ...watchers.map((watcher) => watcher.token)]);
+    return { presence, watchers, name };
+  }
+
   async function view(row: Row, identity: core.Identity): Promise<SessionView> {
     return core.viewOf(row.doc, {
       code: row.code,
       version: row.version,
       identity,
       now: now(),
-      presence: presence(row.code),
+      audience: await audience(row.code, row.doc),
       players: await playersOf(row.doc),
     });
   }
 
+  type Rule = (doc: SessionDoc, identity: core.Identity, watchers: readonly core.OpenWatcher[]) => SessionDoc;
+
   // Loads, applies one rule of the core, saves when it changed something, and returns the caller's view.
-  function change(code: Code, token: PlayerToken, rule: (doc: SessionDoc, identity: core.Identity) => SessionDoc) {
+  function change(code: Code, token: PlayerToken, rule: Rule) {
     return serialized(async () => {
       const row = await load(code);
       const identity = await identityOf(token);
-      const doc = rule(row.doc, identity);
+      const { watchers } = await audience(code, row.doc);
+      // A rule can seat a logged-in watcher by its account token, so its row must exist first.
+      for (const watcher of watchers) {
+        if (watcher.token.startsWith(ACCOUNT_TOKEN_PREFIX)) await ensureAccountRow(BigInt(watcher.token.slice(ACCOUNT_TOKEN_PREFIX.length)));
+      }
+      const doc = rule(row.doc, identity, watchers);
       return view(doc === row.doc ? row : await save(row, doc), identity);
     });
   }
@@ -447,9 +511,14 @@ export async function openStore(
       tuned: false,
       computer: null,
       players: await playersOf(row.doc),
-      names: { X: core.seatName(row.doc.seats.X), O: core.seatName(row.doc.seats.O) },
+      names: await seatNames(row.doc.seats.X, row.doc.seats.O),
       finishedAt: game.times.at(-1) ?? now(),
     });
+  }
+
+  async function seatNames(x: string | null, o: string | null): Promise<Record<Player, string | null>> {
+    const name = await namesOf([x, o]);
+    return { X: core.seatName(x, name), O: core.seatName(o, name) };
   }
 
   let statsCache: Stats | undefined;
@@ -475,10 +544,6 @@ export async function openStore(
     get: (code: Code, token: PlayerToken | undefined): Promise<SessionView> =>
       serialized(async () => view(await load(code), await identityOf(token))),
 
-    // The seats a token holds in a session, for presence. Empty for a watcher.
-    seatsOf: (code: Code, token: PlayerToken): Promise<Player[]> =>
-      serialized(async () => core.seatsOf((await loadRaw(code)).doc, await identityOf(token))),
-
     join: async (code: Code, token: PlayerToken) => {
       const seatToken = await serialized(() => seatTokenOf(token));
       return change(code, token, (doc, identity) => core.join(doc, identity, seatToken));
@@ -491,6 +556,34 @@ export async function openStore(
     lock: (code: Code, token: PlayerToken) => change(code, token, core.lock),
     chat: (code: Code, token: PlayerToken, text: unknown) =>
       change(code, token, (doc, identity) => core.chat(doc, identity, text, now())),
+    seat: (code: Code, token: PlayerToken, action: SeatAction) =>
+      change(code, token, (doc, identity, watchers) => core.seat(doc, identity, action, watchers, now())),
+    answerSeat: (code: Code, token: PlayerToken, accept: boolean) =>
+      change(code, token, (doc, identity, watchers) => core.answerSeat(doc, identity, accept, watchers, now())),
+
+    // The custom name of a player without a GitHub login, or null. `name` passed parseCustomName.
+    customName: (token: PlayerToken): Promise<string | null> =>
+      serialized(async () => {
+        const [row] = await rows('FROM player_names SELECT name WHERE token = $token', { token });
+        return row === undefined ? null : String(row.name);
+      }),
+    // Refuses a name that equals a known GitHub login, so nobody can pose as a logged-in player.
+    // Limit: a GitHub account that logs in later with the same login does not rename the player.
+    // Revisit this if two players with one name confuse people in practice.
+    setName: (token: PlayerToken, name: string): Promise<void> =>
+      serialized(async () => {
+        const [clash] = await rows('FROM users SELECT login WHERE lower(login) = lower($name)', { name });
+        if (clash !== undefined) throw new SessionError(409, 'That name is a GitHub login. Choose another name.');
+        await db.run(
+          `INSERT INTO player_names (token, name) VALUES ($token, $name)
+           ON CONFLICT (token) DO UPDATE SET name = excluded.name, updated_at = now()`,
+          { token, name },
+        );
+      }),
+    clearName: (token: PlayerToken): Promise<void> =>
+      serialized(async () => {
+        await db.run('DELETE FROM player_names WHERE token = $token', { token });
+      }),
 
     // Links this browser to a GitHub account, and refreshes the account's name and picture.
     linkToken: (token: PlayerToken, user: GitHubUser): Promise<void> =>
@@ -597,7 +690,7 @@ export async function openStore(
           tuned: stored.tuned,
           computer: stored.mode === 'computer' && stored.you !== null ? other(stored.you) : null,
           players: { X: accountOf(row.x_login, row.x_avatar), O: accountOf(row.o_login, row.o_avatar) },
-          names: { X: core.seatName(tokenOf(row.token_x)), O: core.seatName(tokenOf(row.token_o)) },
+          names: await seatNames(tokenOf(row.token_x), tokenOf(row.token_o)),
           finishedAt: Number(row.finished),
         });
       }),
@@ -623,6 +716,7 @@ export async function openStore(
            LIMIT $limit OFFSET $offset`,
           { tokens, limit: HISTORY_PAGE_SIZE + 1, offset },
         );
+        const name = await namesOf(found.flatMap((row) => [tokenOf(row.token_x), tokenOf(row.token_o)]));
         const games = found.slice(0, HISTORY_PAGE_SIZE).map((row): HistoryEntry => {
           // A friend game holds this player on both seats.
           const you: Player | null = row.mine_x === true && row.mine_o === true ? null : row.mine_x === true ? 'X' : 'O';
@@ -637,7 +731,7 @@ export async function openStore(
             result: outcomeOf(winner, you),
             moves: Number(row.moves),
             opponent: you === 'X' ? accountOf(row.o_login, row.o_avatar) : you === 'O' ? accountOf(row.x_login, row.x_avatar) : null,
-            opponentName: you === 'X' ? core.seatName(tokenOf(row.token_o)) : you === 'O' ? core.seatName(tokenOf(row.token_x)) : null,
+            opponentName: you === 'X' ? core.seatName(tokenOf(row.token_o), name) : you === 'O' ? core.seatName(tokenOf(row.token_x), name) : null,
             finishedAt: Number(row.finished),
           };
         });
@@ -751,7 +845,7 @@ export async function openStore(
             games: doc.games.filter((record) => record.moves.length > 0).length,
             you,
             opponent: (await playersOf(doc))[other(you)],
-            opponentName: core.seatName(doc.seats[other(you)]),
+            opponentName: core.seatName(doc.seats[other(you)], await namesOf([doc.seats[other(you)]])),
             yourTurn: live.status.kind === 'playing' && live.turn === you && doc.seats[other(you)] !== null,
             updatedAt: Number(row.updated),
           });
@@ -798,8 +892,9 @@ export async function openStore(
         for (const row of old) {
           if (typeof row.code !== 'string' || typeof row.doc !== 'string') throw new Error('unexpected session row shape');
           const code = row.code as Code;
-          const live = presence(code);
-          if (live.X || live.O || !core.isEmptySession(parseDoc(JSON.parse(row.doc)))) continue;
+          const doc = parseDoc(JSON.parse(row.doc));
+          const live = (await audience(code, doc)).presence;
+          if (live.X || live.O || !core.isEmptySession(doc)) continue;
           await db.run('DELETE FROM sessions WHERE code = $code', { code });
           deleted.push(code);
         }

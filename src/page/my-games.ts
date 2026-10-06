@@ -1,7 +1,7 @@
 // The account button and the My games dialog.
 import { winnerOf } from '../game.ts';
 import { nameOf } from '../names.ts';
-import { api, OnlineError, token } from '../online.ts';
+import { type Me, api, OnlineError, token } from '../online.ts';
 import {
   type GameId,
   HISTORY_PAGE_SIZE,
@@ -10,7 +10,10 @@ import {
   type SessionMode,
   type SessionSummary,
   type Tally,
+  CUSTOM_NAME_MAX_LENGTH,
+  CUSTOM_NAME_MIN_LENGTH,
   outcomeOf,
+  parseCustomName,
   toGame,
 } from '../protocol.ts';
 import { accountLink } from '../header/header.ts';
@@ -38,8 +41,8 @@ import { startReview } from './controls.ts';
 import { openCard } from './end-card.ts';
 import { render, resultText } from './render.ts';
 import { deleteSentResults, flushResults, forgetRecords, syncRecords } from './results.ts';
-import { openDeviceSession, joinSession } from './sessions.ts';
-import { page, current, settingsLocked } from './state.ts';
+import { openDeviceSession, joinSession, refresh } from './sessions.ts';
+import { ownName, page, current, saveAccount, settingsLocked } from './state.ts';
 
 function tallyBox(label: string, tally: Tally): HTMLElement {
   const box = document.createElement('div');
@@ -188,12 +191,13 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     logout.addEventListener('click', () => void logOut().then(() => myGamesDialog.close(), showError));
     accountBox.append(avatar, name, logout);
   } else {
-    // The same generated name that the server shows to the other players (src/names.ts).
+    // The same name that the server shows to the other players: the custom name, else the generated one (src/names.ts).
     const text = document.createElement('span');
     const name = document.createElement('b');
-    name.textContent = nameOf(token);
+    name.textContent = ownName();
     text.append('You play as ', name, '.');
     accountBox.append(text);
+    if (navigator.onLine) accountBox.append(renameControls());
     if (page.account.loginAvailable && navigator.onLine) {
       text.append(' Log in with GitHub to use your GitHub name.');
       const login = document.createElement('a');
@@ -319,11 +323,85 @@ export function renderSessionGames(): void {
   );
 }
 
+// Rename for a player without a GitHub login: an inline form, and a reset to the generated name.
+// The dialog covers the toasts, so a refused name shows in the form.
+function renameControls(): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'rename';
+  const open = document.createElement('button');
+  open.className = 'btn btn-small';
+  open.type = 'button';
+  open.textContent = 'Rename';
+  const form = document.createElement('form');
+  form.className = 'rename-form';
+  form.hidden = true;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.maxLength = CUSTOM_NAME_MAX_LENGTH;
+  input.value = page.account.name ?? '';
+  input.placeholder = nameOf(token);
+  input.setAttribute('aria-label', 'Your name');
+  const save = document.createElement('button');
+  save.className = 'btn btn-small btn-primary';
+  save.type = 'submit';
+  save.textContent = 'Save';
+  const cancel = document.createElement('button');
+  cancel.className = 'btn btn-small';
+  cancel.type = 'button';
+  cancel.textContent = 'Cancel';
+  const problem = document.createElement('small');
+  problem.className = 'rename-problem';
+  form.append(input, save, cancel, problem);
+  box.append(open, form);
+  if (page.account.name !== null) {
+    const reset = document.createElement('button');
+    reset.className = 'btn btn-small';
+    reset.type = 'button';
+    reset.textContent = 'Reset to generated name';
+    reset.addEventListener('click', () => void changeName(() => api.clearName(), problem));
+    box.append(reset);
+  }
+  open.addEventListener('click', () => {
+    form.hidden = false;
+    open.hidden = true;
+    input.focus();
+  });
+  cancel.addEventListener('click', () => {
+    form.hidden = true;
+    open.hidden = false;
+    problem.textContent = '';
+  });
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const name = parseCustomName(input.value);
+    if (name === undefined) {
+      problem.textContent = `A name needs ${CUSTOM_NAME_MIN_LENGTH} to ${CUSTOM_NAME_MAX_LENGTH} letters, digits, spaces, "-" or "_".`;
+      return;
+    }
+    void changeName(() => api.setName(name), problem);
+  });
+  return box;
+}
+
+async function changeName(call: () => Promise<Me>, problem: HTMLElement): Promise<void> {
+  try {
+    saveAccount(await call());
+  } catch (error) {
+    if (!(error instanceof OnlineError)) throw error;
+    problem.textContent = error.message;
+    return;
+  }
+  // The open game shows the new name at once. The server tells the other screens of the game.
+  if (page.session?.mode === 'online') await refresh(page.session.code);
+  render();
+  await openMyGames();
+}
+
 // Asks the server who is logged in. Without a network the page keeps the last answer.
 export async function refreshAccount(): Promise<void> {
   if (!navigator.onLine) return;
   try {
-    page.account = await api.me();
+    saveAccount(await api.me());
     void syncRecords();
   } catch (error) {
     if (!(error instanceof OnlineError)) throw error;

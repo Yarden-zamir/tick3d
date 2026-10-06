@@ -138,7 +138,7 @@
         <!-- New game is wide. Undo shows during a game and the result card after it, so the row holds at most three buttons and the sound control. -->
         <div class="actions">
           <button type="button" class="btn btn-primary" id="new-game" data-needs-session>New game</button>
-          <button type="button" class="btn" id="undo" data-show-mode="computer friend">Undo</button>
+          <button type="button" class="btn" id="undo" data-show-mode="computer friend online nearby" data-needs-session>Undo</button>
           <button type="button" class="btn" id="show-card" aria-label="Result card" data-tip="Result card of the last game" hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0V4ZM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 13v3M8 20h8l-1-4H9l-1 4Z"/></svg><span>Card</span></button>
           <!-- One control for the sound: the speaker turns the sound on and off, the caret opens the sound set menu. -->
           <div class="sound-control" role="group" aria-label="Sound controls">
@@ -146,7 +146,15 @@
             <button type="button" id="sound-set" popovertarget="sound-sets" aria-label="Sound set" data-tip="Sound set: the sound of each move"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
           </div>
         </div>
-        <!-- The Players box of online and Nearby games comes here, under the actions row. -->
+        <!-- The Players box of online and Nearby games: seats, watchers and seat controls (src/page/players.ts). -->
+        <section class="players" id="players" aria-labelledby="players-title" data-show-mode="online nearby" data-needs-session>
+          <span class="label" id="players-title">Players</span>
+          <ul class="players-list" id="players-list"></ul>
+          <div class="players-request" id="players-request" aria-live="polite" hidden>
+            <p id="players-request-text"></p>
+            <div class="players-request-actions" id="players-request-actions"></div>
+          </div>
+        </section>
         <!-- The sound set menu. A popover closes on a tap outside it or on Escape. src/page/sound-set.ts fills the list. -->
         <div popover id="sound-sets" class="sound-sets" role="dialog" aria-labelledby="sound-sets-title">
           <div class="sound-sets-head">
@@ -429,6 +437,13 @@
         <button type="button" class="btn" id="clear-confirm-no">Keep</button>
       </div>
     </dialog>
+    <dialog class="end-card home-confirm" id="seat-prompt" aria-labelledby="seat-prompt-text">
+      <p id="seat-prompt-text"></p>
+      <div class="end-card-actions">
+        <button type="button" class="btn btn-primary" id="seat-prompt-accept">Accept</button>
+        <button type="button" class="btn" id="seat-prompt-decline">Decline</button>
+      </div>
+    </dialog>
     <div class="update-bar" id="update-bar" hidden role="status">
       <span>A new version of tick3d is ready.</span>
       <button type="button" class="btn btn-small btn-primary" id="update-reload">Reload</button>
@@ -449,6 +464,7 @@
         <li>Time limits work like a chess clock. A player who runs out loses.</li>
         <li>Lock stops setting changes until the game ends.</li>
         <li>Online: share the code or link. Nearby: devices on the same Wi-Fi.</li>
+        <li>Players: any player manages the seats. A change that affects the other player, and an undo, wait until that player accepts.</li>
         <li>Hover or long-press an icon to see what it does.</li>
       </ul>
       <button type="button" class="btn btn-small info-close" popovertarget="info-panel" popovertargetaction="hide">Close</button>

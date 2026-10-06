@@ -7,7 +7,6 @@ import { type Channel, createOffer, answerOffer } from '../nearby/peer.ts';
 import { renderQr } from '../nearby/qr.ts';
 import { type NearbyHost, type NearbyGuest, createNearbyHost, createNearbyGuest } from '../nearby/session.ts';
 import { type Hello, HELLO_NAME_MAX_LENGTH, decodeSignal } from '../nearby/signal.ts';
-import { nameOf } from '../names.ts';
 import { OnlineError, api, token } from '../online.ts';
 import type { Code, GameId, Metrics } from '../protocol.ts';
 import { sounds } from '../sound.ts';
@@ -42,7 +41,7 @@ import { copyText, showProblem, showToast, showError } from './feedback.ts';
 import { render } from './render.ts';
 import { defaultSessionName, openSession, leaveSession } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
-import { page } from './state.ts';
+import { ownName, page } from './state.ts';
 
 type NearbyState =
   | { kind: 'idle' }
@@ -65,11 +64,10 @@ export const nearbyKind = () => nearby.kind;
 let wakeLock: { release(): Promise<void> } | undefined;
 const thisDevice = detectDevice();
 
-// The name that the other players see for this player, so the device list matches the score by default.
+// The device name starts as the name that the other players see for this player (ownName), so the
+// device list matches the score by default. A custom name fits: CUSTOM_NAME_MAX_LENGTH is HELLO_NAME_MAX_LENGTH.
 // Limit: 9 of the 67348 generated names are longer than HELLO_NAME_MAX_LENGTH, and the device list cuts
 // them. Revisit this when the word lists grow, or when the limit changes in a new signal format.
-const ownName = () => page.account.user?.login ?? nameOf(token);
-
 function nearbyHello(): Hello {
   const name = nearbyNameInput.value.trim() || ownName();
   return { device: thisDevice, name: name.slice(0, HELLO_NAME_MAX_LENGTH) };
@@ -101,10 +99,9 @@ async function renderNearby(): Promise<void> {
   nearbyStop.textContent = state.kind === 'guest' ? 'Leave' : 'End';
   nearbyDeviceIcon.innerHTML = DEVICE_ICONS[thisDevice];
   if (state.kind === 'hosting') {
-    const hostSeat = page.session?.you ?? 'X';
     const guests = await state.host.guests();
     nearbyDevices.replaceChildren(
-      deviceItem(nearbyHello(), `You · Host · Plays ${hostSeat}`),
+      deviceItem(nearbyHello(), `You · Host · ${seatRole(page.session?.you ?? null)}`),
       ...guests.map((guest) => deviceItem(guest.hello, seatRole(guest.seat))),
     );
   } else if (state.kind === 'guest') {
@@ -369,7 +366,7 @@ async function hostNearby(): Promise<void> {
   const view = await backend.create({ mode: 'nearby', name: defaultSessionName('nearby'), clock: settings.clock, human: 'X' });
   if (nearby !== starting) return;
   openSession(view, backend, 'nearby');
-  const host = createNearbyHost(backend, view.code, token);
+  const host = createNearbyHost(backend, view.code, token, () => nearbyHello().name);
   host.onGuestsChanged(() => void renderNearby());
   const hosting: NearbyState = { kind: 'hosting', host };
   nearby = hosting;
@@ -494,6 +491,9 @@ export function endNearby(sayBye = true): void {
   render();
   void renderNearby();
 }
+
+// Draws the device list again, for example after a seat change.
+export const redrawNearby = (): void => void renderNearby();
 
 // Opens the Nearby panel. A session starts when this device hosts or joins.
 export function openNearby(): void {

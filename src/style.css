@@ -2727,3 +2727,126 @@ body[data-turn='O'] .status[data-state='playing'] {
     flex-basis: 100%;
   }
 }
+
+/* ---- Players: seat controls in online and Nearby games ---- */
+
+.players {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.players-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A row: the seat mark, the name over its note, and the actions under them. */
+.players-list li {
+  display: grid;
+  grid-template-columns: 2rem 1fr;
+  column-gap: 0.6rem;
+  row-gap: 0.35rem;
+  align-items: center;
+  padding: 0.45rem 0.55rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.players-mark {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 6px;
+  border: 2px solid var(--line);
+  font-weight: 900;
+}
+
+.players-mark.x {
+  background: var(--x);
+  color: var(--on-color);
+}
+
+.players-mark.o {
+  background: var(--o);
+  color: var(--on-color);
+}
+
+.players-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
+.players-note {
+  grid-column: 2;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.players-row-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.players-row-actions:empty {
+  display: none;
+}
+
+
+.players-request {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.55rem;
+  border: 2px dashed var(--line);
+  border-radius: 8px;
+}
+
+.players-request p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.players-request-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+
+/* Rename in My games: Rename opens an inline form. */
+.rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.rename-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.rename-form input {
+  flex: 1 1 10rem;
+}
+
+.rename-problem {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.rename-problem:empty {
+  display: none;
+}

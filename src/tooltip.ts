@@ -70,6 +70,11 @@ export function setupTooltips(): void {
     if (event.key === 'Escape') hide();
   });
   addEventListener('scroll', () => hide(), { passive: true, capture: true });
+  // A render can replace the element under the tooltip (the Players box draws its buttons again on
+  // every update). The removed element sends no pointerout or focusout, so its tooltip goes here.
+  new MutationObserver(() => {
+    if (shownFor !== undefined && !shownFor.isConnected) hide();
+  }).observe(document.body, { childList: true, subtree: true });
 
   // Long press with touch (or a pen): the tooltip shows, and the click that ends the press is dropped.
   let press: { target: HTMLElement; x: number; y: number; timer: ReturnType<typeof setTimeout> } | undefined;

@@ -77,6 +77,24 @@
 - Choose Online to create a session. The page shows a 4 character code and puts it in the link (`?code=AB3K`). Link sends the link, or copies it when the device cannot share. QR code shows the link as a QR code, which a phone camera opens directly.
 - Codes use letters and digits without `0`, `O`, `1` and `I`, so a code read aloud is not ambiguous.
 - The creator plays X. The first other browser that opens the code plays O. Further browsers watch.
+- The Players box in the panel lists the X seat, the O seat and the watchers. A watcher is a browser that has the game open and holds no seat. The server shows a watcher by an id, a keyed hash of the code and the player token, so the token never leaves the server. Each row shows the name, "You" for the own seat or the own watcher row, and "here" or "away" for a seat.
+- Either player controls the seats. The actions and who must accept them:
+
+  | Action | Button | What changes | Who accepts |
+  | --- | --- | --- | --- |
+  | swap | Swap X and O | X and O trade seats. A swap during a game is allowed, and each clock stays with its seat. | the other player |
+  | leave | Watch instead | You watch, and your seat is free. | nobody |
+  | give | Give my seat (on a watcher row) | The watcher takes your seat, and you watch. | nobody |
+  | seat | Seat as X or Seat as O (on a watcher row, when the other seat is free) | The watcher takes the free seat. | nobody |
+  | unseat | Move to watchers (on the other seat) | The other player watches, and the seat is free. | the other player |
+  | replace | Seat as X or Seat as O (on a watcher row, when the other seat is taken) | The watcher takes the seat of the other player. | the other player |
+  | undo | Undo (at the top of the panel) | Your last move goes back, while the other player has not moved since. Not in a timed game, a finished game or during a lock. | the other player |
+
+- A change of the other player's seat waits as a request. The other player gets a prompt with Accept and Decline, and the Players box shows the same buttons. The player who asks sees "Waiting for …" with Cancel, and a note when the other player is away. While a request waits, the seat controls stay in place but are off. A request ends after 60 seconds without an answer, and each screen then drops it by itself. One request is open at a time, and a new request of the same player replaces the old one. On Accept, the rules check the request again and then apply it. Both players get a message about the result.
+- Undo works the same way: a player asks to take back the own last move, and the other player accepts or declines. A move of the other player ends the request. A timed game, a finished game and a lock allow no undo, as on one device.
+- A watcher is never asked. A watcher has no seat controls and no Undo, only "Play X" or "Play O" while a seat is free.
+- Each seat button has a tooltip that says what changes. The keyboard focus stays on a seat button when the box updates.
+- Computer and friend games have no Players box: a friend game uses one screen, and in a computer game "You play" picks X or O.
 - A browser keeps its seat through a random token in `localStorage`.
 - A link with a code that opens no game (no game with that code, or no network for a new game) shows the error, drops the code from the address, and starts the page as usual.
 - A code loads the full session, finished games included. Either player can name the session and start the next game after a game ends.
@@ -124,6 +142,7 @@ The docs of the tick3d HTTP API come from one file, `server/api-docs.ts`:
 - Join with a code: the host shows a QR code. The guest scans it with the phone's own camera, which opens the game, and shows its own code, which the host scans the same way. On the host, the answer opens in a new tab that hands the code to the hosting tab. Each code also has a text form to copy and paste, for a device without a camera.
 - The devices then talk directly over WebRTC. The host's device holds the session and checks every move with the same rules as the server, so a guest can never move for the host.
 - The panel lists the connected devices with an icon for each kind: phone, tablet or computer. The device name starts as the player's name, and the player can change it. The first guest plays O, later guests watch.
+- The Players box and the seat controls work as in an online game. The host's device holds the session and runs the same rules. A device shows in the box, the score and the chat with its device name.
 - The host's screen stays on while it hosts. When the host ends the game or closes the page, the guests see a message.
 - Chat, the lock, the hide options and time limits work as in an online game.
 - At the end of a game, the host sends the result with both players. The game link then shows both names, and the game is in the history of the guest too.
@@ -143,10 +162,11 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Game code, Link, QR code, session name | no | no | yes | no | no |
 | Host, Join with a code, Games near you, device list | no | no | no | yes | no |
 | Join a friend (code and New code) | no | no | yes | no | no |
+| Players (seats, watchers and seat controls) | no | no | in a game | in a game | no |
 | Time limit | yes | yes | yes | yes | no |
 | Hide board, history and coordinates, Lock | yes | yes | in a game | in a game | no |
 | Score, New game, the session games in My games | yes | yes | in a game | in a game | yes (no session games) |
-| Undo (during a game) | yes | yes | no | no | no |
+| Undo (during a game) | yes | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
 | Result card (after a game) | yes | yes | in a game | in a game | no |
 | Chat | no | no | yes | yes | no |
 
@@ -160,9 +180,11 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 - Login with GitHub is optional. Every browser plays with a random token either way.
 - A login links the browser's token to the GitHub account. Sessions then follow the player: a seat taken on a laptop also plays from a phone that logged in to the same account, so an async game can continue on another device.
 - A seat taken while logged in belongs to the account: every device of the account controls it, and a device that logs out does not. A logout also moves a seat that holds the token of that browser to the account. The seat holds an account id (`account-` and the GitHub id), and the API refuses that id as an `X-Player` value.
-- A logout moves every finished game of that browser to the account, also games from before the login. The browser then starts with an empty history, empty stats and no survival records. The page deletes its copies of the uploaded results, the survival records and the cached online games. Settings, sound, tuning and the computer, friend and Nearby sessions on the device stay.
+- A logout moves every finished game of that browser to the account, also games from before the login. The browser then starts with an empty history, empty stats and no survival records. The page deletes its copies of the uploaded results, the survival records and the cached online games. Settings, sound, tuning and the computer, friend and Nearby sessions on the device stay. A custom name stays with the browser token, so the games that move to the account show the GitHub login.
 - The score shows a player's GitHub name and avatar, and the chat uses the name.
 - A player without a GitHub login gets a generated name: an adjective and an animal in camelCase, such as "braveOtter". The server makes it from the player's token, so every screen shows the same name. A login replaces it with the GitHub name. My games shows the name to its player. The words come from unique-names-generator (MIT).
+- A player without a GitHub login can choose a name: Rename in My games, then Save. A name has 2 to 24 letters (of any script), digits, spaces, "-" and "_". The server trims it and joins inner spaces into one. A name that equals a GitHub login that the server knows is refused, so nobody can pose as a logged-in player. Two players can choose the same name. "Reset to generated name" goes back.
+- The server keeps the name (table `player_names`) and shows it in place of the generated name everywhere: the score, the status, the chat, the watchers, the game links, the history, My games and the stats. A GitHub login still goes first. The page keeps a copy, so the name shows offline too. In Nearby, the device name names each device.
 - The score, the status, the chat, the clocks, the end card and the game links use the same name for each player. The own seat is "You", and a friend game on one screen uses "Player X" and "Player O".
 - My games (the button in the header) shows the account, stats per mode and per computer level, the games of the open session with Replay and Card, the match history, the online sessions with a "Your turn" mark and a Continue button, and every session on this device. Offline, it shows the games on this device.
 - The login runs on the production address. Its cookie is signed and valid for `tick3d.yarden-zamir.com` and its subdomains, so pull request previews see it too. Without the GitHub settings, login is off and the page hides it.
@@ -196,7 +218,7 @@ The page is plain TypeScript built with Vite, with no runtime dependencies. The 
 
 ## Stored data and format changes
 
-- The `sessions` table has one row per session: the code, a creation order, a version, timestamps, and the session as one `VARIANT` document. `users` and `player_tokens` link browsers to GitHub accounts. `results` holds every finished game, one row per game: the games that devices sent, and the online games, which the server records when they end. Its columns hold the public game id, the token of each seat, the winner, how the game ended and the game metrics. `events` holds the faults that pages report.
+- The `sessions` table has one row per session: the code, a creation order, a version, timestamps, and the session as one `VARIANT` document. `users` and `player_tokens` link browsers to GitHub accounts. `player_names` holds the custom names. `results` holds every finished game, one row per game: the games that devices sent, and the online games, which the server records when they end. Its columns hold the public game id, the token of each seat, the winner, how the game ended and the game metrics. `events` holds the faults that pages report.
 - Rows from before game links have NULL in the new columns. The queries read them from `token` and `doc` instead (`SEAT_X` and `SEAT_O` in `server/stats.ts`), and a finished online game that has no row reads from its session. The server never writes data into old rows.
 - `hidden_x` and `hidden_o` mark a seat that its player cleared from the history. `seat_metrics` holds the metrics of each player of an online game, one row per seat.
 - A device stores its sessions in the same document format in IndexedDB, so the same rules read and upgrade them on a phone.
@@ -217,6 +239,8 @@ The full reference, with every shape, error and a curl example, is the OpenAPI 3
 | `POST /api/results` | Finished games from a device. The answer holds the new public id of each result that the server renamed. |
 | `GET /api/games/:id` | One finished game, read-only. No token and no result id. |
 | `GET /api/me/games` | My games: tallies and online sessions. |
+| `PUT /api/me/name`, `DELETE /api/me/name` | Sets the custom name of the player, or goes back to the generated name. Needs the X-Player header. |
+| `POST /api/sessions/:code/seats`, `POST /api/sessions/:code/seats/answer` | Seat controls and undo: an action (swap, leave, give, seat, unseat, replace, undo), and the answer to an open seat request. Needs the X-Player header of a player. |
 | `GET /api/me/history?offset=0` | The match history of the player (by account, else by browser token), 50 games per page, newest first. |
 | `GET /api/me/records` | The survival records of the player, with the same keys as on the device (`src/records.ts`). |
 | `DELETE /api/me/history` | Clears the history of the player. Needs the X-Player header. |
@@ -263,7 +287,7 @@ docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr.17.
 - The image tag must match the `@playwright/test` version in `package.json`. Update both together.
 - `npm ci` in the Playwright image installs packages for glibc. Run `npm ci` again before you use `node:26-alpine`.
 - Each test opens fresh browser contexts, and the tests run in parallel. The HTML report goes to `e2e/playwright-report/`. A failed test keeps a trace in `e2e/test-results/`.
-- One run creates 8 online sessions. The server allows 60 new sessions per hour from one address.
+- One run creates 10 online sessions. The server allows 60 new sessions per hour from one address.
 - The `e2e` workflow runs the suite after a successful pull request preview deploy. When a test fails, the workflow uploads the HTML report.
 - Knip finds the tests through its `entry` setting in `package.json`. Its Playwright plugin is off, because the plugin loads the config, and the config stops without `E2E_BASE_URL`.
 - The laptop host (`compose.lan.yml`) has no automatic test. It needs a local Docker host and a second device on the network.
