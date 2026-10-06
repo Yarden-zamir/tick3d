@@ -23,13 +23,13 @@
 - Advanced settings: in computer mode, "Advanced: computer player" at the bottom of the panel lists every number behind the computer, for each level. Easy and medium have a fresh and a tired value for each chance and for the randomness, and the moves where tiring starts and ends. Hard has its thinking time, search width, threat depth and equal-move margin. A change applies from the next computer move, and "Reset to defaults" restores the tested values. A lock also locks these settings. A game counts as tuned when the settings of its own level, or the setting for all levels, differ from the defaults: a changed hard level does not make an easy game tuned. A tuned game keeps its own survival records, and its end card says "(tuned)".
 - Move validation: an occupied cell, a move after the game ends, a move out of turn, or a move by a spectator is refused with a sound and a message. A tap on an occupied cell then also plays the sound of the mark on it. Every mode runs the same session rules (`src/session/core.ts`): the server for online games, the device for computer and friend games, the host's device for Nearby games.
 - Hide the board, or hide all marks except the last move. Play by coordinates: tap the layer, row and column on the 1 to 4 keypad, for example `2 3 4`. The target cell is outlined before you place. Until you tap a number, the keypad shows the coordinates of the last move, yours or the other player's, so you can follow the game with the board hidden. Hidden marks show again when the game ends.
-- Lock settings: after a lock, no setting (the view included) changes until the game ends. The session keeps the lock, so a reload does not end it. With another device, either player can lock, and the lock holds for both players.
-- Session history: the panel lists the games of the session. Replay steps through a finished game move by move. A session holds any number of games.
+- Lock settings: the small Lock button sits in the Hide row of the panel. After a lock, no setting (the view included) changes until the game ends: the opponent, level, side, view, layout, time limit, hide options and the advanced computer settings. New game, Undo, the join box and the switch to another session in My games also wait. Home still leaves the game, after the usual question. The session keeps the lock, so a reload does not end it. With another device, either player can lock, and the lock holds for both players. A lock waits until both seats have a player, because a game without a second player cannot end. Watchers cannot lock, and a lock does not hold the settings of a watcher. The theme, the sound, the sound set and the angle of the tower stay free. Leave and End of a Nearby game also stay open.
+- Session history: My games lists the games of the open session, with the result of each. Replay closes the dialog and steps through a game on the board, move by move. Card opens the result card of a finished game. A session holds any number of games.
 - Time limits, like a chess clock: a limit per player for the whole game (30 s to 120 min), a limit per move (3 s to 10 min), or both. Each limit has a switch, a number box and quick picks. A player who runs out of either limit loses. The first move of each player is untimed, so the clock starts after both players moved once. A clock ticks in the last 10 seconds. A timed game has no undo.
 - A game keeps the time limit it started with. A change during a game starts with the next game, and the panel shows both limits until then.
 - End card: at the end of a game, a card shows the result, the final board and the game details, the hide settings included. New game on the card starts the next game. The card uses the active theme. Share sends the image through the system share sheet. Without file sharing (most desktop browsers), Share copies the image, and Save image downloads it. Two check boxes, both on by default, add the game code and the link of the game (see Game links) to the card and the share text. A local game has no code, so it shows only the link option.
 - Survival records: when the computer wins, the number of moves that the game lasted can be a new record. Each level, time limit and hide setting keeps its own record. A new record shows as a message and as a sticker on the end card, with the old best. The first loss of a setup sets the record without a message. The device keeps its records for offline play, and the server keeps the records of every game it received. On each visit the page takes the higher record of each setup from the server, so a new record must beat the best of every device of the account.
-- Sound effects made with Web Audio. The note button next to the Sound button opens the sound set menu. The menu groups the sets by character: Instruments, World and voice, Playful, For musicians and Original. Each set has a ▶ demo. The choice belongs to the screen, like the theme, and the default is Cells. In every set except Classic, each cell has its own single sound, so a game works by ear. X and O always sound different.
+- Sound effects made with Web Audio. The sound control in the actions row has two parts: the speaker turns the sound on and off, and the narrow arrow next to it opens the sound set menu. The menu groups the sets by character: Instruments, World and voice, Playful, For musicians and Original. Each set has a play button for a demo. The choice belongs to the screen, like the theme, and the default is Cells. In every set except Classic, each cell has its own single sound, so a game works by ear. X and O always sound different.
   - Cells: the pitch is the layer (C, D, E, G of a pentatonic scale, higher layers higher), the instrument is the row (marimba, glass bell, plucked string, whistle), and the width is the column (one voice, then a fifth, an octave, both; on headphones also left to right). O sounds one octave below X.
   - Soft, Orchestra, Lo-fi keys: the Cells map with other instruments. Soft has flute, clarinet, felt piano, vibraphone. Orchestra has pizzicato strings, harp, French horn, celesta. Lo-fi keys has electric piano, pad pluck, upright bass, music box.
   - Gamelan: the layer is a slendro note, the row is the bronze instrument (saron, bonang, gender, gong), the column is the beat of the tuned pair (none, slow, fast, shimmer). O plays an octave lower.
@@ -42,16 +42,18 @@
   - Classic: the first sound of the game. Each layer has one note, so it does not name the row or the column.
 
   The keypad plays the cell's sound when its third number is in, and the speaker button by the keypad plays the last move again. A mute button keeps the choice. `/sound-training` (the "Train your ear" button at the bottom of the panel) is an ear trainer like Anki. It trains the chosen sound set, and Cells when the choice is Classic. The note button in its header opens the same sound set menu as the game, and a choice there changes the set of the game too. It shows each sound with its answer first, then asks for it with the answer hidden, and gives more cards for the part that the player misses most. The player answers on the four layers of the board: a tap selects the whole layer, row or column that the card asks for, or one cell. The board size and layout fit the screen, and on a phone the layers scroll sideways. After a check, the exact tapped cell keeps an outline, also when the asked part is right. It keeps its progress in the browser and works offline. Search engines may list it.
-- Drag sideways anywhere around the tower to turn it all the way round. A drag that starts on the keypad or on another control does not turn the tower. The tilt stays at the resting view. On a touch screen, a vertical swipe still scrolls the page. Reset angle returns to the resting view, and the browser keeps the angle. A drag never places a mark. Boards and tiles have real 3D depth in the tower, so they look solid at any turn. Layer 1 is the bottom plane and layer 4 the top one; the flat view labels each layer.
+- Drag sideways anywhere around the tower to turn it all the way round. A drag that starts on the keypad or on another control does not turn the tower. The tilt stays at the resting view. On a touch screen, a vertical swipe still scrolls the page. Reset angle, next to the View picker, returns to the resting view, and the browser keeps the angle. A drag never places a mark. Boards and tiles have real 3D depth in the tower, so they look solid at any turn. Layer 1 is the bottom plane and layer 4 the top one; the flat view labels each layer.
 - The status of the game (whose move, the result) sits in the header row. Below 64rem it takes its own line under the header row, and a long status wraps. The other pages show their name in that place.
 - Two views: a 3D tower of tilted layers and a flat view. The flat view has four layouts: grid, side by side, top to bottom, and steps.
 - Twelve neo-brutalist themes in a folding menu in the panel: Light (the default), Dark, Snow, Candy, Mint, Retro, Midnight, Synthwave, Bloodmoon, Dark coffee, Batman (dark, no color) and Mono. Like the mute button, the theme stays open during a lock.
 - Point at a cell to light up the cells above and below it.
 - Every page (the game, `/stats` and `/sound-training`) has the same header (`src/header/`): the wordmark links home, then My games, Info, kitshn and GitHub. It works offline. Only the kitshn list needs a network.
 - My games opens the My games dialog on the game page. On another page it links to `/?open=my-games`, and the game page opens the dialog. A GitHub login from there returns to the page that the player came from. The button shows the login on every page.
-- Info opens a panel with the text of the page: the rules on the game page, what the numbers mean on `/stats`, and how the trainer works on `/sound-training`. Close, Escape or a tap outside the panel closes it.
+- Info opens a panel with the text of the page: on the game page the rules and how to play (keypad and hide options, sounds, time limits, the lock, online and Nearby play), what the numbers mean on `/stats`, and how the trainer works on `/sound-training`. Close, Escape or a tap outside the panel closes it.
 - A GitHub button in the header links to this repository.
 - A kitshn button in the header lists the open pull requests that have a live preview: the title, the first paragraph of the text, the contributors, and links to the preview and to the pull request. A preview page marks its own entry with "You are here".
+- Tooltips: the lock and the icon buttons (sound, sound set, Reset angle, the header buttons) show a short text on hover, on keyboard focus, and on a long press on a touch screen (`src/tooltip.ts`). A long press does not press the button. A short tap works as usual.
+- Buttons share one component in `src/style.css`: `.btn`, with `.btn-primary`, `.btn-small` and `.btn-icon`.
 - The browser keeps the settings in `localStorage`. The app checks each stored value and uses the default for a value that is not valid.
 
 ![The flat view in the grid layout, Midnight theme](docs/screenshots/flat.png)
@@ -136,20 +138,21 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 
 | Control | Computer | Friend | Online | Nearby | Game from a link |
 | --- | --- | --- | --- | --- | --- |
-| Opponent, view, layout, theme, sound, How to play | yes | yes | yes | yes | yes |
+| Opponent, view, layout, theme, sound | yes | yes | yes | yes | yes |
 | Difficulty, You play, Advanced | yes | no | no | no | no |
 | Game code, Link, QR code, session name | no | no | yes | no | no |
 | Host, Join with a code, Games near you, device list | no | no | no | yes | no |
-| Join a friend (code and New code) | yes | yes | yes | no | no |
+| Join a friend (code and New code) | no | no | yes | no | no |
 | Time limit | yes | yes | yes | yes | no |
 | Hide board, history and coordinates, Lock | yes | yes | in a game | in a game | no |
-| Score, New game, Games in this session | yes | yes | in a game | in a game | yes |
-| Undo | yes | yes | no | no | no |
+| Score, New game, the session games in My games | yes | yes | in a game | in a game | yes (no session games) |
+| Undo (during a game) | yes | yes | no | no | no |
+| Result card (after a game) | yes | yes | in a game | in a game | no |
 | Chat | no | no | yes | yes | no |
 
-- The score and the New game, Undo, Sound and Sound set row are at the top of the panel. On a phone, the panel is under the board, so this row is right under the board.
+- The score and the actions row are at the top of the panel. The row has New game (wide), then Undo during a game or Result card after it, then the sound control. On a phone, the panel is under the board, so this row is right under the board.
 - "In a game" means after a create or a join (Online), or after Host or Join (Nearby).
-- Join a friend stays in computer and friend mode as a shortcut: a code from a friend opens the online game at once. A switch to Online first would create a new session for nothing.
+- Join a friend is in the Online mode only. In another mode, a link with `?code=` opens the online game of a friend.
 - Nearby has no Join a friend: a code there is an online game, and Nearby has its own Join.
 
 ## Accounts and My games
@@ -160,7 +163,7 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 - The score shows a player's GitHub name and avatar, and the chat uses the name.
 - A player without a GitHub login gets a generated name: an adjective and an animal in camelCase, such as "braveOtter". The server makes it from the player's token, so every screen shows the same name. A login replaces it with the GitHub name. My games shows the name to its player. The words come from unique-names-generator (MIT).
 - The score, the status, the chat, the clocks, the end card and the game links use the same name for each player. The own seat is "You", and a friend game on one screen uses "Player X" and "Player O".
-- My games (the button in the header) shows the account, stats per mode and per computer level, the match history, the online sessions with a "Your turn" mark and a Continue button, and every session on this device. Offline, it shows the games on this device.
+- My games (the button in the header) shows the account, stats per mode and per computer level, the games of the open session with Replay and Card, the match history, the online sessions with a "Your turn" mark and a Continue button, and every session on this device. Offline, it shows the games on this device.
 - The login runs on the production address. Its cookie is signed and valid for `tick3d.yarden-zamir.com` and its subdomains, so pull request previews see it too. Without the GitHub settings, login is off and the page hides it.
 
 <img src="docs/screenshots/my-games.png" alt="My games: stats and sessions" width="480">
@@ -179,6 +182,7 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 - `src/nearby/`: WebRTC connections, QR codes, the messages between host and guests, device kinds, and the host and guest sessions.
 - `src/pwa.ts` and `vite.config.ts`: the service worker and the manifest.
 - `src/main.ts`, `src/style.css`, `index.html`: the page. `src/main.ts` starts the page; `src/page/` holds the page script, one module per feature (board, sessions, Nearby, My games, clocks, chat and more). `src/page/state.ts` holds the state that more than one module changes.
+- `src/icons.ts`: the inline SVG icons that the scripts draw (the lock, the speaker, play). The icons in the HTML pages use the same style. The app uses no emoji, so the icons follow the theme.
 - `public/`: the favicons and touch icons, copied into the build as is. The service worker plugin writes the web manifest.
 - `server/main.ts`: the HTTP API and server-sent events. `server/lobby.ts`: the list of open Nearby games. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login. `server/previews.ts`: the list of the kitshn button. `server/stats.ts`: the SQL of the stats page. `server/waiters.ts`: the long polls.
 - `src/header/`: the header of every page (the account button, kitshn and the My games link). `src/markup.test.ts` checks that every page has the same header markup.

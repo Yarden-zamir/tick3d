@@ -163,6 +163,28 @@ describe('match options and lock', () => {
     expect(core.update(doc, bob, { hideBoard: true }).options.hideBoard).toBe(true);
   });
 
+  it('waits for the second player, and holds a new game and an undo until the game ends', () => {
+    const alone = core.createDoc({ name: 'Match', mode: 'online', seats: { X: ALICE, O: null } });
+    expect(status(() => core.lock(alone, alice))).toBe(409);
+    const locked = core.lock(play(onlineDoc(), [0]), alice);
+    expect(status(() => core.newGame(locked, alice))).toBe(409);
+    const couch = core.createDoc({ name: 'Couch', mode: 'friend', seats: { X: ALICE, O: ALICE } });
+    const lockedCouch = core.lock(core.move(couch, alice, { game: 0, moveCount: 0, cell: 0 }, 0), alice);
+    expect(status(() => core.newGame(lockedCouch, alice))).toBe(409);
+    expect(status(() => core.undo(lockedCouch, alice, 1))).toBe(409);
+    expect(core.lock(lockedCouch, alice)).toBe(lockedCouch);
+  });
+
+  it('ends the lock when the game ends on time', () => {
+    const timed = core.lock(onlineDoc({ perMove: 5, perGame: null }), alice);
+    const started = play(timed, [0, 1]);
+    expect(view(started, alice).locked).toBe(true);
+    const settled = core.settle(started, 60_000);
+    if (settled === undefined) throw new Error('no timeout');
+    expect(view(settled, alice).locked).toBe(false);
+    expect(core.newGame(settled, alice).games).toHaveLength(2);
+  });
+
   it('shares hide coordinates with both players and watchers, and keeps the other options', () => {
     const doc = core.update(core.update(onlineDoc(), bob, { hideHistory: true }), alice, { hideCoordinates: true });
     for (const who of [alice, bob, carol]) expect(view(doc, who).options).toEqual({ hideBoard: false, hideHistory: true, hideCoordinates: true });

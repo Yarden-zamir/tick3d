@@ -138,6 +138,7 @@ export const EMPTY_SESSION_TTL_MS = 9 * 3_600_000;
 // A session holds any number of games: the same players can keep playing for as long as they like.
 export function newGame(doc: SessionDoc, identity: Identity): SessionDoc {
   requireSeat(doc, identity);
+  if (isLocked(doc)) throw new SessionError(409, 'Settings are locked until this game ends.');
   const game = currentGame(doc);
   // On one device a player may give up a game: it stays in the history, unfinished.
   // With another device involved, a game must end first, so nobody can wipe a game they are losing.
@@ -176,6 +177,8 @@ export function lock(doc: SessionDoc, identity: Identity): SessionDoc {
   requireSeat(doc, identity);
   if (isLocked(doc)) return doc;
   if (currentGame(doc).status.kind !== 'playing') throw new SessionError(409, 'This game is over. Start a new game first.');
+  // Without a second player the game cannot end, so the lock would hold for good.
+  if (doc.seats.X === null || doc.seats.O === null) throw new SessionError(409, 'Wait for the second player before a lock.');
   return { ...doc, lockedGame: doc.games.length - 1 };
 }
 

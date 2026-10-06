@@ -61,7 +61,7 @@ test('a hosted game shows in the list of another device, which joins it with one
   await expect(listed(watcher, name)).toHaveCount(0);
 });
 
-test('Nearby has no join box, and the computer mode keeps its own controls', async ({ open }) => {
+test('Nearby and the computer mode have no join box, and each mode keeps its own controls', async ({ open }) => {
   const { page } = await open(nearby);
   await expect(page.locator('#nearby-host')).toBeVisible();
   await expect(status(page)).toHaveText('Host a game, or join one.');
@@ -70,6 +70,6 @@ test('Nearby has no join box, and the computer mode keeps its own controls', asy
 
   await page.getByRole('button', { name: 'Computer', exact: true }).click();
   await expect(page.locator('[data-setting="difficulty"]')).toBeVisible();
-  for (const id of ['#join', '#undo', '#advanced', '#lock', '#new-game']) await expect(page.locator(id), id).toBeVisible();
-  await expect(page.locator('#nearby-host')).toBeHidden();
+  for (const id of ['#undo', '#advanced', '#lock', '#new-game']) await expect(page.locator(id), id).toBeVisible();
+  for (const id of ['#join', '#nearby-host']) await expect(page.locator(id), id).toBeHidden();
 });

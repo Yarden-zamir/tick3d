@@ -29,13 +29,17 @@ import {
   myGamesNote,
   myGamesOnlineBox,
   myGamesClose,
+  myGamesSession,
+  myGamesSessionBox,
 } from './dom.ts';
 import { showError, reject } from './feedback.ts';
 import { openGameView } from './game-view.ts';
-import { render } from './render.ts';
+import { startReview } from './controls.ts';
+import { openCard } from './end-card.ts';
+import { render, resultText } from './render.ts';
 import { flushResults, syncRecords } from './results.ts';
 import { openDeviceSession, joinSession } from './sessions.ts';
-import { page, settingsLocked } from './state.ts';
+import { page, current, settingsLocked } from './state.ts';
 
 function tallyBox(label: string, tally: Tally): HTMLElement {
   const box = document.createElement('div');
@@ -51,8 +55,10 @@ function tallyBox(label: string, tally: Tally): HTMLElement {
   return box;
 }
 
-// Without an action the item has no button.
-function listItem(title: string, detail: string, action: string | undefined, onClick: () => void, badge?: string): HTMLLIElement {
+// A button of a list item. A click closes the dialog first.
+type Action = { label: string; run: () => void };
+
+function listItem(title: string, detail: string, actions: readonly Action[], badge?: string): HTMLLIElement {
   const item = document.createElement('li');
   const text = document.createElement('div');
   const name = document.createElement('b');
@@ -67,15 +73,17 @@ function listItem(title: string, detail: string, action: string | undefined, onC
     mark.textContent = badge;
     item.append(mark);
   }
-  if (action === undefined) return item;
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = action;
-  button.addEventListener('click', () => {
-    myGamesDialog.close();
-    onClick();
-  });
-  item.append(button);
+  for (const { label, run } of actions) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-small';
+    button.textContent = label;
+    button.addEventListener('click', () => {
+      myGamesDialog.close();
+      run();
+    });
+    item.append(button);
+  }
   return item;
 }
 
@@ -117,7 +125,7 @@ function historyItem(entry: HistoryEntry): HTMLLIElement {
   const detail = `${entry.moves} moves${opponent} · ${ago(entry.finishedAt)}`;
   // A game stored before game links has no link to view.
   const id = entry.id;
-  return id === null ? listItem(title, detail, undefined, () => undefined) : listItem(title, detail, 'View', () => viewGame(id));
+  return listItem(title, detail, id === null ? [] : [{ label: 'View', run: () => viewGame(id) }]);
 }
 
 // The finished games on this device that have a link, newest first, for when the server is out of reach.
@@ -175,6 +183,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     name.textContent = page.account.user.login;
     const logout = document.createElement('button');
     logout.type = 'button';
+    logout.className = 'btn btn-small';
     logout.textContent = 'Log out';
     logout.addEventListener('click', () => void api.logout().then(refreshAccount).then(() => myGamesDialog.close(), showError));
     accountBox.append(avatar, name, logout);
@@ -188,7 +197,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     if (page.account.loginAvailable && navigator.onLine) {
       text.append(' Log in with GitHub to use your GitHub name.');
       const login = document.createElement('a');
-      login.className = 'login-link';
+      login.className = 'btn btn-small btn-primary login-link';
       login.href = api.loginUrl(returnTo);
       login.textContent = 'Log in with GitHub';
       accountBox.append(login);
@@ -201,10 +210,15 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     ...deviceSessions
       .filter((entry) => entry.mode !== 'nearby')
       .map((entry) =>
-        listItem(entry.name, `${entry.mode === 'computer' ? 'Computer' : 'Friend'} · ${gameCount(entry.games)} · ${ago(entry.updatedAt)}`, 'Open', () => {
-          if (settingsLocked()) return reject(undefined, 'locked');
-          void openDeviceSession(entry.code).catch(showError);
-        }),
+        listItem(entry.name, `${entry.mode === 'computer' ? 'Computer' : 'Friend'} · ${gameCount(entry.games)} · ${ago(entry.updatedAt)}`, [
+          {
+            label: 'Open',
+            run: () => {
+              if (settingsLocked()) return reject(undefined, 'locked');
+              void openDeviceSession(entry.code).catch(showError);
+            },
+          },
+        ]),
       ),
   );
   if (myGamesDevice.childElementCount === 0) myGamesDevice.innerHTML = '<li class="empty">No games on this device yet.</li>';
@@ -228,8 +242,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
         listItem(
           summary.name,
           `${opponentOf(summary)} · ${gameCount(summary.games)} · ${ago(summary.updatedAt)}`,
-          'Continue',
-          () => (settingsLocked() ? reject(undefined, 'locked') : void joinSession(summary.code)),
+          [{ label: 'Continue', run: () => (settingsLocked() ? reject(undefined, 'locked') : void joinSession(summary.code)) }],
           summary.yourTurn ? 'Your turn' : undefined,
         ),
       ),
@@ -271,6 +284,25 @@ async function clearHistory(): Promise<void> {
   } finally {
     clearConfirmYes.disabled = false;
   }
+}
+
+// The games of the open session, oldest first, with Replay and the result card. render() calls this,
+// so the list stays current while the dialog is open. A game from a link has no session here.
+export function renderSessionGames(): void {
+  myGamesSessionBox.hidden = page.session === undefined;
+  myGamesSession.replaceChildren(
+    ...page.games.map((game, index) => {
+      const actions: Action[] = [];
+      // The live game has no moves to replay until it ends: the board shows it.
+      if (game !== current() || game.status.kind !== 'playing') {
+        actions.push({ label: page.review?.game === index ? 'Viewing' : 'Replay', run: () => startReview(index) });
+      }
+      if (game.status.kind !== 'playing') actions.push({ label: 'Card', run: () => void openCard(index).catch(showError) });
+      const item = listItem(`Game ${index + 1}`, `${resultText(game)} · ${game.moves.length} ${game.moves.length === 1 ? 'move' : 'moves'}`, actions);
+      item.classList.toggle('active', page.review?.game === index);
+      return item;
+    }),
+  );
 }
 
 // Asks the server who is logged in. Without a network the page keeps the last answer.

@@ -48,15 +48,58 @@ test('a lock holds through a reload and ends with the game; the local end card h
   await expect(page.locator('#lock')).toContainText('Locked');
   await page.reload();
   await expect(page.locator('#lock')).toContainText('Locked');
-  await expect(page.getByRole('button', { name: 'Tower' })).toBeDisabled();
-  await expect(page.locator('#new-game')).toBeDisabled();
+  // Every match setting and the view wait for the end of the game.
+  for (const control of [
+    page.getByRole('button', { name: 'Flat' }),
+    page.getByRole('button', { name: 'Computer', exact: true }),
+    page.getByRole('button', { name: 'Hide board', exact: true }),
+    page.locator('[data-limit="perMove"] [data-limit-on]'),
+    page.locator('#new-game'),
+    page.locator('#undo'),
+  ]) {
+    await expect(control).toBeDisabled();
+  }
+  // Leaving stays possible: Home asks first, as in any game with moves.
+  await page.locator('#home-link').click();
+  await expect(page.locator('#home-confirm')).toHaveAttribute('open');
+  await page.locator('#home-confirm-stay').click();
+  // The theme and the sound stay free.
+  await page.getByRole('button', { name: 'Sound', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Sound', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await play(page, X_WINS.slice(1));
   await expect(status(page)).toHaveAttribute('data-state', 'won');
   await expect(page.getByRole('button', { name: 'Flat' })).toBeEnabled();
+  await expect(page.locator('#lock')).not.toContainText('Locked');
   await expect(page.locator('#end-card')).toHaveAttribute('open');
   await expect(page.locator('#end-card-image')).toHaveAttribute('alt', /^Player X wins! /);
   await expect(page.locator('#end-card-code-option')).toBeHidden();
   await expect(page.locator('#end-card-link')).toBeChecked();
+  await page.locator('#end-card-close').click();
+  // After the game, the result card takes the place of Undo.
+  await expect(page.locator('#undo')).toBeHidden();
+  await page.getByRole('button', { name: 'Result card' }).click();
+  await expect(page.locator('#end-card')).toHaveAttribute('open');
+});
+
+test('My games lists the games of this session, with Replay and the result card', async ({ open }) => {
+  const { page } = await open(friend);
+  await play(page, X_WINS);
+  await page.locator('#end-card-close').click();
+  await page.locator('#new-game').click();
+  await page.locator('#account-button').click();
+  const games = page.locator('#my-games-session li');
+  await expect(games).toHaveCount(2);
+  await expect(games.first()).toContainText('Player X won');
+  // The live game has no Replay and no card yet.
+  await expect(games.nth(1).getByRole('button')).toHaveCount(0);
+  await games.first().getByRole('button', { name: 'Card' }).click();
+  await expect(page.locator('#my-games')).not.toHaveAttribute('open');
+  await expect(page.locator('#end-card')).toHaveAttribute('open');
+  await page.locator('#end-card-close').click();
+  await page.locator('#account-button').click();
+  await games.first().getByRole('button', { name: 'Replay' }).click();
+  await expect(page.locator('#my-games')).not.toHaveAttribute('open');
+  await expect(status(page)).toHaveText(`Game 1 · move ${X_WINS.length} of ${X_WINS.length}`);
 });
 
 test('time limits: range check, presets, and a change during a game starts with the next game', async ({ open }) => {
@@ -97,4 +140,44 @@ test('time limits: range check, presets, and a change during a game starts with 
   await expect(summary).toContainText('3 min per player + 5 s per move');
   await page.reload();
   await expect(summary).toContainText('3 min per player + 5 s per move');
+});
+
+test('the lock shows its tooltip on hover and on a long press, and a short tap still locks', async ({ browser, baseURL }) => {
+  if (baseURL === undefined) throw new Error('the config sets no baseURL');
+  const context = await browser.newContext({ baseURL, hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  await context.addInitScript(() => {
+    if (localStorage.getItem('tick3d.settings') === null) localStorage.setItem('tick3d.settings', JSON.stringify({ mode: 'friend' }));
+  });
+  const page = await context.newPage();
+  await page.goto('/');
+  const lock = page.locator('#lock');
+  const tip = page.getByRole('tooltip');
+  await expect(lock).toBeEnabled();
+  await lock.scrollIntoViewIfNeeded();
+  const box = await lock.boundingBox();
+  if (box === null) throw new Error('the lock has no box');
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+
+  // A long press shows the tooltip and does not lock.
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+  await expect(tip).toContainText('no setting changes');
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect(lock).toHaveAttribute('aria-describedby', 'tip');
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+
+  // A short tap locks.
+  await page.touchscreen.tap(point.x, point.y);
+  await expect(lock).toHaveAttribute('aria-pressed', 'true');
+  await context.close();
+});
+
+test('icon buttons show their tooltip on hover', async ({ open }) => {
+  const { page } = await open(friend);
+  await page.locator('#lock').hover();
+  await expect(page.getByRole('tooltip')).toContainText('Lock: no setting changes');
+  await page.getByRole('button', { name: 'Sound set', exact: true }).hover();
+  await expect(page.getByRole('tooltip')).toContainText('Sound set');
+  await page.mouse.move(1, 1);
+  await expect(page.getByRole('tooltip')).toBeHidden();
 });

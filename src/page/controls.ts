@@ -109,7 +109,7 @@ export function setupControls(): void {
   undoButton.addEventListener('click', undoMove);
 
   lockButton.addEventListener('click', () => {
-    if (!isLive() || page.review || settingsLocked() || page.session === undefined) return;
+    if (!isLive() || page.review || page.session === undefined || page.session.locked) return;
     if (page.session.you === null) return reject(undefined, 'spectator');
     sounds.click();
     const { code, backend } = page.session;

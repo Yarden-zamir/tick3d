@@ -238,38 +238,94 @@ input::placeholder {
   font-weight: 400;
 }
 
-.actions button,
-.toggles button,
-.lock,
-.online button,
-.join button,
-.coords button,
-.review button,
-.history button,
-.end-card-actions button,
-.train button:where(:not(.cell, .train-dot, .brand-links *)) {
-  padding: 0.55rem 0.85rem;
-  border-radius: 8px;
+/* Buttons. Every button and button-like link uses .btn, with at most these modifiers:
+   .btn-primary for the main action, .btn-small for a compact control, .btn-icon for an icon in a square.
+   The disabled look below and the focus ring above apply to all of them. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.6rem;
+  padding: 0.45rem 0.85rem;
   border: var(--border) solid var(--line);
+  border-radius: 8px;
   background: var(--surface);
+  color: var(--ink);
   box-shadow: 3px 3px 0 var(--shadow);
   font-weight: 700;
+  line-height: 1.15;
+  text-decoration: none;
   cursor: pointer;
   transition: translate 0.08s, box-shadow 0.08s, background 0.15s;
 }
 
-:is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:hover:not(:disabled),
-.train button:where(:not(.cell, .train-dot, .brand-links *)):hover:not(:disabled),
-.lock:hover:not(:disabled) {
+.btn:hover:not(:disabled) {
   translate: -1px -1px;
   box-shadow: 4px 4px 0 var(--shadow);
 }
 
-:is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:active:not(:disabled),
-.train button:where(:not(.cell, .train-dot, .brand-links *)):active:not(:disabled),
-.lock:active:not(:disabled) {
+.btn:active:not(:disabled) {
   translate: 3px 3px;
   box-shadow: 0 0 0 var(--shadow);
+}
+
+.btn svg {
+  flex: none;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--on-color);
+  font-weight: 800;
+}
+
+.btn-small {
+  min-height: 2.1rem;
+  padding: 0.25rem 0.65rem;
+  border-width: 2px;
+  box-shadow: 2px 2px 0 var(--shadow);
+  font-size: 0.88rem;
+}
+
+.btn-small:hover:not(:disabled) {
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+.btn-small:active:not(:disabled) {
+  translate: 2px 2px;
+}
+
+.btn-icon {
+  width: 2.6rem;
+  padding: 0;
+}
+
+.btn-small.btn-icon {
+  width: 2.1rem;
+}
+
+/* The tooltip of an element with data-tip (src/tooltip.ts). */
+.tip {
+  position: fixed;
+  z-index: 30;
+  max-width: min(20rem, calc(100vw - 1rem));
+  padding: 0.35rem 0.6rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--surface);
+  box-shadow: 2px 2px 0 var(--shadow);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.3;
+  pointer-events: none;
+}
+
+/* A long press shows the tooltip, so the press must not select text or open the system menu. */
+[data-tip] {
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
 button:disabled,
@@ -431,6 +487,13 @@ input:disabled {
   font-weight: 800;
 }
 
+/* A section heading of a long Info text. */
+.info-panel h3 {
+  margin: 0.3rem 0 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
 .info-panel :is(p, ul) {
   margin: 0;
   font-size: 0.9rem;
@@ -445,12 +508,6 @@ input:disabled {
 
 .info-close {
   justify-self: end;
-  padding: 0.25rem 0.75rem;
-  border: 2px solid currentColor;
-  border-radius: 8px;
-  background: transparent;
-  font-weight: 800;
-  cursor: pointer;
 }
 
 @keyframes banner-in {
@@ -554,9 +611,14 @@ input:disabled {
   display: none;
 }
 
+/* A caret icon, drawn by a mask in the text color. */
 .theme-menu summary::after {
-  content: '▾';
+  content: '';
+  width: 1rem;
+  height: 1rem;
   margin-left: auto;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
   transition: rotate 0.15s;
 }
 
@@ -850,25 +912,19 @@ body[data-turn='O'] .status[data-state='playing'] {
     drop-shadow(0 -1px 0 var(--line));
 }
 
-.angle-row {
+/* The view picker, and Reset angle beside it for the tower. */
+.view-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.6rem;
-  color: var(--muted);
-  font-size: 0.85rem;
-  font-weight: 600;
 }
 
-.angle-row button {
+.view-row .segmented {
+  flex: 1;
+}
+
+.reset-angle {
   flex: none;
-  padding: 0.35rem 0.7rem;
-  border-radius: 8px;
-  border: 2px solid var(--line);
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  font-weight: 700;
-  cursor: pointer;
 }
 
 /* Flat: the four layers as plain grids, in one of four layouts. */
@@ -1065,29 +1121,50 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
+/* New game takes the free width. Undo, the result card and the sound control keep their own width. */
 .actions {
   display: flex;
   gap: 0.6rem;
 }
 
-.actions button {
+.actions > .btn {
+  flex: none;
+}
+
+.actions > .btn-primary {
   flex: 1;
-  padding: 0.7rem 0.8rem;
 }
 
-.actions .primary {
-  flex: 2;
-  background: var(--primary);
-  color: var(--on-color);
-  font-weight: 800;
+/* One box with two parts: the speaker turns the sound on and off, the narrow caret opens the sound sets. */
+/* margin-left: auto keeps the control at the right end when it is alone in the row (Nearby before a game). */
+.sound-control {
+  flex: none;
+  display: flex;
+  min-height: 2.6rem;
+  margin-left: auto;
+  border: var(--border) solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
 }
 
-#sound,
-#sound-set {
-  flex: 0 0 3.2rem;
+.sound-control button {
   display: grid;
   place-items: center;
-  padding: 0;
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sound-control button:hover {
+  background: var(--surface-2);
+}
+
+.sound-control #sound-set {
+  padding-inline: 0.3rem;
+  border-left: 2px solid var(--line);
 }
 
 /* The sound set menu: a popover in the middle of the screen, so it fits a phone too. */
@@ -1144,38 +1221,15 @@ body[data-turn='O'] .status[data-state='playing'] {
   margin-bottom: 0.5rem;
 }
 
-.sound-sets button {
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  color: inherit;
-  box-shadow: 2px 2px 0 var(--shadow);
-  font: inherit;
-  cursor: pointer;
-  transition: translate 0.08s, box-shadow 0.08s;
-}
-
-.sound-sets button:hover {
-  translate: -1px -1px;
-  box-shadow: 3px 3px 0 var(--shadow);
-}
-
-.sound-sets button:active {
-  translate: 2px 2px;
-  box-shadow: 0 0 0 var(--shadow);
-}
-
-.sound-sets-head button {
-  width: 2.2rem;
-  height: 2.2rem;
-  font-weight: 800;
-}
-
+/* A set in the menu: a .btn-small that holds a name and a line of text. */
 .sound-set-choice {
   flex: 1;
   display: grid;
+  justify-content: stretch;
   gap: 0.15rem;
   padding: 0.45rem 0.6rem;
+  font-size: 1rem;
+  font-weight: 400;
   text-align: left;
 }
 
@@ -1189,9 +1243,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--on-color);
 }
 
-.sound-set-play {
-  flex: 0 0 2.8rem;
-  font-size: 1rem;
+.btn.sound-set-play {
+  flex: none;
+  width: 2.8rem;
+  height: auto;
 }
 
 .toggles {
@@ -1201,17 +1256,30 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* Three hide options share the row of the panel, so the sides are narrow. */
-.toggles button {
+.toggles .btn {
   flex: 1;
   padding-inline: 0.5rem;
   color: var(--muted);
   font-weight: 600;
 }
 
-.toggles button[aria-pressed='true'] {
+.toggles .btn[aria-pressed='true'] {
   background: var(--toggle-on);
   color: var(--on-color);
   font-weight: 800;
+}
+
+/* A label row with a small control at its end, such as Hide and the lock. */
+.field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.lock svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .lock[aria-pressed='true'] {
@@ -1272,8 +1340,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-size: 0.92rem;
 }
 
-.help summary,
-.history summary {
+.help summary {
   cursor: pointer;
   color: var(--ink);
   font-weight: 800;
@@ -1319,15 +1386,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .tuning-reset {
   margin-top: 0.8rem;
-  padding: 0.35rem 0.75rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  color: var(--ink);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
 }
 
 /* ---- Online ---- */
@@ -1345,7 +1403,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* The box keeps black lines on cyan in both themes. */
-.online button,
+.online .btn,
 .online input {
   border-color: #000;
   background: #fff;
@@ -1353,7 +1411,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   box-shadow: 3px 3px 0 #000;
 }
 
-.online button:hover:not(:disabled) {
+.online .btn:hover:not(:disabled) {
   box-shadow: 4px 4px 0 #000;
 }
 
@@ -1442,14 +1500,8 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 /* A small square icon button, like the Info button. `.coords button` gives the border, the shadow
    and the hover and press moves; this rule only makes it square and keeps the icon centered. */
-.coords .coords-hear {
-  display: grid;
+.coords-hear {
   flex: none;
-  place-items: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  padding: 0;
-  color: var(--ink);
 }
 
 /* Three read-only slots: layer, row, column. The next one to fill is highlighted. */
@@ -1513,7 +1565,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.5rem;
 }
 
-.keypad button {
+.keypad .btn {
   min-width: 2.9rem;
   min-height: 2.9rem;
   padding: 0.4rem 0.6rem;
@@ -1521,7 +1573,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 800;
 }
 
-.keypad .place {
+.keypad .btn.place {
   background: var(--win);
   color: var(--on-color);
 }
@@ -1629,28 +1681,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   flex: 1;
 }
 
-.chat-form button {
-  padding: 0.5rem 0.9rem;
-  border-radius: 8px;
-  border: var(--border) solid var(--line);
-  background: var(--primary);
-  color: var(--on-color);
-  box-shadow: 3px 3px 0 var(--shadow);
-  font-weight: 800;
-  cursor: pointer;
-  transition: translate 0.08s, box-shadow 0.08s;
-}
-
-.chat-form button:hover:not(:disabled) {
-  translate: -1px -1px;
-  box-shadow: 4px 4px 0 var(--shadow);
-}
-
-.chat-form button:active:not(:disabled) {
-  translate: 3px 3px;
-  box-shadow: 0 0 0 var(--shadow);
-}
-
 /* A bar that slides in from the top when the other player writes. */
 .chat-notice {
   position: fixed;
@@ -1682,7 +1712,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 .chat-notice-icon {
-  font-size: 1.3rem;
+  flex: none;
 }
 
 .chat-notice-body {
@@ -1715,51 +1745,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   from {
     translate: -50% -150%;
   }
-}
-
-/* ---- History ---- */
-
-.history ol {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  max-height: 14rem;
-  overflow-y: auto;
-  margin: 0.6rem 0 0;
-  /* Room for the row buttons' shadows. */
-  padding: 0 0.3rem 0.3rem 0;
-  list-style: none;
-}
-
-.history li {
-  display: grid;
-  /* Name, result, then the Replay and Card buttons. */
-  grid-template-columns: auto 1fr auto auto;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.35rem 0.5rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-2);
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
-.history li.active {
-  background: var(--win);
-  color: var(--on-color);
-}
-
-.history .result {
-  color: inherit;
-  font-weight: 400;
-  opacity: 0.8;
-}
-
-.history button {
-  padding: 0.2rem 0.6rem;
-  font-size: 0.85rem;
-  box-shadow: 2px 2px 0 var(--shadow);
 }
 
 /* ---- Time limit editor ---- */
@@ -2060,7 +2045,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.6rem;
 }
 
-.end-card-actions button {
+.end-card-actions .btn {
   flex: 1;
   white-space: nowrap;
 }
@@ -2073,11 +2058,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   }
 }
 
-.end-card-actions .primary {
+.end-card-actions .btn-primary {
   flex: 1.5;
-  background: var(--primary);
-  color: var(--on-color);
-  font-weight: 800;
 }
 
 .home-confirm {
@@ -2262,26 +2244,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-size: 1rem;
 }
 
-.my-games-head button,
-.account button,
-.my-games-list button,
-.login-link {
-  padding: 0.35rem 0.75rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  color: var(--ink);
-  font-weight: 800;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.login-link {
-  background: var(--primary);
-  color: var(--on-color);
-}
-
 .account {
   display: flex;
   flex-wrap: wrap;
@@ -2347,6 +2309,16 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--muted);
 }
 
+/* The game under replay in the list of this session. */
+.my-games-list li.active {
+  background: var(--win);
+  color: var(--on-color);
+}
+
+.my-games-list li.active small {
+  color: inherit;
+}
+
 .my-games-list .empty {
   color: var(--muted);
   font-weight: 600;
@@ -2390,16 +2362,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   background: var(--surface);
   box-shadow: 5px 5px 0 var(--shadow);
   font-weight: 700;
-}
-
-.update-bar button {
-  padding: 0.35rem 0.8rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--primary);
-  color: var(--on-color);
-  font-weight: 800;
-  cursor: pointer;
 }
 
 /* ---- Nearby ---- */
@@ -2452,20 +2414,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.5rem;
 }
 
-.nearby button {
+.nearby .btn {
   flex: 1;
-  padding: 0.5rem 0.75rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.nearby-start button:first-child {
-  background: var(--primary);
-  color: var(--on-color);
 }
 
 .nearby-step {
@@ -2542,11 +2492,9 @@ body[data-turn='O'] .status[data-state='playing'] {
   overflow-wrap: anywhere;
 }
 
-.nearby-hosts li > button {
+.nearby-hosts li > .btn {
   grid-column: 3;
   grid-row: 1 / span 2;
-  background: var(--primary);
-  color: var(--on-color);
 }
 
 .nearby-note {
@@ -2675,15 +2623,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
-.game-view button {
-  padding: 0.55rem 1.2rem;
-  border: var(--border) solid var(--line);
-  border-radius: 8px;
-  background: var(--primary);
-  box-shadow: 3px 3px 0 var(--shadow);
-  color: var(--on-color);
-  font-weight: 800;
-  cursor: pointer;
+.game-view .btn {
+  padding-inline: 1.2rem;
 }
 
 .my-games-history-actions {
@@ -2694,14 +2635,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .my-games-more {
   margin-top: 0.5rem;
-  padding: 0.35rem 0.75rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  color: var(--ink);
-  font-weight: 800;
-  cursor: pointer;
 }
 
 /* The Previews dialog (the kitshn button): one card per open pull request with a live preview. */

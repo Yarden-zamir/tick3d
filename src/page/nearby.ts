@@ -168,6 +168,7 @@ function renderLobby(): void {
       const item = deviceItem(host, hostedAgo(host.age));
       const join = document.createElement('button');
       join.type = 'button';
+      join.className = 'btn btn-small btn-primary';
       join.textContent = 'Join';
       join.setAttribute('aria-label', `Join ${host.name}`);
       join.addEventListener('click', () => {
