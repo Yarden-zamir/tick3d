@@ -35,3 +35,11 @@ describe('deck layout', () => {
     expect(() => chooseLayout(300, Number.NaN)).toThrow();
   });
 });
+
+describe('display deck layout', () => {
+  it('keeps all four layers in view (2 × 2) on a phone when the page accepts smaller cells', () => {
+    expect(chooseLayout(326, 330, 20)).toMatchObject({ mode: 'grid', perView: 4 });
+    // The trainer keeps its tap-sized cells on the same screen.
+    expect(chooseLayout(326, 330).mode).toBe('scroll');
+  });
+});

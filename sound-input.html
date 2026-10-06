@@ -55,13 +55,12 @@
       </header>
 
       <section class="train-card" id="card" aria-label="Sound input">
-        <p class="input-intro">Turn on the microphone, then whistle, hum or sing. Your pitch lights a cell. Info explains the board.</p>
         <div class="input-mic">
           <button type="button" class="train-play" id="mic">Turn on the microphone</button>
           <button type="button" class="input-calibrate" id="calibrate">Calibrate to your voice</button>
         </div>
         <p class="input-mode">
-          <span id="range-mode">Default bands</span>
+          <span id="range-mode">Default range</span>
           <button type="button" id="range-reset" hidden>Reset to default</button>
         </p>
         <p class="input-hint" id="range-hint" hidden>Your range is small: rows sit close together.</p>
@@ -75,15 +74,30 @@
           </div>
         </div>
         <div class="input-readout" id="readout" data-state="off">
-          <p><span class="input-label">Pitch</span> <b id="frequency">–</b> <span id="note"></span></p>
-          <p><b id="cell">No cell yet</b></p>
+          <p><b id="frequency">–</b> <span id="note"></span> <b id="cell">No cell yet</b></p>
           <div class="train-bar input-level" id="level" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
         </div>
         <p class="train-feedback" id="message" aria-live="polite"></p>
+        <div class="rail" id="rail" role="img" aria-label="Pitch rail: your range from low at the left to high at the right, with the four rows"></div>
         <div class="train-deck-wrap">
           <div class="board flat train-deck input-deck" id="deck" role="group" aria-label="Board: the lit cell follows your pitch. Tap a cell to hear it."></div>
           <div class="train-dots" id="deck-dots"></div>
         </div>
+      </section>
+
+      <section class="train-progress input-settings" aria-labelledby="settings-title">
+        <h2 id="settings-title">Settings</h2>
+        <div class="input-slider">
+          <label for="stickiness">Stickiness</label>
+          <input type="range" id="stickiness" min="0" max="100" step="5" />
+          <output id="stickiness-value" for="stickiness"></output>
+        </div>
+        <div class="input-slider">
+          <label for="build-up">Build-up time</label>
+          <input type="range" id="build-up" min="0" max="5" step="0.1" />
+          <output id="build-up-value" for="build-up"></output>
+        </div>
+        <p class="input-note">A held cell stays lit until your pitch moves past its border by a margin. The margin grows from zero to the stickiness while you hold the cell, in the build-up time.</p>
         <div class="input-actions">
           <label><input type="checkbox" id="hold" checked /> Hold a note for 1 second to place an X</label>
           <button type="button" id="clear">Clear the marks</button>
@@ -100,12 +114,13 @@
     </dialog>
     <div class="info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
       <h2 id="info-title">How sound input works</h2>
-      <p>The page listens to the microphone and finds the pitch of a steady sound: a whistle, a hum or a sung note. The sound stays in this browser.</p>
+      <p>Turn on the microphone, then whistle, hum or sing a steady note. Your pitch lights a cell of the board. The sound stays in this browser.</p>
       <ul>
-        <li>Default bands: the note picks the layer, the nearest of C, D, E and G, the notes of the game's layers. The place inside that note picks the column: a slide up moves the light right, then on to the next layer. The octave picks the row: a whistle above 905 Hz lights row 1, and a hum below 226 Hz lights row 4.</li>
-        <li>Calibrate to your voice: make your lowest comfortable sound for 2 seconds, then your highest. Only clear frames count. Then the four rows split your range in equal musical steps, the highest row on top.</li>
-        <li>Calibrated, a slide up across a row sweeps all 16 cells, from layer 1, column 1 to layer 4, column 4. The note names do not pick the layer then, because a row of your range is seldom one octave. A sound outside your range lights the nearest edge.</li>
-        <li>This browser keeps your range. Reset to default goes back to the default bands.</li>
+        <li>The rail under the readout is your range, low at the left and high at the right. It holds the 64 cells: four rows of 16. The line shows your pitch now.</li>
+        <li>A higher pitch lights a higher row: row 4 at the bottom of your range, row 1 at the top. Inside a row, a slide up moves from layer 1, column 1 to layer 4, column 4.</li>
+        <li>The default range is 150 to 2400 Hz, one octave for each row: hum for rows 4 and 3, whistle for rows 2 and 1.</li>
+        <li>Calibrate to your voice: make your lowest comfortable sound for 2 seconds, then your highest. The rows then split your own range. This browser keeps it, and Reset to default goes back.</li>
+        <li>Stickiness keeps a held cell lit when your pitch wobbles. It grows while you hold the cell. The band on the rail shows it.</li>
         <li>Hold a note on one cell for 1 second to place an X. Tap a cell to hear it in the sound set of the game. Headphones keep that sound out of the microphone.</li>
         <li><a href="/sound-training">Train your ear</a> to learn the cell sounds of the game.</li>
       </ul>

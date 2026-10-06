@@ -5,10 +5,11 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures.ts';
 
 // Chromium plays a WAV file as a fake microphone and grants the microphone without a prompt.
-// The file is a steady G5 (784 Hz): layer 4 (G), row 2 (octave 5), column 2.
+// The file is a steady G5 (784 Hz). In the default range (150 to 2400 Hz, 64 steps) that is step 38:
+// row 2, and step 6 of that row, so layer 2, column 3.
 const RATE = 48_000;
 const G5 = 784;
-const G5_CELL = 3 * 16 + 1 * 4 + 1;
+const G5_CELL = 1 * 16 + 1 * 4 + 2;
 
 function sineWav(frequency: number, seconds: number): Buffer {
   const count = RATE * seconds;
@@ -53,7 +54,8 @@ test('a steady note lights its cell, a held note places an X, and Stop puts the 
   const lit = page.locator('#deck .cell.lit');
   await expect(lit).toHaveCount(1);
   await expect(lit).toHaveAttribute('data-cell', String(G5_CELL));
-  await expect(page.locator('#cell')).toContainText('Layer 4');
+  await expect(page.locator('#cell')).toHaveText('Layer 2, row 2, column 3');
+  await expect(page.locator('#rail .rail-cursor')).toBeVisible();
   await expect(page.locator('#note')).toContainText('G5');
   // The hold is on by default: after a second on one cell, the cell gets an X.
   await expect(page.locator(`#deck .cell[data-cell="${G5_CELL}"]`)).toHaveClass(/\bx\b/);
@@ -108,7 +110,7 @@ test('a calibration from 300 Hz to 1200 Hz splits the rows over that range, and 
   await oscillatorMic(page);
   await page.goto('/sound-input');
   const mode = page.locator('#range-mode');
-  await expect(mode).toHaveText('Default bands');
+  await expect(mode).toHaveText('Default range: 150–2400 Hz');
 
   await page.locator('#calibrate').click();
   await setTone(page, 300);
@@ -132,9 +134,9 @@ test('a calibration from 300 Hz to 1200 Hz splits the rows over that range, and 
   await page.reload();
   await expect(mode).toHaveText(/^Calibrated: /);
   await page.locator('#range-reset').click();
-  await expect(mode).toHaveText('Default bands');
+  await expect(mode).toHaveText('Default range: 150–2400 Hz');
   await page.reload();
-  await expect(mode).toHaveText('Default bands');
+  await expect(mode).toHaveText('Default range: 150–2400 Hz');
   expect(errors).toEqual([]);
 });
 
@@ -148,8 +150,18 @@ test('a high sound below the low sound asks for a retry, and Cancel closes the c
   await setTone(page, 400);
   await expect(calibration).toHaveAttribute('data-step', 'retry', { timeout: 10_000 });
   await expect(page.locator('#calibration-retry')).toBeVisible();
-  await expect(page.locator('#range-mode')).toHaveText('Default bands');
+  await expect(page.locator('#range-mode')).toHaveText(/^Default range/);
   await page.locator('#calibration-cancel').click();
   await expect(calibration).toBeHidden();
   await expect(page.locator('#calibrate')).toBeEnabled();
+});
+
+test('the stickiness settings stay after a reload', async ({ page }) => {
+  await page.goto('/sound-input');
+  await page.locator('#stickiness').fill('0');
+  await expect(page.locator('#stickiness-value')).toHaveText('Off');
+  await page.locator('#build-up').fill('2.5');
+  await page.reload();
+  await expect(page.locator('#stickiness-value')).toHaveText('Off');
+  await expect(page.locator('#build-up-value')).toHaveText('2.5 s');
 });
