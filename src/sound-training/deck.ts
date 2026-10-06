@@ -6,7 +6,8 @@ import { chooseLayout } from './fit.ts';
 // The marks that the page paints on the deck. Each one is a class on the cells.
 // peer: the area under the pointer or the focus. picked: the player's pick. right and wrong: the feedback.
 // last: the cell that played, with the dashed border of the last move in the game.
-export type Paint = Record<'peer' | 'picked' | 'right' | 'wrong' | 'last', ReadonlySet<number>>;
+// tapped: the exact cell that the player tapped, when it is not the cell that played.
+export type Paint = Record<'peer' | 'picked' | 'right' | 'wrong' | 'last' | 'tapped', ReadonlySet<number>>;
 
 export type Deck = {
   cells: readonly HTMLButtonElement[];

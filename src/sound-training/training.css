@@ -138,6 +138,15 @@
   background: var(--danger);
 }
 
+/* The exact cell that the player tapped: a ring in the pick color inside a line outline, on top of the
+   right or the wrong area. */
+.train-deck .cell.tapped {
+  outline: 3px solid var(--line);
+  outline-offset: 2px;
+  box-shadow: inset 0 0 0 calc(var(--cell) * 0.12) var(--toggle-on);
+  z-index: 1;
+}
+
 /* The dots under a scroll deck: which layers are in view, and where the pick and the answer are. */
 .train-dots {
   display: none;

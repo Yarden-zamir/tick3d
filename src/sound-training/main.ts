@@ -136,12 +136,14 @@ function repaint(): void {
   const answer = area(card.cell);
   const picked = area(tapped);
   if (card.kind === 'learn') {
-    paint(deck, { peer: none, picked: none, right: answer, wrong: none, last: new Set([card.cell]) });
+    paint(deck, { peer: none, picked: none, right: answer, wrong: none, last: new Set([card.cell]), tapped: none });
   } else if (checked) {
     const wrong = new Set([...picked].filter((cell) => !answer.has(cell)));
-    paint(deck, { peer: none, picked: none, right: answer, wrong, last: new Set([card.cell]) });
+    // The exact tap stays in view, also inside a right area: the player sees where they were off.
+    const exact = tapped === undefined || tapped === card.cell ? none : new Set([tapped]);
+    paint(deck, { peer: none, picked: none, right: answer, wrong, last: new Set([card.cell]), tapped: exact });
   } else {
-    paint(deck, { peer: area(hovered), picked, right: none, wrong: none, last: none });
+    paint(deck, { peer: area(hovered), picked, right: none, wrong: none, last: none, tapped: none });
   }
 }
 

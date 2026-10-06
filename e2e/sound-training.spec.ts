@@ -22,7 +22,8 @@ test('the ear training shows answers first, then hides them, and keeps its progr
   const errors: Error[] = [];
   page.on('pageerror', (error) => errors.push(error));
   const response = await page.goto('/sound-training');
-  expect(response?.headers()['x-robots-tag']).toContain('noindex');
+  // The page is public: search engines may list it.
+  expect(response?.headers()['x-robots-tag']).toBeUndefined();
 
   const kind = page.locator('#card-kind');
   const answer = page.locator('#card-answer');
@@ -100,6 +101,28 @@ test('a tap selects a whole layer, row or column, or one cell on a full card', a
     await page.locator('#next').click();
   }
   expect([...seen].sort()).toEqual(['cell', 'column', 'layer', 'row']);
+});
+
+test('a right layer on another cell shows the tapped cell and the cell that played', async ({ page }) => {
+  await seedQuiz(page);
+  const tapped = 42;
+  let shown = false;
+  for (let i = 0; i < 150 && !shown; i++) {
+    const asked = await page.locator('#deck').getAttribute('data-asked');
+    await deckCell(page, tapped).click();
+    await page.locator('#check').click();
+    const played = Number(await deckCells(page, '.last').getAttribute('data-cell'));
+    const layerRight = asked === 'layer' && (await page.locator('#card-feedback').textContent())?.includes('right');
+    if (layerRight && played !== tapped) {
+      await expect(deckCells(page, '.tapped')).toHaveCount(1);
+      await expect(deckCell(page, tapped)).toHaveClass(/tapped/);
+      await expect(deckCell(page, tapped)).toHaveClass(/right/);
+      await expect(deckCell(page, played)).toHaveClass(/last/);
+      shown = true;
+    }
+    await page.locator('#next').click();
+  }
+  expect(shown, 'a layer card with a right layer came up').toBe(true);
 });
 
 test('on a phone, the prompt, Play, the board and Check fit the screen', async ({ page }) => {
