@@ -1,8 +1,13 @@
 // The kitshn button and the Previews dialog: the open pull requests with a live preview.
 import { api, OnlineError } from '../online.ts';
 import type { Preview } from '../protocol.ts';
-import { previewsButton, previewsClose, previewsDialog, previewsList, previewsNote } from './dom.ts';
-import { showError } from './feedback.ts';
+import { element } from '../element.ts';
+
+const previewsButton = element('#previews-button', HTMLButtonElement);
+export const previewsDialog = element('#previews', HTMLDialogElement);
+const previewsClose = element('#previews-close', HTMLButtonElement);
+const previewsNote = element('#previews-note', HTMLParagraphElement);
+const previewsList = element('#previews-list', HTMLUListElement);
 
 // The pull request number of this page, when the page itself is a preview (pr.<n>.<domain>).
 function previewNumberOf(hostname: string): number | undefined {
@@ -106,14 +111,15 @@ async function openPreviews(): Promise<void> {
     previewsList.replaceChildren(...previews.map((preview) => previewItem(preview, preview.number === here)));
     if (previews.length === 0) showMessage('No open previews.');
   } catch (error) {
-    // The dialog covers the toasts, so the list itself says what went wrong.
+    // The list itself says what went wrong: the dialog covers the toasts, and only the game page has them.
     if (mine === request) showMessage(error instanceof OnlineError ? `The list did not load. ${error.message}` : 'The list did not load.');
     if (!(error instanceof OnlineError)) throw error;
   }
 }
 
 export function setupPreviews(): void {
-  previewsButton.addEventListener('click', () => void openPreviews().catch(showError));
+  // openPreviews shows a failed call in the list. Any other error is a bug and stays uncaught.
+  previewsButton.addEventListener('click', () => void openPreviews());
   previewsClose.addEventListener('click', () => previewsDialog.close());
   previewsDialog.addEventListener('click', (event) => {
     if (event.target === previewsDialog) previewsDialog.close();

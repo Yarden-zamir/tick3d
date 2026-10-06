@@ -4,15 +4,15 @@ import { scheduleComputer } from './computer.ts';
 import {
   cardDialog,
   myGamesDialog,
-  previewsDialog,
   homeConfirm,
   burstEl,
-  homeLink,
   homeConfirmText,
   homeConfirmStay,
   homeConfirmLeave,
 } from './dom.ts';
 import { showError } from './feedback.ts';
+import { homeLink } from '../header/header.ts';
+import { previewsDialog } from '../header/previews.ts';
 import { nearbyKind, endNearby } from './nearby.ts';
 import { render } from './render.ts';
 import { leaveSession, openLocalSession, applyView } from './sessions.ts';

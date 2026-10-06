@@ -18,8 +18,9 @@ import { openGameView, setupGameView } from './page/game-view.ts';
 import { setupHome } from './page/home.ts';
 import { setupKeypad } from './page/keypad.ts';
 import { setupReports } from './page/metrics.ts';
-import { refreshAccount, setupMyGames } from './page/my-games.ts';
-import { setupPreviews } from './page/previews.ts';
+import { openMyGames, refreshAccount, setupMyGames } from './page/my-games.ts';
+import { setupGameHeader } from './header/header.ts';
+import { readMyGamesRequest, withoutMyGamesRequest } from './header/my-games-link.ts';
 import { openNearbyLink, openNearby, setupNearby } from './page/nearby.ts';
 import { checkLanHost, setupOnlineBox } from './page/online-box.ts';
 import { render } from './page/render.ts';
@@ -36,7 +37,7 @@ setupBoard();
 setupControls();
 setupNearby();
 setupMyGames();
-setupPreviews();
+setupGameHeader();
 
 setupPwa({
   onNeedRefresh(reload) {
@@ -75,8 +76,15 @@ async function start(): Promise<void> {
   page.local = createLocalBackend(page.deviceDb, token, () => page.account.user);
   // Before any session opens, so a session the start opens is never pruned under it.
   await page.local.pruneEmpty(EMPTY_SESSION_TTL_MS);
-  void refreshAccount();
+  const account = refreshAccount();
   void checkLanHost();
+  // The account button of another page asks to open My games. The dialog opens after the account
+  // is known, so it shows the right login.
+  const myGamesRequest = readMyGamesRequest(new URL(location.href));
+  if (myGamesRequest !== undefined) {
+    history.replaceState(null, '', withoutMyGamesRequest(new URL(location.href)));
+    void account.then(() => openMyGames(myGamesRequest.returnTo)).catch(showError);
+  }
   const params = new URLSearchParams(location.search);
   if (params.get('login') === 'failed') {
     showProblem('The GitHub login did not work. Try again.');

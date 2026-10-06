@@ -13,10 +13,8 @@ import {
   outcomeOf,
   toGame,
 } from '../protocol.ts';
+import { accountLink } from '../header/header.ts';
 import {
-  accountAvatar,
-  accountName,
-  accountButton,
   myGamesDialog,
   accountBox,
   myGamesDevice,
@@ -38,15 +36,6 @@ import { render } from './render.ts';
 import { flushResults, syncRecords } from './results.ts';
 import { openDeviceSession, joinSession } from './sessions.ts';
 import { page, settingsLocked } from './state.ts';
-
-export function renderAccount(): void {
-  const user = page.account.user;
-  accountAvatar.hidden = user === null;
-  if (user !== null) accountAvatar.src = `${user.avatar}&s=48`;
-  accountName.textContent = user?.login ?? 'My games';
-  // On narrow phones only the icon shows, so the spoken name carries the login too.
-  accountButton.setAttribute('aria-label', user === null ? 'My games' : `My games, logged in as ${user.login}`);
-}
 
 function tallyBox(label: string, tally: Tally): HTMLElement {
   const box = document.createElement('div');
@@ -171,7 +160,8 @@ async function loadHistory(request: number, append: boolean): Promise<void> {
 // Opening the dialog again while a list loads starts over, so a late answer never adds a second copy.
 let myGamesRequest = 0;
 
-async function openMyGames(): Promise<void> {
+// `returnTo` is the page that a GitHub login returns to. Without it, the login returns to this page.
+export async function openMyGames(returnTo?: string): Promise<void> {
   const request = ++myGamesRequest;
   myGamesDialog.showModal();
   // Account
@@ -199,7 +189,7 @@ async function openMyGames(): Promise<void> {
       text.append(' Log in with GitHub to use your GitHub name.');
       const login = document.createElement('a');
       login.className = 'login-link';
-      login.href = api.loginUrl();
+      login.href = api.loginUrl(returnTo);
       login.textContent = 'Log in with GitHub';
       accountBox.append(login);
     }
@@ -296,7 +286,13 @@ export async function refreshAccount(): Promise<void> {
 }
 
 export function setupMyGames(): void {
-  accountButton.addEventListener('click', () => void openMyGames().catch(showError));
+  // The account button is a link to the My games request (src/header/my-games-link.ts). Here it opens
+  // the dialog at once. A modified click opens a new tab, as for any link, and the dialog opens there.
+  accountLink.addEventListener('click', (event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    void openMyGames().catch(showError);
+  });
   myGamesClose.addEventListener('click', () => myGamesDialog.close());
   myGamesMore.addEventListener('click', () => void loadHistory(myGamesRequest, true).catch(showError));
   myGamesClear.addEventListener('click', () => {

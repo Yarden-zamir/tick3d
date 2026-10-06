@@ -314,9 +314,9 @@ input:disabled {
   gap: 0.6rem;
 }
 
-/* Small buttons in the brutalist style, one height. Rules is an icon that opens the rules banner. */
+/* Small buttons in the brutalist style, one height. Info is an icon that opens the Info panel. */
 .repo-link,
-.rules-button {
+.info-button {
   flex: none;
   box-sizing: border-box;
   height: 2.5rem;
@@ -336,13 +336,13 @@ input:disabled {
 }
 
 .repo-link:hover,
-.rules-button:hover {
+.info-button:hover {
   translate: -1px -1px;
   box-shadow: 4px 4px 0 var(--shadow);
 }
 
 .repo-link:active,
-.rules-button:active {
+.info-button:active {
   translate: 3px 3px;
   box-shadow: 0 0 0 var(--shadow);
 }
@@ -381,7 +381,7 @@ input:disabled {
 }
 
 /* The icon-only buttons are square. */
-.rules-button {
+.info-button {
   justify-content: center;
   width: 2.5rem;
   padding: 0;
@@ -400,42 +400,57 @@ input:disabled {
   }
 }
 
-.rules-banner {
+.info-panel {
   position: fixed;
-  z-index: 11;
-  top: max(0.75rem, env(safe-area-inset-top));
-  left: 50%;
+  inset: max(0.75rem, env(safe-area-inset-top)) auto auto 50%;
   translate: -50% 0;
-  display: grid;
-  gap: 0.25rem;
-  width: min(calc(100vw - 2rem), 26rem);
-  padding: 0.7rem 0.9rem;
+  box-sizing: border-box;
+  width: min(calc(100vw - 2rem), 30rem);
+  max-height: calc(100dvh - 2rem);
+  margin: 0;
+  overflow: auto;
+  padding: 0.8rem 1rem;
   border: var(--border) solid #000;
   border-radius: 12px;
   background: var(--primary);
   color: var(--on-color);
   box-shadow: 5px 5px 0 #000;
-  text-align: left;
   line-height: 1.4;
-  cursor: pointer;
+}
+
+/* A popover hides itself while it is closed. A display value here must not show it. */
+.info-panel:popover-open {
+  display: grid;
+  gap: 0.5rem;
   animation: banner-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.rules-banner b {
-  font-size: 1rem;
+.info-panel h2 {
+  margin: 0;
+  font-size: 1.05rem;
   font-weight: 800;
 }
 
-.rules-banner span {
+.info-panel :is(p, ul) {
+  margin: 0;
   font-size: 0.9rem;
   font-weight: 600;
 }
 
-.rules-banner small {
+.info-panel ul {
+  display: grid;
+  gap: 0.3rem;
+  padding-left: 1.2rem;
+}
+
+.info-close {
   justify-self: end;
-  font-size: 0.75rem;
-  font-weight: 700;
-  opacity: 0.75;
+  padding: 0.25rem 0.75rem;
+  border: 2px solid currentColor;
+  border-radius: 8px;
+  background: transparent;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 @keyframes banner-in {
@@ -597,15 +612,15 @@ input:disabled {
 }
 
 /* The status sits in the header row. Below 64rem the header buttons need the row, so the status
-   takes its own line under it. A long status wraps. */
-.brand:has(> .status) {
+   takes its own line under it. A long status wraps. The name of another page takes the same place. */
+.brand:has(> .status, > .page-title) {
   flex-wrap: wrap;
   row-gap: 0.9rem;
 }
 
 /* Below 64rem the header buttons stay at the right, also when they wrap under the wordmark. */
 @media (width < 64rem) {
-  .brand:has(> .status) > .brand-links {
+  .brand:has(> .status, > .page-title) > .brand-links {
     margin-left: auto;
   }
 }
@@ -632,6 +647,22 @@ input:disabled {
     order: 0;
     flex: 0 1 auto;
     max-width: 28rem;
+  }
+}
+
+.page-title {
+  order: 1;
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: clamp(1.4rem, 5vw, 1.8rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+@media (min-width: 64rem) {
+  .page-title {
+    order: 0;
+    flex: 1 1 auto;
   }
 }
 
@@ -1409,7 +1440,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   line-height: 1.2;
 }
 
-/* A small square icon button, like the rules button. `.coords button` gives the border, the shadow
+/* A small square icon button, like the Info button. `.coords button` gives the border, the shadow
    and the hover and press moves; this rule only makes it square and keeps the icon centered. */
 .coords .coords-hear {
   display: grid;

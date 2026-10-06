@@ -31,7 +31,7 @@ import {
 import { openCard } from './end-card.ts';
 import { renderGameView, viewerName } from './game-view.ts';
 import { renderCoords } from './keypad.ts';
-import { renderAccount } from './my-games.ts';
+import { showAccount } from '../header/header.ts';
 import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
 import { settings, type Settings, type Toggle } from './settings.ts';
@@ -297,7 +297,7 @@ export function render(): void {
   lockButton.textContent = frozen ? '🔒 Locked' : '🔓 Lock';
   lockButton.title = frozen ? `Settings are locked${lockScope} until this game ends.` : `Lock every setting${lockScope} until this game ends.`;
   lockButton.setAttribute('aria-pressed', String(frozen));
-  renderAccount();
+  showAccount(page.account.user);
   soundButton.innerHTML = settings.muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
   soundButton.setAttribute('aria-pressed', String(!settings.muted));
 }
