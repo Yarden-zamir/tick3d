@@ -26,7 +26,7 @@ const setTone = (page: Page, frequency: number | null) =>
   page.evaluate((value) => (window as unknown as { e2eTone: (frequency: number | null) => void }).e2eTone(value), frequency);
 
 // The middle of the pitch band of a cell in the default range of /sound-input.
-const toneOf = (index: number) => frequencyAt(stepOfCell(index) + 0.5, DEFAULT_RANGE);
+const toneOf = (index: number) => frequencyAt(stepOfCell(index) + 0.5, { range: DEFAULT_RANGE, spread: 'log' });
 
 // Layer 2, row 3, column 2.
 const TARGET = 16 + 2 * 4 + 1;

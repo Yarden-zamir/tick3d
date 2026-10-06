@@ -111,7 +111,7 @@ async function openVoice(engine: Voice): Promise<void> {
   const problem = await engine.start();
   opening = false;
   if (problem !== null) return turnOff(problem);
-  if (rail !== undefined) showRailRange(rail, engine.range());
+  if (rail !== undefined) showRailRange(rail, engine.pitchMap());
   // The game ended, or the page went out of view, while the browser asked.
   syncVoice();
 }
@@ -137,7 +137,7 @@ export function setupVoice(): void {
   const engine = createVoice();
   voice = engine;
   rail = buildRail(voiceRailEl);
-  showRailRange(rail, engine.range());
+  showRailRange(rail, engine.pitchMap());
   engine.subscribe(onFrame);
   engine.onStop(turnOff);
   voiceButton.innerHTML = MIC_ICON;
