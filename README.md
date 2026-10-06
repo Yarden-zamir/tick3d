@@ -55,7 +55,7 @@
 - My games opens the My games dialog on the game page. On another page it links to `/?open=my-games`, and the game page opens the dialog. A GitHub login from there returns to the page that the player came from. The button shows the login on every page.
 - Info opens a panel with the text of the page: on the game page the rules and how to play (keypad and hide options, sounds, time limits, the lock, online and Nearby play), what the numbers mean on `/stats`, and how the trainer works on `/sound-training`. Close, Escape or a tap outside the panel closes it.
 - A GitHub button in the header links to this repository.
-- A kitshn button in the header lists the open pull requests that have a live preview: the title, the first paragraph of the text, the contributors, and links to the preview and to the pull request. A preview page marks its own entry with "You are here".
+- A kitshn button in the header lists the production site first, then the open pull requests that have a live preview: the title, the first paragraph of the text, the contributors, and links to the preview and to the pull request. A preview page marks its own entry with "You are here".
 - Tooltips: the lock and the icon buttons (sound, sound set, Reset angle, the header buttons) show a short text on hover, on keyboard focus, and on a long press on a touch screen (`src/tooltip.ts`). A long press does not press the button. A short tap works as usual.
 - Buttons share one component in `src/style.css`: `.btn`, with `.btn-primary`, `.btn-small` and `.btn-icon`.
 - The browser keeps the settings in `localStorage`. The app checks each stored value and uses the default for a value that is not valid.
@@ -236,7 +236,7 @@ The full reference, with every shape, error and a curl example, is the OpenAPI 3
 | `POST /api/practice/runs` | A finished practice run of the Voice room (targets or echo). Checked, 60 per 10 minutes per address. |
 | `GET /api/practice/best?mode=targets&preset=normal` | The best 10 people of one mode and level, and the best run of the caller. |
 | `GET /api/stats` | The aggregates of the stats page. The server computes them at most once a minute. |
-| `GET /api/previews` | The open pull requests with a live preview, for the kitshn button. The server reads GitHub at most once per 2 minutes, without a token. |
+| `GET /api/previews` | The production site and the open pull requests with a live preview, for the kitshn button. The server reads GitHub at most once per 2 minutes, without a token. |
 
 ## Stats page and what is logged
 

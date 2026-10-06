@@ -1,4 +1,4 @@
-// The kitshn button and the Previews dialog: the open pull requests with a live preview.
+// The kitshn button and the Previews dialog: the production site and the open pull requests with a live preview.
 import { api, OnlineError } from '../online.ts';
 import type { Preview } from '../protocol.ts';
 import { element } from '../element.ts';
@@ -87,6 +87,26 @@ function previewItem(preview: Preview, here: boolean): HTMLLIElement {
   return item;
 }
 
+// The production site, built from the main branch.
+function mainItem(url: string): HTMLLIElement {
+  const here = location.origin === url;
+  const item = document.createElement('li');
+  item.className = here ? 'preview here' : 'preview';
+  const head = document.createElement('div');
+  head.className = 'preview-head';
+  const title = document.createElement('b');
+  title.textContent = 'Main';
+  head.append(title);
+  if (here) head.append(badge('You are here'));
+  const description = document.createElement('p');
+  description.textContent = 'The production site, built from the main branch.';
+  const foot = document.createElement('div');
+  foot.className = 'preview-foot';
+  foot.append(link('Open site', url));
+  item.append(head, description, foot);
+  return item;
+}
+
 function showMessage(text: string): void {
   const item = document.createElement('li');
   item.className = 'empty';
@@ -100,16 +120,18 @@ let request = 0;
 async function openPreviews(): Promise<void> {
   const mine = ++request;
   previewsDialog.showModal();
-  previewsNote.textContent = 'Open pull requests with a live preview.';
+  previewsNote.textContent = 'The production site and the open pull requests with a live preview.';
   showMessage('Loading…');
   if (!navigator.onLine) return showMessage('You are offline. The list needs a network.');
   try {
-    const { previews, error } = await api.previews();
+    const { main, previews, error } = await api.previews();
     if (mine !== request) return;
     if (error !== null) previewsNote.textContent = error;
     const here = previewNumberOf(location.hostname);
-    previewsList.replaceChildren(...previews.map((preview) => previewItem(preview, preview.number === here)));
-    if (previews.length === 0) showMessage('No open previews.');
+    const items = previews.map((preview) => previewItem(preview, preview.number === here));
+    if (main !== null) items.unshift(mainItem(main));
+    previewsList.replaceChildren(...items);
+    if (items.length === 0) showMessage('No open previews.');
   } catch (error) {
     // The list itself says what went wrong: the dialog covers the toasts, and only the game page has them.
     if (mine === request) showMessage(error instanceof OnlineError ? `The list did not load. ${error.message}` : 'The list did not load.');

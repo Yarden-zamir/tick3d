@@ -149,6 +149,7 @@ describe('the previews list', () => {
     });
     const list = await previews.list();
     expect(list.error).toBeNull();
+    expect(list.main).toBe('https://game.example.com');
     expect(list.previews).toEqual([
       {
         number: 5,

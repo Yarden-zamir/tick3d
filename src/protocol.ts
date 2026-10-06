@@ -736,8 +736,9 @@ export type Preview = {
   // The author of the pull request and the commit authors, most commits first.
   contributors: Contributor[];
 };
+// `main` is the production site, built from the main branch. null on a server without previews.
 // `error` says why the list is empty or old. null when the list is fresh.
-export type Previews = { previews: Preview[]; error: string | null };
+export type Previews = { main: string | null; previews: Preview[]; error: string | null };
 export const PREVIEW_DESCRIPTION_LENGTH = 280;
 
 function parseContributor(value: unknown): Contributor | undefined {
@@ -764,7 +765,11 @@ export function parsePreviews(value: unknown): Previews {
   if (!isRecord(value) || !Array.isArray(value.previews) || !(value.error === null || typeof value.error === 'string')) {
     throw new Error('invalid answer from /api/previews');
   }
+  // The page puts the address in a link, so it must be a secure site.
+  if (!(value.main === null || (typeof value.main === 'string' && value.main.startsWith('https://')))) {
+    throw new Error('invalid answer from /api/previews');
+  }
   const previews = value.previews.map(parsePreview);
   if (!previews.every((preview) => preview !== undefined)) throw new Error('invalid preview from /api/previews');
-  return { previews, error: value.error };
+  return { main: value.main, previews, error: value.error };
 }

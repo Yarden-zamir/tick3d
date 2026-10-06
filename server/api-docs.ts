@@ -489,7 +489,8 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     draft: { type: 'boolean' },
     contributors: list('The author of the pull request and the commit authors with a GitHub account, most commits first. No bots.', ref('Contributor')),
   }),
-  Previews: object('The open pull requests with a live preview, most recently updated first.', {
+  Previews: object('The production site and the open pull requests with a live preview, most recently updated first.', {
+    main: nullable({ type: 'string', pattern: '^https://', description: 'The production site, built from the main branch. null on a server without previews.' }),
     previews: list('The previews.', ref('Preview')),
     error: nullable({ type: 'string', description: 'Why the list is empty or old, for example when GitHub does not answer.' }),
   }),
@@ -576,6 +577,7 @@ const STATS_EXAMPLE = {
 };
 
 const PREVIEWS_EXAMPLE = {
+  main: 'https://tick3d.yarden-zamir.com',
   previews: [
     {
       number: 17,
