@@ -18,6 +18,8 @@ import {
   parseSessionUpdate,
   parseSessionView,
 } from '../src/protocol.ts';
+import { parsePlayoffRequest } from '../src/practice/playoff.ts';
+import { parsePracticeBoard, parsePracticeRun } from '../src/practice/practice.ts';
 import { PATH_PARAMS, ROUTES, ROUTE_NAMES, type Route, SCHEMAS, type SchemaName, matchRoute, splitRoute } from './api-docs.ts';
 import { curlOf, openApi, swaggerHtml } from './api-docs-render.ts';
 import { openStore } from './store.ts';
@@ -54,6 +56,9 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   NearbyHosts: parseLobbyHosts,
   NearbyAnswer: parseAnswerRequest,
   Previews: parsePreviews,
+  PlayoffRequest: parsePlayoffRequest,
+  PracticeRun: parsePracticeRun,
+  PracticeBoard: parsePracticeBoard,
 };
 
 function parses(name: SchemaName, value: unknown): boolean {

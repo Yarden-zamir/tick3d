@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LAYER_GAP, MIN_CELL, chooseLayout } from './fit.ts';
+import { DISPLAY_MIN_CELL, LAYER_GAP, MIN_CELL, chooseLayout } from './fit.ts';
 
 // The width of `count` layers side by side, as training.css draws them.
 const layersWidth = (cell: number, count: number) => count * (cell * 4.5 + 12) + (count - 1) * LAYER_GAP;
@@ -38,7 +38,7 @@ describe('deck layout', () => {
 
 describe('display deck layout', () => {
   it('keeps all four layers in view (2 × 2) on a phone when the page accepts smaller cells', () => {
-    expect(chooseLayout(326, 330, 20)).toMatchObject({ mode: 'grid', perView: 4 });
+    expect(chooseLayout(326, 330, DISPLAY_MIN_CELL)).toMatchObject({ mode: 'grid', perView: 4 });
     // The trainer keeps its tap-sized cells on the same screen.
     expect(chooseLayout(326, 330).mode).toBe('scroll');
   });

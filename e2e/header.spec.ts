@@ -7,7 +7,7 @@ const PAGES = [
   { path: '/', info: 'How to win' },
   { path: '/stats', info: 'About these stats' },
   { path: '/sound-training', info: 'How the ear training works' },
-  { path: '/sound-input', info: 'How sound input works' },
+  { path: '/sound-input', info: 'How the Voice room works' },
 ];
 
 const USER = { login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4' };

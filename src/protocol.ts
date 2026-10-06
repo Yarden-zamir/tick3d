@@ -4,6 +4,8 @@ import { NO_LIMIT, type TimeControl, parseClock } from './clock.ts';
 import { CELL_COUNT, type Game, type Player, type Status, replay, timeOut } from './game.ts';
 import type { DeviceKind } from './nearby/device.ts';
 import { type Tuning, isTuning, parseTuning } from './tuning.ts';
+import { type Playoff, parsePlayoff } from './practice/playoff.ts';
+import type { PracticeStats } from './practice/practice.ts';
 
 // Letters and digits without the look-alikes 0/O and 1/I, so a code read aloud is not ambiguous.
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -70,6 +72,8 @@ export type SessionView = {
   // `turn` is the player to move, or null when the game is over.
   turn: Player | null;
   status: Status;
+  // The sound playoff of the session, or null (src/practice/playoff.ts).
+  playoff: Playoff | null;
 };
 
 export type SessionUpdate = { name?: string; clock?: TimeControl } & Partial<MatchOptions>;
@@ -222,6 +226,9 @@ export function parseSessionView(value: unknown): SessionView {
   const playerO = players.O === null ? null : parsePlayerInfo(players.O);
   if (playerX === undefined || playerO === undefined) return fail('players');
   if (names === undefined) return fail('names');
+  // An older server, a Nearby host or a cached view sends no playoff.
+  const playoff = value.playoff === undefined || value.playoff === null ? null : parsePlayoff(value.playoff);
+  if (playoff === undefined) return fail('playoff');
   // The rules give the live status. A sender without these fields (an older server, a Nearby host
   // or a cached view) is fine. A sender with fields that disagree with the moves is not.
   const last: unknown = games.at(-1);
@@ -252,6 +259,7 @@ export function parseSessionView(value: unknown): SessionView {
     names,
     turn,
     status: live.status,
+    playoff,
   };
 }
 
@@ -700,6 +708,8 @@ export type Stats = {
   offlineGames: number;
   nearbyMixes: Count[];
   errors: { kind: string; message: string; count: number; lastAt: number }[];
+  // The sound practice room: runs and leaderboards (server/practice.ts).
+  practice: PracticeStats;
 };
 
 export const MOVE_TIME_BUCKETS = ['< 1 s', '1–2 s', '2–5 s', '5–10 s', '10–30 s', '30–60 s', '1–5 min', '5 min +'] as const;

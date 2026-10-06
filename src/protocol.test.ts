@@ -54,6 +54,7 @@ describe('parseSessionView', () => {
     names: { X: 'braveOtter', O: null },
     turn: 'X',
     status: { kind: 'playing' },
+    playoff: null,
   };
 
   it('accepts a valid view', () => {
@@ -63,6 +64,12 @@ describe('parseSessionView', () => {
   it('reads hideCoordinates as false when an older sender has no such field', () => {
     const older = { ...valid, options: { hideBoard: true, hideHistory: false } };
     expect(parseSessionView(older).options).toEqual({ hideBoard: true, hideHistory: false, hideCoordinates: false });
+  });
+
+  it('gives no playoff when a sender has no playoff field, and refuses a broken one', () => {
+    const { playoff: _playoff, ...older } = valid;
+    expect(parseSessionView(older).playoff).toBeNull();
+    expect(() => parseSessionView({ ...valid, playoff: { id: 1 } })).toThrow();
   });
 
   it('gives no names when a sender has no names field', () => {

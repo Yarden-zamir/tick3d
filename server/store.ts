@@ -41,6 +41,9 @@ import {
 import { type Records, addLoss } from '../src/records.ts';
 import * as core from '../src/session/core.ts';
 import { CURRENT_FORMAT, type SessionDoc, parseDoc } from '../src/session/format.ts';
+import type { PlayoffRequest } from '../src/practice/playoff.ts';
+import type { PracticeBoard, PracticeMode, PracticeRun, PresetId } from '../src/practice/practice.ts';
+import { practiceBoard, practiceStats } from './practice.ts';
 import { computeStats, SEAT_O, SEAT_X } from './stats.ts';
 
 const { SessionError } = core;
@@ -114,6 +117,19 @@ const SCHEMA = [
      metrics VARIANT NOT NULL,
      received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
      PRIMARY KEY (public_id, seat)
+   )`,
+  // Finished runs of the sound practice room (src/practice/practice.ts). `id` comes from the page, so a
+  // page can send a run again after a lost answer. `score` is the echo points, or the target count.
+  `CREATE TABLE IF NOT EXISTS practice_runs (
+     token VARCHAR NOT NULL,
+     id VARCHAR NOT NULL,
+     mode VARCHAR NOT NULL CHECK (mode IN ('targets', 'echo')),
+     preset VARCHAR NOT NULL CHECK (preset IN ('easy', 'normal', 'hard')),
+     total_ms INTEGER NOT NULL CHECK (total_ms >= 0),
+     round_ms INTEGER[] NOT NULL,
+     score INTEGER NOT NULL CHECK (score >= 0),
+     finished_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     PRIMARY KEY (token, id)
    )`,
 ];
 
@@ -491,6 +507,33 @@ export async function openStore(
     lock: (code: Code, token: PlayerToken) => change(code, token, core.lock),
     chat: (code: Code, token: PlayerToken, text: unknown) =>
       change(code, token, (doc, identity) => core.chat(doc, identity, text, now())),
+    playoff: (code: Code, token: PlayerToken, request: PlayoffRequest) =>
+      change(code, token, (doc, identity) => core.playoff(doc, identity, request, now())),
+
+    // Stores a finished practice run. A run with an id that this player sent before changes nothing.
+    addPracticeRun: (token: PlayerToken, run: PracticeRun): Promise<{ stored: boolean }> =>
+      serialized(async () => {
+        const inserted = await rows(
+          `INSERT INTO practice_runs (token, id, mode, preset, total_ms, round_ms, score, finished_at)
+           VALUES ($token, $id, $mode, $preset, $total, $rounds::INTEGER[], $score, make_timestamptz($now * 1000))
+           ON CONFLICT DO NOTHING RETURNING id`,
+          {
+            token,
+            id: run.id,
+            mode: run.mode,
+            preset: run.preset,
+            total: run.roundMs.reduce((sum, ms) => sum + ms, 0),
+            rounds: listValue(run.roundMs),
+            score: run.score,
+            now: now(),
+          },
+        );
+        return { stored: inserted.length > 0 };
+      }),
+
+    // The leaderboard of one mode and preset, and the best run of the caller on all linked devices.
+    practiceBoard: (mode: PracticeMode, preset: PresetId, token: PlayerToken | undefined): Promise<PracticeBoard> =>
+      serialized(async () => practiceBoard(rows, mode, preset, [...(await identityOf(token))])),
 
     // Links this browser to a GitHub account, and refreshes the account's name and picture.
     linkToken: (token: PlayerToken, user: GitHubUser): Promise<void> =>
@@ -701,7 +744,9 @@ export async function openStore(
     // The aggregates of the stats page, at most STATS_CACHE_MS old.
     stats: (): Promise<Stats> =>
       serialized(async () => {
-        if (statsCache === undefined || now() - statsCache.generatedAt >= STATS_CACHE_MS) statsCache = await computeStats(rows, now());
+        if (statsCache === undefined || now() - statsCache.generatedAt >= STATS_CACHE_MS) {
+          statsCache = { ...(await computeStats(rows, now())), practice: await practiceStats(rows) };
+        }
         return statsCache;
       }),
 

@@ -67,3 +67,11 @@ export function showRailPitch(rail: Rail, position: number | null, held: Held | 
     rail.band.style.width = `calc(${percent(held.step + 1 + margin)} - ${percent(held.step - margin)})`;
   }
 }
+
+// `step` is the step of the target cell (stepOfCell in mapping.ts), or null for no target.
+export function showRailTarget(rail: Rail, step: number | null): void {
+  rail.target.hidden = step === null;
+  if (step === null) return;
+  rail.target.style.left = percent(step);
+  rail.target.style.width = percent(1);
+}

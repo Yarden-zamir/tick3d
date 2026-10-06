@@ -5,6 +5,9 @@ export type DeckLayout = { mode: 'row' | 'grid' | 'scroll'; cell: number; perVie
 
 // A cell smaller than this is hard to tap on a phone. A larger cell only takes more room.
 export const MIN_CELL = 36;
+// A deck that mainly shows a light (the Voice room, /sound-input) can have smaller cells. On a phone this
+// keeps all four layers in view (2 × 2) while the player sings.
+export const DISPLAY_MIN_CELL = 20;
 const MAX_CELL = 56;
 // The space between two layers, in pixels. training.css uses the same value.
 export const LAYER_GAP = 16;

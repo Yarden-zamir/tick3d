@@ -11,6 +11,7 @@
 import { DIFFICULTIES, type Difficulty } from '../ai.ts';
 import { NO_LIMIT, type TimeControl, parseClock } from '../clock.ts';
 import type { Player } from '../game.ts';
+import { type Playoff, parsePlayoff } from '../practice/playoff.ts';
 import {
   CHAT_KEEP,
   type ChatMessage,
@@ -43,6 +44,8 @@ export type SessionDoc = {
   clock: TimeControl;
   // Oldest first, the newest CHAT_KEEP messages only.
   chat: ChatMessage[];
+  // The sound playoff of the session (src/practice/playoff.ts), or null. Older documents have none.
+  playoff: Playoff | null;
 };
 
 type RawDoc = Record<string, unknown>;
@@ -107,6 +110,8 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
   if (mode === undefined) throw new FormatError(`unknown session mode ${String(doc.mode)}`);
   const chat = doc.chat === undefined ? [] : doc.chat;
   if (!Array.isArray(chat) || !chat.every(isChatMessage)) throw new FormatError('the chat is invalid');
+  const playoff = doc.playoff === undefined || doc.playoff === null ? null : parsePlayoff(doc.playoff);
+  if (playoff === undefined) throw new FormatError('the playoff is invalid');
   return {
     format: CURRENT_FORMAT,
     mode,
@@ -119,6 +124,7 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
     lockedGame,
     clock,
     chat: chat.slice(-CHAT_KEEP),
+    playoff,
   };
 }
 

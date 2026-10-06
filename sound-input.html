@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="description" content="Whistle or hum to the tick3d board: the pitch of your voice lights a cell of the 4×4×4 cube, live." />
+    <meta name="description" content="The tick3d Voice room: whistle, hum or sing, and your pitch lights a cell of the 4×4×4 board. Calibrate your range, race the clock to targets, echo cell sounds, and play a playoff with a friend." />
     <script>
       // Apply the stored theme of the game before the first paint, as index.html does.
       try {
@@ -15,7 +15,7 @@
         }
       } catch {}
     </script>
-    <title>tick3d · sound input</title>
+    <title>tick3d · Voice room</title>
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -25,27 +25,27 @@
     <main class="train input-page">
       <header class="brand train-head">
         <h1><a href="/" class="home-link" id="home-link" title="Home">tick<span>3d</span></a></h1>
-        <p class="page-title">Sound input</p>
+        <p class="page-title">Voice room</p>
         <div class="brand-links">
-          <a class="repo-link account-button" id="account-button" href="/?open=my-games" aria-label="My games">
+          <a class="repo-link account-button" id="account-button" href="/?open=my-games" aria-label="My games" data-tip="My games">
             <!-- [html-validate-disable-next element-required-attributes: the page sets src after login] -->
             <img class="avatar" id="account-avatar" alt="" hidden />
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0V4ZM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 13v3M8 20h8l-1-4H9l-1 4Z"/></svg>
             <span id="account-name">My games</span>
           </a>
-          <button type="button" class="info-button" id="info-button" popovertarget="info-panel" aria-label="Info" title="Info">
+          <button type="button" class="info-button" id="info-button" popovertarget="info-panel" aria-label="Info" data-tip="Info: how this page works">
             <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
               <circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" stroke-width="1.6" />
               <circle cx="8" cy="4.9" r="1.05" fill="currentColor" />
               <path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
             </svg>
           </button>
-          <button type="button" class="repo-link" id="previews-button" aria-haspopup="dialog" aria-label="Previews of open pull requests">
+          <button type="button" class="repo-link" id="previews-button" aria-haspopup="dialog" aria-label="Previews of open pull requests" data-tip="Previews of open pull requests">
             <!-- The KitSHn pot, drawn inline so that it works offline. -->
             <svg viewBox="0 0 14 14" width="18" height="18" fill="currentColor" aria-hidden="true"><rect x="6" y="1.2" width="2" height="1.6" rx="0.5"/><rect x="2.2" y="3.4" width="9.6" height="1.5" rx="0.75"/><rect x="3" y="5.6" width="8" height="6.6" rx="1.6"/><rect x="0.8" y="6.8" width="2.4" height="1.4" rx="0.7"/><rect x="10.8" y="6.8" width="2.4" height="1.4" rx="0.7"/></svg>
             <span>kitshn</span>
           </button>
-          <a class="repo-link" href="https://github.com/Yarden-zamir/tick3d" target="_blank" rel="noopener" aria-label="GitHub">
+          <a class="repo-link" href="https://github.com/Yarden-zamir/tick3d" target="_blank" rel="noopener" aria-label="GitHub" data-tip="The source code on GitHub">
             <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
               <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
             </svg>
@@ -54,14 +54,20 @@
         </div>
       </header>
 
-      <section class="train-card" id="card" aria-label="Sound input">
+      <section class="train-card" id="card" aria-label="Voice room">
+        <div class="voice-tabs" id="tabs" role="group" aria-label="Mode">
+          <button type="button" class="btn btn-small" data-tab="free" aria-pressed="true">Free play</button>
+          <button type="button" class="btn btn-small" data-tab="targets" aria-pressed="false">Targets</button>
+          <button type="button" class="btn btn-small" data-tab="echo" aria-pressed="false">Echo</button>
+          <button type="button" class="btn btn-small" data-tab="playoff" aria-pressed="false">Playoff</button>
+        </div>
         <div class="input-mic">
-          <button type="button" class="train-play" id="mic">Turn on the microphone</button>
-          <button type="button" class="input-calibrate" id="calibrate">Calibrate to your voice</button>
+          <button type="button" class="btn train-play" id="mic">Turn on the microphone</button>
+          <button type="button" class="btn input-calibrate" id="calibrate">Calibrate to your voice</button>
         </div>
         <p class="input-mode">
           <span id="range-mode">Default range</span>
-          <button type="button" id="range-reset" hidden>Reset to default</button>
+          <button type="button" class="btn btn-small" id="range-reset" hidden>Reset to default</button>
         </p>
         <p class="input-hint" id="range-hint" hidden>Your range is small: rows sit close together.</p>
         <div class="input-calibration" id="calibration" hidden>
@@ -69,8 +75,41 @@
           <div class="train-bar" id="calibration-progress" role="meter" aria-label="Calibration step: time with a clear sound" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
           <p id="calibration-heard"></p>
           <div class="input-calibration-actions">
-            <button type="button" class="primary" id="calibration-retry" hidden>Retry</button>
-            <button type="button" id="calibration-cancel">Cancel</button>
+            <button type="button" class="btn btn-primary" id="calibration-retry" hidden>Retry</button>
+            <button type="button" class="btn" id="calibration-cancel">Cancel</button>
+          </div>
+        </div>
+        <div class="practice-panel" id="practice" hidden>
+          <fieldset class="practice-choice" id="levels">
+            <legend>Level</legend>
+            <label><input type="radio" name="preset" value="easy" /> Easy</label>
+            <label><input type="radio" name="preset" value="normal" checked /> Normal</label>
+            <label><input type="radio" name="preset" value="hard" /> Hard</label>
+          </fieldset>
+          <p class="input-note" id="setup-note"></p>
+          <div class="practice-playoff" id="playoff" hidden>
+            <p id="playoff-text"></p>
+            <div class="practice-race">
+              <span>You</span>
+              <div class="train-bar" id="race-you" role="meter" aria-label="Your targets" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0"><i></i></div>
+              <span id="race-them-name">Them</span>
+              <div class="train-bar" id="race-them" role="meter" aria-label="Targets of the other player" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0"><i></i></div>
+            </div>
+            <p class="practice-playoff-actions">
+              <button type="button" class="btn btn-small" id="playoff-leave" hidden>Leave the playoff</button>
+            </p>
+          </div>
+          <div class="practice-start">
+            <button type="button" class="btn btn-primary" id="start">Start</button>
+            <button type="button" class="btn" id="replay" disabled>Hear it again</button>
+          </div>
+          <div class="practice-status" id="status" data-state="idle">
+            <p><b id="round">Ready</b> <span id="round-time"></span> <span id="total-time"></span></p>
+            <div class="practice-heat" id="heat" data-heat="">
+              <span id="heat-word"></span>
+              <span id="heat-way"></span>
+              <div class="train-bar" id="heat-bar" role="meter" aria-label="How near your pitch is to the target" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+            </div>
           </div>
         </div>
         <div class="input-readout" id="readout" data-state="off">
@@ -83,6 +122,16 @@
           <div class="board flat train-deck input-deck" id="deck" role="group" aria-label="Board: the lit cell follows your pitch. Tap a cell to hear it."></div>
           <div class="train-dots" id="deck-dots"></div>
         </div>
+      </section>
+
+      <section class="train-progress practice-results" id="results" aria-labelledby="results-title" hidden>
+        <h2 id="results-title">Results</h2>
+        <div id="summary"><p class="input-note">Finish a run to see your times here.</p></div>
+        <h3>Your best</h3>
+        <div id="bests"></div>
+        <h3 id="board-title">Leaderboard</h3>
+        <p class="input-note" id="board-note"></p>
+        <ol class="practice-board" id="board"></ol>
       </section>
 
       <section class="train-progress input-settings" aria-labelledby="settings-title">
@@ -99,30 +148,32 @@
         </div>
         <p class="input-note">A held cell stays lit until your pitch moves past its border by a margin. The margin grows from zero to the stickiness while you hold the cell, in the build-up time.</p>
         <div class="input-actions">
-          <label><input type="checkbox" id="hold" checked /> Hold a note for 1 second to place an X</label>
-          <button type="button" id="clear">Clear the marks</button>
+          <label><input type="checkbox" id="hold" checked /> Free play: hold a note for 1 second to place an X</label>
+          <button type="button" class="btn btn-small" id="clear">Clear the marks</button>
         </div>
       </section>
     </main>
     <dialog class="end-card my-games" id="previews" aria-labelledby="previews-title">
       <div class="my-games-head">
         <h2 id="previews-title">Previews</h2>
-        <button type="button" id="previews-close" aria-label="Close">✕</button>
+        <button type="button" class="btn btn-small btn-icon" id="previews-close" aria-label="Close"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
       <p class="my-games-note" id="previews-note"></p>
       <ul class="my-games-list previews-list" id="previews-list"></ul>
     </dialog>
     <div class="info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
-      <h2 id="info-title">How sound input works</h2>
+      <h2 id="info-title">How the Voice room works</h2>
       <p>Turn on the microphone, then whistle, hum or sing a steady note. Your pitch lights a cell of the board. The sound stays in this browser.</p>
       <ul>
-        <li>The rail under the readout is your range, low at the left and high at the right. It holds the 64 cells: four rows of 16. The line shows your pitch now.</li>
-        <li>A higher pitch lights a higher row: row 4 at the bottom of your range, row 1 at the top. Inside a row, a slide up moves from layer 1, column 1 to layer 4, column 4.</li>
-        <li>The default range is 150 to 2400 Hz, one octave for each row: hum for rows 4 and 3, whistle for rows 2 and 1.</li>
-        <li>Calibrate to your voice: make your lowest comfortable sound for 2 seconds, then your highest. The rows then split your own range. This browser keeps it, and Reset to default goes back.</li>
+        <li>The rail is your range, low at the left and high at the right. It holds the 64 cells: four rows of 16. A higher pitch lights a higher row. Inside a row, a slide up moves from layer 1, column 1 to layer 4, column 4.</li>
+        <li>The default range is 150 to 2400 Hz, one octave for each row: hum for rows 4 and 3, whistle for rows 2 and 1. Calibrate to your voice: make your lowest comfortable sound for 2 seconds, then your highest. The rows then split your own range. Reset to default goes back.</li>
         <li>Stickiness keeps a held cell lit when your pitch wobbles. It grows while you hold the cell. The band on the rail shows it.</li>
-        <li>Hold a note on one cell for 1 second to place an X. Tap a cell to hear it in the sound set of the game. Headphones keep that sound out of the microphone.</li>
-        <li><a href="/sound-training">Train your ear</a> to learn the cell sounds of the game.</li>
+        <li>Free play: hold a note on one cell for 1 second to place an X. Tap a cell to hear it in the sound set of the game.</li>
+        <li>Targets: a cell lights with a dashed ring. Slide until your light sits on it and hold it. Hot and cold tell you how near you are. 10 targets against the clock.</li>
+        <li>Echo: the game plays the sound of a cell, as the ear training does. Find it by ear, then sing to it and hold it. 100 points for the right cell, 25 fewer for each step off. 8 rounds.</li>
+        <li>Levels: Easy keeps targets near each other with a short hold. Hard spreads them over the board, holds longer, and has no stickiness. Each mode and level keeps its own best, here and on the leaderboard.</li>
+        <li>Playoff: open the Voice room from an online game (the Voice room link in the game panel). The other player gets an invite. You both sing to the same targets at the same time, and the faster total wins.</li>
+        <li>The game uses the same range and stickiness when you play by voice. <a href="/sound-training">Train your ear</a> to learn the cell sounds.</li>
       </ul>
       <button type="button" class="info-close" popovertarget="info-panel" popovertargetaction="hide">Close</button>
     </div>

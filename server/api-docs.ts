@@ -8,6 +8,8 @@ import { LIMIT_RANGE } from '../src/clock.ts';
 import { CELL_COUNT } from '../src/game.ts';
 import { DEVICE_KINDS } from '../src/nearby/device.ts';
 import { HELLO_NAME_MAX_LENGTH, MAX_CODE_LENGTH } from '../src/nearby/signal.ts';
+import { PLAYOFF_COUNTDOWN_MS, PLAYOFF_TARGETS } from '../src/practice/playoff.ts';
+import { ECHO_POINTS, MAX_ROUND_MS, PRACTICE_MODES, PRESET_IDS, ROUNDS } from '../src/practice/practice.ts';
 import {
   CHAT_KEEP,
   CHAT_MAX_LENGTH,
@@ -36,6 +38,8 @@ export const NEARBY_CALLS_PER_10_MINUTES = 120;
 export const NEARBY_HOSTS_PER_NETWORK = 10;
 // A Nearby host stays in the list for this long after its announce request ends.
 export const NEARBY_GRACE_MS = 10_000;
+// Practice runs per 10 minutes from one address. server/main.ts enforces it.
+export const PRACTICE_RUNS_PER_10_MINUTES = 60;
 // The previews list is at most this old. server/previews.ts enforces it.
 export const PREVIEWS_CACHE_MS = 120_000;
 
@@ -106,7 +110,13 @@ export type SchemaName =
   | 'NearbyAnswer'
   | 'Contributor'
   | 'Preview'
-  | 'Previews';
+  | 'Previews'
+  | 'Playoff'
+  | 'PlayoffRequest'
+  | 'PracticeRun'
+  | 'PracticeStored'
+  | 'PracticeLeader'
+  | 'PracticeBoard';
 
 export const ref = (name: SchemaName): Schema => ({ $ref: `#/components/schemas/${name}` });
 const nullable = (schema: Schema): Schema => ({ oneOf: [schema, { type: 'null' }] });
@@ -210,7 +220,8 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     names: ref('SeatNames'),
     turn: { ...nullable(ref('Player')), description: 'The player to move in the live game. null when the live game is over.' },
     status: ref('Status'),
-  }),
+    playoff: { ...nullable(ref('Playoff')), description: 'The sound playoff of the session, or null. An older server sends no such field.' },
+  }, ['playoff']),
   NewSession: object(
     'A new session. You take seat X.',
     { name, clock: { ...ref('TimeControl'), description: 'Optional. No limit when you leave it out.' } },
@@ -384,6 +395,10 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     offlineGames: count(),
     nearbyMixes: list('Nearby device mixes.', ref('Count')),
     errors: list('Page faults.'),
+    practice: object('The sound practice room.', {
+      runs: list('Runs, people and the average round time per mode and preset.'),
+      best: list('The best 5 people per mode and preset.', ref('PracticeLeader')),
+    }),
   }),
   NearbyAnnounce: object(
     'An open Nearby game. The offer code holds the device name and kind of the host.',
@@ -410,6 +425,54 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
   NearbyAnswer: object('The answer of a guest to the offer of a host.', {
     offer: { ...signalCode, pattern: '^T3A1\\.', description: 'The offer code from the list that you answered. A host makes a fresh offer after each guest, so an older offer gets 409.' },
     answer: { ...signalCode, pattern: '^T3B1\\.', description: 'The answer code (src/nearby/signal.ts). The server decodes it, and refuses a code that a device cannot read.' },
+  }),
+  Playoff: object('A sound playoff: both players sing to the same seeded targets at the same time. The faster total wins.', {
+    id: { type: 'integer', minimum: 0, description: 'Grows with each playoff of the session. Requests name it.' },
+    seed: { type: 'integer', minimum: 0, maximum: 2 ** 32 - 1, description: 'The seed of the targets (src/practice/practice.ts, targetSteps).' },
+    preset: strings(PRESET_IDS),
+    by: ref('Player'),
+    seats: object('Each seat: joined, and the time in milliseconds of each target that it hit.', {
+      X: object('A seat.', { joined: { type: 'boolean' }, times: list('Target times in ms.', { type: 'integer', minimum: 0, maximum: MAX_ROUND_MS }) }),
+      O: object('A seat.', { joined: { type: 'boolean' }, times: list('Target times in ms.', { type: 'integer', minimum: 0, maximum: MAX_ROUND_MS }) }),
+    }),
+    startAt: { type: ['number', 'null'], description: `Server time when the targets start: ${PLAYOFF_COUNTDOWN_MS / 1000} s after both joined. null before.` },
+    ended: { type: ['string', 'null'], enum: ['done', 'declined', 'left', null], description: 'done: both hit all targets. declined: the invited player said not now. left: a player stopped.' },
+  }),
+  PlayoffRequest: {
+    description: 'One step of a playoff. Only the two players can send it.',
+    oneOf: [
+      object('Start a playoff (or a new one). Both seats need a player.', { action: { const: 'start' }, preset: strings(PRESET_IDS), seed: { type: 'integer', minimum: 0, maximum: 2 ** 32 - 1 } }),
+      object('Join the playoff of the other player.', { action: { const: 'join' }, id: { type: 'integer', minimum: 0 } }),
+      object('Decline or stop the playoff.', { action: { const: 'leave' }, id: { type: 'integer', minimum: 0 } }),
+      object('A hit target, in order.', {
+        action: { const: 'hit' },
+        id: { type: 'integer', minimum: 0 },
+        index: { type: 'integer', minimum: 0, maximum: PLAYOFF_TARGETS - 1 },
+        ms: { type: 'integer', minimum: 0, maximum: MAX_ROUND_MS },
+      }),
+    ],
+  },
+  PracticeRun: object('A finished run of the sound practice room.', {
+    id: { type: 'string', pattern: '^[A-Za-z0-9-]{8,64}$', description: 'A random id from the page. The same id again changes nothing.' },
+    mode: strings(PRACTICE_MODES, 'targets: sing to the shown cells. echo: hear a cell, then sing to it.'),
+    preset: strings(PRESET_IDS),
+    roundMs: list(`The time of each round in ms: ${ROUNDS.targets} for targets, ${ROUNDS.echo} for echo.`, { type: 'integer', minimum: 0, maximum: MAX_ROUND_MS }),
+    score: { type: 'integer', minimum: 0, maximum: ECHO_POINTS * ROUNDS.echo, description: `Echo: the points (${ECHO_POINTS} for each right cell). Targets: ${ROUNDS.targets}.` },
+  }),
+  PracticeStored: object('The run result.', { stored: { type: 'boolean', description: 'False when the server has a run with this id from you.' } }),
+  PracticeLeader: object('One place of a leaderboard.', {
+    mode: strings(PRACTICE_MODES),
+    preset: strings(PRESET_IDS),
+    rank: { type: 'integer', minimum: 1 },
+    player: { type: 'string', description: 'A GitHub login or a generated name.' },
+    totalMs: count('The total time of the best run.'),
+    score: count('The score of the best run.'),
+  }),
+  PracticeBoard: object('The best 10 people of one mode and preset: a target run by its total time, an echo run by its points, then its time.', {
+    mode: strings(PRACTICE_MODES),
+    preset: strings(PRESET_IDS),
+    top: list('The best people, best first.', ref('PracticeLeader')),
+    you: nullable(object('Your best run, on all your linked devices.', { totalMs: count(), score: count() })),
   }),
   Contributor: object('A GitHub account that worked on a pull request.', {
     login: { type: 'string', minLength: 1, maxLength: 39 },
@@ -467,6 +530,7 @@ function view(fields: Record<string, unknown>): Record<string, unknown> {
     names: { X: seats.X ? 'braveOtter' : null, O: seats.O ? 'cleverHeron' : null },
     turn: 'X',
     status: { kind: 'playing' },
+    playoff: null,
     ...fields,
   };
 }
@@ -508,6 +572,7 @@ const STATS_EXAMPLE = {
   offlineGames: 0,
   nearbyMixes: [],
   errors: [],
+  practice: { runs: [{ mode: 'targets', preset: 'normal', runs: 1, players: 1, avgRoundMs: 2450 }], best: [] },
 };
 
 const PREVIEWS_EXAMPLE = {
@@ -684,6 +749,26 @@ export const ROUTES = {
     errors: [BAD_PLAYER, BAD_CODE, { status: 400, when: `The text is empty or longer than ${CHAT_MAX_LENGTH} characters.` }, NOT_A_PLAYER, NO_GAME],
     examplePlayer: AGENT_A,
   },
+  'POST /api/sessions/{code}/playoff': {
+    operationId: 'playoff',
+    tag: 'Play',
+    summary: 'Start, join, leave or report a sound playoff (the practice room of the page).',
+    description: `Only the two players. start makes a new playoff with you joined, and the other player sees it in the session. When both joined, the targets start ${PLAYOFF_COUNTDOWN_MS / 1000} s later (startAt). Each page then sends a hit for each target, in order. When both sent ${PLAYOFF_TARGETS} hits, the faster total wins. A request for an older playoff id changes nothing.`,
+    player: 'required',
+    body: { schema: 'PlayoffRequest', example: { action: 'start', preset: 'normal', seed: 123_456_789 } },
+    response: {
+      status: 200,
+      description: 'The session with the playoff.',
+      schema: 'SessionView',
+      example: view({
+        seats: { X: true, O: true },
+        version: 4,
+        playoff: { id: 1, seed: 123_456_789, preset: 'normal', by: 'X', seats: { X: { joined: true, times: [] }, O: { joined: false, times: [] } }, startAt: null, ended: null },
+      }),
+    },
+    errors: [BAD_PLAYER, BAD_CODE, { status: 400, when: 'The request is not one of start, join, leave or hit, or a field is wrong.' }, NOT_A_PLAYER, NO_GAME, { status: 409, when: 'An empty seat, a running playoff, a hit before the start or out of order, or a session that is not online.' }],
+    examplePlayer: AGENT_A,
+  },
   'PATCH /api/sessions/{code}': {
     operationId: 'updateSession',
     tag: 'Play',
@@ -829,6 +914,43 @@ export const ROUTES = {
       { status: 413, when: 'The body is larger than 1 kB.' },
       { status: 429, when: `This address sent ${EVENTS_PER_10_MINUTES} reports in the last 10 minutes.` },
     ],
+  },
+  'POST /api/practice/runs': {
+    operationId: 'addPracticeRun',
+    tag: 'Account',
+    summary: 'Store a finished practice run of the Voice room (/sound-input). The page uses it.',
+    description: `One address can send ${PRACTICE_RUNS_PER_10_MINUTES} runs per 10 minutes. The leaderboards and the stats page count them.`,
+    player: 'required',
+    body: {
+      schema: 'PracticeRun',
+      example: { id: 'run-6f1d2c9a', mode: 'targets', preset: 'normal', roundMs: [2100, 1850, 3020, 2400, 1990, 2760, 2210, 1580, 3300, 2040], score: 10 },
+    },
+    response: { status: 200, description: 'Stored, or already stored.', schema: 'PracticeStored', example: { stored: true } },
+    errors: [BAD_PLAYER, { status: 400, when: 'The run is not one that the page can make.' }, TOO_BIG, { status: 429, when: `This address sent ${PRACTICE_RUNS_PER_10_MINUTES} runs in the last 10 minutes.` }],
+    examplePlayer: AGENT_A,
+  },
+  'GET /api/practice/best': {
+    operationId: 'practiceBest',
+    tag: 'Account',
+    summary: 'The leaderboard of one mode and preset of the sound practice room.',
+    player: 'optional',
+    query: {
+      mode: { description: 'targets or echo.', required: true, schema: strings(PRACTICE_MODES), example: 'targets' },
+      preset: { description: 'easy, normal or hard.', required: true, schema: strings(PRESET_IDS), example: 'normal' },
+    },
+    response: {
+      status: 200,
+      description: 'The best 10 people, and your own best run when you send X-Player.',
+      schema: 'PracticeBoard',
+      example: {
+        mode: 'targets',
+        preset: 'normal',
+        top: [{ mode: 'targets', preset: 'normal', rank: 1, player: 'octocat', totalMs: 21_400, score: 10 }],
+        you: { totalMs: 24_250, score: 10 },
+      },
+    },
+    errors: [{ status: 400, when: 'mode or preset is missing or unknown.' }, BAD_PLAYER],
+    examplePlayer: AGENT_A,
   },
   'GET /api/stats': {
     operationId: 'stats',

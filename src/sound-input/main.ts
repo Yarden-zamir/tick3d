@@ -1,27 +1,33 @@
-// The sound input page (/sound-input): the pitch from the microphone lights a cell of the board, live.
-// pitch.ts finds the pitch, mapping.ts places it in the range, sticky.ts holds a cell against a wobble,
-// rail.ts draws the range, calibration.ts measures the player's own range, and stored.ts keeps the choices.
-// The deck of the ear training draws the board.
+// The Voice room (/sound-input): the pitch from the microphone lights a cell of the board, live. It holds the
+// calibration and the stickiness settings, free play, and the practice modes (practice-room.ts): targets,
+// echo and the playoff. The voice engine (src/voice/engine.ts) does the listening; the deck of the ear
+// training draws the board.
 import '../style.css';
 import '../sound-training/training.css';
 import './input.css';
+import './practice.css';
 import { element } from '../element.ts';
 import { toCoords } from '../game.ts';
 import { setupPageHeader } from '../header/header.ts';
-import { settings } from '../page/settings.ts';
+import { settings as gameSettings } from '../page/settings.ts';
+import { normalizeCode } from '../protocol.ts';
+import { SOUND_SETS, type SoundSetId } from '../sound-sets.ts';
 import { setSoundSet, sounds } from '../sound.ts';
 import { buildDeck, fitDeck } from '../sound-training/deck.ts';
-import { isSmallRange, median, rangeFrom, type Retry } from './calibration.ts';
-import { DEFAULT_RANGE, type Range, cellOfStep, noteName, positionOf } from './mapping.ts';
-import { bufferSize, detectPitch, rms } from './pitch.ts';
-import { buildRail, showRailPitch, showRailRange } from './rail.ts';
-import { STORAGE_KEY, type Stored, parseStored, toStorage } from './stored.ts';
-import { type Held, holdStep, marginAt } from './sticky.ts';
+import { DISPLAY_MIN_CELL } from '../sound-training/fit.ts';
+import { isSmallRange, median, rangeFrom, type Retry } from '../voice/calibration.ts';
+import { type VoiceFrame, createVoice } from '../voice/engine.ts';
+import { noteName } from '../voice/mapping.ts';
+import { buildRail, showRailPitch, showRailRange } from '../voice/rail.ts';
+import { type Tab, createPracticeRoom } from './practice-room.ts';
 
 setupPageHeader();
-// A tap on a cell plays it in the sound set of the game. The game page and the trainer change the set.
-setSoundSet(settings.soundSet);
+// A tap on a cell, and the echo rounds, play the sound set of the game. Classic does not name cells, so the
+// room uses Cells then, as the ear training does.
+const soundSet: SoundSetId = SOUND_SETS[gameSettings.soundSet].parts === undefined ? 'cells' : gameSettings.soundSet;
+setSoundSet(soundSet);
 
+const tabButtons = [...element('#tabs', HTMLDivElement).querySelectorAll<HTMLButtonElement>('button[data-tab]')];
 const micButton = element('#mic', HTMLButtonElement);
 const calibrateButton = element('#calibrate', HTMLButtonElement);
 const modeEl = element('#range-mode', HTMLSpanElement);
@@ -50,45 +56,20 @@ const buildUpValue = element('#build-up-value', HTMLOutputElement);
 const holdBox = element('#hold', HTMLInputElement);
 const clearButton = element('#clear', HTMLButtonElement);
 
-// The median of the last frames moves the light, so one odd frame (a click, an octave jump) does not.
-const SMOOTH_FRAMES = 5;
-// After this many frames without a clear pitch (about 0.1 s), the light goes out.
-const MISS_FRAMES = 6;
-// A note on one cell for this long places an X there.
+// A note on one cell for this long places an X there (free play).
 const HOLD_MS = 1000;
 // Each calibration step needs this much time with a clear pitch.
 const STEP_MS = 2000;
-// A longer gap between two frames (a slow device) counts as this much, so one gap does not end a step.
-const MAX_FRAME_MS = 100;
-// The deck mainly shows the light, so its cells can be smaller than tap targets. On a phone this keeps all
-// four layers in view (2 × 2) while the player sings.
-const DISPLAY_MIN_CELL = 20;
-
-type Listening = {
-  stream: MediaStream;
-  context: AudioContext;
-  analyser: AnalyserNode;
-  samples: Float32Array<ArrayBuffer>;
-  frame: number;
-  last: number | undefined;
-};
 
 // One calibration in progress. `heard` holds the pitches of the step now, and `lows` the pitches of the
 // low step once it is done.
 type Calibration = { step: 'low' | 'high'; heard: number[]; lows: number[]; time: number };
 
-let listening: Listening | undefined;
-let starting = false;
+const voice = createVoice();
 let calibration: Calibration | undefined;
-let stored: Stored = loadStored();
-let recent: number[] = [];
-let misses = 0;
-let held: Held | null = null;
+let tab: Tab = 'free';
 let lit: number | undefined;
-let litSince = 0;
 let holdDone = false;
-
-const range = (): Range => stored.range ?? DEFAULT_RANGE;
 
 const deck = buildDeck(deckEl, dotsEl);
 // The X piece of the game, for the cells that a held note places.
@@ -104,56 +85,65 @@ const rail = buildRail(railEl);
 const sideLayout = matchMedia('(orientation: landscape) and (max-height: 32rem)');
 const fit = (): void => fitDeck(deckEl, cardEl, sideLayout.matches, DISPLAY_MIN_CELL);
 
-// ---- Storage ----
+const show = (message: string): void => {
+  messageEl.textContent = message;
+};
 
-function loadStored(): Stored {
-  try {
-    return parseStored(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null'));
-  } catch {
-    return parseStored(null);
+// Opens the microphone from a tap. Returns false when it does not open.
+async function startMic(): Promise<boolean> {
+  if (voice.isListening()) return true;
+  micButton.disabled = true;
+  show('Waiting for the microphone…');
+  const problem = await voice.start();
+  micButton.disabled = false;
+  if (problem !== null) {
+    show(problem);
+    return false;
   }
+  micButton.textContent = 'Stop';
+  micButton.setAttribute('aria-pressed', 'true');
+  readoutEl.dataset.state = 'listening';
+  show(tab === 'free' ? 'Listening. Whistle, hum or sing a steady note.' : '');
+  return true;
 }
 
-function save(): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toStorage(stored)));
-  } catch {
-    // Private mode or a full storage: the choices still work for this visit.
-  }
+function stopMic(message: string): void {
+  voice.stop();
+  endCalibration();
+  practice.stopped(message);
+  showRailPitch(rail, null, null, 0);
+  light(undefined, 0);
+  showLevel(0);
+  micButton.textContent = 'Turn on the microphone';
+  micButton.setAttribute('aria-pressed', 'false');
+  readoutEl.dataset.state = 'off';
+  show(message);
 }
+
+const practice = createPracticeRoom({ voice, deck, rail, startMic, show, fit });
 
 // ---- Display ----
 
-function show(message: string): void {
-  messageEl.textContent = message;
-}
-
 function showRange(): void {
-  const { low, high } = range();
-  modeEl.textContent = `${stored.range === null ? 'Default range' : 'Calibrated'}: ${Math.round(low)}–${Math.round(high)} Hz`;
-  resetButton.hidden = stored.range === null;
-  hintEl.hidden = stored.range === null || !isSmallRange(stored.range);
-  showRailRange(rail, range());
-  held = null;
+  const settings = voice.settings();
+  const { low, high } = voice.range();
+  modeEl.textContent = `${settings.range === null ? 'Default range' : 'Calibrated'}: ${Math.round(low)}–${Math.round(high)} Hz`;
+  resetButton.hidden = settings.range === null;
+  hintEl.hidden = settings.range === null || !isSmallRange(settings.range);
+  showRailRange(rail, voice.range());
+  practice.settingsChanged();
   fit();
 }
 
 function showStickiness(): void {
-  const { share, buildUpMs } = stored.stickiness;
+  const { share, buildUpMs } = voice.settings().stickiness;
   stickinessInput.value = String(Math.round(share * 100));
   buildUpInput.value = String(buildUpMs / 1000);
   stickinessValue.textContent = share === 0 ? 'Off' : `${Math.round(share * 100)}% of a cell`;
   buildUpValue.textContent = `${(buildUpMs / 1000).toFixed(1)} s`;
 }
 
-function describeCell(cell: number): string {
-  const { layer, row, column } = toCoords(cell);
-  return `Layer ${layer + 1}, row ${row + 1}, column ${column + 1}`;
-}
-
-// `level` is the RMS of the samples. The meter shows -60 dB to 0 dB below full scale.
-function showLevel(level: number): void {
-  const share = Math.max(0, Math.min(1, (20 * Math.log10(level) + 60) / 60));
+function showLevel(share: number): void {
   levelEl.setAttribute('aria-valuenow', String(Math.round(share * 100)));
   levelEl.style.setProperty('--level', String(share));
 }
@@ -164,9 +154,9 @@ function showProgress(share: number): void {
 }
 
 // Lights `cell` and lets the light of the cell before fade (input.css). undefined puts the light out.
-function light(cell: number | undefined, now: number): void {
+function light(cell: number | undefined, heldMs: number): void {
   if (cell === lit) {
-    if (cell !== undefined && holdBox.checked && calibration === undefined && !holdDone && now - litSince >= HOLD_MS) {
+    if (cell !== undefined && tab === 'free' && holdBox.checked && calibration === undefined && !holdDone && heldMs >= HOLD_MS) {
       holdDone = true;
       deck.cells[cell]?.classList.add('x');
     }
@@ -174,13 +164,23 @@ function light(cell: number | undefined, now: number): void {
   }
   if (lit !== undefined) deck.cells[lit]?.classList.remove('lit');
   lit = cell;
-  litSince = now;
   holdDone = false;
   if (cell === undefined) return;
   deck.cells[cell]?.classList.add('lit');
-  cellEl.textContent = describeCell(cell);
-  const { layer } = toCoords(cell);
+  const { layer, row, column } = toCoords(cell);
+  cellEl.textContent = `Layer ${layer + 1}, row ${row + 1}, column ${column + 1}`;
   deck.dots.forEach((dot, index) => dot.classList.toggle('right', index === layer));
+}
+
+// ---- Tabs ----
+
+function setTab(next: Tab): void {
+  if (practice.running()) return;
+  tab = next;
+  for (const button of tabButtons) button.setAttribute('aria-pressed', String(button.dataset.tab === tab));
+  document.body.dataset.tab = tab;
+  practice.setTab(tab);
+  fit();
 }
 
 // ---- Calibration ----
@@ -208,9 +208,8 @@ function showStep(step: Calibration['step']): void {
 }
 
 async function startCalibration(): Promise<void> {
-  if (listening === undefined) await start();
-  // The microphone did not start: start() shows why.
-  if (listening === undefined) return;
+  if (practice.running()) return;
+  if (!(await startMic())) return;
   calibration = { step: 'low', heard: [], lows: [], time: 0 };
   calibrateButton.disabled = true;
   showStep('low');
@@ -247,165 +246,94 @@ function calibrate(active: Calibration, frequency: number, elapsed: number): voi
     fit();
     return;
   }
-  stored = { ...stored, range: result };
-  save();
+  voice.saveSettings({ ...voice.settings(), range: result });
   calibrationEl.hidden = true;
   showRange();
   show(`Calibrated to your voice: ${noteName(result.low)} to ${noteName(result.high)}.`);
 }
 
-// ---- Microphone ----
+// ---- Frames ----
 
-function listen(now: number): void {
-  if (listening === undefined) return;
-  const { analyser, samples, context } = listening;
-  const elapsed = listening.last === undefined ? 0 : Math.min(MAX_FRAME_MS, now - listening.last);
-  listening.last = now;
-  analyser.getFloatTimeDomainData(samples);
-  showLevel(rms(samples));
-  const pitch = detectPitch(samples, context.sampleRate);
-  if (pitch === null) {
-    misses++;
-    if (misses >= MISS_FRAMES) {
-      recent = [];
-      held = null;
-      readoutEl.dataset.state = 'listening';
-      showRailPitch(rail, null, null, 0);
-      light(undefined, now);
-    }
-  } else {
-    misses = 0;
-    recent = [...recent, pitch.frequency].slice(-SMOOTH_FRAMES);
-    const frequency = median(recent);
-    const position = positionOf(frequency, range());
-    held = holdStep(held, position, now, stored.stickiness);
+function onFrame(frame: VoiceFrame): void {
+  showLevel(frame.level);
+  if (frame.cell === null) {
+    readoutEl.dataset.state = 'listening';
+    showRailPitch(rail, null, null, 0);
+    light(undefined, 0);
+  } else if (frame.frequency !== null && frame.note !== null) {
     readoutEl.dataset.state = 'heard';
-    frequencyEl.textContent = `${Math.round(frequency)} Hz`;
-    noteEl.textContent = noteName(frequency);
-    showRailPitch(rail, position, held, marginAt(now - held.since, stored.stickiness));
-    light(cellOfStep(held.step), now);
-    if (calibration !== undefined) calibrate(calibration, pitch.frequency, elapsed);
+    frequencyEl.textContent = `${Math.round(frame.frequency)} Hz`;
+    noteEl.textContent = frame.note;
+    showRailPitch(rail, frame.position, frame.held, frame.margin);
+    light(frame.cell, frame.heldMs);
   }
-  listening.frame = requestAnimationFrame(listen);
-}
-
-function micError(error: unknown): string {
-  const name = error instanceof DOMException ? error.name : '';
-  switch (name) {
-    case 'NotAllowedError':
-    case 'SecurityError':
-      return 'The microphone is blocked. Allow it for this site in the browser settings, then try again.';
-    case 'NotFoundError':
-    case 'OverconstrainedError':
-      return 'No microphone found. Connect one, then try again.';
-    case 'NotReadableError':
-    case 'AbortError':
-      return 'The microphone does not start. Another app can hold it. Close that app, then try again.';
-    default:
-      return `The microphone does not start: ${error instanceof Error ? error.message : 'unknown error'}.`;
-  }
-}
-
-async function start(): Promise<void> {
-  if (listening !== undefined || starting) return;
-  // Browsers give no microphone to a page without https.
-  if (!('mediaDevices' in navigator) || typeof navigator.mediaDevices.getUserMedia !== 'function') {
-    show('This browser gives the page no microphone. Open the page over https in a current browser.');
-    return;
-  }
-  // Make the context during the tap: some browsers start a context without a tap as suspended.
-  const context = new AudioContext();
-  starting = true;
-  micButton.disabled = true;
-  show('Waiting for the microphone…');
-  let stream: MediaStream;
-  try {
-    // No processing: echo cancellation and noise suppression treat a steady whistle as noise.
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-  } catch (error) {
-    void context.close();
-    show(micError(error));
-    return;
-  } finally {
-    starting = false;
-    micButton.disabled = false;
-  }
-  // The page went out of view while the browser asked.
-  if (document.hidden) {
-    for (const track of stream.getTracks()) track.stop();
-    void context.close();
-    show('');
-    return;
-  }
-  const analyser = context.createAnalyser();
-  analyser.fftSize = bufferSize(context.sampleRate);
-  context.createMediaStreamSource(stream).connect(analyser);
-  for (const track of stream.getTracks()) track.addEventListener('ended', () => stop('The microphone stopped. Turn it on again to go on.'));
-  listening = { stream, context, analyser, samples: new Float32Array(analyser.fftSize), frame: requestAnimationFrame(listen), last: undefined };
-  micButton.textContent = 'Stop';
-  micButton.setAttribute('aria-pressed', 'true');
-  readoutEl.dataset.state = 'listening';
-  show('Listening. Whistle, hum or sing a steady note.');
-}
-
-function stop(message = ''): void {
-  if (listening === undefined) return;
-  cancelAnimationFrame(listening.frame);
-  for (const track of listening.stream.getTracks()) track.stop();
-  void listening.context.close();
-  listening = undefined;
-  endCalibration();
-  recent = [];
-  misses = 0;
-  held = null;
-  showRailPitch(rail, null, null, 0);
-  light(undefined, 0);
-  showLevel(0);
-  micButton.textContent = 'Turn on the microphone';
-  micButton.setAttribute('aria-pressed', 'false');
-  readoutEl.dataset.state = 'off';
-  show(message);
+  if (calibration !== undefined && frame.raw !== null) calibrate(calibration, frame.raw, frame.elapsed);
+  practice.frame(frame);
 }
 
 // ---- Events ----
 
+voice.subscribe(onFrame);
+voice.onStop((message) => stopMic(message));
+for (const button of tabButtons) {
+  button.addEventListener('click', () => {
+    const next = button.dataset.tab;
+    if (next === 'free' || next === 'targets' || next === 'echo' || next === 'playoff') setTab(next);
+  });
+}
 micButton.addEventListener('click', () => {
-  if (listening === undefined) void start();
-  else stop();
+  if (voice.isListening()) stopMic('');
+  else void startMic();
 });
 calibrateButton.addEventListener('click', () => void startCalibration());
 retryButton.addEventListener('click', () => void startCalibration());
 cancelButton.addEventListener('click', endCalibration);
 resetButton.addEventListener('click', () => {
-  stored = { ...stored, range: null };
-  save();
+  voice.saveSettings({ ...voice.settings(), range: null });
   showRange();
   show('Back to the default range.');
 });
 stickinessInput.addEventListener('input', () => {
-  stored = { ...stored, stickiness: { ...stored.stickiness, share: Number(stickinessInput.value) / 100 } };
-  save();
+  const settings = voice.settings();
+  voice.saveSettings({ ...settings, stickiness: { ...settings.stickiness, share: Number(stickinessInput.value) / 100 } });
   showStickiness();
+  practice.settingsChanged();
 });
 buildUpInput.addEventListener('input', () => {
-  stored = { ...stored, stickiness: { ...stored.stickiness, buildUpMs: Math.round(Number(buildUpInput.value) * 1000) } };
-  save();
+  const settings = voice.settings();
+  voice.saveSettings({ ...settings, stickiness: { ...settings.stickiness, buildUpMs: Math.round(Number(buildUpInput.value) * 1000) } });
   showStickiness();
 });
 clearButton.addEventListener('click', () => {
   for (const button of deck.cells) button.classList.remove('x');
 });
-deck.cells.forEach((button, cell) => button.addEventListener('click', () => sounds.place('X', cell)));
+deck.cells.forEach((button, cell) =>
+  button.addEventListener('click', () => {
+    if (!practice.running()) sounds.place('X', cell);
+  }),
+);
 
 // A hidden page keeps no microphone open.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) stop('The microphone stops when the page is out of view. Turn it on again to go on.');
+  if (document.hidden && voice.isListening()) stopMic('The microphone stops when the page is out of view. Turn it on again to go on.');
 });
-addEventListener('pagehide', () => stop());
-
+addEventListener('pagehide', () => voice.stop());
 addEventListener('resize', fit);
 sideLayout.addEventListener('change', fit);
+
 showStickiness();
 showRange();
+// ?mode= opens a tab. ?code= is an online game: the playoff tab, for a playoff with the other player.
+const params = new URLSearchParams(location.search);
+const code = normalizeCode(params.get('code') ?? '');
+const asked = params.get('mode');
+if (code !== undefined) {
+  setTab('playoff');
+  practice.openSession(code);
+} else if (asked === 'targets' || asked === 'echo') {
+  setTab(asked);
+} else {
+  setTab('free');
+}
 // The web font changes the height of the text above the deck, so fit again once it is in.
 void document.fonts.ready.then(fit);

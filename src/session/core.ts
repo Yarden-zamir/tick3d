@@ -21,6 +21,7 @@ import {
   toGame,
   toRecord,
 } from '../protocol.ts';
+import { PlayoffError, type PlayoffRequest, applyPlayoff } from '../practice/playoff.ts';
 import { CURRENT_FORMAT, type SessionDoc } from './format.ts';
 
 export class SessionError extends Error {
@@ -93,6 +94,7 @@ export function createDoc({ name, mode, clock = NO_LIMIT, seats, computer }: New
     lockedGame: null,
     clock,
     chat: [],
+    playoff: null,
   };
 }
 
@@ -192,6 +194,20 @@ export function chat(doc: SessionDoc, identity: Identity, text: unknown, now: nu
   return { ...doc, chat: [...doc.chat, { id, from: seat, text: message, at: now }].slice(-CHAT_KEEP) };
 }
 
+// A request of a player for the sound playoff of an online session (src/practice/playoff.ts).
+export function playoff(doc: SessionDoc, identity: Identity, request: PlayoffRequest, now: number): SessionDoc {
+  if (doc.mode !== 'online') throw new SessionError(409, 'A playoff needs an online game.');
+  const [seat] = requireSeat(doc, identity);
+  if (seat === undefined) throw new Error('requireSeat returned no seat');
+  try {
+    const next = applyPlayoff(doc.playoff, seat, doc.seats.X !== null && doc.seats.O !== null, request, now);
+    return next === doc.playoff ? doc : { ...doc, playoff: next };
+  } catch (error) {
+    if (error instanceof PlayoffError) throw new SessionError(error.status === 409 ? 409 : 400, error.message);
+    throw error;
+  }
+}
+
 // Records a timeout that happened since the last change, or returns undefined when there is none.
 // The holder of the session calls this on every read, so a flagged clock never depends on a page.
 export function settle(doc: SessionDoc, now: number): SessionDoc | undefined {
@@ -227,5 +243,6 @@ export function viewOf(doc: SessionDoc, { code, version, identity, now, presence
     names: { X: seatName(doc.seats.X), O: seatName(doc.seats.O) },
     turn: live.status.kind === 'playing' ? live.turn : null,
     status: live.status,
+    playoff: doc.playoff,
   };
 }

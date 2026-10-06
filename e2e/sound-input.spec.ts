@@ -2,7 +2,8 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures.ts';
+import { DEFAULT_RANGE, frequencyAt, stepOfCell } from '../src/voice/mapping.ts';
+import { createOnline, expect, joinAsO, test } from './fixtures.ts';
 
 // Chromium plays a WAV file as a fake microphone and grants the microphone without a prompt.
 // The file is a steady G5 (784 Hz). In the default range (150 to 2400 Hz, 64 steps) that is step 38:
@@ -164,4 +165,72 @@ test('the stickiness settings stay after a reload', async ({ page }) => {
   await page.reload();
   await expect(page.locator('#stickiness-value')).toHaveText('Off');
   await expect(page.locator('#build-up-value')).toHaveText('2.5 s');
+});
+
+// Sings each target of a run: reads the target cell, plays the middle pitch of its step, and waits until the
+// target moves on. The settings are the defaults, so the range is DEFAULT_RANGE.
+async function singTargets(page: Page, rounds: number): Promise<void> {
+  for (let round = 0; round < rounds; round++) {
+    const target = page.locator('#deck .cell.target');
+    await expect(target).toHaveCount(1, { timeout: 15_000 });
+    const cell = Number(await target.getAttribute('data-cell'));
+    await setTone(page, frequencyAt(stepOfCell(cell) + 0.5, DEFAULT_RANGE));
+    await expect(page.locator(`#deck .cell.target[data-cell="${cell}"]`)).toHaveCount(0, { timeout: 15_000 });
+  }
+}
+
+test('a target run times each target, keeps the best, and puts the run on the leaderboard and the stats page', async ({ page }) => {
+  const errors = trackErrors(page);
+  await oscillatorMic(page);
+  await page.goto('/sound-input?mode=targets');
+  await expect(page.locator('#practice')).toBeVisible();
+  await page.locator('input[name="preset"][value="easy"]').check();
+  await page.locator('#start').click();
+  await setTone(page, 150);
+  await singTargets(page, 10);
+  await expect(page.locator('#round')).toHaveText('Done');
+  await expect(page.locator('#summary tbody tr')).toHaveCount(10);
+  await expect(page.locator('#bests')).toContainText(/Targets, Easy: \d+\.\d s/);
+  await expect(page.locator('#board li').first()).toBeVisible();
+  await page.goto('/stats');
+  await expect(page.getByRole('heading', { name: 'Voice room practice' })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('an echo round plays a cell, takes the held cell as the answer, and shows the points', async ({ page }) => {
+  await oscillatorMic(page);
+  await page.goto('/sound-input?mode=echo');
+  await page.locator('#start').click();
+  await setTone(page, 600);
+  await expect(page.locator('#round')).toHaveText('Round 1 of 8', { timeout: 10_000 });
+  await expect(page.locator('#message')).toContainText('points', { timeout: 15_000 });
+  await expect(page.locator('#deck .cell.target')).toHaveCount(1);
+  await page.locator('#start').click();
+  await expect(page.locator('#round')).toHaveText('Stopped');
+});
+
+test('a playoff: the other player gets an invite, both sing the same targets, and both see the winner', async ({ open }) => {
+  const alice = await open({ settings: { mode: 'computer' } });
+  const code = await createOnline(alice.page);
+  const bob = await joinAsO(open, `/?code=${code}`);
+  await oscillatorMic(alice.page);
+  await oscillatorMic(bob.page);
+  await alice.page.locator('#voice-room-link').click();
+  await expect(alice.page).toHaveURL(new RegExp(`/sound-input\\?code=${code}`));
+  await expect(alice.page.locator('#playoff')).toBeVisible();
+  await alice.page.locator('#start').click();
+  await expect(alice.page.locator('#start')).toHaveText('Waiting…');
+
+  const invite = bob.page.locator('#playoff-invite');
+  await expect(invite).toBeVisible();
+  await bob.page.locator('#playoff-join').click();
+  await expect(bob.page).toHaveURL(new RegExp(`/sound-input\\?code=${code}`));
+  await expect(bob.page.locator('#start')).toHaveText('Join the playoff');
+  await bob.page.locator('#start').click();
+
+  await Promise.all([singTargets(alice.page, 10), singTargets(bob.page, 10)]);
+  for (const page of [alice.page, bob.page]) {
+    await expect(page.locator('#playoff-text')).toContainText(/win|tie/i, { timeout: 15_000 });
+    await expect(page.locator('#race-them')).toHaveAttribute('aria-valuenow', '10');
+  }
 });
