@@ -1,10 +1,12 @@
 // The ear training page (/sound-training): hear a cell and name its layer, row and column.
-// src/sound-training/schedule.ts picks the cards. This file only draws them and plays the sounds.
+// src/sound-training/schedule.ts picks the cards and deck.ts draws the board. This file joins them and plays the sounds.
 import '../style.css';
 import './training.css';
-import { type Coords, toCell, toCoords } from '../game.ts';
+import { toCell, toCoords } from '../game.ts';
 import { SOUND_NAMES, sounds } from '../sound.ts';
+import { buildDeck, fitDeck, paint } from './deck.ts';
 import {
+  type Asked,
   BOX_COUNT,
   type Card,
   DIMENSIONS,
@@ -17,6 +19,7 @@ import {
   accuracy,
   answerFull,
   answerItem,
+  areaOf,
   freshProgress,
   nextCard,
   parseProgress,
@@ -35,7 +38,9 @@ const kindEl = element('#card-kind', HTMLParagraphElement);
 const titleEl = element('#card-title', HTMLHeadingElement);
 const playButton = element('#play', HTMLButtonElement);
 const answerEl = element('#card-answer', HTMLParagraphElement);
-const groupsEl = element('#card-groups', HTMLDivElement);
+const cardEl = element('#card', HTMLElement);
+const deckEl = element('#deck', HTMLDivElement);
+const dotsEl = element('#deck-dots', HTMLDivElement);
 const feedbackEl = element('#card-feedback', HTMLParagraphElement);
 const checkButton = element('#check', HTMLButtonElement);
 const yoursButton = element('#yours', HTMLButtonElement);
@@ -79,11 +84,22 @@ function save(): void {
 let progress = load();
 let card: Card = nextCard(progress, Math.random);
 let checked = false;
-let picks: Partial<Record<Dimension, Value>> = {};
+// The cell that the player tapped. The pick is the area of that cell (areaOf).
+let tapped: number | undefined;
+let hovered: number | undefined;
 
+// What a tap selects on this card. A learn card shows its answer as the area of its item.
+const askedOf = (shown: Card): Asked => (shown.kind === 'full' ? 'cell' : splitItem(shown.item).dimension);
 const asked = (shown: Card): readonly Dimension[] => (shown.kind === 'full' ? DIMENSIONS : shown.kind === 'quiz' ? [splitItem(shown.item).dimension] : []);
 const withValue = (cell: number, dimension: Dimension, value: Value): number => toCell({ ...toCoords(cell), [dimension]: value });
-const guessedCell = (): number => toCell({ ...toCoords(card.cell), ...picks });
+
+// The cell that the pick stands for: the played cell with the asked parts from the tap.
+function guessedCell(pick: number): number {
+  const guess = toCoords(pick);
+  const coords = toCoords(card.cell);
+  for (const dimension of asked(card)) coords[dimension] = guess[dimension];
+  return toCell(coords);
+}
 
 // ---- Sound ----
 
@@ -97,6 +113,10 @@ function playCells(cells: readonly number[]): void {
 
 // ---- Card ----
 
+const deck = buildDeck(deckEl, dotsEl);
+// A short landscape screen puts the deck beside the other card parts. Keep in step with training.css.
+const sideLayout = matchMedia('(orientation: landscape) and (max-height: 32rem)');
+
 function describe(cell: number, strong: Dimension | undefined): HTMLElement[] {
   const coords = toCoords(cell);
   return DIMENSIONS.flatMap((dimension, index) => {
@@ -109,38 +129,40 @@ function describe(cell: number, strong: Dimension | undefined): HTMLElement[] {
   });
 }
 
-function pickGroup(dimension: Dimension): HTMLFieldSetElement {
-  const group = document.createElement('fieldset');
-  group.className = 'train-group';
-  group.dataset.dimension = dimension;
-  const legend = document.createElement('legend');
-  legend.textContent = `${TEXT[dimension].name} (${TEXT[dimension].part})`;
-  group.append(legend);
-  for (const value of VALUES) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'train-pick';
-    button.dataset.value = String(value);
-    button.setAttribute('aria-pressed', 'false');
-    button.setAttribute('aria-label', `${TEXT[dimension].name} ${value + 1}, ${SOUND_NAMES[dimension][value]}`);
-    const number = document.createElement('b');
-    number.textContent = String(value + 1);
-    const name = document.createElement('small');
-    name.textContent = SOUND_NAMES[dimension][value];
-    button.append(number, name);
-    button.addEventListener('click', () => pick(dimension, value));
-    group.append(button);
+const none: ReadonlySet<number> = new Set();
+
+function repaint(): void {
+  const area = (cell: number | undefined) => (cell === undefined ? none : new Set(areaOf(askedOf(card), cell)));
+  const answer = area(card.cell);
+  const picked = area(tapped);
+  if (card.kind === 'learn') {
+    paint(deck, { peer: none, picked: none, right: answer, wrong: none, last: new Set([card.cell]) });
+  } else if (checked) {
+    const wrong = new Set([...picked].filter((cell) => !answer.has(cell)));
+    paint(deck, { peer: none, picked: none, right: answer, wrong, last: new Set([card.cell]) });
+  } else {
+    paint(deck, { peer: area(hovered), picked, right: none, wrong: none, last: none });
   }
-  return group;
+}
+
+function fit(): void {
+  fitDeck(deckEl, cardEl, sideLayout.matches);
+}
+
+// On a scroll deck, show the layer of the answer when only one layer holds it.
+function showAnswerLayer(): void {
+  if (deckEl.dataset.mode !== 'scroll' || askedOf(card) === 'row' || askedOf(card) === 'column') return;
+  deck.layers[toCoords(card.cell).layer]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
 }
 
 function renderCard(): void {
-  const dimensions = asked(card);
   checked = false;
-  picks = {};
+  tapped = undefined;
+  hovered = undefined;
   feedbackEl.textContent = '';
+  feedbackEl.classList.remove('all-right');
   yoursButton.hidden = true;
-  groupsEl.replaceChildren(...dimensions.map(pickGroup));
+  deckEl.dataset.asked = card.kind === 'learn' ? 'learn' : askedOf(card);
   if (card.kind === 'learn') {
     const { dimension, value } = splitItem(card.item);
     const views = progress.items[card.item]?.learn;
@@ -149,10 +171,10 @@ function renderCard(): void {
     answerEl.replaceChildren(...describe(card.cell, dimension));
   } else {
     kindEl.textContent = card.kind === 'full' ? 'Full cell' : 'Quiz';
-    if (card.kind === 'full') titleEl.textContent = 'Which cell? (layer, row, column)';
+    if (card.kind === 'full') titleEl.textContent = 'Which cell? Tap it.';
     else {
       const { name, part } = TEXT[splitItem(card.item).dimension];
-      titleEl.textContent = `Which ${name.toLowerCase()}? (${part})`;
+      titleEl.textContent = `Which ${name.toLowerCase()}? (${part}) Tap any cell in it.`;
     }
     answerEl.replaceChildren();
   }
@@ -160,51 +182,53 @@ function renderCard(): void {
   checkButton.hidden = card.kind === 'learn';
   checkButton.disabled = true;
   nextButton.hidden = card.kind !== 'learn';
+  deckEl.scrollLeft = 0;
+  repaint();
+  fit();
+  if (card.kind === 'learn') showAnswerLayer();
 }
 
-function pick(dimension: Dimension, value: Value): void {
-  if (checked) return;
-  picks[dimension] = value;
-  const group = groupsEl.querySelector(`[data-dimension="${dimension}"]`);
-  for (const button of group?.querySelectorAll<HTMLButtonElement>('.train-pick') ?? []) {
-    button.setAttribute('aria-pressed', String(button.dataset.value === String(value)));
+function describeArea(cell: number): string {
+  const kind = askedOf(card);
+  const coords = toCoords(cell);
+  if (kind === 'cell') return `layer ${coords.layer + 1}, row ${coords.row + 1}, column ${coords.column + 1}`;
+  return `${TEXT[kind].name.toLowerCase()} ${coords[kind] + 1} (${SOUND_NAMES[kind][coords[kind]]})`;
+}
+
+function tap(cell: number): void {
+  // A learn card or a checked card has its answer in view: a tap plays the cell instead.
+  if (card.kind === 'learn' || checked) {
+    playCells([cell]);
+    return;
   }
-  checkButton.disabled = asked(card).some((asking) => picks[asking] === undefined);
+  tapped = cell;
+  checkButton.disabled = false;
+  feedbackEl.textContent = `Your pick: ${describeArea(cell)}.`;
+  repaint();
 }
 
 function check(): void {
-  if (checked || card.kind === 'learn' || checkButton.disabled) return;
+  if (checked || card.kind === 'learn' || tapped === undefined) return;
   const actual = toCoords(card.cell);
+  const guess = toCoords(guessedCell(tapped));
   const dimensions = asked(card);
-  const right = (dimension: Dimension) => picks[dimension] === actual[dimension];
-  if (card.kind === 'quiz') {
-    progress = answerItem(progress, card.item, right(splitItem(card.item).dimension));
-  } else {
-    // Each pick is set, because Check stays disabled until every group has one.
-    progress = answerFull(progress, card.cell, { ...actual, ...picks } satisfies Coords);
-  }
+  const right = (dimension: Dimension) => guess[dimension] === actual[dimension];
+  progress = card.kind === 'quiz' ? answerItem(progress, card.item, right(splitItem(card.item).dimension)) : answerFull(progress, card.cell, guess);
   save();
   checked = true;
-  for (const dimension of dimensions) {
-    const group = groupsEl.querySelector(`[data-dimension="${dimension}"]`);
-    for (const button of group?.querySelectorAll<HTMLButtonElement>('.train-pick') ?? []) {
-      const value = Number(button.dataset.value);
-      button.classList.toggle('right', value === actual[dimension]);
-      button.classList.toggle('wrong', value === picks[dimension] && !right(dimension));
-    }
-  }
   const lines = dimensions.map((dimension) => {
     const name = TEXT[dimension].name;
     const truth = `${actual[dimension] + 1}, ${SOUND_NAMES[dimension][actual[dimension]]}`;
-    const guess = picks[dimension];
-    return right(dimension) || guess === undefined ? `${name}: right (${truth}).` : `${name}: wrong. You picked ${guess + 1}, ${SOUND_NAMES[dimension][guess]}. It is ${truth}.`;
+    return right(dimension) ? `${name}: right (${truth}).` : `${name}: wrong. You picked ${guess[dimension] + 1}, ${SOUND_NAMES[dimension][guess[dimension]]}. It is ${truth}.`;
   });
   feedbackEl.textContent = lines.join(' ');
   feedbackEl.classList.toggle('all-right', dimensions.every(right));
   yoursButton.hidden = dimensions.every(right);
   checkButton.hidden = true;
   nextButton.hidden = false;
-  nextButton.focus();
+  nextButton.focus({ preventScroll: true });
+  repaint();
+  showAnswerLayer();
   // The right sound again, so the player hears it with the answer in view.
   sounds.place('X', card.cell);
   renderProgress();
@@ -220,7 +244,7 @@ function next(): void {
   card = nextCard(progress, Math.random);
   renderCard();
   renderProgress();
-  playButton.focus();
+  playButton.focus({ preventScroll: true });
 }
 
 // ---- Progress ----
@@ -265,7 +289,7 @@ function dimensionBlock(dimension: Dimension): HTMLElement {
     const label = document.createElement('b');
     label.textContent = `${option + 1} ${SOUND_NAMES[dimension][option]}`;
     const meter = document.createElement('small');
-    meter.textContent = box === 'new' ? 'new' : box === 'learn' ? 'learn' : `${'●'.repeat(Number(box))}${'○'.repeat(BOX_COUNT - Number(box))}${due ? ' due' : ''}`;
+    meter.textContent = box === 'new' ? 'new' : box === 'learn' ? 'learn' : `${'●'.repeat(Number(box))}${'○'.repeat(BOX_COUNT - Number(box))}${due ? '\ndue' : ''}`;
     button.append(label, meter);
     button.addEventListener('click', () => playCells([withValue(card.cell, dimension, option)]));
     examples.append(button);
@@ -296,7 +320,9 @@ function renderProgress(): void {
 playButton.addEventListener('click', () => playCells([card.cell]));
 checkButton.addEventListener('click', check);
 nextButton.addEventListener('click', next);
-yoursButton.addEventListener('click', () => playCells([guessedCell()]));
+yoursButton.addEventListener('click', () => {
+  if (tapped !== undefined) playCells([guessedCell(tapped)]);
+});
 resetButton.addEventListener('click', () => resetDialog.showModal());
 resetNo.addEventListener('click', () => resetDialog.close());
 resetYes.addEventListener('click', () => {
@@ -308,23 +334,33 @@ resetYes.addEventListener('click', () => {
   renderProgress();
 });
 
-// Space plays and Enter checks or goes on, while the focus is on the card or on nothing.
-// On any other button the keys keep their usual action.
+deck.cells.forEach((button, cell) => {
+  button.addEventListener('click', () => tap(cell));
+  // The pointer or the focus shows the area that a tap selects.
+  const preview = (target: number | undefined) => {
+    hovered = target;
+    if (card.kind !== 'learn' && !checked) repaint();
+  };
+  button.addEventListener('pointerenter', () => preview(cell));
+  button.addEventListener('focus', () => preview(cell));
+  button.addEventListener('pointerleave', () => preview(undefined));
+  button.addEventListener('blur', () => preview(undefined));
+  button.addEventListener('keydown', (event) => {
+    // Enter on a cell of the pick checks it. Any other Enter or Space on a cell picks it (the button's own click).
+    if (event.key === 'Enter' && !checked && tapped !== undefined && areaOf(askedOf(card), tapped).includes(cell)) {
+      event.preventDefault();
+      check();
+    }
+  });
+});
+
+// Space plays and Enter checks or goes on, while the focus is on Play, Check, Next or nothing.
+// On the board and on other buttons the keys keep their usual action.
 document.addEventListener('keydown', (event) => {
   if (resetDialog.open || event.altKey || event.ctrlKey || event.metaKey) return;
   const target = event.target instanceof HTMLElement ? event.target : null;
-  const onCard = target === null || target === document.body || target === playButton || target.closest('.train-group') !== null;
-  // Space on Check or Next plays too. Enter on them keeps its usual click.
-  const playsOnSpace = onCard || target === checkButton || target === nextButton;
-  const digit = VALUES.find((value) => event.key === String(value + 1));
-  if (digit !== undefined) {
-    const focused = target?.closest<HTMLElement>('.train-group')?.dataset.dimension;
-    const dimensions = asked(card);
-    const dimension = dimensions.find((name) => name === focused) ?? dimensions.find((name) => picks[name] === undefined) ?? dimensions[0];
-    if (dimension === undefined) return;
-    event.preventDefault();
-    pick(dimension, digit);
-  } else if (event.key === ' ' && playsOnSpace) {
+  const onCard = target === null || target === document.body || target === playButton;
+  if (event.key === ' ' && (onCard || target === checkButton || target === nextButton)) {
     event.preventDefault();
     playCells([card.cell]);
   } else if (event.key === 'Enter' && onCard) {
@@ -334,5 +370,11 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
+// Resize covers a turn of the phone too.
+addEventListener('resize', fit);
+sideLayout.addEventListener('change', fit);
+
 renderCard();
 renderProgress();
+// The web font changes the height of the text above the deck, so fit again once it is in.
+void document.fonts.ready.then(fit);

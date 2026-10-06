@@ -227,3 +227,16 @@ export function parseProgress(value: unknown): Progress {
   if (last !== null && parsedLast === null) return freshProgress();
   return { version: 1, turn, items: parsedItems, recent: parsedRecent, last: parsedLast };
 }
+
+// ---- Answer area ----
+
+// What a tap on the deck selects: a whole layer, a row or a column through all layers, or one cell.
+export type Asked = Dimension | 'cell';
+
+// The cells that a tap on `cell` selects when the card asks for `asked`.
+export function areaOf(asked: Asked, cell: number): number[] {
+  // toCoords checks that the cell is on the board.
+  if (asked === 'cell') return [toCell(toCoords(cell))];
+  const value = toCoords(cell)[asked];
+  return Array.from({ length: CELL_COUNT }, (_, index) => index).filter((index) => toCoords(index)[asked] === value);
+}

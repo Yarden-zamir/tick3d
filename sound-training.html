@@ -25,7 +25,6 @@
     <main class="train">
       <header class="brand train-head">
         <h1><a href="/" class="home-link">tick<span>3d</span></a> ear training</h1>
-        <p>Hear a cell and name its place. Headphones help with the columns.</p>
       </header>
 
       <section class="train-card" id="card" aria-label="Card">
@@ -33,18 +32,22 @@
         <h2 id="card-title">Loading…</h2>
         <button type="button" class="train-play" id="play" aria-keyshortcuts="Space">▶ Play</button>
         <p class="train-answer" id="card-answer" hidden></p>
-        <div class="train-groups" id="card-groups"></div>
-        <p class="train-feedback" id="card-feedback" aria-live="polite"></p>
+        <div class="train-deck-wrap">
+          <div class="board flat train-deck" id="deck" role="group" aria-label="Board: tap your answer"></div>
+          <div class="train-dots" id="deck-dots"></div>
+        </div>
         <div class="train-actions">
           <button type="button" class="primary" id="check" aria-keyshortcuts="Enter">Check</button>
           <button type="button" id="yours" hidden>Hear yours</button>
           <button type="button" class="primary" id="next" aria-keyshortcuts="Enter" hidden>Next</button>
         </div>
-        <p class="train-keys">Keys: Space plays, 1–4 picks, Enter checks or goes on.</p>
+        <p class="train-feedback" id="card-feedback" aria-live="polite"></p>
+        <p class="train-keys">Keys: Space plays. Arrows move on the board, Enter or Space picks, Enter again checks.</p>
       </section>
 
       <section class="train-progress" aria-labelledby="progress-title">
         <h2 id="progress-title">What you hear</h2>
+        <p class="train-intro">Hear a cell and find its place on the board. Headphones help with the columns.</p>
         <p class="train-hint" id="hint"></p>
         <div class="train-dimensions" id="dimensions"></div>
         <p class="train-totals" id="totals"></p>

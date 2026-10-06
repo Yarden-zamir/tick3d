@@ -9,6 +9,7 @@ import {
   LEARN_VIEWS,
   answerFull,
   answerItem,
+  areaOf,
   freshProgress,
   fullShare,
   nextCard,
@@ -180,5 +181,21 @@ describe('stored progress', () => {
     ];
     for (const value of bad) expect(parseProgress(value)).toEqual(freshProgress());
     expect(DIMENSIONS.every((dimension) => Array.isArray(parseProgress(good).recent[dimension]))).toBe(true);
+  });
+});
+
+describe('answer area', () => {
+  it('selects a whole layer, a row or a column through all layers, or one cell', () => {
+    const cell = 1 * 16 + 2 * 4 + 3; // layer 1, row 2, column 3
+    for (const dimension of DIMENSIONS) {
+      const area = areaOf(dimension, cell);
+      expect(area).toHaveLength(16);
+      expect(area).toContain(cell);
+      expect(new Set(area.map((index) => toCoords(index)[dimension]))).toEqual(new Set([toCoords(cell)[dimension]]));
+    }
+    // A row or a column reaches every layer.
+    expect(new Set(areaOf('row', cell).map((index) => toCoords(index).layer)).size).toBe(4);
+    expect(new Set(areaOf('column', cell).map((index) => toCoords(index).layer)).size).toBe(4);
+    expect(areaOf('cell', cell)).toEqual([cell]);
   });
 });
