@@ -157,6 +157,47 @@ describe('accounts', () => {
     expect((await store.get(code, alice)).players.X?.login).toBe('alice');
   });
 
+  it('keeps a seat that a logged-in phone takes with the account, so a logout drops it from the phone only', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    const { code } = await store.create(alicePhone, 'From the phone');
+    await store.join(code, bob);
+    // Both devices of the account control the seat.
+    expect((await store.get(code, alice)).you).toBe('X');
+    await store.move(code, alicePhone, { game: 0, moveCount: 0, cell: 0 });
+    await store.move(code, bob, { game: 0, moveCount: 1, cell: 1 });
+    await store.move(code, alice, { game: 0, moveCount: 2, cell: 16 });
+    await store.unlinkToken(alicePhone);
+    const phone = await store.get(code, alicePhone);
+    expect(phone.you).toBeNull();
+    expect(phone.players.X?.login).toBe('alice');
+    expect(await status(() => store.move(code, alicePhone, { game: 0, moveCount: 4, cell: 32 }))).toBe(403);
+    await store.move(code, bob, { game: 0, moveCount: 3, cell: 2 });
+    await store.move(code, alice, { game: 0, moveCount: 4, cell: 32 });
+    await store.move(code, bob, { game: 0, moveCount: 5, cell: 3 });
+    await store.move(code, alice, { game: 0, moveCount: 6, cell: 48 });
+    // The finished game is in the history of the account, and not of the logged-out phone.
+    expect((await store.history(alice, 0)).games).toMatchObject([{ id: `${code}-1`, result: 'won' }]);
+    expect((await store.history(alicePhone, 0)).games).toEqual([]);
+    expect((await store.history(bob, 0)).games).toMatchObject([{ opponent: { login: 'alice' } }]);
+    expect((await store.myGames(alice)).sessions).toMatchObject([{ code, you: 'X' }]);
+  });
+
+  it('moves a seat that holds the device token to the account on logout', async () => {
+    // A session from before account seats: the seat names the phone's own token.
+    store = await openStore(':memory:');
+    const { code } = await store.create(alicePhone, 'Old session');
+    await store.join(code, bob);
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.unlinkToken(alicePhone);
+    expect((await store.get(code, alicePhone)).you).toBeNull();
+    expect((await store.get(code, alice)).you).toBe('X');
+    expect((await store.get(code, bob)).players.X?.login).toBe('alice');
+    await store.move(code, alice, { game: 0, moveCount: 0, cell: 5 });
+  });
+
   it('refreshes a renamed account', async () => {
     const code = await session();
     await store.linkToken(alice, ALICE_GITHUB);

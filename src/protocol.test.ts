@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { replay } from './game.ts';
 import {
+  asPlayerToken,
   normalizeChat,
   normalizeCode,
   parsePlayerInfo,
@@ -17,6 +18,13 @@ import {
   parseSessionView,
   toRecord,
 } from './protocol.ts';
+
+describe('asPlayerToken', () => {
+  it('accepts a browser token and refuses an account token, because a GitHub id is public', () => {
+    expect(asPlayerToken('aaaaaaaa-0000-4000-8000-000000000001')).toBe('aaaaaaaa-0000-4000-8000-000000000001');
+    expect(asPlayerToken('account-0000000000000101')).toBeUndefined();
+  });
+});
 
 describe('normalizeCode', () => {
   it('accepts 4 characters from the alphabet in any case', () => {

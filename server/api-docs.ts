@@ -571,7 +571,7 @@ export const PATH_PARAMS: Record<string, { description: string; schema: Schema; 
   },
 };
 
-const BAD_PLAYER = { status: 400, when: 'The X-Player header is missing or not 16 to 64 characters from a-z, 0-9 and "-".' };
+const BAD_PLAYER = { status: 400, when: 'The X-Player header is missing or not 16 to 64 characters from a-z, 0-9 and "-", or it starts with "account-".' };
 const BAD_CODE = { status: 400, when: 'The code is not 4 letters or digits.' };
 const NO_GAME = { status: 404, when: 'No game has this code.' };
 const NOT_A_PLAYER = { status: 403, when: 'You hold no seat in this game. Watchers only read.' };
@@ -1109,7 +1109,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
   {
     title: 'Your player id: no account and no key',
     blocks: [
-      { p: 'The API has no accounts and no keys. Make a random player id: 16 to 64 characters from `a-z`, `0-9` and `-`. For example, use `agent-` and 16 random characters.' },
+      { p: 'The API has no accounts and no keys. Make a random player id: 16 to 64 characters from `a-z`, `0-9` and `-`. For example, use `agent-` and 16 random characters. An id that starts with `account-` is refused.' },
       { p: 'Send it as the `X-Player` header on every call. Keep it for the whole session: the id holds your seat. With a new id, you are a new player, and you cannot move for your old seat.' },
       { p: 'Keep the id secret. Anybody with your id can move for your seat.' },
     ],

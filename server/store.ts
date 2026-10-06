@@ -4,6 +4,7 @@ import { DIFFICULTIES } from '../src/ai.ts';
 import { NO_LIMIT, type TimeControl } from '../src/clock.ts';
 import { type LineKind, type Player, lineKind, other, winnerOf } from '../src/game.ts';
 import {
+  ACCOUNT_TOKEN_PREFIX,
   CODE_ALPHABET,
   CODE_LENGTH,
   type ClientEvent,
@@ -114,7 +115,17 @@ const SCHEMA = [
      received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
      PRIMARY KEY (public_id, seat)
    )`,
+  // Account seats: every account has a row for its account token (accountToken below), so the joins
+  // through player_tokens resolve an account seat to its user, as they do for a device token.
+  `INSERT INTO player_tokens (token, github_id)
+   SELECT '${ACCOUNT_TOKEN_PREFIX}' || lpad(github_id::VARCHAR, 16, '0'), github_id FROM users
+   ON CONFLICT (token) DO NOTHING`,
 ];
+
+// The token that a seat holds when a logged-in player takes it. Every device of the account holds it
+// through identityOf, and a device that logs out does not. It passes the token checks of a stored
+// document, so the format does not change. asPlayerToken refuses it as an X-Player value.
+const accountToken = (githubId: number | bigint): string => `${ACCOUNT_TOKEN_PREFIX}${String(githubId).padStart(16, '0')}`;
 
 export type GitHubUser = { id: number; login: string; avatar: string };
 
@@ -345,7 +356,14 @@ export async function openStore(
     return row.stale ? save(row, row.doc) : row;
   }
 
-  // The token plus the tokens of the same GitHub account, so a logged-in player holds their seats on every device.
+  // The token that a new seat of this device holds: the account token when the device is logged in.
+  async function seatTokenOf(token: PlayerToken): Promise<string> {
+    const [linked] = await rows('FROM player_tokens SELECT github_id WHERE token = $token', { token });
+    return linked === undefined ? token : accountToken(linked.github_id as number | bigint);
+  }
+
+  // The token plus the tokens of the same GitHub account (the account token among them), so a
+  // logged-in player holds their seats on every device.
   async function identityOf(token: PlayerToken | undefined): Promise<core.Identity> {
     if (token === undefined) return new Set();
     const linked = await rows(
@@ -433,7 +451,7 @@ export async function openStore(
     // The creator takes seat X, so the creator moves first in the first game.
     create: (token: PlayerToken, name: string, clock: TimeControl = NO_LIMIT): Promise<SessionView> =>
       serialized(async () => {
-        const doc = core.createDoc({ name, mode: 'online', clock, seats: { X: token, O: null } });
+        const doc = core.createDoc({ name, mode: 'online', clock, seats: { X: await seatTokenOf(token), O: null } });
         for (let attempt = 0; attempt < 20; attempt++) {
           const code = newCode();
           try {
@@ -454,7 +472,10 @@ export async function openStore(
     seatsOf: (code: Code, token: PlayerToken): Promise<Player[]> =>
       serialized(async () => core.seatsOf((await loadRaw(code)).doc, await identityOf(token))),
 
-    join: (code: Code, token: PlayerToken) => change(code, token, (doc, identity) => core.join(doc, identity, token)),
+    join: async (code: Code, token: PlayerToken) => {
+      const seatToken = await serialized(() => seatTokenOf(token));
+      return change(code, token, (doc, identity) => core.join(doc, identity, seatToken));
+    },
     move: (code: Code, token: PlayerToken, request: MoveRequest) =>
       change(code, token, (doc, identity) => core.move(doc, identity, request, now())),
     newGame: (code: Code, token: PlayerToken) => change(code, token, core.newGame),
@@ -477,11 +498,31 @@ export async function openStore(
            ON CONFLICT (token) DO UPDATE SET github_id = excluded.github_id, linked_at = now()`,
           { token, id: user.id },
         );
+        await db.run('INSERT INTO player_tokens (token, github_id) VALUES ($token, $id) ON CONFLICT (token) DO NOTHING', {
+          token: accountToken(user.id),
+          id: user.id,
+        });
       }),
 
     // Logout: this browser no longer acts for its account. The other devices of the account stay linked.
+    // A seat that holds this device token goes to the account first: a session from before account
+    // seats, or a seat taken before the login. The account keeps it, and this browser loses it.
+    // Limit: the query reads the seats of every session document, like myGames. Revisit this at about
+    // 100,000 sessions, or when a logout takes more than about 100 ms.
     unlinkToken: (token: PlayerToken): Promise<void> =>
       serialized(async () => {
+        const [linked] = await rows('FROM player_tokens SELECT github_id WHERE token = $token', { token });
+        if (linked === undefined) return;
+        const account = accountToken(linked.github_id as number | bigint);
+        const held = await rows(
+          'FROM sessions SELECT code WHERE doc.seats.X::VARCHAR = $token OR doc.seats.O::VARCHAR = $token',
+          { token },
+        );
+        for (const { code } of held) {
+          const row = await loadRaw(code as Code);
+          const seats = { X: row.doc.seats.X === token ? account : row.doc.seats.X, O: row.doc.seats.O === token ? account : row.doc.seats.O };
+          await save(row, { ...row.doc, seats });
+        }
         await db.run('DELETE FROM player_tokens WHERE token = $token', { token });
       }),
 
