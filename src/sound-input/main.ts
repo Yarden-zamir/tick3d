@@ -158,9 +158,12 @@ function light(cell: number | undefined, now: number): void {
   cellEl.textContent = describeCell(cell);
   const { layer } = toCoords(cell);
   deck.dots.forEach((dot, index) => dot.classList.toggle('right', index === layer));
-  // On a phone the deck shows one layer at a time: follow the light to its layer.
-  if (layer !== before && deckEl.dataset.mode === 'scroll') {
-    deck.layers[layer]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+  // On a phone the deck shows one layer at a time: follow the light to its layer. Only the deck scrolls
+  // (scrollIntoView also scrolls the page), so the page stays still while the player whistles.
+  const target = deck.layers[layer];
+  if (layer !== before && deckEl.dataset.mode === 'scroll' && target !== undefined) {
+    const left = deckEl.scrollLeft + target.getBoundingClientRect().left - deckEl.getBoundingClientRect().left;
+    deckEl.scrollTo({ left, behavior: 'smooth' });
   }
 }
 

@@ -58,8 +58,9 @@
   box-shadow: 4px 4px 0 var(--shadow);
 }
 
-/* While the hold is on, a ring in the X color fills the lit cell in 1 second (HOLD_MS in main.ts). */
-.train-card:has(#hold:checked) .input-deck .cell.lit:not(.x) {
+/* While the hold is on, a ring in the X color fills the lit cell in 1 second (HOLD_MS in main.ts).
+   A calibration places no X, so the ring does not show while the calibration box is open. */
+.train-card:has(#hold:checked):has(#calibration[hidden]) .input-deck .cell.lit:not(.x) {
   animation: input-hold 1s linear forwards;
 }
 
