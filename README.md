@@ -130,6 +130,7 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Undo | yes | yes | no | no | no |
 | Chat | no | no | yes | yes | no |
 
+- The score and the New game, Undo and Sound row are at the top of the panel. On a phone, the panel is under the board, so this row is right under the board.
 - "In a game" means after a create or a join (Online), or after Host or Join (Nearby).
 - Join a friend stays in computer and friend mode as a shortcut: a code from a friend opens the online game at once. A switch to Online first would create a new session for nothing.
 - Nearby has no Join a friend: a code there is an online game, and Nearby has its own Join.
