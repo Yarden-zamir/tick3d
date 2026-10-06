@@ -4,7 +4,6 @@ import { type Player, other, type Game, replay, toCoords, winnerOf } from '../ga
 import { applyCamera, cells, marks } from './board.ts';
 import { renderChat } from './chat.ts';
 import { renderClockEditor, renderClocks } from './clocks.ts';
-import { startReview } from './controls.ts';
 import {
   boardEl,
   boardHiddenEl,
@@ -19,7 +18,6 @@ import {
   joinCodeInput,
   newCodeButton,
   scoreEl,
-  historyEl,
   newGameButton,
   tuningEl,
   undoButton,
@@ -28,19 +26,15 @@ import {
   soundButton,
   trainLink,
 } from './dom.ts';
-import { openCard } from './end-card.ts';
 import { renderGameView, viewerName } from './game-view.ts';
 import { renderCoords } from './keypad.ts';
+import { renderSessionGames } from './my-games.ts';
 import { showAccount } from '../header/header.ts';
+import { LOCK_CLOSED_ICON, LOCK_OPEN_ICON, SOUND_OFF_ICON, SOUND_ON_ICON } from '../icons.ts';
 import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
 import { settings, type Settings, type Toggle } from './settings.ts';
-import { me, page, shared, current, isLive, matchOptions, settingsLocked, canChangeMatch } from './state.ts';
-
-// Inline icons draw in the text color, so they follow the theme. Emoji do not.
-const SPEAKER = '<path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>';
-const SOUND_ON_ICON = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">${SPEAKER}<path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/></svg>`;
-const SOUND_OFF_ICON = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">${SPEAKER}<path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>`;
+import { me, page, shared, current, isLive, matchOptions, settingsLocked, canChangeMatch, bothSeated } from './state.ts';
 
 // One name per seat, the same in the score, status, chat, clocks, keypad, history and end card.
 // This screen's own seat is "You". Then come "Computer", the GitHub login and the generated name.
@@ -65,7 +59,7 @@ function awayPlayer(): Player | undefined {
   return page.session.seats[opponent] && !page.session.presence[opponent] ? opponent : undefined;
 }
 
-function resultText(game: Game): string {
+export function resultText(game: Game): string {
   switch (game.status.kind) {
     case 'won':
       return `${playerName(game.status.winner)} won`;
@@ -257,30 +251,7 @@ export function render(): void {
     }),
   );
 
-  historyEl.replaceChildren(
-    ...page.games.map((g, index) => {
-      const item = document.createElement('li');
-      const reviewable = g !== current() || g.status.kind !== 'playing';
-      item.innerHTML = `<span>Game ${index + 1}</span><span class="result">${resultText(g)} · ${g.moves.length} moves</span>`;
-      if (reviewable) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = page.review?.game === index ? 'Viewing' : 'Replay';
-        button.addEventListener('click', () => startReview(index));
-        item.append(button);
-      }
-      // A game from a link has no session for the card to describe.
-      if (g.status.kind !== 'playing' && page.viewing === undefined) {
-        const cardButton = document.createElement('button');
-        cardButton.type = 'button';
-        cardButton.textContent = 'Card';
-        cardButton.addEventListener('click', () => void openCard(index));
-        item.append(cardButton);
-      }
-      item.classList.toggle('active', page.review?.game === index);
-      return item;
-    }),
-  );
+  renderSessionGames();
 
   // With another device, a game must end before the next one starts.
   const sharedLive = shared() && isLive() && current().moves.length > 0;
@@ -289,14 +260,22 @@ export function render(): void {
   for (const input of tuningEl.querySelectorAll('input')) input.disabled = frozen;
   undoButton.disabled =
     frozen || page.thinking || page.review !== undefined || !isLive() || current().moves.length === 0 || hasLimit(current().clock);
+  // Undo is for a live game, and the result card for a finished one. So they share one place in the actions row.
+  if (!isLive()) undoButton.hidden = true;
   showCardButton.hidden = isLive() || page.review !== undefined;
   renderClockEditor(frozen);
   renderClocks();
-  lockButton.disabled = frozen || page.busy || !isLive() || page.review !== undefined || !canChangeMatch();
+  // A watcher sees the lock of the session, but the lock does not hold the watcher's own settings.
+  const locked = page.session?.locked ?? false;
+  lockButton.disabled = locked || page.busy || !isLive() || page.review !== undefined || !canChangeMatch() || !bothSeated();
   const lockScope = shared() ? ' for both players' : '';
-  lockButton.textContent = frozen ? '🔒 Locked' : '🔓 Lock';
-  lockButton.title = frozen ? `Settings are locked${lockScope} until this game ends.` : `Lock every setting${lockScope} until this game ends.`;
-  lockButton.setAttribute('aria-pressed', String(frozen));
+  lockButton.innerHTML = locked ? `${LOCK_CLOSED_ICON}<span>Locked</span>` : `${LOCK_OPEN_ICON}<span>Lock</span>`;
+  lockButton.title = locked
+    ? `Settings are locked${lockScope} until this game ends.`
+    : bothSeated()
+      ? `Lock every setting${lockScope} until this game ends.`
+      : 'A lock waits for the second player.';
+  lockButton.setAttribute('aria-pressed', String(locked));
   showAccount(page.account.user);
   soundButton.innerHTML = settings.muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
   soundButton.setAttribute('aria-pressed', String(!settings.muted));

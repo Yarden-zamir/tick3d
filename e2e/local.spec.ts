@@ -48,15 +48,56 @@ test('a lock holds through a reload and ends with the game; the local end card h
   await expect(page.locator('#lock')).toContainText('Locked');
   await page.reload();
   await expect(page.locator('#lock')).toContainText('Locked');
-  await expect(page.getByRole('button', { name: 'Tower' })).toBeDisabled();
-  await expect(page.locator('#new-game')).toBeDisabled();
+  // Every match setting and the view wait for the end of the game.
+  for (const control of [
+    page.getByRole('button', { name: 'Flat' }),
+    page.getByRole('button', { name: 'Computer', exact: true }),
+    page.getByRole('button', { name: 'Hide board', exact: true }),
+    page.locator('[data-limit="perMove"] [data-limit-on]'),
+    page.locator('#new-game'),
+    page.locator('#undo'),
+  ]) {
+    await expect(control).toBeDisabled();
+  }
+  await page.locator('#home-link').click();
+  await expectToast(page, 'Settings are locked');
+  // The theme and the sound stay free.
+  await page.getByRole('button', { name: 'Sound', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Sound', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await play(page, X_WINS.slice(1));
   await expect(status(page)).toHaveAttribute('data-state', 'won');
   await expect(page.getByRole('button', { name: 'Flat' })).toBeEnabled();
+  await expect(page.locator('#lock')).not.toContainText('Locked');
   await expect(page.locator('#end-card')).toHaveAttribute('open');
   await expect(page.locator('#end-card-image')).toHaveAttribute('alt', /^Player X wins! /);
   await expect(page.locator('#end-card-code-option')).toBeHidden();
   await expect(page.locator('#end-card-link')).toBeChecked();
+  await page.locator('#end-card-close').click();
+  // After the game, the result card takes the place of Undo.
+  await expect(page.locator('#undo')).toBeHidden();
+  await page.getByRole('button', { name: 'Result card' }).click();
+  await expect(page.locator('#end-card')).toHaveAttribute('open');
+});
+
+test('My games lists the games of this session, with Replay and the result card', async ({ open }) => {
+  const { page } = await open(friend);
+  await play(page, X_WINS);
+  await page.locator('#end-card-close').click();
+  await page.locator('#new-game').click();
+  await page.locator('#account-button').click();
+  const games = page.locator('#my-games-session li');
+  await expect(games).toHaveCount(2);
+  await expect(games.first()).toContainText('Player X won');
+  // The live game has no Replay and no card yet.
+  await expect(games.nth(1).getByRole('button')).toHaveCount(0);
+  await games.first().getByRole('button', { name: 'Card' }).click();
+  await expect(page.locator('#my-games')).not.toHaveAttribute('open');
+  await expect(page.locator('#end-card')).toHaveAttribute('open');
+  await page.locator('#end-card-close').click();
+  await page.locator('#account-button').click();
+  await games.first().getByRole('button', { name: 'Replay' }).click();
+  await expect(page.locator('#my-games')).not.toHaveAttribute('open');
+  await expect(status(page)).toHaveText(`Game 1 · move ${X_WINS.length} of ${X_WINS.length}`);
 });
 
 test('time limits: range check, presets, and a change during a game starts with the next game', async ({ open }) => {

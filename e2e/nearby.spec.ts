@@ -44,6 +44,12 @@ test('host and guest connect with text codes, play a game and chat, and both see
   await expect(host.locator('.tally.O')).toContainText(guestName);
   await expect(host.locator('#chat-log')).toContainText(guestName);
 
+  // The guest locks: the lock holds the settings of both devices until the game ends.
+  await guest.locator('#lock').click();
+  await expect(host.locator('#lock')).toContainText('Locked');
+  await expect(host.getByRole('button', { name: 'Flat' })).toBeDisabled();
+  await expect(host.getByRole('button', { name: 'Hide board', exact: true })).toBeDisabled();
+
   // The host finishes the game: X on 0, 16, 32, 48, O on 1, 2, 3.
   for (const [page, index] of [[host, 16], [guest, 2], [host, 32], [guest, 3], [host, 48]] as const) {
     await expectMyMove(page);
@@ -52,6 +58,8 @@ test('host and guest connect with text codes, play a game and chat, and both see
   }
   await expect(host.locator('#status')).toHaveText('You win!');
   await expect(guest.locator('#status')).toHaveText(`${hostName} wins!`);
+  await expect(guest.locator('#lock')).not.toContainText('Locked');
+  await expect(guest.getByRole('button', { name: 'Flat' })).toBeEnabled();
   await expect(host).toHaveURL(/[?&]game=[A-Z2-9]{8}/);
   const id = new URL(host.url()).searchParams.get('game');
 

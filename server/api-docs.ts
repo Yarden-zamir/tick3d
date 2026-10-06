@@ -665,7 +665,7 @@ export const ROUTES = {
       schema: 'SessionView',
       example: view({ games: [game(X_WINS), game([])], seats: { X: true, O: true }, version: 10 }),
     },
-    errors: [BAD_PLAYER, BAD_CODE, NOT_A_PLAYER, NO_GAME, { status: 409, when: 'The live game is not over.' }],
+    errors: [BAD_PLAYER, BAD_CODE, NOT_A_PLAYER, NO_GAME, { status: 409, when: 'The live game is not over, or the settings are locked until it ends.' }],
     examplePlayer: AGENT_A,
   },
   'POST /api/sessions/{code}/chat': {
@@ -701,7 +701,7 @@ export const ROUTES = {
     summary: 'Lock the settings until the live game ends.',
     player: 'required',
     response: { status: 200, description: 'The locked session.', schema: 'SessionView', example: view({ seats: { X: true, O: true }, locked: true, version: 3 }) },
-    errors: [BAD_PLAYER, BAD_CODE, NOT_A_PLAYER, NO_GAME, { status: 409, when: 'The live game is over.' }],
+    errors: [BAD_PLAYER, BAD_CODE, NOT_A_PLAYER, NO_GAME, { status: 409, when: 'The live game is over, or a seat is still empty.' }],
     examplePlayer: AGENT_A,
   },
   'GET /api/sessions/{code}/events': {

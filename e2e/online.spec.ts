@@ -68,16 +68,19 @@ test('two players play a full game, and a watcher replays it', async ({ open, ba
   await bob.locator('#session-name').press('Enter');
   await expect(alice.locator('#session-name')).toHaveValue('Friday rematch');
   await bob.locator('#new-game').click();
-  await expect(alice.locator('#history li')).toHaveCount(2);
-  await expect(bob.locator('#history li')).toHaveCount(2);
+  await expect(alice.locator('#my-games-session li')).toHaveCount(2);
+  await expect(bob.locator('#my-games-session li')).toHaveCount(2);
 
-  const { page: carol } = await open();
+  // The join box is in the Online mode only. A page that starts in the Online mode creates no session.
+  const { page: carol } = await open({ settings: { mode: 'online' } });
   await carol.locator('#join-code').fill(code.toLowerCase());
   await carol.locator('#join-code').press('Enter');
   await expect(status(carol)).toContainText('Watching');
   await expect(carol.locator('#session-name')).toHaveValue('Friday rematch');
-  await carol.locator('#history-box summary').click();
-  await carol.locator('#history li').first().getByRole('button', { name: 'Replay' }).click();
+  // The games of the session are in My games. Replay closes the dialog and shows the game on the board.
+  await carol.locator('#account-button').click();
+  await carol.locator('#my-games-session li').first().getByRole('button', { name: 'Replay' }).click();
+  await expect(carol.locator('#my-games')).not.toHaveAttribute('open');
   await expect(status(carol)).toContainText('move 7 of 7');
   await carol.locator('[data-review="prev"]').click();
   await expect(marks(carol)).toHaveCount(6);
@@ -94,7 +97,10 @@ test('two players play a full game, and a watcher replays it', async ({ open, ba
 test('hide options and the lock belong to the session', async ({ open }) => {
   const { page: alice } = await open();
   const code = await createOnline(alice);
+  // A lock waits for the second player: without one, the game could never end.
+  await expect(alice.locator('#lock')).toBeDisabled();
   const { page: bob } = await joinAsO(open, `/?code=${code}`);
+  await expect(alice.locator('#lock')).toBeEnabled();
   const { page: carol } = await open({ path: `/?code=${code}` });
   await expect(status(carol)).toContainText('Watching');
   const hideBoard = (page: Page) => page.getByRole('button', { name: 'Hide board', exact: true });
@@ -128,6 +134,13 @@ test('hide options and the lock belong to the session', async ({ open }) => {
   for (const control of [hideBoard(alice), alice.getByRole('button', { name: 'Tower' }), alice.getByRole('button', { name: 'Computer' }), alice.locator('#join-code'), hideHistory(bob)]) {
     await expect(control).toBeDisabled();
   }
+  // The home link waits for the end of the lock too.
+  await alice.locator('#home-link').click();
+  await expectToast(alice, 'Settings are locked');
+  expect(new URL(alice.url()).searchParams.get('code')).toBe(code);
+  // A watcher sees the lock, but keeps its own settings, so the lock never traps a watcher.
+  await expect(carol.locator('#lock')).toContainText('Locked');
+  await expect(carol.getByRole('button', { name: 'Flat' })).toBeEnabled();
   const refused = await alice.evaluate(async (sessionCode) => {
     const response = await fetch(`/api/sessions/${sessionCode}`, {
       method: 'PATCH',
@@ -213,6 +226,6 @@ test('the session clock reaches both players, and the server decides a timeout',
   await perMove(alice).locator('[data-limit-on]').uncheck();
   await expect(bob.locator('#clock-summary')).toContainText('5 min per player');
   await bob.locator('#new-game').click();
-  await expect(alice.locator('#history li')).toHaveCount(2);
+  await expect(alice.locator('#my-games-session li')).toHaveCount(2);
   await expect(alice.locator('[data-clock="X"]')).toContainText('5:00');
 });

@@ -71,7 +71,10 @@ export function setCurrent(game: Game): void {
 }
 
 export const isLive = () => current().status.kind === 'playing';
-export const settingsLocked = () => page.session?.locked ?? false;
+// The lock holds the two players. A watcher keeps every own setting, so a lock never traps a watcher in a game.
+export const settingsLocked = () => page.session !== undefined && page.session.locked && page.session.you !== null;
+// Both seats have a player. A game with another device waits for the second player before a lock.
+export const bothSeated = () => page.session !== undefined && page.session.seats.X && page.session.seats.O;
 // A game with another device: online, or Nearby. Moves are final and chat is open.
 export const shared = () => page.session?.mode === 'online' || page.session?.mode === 'nearby';
 

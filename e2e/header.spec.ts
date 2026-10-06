@@ -29,7 +29,7 @@ for (const { path, info } of PAGES) {
     await expect(panel).toBeHidden();
     await page.getByRole('button', { name: 'Info' }).click();
     await expect(panel).toBeVisible();
-    await expect(panel.getByRole('heading')).toHaveText(info);
+    await expect(panel.getByRole('heading', { level: 2 })).toHaveText(info);
     await panel.getByRole('button', { name: 'Close' }).click();
     await expect(panel).toBeHidden();
 

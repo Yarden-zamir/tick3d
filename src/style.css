@@ -238,14 +238,13 @@ input::placeholder {
   font-weight: 400;
 }
 
-.actions button,
+.actions > button,
 .toggles button,
 .lock,
 .online button,
 .join button,
 .coords button,
 .review button,
-.history button,
 .end-card-actions button,
 .train button:where(:not(.cell, .train-dot, .brand-links *)) {
   padding: 0.55rem 0.85rem;
@@ -258,14 +257,16 @@ input::placeholder {
   transition: translate 0.08s, box-shadow 0.08s, background 0.15s;
 }
 
-:is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:hover:not(:disabled),
+.actions > button:hover:not(:disabled),
+:is(.toggles, .online, .join, .coords, .review, .end-card-actions) button:hover:not(:disabled),
 .train button:where(:not(.cell, .train-dot, .brand-links *)):hover:not(:disabled),
 .lock:hover:not(:disabled) {
   translate: -1px -1px;
   box-shadow: 4px 4px 0 var(--shadow);
 }
 
-:is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:active:not(:disabled),
+.actions > button:active:not(:disabled),
+:is(.toggles, .online, .join, .coords, .review, .end-card-actions) button:active:not(:disabled),
 .train button:where(:not(.cell, .train-dot, .brand-links *)):active:not(:disabled),
 .lock:active:not(:disabled) {
   translate: 3px 3px;
@@ -554,9 +555,14 @@ input:disabled {
   display: none;
 }
 
+/* A caret icon, drawn by a mask in the text color. */
 .theme-menu summary::after {
-  content: '▾';
+  content: '';
+  width: 1rem;
+  height: 1rem;
   margin-left: auto;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
   transition: rotate 0.15s;
 }
 
@@ -850,19 +856,21 @@ body[data-turn='O'] .status[data-state='playing'] {
     drop-shadow(0 -1px 0 var(--line));
 }
 
-.angle-row {
+/* The view picker, and Reset angle beside it for the tower. */
+.view-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.6rem;
-  color: var(--muted);
-  font-size: 0.85rem;
-  font-weight: 600;
 }
 
-.angle-row button {
+.view-row .segmented {
+  flex: 1;
+}
+
+.reset-angle {
   flex: none;
-  padding: 0.35rem 0.7rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.85rem;
   border-radius: 8px;
   border: 2px solid var(--line);
   background: var(--surface);
@@ -1065,29 +1073,55 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
+/* New game takes the free width. Undo, the result card and the sound control keep their own width. */
 .actions {
   display: flex;
   gap: 0.6rem;
 }
 
-.actions button {
-  flex: 1;
-  padding: 0.7rem 0.8rem;
+.actions > button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.8rem;
 }
 
 .actions .primary {
-  flex: 2;
+  flex: 1;
   background: var(--primary);
   color: var(--on-color);
   font-weight: 800;
 }
 
-#sound,
-#sound-set {
-  flex: 0 0 3.2rem;
+/* One box with two parts: the speaker turns the sound on and off, the narrow caret opens the sound sets. */
+.sound-control {
+  flex: none;
+  display: flex;
+  border: var(--border) solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+
+.sound-control button {
   display: grid;
   place-items: center;
-  padding: 0;
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sound-control button:hover {
+  background: var(--surface-2);
+}
+
+.sound-control #sound-set {
+  padding-inline: 0.3rem;
+  border-left: 2px solid var(--line);
 }
 
 /* The sound set menu: a popover in the middle of the screen, so it fits a phone too. */
@@ -1166,9 +1200,11 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 .sound-sets-head button {
+  display: grid;
+  place-items: center;
   width: 2.2rem;
   height: 2.2rem;
-  font-weight: 800;
+  padding: 0;
 }
 
 .sound-set-choice {
@@ -1191,7 +1227,8 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .sound-set-play {
   flex: 0 0 2.8rem;
-  font-size: 1rem;
+  display: grid;
+  place-items: center;
 }
 
 .toggles {
@@ -1212,6 +1249,28 @@ body[data-turn='O'] .status[data-state='playing'] {
   background: var(--toggle-on);
   color: var(--on-color);
   font-weight: 800;
+}
+
+/* A label row with a small control at its end, such as Hide and the lock. */
+.field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+  box-shadow: 2px 2px 0 var(--shadow);
+}
+
+.lock svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .lock[aria-pressed='true'] {
@@ -1272,8 +1331,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-size: 0.92rem;
 }
 
-.help summary,
-.history summary {
+.help summary {
   cursor: pointer;
   color: var(--ink);
   font-weight: 800;
@@ -1514,6 +1572,8 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 .keypad button {
+  display: inline-grid;
+  place-items: center;
   min-width: 2.9rem;
   min-height: 2.9rem;
   padding: 0.4rem 0.6rem;
@@ -1546,6 +1606,11 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+}
+
+.review-buttons button {
+  display: inline-grid;
+  place-items: center;
 }
 
 /* ---- Chat ---- */
@@ -1682,7 +1747,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 .chat-notice-icon {
-  font-size: 1.3rem;
+  flex: none;
 }
 
 .chat-notice-body {
@@ -1715,51 +1780,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   from {
     translate: -50% -150%;
   }
-}
-
-/* ---- History ---- */
-
-.history ol {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  max-height: 14rem;
-  overflow-y: auto;
-  margin: 0.6rem 0 0;
-  /* Room for the row buttons' shadows. */
-  padding: 0 0.3rem 0.3rem 0;
-  list-style: none;
-}
-
-.history li {
-  display: grid;
-  /* Name, result, then the Replay and Card buttons. */
-  grid-template-columns: auto 1fr auto auto;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.35rem 0.5rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-2);
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
-.history li.active {
-  background: var(--win);
-  color: var(--on-color);
-}
-
-.history .result {
-  color: inherit;
-  font-weight: 400;
-  opacity: 0.8;
-}
-
-.history button {
-  padding: 0.2rem 0.6rem;
-  font-size: 0.85rem;
-  box-shadow: 2px 2px 0 var(--shadow);
 }
 
 /* ---- Time limit editor ---- */
@@ -2277,6 +2297,15 @@ body[data-turn='O'] .status[data-state='playing'] {
   cursor: pointer;
 }
 
+/* The close button of a dialog: an icon in a square. */
+.my-games-head button {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  padding: 0;
+}
+
 .login-link {
   background: var(--primary);
   color: var(--on-color);
@@ -2345,6 +2374,16 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .my-games-list small {
   color: var(--muted);
+}
+
+/* The game under replay in the list of this session. */
+.my-games-list li.active {
+  background: var(--win);
+  color: var(--on-color);
+}
+
+.my-games-list li.active small {
+  color: inherit;
 }
 
 .my-games-list .empty {
