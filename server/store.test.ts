@@ -60,7 +60,7 @@ describe('pruning empty sessions', () => {
     store = await openStore(':memory:', {
       // The clock runs `later` ahead, so rows written now count as old.
       now: () => Date.now() + later,
-      presence: (code) => ({ X: code === watched, O: false }),
+      open: (code) => (code === watched ? [alice] : []),
     });
     const empty = (await store.create(alice, 'Never played')).code;
     const played = (await store.create(alice, 'Played')).code;
@@ -128,7 +128,7 @@ describe('sessions', () => {
   });
 
   it('reports presence from the HTTP layer', async () => {
-    store = await openStore(':memory:', { presence: () => ({ X: true, O: false }) });
+    store = await openStore(':memory:', { open: () => [alice] });
     const { code } = await store.create(alice, 'Present');
     expect((await store.get(code, alice)).presence).toEqual({ X: true, O: false });
   });
@@ -223,6 +223,45 @@ describe('accounts', () => {
     expect((await store.get(code, bob)).players.X?.login).toBe('alice');
     expect((await store.get(code, alice)).you).toBe('X');
     expect((await store.get(code, alicePhone)).you).toBeNull();
+  });
+
+  it('moves the finished games of a logged-out device to the account, also games from before the login', async () => {
+    store = await openStore(':memory:');
+    await store.addResults(alicePhone, [result('44444444-0000-4000-8000-000000000001', { you: 'O' })]);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addResults(alicePhone, [result('44444444-0000-4000-8000-000000000002', { mode: 'friend', you: null, difficulty: null })]);
+    await store.unlinkToken(alicePhone);
+    const phone = await store.myGames(alicePhone);
+    expect(phone.total.played).toBe(0);
+    expect((await store.history(alicePhone, 0)).games).toEqual([]);
+    expect(await store.records(alicePhone)).toEqual({});
+    // A device that links to the account later sees them.
+    await store.linkToken(alice, ALICE_GITHUB);
+    expect((await store.myGames(alice)).total.played).toBe(2);
+    expect((await store.history(alice, 0)).games.map((entry) => entry.result).sort()).toEqual(['lost', 'played']);
+    expect(await store.records(alice)).not.toEqual({});
+  });
+
+  it('keeps one Nearby game in the history of the account after the guest logs out', async () => {
+    store = await openStore(':memory:');
+    const bobLaptop = 'eeeeeeee-0000-4000-8000-000000000005' as PlayerToken;
+    const BOB_GITHUB = { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' };
+    await store.linkToken(bob, BOB_GITHUB);
+    const nearby = { mode: 'nearby', difficulty: null, game: finishedGame(X_WINS) } as const;
+    const id = gameId('NEARBY45');
+    // The host (Alice, X) names the guest device (Bob, O). Both devices send a result.
+    await store.addResults(alice, [
+      result('eeeeeeee-1111-4000-8000-000000000001', { ...nearby, you: 'X', publicId: id, guest: bob, metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } }),
+    ]);
+    await store.addResults(bob, [
+      result('eeeeeeee-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: 2_034, metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } }),
+    ]);
+    await store.unlinkToken(bob);
+    expect((await store.history(bob, 0)).games).toEqual([]);
+    expect((await store.myGames(bob)).total.played).toBe(0);
+    await store.linkToken(bobLaptop, BOB_GITHUB);
+    expect((await store.history(bobLaptop, 0)).games).toMatchObject([{ id, mode: 'nearby', result: 'lost', opponentName: nameOf(alice) }]);
+    expect((await store.history(alice, 0)).games).toMatchObject([{ id, result: 'won', opponent: { login: 'bob' } }]);
   });
 
   it('refreshes a renamed account', async () => {
@@ -647,6 +686,14 @@ describe('sound practice', () => {
     expect(practice.best.map((entry) => entry.player)).toEqual(['alice', nameOf(bob)]);
   });
 
+  it('shows a custom name on the practice board and in the practice stats', async () => {
+    store = await openStore(':memory:');
+    await store.setName(bob, 'Bea');
+    await store.addPracticeRun(bob, run('run-bob-named', 25_000));
+    expect((await store.practiceBoard('targets', 'normal', undefined)).top.map((entry) => entry.player)).toEqual(['Bea']);
+    expect((await store.stats()).practice.best.map((entry) => entry.player)).toEqual(['Bea']);
+  });
+
   it('ranks echo runs by points first, then time', async () => {
     store = await openStore(':memory:');
     await store.addPracticeRun(alice, run('run-echo-a', 40_000, 'echo', 700));
@@ -675,5 +722,145 @@ describe('sound practice', () => {
     const done = await store.get(code, carol);
     expect(done.playoff?.ended).toBe('done');
     expect(done.playoff?.seats.X.times).toHaveLength(10);
+  });
+});
+
+describe('seat controls', () => {
+  it('lists the open tokens without a seat as watchers, by an opaque id, and never shows a token', async () => {
+    let open: PlayerToken[] = [];
+    store = await openStore(':memory:', { open: () => open });
+    const { code } = await store.create(alice, 'Watched');
+    await store.join(code, bob);
+    open = [alice, carol, carol];
+    const view = await store.get(code, bob);
+    expect(view.presence).toEqual({ X: true, O: false });
+    expect(view.watchers).toEqual([{ id: expect.stringMatching(/^[0-9a-f]{16}$/), name: nameOf(carol), player: null }]);
+    expect(JSON.stringify(view)).not.toContain(carol);
+    expect(JSON.stringify(view)).not.toContain(alice);
+    // The id is the same for every reader, so a player can act on it. Only Carol sees it as her own.
+    expect((await store.get(code, alice)).watchers).toEqual(view.watchers);
+    expect(view.youWatcher).toBeNull();
+    expect((await store.get(code, carol)).youWatcher).toBe(view.watchers[0]?.id);
+    // Dave watches too: each watcher gets its own id, never the id of another watcher.
+    const dave = 'eeeeeeee-0000-4000-8000-000000000005' as PlayerToken;
+    open = [alice, carol, dave];
+    const both = (await store.get(code, carol)).watchers;
+    expect(both).toHaveLength(2);
+    expect((await store.get(code, carol)).youWatcher).toBe(both[0]?.id);
+    expect((await store.get(code, dave)).youWatcher).toBe(both[1]?.id);
+    expect(both[0]?.id).not.toBe(both[1]?.id);
+  });
+
+  it('asks before a swap, applies it on accept, and seats a watcher without asking', async () => {
+    let open: PlayerToken[] = [];
+    store = await openStore(':memory:', { open: () => open });
+    const { code } = await store.create(alice, 'Seats');
+    await store.join(code, bob);
+    open = [alice, bob, carol];
+    const asked = await store.seat(code, alice, { action: 'swap' });
+    expect(asked.seatRequest).toMatchObject({ kind: 'swap', from: 'X' });
+    expect((await store.get(code, bob)).seatRequest).toMatchObject({ kind: 'swap', from: 'X' });
+    expect((await store.answerSeat(code, bob, true)).you).toBe('X');
+    expect((await store.get(code, alice)).you).toBe('O');
+    // Alice (O now) leaves, and Bob seats the watcher in the empty seat.
+    await store.seat(code, alice, { action: 'leave' });
+    const watcher = (await store.get(code, bob)).watchers.find((entry) => entry.name === nameOf(carol));
+    if (watcher === undefined) throw new Error('carol is not a watcher');
+    expect((await store.seat(code, bob, { action: 'seat', watcher: watcher.id })).seats).toEqual({ X: true, O: true });
+    expect((await store.get(code, carol)).you).toBe('O');
+    expect(await status(() => store.seat(code, alice, { action: 'swap' }))).toBe(403);
+    // Bob (X) moves and asks to undo. Carol (O) accepts, and the move goes back.
+    await store.move(code, bob, { game: 0, moveCount: 0, cell: 21 });
+    expect((await store.seat(code, bob, { action: 'undo' })).seatRequest).toMatchObject({ kind: 'undo', from: 'X' });
+    expect((await store.answerSeat(code, carol, true)).games[0]?.moves).toEqual([]);
+  });
+});
+
+describe('seat controls with accounts', () => {
+  it('gives a seat to a logged-in watcher as an account seat, so a logout drops it from that device', async () => {
+    let open: PlayerToken[] = [];
+    store = await openStore(':memory:', { open: () => open });
+    const { code } = await store.create(bob, 'Give');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    open = [bob, alicePhone];
+    const watching = await store.get(code, alicePhone);
+    expect(watching.watchers).toMatchObject([{ player: { login: 'alice' } }]);
+    expect(watching.youWatcher).toBe(watching.watchers[0]?.id);
+    const id = watching.watchers[0]?.id;
+    if (id === undefined) throw new Error('no watcher');
+    await store.seat(code, bob, { action: 'seat', watcher: id });
+    expect((await store.get(code, alice)).you).toBe('O');
+    await store.unlinkToken(alicePhone);
+    expect((await store.get(code, alicePhone)).you).toBeNull();
+    expect((await store.get(code, alice)).you).toBe('O');
+  });
+});
+
+describe('seat controls for an account without an account row', () => {
+  it('seats a logged-in watcher whose account linked before account seats, and resolves the name', async () => {
+    let open: PlayerToken[] = [];
+    const path = `${await mkdtemp('/tmp/tick3d-store-')}/watcher.duckdb`;
+    store = await openStore(path, { open: () => open });
+    const { code } = await store.create(bob, 'Seat an old account');
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    store.close();
+    const instance = await DuckDBInstance.create(path);
+    const db = await instance.connect();
+    await db.run("DELETE FROM player_tokens WHERE token LIKE 'account-%'");
+    db.closeSync();
+    instance.closeSync();
+    store = await openStore(path, { open: () => open });
+    open = [bob, alicePhone];
+    const watching = await store.get(code, alicePhone);
+    expect(watching.youWatcher).toBe(watching.watchers[0]?.id);
+    const id = watching.watchers[0]?.id;
+    if (id === undefined) throw new Error('no watcher');
+    await store.seat(code, bob, { action: 'seat', watcher: id });
+    expect((await store.get(code, bob)).players.O?.login).toBe('alice');
+    expect((await store.get(code, alicePhone)).you).toBe('O');
+  });
+});
+
+describe('custom names', () => {
+  it('shows a custom name in views, history, My games, game links and stats, and goes back on reset', async () => {
+    const code = await session();
+    await store.setName(alice, 'Dana');
+    await playMoves(code, X_WINS);
+    expect((await store.get(code, bob)).names).toEqual({ X: 'Dana', O: nameOf(bob) });
+    expect((await store.history(bob, 0)).games[0]).toMatchObject({ opponentName: 'Dana' });
+    expect((await store.myGames(bob)).sessions[0]).toMatchObject({ opponentName: 'Dana' });
+    expect((await store.game(gameId(`${code}-1`))).names.X).toBe('Dana');
+    // The computer (X) wins this game against Alice, so it counts for her survival record.
+    await store.addResults(alice, [result('66666666-0000-4000-8000-000000000002', { you: 'O', difficulty: 'easy' })]);
+    expect((await store.stats()).survival).toEqual([expect.objectContaining({ player: 'Dana' })]);
+    expect(await store.customName(alice)).toBe('Dana');
+    await store.clearName(alice);
+    expect(await store.customName(alice)).toBeNull();
+    expect((await store.get(code, bob)).names.X).toBe(nameOf(alice));
+  });
+
+  // A custom name belongs to the device token. A logout moves the games and seats of the device to the
+  // account token (unlinkToken), so they show the GitHub login, and the device keeps its own name.
+  it('keeps a custom name with the device on logout, so the games that move to the account do not show it', async () => {
+    const code = await session();
+    await store.setName(alice, 'Dana');
+    await playMoves(code, X_WINS);
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.unlinkToken(alice);
+    const view = await store.get(code, bob);
+    expect(view.players.X?.login).toBe('alice');
+    expect(view.names.X).not.toBe('Dana');
+    expect((await store.history(bob, 0)).games[0]).toMatchObject({ opponent: { login: 'alice' } });
+    expect((await store.history(bob, 0)).games[0]?.opponentName).not.toBe('Dana');
+    expect((await store.game(gameId(`${code}-1`))).names.X).not.toBe('Dana');
+    expect(await store.customName(alice)).toBe('Dana');
+  });
+
+  it('refuses a name that equals a GitHub login, in any case', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(carol, ALICE_GITHUB);
+    expect(await status(() => store.setName(bob, 'ALICE'))).toBe(409);
+    expect(await store.customName(bob)).toBeNull();
   });
 });

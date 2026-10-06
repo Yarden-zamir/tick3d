@@ -4,15 +4,16 @@ import { listValue } from '@duckdb/node-api';
 import { PRACTICE_MODES, PRESET_IDS, type PracticeBoard, type PracticeLeader, type PracticeMode, type PracticeStats, type PresetId } from '../src/practice/practice.ts';
 import { PERSON, type Rows, num, oneOf, personName } from './stats.ts';
 
-// One row per run, with the person (the GitHub account, else the token) and a sort key: a target run by
-// its total time, an echo run by its points (more first), then its time. The best run of a person has the
-// smallest key.
+// One row per run, with the person (the GitHub account, else the token), its custom name, and a sort
+// key: a target run by its total time, an echo run by its points (more first), then its time. The best
+// run of a person has the smallest key.
 const RUNS = `WITH runs AS (
   FROM practice_runs LEFT JOIN player_tokens pt USING (token) LEFT JOIN users u ON u.github_id = pt.github_id
-  SELECT mode, preset, ${PERSON} AS person, u.login, total_ms, score, round_ms,
+    LEFT JOIN player_names pn USING (token)
+  SELECT mode, preset, ${PERSON} AS person, u.login, pn.name AS custom, total_ms, score, round_ms,
     CASE WHEN mode = 'echo' THEN (1000 - score)::BIGINT * 1000000000 + total_ms ELSE total_ms::BIGINT END AS key
 ), best AS (
-  SELECT mode, preset, person, any_value(login) AS login, min(key) AS key, arg_min(total_ms, key) AS total_ms, arg_min(score, key) AS score
+  SELECT mode, preset, person, any_value(login) AS login, any_value(custom) AS custom, min(key) AS key, arg_min(total_ms, key) AS total_ms, arg_min(score, key) AS score
   FROM runs GROUP BY mode, preset, person
 )`;
 
@@ -32,7 +33,7 @@ function leader(row: Record<string, unknown>): PracticeLeader {
 async function leaders(rows: Rows, limit: number, only?: { mode: PracticeMode; preset: PresetId }): Promise<PracticeLeader[]> {
   const found = await rows(
     `${RUNS} SELECT mode, preset, row_number() OVER (PARTITION BY mode, preset ORDER BY key, login NULLS LAST, person)::INTEGER AS rank,
-       login, person, total_ms, score
+       login, custom, person, total_ms, score
      FROM best ${only === undefined ? '' : 'WHERE mode = $mode AND preset = $preset'}
      QUALIFY rank <= $limit ORDER BY mode, preset, rank`,
     only === undefined ? { limit } : { limit, ...only },

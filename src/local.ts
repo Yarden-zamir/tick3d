@@ -11,9 +11,11 @@ import {
   type MoveRequest,
   type PlayerInfo,
   type PlayerToken,
+  type SeatAction,
   type SessionUpdate,
   type SessionView,
 } from './protocol.ts';
+import { nameOf } from './names.ts';
 import * as core from './session/core.ts';
 import { CURRENT_FORMAT, type SessionDoc, parseDoc } from './session/format.ts';
 
@@ -55,8 +57,11 @@ export function createLocalBackend(
   account: () => PlayerInfo | null,
 ) {
   const listeners = new Map<Code, Set<() => void>>();
-  // A Nearby host reports which seats are connected. Other sessions on this device are all present.
-  const presenceOf = new Map<Code, (doc: SessionDoc) => Record<Player, boolean>>();
+  // A Nearby host reports which seats are connected, its watchers and their names.
+  // Other sessions on this device have both seats present and no watchers.
+  const audiences = new Map<Code, (doc: SessionDoc) => core.Audience>();
+  const audienceOf = (code: Code, doc: SessionDoc): core.Audience =>
+    audiences.get(code)?.(doc) ?? { presence: { X: doc.seats.X !== null, O: doc.seats.O !== null }, watchers: [], name: nameOf };
   // Other tabs of this device hear about changes, so two open tabs show the same game.
   const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel('tick3d-local');
   const fire = (code: Code) => listeners.get(code)?.forEach((listener) => listener());
@@ -101,7 +106,7 @@ export function createLocalBackend(
       version: row.version,
       identity: identity(withComputer),
       now: Date.now(),
-      presence: presenceOf.get(row.code)?.(doc) ?? { X: doc.seats.X !== null, O: doc.seats.O !== null },
+      audience: audienceOf(row.code, doc),
       players: { X: seatInfo('X'), O: seatInfo('O') },
     });
   }
@@ -159,11 +164,16 @@ export function createLocalBackend(
     undo: (code: Code, count: number) => change(code, (doc) => core.undo(doc, identity(true), count)),
     // A device-held session has nobody else to join; a Nearby guest joins through the host.
     join: (code: Code) => change(code, (doc) => doc),
+    // The seat changes of the host's player in a Nearby game.
+    seat: (code: Code, action: SeatAction) =>
+      change(code, (doc) => core.seat(doc, identity(), action, audienceOf(code, doc).watchers, Date.now())),
+    answerSeat: (code: Code, accept: boolean) =>
+      change(code, (doc) => core.answerSeat(doc, identity(), accept, audienceOf(code, doc).watchers, Date.now())),
 
     // For a Nearby host: who is connected, and a nudge to redraw when a guest comes or goes.
-    setPresence(code: Code, presence: ((doc: SessionDoc) => Record<Player, boolean>) | undefined): void {
-      if (presence === undefined) presenceOf.delete(code);
-      else presenceOf.set(code, presence);
+    setAudience(code: Code, audience: ((doc: SessionDoc) => core.Audience) | undefined): void {
+      if (audience === undefined) audiences.delete(code);
+      else audiences.set(code, audience);
     },
     notify: (code: Code) => fire(code),
 

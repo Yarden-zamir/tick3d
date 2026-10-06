@@ -3,13 +3,18 @@
 // A guest reaches the host through the same calls as the server, so the page treats both alike.
 import type { Player } from '../game.ts';
 import type { LocalBackend } from '../local.ts';
+import { nameOf } from '../names.ts';
 import {
   type Code,
   type GameId,
   type PlayerToken,
+  type SeatAction,
   type SessionView,
+  WATCHER_ID_LENGTH,
   asPlayerToken,
   parseMoveRequest,
+  parseSeatAction,
+  parseSeatAnswer,
   parseSessionUpdate,
   parseSessionView,
 } from '../protocol.ts';
@@ -19,24 +24,39 @@ import type { Channel } from './peer.ts';
 import { RpcError, type RpcMethod, rpcClient, rpcServer } from './rpc.ts';
 import type { Hello } from './signal.ts';
 
-type Guest = { hello: Hello; token: PlayerToken | undefined; server: ReturnType<typeof rpcServer> };
+// `id` is the watcher id of the guest: random, so it says nothing about the token.
+type Guest = { hello: Hello; token: PlayerToken | undefined; id: string; server: ReturnType<typeof rpcServer> };
 type GuestSummary = { hello: Hello; seat: Player | null };
 
 const argsOf = (args: unknown): Record<string, unknown> =>
   typeof args === 'object' && args !== null && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
 
-export function createNearbyHost(local: LocalBackend, code: Code, hostToken: PlayerToken) {
+const randomWatcherId = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(WATCHER_ID_LENGTH / 2)), (byte) => byte.toString(16).padStart(2, '0')).join('');
+
+// `hostName` is the device name of the host, which also names the host's seat.
+export function createNearbyHost(local: LocalBackend, code: Code, hostToken: PlayerToken, hostName: () => string) {
   const guests = new Set<Guest>();
   const changeListeners = new Set<() => void>();
+  const hostId = randomWatcherId();
+  // The device name of each guest token, kept after the guest leaves, so its seat keeps the name.
+  const names = new Map<string, string>();
   // Calls that arrive after stop() get a refusal, also in the moment before each channel closes.
   let stopped = false;
 
   // The host's own seat is present while it hosts. A guest's seat is present while its channel is open.
-  function presence(doc: SessionDoc): Record<Player, boolean> {
-    const connected = new Set<string>([hostToken, ...[...guests].flatMap((guest) => (guest.token ? [guest.token] : []))]);
-    return { X: doc.seats.X !== null && connected.has(doc.seats.X), O: doc.seats.O !== null && connected.has(doc.seats.O) };
+  // A connected device without a seat (the host too) is a watcher. Each device shows with its device name.
+  function audience(doc: SessionDoc): core.Audience {
+    const connected = new Map<string, string>([[hostToken, hostId]]);
+    for (const guest of guests) if (guest.token !== undefined && !connected.has(guest.token)) connected.set(guest.token, guest.id);
+    const seated = (token: string) => token === doc.seats.X || token === doc.seats.O;
+    return {
+      presence: { X: doc.seats.X !== null && connected.has(doc.seats.X), O: doc.seats.O !== null && connected.has(doc.seats.O) },
+      watchers: [...connected].filter(([token]) => !seated(token)).map(([token, id]) => ({ id, token, player: null })),
+      name: (token) => (token === hostToken ? hostName() : (names.get(token) ?? nameOf(token))),
+    };
   }
-  local.setPresence(code, presence);
+  local.setAudience(code, audience);
 
   const guestsChanged = () => {
     local.notify(code);
@@ -52,10 +72,16 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
   async function handle(guest: Guest, method: RpcMethod, args: unknown): Promise<SessionView> {
     if (stopped) throw new RpcError(410, 'The host ended the game.');
     const fields = argsOf(args);
-    if (method === 'join') {
+    const unknownBefore = guest.token === undefined;
+    // A guest names its token with join, and with get from the version with seat controls on, so a
+    // watcher that never joined is known too. A guest keeps the first token it names.
+    if (method === 'join' || (method === 'get' && fields.token !== undefined)) {
       const token = asPlayerToken(fields.token);
-      if (token === undefined || token === hostToken) throw new RpcError(400, 'A guest needs its own player token.');
+      if (token === undefined || token === hostToken || (guest.token !== undefined && guest.token !== token)) {
+        throw new RpcError(400, 'A guest needs its own player token.');
+      }
       guest.token = token;
+      names.set(token, guest.hello.name);
     }
     const identity: core.Identity = new Set(guest.token ? [guest.token] : []);
     const now = Date.now();
@@ -84,17 +110,28 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
           return (doc) => core.lock(doc, identity);
         case 'chat':
           return (doc) => core.chat(doc, identity, fields.text, now);
+        case 'seat': {
+          const action = parseSeatAction(args);
+          if (action === undefined) throw new RpcError(400, 'The seat change is not valid.');
+          return (doc) => core.seat(doc, identity, action, audience(doc).watchers, now);
+        }
+        case 'answerSeat': {
+          const answer = parseSeatAnswer(args);
+          if (answer === undefined) throw new RpcError(400, 'The answer is not valid.');
+          return (doc) => core.answerSeat(doc, identity, answer.accept, audience(doc).watchers, now);
+        }
       }
     })();
     const { doc, version } = await local.change(code, rule);
-    if (method === 'join') guestsChanged();
-    return core.viewOf(doc, { code, version, identity, now: Date.now(), presence: presence(doc), players: { X: null, O: null } });
+    // A new token makes a new watcher or a new seat for the other devices.
+    if (method === 'join' || (unknownBefore && guest.token !== undefined)) guestsChanged();
+    return core.viewOf(doc, { code, version, identity, now: Date.now(), audience: audience(doc), players: { X: null, O: null } });
   }
 
   return {
     code,
     addGuest(channel: Channel, hello: Hello): void {
-      const guest: Guest = { hello, token: undefined, server: undefined as never };
+      const guest: Guest = { hello, token: undefined, id: randomWatcherId(), server: undefined as never };
       guest.server = rpcServer(channel, (method, args) => handle(guest, method, args));
       guests.add(guest);
       channel.onClose(() => {
@@ -128,7 +165,7 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
       for (const guest of guests) guest.server.bye(reason);
       guests.clear();
       unsubscribe();
-      local.setPresence(code, undefined);
+      local.setAudience(code, undefined);
       local.notify(code);
     },
   };
@@ -150,13 +187,16 @@ export function createNearbyGuest(channel: Channel, token: PlayerToken, onBye: (
   channel.onClose(() => end('The connection to the host closed.'));
   const view = async (method: RpcMethod, args: unknown = {}) => parseSessionView(await rpc.call(method, args));
   return {
-    load: (_code: Code) => view('get'),
+    // The token tells the host who watches, so a player can give a seat to this device.
+    load: (_code: Code) => view('get', { token }),
     join: (_code: Code) => view('join', { token }),
     move: (_code: Code, request: unknown) => view('move', request),
     newGame: (_code: Code) => view('newGame'),
     update: (_code: Code, changes: unknown) => view('update', changes),
     lock: (_code: Code) => view('lock'),
     chat: (_code: Code, text: string) => view('chat', { text }),
+    seat: (_code: Code, action: SeatAction) => view('seat', action),
+    answerSeat: (_code: Code, accept: boolean) => view('answerSeat', { accept }),
     // One channel carries one session, so every change notice is for this session.
     subscribe: (_code: Code, onChange: () => void): (() => void) => rpc.onChanged(() => onChange()),
     onLink: (handler: (game: number, id: GameId) => void) => rpc.onLink(handler),

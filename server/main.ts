@@ -1,6 +1,5 @@
 import { hostname } from 'node:os';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import type { Player } from '../src/game.ts';
 import {
   type Code,
   type PlayerToken,
@@ -8,10 +7,13 @@ import {
   asPlayerToken,
   normalizeCode,
   parseClientEvent,
+  parseCustomName,
   parseGameId,
   parseMetrics,
   parseMoveRequest,
   parseNewSession,
+  parseSeatAction,
+  parseSeatAnswer,
   parseSessionUpdate,
 } from '../src/protocol.ts';
 import { asHostId, parseAnnounce, parseAnswerRequest } from '../src/nearby/lobby.ts';
@@ -81,19 +83,23 @@ const lanHost = process.env.LAN_HOST === '1' ? { name: process.env.LAN_HOST_NAME
 const previewsConfig = previewsConfigFromEnv(process.env);
 const previews: PreviewList | undefined = previewsConfig === undefined ? undefined : createPreviews(previewsConfig);
 
-// Event streams per session code, with the seats each one holds. They live in this process only,
-// which is fine for one API container. A seat with an open stream is "present".
-type Stream = { res: ServerResponse; seats: Player[] };
+// Event streams per session code, with the player token of each. They live in this process only,
+// which is fine for one API container. A seat with an open stream is "present", and a token without
+// a seat is a watcher. Long polls do not count: an API client shows as away, as before.
+type Stream = { res: ServerResponse; token: PlayerToken | undefined };
 const streams = new Map<Code, Set<Stream>>();
 let streamCount = 0;
 
-function presenceOf(code: Code): Record<Player, boolean> {
-  const present = { X: false, O: false };
-  for (const stream of streams.get(code) ?? []) for (const seat of stream.seats) present[seat] = true;
-  return present;
+function openTokens(code: Code): PlayerToken[] {
+  return [...(streams.get(code) ?? [])].flatMap((stream) => (stream.token === undefined ? [] : [stream.token]));
 }
 
-const store = await openStore(dbPath, { presence: presenceOf, onChange: notify });
+const store = await openStore(dbPath, { open: openTokens, onChange: notify });
+
+// A new name reaches the sessions that the player has open now. Other sessions show it with their next change.
+function notifyPlayer(token: PlayerToken): void {
+  for (const [code, set] of streams) if ([...set].some((stream) => stream.token === token)) notify(code);
+}
 
 // Tells every open page of a session to fetch it again, and wakes its long polls.
 function notify(code: Code): void {
@@ -189,25 +195,34 @@ async function waitForChange(res: ServerResponse, code: Code, wait: string, toke
 // EventSource cannot send headers, so the stream takes the player token from the query string.
 // Caddy keeps no access log for this site; revisit this if logging is ever turned on.
 async function openStream(req: IncomingMessage, res: ServerResponse, code: Code, token: PlayerToken | undefined): Promise<void> {
-  const seats = token === undefined ? [] : await store.seatsOf(code, token); // 404 before the stream opens
+  await store.get(code, token); // 404 before the stream opens
   // The client can leave during the await. Its close event is then already past, so no handler runs.
   if (req.destroyed || res.destroyed) return;
   if (streamCount >= MAX_STREAMS) throw new HttpError(503, 'Too many live connections. Try again later.');
   const set = streams.get(code) ?? new Set();
-  const stream: Stream = { res, seats };
+  const stream: Stream = { res, token };
   req.on('close', () => {
     set.delete(stream);
     streamCount--;
     if (set.size === 0) streams.delete(code);
-    if (seats.length > 0) notify(code);
+    if (token !== undefined) notify(code);
   });
   streams.set(code, set);
   set.add(stream);
   streamCount++;
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
   res.write('retry: 3000\n\n');
-  // A player arriving changes what the other player sees ("away" turns into "here").
-  if (seats.length > 0) notify(code);
+  // A player or a watcher arriving changes what the others see ("away" turns into "here", a new watcher).
+  if (token !== undefined) notify(code);
+}
+
+// The answer of GET /api/me: the login state and the custom name.
+async function me(token: PlayerToken, user: ReturnType<Auth['user']>) {
+  return {
+    loginAvailable: auth !== undefined,
+    user: user === undefined ? null : { login: user.login, avatar: user.avatar },
+    name: await store.customName(token),
+  };
 }
 
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -272,7 +287,23 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         return send(res, 200, await store.history(token, offset));
       }
       if (match.route === 'GET /api/me/records') return send(res, 200, { records: await store.records(token) });
-      return send(res, 200, { loginAvailable: auth !== undefined, user: user === undefined ? null : { login: user.login, avatar: user.avatar } });
+      return send(res, 200, await me(token, user));
+    }
+    // A cross-site form cannot send the X-Player header, so another site cannot rename a player.
+    case 'PUT /api/me/name': {
+      const token = requirePlayer(req);
+      const body = await readJson(req);
+      const name = parseCustomName(typeof body === 'object' && body !== null && 'name' in body ? body.name : undefined);
+      if (name === undefined) throw new HttpError(400, 'A name needs 2 to 24 letters, digits, spaces, "-" or "_".');
+      await store.setName(token, name);
+      notifyPlayer(token);
+      return send(res, 200, await me(token, auth?.user(req)));
+    }
+    case 'DELETE /api/me/name': {
+      const token = requirePlayer(req);
+      await store.clearName(token);
+      notifyPlayer(token);
+      return send(res, 200, await me(token, auth?.user(req)));
     }
 
     case 'POST /api/results': {
@@ -357,6 +388,16 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     }
     case 'POST /api/sessions/{code}/games':
       return send(res, 200, await store.newGame(code(), requirePlayer(req)));
+    case 'POST /api/sessions/{code}/seats': {
+      const action = parseSeatAction(await readJson(req));
+      if (action === undefined) throw new HttpError(400, 'A seat change needs an action, and a watcher id for give, seat and replace.');
+      return send(res, 200, await store.seat(code(), requirePlayer(req), action));
+    }
+    case 'POST /api/sessions/{code}/seats/answer': {
+      const answer = parseSeatAnswer(await readJson(req));
+      if (answer === undefined) throw new HttpError(400, 'An answer needs accept: true or false.');
+      return send(res, 200, await store.answerSeat(code(), requirePlayer(req), answer.accept));
+    }
     case 'POST /api/sessions/{code}/chat': {
       const body = await readJson(req);
       const text = typeof body === 'object' && body !== null && 'text' in body ? body.text : undefined;

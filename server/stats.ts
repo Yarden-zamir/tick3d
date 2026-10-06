@@ -1,5 +1,5 @@
 // The aggregates of the stats page (/stats), in DuckDB SQL. Only counts and player names leave
-// this file: never a token, a result id or a game id. A player without a login shows with a generated name.
+// this file: never a token, a result id or a game id. A player without a login shows with a custom or a generated name.
 import type { DuckDBValue } from '@duckdb/node-api';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { CELL_COUNT } from '../src/game.ts';
@@ -70,8 +70,9 @@ const text = (value: unknown) => {
   return value;
 };
 const textOrNull = (value: unknown) => (value === null ? null : text(value));
-// The GitHub login of a person (PERSON), else the generated name of their token. The token itself stays here.
-export const personName = (row: Record<string, unknown>) => textOrNull(row.login) ?? nameOf(text(row.person));
+// The GitHub login of a person (PERSON), else their custom name, else the generated name of their token.
+// The token itself stays here. A query that uses it selects `login`, `custom` and `person`.
+export const personName = (row: Record<string, unknown>) => textOrNull(row.login) ?? textOrNull(row.custom) ?? nameOf(text(row.person));
 const counts = (found: Record<string, unknown>[]): Count[] =>
   found.map((row) => ({ key: row.key === null ? 'unknown' : text(row.key), count: num(row.count) }));
 
@@ -134,10 +135,11 @@ export async function computeStats(rows: Rows, now: number): Promise<Omit<Stats,
   const survival = await q(`${GAMES},
     losses AS (SELECT level, CASE you WHEN 'X' THEN player_x ELSE player_o END AS token, len(moves) AS moves
       FROM g WHERE mode = 'computer' AND winner = computer AND NOT tuned),
-    best AS (SELECT level, ${PERSON} AS person, any_value(u.login) AS login, max(moves) AS moves
+    best AS (SELECT level, ${PERSON} AS person, any_value(u.login) AS login, any_value(pn.name) AS custom, max(moves) AS moves
       FROM losses LEFT JOIN player_tokens pt USING (token) LEFT JOIN users u ON u.github_id = pt.github_id
+        LEFT JOIN player_names pn USING (token)
       GROUP BY level, person)
-    SELECT level, row_number() OVER (PARTITION BY level ORDER BY moves DESC, login NULLS LAST, person)::INTEGER AS rank, login, person, moves::INTEGER AS moves
+    SELECT level, row_number() OVER (PARTITION BY level ORDER BY moves DESC, login NULLS LAST, person)::INTEGER AS rank, login, custom, person, moves::INTEGER AS moves
     FROM best QUALIFY rank <= 10 ORDER BY level, rank`);
 
   const lengthByMode = await q(`${GAMES} SELECT mode, count(*)::INTEGER AS games, avg(len(moves)) AS avg,
@@ -158,10 +160,11 @@ export async function computeStats(rows: Rows, now: number): Promise<Omit<Stats,
     SELECT key, human_ms, computer_ms, search_ms FROM timed LEFT JOIN search USING (key) ORDER BY key`);
 
   const slowest = await q(`${STEPS},
-    people AS (SELECT ${PERSON} AS person, any_value(u.login) AS login, median(ms) AS median_ms, count(*)::INTEGER AS moves
+    people AS (SELECT ${PERSON} AS person, any_value(u.login) AS login, any_value(pn.name) AS custom, median(ms) AS median_ms, count(*)::INTEGER AS moves
       FROM steps LEFT JOIN player_tokens pt USING (token) LEFT JOIN users u ON u.github_id = pt.github_id
+        LEFT JOIN player_names pn USING (token)
       WHERE who = 'human' AND token IS NOT NULL GROUP BY person HAVING count(*) >= 20)
-    SELECT login, person, median_ms, moves FROM people ORDER BY median_ms DESC LIMIT 10`);
+    SELECT login, custom, person, median_ms, moves FROM people ORDER BY median_ms DESC LIMIT 10`);
 
   const firstPlayer = await q(`${GAMES} SELECT mode, count(*) FILTER (winner = 'X')::INTEGER AS x,
     count(*) FILTER (winner = 'O')::INTEGER AS o, count(*) FILTER (winner IS NULL)::INTEGER AS draws

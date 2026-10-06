@@ -14,7 +14,9 @@ import type { Player } from '../game.ts';
 import { type Playoff, parsePlayoff } from '../practice/playoff.ts';
 import {
   CHAT_KEEP,
+  CONSENT_ACTIONS,
   type ChatMessage,
+  type ConsentAction,
   type GameRecord,
   type MatchOptions,
   SESSION_MODES,
@@ -46,7 +48,13 @@ export type SessionDoc = {
   chat: ChatMessage[];
   // The sound playoff of the session (src/practice/playoff.ts), or null. Older documents have none.
   playoff: Playoff | null;
+  // A seat change that waits for the other player (see seat in core.ts), or null.
+  seatRequest: StoredSeatRequest | null;
 };
+
+// `watcher` is the player token of the watcher that takes the other seat (replace), else null.
+// `at` is the time of the request. The request ends SEAT_REQUEST_MS (core.ts) later.
+type StoredSeatRequest = { kind: ConsentAction; from: Player; watcher: string | null; at: number };
 
 type RawDoc = Record<string, unknown>;
 export type Upgrade = (doc: RawDoc) => RawDoc;
@@ -112,6 +120,8 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
   if (!Array.isArray(chat) || !chat.every(isChatMessage)) throw new FormatError('the chat is invalid');
   const playoff = doc.playoff === undefined || doc.playoff === null ? null : parsePlayoff(doc.playoff);
   if (playoff === undefined) throw new FormatError('the playoff is invalid');
+  // A document from before seat controls has no seat request.
+  const seatRequest = doc.seatRequest === undefined || doc.seatRequest === null ? null : readSeatRequest(doc.seatRequest);
   return {
     format: CURRENT_FORMAT,
     mode,
@@ -125,7 +135,20 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
     clock,
     chat: chat.slice(-CHAT_KEEP),
     playoff,
+    seatRequest,
   };
+}
+
+function readSeatRequest(value: unknown): StoredSeatRequest {
+  if (!isRecord(value)) throw new FormatError('the seat request is invalid');
+  const kind = CONSENT_ACTIONS.find((known) => known === value.kind);
+  const { from, watcher, at } = value;
+  if (kind === undefined || (from !== 'X' && from !== 'O') || typeof at !== 'number' || !Number.isFinite(at)) {
+    throw new FormatError('the seat request is invalid');
+  }
+  const target = kind === 'replace' ? (typeof watcher === 'string' ? watcher : undefined) : watcher === null ? null : undefined;
+  if (target === undefined) throw new FormatError('the seat request has an invalid watcher');
+  return { kind, from, watcher: target, at };
 }
 
 function readComputer(value: unknown, mode: SessionMode): SessionDoc['computer'] {

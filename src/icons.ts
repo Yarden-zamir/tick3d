@@ -17,3 +17,6 @@ export const LOCK_OPEN_ICON = icon(`${LOCK_BODY}<path d="M8 10.5V6.5a4 4 0 0 1 7
 export const MIC_ICON = icon('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>', 2.2);
 
 export const PLAY_ICON = icon('<path d="M8 5.5v13l10.5-6.5Z" fill="currentColor"/>', 2.2);
+
+// An eye: a watcher in the Players box.
+export const EYE_ICON = icon('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>');

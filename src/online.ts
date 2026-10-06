@@ -17,9 +17,11 @@ import {
   type PublicGame,
   RESULTS_PER_UPLOAD,
   type ResultUpload,
+  type SeatAction,
   type SessionUpdate,
   type SessionView,
   asPlayerToken,
+  parseCustomName,
   parseGameId,
   parseHistoryPage,
   parsePlayerInfo,
@@ -100,14 +102,20 @@ async function call(method: string, path: string, body?: unknown, signal?: Abort
 const request = async (method: string, path: string, body?: unknown): Promise<SessionView> =>
   parseSessionView(await call(method, `/sessions${path}`, body));
 
-export type Me = { loginAvailable: boolean; user: PlayerInfo | null };
+// `name` is the custom name of a player without a GitHub login, or null.
+export type Me = { loginAvailable: boolean; user: PlayerInfo | null; name: string | null };
 
 export function parseMe(value: unknown): Me {
   if (typeof value !== 'object' || value === null) throw new Error('invalid answer from /api/me');
   const { loginAvailable, user } = value as Record<string, unknown>;
   const info = user === null ? null : parsePlayerInfo(user);
-  if (typeof loginAvailable !== 'boolean' || info === undefined) throw new Error('invalid answer from /api/me');
-  return { loginAvailable, user: info };
+  // An older server sends no name.
+  const raw = (value as Record<string, unknown>).name;
+  const name = raw === undefined || raw === null ? null : parseCustomName(raw);
+  if (typeof loginAvailable !== 'boolean' || info === undefined || name === undefined || (raw !== undefined && raw !== null && raw !== name)) {
+    throw new Error('invalid answer from /api/me');
+  }
+  return { loginAvailable, user: info, name };
 }
 
 // The page reads "My games" only to display it, so a light shape check is enough here.
@@ -133,8 +141,12 @@ export const api = {
   practiceRun: (run: PracticeRun) => call('POST', '/practice/runs', run),
   practiceBest: async (mode: PracticeMode, preset: PresetId): Promise<PracticeBoard> =>
     parsePracticeBoard(await call('GET', `/practice/best?mode=${mode}&preset=${preset}`)),
+  seat: (code: Code, action: SeatAction) => request('POST', `/${code}/seats`, action),
+  answerSeat: (code: Code, accept: boolean) => request('POST', `/${code}/seats/answer`, { accept }),
 
   me: async () => parseMe(await call('GET', '/me')),
+  setName: async (name: string) => parseMe(await call('PUT', '/me/name', { name })),
+  clearName: async () => parseMe(await call('DELETE', '/me/name')),
   myGames: async () => parseMyGames(await call('GET', '/me/games')),
   previews: async (): Promise<Previews> => parsePreviews(await call('GET', '/previews')),
   logout: () => call('POST', '/auth/logout'),
