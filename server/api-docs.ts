@@ -14,6 +14,7 @@ import {
   CODE_ALPHABET,
   CODE_LENGTH,
   NAME_MAX_LENGTH,
+  PREVIEW_DESCRIPTION_LENGTH,
   HISTORY_PAGE_SIZE,
   LAYOUTS,
   REFUSALS,
@@ -35,6 +36,8 @@ export const NEARBY_CALLS_PER_10_MINUTES = 120;
 export const NEARBY_HOSTS_PER_NETWORK = 10;
 // A Nearby host stays in the list for this long after its announce request ends.
 export const NEARBY_GRACE_MS = 10_000;
+// The previews list is at most this old. server/previews.ts enforces it.
+export const PREVIEWS_CACHE_MS = 120_000;
 
 // ---- Shapes (JSON Schema 2020-12, as OpenAPI 3.1 uses) ----
 
@@ -100,7 +103,10 @@ export type SchemaName =
   | 'NearbyAnnounced'
   | 'NearbyHost'
   | 'NearbyHosts'
-  | 'NearbyAnswer';
+  | 'NearbyAnswer'
+  | 'Contributor'
+  | 'Preview'
+  | 'Previews';
 
 export const ref = (name: SchemaName): Schema => ({ $ref: `#/components/schemas/${name}` });
 const nullable = (schema: Schema): Schema => ({ oneOf: [schema, { type: 'null' }] });
@@ -405,6 +411,25 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     offer: { ...signalCode, pattern: '^T3A1\\.', description: 'The offer code from the list that you answered. A host makes a fresh offer after each guest, so an older offer gets 409.' },
     answer: { ...signalCode, pattern: '^T3B1\\.', description: 'The answer code (src/nearby/signal.ts). The server decodes it, and refuses a code that a device cannot read.' },
   }),
+  Contributor: object('A GitHub account that worked on a pull request.', {
+    login: { type: 'string', minLength: 1, maxLength: 39 },
+    avatar: { type: 'string', pattern: '^https://avatars\\.githubusercontent\\.com/' },
+    url: { type: 'string', pattern: '^https://github\\.com/', description: 'The GitHub profile.' },
+  }),
+  Preview: object('An open pull request with a live preview.', {
+    number: { type: 'integer', minimum: 1 },
+    title: { type: 'string' },
+    description: { type: 'string', maxLength: PREVIEW_DESCRIPTION_LENGTH, description: 'The first paragraph of the pull request text, without Markdown.' },
+    url: { type: 'string', pattern: '^https://github\\.com/', description: 'The pull request on GitHub.' },
+    previewUrl: { type: 'string', pattern: '^https://pr\\.[0-9]+\\.', description: 'The preview site: https://pr.<number>.<domain>.' },
+    updatedAt: { type: 'number', description: 'The last change of the pull request, in epoch milliseconds.' },
+    draft: { type: 'boolean' },
+    contributors: list('The author of the pull request and the commit authors with a GitHub account, most commits first. No bots.', ref('Contributor')),
+  }),
+  Previews: object('The open pull requests with a live preview, most recently updated first.', {
+    previews: list('The previews.', ref('Preview')),
+    error: nullable({ type: 'string', description: 'Why the list is empty or old, for example when GitHub does not answer.' }),
+  }),
 };
 
 // ---- Examples ----
@@ -483,6 +508,22 @@ const STATS_EXAMPLE = {
   offlineGames: 0,
   nearbyMixes: [],
   errors: [],
+};
+
+const PREVIEWS_EXAMPLE = {
+  previews: [
+    {
+      number: 17,
+      title: 'feat: a sound set menu',
+      description: 'A sound set menu next to the Sound button. The default stays Cells.',
+      url: 'https://github.com/Yarden-zamir/tick3d/pull/17',
+      previewUrl: 'https://pr.17.tick3d.yarden-zamir.com',
+      updatedAt: T0,
+      draft: false,
+      contributors: [{ login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', url: 'https://github.com/octocat' }],
+    },
+  ],
+  error: null,
 };
 
 // ---- Routes ----
@@ -795,6 +836,15 @@ export const ROUTES = {
     summary: 'The aggregates of the hidden stats page at /stats.',
     player: 'none',
     response: { status: 200, description: 'Counts only. No token, result id or game id.', schema: 'Stats', example: STATS_EXAMPLE },
+    errors: [],
+  },
+  'GET /api/previews': {
+    operationId: 'previews',
+    tag: 'Account',
+    summary: 'The open pull requests that have a live preview. The kitshn button of the page uses it.',
+    description: `The server reads GitHub at most once per ${PREVIEWS_CACHE_MS / 60_000} minutes, and keeps the last list when GitHub fails. A preview is live when its /api/health answers. A server without previews (a LAN host) returns an empty list with an error.`,
+    player: 'none',
+    response: { status: 200, description: 'The previews. Never an error status: a problem goes in `error`.', schema: 'Previews', example: PREVIEWS_EXAMPLE },
     errors: [],
   },
   'GET /api/health': {

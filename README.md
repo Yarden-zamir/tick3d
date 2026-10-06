@@ -35,6 +35,7 @@
 - Twelve neo-brutalist themes in a folding menu in the panel: Light (the default), Dark, Snow, Candy, Mint, Retro, Midnight, Synthwave, Bloodmoon, Dark coffee, Batman (dark, no color) and Mono. Like the mute button, the theme stays open during a lock.
 - Point at a cell to light up the cells above and below it.
 - A GitHub button in the header links to this repository.
+- A kitshn button in the header lists the open pull requests that have a live preview: the title, the first paragraph of the text, the contributors, and links to the preview and to the pull request. A preview page marks its own entry with "You are here".
 - The browser keeps the settings in `localStorage`. The app checks each stored value and uses the default for a value that is not valid.
 
 ![The flat view in the grid layout, Midnight theme](docs/screenshots/flat.png)
@@ -162,7 +163,7 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 - `src/pwa.ts` and `vite.config.ts`: the service worker and the manifest.
 - `src/main.ts`, `src/style.css`, `index.html`: the page. `src/main.ts` starts the page; `src/page/` holds the page script, one module per feature (board, sessions, Nearby, My games, clocks, chat and more). `src/page/state.ts` holds the state that more than one module changes.
 - `public/`: the favicons and touch icons, copied into the build as is. The service worker plugin writes the web manifest.
-- `server/main.ts`: the HTTP API and server-sent events. `server/lobby.ts`: the list of open Nearby games. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login. `server/stats.ts`: the SQL of the stats page. `server/waiters.ts`: the long polls.
+- `server/main.ts`: the HTTP API and server-sent events. `server/lobby.ts`: the list of open Nearby games. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login. `server/previews.ts`: the list of the kitshn button. `server/stats.ts`: the SQL of the stats page. `server/waiters.ts`: the long polls.
 - `stats.html`, `src/stats/`: the hidden stats page.
 - `sound-training.html`, `src/sound-training/`: the ear training page. `schedule.ts` picks the cards (Leitner boxes, weakest part first), `deck.ts` draws the board, and `fit.ts` sizes it to the screen.
 - `server/api-docs.ts`: every API route with its shapes, examples and errors, and the guide. The server finds the route of a request in this list, so a route without docs cannot exist. `server/api-docs-render.ts` makes the OpenAPI document and the Swagger UI page. A test runs every example through the real parsers in `src/protocol.ts`, and checks the document against the official OpenAPI 3.1 JSON Schema with `@seriousme/openapi-schema-validator`.
@@ -202,6 +203,7 @@ The full reference, with every shape, error and a curl example, is the OpenAPI 3
 | `POST /api/nearby/hosts/:id/answer` | A guest sends its answer to the offer of a host. Needs the X-Player header. |
 | `POST /api/events` | A fault report from a page. At most 1 kB, 30 per 10 minutes per address. |
 | `GET /api/stats` | The aggregates of the stats page. The server computes them at most once a minute. |
+| `GET /api/previews` | The open pull requests with a live preview, for the kitshn button. The server reads GitHub at most once per 2 minutes, without a token. |
 
 ## Stats page and what is logged
 

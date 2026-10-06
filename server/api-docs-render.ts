@@ -108,7 +108,7 @@ export function openApi(origin: string): Record<string, unknown> {
       { name: 'Play', description: 'Create, join, move, chat and wait.' },
       { name: 'Nearby', description: 'The list of open Nearby games on your network. The page uses it.' },
       { name: 'Docs', description: 'This document, its web page and the health check.' },
-      { name: 'Account', description: 'Routes for the page: GitHub login, stats and offline results.' },
+      { name: 'Account', description: 'Routes for the page: GitHub login, stats, offline results and the previews list.' },
     ],
     paths,
     components: { schemas: SCHEMAS },

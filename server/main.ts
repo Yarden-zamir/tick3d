@@ -29,6 +29,7 @@ import {
 import { openApi, swaggerHtml } from './api-docs-render.ts';
 import { type Auth, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
 import { LobbyError, createLobby, networkOf } from './lobby.ts';
+import { type PreviewList, createPreviews, previewsConfigFromEnv } from './previews.ts';
 import { openStore } from './store.ts';
 import { createWaiters } from './waiters.ts';
 
@@ -71,6 +72,8 @@ const authConfig = authConfigFromEnv(process.env);
 const auth: Auth | undefined = authConfig === undefined ? undefined : createAuth(authConfig);
 // LAN_HOST=1 marks a server that a player runs on their own computer for a local network.
 const lanHost = process.env.LAN_HOST === '1' ? { name: process.env.LAN_HOST_NAME || hostname() } : null;
+const previewsConfig = previewsConfigFromEnv(process.env);
+const previews: PreviewList | undefined = previewsConfig === undefined ? undefined : createPreviews(previewsConfig);
 
 // Event streams per session code, with the seats each one holds. They live in this process only,
 // which is fine for one API container. A seat with an open stream is "present".
@@ -295,6 +298,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Aggregates only (see server/stats.ts), so the hidden stats page needs no login.
     case 'GET /api/stats':
       return send(res, 200, await store.stats());
+    // Cached in server/previews.ts, so a flood of requests costs no extra GitHub calls and needs no limiter.
+    case 'GET /api/previews':
+      return send(res, 200, previews === undefined ? { previews: [], error: 'This server has no previews.' } : await previews.list());
 
     case 'POST /api/sessions': {
       if (!allowCreate(clientOf(req), Date.now())) throw new HttpError(429, 'Too many new games from this address. Try again later.');
