@@ -80,3 +80,76 @@ test('a blocked microphone shows what to do, and the page stays usable', async (
   await expect(page.locator('#deck .cell.lit')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+// The calibration needs two tones in turn, so this test feeds the page an oscillator as its microphone.
+// window.e2eTone(frequency) changes the tone. The test above covers the real fake device of Chromium.
+async function oscillatorMic(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const context = new AudioContext();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      gain.gain.value = 0.5;
+      const output = context.createMediaStreamDestination();
+      oscillator.connect(gain).connect(output);
+      oscillator.start();
+      (window as unknown as { e2eTone: (frequency: number) => void }).e2eTone = (frequency) => oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+      await context.resume();
+      return output.stream;
+    };
+  });
+}
+
+const setTone = (page: Page, frequency: number) =>
+  page.evaluate((value) => (window as unknown as { e2eTone: (frequency: number) => void }).e2eTone(value), frequency);
+
+test('a calibration from 300 Hz to 1200 Hz splits the rows over that range, and the device keeps it', async ({ page }) => {
+  const errors = trackErrors(page);
+  await oscillatorMic(page);
+  await page.goto('/sound-input');
+  const mode = page.locator('#range-mode');
+  await expect(mode).toHaveText('Default bands');
+
+  await page.locator('#calibrate').click();
+  await setTone(page, 300);
+  const calibration = page.locator('#calibration');
+  await expect(calibration).toHaveAttribute('data-step', 'low');
+  await expect(page.locator('#calibration-heard')).toContainText('Hz');
+  await expect(calibration).toHaveAttribute('data-step', 'high', { timeout: 10_000 });
+  await setTone(page, 1200);
+  await expect(calibration).toBeHidden({ timeout: 10_000 });
+  await expect(mode).toHaveText(/^Calibrated: (29\d|30\d)–(119\d|120\d) Hz$/);
+  // Two octaves: no small range hint.
+  await expect(page.locator('#range-hint')).toBeHidden();
+
+  // 2 octaves make 4 rows of half an octave. 504 Hz is in the middle of the second row from the bottom (row 3).
+  await setTone(page, 504);
+  await expect(page.locator('#cell')).toContainText('row 3,');
+  // A tone above the range lights the top edge: layer 4, row 1, column 4 (cell 3 × 16 + 3).
+  await setTone(page, 3000);
+  await expect(page.locator('#deck .cell.lit')).toHaveAttribute('data-cell', String(3 * 16 + 3));
+
+  await page.reload();
+  await expect(mode).toHaveText(/^Calibrated: /);
+  await page.locator('#range-reset').click();
+  await expect(mode).toHaveText('Default bands');
+  await page.reload();
+  await expect(mode).toHaveText('Default bands');
+  expect(errors).toEqual([]);
+});
+
+test('a high sound below the low sound asks for a retry, and Cancel closes the calibration', async ({ page }) => {
+  await oscillatorMic(page);
+  await page.goto('/sound-input');
+  await page.locator('#calibrate').click();
+  await setTone(page, 800);
+  const calibration = page.locator('#calibration');
+  await expect(calibration).toHaveAttribute('data-step', 'high', { timeout: 10_000 });
+  await setTone(page, 400);
+  await expect(calibration).toHaveAttribute('data-step', 'retry', { timeout: 10_000 });
+  await expect(page.locator('#calibration-retry')).toBeVisible();
+  await expect(page.locator('#range-mode')).toHaveText('Default bands');
+  await page.locator('#calibration-cancel').click();
+  await expect(calibration).toBeHidden();
+  await expect(page.locator('#calibrate')).toBeEnabled();
+});
