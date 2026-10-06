@@ -33,6 +33,7 @@ import { showAccount } from '../header/header.ts';
 import { LOCK_CLOSED_ICON, LOCK_OPEN_ICON, SOUND_OFF_ICON, SOUND_ON_ICON } from '../icons.ts';
 import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
+import { renderPlayers } from './players.ts';
 import { settings, type Settings, type Toggle } from './settings.ts';
 import { me, page, shared, current, isLive, matchOptions, settingsLocked, canChangeMatch, bothSeated } from './state.ts';
 
@@ -182,6 +183,7 @@ export function render(): void {
   coordsForm.hidden = page.review !== undefined;
   renderCoords();
   renderChat();
+  renderPlayers();
   renderGameView();
 
   document.querySelectorAll<HTMLElement>('[data-show-mode], [data-needs-session]').forEach((field) => {

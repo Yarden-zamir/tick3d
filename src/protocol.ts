@@ -66,11 +66,98 @@ export type SessionView = {
   players: Record<Player, PlayerInfo | null>;
   // The generated name of each seat's player (src/names.ts). Null for an empty seat and for the computer.
   names: SeatNames;
+  // The devices that have the session open without a seat, as the holder of the session knows them.
+  watchers: Watcher[];
+  // A seat change that waits for the other player to accept, or null.
+  seatRequest: SeatRequestView | null;
   // The live game (the last one in `games`), so an API client needs no rules of its own.
   // `turn` is the player to move, or null when the game is over.
   turn: Player | null;
   status: Status;
 };
+
+// ---- Seats ----
+
+// What a seated player can do with the seats in a game with another device (src/session/core.ts).
+// swap: X and O trade seats. leave: I watch, my seat empties. give: my seat goes to a watcher.
+// seat: a watcher takes the empty seat. unseat: the other player watches. replace: a watcher takes the other seat.
+export const SEAT_ACTIONS = ['swap', 'leave', 'give', 'seat', 'unseat', 'replace'] as const;
+// The actions that change the seat of the other player. They wait until the other player accepts.
+export const CONSENT_ACTIONS = ['swap', 'unseat', 'replace'] as const;
+export type ConsentAction = (typeof CONSENT_ACTIONS)[number];
+export type SeatAction = { action: 'swap' | 'leave' | 'unseat' } | { action: 'give' | 'seat' | 'replace'; watcher: string };
+export type SeatAnswer = { accept: boolean };
+// A watcher id is an opaque handle that the holder of the session makes. It is never a player token.
+export const WATCHER_ID_LENGTH = 16;
+const WATCHER_ID_CHARS = '0123456789abcdef';
+type Watcher = { id: string; name: string; player: PlayerInfo | null };
+export type SeatRequestView = {
+  kind: ConsentAction;
+  from: Player;
+  // The watcher that takes the other seat, for replace. Null for the other actions.
+  watcher: { name: string; player: PlayerInfo | null } | null;
+  // The request ends at this time (server time) when nobody answers.
+  expiresAt: number;
+};
+
+const isWatcherId = (value: unknown): value is string =>
+  typeof value === 'string' && value.length === WATCHER_ID_LENGTH && [...value].every((char) => WATCHER_ID_CHARS.includes(char));
+
+// The body of POST /api/sessions/{code}/seats. Refuses an unknown action, a missing or extra watcher, and extra fields.
+export function parseSeatAction(value: unknown): SeatAction | undefined {
+  if (!isRecord(value)) return undefined;
+  const action = oneOf(SEAT_ACTIONS, value.action);
+  if (action === undefined) return undefined;
+  if (action === 'give' || action === 'seat' || action === 'replace') {
+    return hasOnlyKeys(value, ['action', 'watcher']) && isWatcherId(value.watcher) ? { action, watcher: value.watcher } : undefined;
+  }
+  return hasOnlyKeys(value, ['action']) ? { action } : undefined;
+}
+
+// The body of POST /api/sessions/{code}/seats/answer.
+export function parseSeatAnswer(value: unknown): SeatAnswer | undefined {
+  return isRecord(value) && hasOnlyKeys(value, ['accept']) && typeof value.accept === 'boolean' ? { accept: value.accept } : undefined;
+}
+
+function parseWatcher(value: unknown): Watcher | undefined {
+  if (!isRecord(value) || !isWatcherId(value.id) || !isDisplayName(value.name)) return undefined;
+  const player = value.player === null ? null : parsePlayerInfo(value.player);
+  return player === undefined ? undefined : { id: value.id, name: value.name, player };
+}
+
+function parseSeatRequestView(value: unknown): SeatRequestView | undefined {
+  if (!isRecord(value)) return undefined;
+  const kind = oneOf(CONSENT_ACTIONS, value.kind);
+  const { from, expiresAt } = value;
+  if (kind === undefined || (from !== 'X' && from !== 'O') || typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) return undefined;
+  let watcher: SeatRequestView['watcher'] = null;
+  if (value.watcher !== null) {
+    if (!isRecord(value.watcher) || !isDisplayName(value.watcher.name)) return undefined;
+    const player = value.watcher.player === null ? null : parsePlayerInfo(value.watcher.player);
+    if (player === undefined) return undefined;
+    watcher = { name: value.watcher.name, player };
+  }
+  if ((kind === 'replace') !== (watcher !== null)) return undefined;
+  return { kind, from, watcher, expiresAt };
+}
+
+// ---- Custom names ----
+
+// A player without a GitHub login can replace the generated name with a name of their own.
+// The same limit as a Nearby device name (HELLO_NAME_MAX_LENGTH), so a custom name fits there.
+export const CUSTOM_NAME_MIN_LENGTH = 2;
+export const CUSTOM_NAME_MAX_LENGTH = 24;
+
+// Trims, collapses inner spaces, and allows letters of any script, digits, spaces, "-" and "_".
+// The server also refuses a name that equals a GitHub login, so nobody can pose as a logged-in player.
+export function parseCustomName(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  // A regex is the simplest way to match the letters and digits of every script (Unicode properties).
+  const name = value.trim().split(/\s+/u).join(' ');
+  const length = [...name].length;
+  if (length < CUSTOM_NAME_MIN_LENGTH || length > CUSTOM_NAME_MAX_LENGTH) return undefined;
+  return /^[\p{L}\p{M}\p{Nd} _-]+$/u.test(name) && /[\p{L}\p{Nd}]/u.test(name) ? name : undefined;
+}
 
 export type SessionUpdate = { name?: string; clock?: TimeControl } & Partial<MatchOptions>;
 
@@ -201,8 +288,10 @@ export function parseSessionView(value: unknown): SessionView {
   const code = typeof value.code === 'string' ? normalizeCode(value.code) : undefined;
   const name = normalizeName(value.name);
   const { games, seats, you, options, locked, now, version, chat, presence, players } = value;
-  // An older server, an older Nearby host or a cached view sends no names.
+  // An older server, an older Nearby host or a cached view sends no names, watchers or seat request.
   const names = value.names === undefined ? { X: null, O: null } : parseSeatNames(value.names);
+  const watchers = value.watchers === undefined ? [] : Array.isArray(value.watchers) ? value.watchers.map(parseWatcher) : undefined;
+  const seatRequest = value.seatRequest === undefined || value.seatRequest === null ? null : parseSeatRequestView(value.seatRequest);
   const clock = parseClock(value.clock);
   if (code === undefined) return fail('code');
   if (name === undefined) return fail('name');
@@ -222,6 +311,8 @@ export function parseSessionView(value: unknown): SessionView {
   const playerO = players.O === null ? null : parsePlayerInfo(players.O);
   if (playerX === undefined || playerO === undefined) return fail('players');
   if (names === undefined) return fail('names');
+  if (watchers === undefined || !watchers.every((watcher) => watcher !== undefined)) return fail('watchers');
+  if (seatRequest === undefined) return fail('seatRequest');
   // The rules give the live status. A sender without these fields (an older server, a Nearby host
   // or a cached view) is fine. A sender with fields that disagree with the moves is not.
   const last: unknown = games.at(-1);
@@ -250,6 +341,8 @@ export function parseSessionView(value: unknown): SessionView {
     presence: { X: presence.X, O: presence.O },
     players: { X: playerX, O: playerO },
     names,
+    watchers,
+    seatRequest,
     turn,
     status: live.status,
   };
@@ -265,8 +358,8 @@ function sameStatus(value: unknown, status: Status): boolean {
 
 const GITHUB_LOGIN_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
 
-const isSeatName = (value: unknown): value is string | null =>
-  value === null || (typeof value === 'string' && value.length >= 1 && value.length <= NAME_MAX_LENGTH);
+const isDisplayName = (value: unknown): value is string => typeof value === 'string' && value.length >= 1 && value.length <= NAME_MAX_LENGTH;
+const isSeatName = (value: unknown): value is string | null => value === null || isDisplayName(value);
 
 function parseSeatNames(value: unknown): SeatNames | undefined {
   return isRecord(value) && isSeatName(value.X) && isSeatName(value.O) ? { X: value.X, O: value.O } : undefined;

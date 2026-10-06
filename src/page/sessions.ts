@@ -12,7 +12,8 @@ import { announce, finish } from './end-card.ts';
 import { reject, showToast, showError, showProblem } from './feedback.ts';
 import { closeGameView } from './game-view.ts';
 import { countMove, countUndo } from './metrics.ts';
-import { nearbyKind, endNearby } from './nearby.ts';
+import { nearbyKind, endNearby, redrawNearby } from './nearby.ts';
+import { seatChangeText } from './players.ts';
 import { render } from './render.ts';
 import { type Mode, settings, saveSettings } from './settings.ts';
 import { page, current, nowMs, setCurrent, shared, type SessionBackend, settingsLocked } from './state.ts';
@@ -92,6 +93,8 @@ export function applyView(view: SessionView): void {
       showToast(`Time limit${startsLater ? ' for the next game' : ''}: ${describeClock(page.session.clock)}.`);
     }
     if (page.session.locked && !previous.locked) showToast('Settings are locked for both players until this game ends.');
+    const seatChange = seatChangeText(previous, page.session);
+    if (seatChange !== undefined) showToast(seatChange);
     for (const [option, label] of [['hideBoard', 'Hide board'], ['hideHistory', 'Hide history'], ['hideCoordinates', 'Hide coordinates']] as const) {
       if (page.session.options[option] !== previous.options[option]) {
         showToast(`${label} is ${page.session.options[option] ? 'on' : 'off'} for both players.`);
@@ -116,6 +119,10 @@ export function applyView(view: SessionView): void {
   if (newest !== undefined && shared()) {
     sounds.message();
     notifyChat(newest, incoming.length);
+  }
+  // The Nearby device list shows the seat of each device.
+  if (page.session.mode === 'nearby' && (previous.you !== page.session.you || JSON.stringify(previous.names) !== JSON.stringify(page.session.names))) {
+    redrawNearby();
   }
   if (page.review && page.review.game >= page.games.length) page.review = undefined;
   if (page.session.mode === 'online') void page.deviceDb?.put('remote', { code: page.session.code, view, savedAt: Date.now() });

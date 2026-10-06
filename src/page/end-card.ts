@@ -9,6 +9,7 @@ import {
   cardDialog,
   myGamesDialog,
   homeConfirm,
+  seatPrompt,
   burstEl,
   cardCode,
   cardLink,
@@ -58,7 +59,7 @@ export function finish(game: Game): void {
   setTimeout(() => {
     // Show the card only if that game is still the finished live game and nothing else is open.
     if (page.games.length - 1 !== index || isLive() || page.review !== undefined) return;
-    if (cardDialog.open || myGamesDialog.open || previewsDialog.open || homeConfirm.open) return;
+    if (cardDialog.open || myGamesDialog.open || previewsDialog.open || homeConfirm.open || seatPrompt.open) return;
     void openCard(index);
   }, CARD_DELAY_MS);
 }

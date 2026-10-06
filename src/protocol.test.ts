@@ -16,6 +16,9 @@ import {
   type Code,
   parseSessionUpdate,
   parseSessionView,
+  parseCustomName,
+  parseSeatAction,
+  parseSeatAnswer,
   toRecord,
 } from './protocol.ts';
 
@@ -52,6 +55,8 @@ describe('parseSessionView', () => {
     presence: { X: true, O: false },
     players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' }, O: null },
     names: { X: 'braveOtter', O: null },
+    watchers: [{ id: '0123456789abcdef', name: 'Carol', player: null }],
+    seatRequest: { kind: 'replace', from: 'X', watcher: { name: 'Carol', player: null }, expiresAt: 90 },
     turn: 'X',
     status: { kind: 'playing' },
   };
@@ -68,6 +73,11 @@ describe('parseSessionView', () => {
   it('gives no names when a sender has no names field', () => {
     const { names: _names, ...older } = valid;
     expect(parseSessionView(older).names).toEqual({ X: null, O: null });
+  });
+
+  it('gives no watchers and no seat request when a sender is from before seat controls', () => {
+    const { watchers: _watchers, seatRequest: _request, ...older } = valid;
+    expect(parseSessionView(older)).toMatchObject({ watchers: [], seatRequest: null });
   });
 
   it('fills turn and status from the moves when a sender has no such fields', () => {
@@ -98,6 +108,13 @@ describe('parseSessionView', () => {
     ['names', { ...valid, names: { X: 'a'.repeat(41), O: null } }],
     ['names', { ...valid, names: { X: 'braveOtter' } }],
     ['names', { ...valid, names: null }],
+    // A watcher id is an opaque handle, never a player token.
+    ['watchers', { ...valid, watchers: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Carol', player: null }] }],
+    ['watchers', { ...valid, watchers: [{ id: '0123456789abcdef', name: '', player: null }] }],
+    ['watchers', { ...valid, watchers: null }],
+    ['seatRequest', { ...valid, seatRequest: { ...valid.seatRequest, kind: 'leave' } }],
+    ['seatRequest', { ...valid, seatRequest: { ...valid.seatRequest, watcher: null } }],
+    ['seatRequest', { ...valid, seatRequest: { kind: 'swap', from: 'X', watcher: { name: 'Carol', player: null }, expiresAt: 90 } }],
   ])('throws on a bad %s field', (_, input) => {
     expect(() => parseSessionView(input)).toThrow();
   });
@@ -329,5 +346,41 @@ describe('parseClientEvent', () => {
     { kind: 'error', message: 'x', version: 'v', token: 'secret' },
   ])('refuses %j', (value) => {
     expect(parseClientEvent(value)).toBeUndefined();
+  });
+});
+
+describe('seat requests', () => {
+  it('reads every action, with a watcher id where the action needs one', () => {
+    expect(parseSeatAction({ action: 'swap' })).toEqual({ action: 'swap' });
+    expect(parseSeatAction({ action: 'give', watcher: '0123456789abcdef' })).toEqual({ action: 'give', watcher: '0123456789abcdef' });
+    expect(parseSeatAnswer({ accept: false })).toEqual({ accept: false });
+  });
+
+  it.each([
+    { action: 'kick' },
+    { action: 'swap', watcher: '0123456789abcdef' },
+    { action: 'seat' },
+    { action: 'replace', watcher: 'aaaaaaaa-0000-4000-8000-000000000001' },
+    { action: 'leave', extra: true },
+    null,
+  ])('refuses the seat action %j', (input) => {
+    expect(parseSeatAction(input)).toBeUndefined();
+  });
+
+  it.each([{}, { accept: 'yes' }, { accept: true, extra: 1 }])('refuses the answer %j', (input) => {
+    expect(parseSeatAnswer(input)).toBeUndefined();
+  });
+});
+
+describe('parseCustomName', () => {
+  it('trims, joins inner spaces, and allows letters of any script, digits, "-" and "_"', () => {
+    expect(parseCustomName('  Dana   the_3rd ')).toBe('Dana the_3rd');
+    expect(parseCustomName('יַרְדֵּן')).toBe('יַרְדֵּן');
+    expect(parseCustomName('Zoë-K')).toBe('Zoë-K');
+    expect(parseCustomName('a'.repeat(24))).toBe('a'.repeat(24));
+  });
+
+  it.each(['a', 'a'.repeat(25), '<b>bold</b>', 'name!', '___', '  ', 42, null])('refuses %j', (input) => {
+    expect(parseCustomName(input)).toBeUndefined();
   });
 });

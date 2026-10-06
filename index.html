@@ -146,7 +146,15 @@
             <button type="button" id="sound-set" popovertarget="sound-sets" aria-label="Sound set" data-tip="Sound set: the sound of each move"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
           </div>
         </div>
-        <!-- The Players box of online and Nearby games comes here, under the actions row. -->
+        <!-- The Players box of online and Nearby games: seats, watchers and seat controls (src/page/players.ts). -->
+        <section class="players" id="players" aria-labelledby="players-title" data-show-mode="online nearby" data-needs-session>
+          <span class="label" id="players-title">Players</span>
+          <ul class="players-list" id="players-list"></ul>
+          <div class="players-request" id="players-request" hidden>
+            <p id="players-request-text"></p>
+            <div class="players-request-actions" id="players-request-actions"></div>
+          </div>
+        </section>
         <!-- The sound set menu. A popover closes on a tap outside it or on Escape. src/page/sound-set.ts fills the list. -->
         <div popover id="sound-sets" class="sound-sets" role="dialog" aria-labelledby="sound-sets-title">
           <div class="sound-sets-head">
@@ -427,6 +435,13 @@
       <div class="end-card-actions">
         <button type="button" class="btn btn-primary" id="clear-confirm-yes">Clear history</button>
         <button type="button" class="btn" id="clear-confirm-no">Keep</button>
+      </div>
+    </dialog>
+    <dialog class="end-card home-confirm" id="seat-prompt" aria-labelledby="seat-prompt-text">
+      <p id="seat-prompt-text"></p>
+      <div class="end-card-actions">
+        <button type="button" class="btn btn-primary" id="seat-prompt-accept">Accept</button>
+        <button type="button" class="btn" id="seat-prompt-decline">Decline</button>
       </div>
     </dialog>
     <div class="update-bar" id="update-bar" hidden role="status">

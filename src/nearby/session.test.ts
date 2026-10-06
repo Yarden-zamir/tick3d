@@ -14,7 +14,7 @@ const phone = { device: 'phone' as const, name: 'Guest phone' };
 async function setup() {
   const local = createLocalBackend(await openDeviceDb(new IDBFactory(), 'nearby'), host, () => null);
   const view = await local.create({ mode: 'nearby', name: 'Nearby', clock: { perMove: null, perGame: null }, human: 'X' });
-  const nearby = createNearbyHost(local, view.code, host);
+  const nearby = createNearbyHost(local, view.code, host, () => 'Host laptop');
   const connect = (token: PlayerToken) => {
     const [hostSide, guestSide] = channelPair();
     nearby.addGuest(hostSide, phone);
@@ -90,5 +90,29 @@ describe('Nearby host and guest', () => {
     await first.backend.join(code);
     first.backend.close();
     expect(first.bye()).toBe('');
+  });
+
+  it('lets players change seats over the channel, with the other player asked first, and lists watchers by device name', async () => {
+    const { local, code, connect } = await setup();
+    const first = connect(guest);
+    await first.backend.join(code);
+    const second = connect(watcher);
+    const watching = await second.backend.load(code);
+    expect(watching.you).toBeNull();
+    const [listed] = (await local.load(code)).watchers;
+    expect(listed).toEqual({ id: expect.stringMatching(/^[0-9a-f]{16}$/), name: phone.name, player: null });
+    expect(JSON.stringify(watching)).not.toContain(watcher);
+    // The guest on O asks to swap. The host accepts.
+    expect((await first.backend.seat(code, { action: 'swap' })).seatRequest).toMatchObject({ kind: 'swap', from: 'O' });
+    expect((await local.answerSeat(code, true)).you).toBe('O');
+    expect((await first.backend.load(code)).you).toBe('X');
+    // The host gives its seat to the watcher without asking, and then watches.
+    if (listed === undefined) throw new Error('no watcher');
+    expect((await local.seat(code, { action: 'give', watcher: listed.id })).you).toBeNull();
+    expect((await second.backend.load(code)).you).toBe('O');
+    expect((await local.load(code)).names.O).toBe(phone.name);
+    // A bad argument is refused, and an answer needs an open request.
+    await expect(first.backend.seat(code, { action: 'kick' } as never)).rejects.toMatchObject({ status: 400 });
+    await expect(first.backend.answerSeat(code, true)).rejects.toMatchObject({ status: 409 });
   });
 });

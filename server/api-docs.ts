@@ -13,16 +13,22 @@ import {
   CHAT_MAX_LENGTH,
   CODE_ALPHABET,
   CODE_LENGTH,
+  CONSENT_ACTIONS,
+  CUSTOM_NAME_MAX_LENGTH,
+  CUSTOM_NAME_MIN_LENGTH,
   NAME_MAX_LENGTH,
   PREVIEW_DESCRIPTION_LENGTH,
   HISTORY_PAGE_SIZE,
   LAYOUTS,
   REFUSALS,
   RESULTS_PER_UPLOAD,
+  SEAT_ACTIONS,
   SESSION_MODES,
   THEMES,
   VIEWS,
+  WATCHER_ID_LENGTH,
 } from '../src/protocol.ts';
+import { SEAT_REQUEST_MS } from '../src/session/core.ts';
 
 // Long polls wait at most this long. Proxies keep an idle request open for longer.
 export const WAIT_MS = 25_000;
@@ -73,7 +79,12 @@ export type SchemaName =
   | 'ChatMessage'
   | 'PlayerInfo'
   | 'SeatNames'
+  | 'Watcher'
+  | 'SeatRequest'
   | 'SessionView'
+  | 'SeatAction'
+  | 'SeatAnswer'
+  | 'NameRequest'
   | 'NewSession'
   | 'SessionUpdate'
   | 'MoveRequest'
@@ -137,6 +148,8 @@ const limit = (kind: keyof typeof LIMIT_RANGE, description: string): Schema => (
 const name: Schema = { type: 'string', minLength: 1, maxLength: NAME_MAX_LENGTH, description: 'The session name. The server trims spaces.' };
 const seatName: Schema = { type: 'string', minLength: 1, maxLength: NAME_MAX_LENGTH, description: 'A generated name: an adjective and an animal in camelCase.' };
 const chatText: Schema = { type: 'string', minLength: 1, maxLength: CHAT_MAX_LENGTH, description: `1 to ${CHAT_MAX_LENGTH} characters. The server trims spaces.` };
+const watcherId: Schema = { type: 'string', pattern: `^[0-9a-f]{${WATCHER_ID_LENGTH}}$`, description: 'The id of a watcher in this session. It is not a player id.' };
+const displayName: Schema = { type: 'string', minLength: 1, maxLength: NAME_MAX_LENGTH, description: 'A custom name that the player chose, else a generated name.' };
 const signalCode: Schema = { type: 'string', minLength: 1, maxLength: MAX_CODE_LENGTH };
 const hostId: Schema = { type: 'string', pattern: '^[A-Za-z0-9_-]{16}$', description: 'The id of a Nearby host in the list.' };
 const strings = (values: readonly string[], description?: string): Schema => ({ type: 'string', enum: values, ...(description === undefined ? {} : { description }) });
@@ -186,9 +199,23 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     login: { type: 'string', minLength: 1, maxLength: 39 },
     avatar: { type: 'string', pattern: '^https://avatars\\.githubusercontent\\.com/' },
   }),
-  SeatNames: object('The generated name of the player on each seat, such as "braveOtter". null for an empty seat and for the computer.', {
+  SeatNames: object('The name of the player on each seat: a custom name, else a generated name such as "braveOtter". null for an empty seat and for the computer.', {
     X: nullable(seatName),
     O: nullable(seatName),
+  }),
+  Watcher: object('A browser that has the game open and holds no seat.', {
+    id: watcherId,
+    name: displayName,
+    player: { ...nullable(ref('PlayerInfo')), description: 'The GitHub account of the watcher, or null.' },
+  }),
+  SeatRequest: object(`A seat change that waits for the other player. It ends after ${SEAT_REQUEST_MS / 1000} s without an answer.`, {
+    kind: strings(CONSENT_ACTIONS, 'swap: X and O trade seats. unseat: the other player watches. replace: a watcher takes the seat of the other player.'),
+    from: { ...ref('Player'), description: 'The seat of the player who asked.' },
+    watcher: {
+      ...nullable(object('The watcher that takes the seat.', { name: displayName, player: nullable(ref('PlayerInfo')) })),
+      description: 'For replace only. null for the other kinds.',
+    },
+    expiresAt: { type: 'number', description: 'Server time in epoch milliseconds when the request ends.' },
   }),
   SessionView: object('A session as the caller sees it: every game, the seats, the chat and the live game state.', {
     code: { type: 'string', pattern: `^[${CODE_ALPHABET}]{${CODE_LENGTH}}$`, description: 'The session code. The link is /?code=<code>.' },
@@ -208,6 +235,8 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     }),
     players: object('The GitHub account behind each seat, or null.', { X: nullable(ref('PlayerInfo')), O: nullable(ref('PlayerInfo')) }),
     names: ref('SeatNames'),
+    watchers: { type: 'array', items: ref('Watcher'), description: 'The browsers that have the game open without a seat, in the order that they came.' },
+    seatRequest: { ...nullable(ref('SeatRequest')), description: 'A seat change that waits for the other player, or null.' },
     turn: { ...nullable(ref('Player')), description: 'The player to move in the live game. null when the live game is over.' },
     status: ref('Status'),
   }),
@@ -236,12 +265,38 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     cell: ref('Cell'),
   }),
   ChatRequest: object('A chat message.', { text: chatText }),
+  SeatAction: object(
+    'A change of the seats. Only a player can send it.',
+    {
+      action: strings(
+        SEAT_ACTIONS,
+        'swap: X and O trade seats. leave: you watch, and your seat empties. give: your seat goes to a watcher. seat: a watcher takes the empty seat. unseat: the other player watches. replace: a watcher takes the seat of the other player.',
+      ),
+      watcher: { ...watcherId, description: 'For give, seat and replace only: the id of a watcher from `watchers`.' },
+    },
+    ['watcher'],
+  ),
+  SeatAnswer: object('An answer to the open seat request.', {
+    accept: { type: 'boolean', description: 'true applies the change. false declines it, or cancels your own request.' },
+  }),
+  NameRequest: object('Your display name.', {
+    name: {
+      type: 'string',
+      minLength: CUSTOM_NAME_MIN_LENGTH,
+      maxLength: CUSTOM_NAME_MAX_LENGTH,
+      description: `${CUSTOM_NAME_MIN_LENGTH} to ${CUSTOM_NAME_MAX_LENGTH} letters, digits, spaces, "-" and "_". The server trims spaces and joins inner spaces into one.`,
+    },
+  }),
   Error: object('A refused request.', { error: { type: 'string', description: 'A message for a person.' } }),
   Health: object('The server is up.', {
     ok: { const: true },
     lan: nullable(object('A server that a player runs on a local network.', { name: { type: 'string' } })),
   }),
-  Me: object('Your login state on the page.', { loginAvailable: { type: 'boolean' }, user: nullable(ref('PlayerInfo')) }),
+  Me: object('Your login state on the page, and your custom name.', {
+    loginAvailable: { type: 'boolean' },
+    user: nullable(ref('PlayerInfo')),
+    name: { ...nullable(displayName), description: 'The name that you chose with PUT /api/me/name, or null.' },
+  }),
   Tally: object('Game counts.', {
     played: { type: 'integer', minimum: 0 },
     won: { type: 'integer', minimum: 0 },
@@ -466,6 +521,8 @@ function view(fields: Record<string, unknown>): Record<string, unknown> {
     presence: { X: false, O: false },
     players: { X: null, O: null },
     names: { X: seats.X ? 'braveOtter' : null, O: seats.O ? 'cleverHeron' : null },
+    watchers: [],
+    seatRequest: null,
     turn: 'X',
     status: { kind: 'playing' },
     ...fields,
@@ -530,7 +587,7 @@ const PREVIEWS_EXAMPLE = {
 
 // ---- Routes ----
 
-type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 type RouteId = `${Method} /api/${string}`;
 
 type Query = { description: string; required: boolean; schema: Schema; example: string };
@@ -706,11 +763,57 @@ export const ROUTES = {
     errors: [BAD_PLAYER, BAD_CODE, NOT_A_PLAYER, NO_GAME, { status: 409, when: 'The live game is over, or a seat is still empty.' }],
     examplePlayer: AGENT_A,
   },
+  'POST /api/sessions/{code}/seats': {
+    operationId: 'changeSeats',
+    tag: 'Play',
+    summary: 'Change the seats: swap, leave, give, seat, unseat or replace.',
+    description: `Only a player can change the seats. A change of your own seat, or of an empty seat, applies at once. A change of the seat of the other player (swap, unseat, replace) waits in \`seatRequest\` until the other player accepts with POST /api/sessions/{code}/seats/answer. It ends after ${SEAT_REQUEST_MS / 1000} s. A new request replaces your older one. A swap is allowed during a game: each clock stays with its seat. Watchers come from \`watchers\` in the session.`,
+    player: 'required',
+    body: { schema: 'SeatAction', example: { action: 'swap' } },
+    response: {
+      status: 200,
+      description: 'The session. In this example, the swap waits for the other player.',
+      schema: 'SessionView',
+      example: view({ seats: { X: true, O: true }, version: 3, seatRequest: { kind: 'swap', from: 'X', watcher: null, expiresAt: T0 + SEAT_REQUEST_MS } }),
+    },
+    errors: [
+      BAD_PLAYER,
+      BAD_CODE,
+      { status: 400, when: 'The action is unknown, or the watcher is missing or not needed.' },
+      NOT_A_PLAYER,
+      { status: 404, when: 'No game has this code, or the watcher left.' },
+      { status: 409, when: 'The seat is not free or not taken as the action needs, the other player asked first, or the game is not online.' },
+    ],
+    examplePlayer: AGENT_A,
+  },
+  'POST /api/sessions/{code}/seats/answer': {
+    operationId: 'answerSeats',
+    tag: 'Play',
+    summary: 'Accept or decline the open seat request.',
+    description: 'The other player accepts or declines. The player who asked can only cancel, with accept false. Accept checks the request again and then applies it.',
+    player: 'required',
+    body: { schema: 'SeatAnswer', example: { accept: true } },
+    response: {
+      status: 200,
+      description: 'The session. In this example, the swap applied: your seat is now X.',
+      schema: 'SessionView',
+      example: view({ seats: { X: true, O: true }, version: 4, names: { X: 'cleverHeron', O: 'braveOtter' } }),
+    },
+    errors: [
+      BAD_PLAYER,
+      BAD_CODE,
+      BAD_BODY,
+      NOT_A_PLAYER,
+      NO_GAME,
+      { status: 409, when: 'No request is open, only the other player can accept, or the request no longer applies.' },
+    ],
+    examplePlayer: AGENT_B,
+  },
   'GET /api/sessions/{code}/events': {
     operationId: 'sessionEvents',
     tag: 'Play',
     summary: 'A server-sent event stream for the page.',
-    description: 'Each "data: changed" event means: read the session again. The page uses this stream, and an open stream marks its seat as present. An agent can use ?wait on GET /api/sessions/{code} instead.',
+    description: 'Each "data: changed" event means: read the session again. The page uses this stream. An open stream marks its seat as present, or lists its player in `watchers`. An agent can use ?wait on GET /api/sessions/{code} instead.',
     player: 'none',
     query: {
       player: { description: 'Your player id. A browser EventSource cannot send headers.', required: false, schema: { type: 'string' }, example: AGENT_A },
@@ -879,7 +982,27 @@ export const ROUTES = {
     summary: 'Your GitHub login state. The page uses it.',
     description: 'A login cookie from the page links your player id to a GitHub account. A client without a page login gets null.',
     player: 'required',
-    response: { status: 200, description: 'Your login state.', schema: 'Me', example: { loginAvailable: true, user: null } },
+    response: { status: 200, description: 'Your login state.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith' } },
+    errors: [BAD_PLAYER],
+    examplePlayer: AGENT_A,
+  },
+  'PUT /api/me/name': {
+    operationId: 'setName',
+    tag: 'Account',
+    summary: 'Choose your display name.',
+    description: 'Without a GitHub login, other players see this name in place of your generated name. A GitHub login still goes first.',
+    player: 'required',
+    body: { schema: 'NameRequest', example: { name: 'Agent Smith' } },
+    response: { status: 200, description: 'Your login state with the new name.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith' } },
+    errors: [BAD_PLAYER, { status: 400, when: 'The name is not valid.' }, { status: 409, when: 'The name is the login of a GitHub account.' }],
+    examplePlayer: AGENT_A,
+  },
+  'DELETE /api/me/name': {
+    operationId: 'clearName',
+    tag: 'Account',
+    summary: 'Go back to your generated name.',
+    player: 'required',
+    response: { status: 200, description: 'Your login state without a custom name.', schema: 'Me', example: { loginAvailable: true, user: null, name: null } },
     errors: [BAD_PLAYER],
     examplePlayer: AGENT_A,
   },
@@ -1145,7 +1268,9 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
           '`games`: every game, oldest first. The last one is the live game. `moves` lists its cells in order: X played moves 0, 2, 4 and so on, O played moves 1, 3, 5.',
           '`version`: grows with every change.',
           '`chat`: the newest messages, oldest first.',
-          '`players` and `names`: who plays each seat. `players` holds the GitHub account of a player who logged in on the page. A player without a GitHub login gets a generated name in `names`, such as "braveOtter". The same player id always gets the same name, so you also get one.',
+          '`players` and `names`: who plays each seat. `players` holds the GitHub account of a player who logged in on the page. A player without a GitHub login has a name in `names`: a name that the player chose (PUT /api/me/name), else a generated name such as "braveOtter". The same player id always gets the same generated name, so you also get one.',
+          '`watchers`: the browsers that have the game open without a seat.',
+          '`seatRequest`: a seat change that waits for an answer, or null.',
         ],
       },
     ],
@@ -1202,6 +1327,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
       { p: 'A person watches in a browser: open `{origin}/?code=<code>`. The page shows the board, the moves and the chat, live.' },
       { p: 'Important: a browser that opens the link while a seat is free takes that seat. To let your user watch and not play, give the link after both seats are taken.' },
       { p: 'The page shows a player as "away" when no browser of that player has the game open. A player that uses the API shows as away. The game goes on as usual.' },
+      { p: 'A player can change the seats with `POST /api/sessions/<code>/seats`: swap X and O, leave the seat, give it to a watcher, seat a watcher in the empty seat, or move the other player out. A change of the seat of the other player waits until that player accepts it with `POST /api/sessions/<code>/seats/answer`. When `seatRequest` names your seat as the other one, answer it, or it ends after a minute.' },
     ],
   },
   {

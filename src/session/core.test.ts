@@ -42,7 +42,7 @@ const view = (doc: SessionDoc, identity: core.Identity) =>
     version: 1,
     identity,
     now: 0,
-    presence: { X: true, O: false },
+    audience: { presence: { X: true, O: false }, watchers: [], name: nameOf },
     players: { X: null, O: null },
   });
 
@@ -227,5 +227,98 @@ describe('chat', () => {
     for (let i = 0; i < 60; i++) doc = core.chat(doc, alice, `m${i}`, i);
     expect(doc.chat).toHaveLength(50);
     expect(doc.chat.at(-1)).toMatchObject({ id: 62, text: 'm59' });
+  });
+});
+
+describe('seat controls', () => {
+  // Carol has the game open without a seat. The holder gives her an opaque id.
+  const watchers: core.OpenWatcher[] = [{ id: 'c0ffee0000000001', token: CAROL, player: null }];
+
+  it('applies a change of the own seat or of an empty seat at once', () => {
+    const doc = onlineDoc();
+    const left = core.seat(doc, bob, { action: 'leave' }, watchers, 0);
+    expect(left.seats).toEqual({ X: ALICE, O: null });
+    const seated = core.seat(left, alice, { action: 'seat', watcher: 'c0ffee0000000001' }, watchers, 0);
+    expect(seated.seats).toEqual({ X: ALICE, O: CAROL });
+    const given = core.seat(doc, alice, { action: 'give', watcher: 'c0ffee0000000001' }, watchers, 0);
+    expect(given.seats).toEqual({ X: CAROL, O: BOB });
+    // With the other seat empty, a swap affects nobody: the player moves to the other side.
+    expect(core.seat(left, alice, { action: 'swap' }, watchers, 0).seats).toEqual({ X: null, O: ALICE });
+  });
+
+  it('asks the other player before a swap, an unseat or a replace, and applies it on accept', () => {
+    const doc = play(onlineDoc(), [0, 1, 2]);
+    for (const [request, seats] of [
+      [{ action: 'swap' }, { X: BOB, O: ALICE }],
+      [{ action: 'unseat' }, { X: ALICE, O: null }],
+      [{ action: 'replace', watcher: 'c0ffee0000000001' }, { X: ALICE, O: CAROL }],
+    ] as const) {
+      const asked = core.seat(doc, alice, request, watchers, 1_000);
+      expect(asked.seats).toEqual(doc.seats);
+      expect(view(asked, bob).seatRequest).toMatchObject({ kind: request.action, from: 'X', expiresAt: 1_000 + core.SEAT_REQUEST_MS });
+      const accepted = core.answerSeat(asked, bob, true, watchers, 2_000);
+      expect(accepted.seats).toEqual(seats);
+      expect(accepted.seatRequest).toBeNull();
+      // A swap in the middle of a game keeps the moves and their times: each clock stays with its seat.
+      expect(accepted.games).toEqual(doc.games);
+    }
+  });
+
+  it('lets the other player decline and the asker cancel, but only the other player accept', () => {
+    const asked = core.seat(onlineDoc(), alice, { action: 'swap' }, watchers, 0);
+    expect(status(() => core.answerSeat(asked, alice, true, watchers, 1))).toBe(409);
+    expect(core.answerSeat(asked, alice, false, watchers, 1).seatRequest).toBeNull();
+    const declined = core.answerSeat(asked, bob, false, watchers, 1);
+    expect(declined.seatRequest).toBeNull();
+    expect(declined.seats).toEqual(asked.seats);
+    // One request at a time: the other player answers first, and a new request from the asker replaces the old one.
+    expect(status(() => core.seat(asked, bob, { action: 'swap' }, watchers, 1))).toBe(409);
+    expect(core.seat(asked, alice, { action: 'unseat' }, watchers, 5).seatRequest).toMatchObject({ kind: 'unseat', at: 5 });
+  });
+
+  it('drops a request after it ends, and refuses an answer to it', () => {
+    const asked = core.seat(onlineDoc(), alice, { action: 'swap' }, watchers, 0);
+    const end = core.SEAT_REQUEST_MS;
+    expect(core.settle(asked, end - 1)).toBeUndefined();
+    expect(core.settle(asked, end)?.seatRequest).toBeNull();
+    expect(view(asked, bob).seatRequest).not.toBeNull();
+    expect(status(() => core.answerSeat(asked, bob, true, watchers, end))).toBe(409);
+  });
+
+  it('checks a replace again on accept: the watcher must still be here without a seat', () => {
+    const asked = core.seat(onlineDoc(), alice, { action: 'replace', watcher: 'c0ffee0000000001' }, watchers, 0);
+    expect(status(() => core.answerSeat(asked, bob, true, [], 1))).toBe(409);
+    expect(core.answerSeat(asked, bob, true, watchers, 1).seats.O).toBe(CAROL);
+  });
+
+  it('refuses watchers, unknown watchers, wrong seats and games on one device', () => {
+    const doc = onlineDoc();
+    for (const request of [{ action: 'swap' }, { action: 'leave' }] as const) {
+      expect(status(() => core.seat(doc, carol, request, watchers, 0))).toBe(403);
+    }
+    expect(status(() => core.answerSeat(core.seat(doc, alice, { action: 'swap' }, watchers, 0), carol, true, watchers, 1))).toBe(403);
+    expect(status(() => core.seat(doc, alice, { action: 'give', watcher: 'ffffffffffffffff' }, watchers, 0))).toBe(404);
+    expect(status(() => core.seat(doc, alice, { action: 'seat', watcher: 'c0ffee0000000001' }, watchers, 0))).toBe(409);
+    const left = core.seat(doc, bob, { action: 'leave' }, watchers, 0);
+    expect(status(() => core.seat(left, alice, { action: 'unseat' }, watchers, 0))).toBe(409);
+    expect(status(() => core.seat(left, alice, { action: 'replace', watcher: 'c0ffee0000000001' }, watchers, 0))).toBe(409);
+    expect(status(() => core.answerSeat(doc, alice, true, watchers, 0))).toBe(409);
+    const couch = core.createDoc({ name: 'Couch', mode: 'friend', seats: { X: ALICE, O: ALICE } });
+    expect(status(() => core.seat(couch, alice, { action: 'swap' }, watchers, 0))).toBe(409);
+  });
+
+  it('lists watchers by id and name only, never by token', () => {
+    const asked = core.seat(onlineDoc(), alice, { action: 'replace', watcher: 'c0ffee0000000001' }, watchers, 0);
+    const shown = core.viewOf(asked, {
+      code: 'ABCD' as Code,
+      version: 1,
+      identity: bob,
+      now: 1,
+      audience: { presence: { X: true, O: true }, watchers, name: (token) => (token === CAROL ? 'Carol' : nameOf(token)) },
+      players: { X: null, O: null },
+    });
+    expect(shown.watchers).toEqual([{ id: 'c0ffee0000000001', name: 'Carol', player: null }]);
+    expect(shown.seatRequest?.watcher).toEqual({ name: 'Carol', player: null });
+    expect(JSON.stringify(shown)).not.toContain(CAROL);
   });
 });

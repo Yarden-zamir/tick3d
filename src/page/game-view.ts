@@ -25,7 +25,7 @@ async function deviceCopy(id: GameId): Promise<PublicGame | undefined> {
     const mine = (seat: Player) => result.you === null || result.you === seat;
     const seatInfo = (seat: Player) => (mine(seat) ? page.account.user : null);
     // A Nearby host also knows the guest on the other seat.
-    const seatName = (seat: Player) => (mine(seat) ? nameOf(token) : result.guest === null ? null : nameOf(result.guest));
+    const seatName = (seat: Player) => (mine(seat) ? (page.account.name ?? nameOf(token)) : result.guest === null ? null : nameOf(result.guest));
     return {
       id,
       mode: result.mode,

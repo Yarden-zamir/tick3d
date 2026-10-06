@@ -3,8 +3,10 @@ import type { TimeControl } from '../clock.ts';
 import type { DeviceDb } from '../device-db.ts';
 import { type Game, type Player, newGame } from '../game.ts';
 import type { LocalBackend } from '../local.ts';
-import type { Me } from '../online.ts';
-import type { SessionView, MatchOptions, Code, MoveRequest, SessionUpdate, PublicGame } from '../protocol.ts';
+import { nameOf } from '../names.ts';
+import { type Me, token } from '../online.ts';
+import { parseCustomName } from '../protocol.ts';
+import type { SessionView, MatchOptions, Code, MoveRequest, SeatAction, SessionUpdate, PublicGame } from '../protocol.ts';
 import { type Mode, settings } from './settings.ts';
 
 // The open session: its latest view, the backend that holds it, and its mode.
@@ -43,13 +45,37 @@ type PageState = {
   viewing: PublicGame | undefined;
 };
 
+// The custom name from the last /api/me answer, so the page shows it offline too.
+const NAME_KEY = 'tick3d.name';
+
+function storedName(): string | null {
+  try {
+    return parseCustomName(localStorage.getItem(NAME_KEY)) ?? null;
+  } catch {
+    return null; // Storage is blocked. The name comes with the next /api/me answer.
+  }
+}
+
+export function saveAccount(account: Me): void {
+  page.account = account;
+  try {
+    if (account.name === null) localStorage.removeItem(NAME_KEY);
+    else localStorage.setItem(NAME_KEY, account.name);
+  } catch {
+    // Storage is blocked. The page keeps the name for this visit.
+  }
+}
+
+// The name that other players see for this player: the GitHub login, the custom name, or the generated name.
+export const ownName = (): string => page.account.user?.login ?? page.account.name ?? nameOf(token);
+
 export const page: PageState = {
   games: [newGame('X', settings.clock)],
   session: undefined,
   review: undefined,
   deviceDb: undefined,
   local: undefined,
-  account: { loginAvailable: false, user: null },
+  account: { loginAvailable: false, user: null, name: storedName() },
   thinking: false,
   busy: false,
   computerThinkMs: [],
@@ -109,5 +135,7 @@ export type SessionBackend = {
   update(code: Code, changes: SessionUpdate): Promise<SessionView>;
   lock(code: Code): Promise<SessionView>;
   chat(code: Code, text: string): Promise<SessionView>;
+  seat(code: Code, action: SeatAction): Promise<SessionView>;
+  answerSeat(code: Code, accept: boolean): Promise<SessionView>;
   subscribe(code: Code, onChange: () => void): () => void;
 };

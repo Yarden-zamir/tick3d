@@ -59,7 +59,7 @@ describe('pruning empty sessions', () => {
     store = await openStore(':memory:', {
       // The clock runs `later` ahead, so rows written now count as old.
       now: () => Date.now() + later,
-      presence: (code) => ({ X: code === watched, O: false }),
+      open: (code) => (code === watched ? [alice] : []),
     });
     const empty = (await store.create(alice, 'Never played')).code;
     const played = (await store.create(alice, 'Played')).code;
@@ -127,7 +127,7 @@ describe('sessions', () => {
   });
 
   it('reports presence from the HTTP layer', async () => {
-    store = await openStore(':memory:', { presence: () => ({ X: true, O: false }) });
+    store = await openStore(':memory:', { open: () => [alice] });
     const { code } = await store.create(alice, 'Present');
     expect((await store.get(code, alice)).presence).toEqual({ X: true, O: false });
   });
@@ -653,5 +653,68 @@ describe('stats', () => {
     expect((await store.stats()).totals.games).toBe(first.totals.games);
     time += 60_000;
     expect((await store.stats()).totals.games).toBe(first.totals.games + 1);
+  });
+});
+
+describe('seat controls', () => {
+  it('lists the open tokens without a seat as watchers, by an opaque id, and never shows a token', async () => {
+    let open: PlayerToken[] = [];
+    store = await openStore(':memory:', { open: () => open });
+    const { code } = await store.create(alice, 'Watched');
+    await store.join(code, bob);
+    open = [alice, carol, carol];
+    const view = await store.get(code, bob);
+    expect(view.presence).toEqual({ X: true, O: false });
+    expect(view.watchers).toEqual([{ id: expect.stringMatching(/^[0-9a-f]{16}$/), name: nameOf(carol), player: null }]);
+    expect(JSON.stringify(view)).not.toContain(carol);
+    expect(JSON.stringify(view)).not.toContain(alice);
+    // The id is the same for every reader, so a player can act on it.
+    expect((await store.get(code, alice)).watchers).toEqual(view.watchers);
+  });
+
+  it('asks before a swap, applies it on accept, and seats a watcher without asking', async () => {
+    let open: PlayerToken[] = [];
+    store = await openStore(':memory:', { open: () => open });
+    const { code } = await store.create(alice, 'Seats');
+    await store.join(code, bob);
+    open = [alice, bob, carol];
+    const asked = await store.seat(code, alice, { action: 'swap' });
+    expect(asked.seatRequest).toMatchObject({ kind: 'swap', from: 'X' });
+    expect((await store.get(code, bob)).seatRequest).toMatchObject({ kind: 'swap', from: 'X' });
+    expect((await store.answerSeat(code, bob, true)).you).toBe('X');
+    expect((await store.get(code, alice)).you).toBe('O');
+    // Alice (O now) leaves, and Bob seats the watcher in the empty seat.
+    await store.seat(code, alice, { action: 'leave' });
+    const watcher = (await store.get(code, bob)).watchers.find((entry) => entry.name === nameOf(carol));
+    if (watcher === undefined) throw new Error('carol is not a watcher');
+    expect((await store.seat(code, bob, { action: 'seat', watcher: watcher.id })).seats).toEqual({ X: true, O: true });
+    expect((await store.get(code, carol)).you).toBe('O');
+    expect(await status(() => store.seat(code, alice, { action: 'swap' }))).toBe(403);
+  });
+});
+
+describe('custom names', () => {
+  it('shows a custom name in views, history, My games, game links and stats, and goes back on reset', async () => {
+    const code = await session();
+    await store.setName(alice, 'Dana');
+    await playMoves(code, X_WINS);
+    expect((await store.get(code, bob)).names).toEqual({ X: 'Dana', O: nameOf(bob) });
+    expect((await store.history(bob, 0)).games[0]).toMatchObject({ opponentName: 'Dana' });
+    expect((await store.myGames(bob)).sessions[0]).toMatchObject({ opponentName: 'Dana' });
+    expect((await store.game(gameId(`${code}-1`))).names.X).toBe('Dana');
+    // The computer (X) wins this game against Alice, so it counts for her survival record.
+    await store.addResults(alice, [result('66666666-0000-4000-8000-000000000002', { you: 'O', difficulty: 'easy' })]);
+    expect((await store.stats()).survival).toEqual([expect.objectContaining({ player: 'Dana' })]);
+    expect(await store.customName(alice)).toBe('Dana');
+    await store.clearName(alice);
+    expect(await store.customName(alice)).toBeNull();
+    expect((await store.get(code, bob)).names.X).toBe(nameOf(alice));
+  });
+
+  it('refuses a name that equals a GitHub login, in any case', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(carol, ALICE_GITHUB);
+    expect(await status(() => store.setName(bob, 'ALICE'))).toBe(409);
+    expect(await store.customName(bob)).toBeNull();
   });
 });
