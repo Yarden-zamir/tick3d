@@ -3,7 +3,9 @@
 import '../style.css';
 import './training.css';
 import { toCell, toCoords } from '../game.ts';
-import { SOUND_NAMES, sounds } from '../sound.ts';
+import { setSoundSet, sounds } from '../sound.ts';
+import { SOUND_SETS } from '../sound-sets.ts';
+import { settings } from '../page/settings.ts';
 import { buildDeck, fitDeck, paint } from './deck.ts';
 import {
   type Asked,
@@ -53,10 +55,18 @@ const resetDialog = element('#reset-confirm', HTMLDialogElement);
 const resetYes = element('#reset-yes', HTMLButtonElement);
 const resetNo = element('#reset-no', HTMLButtonElement);
 
+// The trainer uses the sound set of the game. Classic does not name every cell, so the trainer uses Cells then.
+const trainingId = settings.soundSet === 'classic' ? 'cells' : settings.soundSet;
+const parts = SOUND_SETS[trainingId].parts;
+if (parts === undefined) throw new Error(`the ${trainingId} sound set does not name its parts`);
+setSoundSet(trainingId);
+const SOUND_NAMES: Record<Dimension, readonly string[]> = { layer: parts.layer.names, row: parts.row.names, column: parts.column.names };
+
+// `part` is the set's own word for what the coordinate changes, for example "pitch" or "vowel".
 const TEXT: Record<Dimension, { name: string; part: string; parts: string }> = {
-  layer: { name: 'Layer', part: 'pitch', parts: 'Pitches' },
-  row: { name: 'Row', part: 'instrument', parts: 'Instruments' },
-  column: { name: 'Column', part: 'width and side', parts: 'Widths' },
+  layer: { name: 'Layer', part: parts.layer.hint, parts: 'Layer sounds' },
+  row: { name: 'Row', part: parts.row.hint, parts: 'Row sounds' },
+  column: { name: 'Column', part: parts.column.hint, parts: 'Column sounds' },
 };
 
 // ---- Storage ----
@@ -255,7 +265,7 @@ function dimensionBlock(dimension: Dimension): HTMLElement {
   const block = document.createElement('section');
   block.className = 'train-dimension';
   const title = document.createElement('h3');
-  title.textContent = `${TEXT[dimension].parts} → ${TEXT[dimension].name.toLowerCase()}`;
+  title.textContent = `${TEXT[dimension].parts}: ${TEXT[dimension].part}`;
   const share = accuracy(progress, dimension);
   const answers = progress.recent[dimension].length;
   const bar = document.createElement('div');
@@ -314,7 +324,7 @@ function renderProgress(): void {
   else hintEl.textContent = 'You hear all three parts well. Full cells come more often now.';
   const seen = ITEMS.filter((item) => progress.items[item] !== undefined).length;
   const inQuiz = ITEMS.filter((item) => progress.items[item]?.learn === 0).length;
-  totalsEl.textContent = `${progress.turn} cards done · ${seen} of ${ITEMS.length} sounds seen · ${inQuiz} in the quiz`;
+  totalsEl.textContent = `${progress.turn} cards done · ${seen} of ${ITEMS.length} sounds seen · ${inQuiz} in the quiz · ${SOUND_SETS[trainingId].name} sound set`;
 }
 
 // ---- Events ----

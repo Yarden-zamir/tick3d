@@ -134,6 +134,16 @@
           <button type="button" class="primary" id="new-game" data-needs-session>New game</button>
           <button type="button" id="undo" data-show-mode="computer friend">Undo</button>
           <button type="button" id="sound" aria-label="Sound"></button>
+          <button type="button" id="sound-set" popovertarget="sound-sets" aria-label="Sound set" title="Sound set"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg></button>
+        </div>
+        <!-- The sound set menu. A popover closes on a tap outside it or on Escape. src/page/sound-set.ts fills the list. -->
+        <div popover id="sound-sets" class="sound-sets" role="dialog" aria-labelledby="sound-sets-title">
+          <div class="sound-sets-head">
+            <h2 id="sound-sets-title">Sound set</h2>
+            <button type="button" popovertarget="sound-sets" popovertargetaction="hide" aria-label="Close the sound sets">✕</button>
+          </div>
+          <p class="sound-sets-note">The sound of each move. ▶ plays four moves of the set.</p>
+          <div id="sound-set-list"></div>
         </div>
         <button type="button" class="lock" id="show-card" hidden>🏆 Result card</button>
 
@@ -331,7 +341,7 @@
           <p>Take turns to place a mark. Get four in a straight line to win.</p>
           <p>Lines can run along a layer, up through the layers, or diagonally through the cube. There are 76 lines.</p>
           <p>Point at a cell to light up the cells above and below it.</p>
-          <p>Every cell has its own sound, so you can follow a game by ear. The pitch is the layer: higher layers sound higher. The instrument is the row: 1 a wooden marimba, 2 a glass bell, 3 a plucked string, 4 a soft whistle. The width is the column: 1 is one thin voice, then a fifth joins, then an octave, and 4 has both. On headphones the column also comes from the left (1) to the right (4). O sounds one octave below X. The speaker button by the keypad plays the last move again, or the cell you typed.</p>
+          <p>Every cell has its own sound, so you can follow a game by ear. The note button next to the Sound button picks the sound set. Each set tells its map in the menu. In the default set, Cells, the pitch is the layer: higher layers sound higher. The instrument is the row: 1 a wooden marimba, 2 a glass bell, 3 a plucked string, 4 a soft whistle. The width is the column: 1 is one thin voice, then a fifth joins, then an octave, and 4 has both. On headphones the column also comes from the left (1) to the right (4). O sounds one octave below X. The speaker button by the keypad plays the last move again, or the cell you typed.</p>
           <p>Time limits work like a chess clock. Set a limit for each player's whole game, a limit per move, or both. A player who runs out of either limit loses. The first move of each player is untimed. A change during a game starts with the next game.</p>
           <p>Lock settings keeps every setting, the view included, until the game ends. Online, the lock and the hide options apply to both players.</p>
           <p>Hide coordinates keeps the numbers of the last move off the keypad, so you follow the game by its sounds.</p>

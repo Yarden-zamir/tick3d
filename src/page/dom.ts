@@ -42,6 +42,7 @@ export const newCodeButton = element('#new-code', HTMLButtonElement);
 export const newGameButton = element('#new-game', HTMLButtonElement);
 export const undoButton = element('#undo', HTMLButtonElement);
 export const soundButton = element('#sound', HTMLButtonElement);
+export const soundSetList = element('#sound-set-list', HTMLDivElement);
 export const lockButton = element('#lock', HTMLButtonElement);
 export const resetAngleButton = element('#reset-angle', HTMLButtonElement);
 export const rulesButton = element('#rules-button', HTMLButtonElement);

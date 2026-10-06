@@ -3,6 +3,7 @@ import { type Difficulty, DIFFICULTIES } from '../ai.ts';
 import { type TimeControl, NO_LIMIT, parseClock } from '../clock.ts';
 import type { Player } from '../game.ts';
 import { LAYOUTS, type MATCH_OPTIONS, THEMES, VIEWS } from '../protocol.ts';
+import { SOUND_SET_IDS, type SoundSetId } from '../sound-sets.ts';
 
 export const MODES = ['computer', 'friend', 'online', 'nearby'] as const;
 export const PLAYERS = ['X', 'O'] as const;
@@ -37,6 +38,8 @@ export type Settings = {
   // The tower's turn around its vertical axis, in degrees. Dragging the tower sets it.
   spin: number;
   theme: Theme;
+  // The sound set of the moves. Like the theme and the mute, it belongs to the screen: the lock does not hold it.
+  soundSet: SoundSetId;
 };
 export type Toggle = (typeof MATCH_OPTIONS)[number];
 
@@ -50,6 +53,7 @@ export const DEFAULTS: Settings = {
   muted: false,
   spin: 45,
   theme: 'light',
+  soundSet: 'cells',
 };
 const STORAGE_KEY = 'tick3d.settings';
 
@@ -81,6 +85,7 @@ function loadSettings(): Settings {
     muted: bool(stored.muted, DEFAULTS.muted),
     spin: wrapSpin(finite(stored.spin, DEFAULTS.spin)),
     theme: oneOf(THEMES, stored.theme, DEFAULTS.theme),
+    soundSet: oneOf(SOUND_SET_IDS, stored.soundSet, DEFAULTS.soundSet),
   };
 }
 

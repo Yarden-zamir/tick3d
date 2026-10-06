@@ -27,6 +27,7 @@ import { refresh, setUrlCode, setUrlGame, joinSession, openLocalSession } from '
 import { settings } from './page/settings.ts';
 import { page } from './page/state.ts';
 import { applyTheme, setupTheme } from './page/theme.ts';
+import { setupSoundSets } from './page/sound-set.ts';
 
 // Every module only declares things on import. These calls add the listeners and build the
 // board, tuning and theme controls, in the order of the old single page script.
@@ -53,6 +54,7 @@ setupClocks();
 setupAdvanced();
 setupEndCard();
 setupTheme();
+setupSoundSets();
 setupKeypad();
 setupChat();
 setupOnlineBox();
