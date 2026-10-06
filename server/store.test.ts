@@ -700,6 +700,10 @@ describe('seat controls', () => {
     expect((await store.seat(code, bob, { action: 'seat', watcher: watcher.id })).seats).toEqual({ X: true, O: true });
     expect((await store.get(code, carol)).you).toBe('O');
     expect(await status(() => store.seat(code, alice, { action: 'swap' }))).toBe(403);
+    // Bob (X) moves and asks to undo. Carol (O) accepts, and the move goes back.
+    await store.move(code, bob, { game: 0, moveCount: 0, cell: 21 });
+    expect((await store.seat(code, bob, { action: 'undo' })).seatRequest).toMatchObject({ kind: 'undo', from: 'X' });
+    expect((await store.answerSeat(code, carol, true)).games[0]?.moves).toEqual([]);
   });
 });
 

@@ -122,13 +122,15 @@ export function move(doc: SessionDoc, identity: Identity, request: MoveRequest, 
   if (game.status.kind === 'playing' && !seats.includes(game.turn)) throw new SessionError(409, 'It is not your turn.');
   const result = play(game, request.cell, now);
   if (!result.ok) throw new SessionError(409, result.error === 'occupied' ? 'That cell is taken.' : 'This game is over.');
-  return replaceCurrent(doc, result.game);
+  // A move ends an undo request: the move to take back is not the last one any more.
+  const next = replaceCurrent(doc, result.game);
+  return next.seatRequest?.kind === 'undo' ? { ...next, seatRequest: null } : next;
 }
 
-// Takes back moves in a game on one device. Online, a move is final.
+// Takes back moves in a game on one device. With another device, an undo is a request (see seat).
 export function undo(doc: SessionDoc, identity: Identity, count: number): SessionDoc {
   requireSeat(doc, identity);
-  if (doc.mode === 'online' || doc.mode === 'nearby') throw new SessionError(409, 'Moves are final in a game with another device.');
+  if (doc.mode === 'online' || doc.mode === 'nearby') throw new SessionError(409, 'With another device, the other player must accept an undo.');
   const game = currentGame(doc);
   if (game.status.kind !== 'playing') throw new SessionError(409, 'This game is over.');
   if (game.clock.perMove !== null || game.clock.perGame !== null) throw new SessionError(409, 'A timed game has no undo.');
@@ -229,8 +231,24 @@ function watcherToken(doc: SessionDoc, watchers: readonly OpenWatcher[], id: str
   return found.token;
 }
 
-// Every applied seat change closes an open request, because the request was about the seats before it.
+// Why `from` cannot take back the last move of the live game now, or undefined when it can.
+// The rules of undo on one device hold too: a timed game has no undo, and a lock holds the game.
+function undoProblem(doc: SessionDoc, from: Player): string | undefined {
+  const game = currentGame(doc);
+  if (game.status.kind !== 'playing') return 'This game is over.';
+  if (game.moves.length === 0 || game.turn === from) return 'Only your own last move can go back, before the other player moves.';
+  if (game.clock.perMove !== null || game.clock.perGame !== null) return 'A timed game has no undo.';
+  if (isLocked(doc)) return 'Settings are locked until this game ends.';
+  return undefined;
+}
+
+// Every applied change closes an open request, because the request was about the state before it.
 function applySeatChange(doc: SessionDoc, { kind, from, watcher }: SeatChange): SessionDoc {
+  if (kind === 'undo') {
+    const problem = undoProblem(doc, from);
+    if (problem !== undefined) throw new SessionError(409, problem);
+    return { ...replaceCurrent(doc, undoGame(currentGame(doc), 1)), seatRequest: null };
+  }
   if ((kind === 'give' || kind === 'seat' || kind === 'replace') && watcher === null) throw new Error(`${kind} without a watcher`);
   const to = other(from);
   const seats = { ...doc.seats };
@@ -256,8 +274,8 @@ function applySeatChange(doc: SessionDoc, { kind, from, watcher }: SeatChange): 
   return { ...doc, seats, seatRequest: null };
 }
 
-// A seated player changes the seats. A change of the other player's seat (swap, unseat, replace)
-// becomes a request that the other player must accept. A change of the own seat, or of an empty seat,
+// A seated player changes the seats, or takes back the own last move (undo). A change of the other
+// player's seat or game (swap, unseat, replace, undo) becomes a request that the other player must accept. A change of the own seat, or of an empty seat,
 // applies at once. Watchers cannot change seats; they can only take an empty seat with join.
 // A swap is allowed during a game: the players trade sides, and each clock stays with its seat.
 export function seat(doc: SessionDoc, identity: Identity, request: SeatAction, watchers: readonly OpenWatcher[], now: number): SessionDoc {
@@ -272,9 +290,11 @@ export function seat(doc: SessionDoc, identity: Identity, request: SeatAction, w
   if ((request.action === 'unseat' || request.action === 'replace') && otherToken === null) {
     throw new SessionError(409, 'The other seat is empty.');
   }
+  const problem = request.action === 'undo' ? undoProblem(doc, from) : undefined;
+  if (problem !== undefined) throw new SessionError(409, problem);
   const kind = request.action;
   // A player who holds both seats (two devices of one account) asks nobody.
-  if ((kind === 'swap' || kind === 'unseat' || kind === 'replace') && otherToken !== null && !identity.has(otherToken)) {
+  if ((kind === 'swap' || kind === 'unseat' || kind === 'replace' || kind === 'undo') && otherToken !== null && !identity.has(otherToken)) {
     return { ...doc, seatRequest: { kind, from, watcher, at: now } };
   }
   return applySeatChange(doc, { kind, from, watcher });

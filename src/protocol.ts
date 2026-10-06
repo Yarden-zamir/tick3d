@@ -83,11 +83,12 @@ export type SessionView = {
 // What a seated player can do with the seats in a game with another device (src/session/core.ts).
 // swap: X and O trade seats. leave: I watch, my seat empties. give: my seat goes to a watcher.
 // seat: a watcher takes the empty seat. unseat: the other player watches. replace: a watcher takes the other seat.
-export const SEAT_ACTIONS = ['swap', 'leave', 'give', 'seat', 'unseat', 'replace'] as const;
-// The actions that change the seat of the other player. They wait until the other player accepts.
-export const CONSENT_ACTIONS = ['swap', 'unseat', 'replace'] as const;
+// undo: takes back my last move, while the other player has not moved since.
+export const SEAT_ACTIONS = ['swap', 'leave', 'give', 'seat', 'unseat', 'replace', 'undo'] as const;
+// The actions that change the seat or the game of the other player. They wait until the other player accepts.
+export const CONSENT_ACTIONS = ['swap', 'unseat', 'replace', 'undo'] as const;
 export type ConsentAction = (typeof CONSENT_ACTIONS)[number];
-export type SeatAction = { action: 'swap' | 'leave' | 'unseat' } | { action: 'give' | 'seat' | 'replace'; watcher: string };
+export type SeatAction = { action: 'swap' | 'leave' | 'unseat' | 'undo' } | { action: 'give' | 'seat' | 'replace'; watcher: string };
 export type SeatAnswer = { accept: boolean };
 // A watcher id is an opaque handle that the holder of the session makes. It is never a player token.
 export const WATCHER_ID_LENGTH = 16;

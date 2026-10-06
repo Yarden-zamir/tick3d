@@ -115,6 +115,10 @@ describe('Nearby host and guest', () => {
     expect((await local.seat(code, { action: 'give', watcher: listed.id })).you).toBeNull();
     expect((await second.backend.load(code)).you).toBe('O');
     expect((await local.load(code)).names.O).toBe(phone.name);
+    // The guest on X moves and asks to undo. The watcher on O now accepts over the channel.
+    await first.backend.move(code, { game: 0, moveCount: 0, cell: 5 });
+    expect((await first.backend.seat(code, { action: 'undo' })).seatRequest).toMatchObject({ kind: 'undo' });
+    expect((await second.backend.answerSeat(code, true)).games[0]?.moves).toEqual([]);
     // A bad argument is refused, and an answer needs an open request.
     await expect(first.backend.seat(code, { action: 'kick' } as never)).rejects.toMatchObject({ status: 400 });
     await expect(first.backend.answerSeat(code, true)).rejects.toMatchObject({ status: 409 });

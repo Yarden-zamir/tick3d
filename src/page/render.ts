@@ -122,6 +122,20 @@ function statusText(): string {
   }
 }
 
+// Why Undo cannot run now, or undefined. With another device, only the own last move can go back,
+// and the other player must accept (src/page/players.ts). The session rules check the same again.
+function undoProblemText(): string | undefined {
+  const game = current();
+  if (!isLive()) return 'The game is over.';
+  if (game.moves.length === 0) return 'No move to take back yet.';
+  if (hasLimit(game.clock)) return 'A timed game has no undo.';
+  if (!shared()) return undefined;
+  if (page.session?.you == null) return 'Only the two players can undo.';
+  if (game.turn === page.session.you) return 'Only your own last move can go back, before the other player moves.';
+  if (page.session.seatRequest !== null) return 'Wait for the open request first.';
+  return undefined;
+}
+
 // A panel control shows only where it applies (see the table in README "Controls per mode").
 // data-show-mode lists the modes of a control, and such a control is for play, so a game from a link
 // hides it. data-needs-session marks a control of an open game, which online and Nearby mode have
@@ -260,8 +274,9 @@ export function render(): void {
   // A game from a link: New game goes back to play.
   newGameButton.disabled = page.viewing === undefined && (frozen || page.busy || page.thinking || page.session?.you == null || sharedLive);
   for (const input of tuningEl.querySelectorAll('input')) input.disabled = frozen;
-  undoButton.disabled =
-    frozen || page.thinking || page.review !== undefined || !isLive() || current().moves.length === 0 || hasLimit(current().clock);
+  const undoProblem = undoProblemText();
+  undoButton.disabled = frozen || page.thinking || page.busy || page.review !== undefined || undoProblem !== undefined;
+  undoButton.title = undoProblem ?? (shared() ? 'Ask the other player to take back your last move.' : 'Take back the last move.');
   // Undo is for a live game, and the result card for a finished one. So they share one place in the actions row.
   if (!isLive()) undoButton.hidden = true;
   showCardButton.hidden = isLive() || page.review !== undefined;

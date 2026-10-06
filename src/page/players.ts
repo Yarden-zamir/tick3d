@@ -30,11 +30,12 @@ function requestText(request: SeatRequestView, asker: string): string {
     swap: `${asker} wants to swap X and O.`,
     unseat: `${asker} wants you to watch instead. Your seat then empties.`,
     replace: `${asker} wants ${request.watcher?.player?.login ?? request.watcher?.name ?? 'a watcher'} to take your seat. You then watch.`,
+    undo: `${asker} wants to take back their last move.`,
   };
   return texts[request.kind];
 }
 
-const WAIT_TEXT: Record<ConsentAction, string> = { swap: 'the swap', unseat: 'the move to watching', replace: 'the new player' };
+const WAIT_TEXT: Record<ConsentAction, string> = { swap: 'the swap', unseat: 'the move to watching', replace: 'the new player', undo: 'the undo' };
 
 function button(label: string, onClick: () => void, primary = false): HTMLButtonElement {
   const element = document.createElement('button');
@@ -44,6 +45,11 @@ function button(label: string, onClick: () => void, primary = false): HTMLButton
   element.disabled = page.busy;
   element.addEventListener('click', onClick);
   return element;
+}
+
+// Undo in a game with another device: a request to take back the own last move.
+export function requestUndo(): void {
+  act({ action: 'undo' }, 'Your last move is back.');
 }
 
 function act(action: SeatAction, done: string): void {
@@ -63,7 +69,7 @@ function answer(accept: boolean): void {
   seatPrompt.close();
   void withBusy(async () => {
     applyView(await session.backend.answerSeat(session.code, accept));
-    showToast(accept ? 'Accepted. The seats changed.' : session.seatRequest?.from === session.you ? 'Request cancelled.' : 'Declined.');
+    showToast(accept ? 'Accepted.' : session.seatRequest?.from === session.you ? 'Request cancelled.' : 'Declined.');
   });
 }
 
@@ -182,7 +188,8 @@ export function seatChangeText(before: SessionView, after: SessionView): string 
     const otherName = seatHolder(before, other(before.you)) ?? 'The other player';
     const holders = (view: SessionView) => `${seatHolder(view, 'X')}|${seatHolder(view, 'O')}`;
     if (before.you !== after.you) return youText;
-    if (holders(before) !== holders(after)) return `${otherName} accepted.`;
+    const movesOf = (view: SessionView) => view.games.at(-1)?.moves.length ?? 0;
+    if (holders(before) !== holders(after) || (request.kind === 'undo' && movesOf(after) < movesOf(before))) return `${otherName} accepted.`;
     if (after.now >= request.expiresAt) return 'The seat request ended without an answer.';
     return request.from === before.you ? `${otherName} declined.` : `${otherName} cancelled the request.`;
   }

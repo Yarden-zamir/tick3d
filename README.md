@@ -88,8 +88,10 @@
   | seat | Seat here (on a watcher row) | The watcher takes the empty seat. | nobody |
   | unseat | Make watcher (on the other seat) | The other player watches, and the seat empties. | the other player |
   | replace | Replace (on a watcher row) | The watcher takes the seat of the other player. | the other player |
+  | undo | Undo (at the top of the panel) | Your last move goes back, while the other player has not moved since. Not in a timed game, a finished game or during a lock. | the other player |
 
 - A change of the other player's seat waits as a request. The other player gets a prompt with Accept and Decline, and the Players box shows the same buttons. The player who asks sees "Waiting for …" with Cancel. A request ends after 60 seconds without an answer. One request is open at a time, and a new request of the same player replaces the old one. On Accept, the rules check the request again and then apply it. Both players get a message about the result.
+- Undo works the same way: a player asks to take back the own last move, and the other player accepts or declines. A move of the other player ends the request. A timed game, a finished game and a lock allow no undo, as on one device.
 - A watcher is never asked. A watcher has no seat controls, only "Take the empty seat" while a seat is free.
 - Computer and friend games have no Players box: a friend game uses one screen, and in a computer game "You play" picks X or O.
 - A browser keeps its seat through a random token in `localStorage`.
@@ -163,7 +165,7 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Time limit | yes | yes | yes | yes | no |
 | Hide board, history and coordinates, Lock | yes | yes | in a game | in a game | no |
 | Score, New game, the session games in My games | yes | yes | in a game | in a game | yes (no session games) |
-| Undo (during a game) | yes | yes | no | no | no |
+| Undo (during a game) | yes | yes | in a game (asks the other player) | in a game (asks the other player) | no |
 | Result card (after a game) | yes | yes | in a game | in a game | no |
 | Chat | no | no | yes | yes | no |
 
@@ -237,7 +239,7 @@ The full reference, with every shape, error and a curl example, is the OpenAPI 3
 | `GET /api/games/:id` | One finished game, read-only. No token and no result id. |
 | `GET /api/me/games` | My games: tallies and online sessions. |
 | `PUT /api/me/name`, `DELETE /api/me/name` | Sets the custom name of the player, or goes back to the generated name. Needs the X-Player header. |
-| `POST /api/sessions/:code/seats`, `POST /api/sessions/:code/seats/answer` | Seat controls: an action (swap, leave, give, seat, unseat, replace), and the answer to an open seat request. Needs the X-Player header of a player. |
+| `POST /api/sessions/:code/seats`, `POST /api/sessions/:code/seats/answer` | Seat controls and undo: an action (swap, leave, give, seat, unseat, replace, undo), and the answer to an open seat request. Needs the X-Player header of a player. |
 | `GET /api/me/history?offset=0` | The match history of the player (by account, else by browser token), 50 games per page, newest first. |
 | `GET /api/me/records` | The survival records of the player, with the same keys as on the device (`src/records.ts`). |
 | `DELETE /api/me/history` | Clears the history of the player. Needs the X-Player header. |

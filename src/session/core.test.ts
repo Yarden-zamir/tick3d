@@ -307,6 +307,27 @@ describe('seat controls', () => {
     expect(status(() => core.seat(couch, alice, { action: 'swap' }, watchers, 0))).toBe(409);
   });
 
+  it('takes back the own last move when the other player accepts, before the other player moves', () => {
+    const doc = play(onlineDoc(), [0, 1, 2]);
+    // X moved last. O cannot ask, X can.
+    expect(status(() => core.seat(doc, bob, { action: 'undo' }, watchers, 0))).toBe(409);
+    expect(status(() => core.seat(doc, carol, { action: 'undo' }, watchers, 0))).toBe(403);
+    const asked = core.seat(doc, alice, { action: 'undo' }, watchers, 0);
+    expect(asked.games).toEqual(doc.games);
+    expect(core.answerSeat(asked, bob, true, watchers, 1).games[0]?.moves).toEqual([0, 1]);
+    expect(core.answerSeat(asked, bob, false, watchers, 1).games[0]?.moves).toEqual([0, 1, 2]);
+    // A move of the other player ends the request: the move is not the last one any more.
+    const moved = core.move(asked, bob, { game: 0, moveCount: 3, cell: 3 }, 2);
+    expect(moved.seatRequest).toBeNull();
+    expect(status(() => core.answerSeat(moved, bob, true, watchers, 3))).toBe(409);
+  });
+
+  it('allows no undo in a timed game, a finished game or before a move', () => {
+    expect(status(() => core.seat(play(onlineDoc({ perMove: 30, perGame: null }), [0]), alice, { action: 'undo' }, watchers, 0))).toBe(409);
+    expect(status(() => core.seat(play(onlineDoc(), X_WINS), alice, { action: 'undo' }, watchers, 0))).toBe(409);
+    expect(status(() => core.seat(onlineDoc(), alice, { action: 'undo' }, watchers, 0))).toBe(409);
+  });
+
   it('lists watchers by id and name only, never by token', () => {
     const asked = core.seat(onlineDoc(), alice, { action: 'replace', watcher: 'c0ffee0000000001' }, watchers, 0);
     const shown = core.viewOf(asked, {

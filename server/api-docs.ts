@@ -209,7 +209,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     player: { ...nullable(ref('PlayerInfo')), description: 'The GitHub account of the watcher, or null.' },
   }),
   SeatRequest: object(`A seat change that waits for the other player. It ends after ${SEAT_REQUEST_MS / 1000} s without an answer.`, {
-    kind: strings(CONSENT_ACTIONS, 'swap: X and O trade seats. unseat: the other player watches. replace: a watcher takes the seat of the other player.'),
+    kind: strings(CONSENT_ACTIONS, 'swap: X and O trade seats. unseat: the other player watches. replace: a watcher takes the seat of the other player. undo: the last move goes back.'),
     from: { ...ref('Player'), description: 'The seat of the player who asked.' },
     watcher: {
       ...nullable(object('The watcher that takes the seat.', { name: displayName, player: nullable(ref('PlayerInfo')) })),
@@ -271,7 +271,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     {
       action: strings(
         SEAT_ACTIONS,
-        'swap: X and O trade seats. leave: you watch, and your seat empties. give: your seat goes to a watcher. seat: a watcher takes the empty seat. unseat: the other player watches. replace: a watcher takes the seat of the other player.',
+        'swap: X and O trade seats. leave: you watch, and your seat empties. give: your seat goes to a watcher. seat: a watcher takes the empty seat. unseat: the other player watches. replace: a watcher takes the seat of the other player. undo: your last move goes back, before the other player moves; not in a timed game.',
       ),
       watcher: { ...watcherId, description: 'For give, seat and replace only: the id of a watcher from `watchers`.' },
     },
@@ -768,8 +768,8 @@ export const ROUTES = {
   'POST /api/sessions/{code}/seats': {
     operationId: 'changeSeats',
     tag: 'Play',
-    summary: 'Change the seats: swap, leave, give, seat, unseat or replace.',
-    description: `Only a player can change the seats. A change of your own seat, or of an empty seat, applies at once. A change of the seat of the other player (swap, unseat, replace) waits in \`seatRequest\` until the other player accepts with POST /api/sessions/{code}/seats/answer. It ends after ${SEAT_REQUEST_MS / 1000} s. A new request replaces your older one. A swap is allowed during a game: each clock stays with its seat. Watchers come from \`watchers\` in the session.`,
+    summary: 'Change the seats (swap, leave, give, seat, unseat, replace), or ask to take back your last move (undo).',
+    description: `Only a player can change the seats. A change of your own seat, or of an empty seat, applies at once. A change of the seat of the other player (swap, unseat, replace) and an undo wait in \`seatRequest\` until the other player accepts with POST /api/sessions/{code}/seats/answer. It ends after ${SEAT_REQUEST_MS / 1000} s. A new request replaces your older one. A swap is allowed during a game: each clock stays with its seat. Watchers come from \`watchers\` in the session.`,
     player: 'required',
     body: { schema: 'SeatAction', example: { action: 'swap' } },
     response: {
@@ -784,7 +784,7 @@ export const ROUTES = {
       { status: 400, when: 'The action is unknown, or the watcher is missing or not needed.' },
       NOT_A_PLAYER,
       { status: 404, when: 'No game has this code, or the watcher left.' },
-      { status: 409, when: 'The seat is not free or not taken as the action needs, the other player asked first, or the game is not online.' },
+      { status: 409, when: 'The seat is not free or not taken as the action needs, the other player asked first, the game is not online, or an undo does not apply (not your last move, a timed or finished game, a lock).' },
     ],
     examplePlayer: AGENT_A,
   },
@@ -1329,7 +1329,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
       { p: 'A person watches in a browser: open `{origin}/?code=<code>`. The page shows the board, the moves and the chat, live.' },
       { p: 'Important: a browser that opens the link while a seat is free takes that seat. To let your user watch and not play, give the link after both seats are taken.' },
       { p: 'The page shows a player as "away" when no browser of that player has the game open. A player that uses the API shows as away. The game goes on as usual.' },
-      { p: 'A player can change the seats with `POST /api/sessions/<code>/seats`: swap X and O, leave the seat, give it to a watcher, seat a watcher in the empty seat, or move the other player out. A change of the seat of the other player waits until that player accepts it with `POST /api/sessions/<code>/seats/answer`. When `seatRequest` names your seat as the other one, answer it, or it ends after a minute.' },
+      { p: 'A player can change the seats with `POST /api/sessions/<code>/seats`: swap X and O, leave the seat, give it to a watcher, seat a watcher in the empty seat, or move the other player out. `{"action":"undo"}` asks to take back your last move, before the other player moves. A change of the seat of the other player, and an undo, wait until that player accepts it with `POST /api/sessions/<code>/seats/answer`. When `seatRequest` names your seat as the other one, answer it, or it ends after a minute.' },
     ],
   },
   {

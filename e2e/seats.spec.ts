@@ -33,6 +33,15 @@ test('players change seats, with the other player asked first, and a custom name
   await expect(playerRow(carol, carolName)).toContainText('You · Watching');
   await expect(playerRow(alice, carolName)).not.toContainText('You');
 
+  // Alice (X) moves and asks to undo. Bob accepts, and no screen shows the mark any more.
+  await alice.locator('.cell').nth(21).click();
+  for (const page of [alice, bob, carol]) await expect(page.locator('.cell.x')).toHaveCount(1);
+  await alice.locator('#undo').click();
+  await expect(bob.locator('#seat-prompt-text')).toContainText('wants to take back their last move');
+  await bob.locator('#seat-prompt-accept').click();
+  for (const page of [alice, bob, carol]) await expect(page.locator('.cell.x, .cell.o')).toHaveCount(0);
+  await expectToast(alice, 'accepted');
+
   // Alice (X) asks to swap. Bob gets a prompt and accepts. The seats trade on all three screens.
   await playerRow(alice, 'You').getByRole('button', { name: 'Swap X and O' }).click();
   await expect(alice.locator('#players-request')).toContainText('Waiting for Bob Builder');
