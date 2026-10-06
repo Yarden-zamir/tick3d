@@ -30,7 +30,7 @@ test('a drag in the empty stage beside the tower turns it, and a drag on the key
   await keypadKey.scrollIntoViewIfNeeded();
   const key = await box(keypadKey);
   const [x, y] = [key.x + key.width / 2, key.y + key.height / 2];
-  const pressed = await page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.closest('[data-digit]') !== null, [x, y]);
+  const pressed = await page.evaluate(({ px, py }) => document.elementFromPoint(px, py)?.closest('[data-digit]') !== null, { px: x, py: y });
   expect(pressed, 'the press lands on the keypad key').toBe(true);
   await dragFrom(page, x, y);
   await expect(reset).toBeDisabled();
