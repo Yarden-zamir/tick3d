@@ -300,7 +300,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return send(res, 200, await store.stats());
     // Cached in server/previews.ts, so a flood of requests costs no extra GitHub calls and needs no limiter.
     case 'GET /api/previews':
-      return send(res, 200, previews === undefined ? { previews: [], error: 'This server has no previews.' } : await previews.list());
+      return send(res, 200, previews === undefined ? { main: null, previews: [], error: 'This server has no previews.' } : await previews.list());
 
     case 'POST /api/sessions': {
       if (!allowCreate(clientOf(req), Date.now())) throw new HttpError(429, 'Too many new games from this address. Try again later.');

@@ -281,18 +281,20 @@ export function createPreviews(config: PreviewsConfig, fetchImpl: typeof fetch =
     return previews.filter((preview) => preview !== undefined);
   }
 
+  const main = `https://${config.domain}`;
+
   async function load(): Promise<Previews> {
     try {
       last = await refresh();
-      return { previews: last, error: null };
+      return { main, previews: last, error: null };
     } catch (error) {
       if (!(error instanceof GitHubError)) throw error;
       console.error('previews:', error.message);
-      return { previews: last ?? [], error: last === undefined ? 'GitHub did not answer. Try again later.' : 'GitHub did not answer. The list can be old.' };
+      return { main, previews: last ?? [], error: last === undefined ? 'GitHub did not answer. Try again later.' : 'GitHub did not answer. The list can be old.' };
     }
   }
 
-  let current: Previews = { previews: [], error: null };
+  let current: Previews = { main, previews: [], error: null };
 
   return {
     // The list, at most PREVIEWS_CACHE_MS old. Requests during a refresh wait for that one refresh.
