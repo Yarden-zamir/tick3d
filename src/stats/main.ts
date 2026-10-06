@@ -5,11 +5,13 @@ import './stats.css';
 import { describeClock } from '../clock.ts';
 import { CELL_COUNT, SIZE } from '../game.ts';
 import { type Count, MOVE_TIME_BUCKETS, type Stats } from '../protocol.ts';
+import { setupPageHeader } from '../header/header.ts';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const grid = document.querySelector('#stats-grid');
 const note = document.querySelector('#stats-note');
 if (!(grid instanceof HTMLElement) || !(note instanceof HTMLElement)) throw new Error('stats.html misses #stats-grid or #stats-note');
+setupPageHeader();
 
 // ---- Small builders ----
 

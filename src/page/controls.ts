@@ -1,26 +1,16 @@
-// The settings controls, review, new game, undo, lock, sound and the rules banner.
+// The settings controls, review, new game, undo, lock and sound.
 import { DIFFICULTIES } from '../ai.ts';
 import { sounds, setMuted } from '../sound.ts';
 import { undoMove } from './computer.ts';
-import { rulesBanner, rulesButton, reviewEl, newGameButton, undoButton, lockButton, soundButton } from './dom.ts';
+import { reviewEl, newGameButton, undoButton, lockButton, soundButton } from './dom.ts';
 import { reject, showError } from './feedback.ts';
+import { infoButton } from '../header/header.ts';
 import { nearbyKind, endNearby, openNearby } from './nearby.ts';
 import { render } from './render.ts';
 import { leaveSession, createSession, openLocalSession, withBusy, applyView, startNewGame } from './sessions.ts';
 import { LAYOUTS, MATCH_OPTIONS, VIEWS } from '../protocol.ts';
 import { settings, oneOf, MODES, PLAYERS, saveSettings } from './settings.ts';
 import { page, settingsLocked, isLive } from './state.ts';
-
-// The Rules button opens a short rules banner, which closes on a tap or after a while.
-const RULES_BANNER_MS = 8000;
-let rulesTimer: ReturnType<typeof setTimeout> | undefined;
-
-function setRulesBanner(open: boolean): void {
-  clearTimeout(rulesTimer);
-  rulesBanner.hidden = !open;
-  rulesButton.setAttribute('aria-expanded', String(open));
-  if (open) rulesTimer = setTimeout(() => setRulesBanner(false), RULES_BANNER_MS);
-}
 
 export function startReview(index: number): void {
   const game = page.games[index];
@@ -81,11 +71,8 @@ function changeSetting(setting: string, value: string | undefined): void {
 }
 
 export function setupControls(): void {
-  rulesButton.addEventListener('click', () => {
-    sounds.click();
-    setRulesBanner(rulesBanner.hidden !== false);
-  });
-  rulesBanner.addEventListener('click', () => setRulesBanner(false));
+  // The Info popover opens without a script (src/header/header.ts). The game adds its click sound.
+  infoButton.addEventListener('click', () => sounds.click());
 
   document.querySelectorAll<HTMLElement>('.segmented').forEach((group) => {
     const setting = group.dataset.setting;

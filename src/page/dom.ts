@@ -1,11 +1,9 @@
-// The page elements. Each lookup stops the start-up when index.html has no such element.
+// The elements of the game page. Each lookup stops the start-up when index.html has no such element.
+// The header elements are in src/header/.
+import { element } from '../element.ts';
 
-
-export function element<T extends HTMLElement>(selector: string, type: new () => T): T {
-  const found = document.querySelector(selector);
-  if (!(found instanceof type)) throw new Error(`missing element ${selector}`);
-  return found;
-}
+// src/page/clocks.ts looks up its own elements with it.
+export { element };
 
 export const stageEl = element('#stage', HTMLElement);
 export const boardEl = element('#board', HTMLDivElement);
@@ -45,8 +43,6 @@ export const soundButton = element('#sound', HTMLButtonElement);
 export const soundSetList = element('#sound-set-list', HTMLDivElement);
 export const lockButton = element('#lock', HTMLButtonElement);
 export const resetAngleButton = element('#reset-angle', HTMLButtonElement);
-export const rulesButton = element('#rules-button', HTMLButtonElement);
-export const rulesBanner = element('#rules-banner', HTMLButtonElement);
 export const clockSummary = element('#clock-summary', HTMLParagraphElement);
 export const clocksEl = element('#clocks', HTMLDivElement);
 export const clockNote = element('#clock-note', HTMLSpanElement);
@@ -80,19 +76,10 @@ export const chatSend = element('#chat-send', HTMLButtonElement);
 export const chatNotice = element('#chat-notice', HTMLButtonElement);
 export const chatNoticeFrom = element('#chat-notice-from', HTMLElement);
 export const chatNoticeText = element('#chat-notice-text', HTMLSpanElement);
-export const accountButton = element('#account-button', HTMLButtonElement);
-export const accountAvatar = element('#account-avatar', HTMLImageElement);
-export const accountName = element('#account-name', HTMLSpanElement);
 export const updateBar = element('#update-bar', HTMLDivElement);
 export const updateReload = element('#update-reload', HTMLButtonElement);
 export const myGamesDialog = element('#my-games', HTMLDialogElement);
 export const myGamesClose = element('#my-games-close', HTMLButtonElement);
-export const previewsButton = element('#previews-button', HTMLButtonElement);
-export const previewsDialog = element('#previews', HTMLDialogElement);
-export const previewsClose = element('#previews-close', HTMLButtonElement);
-export const previewsNote = element('#previews-note', HTMLParagraphElement);
-export const previewsList = element('#previews-list', HTMLUListElement);
-export const homeLink = element('#home-link', HTMLAnchorElement);
 export const homeConfirm = element('#home-confirm', HTMLDialogElement);
 export const homeConfirmText = element('#home-confirm-text', HTMLParagraphElement);
 export const homeConfirmLeave = element('#home-confirm-leave', HTMLButtonElement);

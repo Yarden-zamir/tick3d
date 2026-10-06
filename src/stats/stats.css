@@ -2,20 +2,15 @@
 .stats {
   max-width: 76rem;
   margin: 0 auto;
-  padding: max(1rem, env(safe-area-inset-top)) 1rem 3rem;
+  padding: max(1.25rem, env(safe-area-inset-top)) 1rem 3rem;
 }
 
 .stats-head {
   margin-bottom: 1.2rem;
 }
 
-.stats-head h1 {
-  font-size: clamp(2rem, 9vw, 3.2rem);
-  white-space: nowrap;
-}
-
-.stats-head p {
-  margin: 0.8rem 0 0;
+.stats-note {
+  margin: 0 0 1.2rem;
   color: var(--muted);
   font-weight: 600;
 }

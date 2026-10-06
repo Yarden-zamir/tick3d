@@ -130,8 +130,8 @@ export const api = {
   myGames: async () => parseMyGames(await call('GET', '/me/games')),
   previews: async (): Promise<Previews> => parsePreviews(await call('GET', '/previews')),
   logout: () => call('POST', '/auth/logout'),
-  // Login is a full page visit to GitHub and back to this page.
-  loginUrl: () => `/api/auth/login?return=${encodeURIComponent(location.href)}`,
+  // Login is a full page visit to GitHub and back to `returnTo`, by default this page.
+  loginUrl: (returnTo = location.href) => `/api/auth/login?return=${encodeURIComponent(returnTo)}`,
 
   // Sends finished games in batches. Returns the public id of each result (by result id) that
   // the server keeps under another public id than the device sent.

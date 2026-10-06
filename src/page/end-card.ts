@@ -8,7 +8,6 @@ import { computerTuning } from './advanced.ts';
 import {
   cardDialog,
   myGamesDialog,
-  previewsDialog,
   homeConfirm,
   burstEl,
   cardCode,
@@ -23,6 +22,7 @@ import {
   showCardButton,
 } from './dom.ts';
 import { showToast } from './feedback.ts';
+import { previewsDialog } from '../header/previews.ts';
 import { type GameId, onlineGameId } from '../protocol.ts';
 import { nearbyKind, shareGameLink } from './nearby.ts';
 import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnlineMetrics, hostLinkOf, setHostLink } from './results.ts';
