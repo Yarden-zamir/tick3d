@@ -112,6 +112,11 @@ test('hide options and the lock belong to the session', async ({ open }) => {
   await expect(hideBoard(alice)).toHaveAttribute('aria-pressed', 'false');
   await hideHistory(bob).click();
   await expect(hideHistory(alice)).toHaveAttribute('aria-pressed', 'true');
+  const hideCoordinates = (page: Page) => page.getByRole('button', { name: 'Hide coordinates', exact: true });
+  await hideCoordinates(alice).click();
+  await expectToast(bob, 'Hide coordinates is on for both');
+  await expect(hideCoordinates(bob)).toHaveAttribute('aria-pressed', 'true');
+  await expect(bob.locator('#train-link')).toHaveClass(/highlight/);
 
   // The view stays per screen.
   await alice.getByRole('button', { name: 'Flat' }).click();

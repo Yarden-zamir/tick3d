@@ -69,6 +69,7 @@ export const themeName = element('#theme-name', HTMLSpanElement);
 export const themePicker = element('#theme-picker', HTMLDivElement);
 export const coordsTitle = element('#coords-title', HTMLSpanElement);
 export const coordsHear = element('#coords-hear', HTMLButtonElement);
+export const trainLink = element('#train-link', HTMLAnchorElement);
 export const chatEl = element('#chat', HTMLElement);
 export const chatLog = element('#chat-log', HTMLOListElement);
 export const chatForm = element('#chat-form', HTMLFormElement);

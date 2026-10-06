@@ -28,6 +28,7 @@ const GAMES = `WITH g AS (
     coalesce(doc.tuned::BOOLEAN, false) AS tuned,
     coalesce(doc.options.hideBoard::BOOLEAN, false) AS hide_board,
     coalesce(doc.options.hideHistory::BOOLEAN, false) AS hide_history,
+    coalesce(doc.options.hideCoordinates::BOOLEAN, false) AS hide_coordinates,
     doc.game.moves::INTEGER[] AS moves,
     doc.game.times::DOUBLE[] AS times,
     doc.game.clock.perGame::INTEGER AS per_game,
@@ -171,10 +172,11 @@ export async function computeStats(rows: Rows, now: number): Promise<Stats> {
 
   const hide = await q(`${GAMES} SELECT
       CASE WHEN hide_board AND hide_history THEN 'both' WHEN hide_board THEN 'board' WHEN hide_history THEN 'history' ELSE 'none' END AS setting,
+      hide_coordinates AS coordinates,
       count(*)::INTEGER AS games,
       count(*) FILTER (mode = 'computer')::INTEGER AS computer_games,
       count(*) FILTER (mode = 'computer' AND winner = you)::INTEGER AS human_wins
-    FROM g GROUP BY setting ORDER BY games DESC`);
+    FROM g GROUP BY setting, coordinates ORDER BY games DESC`);
 
   const timeLimits = await q(`${GAMES} SELECT per_game, per_move, count(*)::INTEGER AS games FROM g
     GROUP BY per_game, per_move ORDER BY games DESC LIMIT 8`);
@@ -258,6 +260,7 @@ export async function computeStats(rows: Rows, now: number): Promise<Stats> {
     endings: counts(endings),
     hide: hide.map((row) => ({
       setting: oneOf(['none', 'board', 'history', 'both'] as const, row.setting),
+      coordinates: row.coordinates === true,
       games: num(row.games),
       computerGames: num(row.computer_games),
       humanWins: num(row.human_wins),

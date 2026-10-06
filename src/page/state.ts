@@ -77,7 +77,7 @@ export const shared = () => page.session?.mode === 'online' || page.session?.mod
 
 // The hide options belong to the session. With another device they apply to both players.
 export function matchOptions(): MatchOptions {
-  return page.session?.options ?? { hideBoard: false, hideHistory: false };
+  return page.session?.options ?? { hideBoard: false, hideHistory: false, hideCoordinates: false };
 }
 
 // The time limit for the next game. The live game keeps its own limit in `current().clock`.

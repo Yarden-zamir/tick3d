@@ -35,7 +35,7 @@ describe('parseSessionView', () => {
     games: [{ moves: [0, 1], times: [10, 20], clock: { perMove: null, perGame: 300 }, timedOut: false }],
     seats: { X: true, O: false },
     you: 'X',
-    options: { hideBoard: true, hideHistory: false },
+    options: { hideBoard: true, hideHistory: false, hideCoordinates: true },
     locked: false,
     clock: { perMove: 30, perGame: 300 },
     now: 30,
@@ -50,6 +50,11 @@ describe('parseSessionView', () => {
 
   it('accepts a valid view', () => {
     expect(parseSessionView(valid)).toEqual(valid);
+  });
+
+  it('reads hideCoordinates as false when an older sender has no such field', () => {
+    const older = { ...valid, options: { hideBoard: true, hideHistory: false } };
+    expect(parseSessionView(older).options).toEqual({ hideBoard: true, hideHistory: false, hideCoordinates: false });
   });
 
   it('gives no names when a sender has no names field', () => {
@@ -70,6 +75,7 @@ describe('parseSessionView', () => {
     ['game clock', { ...valid, games: [{ ...valid.games[0], clock: { perMove: 1, perGame: null } }] }],
     ['clock', { ...valid, clock: { perMove: null, perGame: 7 } }],
     ['you', { ...valid, you: 'Z' }],
+    ['options', { ...valid, options: { hideBoard: true, hideHistory: false, hideCoordinates: 'yes' } }],
     ['seats', { ...valid, seats: {} }],
     ['options', { ...valid, options: { hideBoard: 'yes', hideHistory: false } }],
     ['locked', { ...valid, locked: undefined }],
@@ -93,10 +99,11 @@ describe('parseSessionUpdate', () => {
   it('accepts a name and match options', () => {
     expect(parseSessionUpdate({ name: ' Rematch ', hideBoard: true })).toEqual({ name: 'Rematch', hideBoard: true });
     expect(parseSessionUpdate({ hideHistory: false })).toEqual({ hideHistory: false });
+    expect(parseSessionUpdate({ hideCoordinates: true })).toEqual({ hideCoordinates: true });
     expect(parseSessionUpdate({ clock: { perMove: 30, perGame: null } })).toEqual({ clock: { perMove: 30, perGame: null } });
   });
 
-  it.each([{}, { name: '' }, { hideBoard: 'true' }, { locked: true }, { clock: { perMove: 2, perGame: null } }, null])('rejects %j', (input) => {
+  it.each([{}, { name: '' }, { hideBoard: 'true' }, { hideCoordinates: 1 }, { locked: true }, { clock: { perMove: 2, perGame: null } }, null])('rejects %j', (input) => {
     expect(parseSessionUpdate(input)).toBeUndefined();
   });
 });
@@ -129,7 +136,7 @@ describe('parseResultUpload', () => {
   const day = 86_400_000;
 
   it('accepts a finished game with a matching mode, seat and level', () => {
-    expect(parseResultUpload(valid, now)).toEqual({ ...valid, publicId: null, options: { hideBoard: false, hideHistory: false }, tuned: false, metrics: null, guest: null });
+    expect(parseResultUpload(valid, now)).toEqual({ ...valid, publicId: null, options: { hideBoard: false, hideHistory: false, hideCoordinates: false }, tuned: false, metrics: null, guest: null });
     expect(parseResultUpload({ ...valid, mode: 'friend', you: null, difficulty: null }, now)).toBeDefined();
     expect(parseResultUpload({ ...valid, finishedAt: now + day }, now)).toBeDefined();
   });
@@ -235,8 +242,13 @@ describe('parseResultUpload, game link fields', () => {
   const valid = { id: 'aaaaaaaa-0000-4000-8000-000000000001-ab3k-0', mode: 'computer', game, you: 'X', difficulty: 'easy', finishedAt: 5 };
 
   it('keeps a device id, the hide options and the tuned flag', () => {
-    const options = { hideBoard: true, hideHistory: false };
+    const options = { hideBoard: true, hideHistory: false, hideCoordinates: true };
     expect(parseResultUpload({ ...valid, publicId: 'ABCDEFGH', options, tuned: true }, 10)).toMatchObject({ publicId: 'ABCDEFGH', options, tuned: true });
+  });
+
+  it('reads hide options from an older device, without hideCoordinates, as not hidden', () => {
+    const older = { ...valid, options: { hideBoard: true, hideHistory: false } };
+    expect(parseResultUpload(older, 10)?.options).toEqual({ hideBoard: true, hideHistory: false, hideCoordinates: false });
   });
 
   it.each([
@@ -255,7 +267,7 @@ describe('parsePublicGame', () => {
     id: 'ABCDEFGH',
     mode: 'computer',
     game: toRecord(replay([0, 1, 16, 2, 32, 3, 48])),
-    options: { hideBoard: false, hideHistory: true },
+    options: { hideBoard: false, hideHistory: true, hideCoordinates: false },
     difficulty: 'hard',
     tuned: false,
     computer: 'O',

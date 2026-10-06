@@ -21,7 +21,17 @@ export type Code = string & { readonly __brand: 'Code' };
 export type PlayerToken = string & { readonly __brand: 'PlayerToken' };
 
 // Match options apply to both players and to watchers. View and layout stay per screen.
-export type MatchOptions = { hideBoard: boolean; hideHistory: boolean };
+// hideCoordinates hides the coordinates of the last move on the keypad, so a player follows the game by ear.
+export type MatchOptions = { hideBoard: boolean; hideHistory: boolean; hideCoordinates: boolean };
+export const MATCH_OPTIONS = ['hideBoard', 'hideHistory', 'hideCoordinates'] as const;
+
+// Reads match options. A sender or a stored value from before hideCoordinates has no such field: it reads as false.
+export function parseMatchOptions(value: unknown): MatchOptions | undefined {
+  if (!isRecord(value) || typeof value.hideBoard !== 'boolean' || typeof value.hideHistory !== 'boolean') return undefined;
+  const hideCoordinates = value.hideCoordinates ?? false;
+  if (typeof hideCoordinates !== 'boolean') return undefined;
+  return { hideBoard: value.hideBoard, hideHistory: value.hideHistory, hideCoordinates };
+}
 
 export type ChatMessage = { id: number; from: Player; text: string; at: number };
 // A GitHub account linked to a seat. Shown next to the seat, never required to play.
@@ -156,7 +166,7 @@ export function parseMoveRequest(value: unknown): MoveRequest | undefined {
 export function parseSessionUpdate(value: unknown): SessionUpdate | undefined {
   if (!isRecord(value)) return undefined;
   const keys = Object.keys(value);
-  const known = ['name', 'hideBoard', 'hideHistory', 'clock'];
+  const known = ['name', ...MATCH_OPTIONS, 'clock'];
   if (keys.length === 0 || !keys.every((key) => known.includes(key))) return undefined;
   const update: SessionUpdate = {};
   if ('name' in value) {
@@ -169,7 +179,7 @@ export function parseSessionUpdate(value: unknown): SessionUpdate | undefined {
     if (clock === undefined) return undefined;
     update.clock = clock;
   }
-  for (const option of ['hideBoard', 'hideHistory'] as const) {
+  for (const option of MATCH_OPTIONS) {
     if (!(option in value)) continue;
     const flag = value[option];
     if (typeof flag !== 'boolean') return undefined;
@@ -195,9 +205,8 @@ export function parseSessionView(value: unknown): SessionView {
   if (!Array.isArray(games) || games.length === 0 || !games.every(isGameRecord)) return fail('games');
   if (!isRecord(seats) || typeof seats.X !== 'boolean' || typeof seats.O !== 'boolean') return fail('seats');
   if (you !== null && you !== 'X' && you !== 'O') return fail('you');
-  if (!isRecord(options) || typeof options.hideBoard !== 'boolean' || typeof options.hideHistory !== 'boolean') {
-    return fail('options');
-  }
+  const matchOptions = parseMatchOptions(options);
+  if (matchOptions === undefined) return fail('options');
   if (typeof locked !== 'boolean') return fail('locked');
   if (clock === undefined) return fail('clock');
   if (typeof now !== 'number' || !Number.isFinite(now)) return fail('now');
@@ -228,7 +237,7 @@ export function parseSessionView(value: unknown): SessionView {
     games,
     seats: { X: seats.X, O: seats.O },
     you,
-    options: { hideBoard: options.hideBoard, hideHistory: options.hideHistory },
+    options: matchOptions,
     locked,
     clock,
     now,
@@ -447,9 +456,6 @@ const FUTURE_SLACK_MS = 86_400_000;
 
 const RESULT_KEYS = ['id', 'mode', 'game', 'you', 'difficulty', 'finishedAt', 'publicId', 'options', 'tuned', 'metrics', 'guest'];
 
-export const isMatchOptions = (value: unknown): value is MatchOptions =>
-  isRecord(value) && typeof value.hideBoard === 'boolean' && typeof value.hideHistory === 'boolean';
-
 // `now` is the time of the reader. The database can store finishedAt only inside a bounded range.
 // A device version before game links sends no publicId, options, tuned or metrics, and a version
 // before generated names sends no guest. Those get their defaults, so its waiting results still upload.
@@ -476,8 +482,8 @@ export function parseResultUpload(value: unknown, now: number): ResultUpload | u
   if (typeof finishedAt !== 'number' || !(finishedAt > 0 && finishedAt <= now + FUTURE_SLACK_MS)) return undefined;
   const publicId = value.publicId === undefined || value.publicId === null ? null : parseGameId(value.publicId);
   if (publicId === undefined || (publicId !== null && (!isDeviceGameId(publicId) || publicId !== value.publicId))) return undefined;
-  const options = value.options ?? { hideBoard: false, hideHistory: false };
-  if (!isMatchOptions(options)) return undefined;
+  const options = parseMatchOptions(value.options ?? { hideBoard: false, hideHistory: false });
+  if (options === undefined) return undefined;
   const tuned = value.tuned ?? false;
   if (typeof tuned !== 'boolean' || (tuned && mode !== 'computer')) return undefined;
   const metrics = value.metrics === undefined || value.metrics === null ? null : parseMetrics(value.metrics);
@@ -493,7 +499,7 @@ export function parseResultUpload(value: unknown, now: number): ResultUpload | u
     difficulty: level,
     finishedAt,
     publicId,
-    options: { hideBoard: options.hideBoard, hideHistory: options.hideHistory },
+    options,
     tuned,
     metrics,
     guest,
@@ -533,7 +539,8 @@ export function parsePublicGame(value: unknown): PublicGame {
   if (id === undefined || id !== value.id) return fail('id');
   if (mode === undefined) return fail('mode');
   if (!isGameRecord(game) || toGame(game).status.kind === 'playing') return fail('game');
-  if (!isMatchOptions(options)) return fail('options');
+  const matchOptions = parseMatchOptions(options);
+  if (matchOptions === undefined) return fail('options');
   if (difficulty === undefined || (mode === 'computer') !== (difficulty !== null)) return fail('difficulty');
   if (typeof tuned !== 'boolean') return fail('tuned');
   if (computer !== null && computer !== 'X' && computer !== 'O') return fail('computer');
@@ -549,7 +556,7 @@ export function parsePublicGame(value: unknown): PublicGame {
     id,
     mode,
     game: { moves: game.moves, times: game.times, clock: game.clock, timedOut: game.timedOut },
-    options: { hideBoard: options.hideBoard, hideHistory: options.hideHistory },
+    options: matchOptions,
     difficulty,
     tuned,
     computer,
@@ -672,7 +679,8 @@ export type Stats = {
   cells: number[];
   // How games end: axis, plane, space (the kind of the winning line), timeout or draw.
   endings: Count[];
-  hide: { setting: 'none' | 'board' | 'history' | 'both'; games: number; computerGames: number; humanWins: number }[];
+  // `coordinates` is true for the games with hidden coordinates, on top of `setting`.
+  hide: { setting: 'none' | 'board' | 'history' | 'both'; coordinates: boolean; games: number; computerGames: number; humanWins: number }[];
   timeLimits: { perGame: number | null; perMove: number | null; games: number }[];
   tuned: { tuned: boolean; games: number; humanWins: number }[];
   // From game metrics: device results, and each player of an online game (one report per seat).

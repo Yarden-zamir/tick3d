@@ -8,6 +8,7 @@ import { nameOf } from '../names.ts';
 import {
   CHAT_KEEP,
   CHAT_MAX_LENGTH,
+  MATCH_OPTIONS,
   type Code,
   type GameRecord,
   type MoveRequest,
@@ -88,7 +89,7 @@ export function createDoc({ name, mode, clock = NO_LIMIT, seats, computer }: New
     name: validName,
     games: [emptyRecord(clock)],
     seats,
-    options: { hideBoard: false, hideHistory: false },
+    options: { hideBoard: false, hideHistory: false, hideCoordinates: false },
     lockedGame: null,
     clock,
     chat: [],
@@ -150,7 +151,7 @@ export function newGame(doc: SessionDoc, identity: Identity): SessionDoc {
 // The name stays open during a lock. The match options and the clock do not.
 export function update(doc: SessionDoc, identity: Identity, changes: SessionUpdate): SessionDoc {
   requireSeat(doc, identity);
-  const changesMatch = changes.hideBoard !== undefined || changes.hideHistory !== undefined || changes.clock !== undefined;
+  const changesMatch = MATCH_OPTIONS.some((option) => changes[option] !== undefined) || changes.clock !== undefined;
   if (changesMatch && isLocked(doc)) throw new SessionError(409, 'Settings are locked until this game ends.');
   const next: SessionDoc = {
     ...doc,
@@ -158,6 +159,7 @@ export function update(doc: SessionDoc, identity: Identity, changes: SessionUpda
     options: {
       hideBoard: changes.hideBoard ?? doc.options.hideBoard,
       hideHistory: changes.hideHistory ?? doc.options.hideHistory,
+      hideCoordinates: changes.hideCoordinates ?? doc.options.hideCoordinates,
     },
     clock: changes.clock ?? doc.clock,
   };

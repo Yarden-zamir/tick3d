@@ -42,7 +42,7 @@ async function playMoves(code: Code, cells: number[], game = 0): Promise<void> {
 
 function result(id: string, overrides: Partial<ResultUpload> = {}): ResultUpload {
   const game = toRecord(replay(X_WINS, { times: X_WINS.map((_, i) => 1_000 + i) }));
-  const options = { hideBoard: false, hideHistory: false };
+  const options = { hideBoard: false, hideHistory: false, hideCoordinates: false };
   return { id, mode: 'computer', game, you: 'X', difficulty: 'hard', finishedAt: 2_000, publicId: null, options, tuned: false, metrics: null, guest: null, ...overrides };
 }
 
@@ -250,6 +250,15 @@ describe('game links', () => {
     const text = JSON.stringify(shown);
     expect(text).not.toContain(alice);
     expect(text).not.toContain(upload.id);
+  });
+
+  it('reads a result stored before hide coordinates as not hidden', async () => {
+    store = await openStore(':memory:');
+    const id = gameId('BCDFGHJK');
+    // An older device sent options without hideCoordinates, and the row keeps them as they came.
+    const old = { ...result('44444444-0000-4000-8000-000000000002', { publicId: id }), options: { hideBoard: true, hideHistory: false } };
+    await store.addResults(alice, [old]);
+    expect((await store.game(id)).options).toEqual({ hideBoard: true, hideHistory: false, hideCoordinates: false });
   });
 
   it('gives a result without an id, or with an id that another game holds, a new unique id', async () => {
@@ -499,7 +508,7 @@ describe('stats', () => {
       result('aaaaaaaa-1111-4000-8000-000000000001', { you: 'O', metrics: METRICS, game: finishedGame(X_WINS_LATE) }),
       result('aaaaaaaa-1111-4000-8000-000000000002', { you: 'X', metrics: { ...METRICS, device: 'computer', theme: 'light' } }),
     ]);
-    await store.addResults(carol, [result('aaaaaaaa-1111-4000-8000-000000000003', { you: 'O', options: { hideBoard: true, hideHistory: false } })]);
+    await store.addResults(carol, [result('aaaaaaaa-1111-4000-8000-000000000003', { you: 'O', options: { hideBoard: true, hideHistory: false, hideCoordinates: true } })]);
     await store.addEvent({ kind: 'error', message: 'TypeError: x is undefined (index.js:1)', version: 'index-abc123' });
     await store.addEvent({ kind: 'error', message: 'TypeError: x is undefined (index.js:1)', version: 'index-abc123' });
     const stats = await store.stats();
@@ -518,7 +527,7 @@ describe('stats', () => {
     expect(stats.themes).toEqual(expect.arrayContaining([{ key: 'dark', count: 1 }, { key: 'light', count: 1 }]));
     expect(stats.refusals).toEqual([{ key: 'occupied', count: 4 }]);
     expect(stats.input).toEqual({ board: 6, keypad: 2 });
-    expect(stats.hide).toEqual(expect.arrayContaining([expect.objectContaining({ setting: 'board', games: 1, computerGames: 1, humanWins: 0 })]));
+    expect(stats.hide).toEqual(expect.arrayContaining([expect.objectContaining({ setting: 'board', coordinates: true, games: 1, computerGames: 1, humanWins: 0 })]));
     expect(stats.errors).toEqual([expect.objectContaining({ kind: 'error', count: 2 })]);
     expect(stats.moveTimes.reduce((sum, bucket) => sum + bucket.human + bucket.computer, 0)).toBeGreaterThan(0);
     const text = JSON.stringify(stats);

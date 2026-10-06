@@ -6,7 +6,7 @@ import { coordsSlots, coordsSlotsEl, coordsTitle, coordsHear, digitButtons, coor
 import { showProblem } from './feedback.ts';
 import { playerName } from './render.ts';
 import { humanMove } from './sessions.ts';
-import { page, current } from './state.ts';
+import { page, current, matchOptions } from './state.ts';
 
 // The cell the keypad points at once layer, row and column are all chosen.
 function coordTarget(): number | undefined {
@@ -22,10 +22,11 @@ export function renderCoords(): void {
   const last = game.moves.at(-1);
   const showLast = page.coordDigits.length === 0 && last !== undefined;
   const lastPlayer = other(game.turn);
-  let digits = page.coordDigits;
+  let digits: readonly (number | string)[] = page.coordDigits;
   if (showLast) {
     const { layer, row, column } = toCoords(last);
-    digits = [layer + 1, row + 1, column + 1];
+    // Hide coordinates keeps the last move a secret to the eye. The speaker still plays it.
+    digits = matchOptions().hideCoordinates ? ['?', '?', '?'] : [layer + 1, row + 1, column + 1];
   }
   coordsSlots.forEach((slot, i) => {
     slot.textContent = String(digits[i] ?? '');

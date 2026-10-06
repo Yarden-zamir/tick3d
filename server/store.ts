@@ -28,7 +28,7 @@ import {
   type Stats,
   type Tally,
   isGameRecord,
-  isMatchOptions,
+  parseMatchOptions,
   newGameId,
   onlineGameId,
   outcomeOf,
@@ -169,8 +169,10 @@ type StoredGame = Pick<ResultUpload, 'game' | 'you' | 'difficulty' | 'options' |
 function readStored(json: unknown): StoredGame {
   const doc: unknown = JSON.parse(String(json));
   if (typeof doc === 'object' && doc !== null && 'mode' in doc && doc.mode === 'online') {
-    const { game, options } = doc as Record<string, unknown>;
-    if (!isGameRecord(game) || !isFinished(game) || !isMatchOptions(options)) throw new Error('a stored online game does not parse');
+    const { game } = doc as Record<string, unknown>;
+    // A game stored before hideCoordinates reads it as false.
+    const options = parseMatchOptions((doc as Record<string, unknown>).options);
+    if (!isGameRecord(game) || !isFinished(game) || options === undefined) throw new Error('a stored online game does not parse');
     return { mode: 'online', game, you: null, difficulty: null, options, tuned: false };
   }
   // The finish time was checked when the result arrived.

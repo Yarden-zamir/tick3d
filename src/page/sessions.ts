@@ -17,6 +17,9 @@ import { render } from './render.ts';
 import { type Mode, settings, saveSettings } from './settings.ts';
 import { page, current, nowMs, setCurrent, shared, type SessionBackend, settingsLocked } from './state.ts';
 
+// The error sound of a refused move lasts about 0.27 s. A taken cell plays its own sound after it.
+const TAKEN_SOUND_DELAY_MS = 320;
+
 export function humanMove(cell: number, via: 'board' | 'keypad'): void {
   if (page.viewing) return reject(cell, 'viewing');
   if (page.review) return reject(cell, 'reviewing');
@@ -30,7 +33,13 @@ async function playMove(cell: number, via: 'board' | 'keypad'): Promise<void> {
   if (page.busy || page.thinking) return reject(cell, waitReason);
   const game = current();
   const result = play(game, cell, nowMs());
-  if (!result.ok) return reject(cell, result.error);
+  if (!result.ok) {
+    reject(cell, result.error);
+    // A taken cell plays its own sound after the error sound, so the player learns by ear what is there.
+    const mark = game.board[cell];
+    if (result.error === 'occupied' && mark) setTimeout(() => sounds.place(mark, cell), TAKEN_SOUND_DELAY_MS);
+    return;
+  }
   // In a friend game this device plays both seats.
   if (page.session.mode !== 'friend' && game.turn !== page.session.you) return reject(cell, waitReason);
   const { code, backend } = page.session;
@@ -83,7 +92,7 @@ export function applyView(view: SessionView): void {
       showToast(`Time limit${startsLater ? ' for the next game' : ''}: ${describeClock(page.session.clock)}.`);
     }
     if (page.session.locked && !previous.locked) showToast('Settings are locked for both players until this game ends.');
-    for (const [option, label] of [['hideBoard', 'Hide board'], ['hideHistory', 'Hide history']] as const) {
+    for (const [option, label] of [['hideBoard', 'Hide board'], ['hideHistory', 'Hide history'], ['hideCoordinates', 'Hide coordinates']] as const) {
       if (page.session.options[option] !== previous.options[option]) {
         showToast(`${label} is ${page.session.options[option] ? 'on' : 'off'} for both players.`);
       }
