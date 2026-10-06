@@ -30,11 +30,13 @@ import { settings } from './page/settings.ts';
 import { page } from './page/state.ts';
 import { applyTheme, setupTheme } from './page/theme.ts';
 import { setupSoundSets } from './page/sound-set.ts';
+import { setupVoice } from './page/voice.ts';
 
 // Every module only declares things on import. These calls add the listeners and build the
 // board, tuning and theme controls, in the order of the old single page script.
 setupBoard();
 setupControls();
+setupVoice();
 setupNearby();
 setupMyGames();
 setupGameHeader();

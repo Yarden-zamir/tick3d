@@ -1,5 +1,5 @@
 /* The sound input page. It uses the layout of the ear training (training.css) and the theme tokens of
-   style.css. This file adds the readout, the meters, the pitch rail, the light on the deck and the settings. */
+   style.css. This file adds the readout, the meters, the light on the deck and the settings. */
 
 /* One column: the Info popover of the header holds the explanation. The settings come under the card. */
 @media (min-width: 64rem) {
@@ -123,97 +123,6 @@
 
 .input-calibration-actions button {
   min-height: 2.75rem;
-}
-
-/* The pitch rail (src/sound-input/rail.ts): 64 steps from low at the left to high at the right. The four
-   row bands are grid cells. The ticks are gradients: a short one for each cell, a long one for each layer. */
-.rail {
-  display: grid;
-  gap: 0.15rem;
-}
-
-.rail-track {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  height: 2.4rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background-color: var(--surface);
-  background-image:
-    repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 6.25%),
-    repeating-linear-gradient(to right, var(--muted) 0 1px, transparent 1px 1.5625%);
-  background-position: bottom left;
-  background-repeat: no-repeat;
-  background-size:
-    100% 55%,
-    100% 25%;
-  overflow: hidden;
-}
-
-.rail-row {
-  padding: 0.1rem 0.3rem;
-  border-left: 2px solid var(--line);
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.rail-row:first-child {
-  border-left: 0;
-}
-
-/* Every second row band is shaded, so the rows read apart. */
-.rail-row:nth-child(even) {
-  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
-}
-
-.rail-band,
-.rail-cursor,
-.rail-target {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-}
-
-/* The lit cell and its sticky margin: the band widens while the player holds the cell. */
-.rail-band {
-  background: color-mix(in srgb, var(--win) 55%, transparent);
-  transition: left 0.08s, width 0.08s;
-}
-
-.rail-target {
-  background: color-mix(in srgb, var(--x) 45%, transparent);
-  outline: 2px solid var(--x);
-}
-
-.rail-cursor {
-  width: 3px;
-  margin-left: -1px;
-  background: var(--ink);
-}
-
-.rail-labels {
-  position: relative;
-  height: 1rem;
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.rail-labels span {
-  position: absolute;
-  translate: -50% 0;
-}
-
-.rail-labels span:first-child {
-  translate: 0 0;
-}
-
-.rail-labels span:last-child {
-  translate: -100% 0;
 }
 
 /* The board of the game (src/board/) in its stage. The stage of the game page takes a named grid area;

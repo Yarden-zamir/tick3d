@@ -111,6 +111,11 @@
             <span class="slot"><small>Row</small><b></b></span>
             <span class="slot"><small>Column</small><b></b></span>
           </div>
+          <!-- Play by voice aims here: the slots show the cell of the pitch. src/page/voice.ts shows this part while the voice is on. -->
+          <div class="voice-panel" id="voice-panel" hidden>
+            <div class="rail" id="voice-rail" role="img" aria-label="Pitch rail: your range from low at the left to high at the right, with the four rows"></div>
+            <p class="voice-status" role="status"><span id="voice-state"></span> · <a id="voice-room" href="/sound-input">Calibrate and practice</a></p>
+          </div>
           <div class="keypad">
             <button type="button" class="btn" data-digit="1">1</button>
             <button type="button" class="btn" data-digit="2">2</button>
@@ -146,6 +151,8 @@
             <button type="button" id="sound" aria-label="Sound" data-tip="Sound on or off"></button>
             <button type="button" id="sound-set" popovertarget="sound-sets" aria-label="Sound set" data-tip="Sound set: the sound of each move"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
           </div>
+          <!-- Play by voice: a held note places your move. src/page/voice.ts sets the icon and shows the button where this screen has a seat. -->
+          <button type="button" class="btn btn-icon" id="voice" aria-label="Play by voice" aria-pressed="false" data-tip="Play by voice: hold a note on a free cell to place your move" hidden></button>
         </div>
         <!-- The Players box of online and Nearby games comes here, under the actions row. -->
         <!-- The sound set menu. A popover closes on a tap outside it or on Escape. src/page/sound-set.ts fills the list. -->
@@ -462,6 +469,8 @@
         <li>Drag around the tower to turn it.</li>
         <li>Keypad: tap the layer, row and column, then Place.</li>
         <li>Every cell has its own sound. The arrow next to the speaker opens the sound sets and their maps.</li>
+        <li>Play by voice: the microphone button aims at the cell of your pitch on your turn. Hold a note for 1 second to place your move. Calibrate and practice on /sound-input.</li>
+        <li>The Song button of a finished game plays it as music. Hold it to share the song as a sound file.</li>
         <li>Time limits work like a chess clock. A player who runs out loses.</li>
         <li>Lock stops setting changes until the game ends.</li>
         <li>Online: share the code or link. Nearby: devices on the same Wi-Fi.</li>

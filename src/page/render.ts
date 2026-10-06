@@ -35,6 +35,7 @@ import { LOCK_CLOSED_ICON, LOCK_OPEN_ICON, SOUND_OFF_ICON, SOUND_ON_ICON } from 
 import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
 import { settings, type Toggle } from './settings.ts';
+import { syncVoice } from './voice.ts';
 import { me, page, shared, current, isLive, matchOptions, settingsLocked, canChangeMatch, bothSeated } from './state.ts';
 
 // One name per seat, the same in the score, status, chat, clocks, keypad, history and end card.
@@ -270,4 +271,5 @@ export function render(): void {
   showAccount(page.account.user);
   soundButton.innerHTML = settings.muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
   soundButton.setAttribute('aria-pressed', String(!settings.muted));
+  syncVoice();
 }

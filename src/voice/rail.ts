@@ -1,6 +1,7 @@
 // The pitch rail: the whole range as a strip, low at the left. It shows the four row bands, a tick for
 // each layer and each column, a cursor at the pitch now, the sticky band around the lit cell, and an
-// optional target cell. input.css draws it. The places come from positionOf in mapping.ts (0 to STEPS).
+// optional target cell. rail.css draws it. The places come from positionOf in mapping.ts (0 to STEPS).
+import './rail.css';
 import { frequencyAt, type Range, STEPS } from './mapping.ts';
 import type { Held } from './sticky.ts';
 
