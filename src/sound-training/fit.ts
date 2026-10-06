@@ -20,21 +20,22 @@ function largestCell(width: number, height: number, columns: number, rows: numbe
   return Math.floor(Math.min(MAX_CELL, byWidth, byHeight));
 }
 
-// `width` and `height` are the room for the deck in pixels.
-export function chooseLayout(width: number, height: number): DeckLayout {
+// `width` and `height` are the room for the deck in pixels. `minCell` is the smallest cell that the page
+// accepts: MIN_CELL for a deck that the player taps, less for a deck that mainly shows (/sound-input).
+export function chooseLayout(width: number, height: number, minCell = MIN_CELL): DeckLayout {
   if (!(width > 0) || !(height > 0)) throw new RangeError(`no room for the deck: ${width} × ${height}`);
   const row = largestCell(width, height, 4, 1);
   const grid = largestCell(width, height, 2, 2);
-  if (row >= MIN_CELL && row >= grid) return { mode: 'row', cell: row, perView: 4 };
-  if (grid >= MIN_CELL) return { mode: 'grid', cell: grid, perView: 4 };
+  if (row >= minCell && row >= grid) return { mode: 'row', cell: row, perView: 4 };
+  if (grid >= minCell) return { mode: 'grid', cell: grid, perView: 4 };
   // A scroll deck: one row of layers. One more cell of width lets the next layer peek in, so the player
   // sees that the deck scrolls.
   const byHeight = largestCell(Infinity, height, 1, 1);
   for (const perView of [2, 1]) {
     const byWidth = Math.floor((width - perView * (LAYER_EXTRA + LAYER_GAP)) / (perView * CELLS_PER_LAYER + 1));
     const cell = Math.min(byWidth, byHeight);
-    if (cell >= MIN_CELL) return { mode: 'scroll', cell, perView };
+    if (cell >= minCell) return { mode: 'scroll', cell, perView };
   }
   // Too small a screen for one large layer: keep the cells large enough to tap. The page scrolls then.
-  return { mode: 'scroll', cell: MIN_CELL, perView: 1 };
+  return { mode: 'scroll', cell: minCell, perView: 1 };
 }

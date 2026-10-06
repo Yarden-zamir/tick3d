@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="description" content="Train your ear for tick3d: hear a cell of the 4×4×4 board and find its layer, row and column." />
+    <meta name="description" content="Whistle or hum to the tick3d board: the pitch of your voice lights a cell of the 4×4×4 cube, live." />
     <script>
       // Apply the stored theme of the game before the first paint, as index.html does.
       try {
@@ -15,20 +15,17 @@
         }
       } catch {}
     </script>
-    <title>tick3d · ear training</title>
+    <title>tick3d · sound input</title>
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <main class="train">
+    <main class="train input-page">
       <header class="brand train-head">
         <h1><a href="/" class="home-link" id="home-link" title="Home">tick<span>3d</span></a></h1>
-        <div class="page-title">
-          <span>Ear training</span>
-          <button type="button" class="btn" id="sound-set" popovertarget="sound-sets" aria-label="Sound set" data-tip="Sound set"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg><span id="sound-set-name"></span></button>
-        </div>
+        <p class="page-title">Sound input</p>
         <div class="brand-links">
           <a class="repo-link account-button" id="account-button" href="/?open=my-games" aria-label="My games" data-tip="My games">
             <!-- [html-validate-disable-next element-required-attributes: the page sets src after login] -->
@@ -57,30 +54,54 @@
         </div>
       </header>
 
-      <section class="train-card" id="card" aria-label="Card">
-        <p class="train-kind" id="card-kind"></p>
-        <h2 id="card-title">Loading…</h2>
-        <button type="button" class="btn train-play" id="play" aria-keyshortcuts="Space"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5Z"/></svg><span>Play</span></button>
-        <p class="train-answer" id="card-answer" hidden></p>
+      <section class="train-card" id="card" aria-label="Sound input">
+        <div class="input-mic">
+          <button type="button" class="btn train-play" id="mic">Turn on the microphone</button>
+          <button type="button" class="btn input-calibrate" id="calibrate">Calibrate to your voice</button>
+        </div>
+        <p class="input-mode">
+          <span id="range-mode">Default range</span>
+          <button type="button" class="btn btn-small" id="range-reset" hidden>Reset to default</button>
+        </p>
+        <p class="input-hint" id="range-hint" hidden>Your range is small: rows sit close together.</p>
+        <div class="input-calibration" id="calibration" hidden>
+          <p class="input-step" id="calibration-step" aria-live="polite"></p>
+          <div class="train-bar" id="calibration-progress" role="meter" aria-label="Calibration step: time with a clear sound" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+          <p id="calibration-heard"></p>
+          <div class="input-calibration-actions">
+            <button type="button" class="btn btn-primary" id="calibration-retry" hidden>Retry</button>
+            <button type="button" class="btn" id="calibration-cancel">Cancel</button>
+          </div>
+        </div>
+        <div class="input-readout" id="readout" data-state="off">
+          <p><b id="frequency">–</b> <span id="note"></span> <b id="cell">No cell yet</b></p>
+          <div class="train-bar input-level" id="level" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+        </div>
+        <p class="train-feedback" id="message" aria-live="polite"></p>
+        <div class="rail" id="rail" role="img" aria-label="Pitch rail: your range from low at the left to high at the right, with the four rows"></div>
         <div class="train-deck-wrap">
-          <div class="board flat train-deck" id="deck" role="group" aria-label="Board: tap your answer"></div>
+          <div class="board flat train-deck input-deck" id="deck" role="group" aria-label="Board: the lit cell follows your pitch. Tap a cell to hear it."></div>
           <div class="train-dots" id="deck-dots"></div>
         </div>
-        <div class="train-actions">
-          <button type="button" class="btn btn-primary" id="check" aria-keyshortcuts="Enter">Check</button>
-          <button type="button" class="btn" id="yours" hidden>Hear yours</button>
-          <button type="button" class="btn btn-primary" id="next" aria-keyshortcuts="Enter" hidden>Next</button>
-        </div>
-        <p class="train-feedback" id="card-feedback" aria-live="polite"></p>
-        <p class="train-keys">Keys: Space plays. Arrows move on the board, Enter or Space picks, Enter again checks.</p>
       </section>
 
-      <section class="train-progress" aria-labelledby="progress-title">
-        <h2 id="progress-title">What you hear</h2>
-        <p class="train-hint" id="hint"></p>
-        <div class="train-dimensions" id="dimensions"></div>
-        <p class="train-totals" id="totals"></p>
-        <button type="button" class="btn train-reset" id="reset">Reset progress</button>
+      <section class="train-progress input-settings" aria-labelledby="settings-title">
+        <h2 id="settings-title">Settings</h2>
+        <div class="input-slider">
+          <label for="stickiness">Stickiness</label>
+          <input type="range" id="stickiness" min="0" max="100" step="5" />
+          <output id="stickiness-value" for="stickiness"></output>
+        </div>
+        <div class="input-slider">
+          <label for="build-up">Build-up time</label>
+          <input type="range" id="build-up" min="0" max="5" step="0.1" />
+          <output id="build-up-value" for="build-up"></output>
+        </div>
+        <p class="input-note">A held cell stays lit until your pitch moves past its border by a margin. The margin grows from zero to the stickiness while you hold the cell, in the build-up time.</p>
+        <div class="input-actions">
+          <label><input type="checkbox" id="hold" checked /> Hold a note for 1 second to place an X</label>
+          <button type="button" class="btn btn-small" id="clear">Clear the marks</button>
+        </div>
       </section>
     </main>
     <dialog class="end-card my-games" id="previews" aria-labelledby="previews-title">
@@ -92,35 +113,19 @@
       <ul class="my-games-list previews-list" id="previews-list"></ul>
     </dialog>
     <div class="info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
-      <h2 id="info-title">How the ear training works</h2>
-      <p>Each cell of the board has its own sound. The sound has three parts: one for the layer, one for the row and one for the column. Hear a cell and find its place.</p>
+      <h2 id="info-title">How sound input works</h2>
+      <p>Turn on the microphone, then whistle, hum or sing a steady note. Your pitch lights a cell of the board. The sound stays in this browser.</p>
       <ul>
-        <li>A new sound comes as a learn card first. The card shows the answer, and the board lights the whole layer, row or column.</li>
-        <li>After two learn cards, the sound joins the quiz. A quiz card hides the answer. Tap any cell in the area that you hear, then Check.</li>
-        <li>A right answer moves the sound to a later box, so it comes back less often. A wrong answer brings it back soon.</li>
-        <li>The part that you hear least well gets more cards. When every sound is in the quiz, full cells come too: find the exact cell. They come more often as you get better.</li>
-        <li>The trainer uses the sound set of the game. Change it with the note button. Headphones help with the columns.</li>
-        <li>Your progress stays in this browser.</li>
-        <li><a href="/sound-input">Try whistling to the board</a>: your pitch lights a cell, live.</li>
+        <li>The rail under the readout is your range, low at the left and high at the right. It holds the 64 cells: four rows of 16. The line shows your pitch now.</li>
+        <li>A higher pitch lights a higher row: row 4 at the bottom of your range, row 1 at the top. Inside a row, a slide up moves from layer 1, column 1 to layer 4, column 4.</li>
+        <li>The default range is 150 to 2400 Hz, one octave for each row: hum for rows 4 and 3, whistle for rows 2 and 1.</li>
+        <li>Calibrate to your voice: make your lowest comfortable sound for 2 seconds, then your highest. The rows then split your own range. This browser keeps it, and Reset to default goes back.</li>
+        <li>Stickiness keeps a held cell lit when your pitch wobbles. It grows while you hold the cell. The band on the rail shows it.</li>
+        <li>Hold a note on one cell for 1 second to place an X. Tap a cell to hear it in the sound set of the game. Headphones keep that sound out of the microphone.</li>
+        <li><a href="/sound-training">Train your ear</a> to learn the cell sounds of the game.</li>
       </ul>
       <button type="button" class="btn btn-small info-close" popovertarget="info-panel" popovertargetaction="hide">Close</button>
     </div>
-    <!-- The sound set menu of the game page (index.html). It is outside .train, so the .train button style does not apply. -->
-    <div popover id="sound-sets" class="sound-sets" role="dialog" aria-labelledby="sound-sets-title">
-      <div class="sound-sets-head">
-        <h2 id="sound-sets-title">Sound set</h2>
-        <button type="button" class="btn btn-small btn-icon" popovertarget="sound-sets" popovertargetaction="hide" aria-label="Close the sound sets"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-      </div>
-      <p class="sound-sets-note">The game uses the same set. The play button of a set plays four moves of it. Classic does not name cells, so the trainer uses Cells.</p>
-      <div id="sound-set-list"></div>
-    </div>
-    <dialog class="end-card home-confirm" id="reset-confirm" aria-labelledby="reset-confirm-text">
-      <p id="reset-confirm-text">Reset your ear training? Every sound starts as new again.</p>
-      <div class="end-card-actions">
-        <button type="button" class="btn btn-primary" id="reset-yes">Reset</button>
-        <button type="button" class="btn" id="reset-no">Keep</button>
-      </div>
-    </dialog>
-    <script type="module" src="/src/sound-training/main.ts"></script>
+    <script type="module" src="/src/sound-input/main.ts"></script>
   </body>
 </html>
