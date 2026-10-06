@@ -33,6 +33,7 @@ import { showAccount } from '../header/header.ts';
 import { LOCK_CLOSED_ICON, LOCK_OPEN_ICON, SOUND_OFF_ICON, SOUND_ON_ICON } from '../icons.ts';
 import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
+import { syncVoice } from './voice.ts';
 import { settings, type Settings, type Toggle } from './settings.ts';
 import { me, page, shared, current, isLive, matchOptions, settingsLocked, canChangeMatch, bothSeated } from './state.ts';
 
@@ -280,4 +281,5 @@ export function render(): void {
   showAccount(page.account.user);
   soundButton.innerHTML = settings.muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
   soundButton.setAttribute('aria-pressed', String(!settings.muted));
+  syncVoice();
 }

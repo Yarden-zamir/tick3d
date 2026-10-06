@@ -110,6 +110,8 @@
             <span class="slot"><small>Row</small><b></b></span>
             <span class="slot"><small>Column</small><b></b></span>
           </div>
+          <!-- Play by voice aims here: the slots show the cell of the pitch. src/page/voice.ts shows this line while the voice is on. -->
+          <p class="voice-status" id="voice-status" role="status" hidden><span id="voice-state"></span> · <a href="/sound-input">Calibrate on /sound-input</a></p>
           <div class="keypad">
             <button type="button" class="btn" data-digit="1">1</button>
             <button type="button" class="btn" data-digit="2">2</button>
@@ -145,6 +147,8 @@
             <button type="button" id="sound" aria-label="Sound" data-tip="Sound on or off"></button>
             <button type="button" id="sound-set" popovertarget="sound-sets" aria-label="Sound set" data-tip="Sound set: the sound of each move"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
           </div>
+          <!-- Play by voice: a held note places your move. src/page/voice.ts sets the icon and shows the button where this screen has a seat. -->
+          <button type="button" class="btn btn-icon" id="voice" aria-label="Play by voice" aria-pressed="false" data-tip="Play by voice: hold a note on a free cell to place your move" hidden></button>
         </div>
         <!-- The Players box of online and Nearby games comes here, under the actions row. -->
         <!-- The sound set menu. A popover closes on a tap outside it or on Escape. src/page/sound-set.ts fills the list. -->
@@ -450,10 +454,14 @@
       <p>The keypad places a mark by coordinates: tap the layer, row and column, then Place. Until you tap a number, it shows the last move. Hide board shows the keypad only. Hide history shows only the last mark until the game ends. Hide coordinates keeps the numbers of the last move off the keypad, so you follow the game by its sounds.</p>
       <h3>Sounds</h3>
       <p>Every cell has its own sound, so you can follow a game by ear. The speaker button turns the sound on and off. The arrow next to it opens the sound sets, and each set tells its map in the menu. In the default set, Cells, the pitch is the layer: higher layers sound higher. The instrument is the row: 1 a wooden marimba, 2 a glass bell, 3 a plucked string, 4 a soft whistle. The width is the column: 1 is one thin voice, then a fifth joins, then an octave, and 4 has both. On headphones the column also comes from the left (1) to the right (4). O sounds one octave below X. The speaker button by the keypad plays the last move again, or the cell you typed.</p>
+      <h3>Play by voice</h3>
+      <p>The microphone button next to the sound control turns play by voice on. On your turn, whistle, hum or sing: the cell of your pitch shows as the aim, on the board and on the keypad. Hold the note on a free cell for 1 second to place your move. The voice pauses while the game plays a sound and on the other player's turn, so the speaker does not feed the microphone. The range is the one of /sound-input, so calibrate there to fit your voice. With Hide board and the cell sounds, you play without eyes and hands.</p>
+      <h3>Your game as a song</h3>
+      <p>The Song button on the result card plays the finished game as a melody, one note per move. Hold it, or right-click it, to share the song as a sound file. Where the browser cannot share files, the file downloads.</p>
       <h3>Time limits</h3>
       <p>Time limits work like a chess clock. Set a limit for each player's whole game, a limit per move, or both. A player who runs out of either limit loses. The first move of each player is untimed. A change during a game starts with the next game. A timed game has no undo.</p>
       <h3>Lock</h3>
-      <p>Lock stops setting changes until the game ends: the difficulty, the time limit, the hide options and the view. A reload does not end the lock. You can still leave the game. The theme, the sound and the sound set stay free. Online and in Nearby, the lock and the hide options apply to both players, and a lock waits for the second player. Watchers cannot lock.</p>
+      <p>Lock stops setting changes until the game ends: the difficulty, the time limit, the hide options and the view. A reload does not end the lock. You can still leave the game. The theme, the sound, the sound set and play by voice stay free. Online and in Nearby, the lock and the hide options apply to both players, and a lock waits for the second player. Watchers cannot lock.</p>
       <p>Hover or long-press an icon button to see what it does.</p>
       <h3>Online and Nearby</h3>
       <p>Online, share the code, the link or the QR code. A friend joins with the code in the Online mode, or opens the link. Nearby plays with devices on the same Wi-Fi: one device hosts, the others join. With another device, moves are final and a new game starts after the game ends.</p>

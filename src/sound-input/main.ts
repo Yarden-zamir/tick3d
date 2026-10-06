@@ -13,9 +13,10 @@ import { setSoundSet, sounds } from '../sound.ts';
 import { buildDeck, fitDeck } from '../sound-training/deck.ts';
 import { isSmallRange, median, rangeFrom, type Retry } from './calibration.ts';
 import { DEFAULT_RANGE, type Range, cellOfStep, noteName, positionOf } from './mapping.ts';
-import { bufferSize, detectPitch, rms } from './pitch.ts';
+import { HOLD_MS, MISS_FRAMES, SMOOTH_FRAMES, type Mic, closeMic, hasMic, micError, openMic } from './mic.ts';
+import { detectPitch, rms } from './pitch.ts';
 import { buildRail, showRailPitch, showRailRange } from './rail.ts';
-import { STORAGE_KEY, type Stored, parseStored, toStorage } from './stored.ts';
+import { STORAGE_KEY, type Stored, loadStored, toStorage } from './stored.ts';
 import { type Held, holdStep, marginAt } from './sticky.ts';
 
 setupPageHeader();
@@ -50,12 +51,6 @@ const buildUpValue = element('#build-up-value', HTMLOutputElement);
 const holdBox = element('#hold', HTMLInputElement);
 const clearButton = element('#clear', HTMLButtonElement);
 
-// The median of the last frames moves the light, so one odd frame (a click, an octave jump) does not.
-const SMOOTH_FRAMES = 5;
-// After this many frames without a clear pitch (about 0.1 s), the light goes out.
-const MISS_FRAMES = 6;
-// A note on one cell for this long places an X there.
-const HOLD_MS = 1000;
 // Each calibration step needs this much time with a clear pitch.
 const STEP_MS = 2000;
 // A longer gap between two frames (a slow device) counts as this much, so one gap does not end a step.
@@ -64,14 +59,7 @@ const MAX_FRAME_MS = 100;
 // four layers in view (2 × 2) while the player sings.
 const DISPLAY_MIN_CELL = 20;
 
-type Listening = {
-  stream: MediaStream;
-  context: AudioContext;
-  analyser: AnalyserNode;
-  samples: Float32Array<ArrayBuffer>;
-  frame: number;
-  last: number | undefined;
-};
+type Listening = Mic & { frame: number; last: number | undefined };
 
 // One calibration in progress. `heard` holds the pitches of the step now, and `lows` the pitches of the
 // low step once it is done.
@@ -105,14 +93,6 @@ const sideLayout = matchMedia('(orientation: landscape) and (max-height: 32rem)'
 const fit = (): void => fitDeck(deckEl, cardEl, sideLayout.matches, DISPLAY_MIN_CELL);
 
 // ---- Storage ----
-
-function loadStored(): Stored {
-  try {
-    return parseStored(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null'));
-  } catch {
-    return parseStored(null);
-  }
-}
 
 function save(): void {
   try {
@@ -289,41 +269,19 @@ function listen(now: number): void {
   listening.frame = requestAnimationFrame(listen);
 }
 
-function micError(error: unknown): string {
-  const name = error instanceof DOMException ? error.name : '';
-  switch (name) {
-    case 'NotAllowedError':
-    case 'SecurityError':
-      return 'The microphone is blocked. Allow it for this site in the browser settings, then try again.';
-    case 'NotFoundError':
-    case 'OverconstrainedError':
-      return 'No microphone found. Connect one, then try again.';
-    case 'NotReadableError':
-    case 'AbortError':
-      return 'The microphone does not start. Another app can hold it. Close that app, then try again.';
-    default:
-      return `The microphone does not start: ${error instanceof Error ? error.message : 'unknown error'}.`;
-  }
-}
-
 async function start(): Promise<void> {
   if (listening !== undefined || starting) return;
-  // Browsers give no microphone to a page without https.
-  if (!('mediaDevices' in navigator) || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+  if (!hasMic()) {
     show('This browser gives the page no microphone. Open the page over https in a current browser.');
     return;
   }
-  // Make the context during the tap: some browsers start a context without a tap as suspended.
-  const context = new AudioContext();
   starting = true;
   micButton.disabled = true;
   show('Waiting for the microphone…');
-  let stream: MediaStream;
+  let mic: Mic;
   try {
-    // No processing: echo cancellation and noise suppression treat a steady whistle as noise.
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    mic = await openMic();
   } catch (error) {
-    void context.close();
     show(micError(error));
     return;
   } finally {
@@ -332,16 +290,12 @@ async function start(): Promise<void> {
   }
   // The page went out of view while the browser asked.
   if (document.hidden) {
-    for (const track of stream.getTracks()) track.stop();
-    void context.close();
+    closeMic(mic);
     show('');
     return;
   }
-  const analyser = context.createAnalyser();
-  analyser.fftSize = bufferSize(context.sampleRate);
-  context.createMediaStreamSource(stream).connect(analyser);
-  for (const track of stream.getTracks()) track.addEventListener('ended', () => stop('The microphone stopped. Turn it on again to go on.'));
-  listening = { stream, context, analyser, samples: new Float32Array(analyser.fftSize), frame: requestAnimationFrame(listen), last: undefined };
+  for (const track of mic.stream.getTracks()) track.addEventListener('ended', () => stop('The microphone stopped. Turn it on again to go on.'));
+  listening = { ...mic, frame: requestAnimationFrame(listen), last: undefined };
   micButton.textContent = 'Stop';
   micButton.setAttribute('aria-pressed', 'true');
   readoutEl.dataset.state = 'listening';
@@ -351,8 +305,7 @@ async function start(): Promise<void> {
 function stop(message = ''): void {
   if (listening === undefined) return;
   cancelAnimationFrame(listening.frame);
-  for (const track of listening.stream.getTracks()) track.stop();
-  void listening.context.close();
+  closeMic(listening);
   listening = undefined;
   endCalibration();
   recent = [];

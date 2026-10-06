@@ -13,4 +13,7 @@ const LOCK_BODY = '<rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path
 export const LOCK_CLOSED_ICON = icon(`${LOCK_BODY}<path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>`);
 export const LOCK_OPEN_ICON = icon(`${LOCK_BODY}<path d="M8 10.5V6.5a4 4 0 0 1 7.8-1.3"/>`);
 
+// The same microphone as the "Sing to the board" link in index.html.
+export const MIC_ICON = icon('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>', 2.2);
+
 export const PLAY_ICON = icon('<path d="M8 5.5v13l10.5-6.5Z" fill="currentColor"/>', 2.2);

@@ -5,6 +5,10 @@ import { SOUND_SETS, type SoundSetId, type SoundSet, type Voice } from './sound-
 // All sounds are synthesized with Web Audio, so the app ships no audio files.
 let context: AudioContext | undefined;
 let muted = false;
+// The end of the last live sound, in performance.now() milliseconds. Play by voice does not listen until then.
+let soundUntil = 0;
+
+export const liveSoundUntil = (): number => soundUntil;
 
 export function setMuted(value: boolean): void {
   muted = value;
@@ -93,6 +97,7 @@ function play(voices: readonly Voice[], scale = 1, delay = 0, ctx: BaseAudioCont
     out.connect(panner).connect(ctx.destination);
     source.start(start);
     source.stop(end);
+    if (ctx === context) soundUntil = Math.max(soundUntil, performance.now() + (end - ctx.currentTime) * 1000);
   }
 }
 

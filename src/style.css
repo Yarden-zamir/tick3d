@@ -1167,6 +1167,51 @@ body[data-turn='O'] .status[data-state='playing'] {
   border-left: 2px solid var(--line);
 }
 
+/* Play by voice. On, the button takes the toggle color. A dot in its corner shows the state: green and
+   pulsing while the microphone listens, muted while it pauses. */
+#voice {
+  position: relative;
+}
+
+#voice[aria-pressed='true'] {
+  background: var(--toggle-on);
+  color: var(--on-color);
+}
+
+#voice[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+#voice[aria-pressed='true'][data-state='listening']::after {
+  background: var(--win);
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  50% {
+    scale: 1.4;
+  }
+}
+
+.voice-status {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.voice-status a {
+  color: inherit;
+  font-weight: 600;
+}
+
 /* The sound set menu: a popover in the middle of the screen, so it fits a phone too. */
 .sound-sets {
   width: min(28rem, calc(100vw - 2rem));

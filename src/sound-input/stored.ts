@@ -38,3 +38,12 @@ export function parseStored(value: unknown): Stored {
   if (version !== STORAGE_VERSION) return DEFAULT_STORED;
   return { range: parseRange(range), stickiness: parseStickiness(stickiness) };
 }
+
+// The choices on this device. Blocked storage or bad JSON gives the defaults.
+export function loadStored(): Stored {
+  try {
+    return parseStored(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null'));
+  } catch {
+    return DEFAULT_STORED;
+  }
+}
