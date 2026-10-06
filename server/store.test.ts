@@ -771,6 +771,23 @@ describe('custom names', () => {
     expect((await store.get(code, bob)).names.X).toBe(nameOf(alice));
   });
 
+  // A custom name belongs to the device token. A logout moves the games and seats of the device to the
+  // account token (unlinkToken), so they show the GitHub login, and the device keeps its own name.
+  it('keeps a custom name with the device on logout, so the games that move to the account do not show it', async () => {
+    const code = await session();
+    await store.setName(alice, 'Dana');
+    await playMoves(code, X_WINS);
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.unlinkToken(alice);
+    const view = await store.get(code, bob);
+    expect(view.players.X?.login).toBe('alice');
+    expect(view.names.X).not.toBe('Dana');
+    expect((await store.history(bob, 0)).games[0]).toMatchObject({ opponent: { login: 'alice' } });
+    expect((await store.history(bob, 0)).games[0]?.opponentName).not.toBe('Dana');
+    expect((await store.game(gameId(`${code}-1`))).names.X).not.toBe('Dana');
+    expect(await store.customName(alice)).toBe('Dana');
+  });
+
   it('refuses a name that equals a GitHub login, in any case', async () => {
     store = await openStore(':memory:');
     await store.linkToken(carol, ALICE_GITHUB);

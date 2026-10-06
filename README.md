@@ -83,16 +83,17 @@
   | Action | Button | What changes | Who accepts |
   | --- | --- | --- | --- |
   | swap | Swap X and O | X and O trade seats. A swap during a game is allowed, and each clock stays with its seat. | the other player |
-  | leave | Watch instead | You watch, and your seat empties. | nobody |
+  | leave | Watch instead | You watch, and your seat is free. | nobody |
   | give | Give my seat (on a watcher row) | The watcher takes your seat, and you watch. | nobody |
-  | seat | Seat here (on a watcher row) | The watcher takes the empty seat. | nobody |
-  | unseat | Make watcher (on the other seat) | The other player watches, and the seat empties. | the other player |
-  | replace | Replace (on a watcher row) | The watcher takes the seat of the other player. | the other player |
+  | seat | Seat as X or Seat as O (on a watcher row, when the other seat is free) | The watcher takes the free seat. | nobody |
+  | unseat | Move to watchers (on the other seat) | The other player watches, and the seat is free. | the other player |
+  | replace | Seat as X or Seat as O (on a watcher row, when the other seat is taken) | The watcher takes the seat of the other player. | the other player |
   | undo | Undo (at the top of the panel) | Your last move goes back, while the other player has not moved since. Not in a timed game, a finished game or during a lock. | the other player |
 
-- A change of the other player's seat waits as a request. The other player gets a prompt with Accept and Decline, and the Players box shows the same buttons. The player who asks sees "Waiting for …" with Cancel. A request ends after 60 seconds without an answer. One request is open at a time, and a new request of the same player replaces the old one. On Accept, the rules check the request again and then apply it. Both players get a message about the result.
+- A change of the other player's seat waits as a request. The other player gets a prompt with Accept and Decline, and the Players box shows the same buttons. The player who asks sees "Waiting for …" with Cancel, and a note when the other player is away. While a request waits, the seat controls stay in place but are off. A request ends after 60 seconds without an answer, and each screen then drops it by itself. One request is open at a time, and a new request of the same player replaces the old one. On Accept, the rules check the request again and then apply it. Both players get a message about the result.
 - Undo works the same way: a player asks to take back the own last move, and the other player accepts or declines. A move of the other player ends the request. A timed game, a finished game and a lock allow no undo, as on one device.
-- A watcher is never asked. A watcher has no seat controls, only "Take the empty seat" while a seat is free.
+- A watcher is never asked. A watcher has no seat controls and no Undo, only "Play X" or "Play O" while a seat is free.
+- Each seat button has a tooltip that says what changes. The keyboard focus stays on a seat button when the box updates.
 - Computer and friend games have no Players box: a friend game uses one screen, and in a computer game "You play" picks X or O.
 - A browser keeps its seat through a random token in `localStorage`.
 - A link with a code that opens no game (no game with that code, or no network for a new game) shows the error, drops the code from the address, and starts the page as usual.
@@ -165,7 +166,7 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Time limit | yes | yes | yes | yes | no |
 | Hide board, history and coordinates, Lock | yes | yes | in a game | in a game | no |
 | Score, New game, the session games in My games | yes | yes | in a game | in a game | yes (no session games) |
-| Undo (during a game) | yes | yes | in a game (asks the other player) | in a game (asks the other player) | no |
+| Undo (during a game) | yes | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
 | Result card (after a game) | yes | yes | in a game | in a game | no |
 | Chat | no | no | yes | yes | no |
 
@@ -179,7 +180,7 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 - Login with GitHub is optional. Every browser plays with a random token either way.
 - A login links the browser's token to the GitHub account. Sessions then follow the player: a seat taken on a laptop also plays from a phone that logged in to the same account, so an async game can continue on another device.
 - A seat taken while logged in belongs to the account: every device of the account controls it, and a device that logs out does not. A logout also moves a seat that holds the token of that browser to the account. The seat holds an account id (`account-` and the GitHub id), and the API refuses that id as an `X-Player` value.
-- A logout moves every finished game of that browser to the account, also games from before the login. The browser then starts with an empty history, empty stats and no survival records. The page deletes its copies of the uploaded results, the survival records and the cached online games. Settings, sound, tuning and the computer, friend and Nearby sessions on the device stay.
+- A logout moves every finished game of that browser to the account, also games from before the login. The browser then starts with an empty history, empty stats and no survival records. The page deletes its copies of the uploaded results, the survival records and the cached online games. Settings, sound, tuning and the computer, friend and Nearby sessions on the device stay. A custom name stays with the browser token, so the games that move to the account show the GitHub login.
 - The score shows a player's GitHub name and avatar, and the chat uses the name.
 - A player without a GitHub login gets a generated name: an adjective and an animal in camelCase, such as "braveOtter". The server makes it from the player's token, so every screen shows the same name. A login replaces it with the GitHub name. My games shows the name to its player. The words come from unique-names-generator (MIT).
 - A player without a GitHub login can choose a name: Rename in My games, then Save. A name has 2 to 24 letters (of any script), digits, spaces, "-" and "_". The server trims it and joins inner spaces into one. A name that equals a GitHub login that the server knows is refused, so nobody can pose as a logged-in player. Two players can choose the same name. "Reset to generated name" goes back.
@@ -286,7 +287,7 @@ docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr.17.
 - The image tag must match the `@playwright/test` version in `package.json`. Update both together.
 - `npm ci` in the Playwright image installs packages for glibc. Run `npm ci` again before you use `node:26-alpine`.
 - Each test opens fresh browser contexts, and the tests run in parallel. The HTML report goes to `e2e/playwright-report/`. A failed test keeps a trace in `e2e/test-results/`.
-- One run creates 9 online sessions. The server allows 60 new sessions per hour from one address.
+- One run creates 10 online sessions. The server allows 60 new sessions per hour from one address.
 - The `e2e` workflow runs the suite after a successful pull request preview deploy. When a test fails, the workflow uploads the HTML report.
 - Knip finds the tests through its `entry` setting in `package.json`. Its Playwright plugin is off, because the plugin loads the config, and the config stops without `E2E_BASE_URL`.
 - The laptop host (`compose.lan.yml`) has no automatic test. It needs a local Docker host and a second device on the network.
