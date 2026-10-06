@@ -1,4 +1,5 @@
 import type { Player } from './game.ts';
+import type { Song } from './song.ts';
 import { SOUND_SETS, type SoundSetId, type SoundSet, type Voice } from './sound-sets.ts';
 
 // All sounds are synthesized with Web Audio, so the app ships no audio files.
@@ -32,7 +33,7 @@ function tone({ frequency, at = 0, duration, type = 'sine', volume = 0.2, slideT
 let noiseBuffer: AudioBuffer | undefined;
 
 // One second of white noise, made once. Drums, wind and rain filter it.
-function noise(ctx: AudioContext): AudioBuffer {
+function noise(ctx: BaseAudioContext): AudioBuffer {
   if (noiseBuffer === undefined) {
     noiseBuffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const samples = noiseBuffer.getChannelData(0);
@@ -42,9 +43,9 @@ function noise(ctx: AudioContext): AudioBuffer {
 }
 
 // Plays the voices of src/sound-sets.ts. Each voice is a source, an envelope, an optional filter and a side.
-// `scale` makes all levels softer or louder, and `delay` starts all voices later.
-function play(voices: readonly Voice[], scale = 1, delay = 0): void {
-  const ctx = audio();
+// `scale` makes all levels softer or louder, and `delay` starts all voices later. `ctx` is the live
+// context, or an OfflineAudioContext that renders a sound file.
+function play(voices: readonly Voice[], scale = 1, delay = 0, ctx: BaseAudioContext | undefined = audio()): void {
   if (!ctx) return;
   for (const voice of voices) {
     if (!(voice.level > 0) || !(voice.decay > 0)) throw new RangeError(`a voice needs a level and a decay: ${JSON.stringify(voice)}`);
@@ -112,6 +113,25 @@ export function playDemo(id: SoundSetId): void {
 // One cell of a set, as a move of X: the sound when a player picks the set.
 export function playSample(id: SoundSetId): void {
   play(SOUND_SETS[id].voices(DEMO_CELLS[1], 'X'));
+}
+
+function scheduleSong(song: Song, set: SoundSet, ctx: BaseAudioContext | undefined): void {
+  for (const note of song.notes) play(set.voices(note.cell, note.player), note.scale, note.at, ctx);
+}
+
+// Plays a finished game as a melody in the sound set of the screen.
+export function playSong(song: Song): void {
+  scheduleSong(song, soundSet, audio());
+}
+
+// The same melody, rendered into stereo samples by the same voices. The mute does not apply: the
+// player asks for a file.
+const SONG_RATE = 44_100;
+
+export function renderSong(song: Song): Promise<AudioBuffer> {
+  const ctx = new OfflineAudioContext(2, Math.ceil(song.duration * SONG_RATE), SONG_RATE);
+  scheduleSong(song, soundSet, ctx);
+  return ctx.startRendering();
 }
 
 // The preview plays softer than a move: 0.12 against 0.28 in the Cells set.

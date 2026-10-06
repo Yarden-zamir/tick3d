@@ -2045,6 +2045,23 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.6rem;
 }
 
+/* The song button sits at the end of the include options, near the card. A long press shares the song,
+   so a touch must not select its text or open the image menu. */
+.end-card .song {
+  margin-left: auto;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.end-card .song:is([data-state='held'], [data-state='rendering']) {
+  background: var(--primary);
+  color: var(--on-color);
+}
+
+.end-card .song[data-state='playing'] {
+  background: var(--surface-2);
+}
+
 .end-card-actions .btn {
   flex: 1;
   white-space: nowrap;

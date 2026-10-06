@@ -53,6 +53,7 @@ export const cardCode = element('#end-card-code', HTMLInputElement);
 export const cardLink = element('#end-card-link', HTMLInputElement);
 export const cardShareButton = element('#end-card-share', HTMLButtonElement);
 export const cardSaveButton = element('#end-card-save', HTMLButtonElement);
+export const cardSongButton = element('#end-card-song', HTMLButtonElement);
 export const cardCloseButton = element('#end-card-close', HTMLButtonElement);
 export const cardNewGameButton = element('#end-card-new-game', HTMLButtonElement);
 export const tuningEl = element('#tuning', HTMLDivElement);

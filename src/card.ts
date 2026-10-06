@@ -260,7 +260,12 @@ function toBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 }
 
 export async function saveImage(canvas: HTMLCanvasElement, filename: string): Promise<void> {
-  const url = URL.createObjectURL(await toBlob(canvas));
+  saveFile(await toBlob(canvas), filename);
+}
+
+// Downloads the file.
+function saveFile(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
@@ -270,25 +275,39 @@ export async function saveImage(canvas: HTMLCanvasElement, filename: string): Pr
 
 export type ShareOutcome = 'shared' | 'cancelled' | 'copied' | 'saved';
 
+// The system share sheet. 'unsupported' means that the browser cannot share these files, or that the
+// share failed for another reason than a cancel.
+async function systemShare(data: ShareData): Promise<'shared' | 'cancelled' | 'unsupported'> {
+  if (typeof navigator.canShare !== 'function' || !navigator.canShare(data)) return 'unsupported';
+  try {
+    await navigator.share(data);
+    return 'shared';
+  } catch (error) {
+    return error instanceof DOMException && error.name === 'AbortError' ? 'cancelled' : 'unsupported';
+  }
+}
+
 // Shares the image with the system share sheet. Without file sharing (most desktop browsers),
 // the image goes to the clipboard, and without clipboard images it downloads.
 export async function shareImage(canvas: HTMLCanvasElement, filename: string, text: string, url?: string): Promise<ShareOutcome> {
   const blob = await toBlob(canvas);
   const data: ShareData = { files: [new File([blob], filename, { type: 'image/png' })], title: 'tick3d', text };
   if (url !== undefined) data.url = url;
-  if (typeof navigator.canShare === 'function' && navigator.canShare(data)) {
-    try {
-      await navigator.share(data);
-      return 'shared';
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled';
-    }
-  }
+  const shared = await systemShare(data);
+  if (shared !== 'unsupported') return shared;
   try {
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
     return 'copied';
   } catch {
-    await saveImage(canvas, filename);
+    saveFile(blob, filename);
     return 'saved';
   }
+}
+
+// Shares a file with the system share sheet. Without file sharing (most desktop browsers), it downloads.
+export async function shareFile(file: File, text: string): Promise<Exclude<ShareOutcome, 'copied'>> {
+  const shared = await systemShare({ files: [file], title: 'tick3d', text });
+  if (shared !== 'unsupported') return shared;
+  saveFile(file, file.name);
+  return 'saved';
 }

@@ -1,9 +1,12 @@
 // The end of a game: sounds, confetti, and the end card.
-import { type CardInput, drawCard, shareImage, saveImage } from '../card.ts';
+import { type CardInput, drawCard, shareImage, saveImage, shareFile } from '../card.ts';
 import { formatClock, describeClock } from '../clock.ts';
 import { type Game, other, winnerOf } from '../game.ts';
 import { isTunedFor } from '../tuning.ts';
-import { sounds } from '../sound.ts';
+import { SOUND_ON_ICON } from '../icons.ts';
+import { songOf } from '../song.ts';
+import { playSong, renderSong, sounds } from '../sound.ts';
+import { encodeWav } from '../wav.ts';
 import { computerTuning } from './advanced.ts';
 import {
   cardDialog,
@@ -18,6 +21,7 @@ import {
   newGameButton,
   cardShareButton,
   cardSaveButton,
+  cardSongButton,
   cardCloseButton,
   showCardButton,
 } from './dom.ts';
@@ -167,11 +171,120 @@ export async function openCard(index: number): Promise<void> {
   if (!cardDialog.open) cardDialog.showModal();
 }
 
-function cardFilename(): string {
-  return `tick3d-${new Date().toISOString().slice(0, 10)}.png`;
+function cardFilename(extension: 'png' | 'wav'): string {
+  return `tick3d-${new Date().toISOString().slice(0, 10)}.${extension}`;
+}
+
+// ---- The game as a song ----
+
+// A press this long on the song button shares the song as a file.
+const LONG_PRESS_MS = 600;
+type SongState = 'idle' | 'playing' | 'held' | 'rendering';
+const SONG_LABELS: Record<SongState, string> = { idle: 'Song', playing: 'Playing…', held: 'Release to share', rendering: 'Making the file…' };
+// A pointer press on the song button. `file` is the render that starts when the press becomes long.
+type SongPress = { timer: ReturnType<typeof setTimeout>; file: Promise<File> | undefined };
+let songPress: SongPress | undefined;
+let songTimer: ReturnType<typeof setTimeout> | undefined;
+
+function showSongState(state: SongState): void {
+  cardSongButton.dataset.state = state;
+  cardSongButton.innerHTML = `${SOUND_ON_ICON}<span>${SONG_LABELS[state]}</span>`;
+}
+
+function cardGame(): { game: Game; index: number; gameId: GameId | undefined } | undefined {
+  if (card === undefined) return undefined;
+  const game = page.games[card.index];
+  return game === undefined ? undefined : { game, index: card.index, gameId: card.gameId };
+}
+
+function playCardSong(): void {
+  const shown = cardGame();
+  if (shown === undefined || cardSongButton.dataset.state !== 'idle') return;
+  if (settings.muted) return showToast('Turn the sound on to hear the song.');
+  const song = songOf(shown.game);
+  playSong(song);
+  showSongState('playing');
+  clearTimeout(songTimer);
+  songTimer = setTimeout(() => showSongState('idle'), song.duration * 1000);
+}
+
+// Renders the song offline with the voices of live play, into a WAV file named like the card image.
+async function songFile(game: Game): Promise<File> {
+  const buffer = await renderSong(songOf(game));
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) => buffer.getChannelData(channel));
+  return new File([encodeWav(channels, buffer.sampleRate)], cardFilename('wav'), { type: 'audio/wav' });
+}
+
+async function shareSong(file: Promise<File>): Promise<void> {
+  const shown = cardGame();
+  if (shown === undefined) return;
+  const input = cardInput(shown.game, shown.index, shown.gameId);
+  showSongState('rendering');
+  try {
+    const outcome = await shareFile(await file, `${input.title}: ${input.subtitle} on tick3d, as a song.`);
+    if (outcome === 'saved') showToast('Song saved as a sound file.');
+  } finally {
+    showSongState('idle');
+  }
+}
+
+function endSongPress(): void {
+  if (songPress === undefined) return;
+  clearTimeout(songPress.timer);
+  if (songPress.file === undefined) songPress = undefined;
+  else if (cardSongButton.dataset.state === 'held') showSongState('idle');
+}
+
+function setupSong(): void {
+  showSongState('idle');
+  cardSongButton.addEventListener('pointerdown', (event) => {
+    if (!event.isPrimary || event.button !== 0 || cardSongButton.dataset.state !== 'idle') return;
+    const shown = cardGame();
+    if (shown === undefined) return;
+    const press: SongPress = {
+      file: undefined,
+      timer: setTimeout(() => {
+        // The render starts during the press, so the file is ready soon after the release.
+        press.file = songFile(shown.game);
+        showSongState('held');
+      }, LONG_PRESS_MS),
+    };
+    songPress = press;
+  });
+  // A touch browser gives the page a share sheet only during a gesture, and a release is one. So the
+  // long press shares at the release, not at the end of the wait.
+  cardSongButton.addEventListener('pointerup', () => {
+    const file = songPress?.file;
+    if (file !== undefined && cardSongButton.dataset.state === 'held') void shareSong(file);
+    endSongPress();
+  });
+  // A pointer that leaves the button cancels the press.
+  cardSongButton.addEventListener('pointerleave', () => {
+    endSongPress();
+    songPress = undefined;
+  });
+  cardSongButton.addEventListener('pointercancel', () => {
+    endSongPress();
+    songPress = undefined;
+  });
+  cardSongButton.addEventListener('click', () => {
+    // The click after a long press does not also play the song.
+    const long = songPress?.file !== undefined;
+    songPress = undefined;
+    if (!long) playCardSong();
+  });
+  // The context menu (a right click, the menu key, Shift+F10) shares the song too. During a touch long
+  // press, the browser menu stays closed and the release shares.
+  cardSongButton.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    const shown = cardGame();
+    if (songPress !== undefined || shown === undefined || cardSongButton.dataset.state !== 'idle') return;
+    void shareSong(songFile(shown.game));
+  });
 }
 
 export function setupEndCard(): void {
+  setupSong();
   cardShareButton.addEventListener('click', () => {
     if (card === undefined) return;
     const { canvas, index, gameId } = card;
@@ -182,14 +295,14 @@ export function setupEndCard(): void {
     const gameLink = gameId === undefined ? undefined : `${location.origin}/?game=${gameId}`;
     const url = cardLink.checked ? (gameLink ?? (isOnline ? location.href : location.origin)) : undefined;
     const code = cardCode.checked && isOnline && page.session ? ` Code ${page.session.code}.` : '';
-    void shareImage(canvas, cardFilename(), `${input.title}: ${input.subtitle} on tick3d.${code}`, url).then((outcome) => {
+    void shareImage(canvas, cardFilename('png'), `${input.title}: ${input.subtitle} on tick3d.${code}`, url).then((outcome) => {
       if (outcome === 'copied') showToast('Image copied. Paste it anywhere.');
       if (outcome === 'saved') showToast('Image saved.');
     });
   });
 
   cardSaveButton.addEventListener('click', () => {
-    if (card !== undefined) void saveImage(card.canvas, cardFilename());
+    if (card !== undefined) void saveImage(card.canvas, cardFilename('png'));
   });
   cardCloseButton.addEventListener('click', () => cardDialog.close());
   cardNewGameButton.addEventListener('click', () => {
