@@ -1,0 +1,249 @@
+/* The ear training page. It uses the theme tokens of style.css, so it follows the saved theme.
+   style.css gives every .train button the brutalist look. */
+.train {
+  display: grid;
+  gap: 1.2rem;
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: max(1rem, env(safe-area-inset-top)) 1rem 3rem;
+}
+
+.train-head {
+  /* .brand of style.css places the title in the grid of the game page. Here it is the first row. */
+  grid-area: auto;
+  display: grid;
+  justify-content: start;
+}
+
+.train-head h1 {
+  font-size: clamp(2rem, 9vw, 3.2rem);
+}
+
+.train-head p {
+  margin: 0.8rem 0 0;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.train-card,
+.train-progress {
+  display: grid;
+  align-content: start;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: var(--border) solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 6px 6px 0 var(--shadow);
+}
+
+.train h2,
+.train h3 {
+  margin: 0;
+  font-weight: 800;
+}
+
+.train h2 {
+  font-size: 1.4rem;
+}
+
+.train h3 {
+  font-size: 1rem;
+}
+
+.train-kind {
+  justify-self: start;
+  margin: 0;
+  padding: 0.1rem 0.55rem;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--toggle-on);
+  color: var(--on-color);
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.train .train-play {
+  min-height: 4.5rem;
+  background: var(--primary);
+  color: var(--on-color);
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.train-answer {
+  margin: 0;
+  padding: 0.7rem 0.8rem;
+  border: 2px dashed var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.train-answer strong {
+  padding: 0 0.25rem;
+  border-radius: 4px;
+  background: var(--win);
+  color: var(--on-color);
+  font-weight: 800;
+}
+
+.train-groups {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.train-group {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.5rem 0.6rem 0.7rem;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+}
+
+.train-group legend {
+  padding: 0 0.3rem;
+  font-weight: 800;
+}
+
+.train .train-pick {
+  display: grid;
+  justify-items: center;
+  gap: 0.1rem;
+  min-height: 3.6rem;
+  padding: 0.4rem 0.2rem;
+}
+
+.train-pick b {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.train-pick small,
+.train-value small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.train .train-pick[aria-pressed='true'] {
+  background: var(--toggle-on);
+  color: var(--on-color);
+}
+
+.train .train-pick.right {
+  background: var(--win);
+  color: var(--on-color);
+}
+
+.train .train-pick.wrong {
+  background: var(--danger);
+  color: var(--on-color);
+  text-decoration: line-through;
+}
+
+.train-pick:is([aria-pressed='true'], .right, .wrong) small {
+  color: var(--on-color);
+}
+
+.train-feedback {
+  margin: 0;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.train-feedback:empty {
+  display: none;
+}
+
+.train-feedback.all-right::before {
+  content: '✓ ';
+}
+
+.train-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.train-actions button {
+  flex: 1;
+  min-height: 3.2rem;
+}
+
+.train .primary {
+  background: var(--primary);
+  color: var(--on-color);
+  font-weight: 800;
+}
+
+.train-keys,
+.train-hint,
+.train-totals,
+.train-bar-value {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.train-hint {
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.train-dimensions {
+  display: grid;
+  gap: 1rem;
+}
+
+.train-dimension {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.train-bar {
+  height: 1rem;
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.train-bar i {
+  display: block;
+  height: 100%;
+  background: var(--o);
+}
+
+.train-values {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.train .train-value {
+  display: grid;
+  gap: 0.1rem;
+  min-height: 3rem;
+  padding: 0.35rem 0.3rem;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.train .train-value[data-box='new'] {
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.train .train-all,
+.train .train-reset {
+  justify-self: start;
+  min-height: 2.75rem;
+}

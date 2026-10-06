@@ -246,7 +246,8 @@ input::placeholder {
 .coords button,
 .review button,
 .history button,
-.end-card-actions button {
+.end-card-actions button,
+.train button {
   padding: 0.55rem 0.85rem;
   border-radius: 8px;
   border: var(--border) solid var(--line);
@@ -257,13 +258,13 @@ input::placeholder {
   transition: translate 0.08s, box-shadow 0.08s, background 0.15s;
 }
 
-:is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:hover:not(:disabled),
+:is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions, .train) button:hover:not(:disabled),
 .lock:hover:not(:disabled) {
   translate: -1px -1px;
   box-shadow: 4px 4px 0 var(--shadow);
 }
 
-:is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:active:not(:disabled),
+:is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions, .train) button:active:not(:disabled),
 .lock:active:not(:disabled) {
   translate: 3px 3px;
   box-shadow: 0 0 0 var(--shadow);
@@ -1062,6 +1063,11 @@ body[data-turn='O'] .status[data-state='playing'] {
 .help p {
   margin: 0.5rem 0 0;
   line-height: 1.45;
+}
+
+.help a {
+  color: var(--ink);
+  font-weight: 800;
 }
 
 .tuning fieldset {

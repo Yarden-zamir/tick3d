@@ -56,6 +56,13 @@ const INSTRUMENTS = ['marimba', 'bell', 'pluck', 'whistle'] as const;
 const WIDTHS = [[1], [1, 3 / 2], [1, 2], [1, 3 / 2, 2]] as const;
 const PANS = [-0.75, -0.25, 0.25, 0.75] as const;
 
+// The words for each sound part, by coordinate (0 to 3). The ear training page shows them.
+export const SOUND_NAMES = {
+  layer: ['C', 'D', 'E', 'G'],
+  row: INSTRUMENTS,
+  column: ['thin, left', 'fifth, mid-left', 'octave, mid-right', 'wide, right'],
+} as const;
+
 type Instrument = (typeof INSTRUMENTS)[number];
 export type CellSound = { frequency: number; instrument: Instrument; intervals: readonly number[]; pan: number };
 

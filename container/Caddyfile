@@ -46,6 +46,12 @@ http:// {
 		header @stats Cache-Control "no-cache"
 		header @stats X-Robots-Tag "noindex, nofollow"
 
+		# The ear training page. How to play links to it, but search engines must not list it.
+		@training path /sound-training /sound-training.html
+		rewrite /sound-training /sound-training.html
+		header @training Cache-Control "no-cache"
+		header @training X-Robots-Tag "noindex, nofollow"
+
 		# The service worker, its Workbox runtime and the manifest have fixed names. A browser must
 		# check them on every visit, or a new version never reaches a player who has the old one.
 		@pwa path /sw.js /workbox-*.js /manifest.webmanifest
