@@ -27,11 +27,16 @@ test('a drag in the empty stage beside the tower turns it, and a drag on the key
   const before = await storedSpin(page);
 
   const keypadKey = page.getByRole('button', { name: '1', exact: true });
+  await keypadKey.scrollIntoViewIfNeeded();
   const key = await box(keypadKey);
-  await dragFrom(page, key.x + key.width / 2, key.y + key.height / 2);
+  const [x, y] = [key.x + key.width / 2, key.y + key.height / 2];
+  const pressed = await page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.closest('[data-digit]') !== null, [x, y]);
+  expect(pressed, 'the press lands on the keypad key').toBe(true);
+  await dragFrom(page, x, y);
   await expect(reset).toBeDisabled();
   expect(await storedSpin(page)).toEqual(before);
 
+  await page.evaluate(() => scrollTo(0, 0));
   const stage = await box(page.locator('#stage'));
   const board = await box(page.locator('#board'));
   expect(board.x - stage.x, 'the stage has room beside the tower').toBeGreaterThan(40);
@@ -45,11 +50,12 @@ test('a drag in the empty stage beside the tower turns it, and a drag on the key
 
 test('a drag that starts on a cell turns the tower and places no mark, and a tap places one', async ({ open }) => {
   const { page } = await open(friend);
-  const target = await box(cell(page, 0));
+  // Cell 63 is on the top layer. The toast "Ready for offline play" can cover the bottom layer.
+  const target = await box(cell(page, 63));
   await dragFrom(page, target.x + target.width / 2, target.y + target.height / 2);
   await expect(page.getByRole('button', { name: 'Reset angle' })).toBeEnabled();
   await expect(marks(page)).toHaveCount(0);
   await page.getByRole('button', { name: 'Reset angle' }).click();
-  await cell(page, 0).click();
+  await cell(page, 63).click();
   await expect(marks(page)).toHaveCount(1);
 });
