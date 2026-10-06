@@ -296,7 +296,7 @@ export function renderSessionGames(): void {
         actions.push({ label: page.review?.game === index ? 'Viewing' : 'Replay', run: () => startReview(index) });
       }
       if (game.status.kind !== 'playing') actions.push({ label: 'Card', run: () => void openCard(index).catch(showError) });
-      const item = listItem(`Game ${index + 1}`, `${resultText(game)} · ${game.moves.length} moves`, actions);
+      const item = listItem(`Game ${index + 1}`, `${resultText(game)} · ${game.moves.length} ${game.moves.length === 1 ? 'move' : 'moves'}`, actions);
       item.classList.toggle('active', page.review?.game === index);
       return item;
     }),
