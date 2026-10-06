@@ -113,14 +113,17 @@ function cellsFamily(name: string, description: string, instruments: Four<Instru
   };
 }
 
-const MAPPING = 'Layer = pitch (C D E G). Column = width: 1 voice, +fifth, +octave, both. O is an octave lower.';
-
-const cells = cellsFamily('Cells', `${MAPPING} Rows: marimba, bell, string, whistle.`, CELL_INSTRUMENTS, ['marimba', 'bell', 'pluck', 'whistle']);
+const cells = cellsFamily(
+  'Cells',
+  'Layer = pitch (C D E G). Row = marimba, bell, string, whistle. Column = width: 1 voice, +fifth, +octave, both. O is an octave lower.',
+  CELL_INSTRUMENTS,
+  ['marimba', 'bell', 'pluck', 'whistle'],
+);
 
 // Soft: mellow instruments with no sharp attack.
 const soft = cellsFamily(
   'Soft',
-  `The Cells map with mellow sounds. Rows: flute, clarinet, felt piano, vibraphone. ${MAPPING}`,
+  'Mellow, no sharp attacks. Rows: flute, clarinet, felt piano, vibraphone. The rest as in Cells.',
   [
     // A flute: a pure tone with a slow vibrato and a breath of noise at the start.
     (f, level) => [
@@ -144,7 +147,7 @@ const soft = cellsFamily(
 // Orchestra: strings, harp, brass and celesta.
 const orchestra = cellsFamily(
   'Orchestra',
-  `The Cells map with an orchestra. Rows: pizzicato strings, harp, French horn, celesta. ${MAPPING}`,
+  'Rows: pizzicato strings, harp, French horn, celesta. The rest as in Cells.',
   [
     // Pizzicato: a plucked bowed string, a short body and an edge that goes fast.
     (f, level) => [
@@ -170,7 +173,7 @@ const orchestra = cellsFamily(
 // Lo-fi keys: warm keyboard sounds with a slow wobble, like an old tape.
 const lofi = cellsFamily(
   'Lo-fi keys',
-  `The Cells map with warm keys. Rows: electric piano, pad pluck, upright bass, music box. ${MAPPING}`,
+  'Warm and wobbly. Rows: electric piano, pad pluck, upright bass, music box. The rest as in Cells.',
   [
     // A Rhodes-style electric piano: two tines 3 Hz apart wobble, and a bell partial gives the bark.
     (f, level) => [
