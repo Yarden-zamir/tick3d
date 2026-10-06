@@ -2563,7 +2563,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   box-shadow: 3px 3px 0 var(--shadow);
 }
 
-.preview-head {
+/* Two classes, so the flex rows win over the grid of `.my-games-list li > div`. */
+.previews-list .preview-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2582,8 +2583,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   overflow-wrap: anywhere;
 }
 
-.preview-people,
-.preview-foot {
+.previews-list .preview-people,
+.previews-list .preview-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2598,6 +2599,14 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-size: 0.85rem;
   font-weight: 700;
   text-decoration: none;
+}
+
+/* Two classes, so the small round avatar wins over `.end-card img`. */
+.preview-people .avatar {
+  width: 1.4rem;
+  height: 1.4rem;
+  max-height: none;
+  border-radius: 50%;
 }
 
 .preview-people a:hover {
