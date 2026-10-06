@@ -224,6 +224,45 @@ describe('accounts', () => {
     expect((await store.get(code, alicePhone)).you).toBeNull();
   });
 
+  it('moves the finished games of a logged-out device to the account, also games from before the login', async () => {
+    store = await openStore(':memory:');
+    await store.addResults(alicePhone, [result('44444444-0000-4000-8000-000000000001', { you: 'O' })]);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addResults(alicePhone, [result('44444444-0000-4000-8000-000000000002', { mode: 'friend', you: null, difficulty: null })]);
+    await store.unlinkToken(alicePhone);
+    const phone = await store.myGames(alicePhone);
+    expect(phone.total.played).toBe(0);
+    expect((await store.history(alicePhone, 0)).games).toEqual([]);
+    expect(await store.records(alicePhone)).toEqual({});
+    // A device that links to the account later sees them.
+    await store.linkToken(alice, ALICE_GITHUB);
+    expect((await store.myGames(alice)).total.played).toBe(2);
+    expect((await store.history(alice, 0)).games.map((entry) => entry.result).sort()).toEqual(['lost', 'played']);
+    expect(await store.records(alice)).not.toEqual({});
+  });
+
+  it('keeps one Nearby game in the history of the account after the guest logs out', async () => {
+    store = await openStore(':memory:');
+    const bobLaptop = 'eeeeeeee-0000-4000-8000-000000000005' as PlayerToken;
+    const BOB_GITHUB = { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' };
+    await store.linkToken(bob, BOB_GITHUB);
+    const nearby = { mode: 'nearby', difficulty: null, game: finishedGame(X_WINS) } as const;
+    const id = gameId('NEARBY45');
+    // The host (Alice, X) names the guest device (Bob, O). Both devices send a result.
+    await store.addResults(alice, [
+      result('eeeeeeee-1111-4000-8000-000000000001', { ...nearby, you: 'X', publicId: id, guest: bob, metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } }),
+    ]);
+    await store.addResults(bob, [
+      result('eeeeeeee-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: 2_034, metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } }),
+    ]);
+    await store.unlinkToken(bob);
+    expect((await store.history(bob, 0)).games).toEqual([]);
+    expect((await store.myGames(bob)).total.played).toBe(0);
+    await store.linkToken(bobLaptop, BOB_GITHUB);
+    expect((await store.history(bobLaptop, 0)).games).toMatchObject([{ id, mode: 'nearby', result: 'lost', opponentName: nameOf(alice) }]);
+    expect((await store.history(alice, 0)).games).toMatchObject([{ id, result: 'won', opponent: { login: 'bob' } }]);
+  });
+
   it('refreshes a renamed account', async () => {
     const code = await session();
     await store.linkToken(alice, ALICE_GITHUB);

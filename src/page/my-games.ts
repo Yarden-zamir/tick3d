@@ -37,7 +37,7 @@ import { openGameView } from './game-view.ts';
 import { startReview } from './controls.ts';
 import { openCard } from './end-card.ts';
 import { render, resultText } from './render.ts';
-import { flushResults, syncRecords } from './results.ts';
+import { deleteSentResults, flushResults, forgetRecords, syncRecords } from './results.ts';
 import { openDeviceSession, joinSession } from './sessions.ts';
 import { page, current, settingsLocked } from './state.ts';
 
@@ -185,7 +185,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     logout.type = 'button';
     logout.className = 'btn btn-small';
     logout.textContent = 'Log out';
-    logout.addEventListener('click', () => void api.logout().then(refreshAccount).then(() => myGamesDialog.close(), showError));
+    logout.addEventListener('click', () => void logOut().then(() => myGamesDialog.close(), showError));
     accountBox.append(avatar, name, logout);
   } else {
     // The same generated name that the server shows to the other players (src/names.ts).
@@ -273,8 +273,7 @@ async function clearHistory(): Promise<void> {
     // Upload what waits first, so a result that arrives later does not bring a cleared game back.
     await flushResults();
     await api.clearHistory();
-    const db = page.deviceDb;
-    if (db !== undefined) for (const result of await db.all('results')) if (result.sent) await db.delete('results', result.id);
+    await deleteSentResults();
     clearConfirm.close();
     historyOffset = 0;
     // The dialog covers the toasts, so the list itself says what happened.
@@ -284,6 +283,21 @@ async function clearHistory(): Promise<void> {
   } finally {
     clearConfirmYes.disabled = false;
   }
+}
+
+// Logout. The server moves the finished games and seats of this browser to the account, so this
+// device drops its copies of account data: the uploaded results, the survival records and the cached
+// online games. Settings, sound, tuning and the sessions on this device stay.
+// Limit: a result that does not upload before the logout stays, and uploads later for this browser.
+// Revisit this if players report a logged-in game in the stats of a logged-out browser.
+async function logOut(): Promise<void> {
+  await flushResults();
+  await api.logout();
+  await deleteSentResults();
+  forgetRecords();
+  const db = page.deviceDb;
+  if (db !== undefined) for (const cached of await db.all('remote')) await db.delete('remote', cached.code);
+  await refreshAccount();
 }
 
 // The games of the open session, oldest first, with Replay and the result card. render() calls this,

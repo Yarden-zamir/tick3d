@@ -511,8 +511,13 @@ export async function openStore(
     // Logout: this browser no longer acts for its account. The other devices of the account stay linked.
     // A seat that holds this device token goes to the account first: a session from before account
     // seats, or a seat taken before the login. The account keeps it, and this browser loses it.
-    // Limit: the query reads the seats of every session document, like myGames. Revisit this at about
-    // 100,000 sessions, or when a logout takes more than about 100 ms.
+    // Every finished result that names this device token also goes to the account: the uploader
+    // (`token`) and both seat columns, also results from before the login. The browser then lists and
+    // counts none of them. A Nearby host row that names this device as the guest moves too, so the
+    // guest dedupe (HOST_HAS_GAME) still matches. hidden_x and hidden_o stay: a cleared seat stays cleared.
+    // Limit: the session query reads the seats of every session document, like myGames, and the result
+    // updates scan the results table. Revisit this at about 100,000 sessions or results, or when a
+    // logout takes more than about 100 ms.
     unlinkToken: (token: PlayerToken): Promise<void> =>
       serialized(async () => {
         const [linked] = await rows('FROM player_tokens SELECT github_id WHERE token = $token', { token });
@@ -526,6 +531,9 @@ export async function openStore(
           const row = await loadRaw(code as Code);
           const seats = { X: row.doc.seats.X === token ? account : row.doc.seats.X, O: row.doc.seats.O === token ? account : row.doc.seats.O };
           await save(row, { ...row.doc, seats });
+        }
+        for (const column of ['token', 'player_x', 'player_o'] as const) {
+          await db.run(`UPDATE results SET ${column} = $account WHERE ${column} = $token`, { account, token });
         }
         await db.run('DELETE FROM player_tokens WHERE token = $token', { token });
       }),
