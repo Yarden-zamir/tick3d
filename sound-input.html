@@ -118,9 +118,8 @@
         </div>
         <p class="train-feedback" id="message" aria-live="polite"></p>
         <div class="rail" id="rail" role="img" aria-label="Pitch rail: your range from low at the left to high at the right, with the four rows"></div>
-        <div class="train-deck-wrap">
-          <div class="board flat train-deck input-deck" id="deck" role="group" aria-label="Board: the lit cell follows your pitch. Tap a cell to hear it."></div>
-          <div class="train-dots" id="deck-dots"></div>
+        <div class="stage voice-stage" id="stage">
+          <div class="board" id="board" role="group" aria-label="Board: the lit cell follows your pitch. Tap a cell to hear it."></div>
         </div>
       </section>
 
@@ -129,13 +128,34 @@
         <div id="summary"><p class="input-note">Finish a run to see your times here.</p></div>
         <h3>Your best</h3>
         <div id="bests"></div>
-        <h3 id="board-title">Leaderboard</h3>
-        <p class="input-note" id="board-note"></p>
-        <ol class="practice-board" id="board"></ol>
+        <h3 id="leaders-title">Leaderboard</h3>
+        <p class="input-note" id="leaders-note"></p>
+        <ol class="practice-board" id="leaders"></ol>
       </section>
 
       <section class="train-progress input-settings" aria-labelledby="settings-title">
         <h2 id="settings-title">Settings</h2>
+        <div class="voice-view" id="view-controls">
+          <div class="field">
+            <span class="label">View</span>
+            <div class="view-row">
+              <div class="segmented" data-setting="view">
+                <button type="button" data-value="tower">Tower</button>
+                <button type="button" data-value="flat">Flat</button>
+              </div>
+              <button type="button" class="btn btn-small reset-angle" id="reset-angle" data-show-view="tower" data-tip="Turn the tower back to the resting view">Reset angle</button>
+            </div>
+          </div>
+          <div class="field" data-show-view="flat">
+            <span class="label">Layout</span>
+            <div class="segmented" data-setting="layout">
+              <button type="button" data-value="grid">Grid</button>
+              <button type="button" data-value="row">Side by side</button>
+              <button type="button" data-value="column">Top to bottom</button>
+              <button type="button" data-value="steps">Steps</button>
+            </div>
+          </div>
+        </div>
         <div class="input-slider">
           <label for="stickiness">Stickiness</label>
           <input type="range" id="stickiness" min="0" max="100" step="5" />
@@ -169,6 +189,7 @@
         <li>The default range is 150 to 2400 Hz, one octave for each row: hum for rows 4 and 3, whistle for rows 2 and 1. Calibrate to your voice: make your lowest comfortable sound for 2 seconds, then your highest. The rows then split your own range. Reset to default goes back.</li>
         <li>Stickiness keeps a held cell lit when your pitch wobbles. It grows while you hold the cell. The band on the rail shows it.</li>
         <li>Free play: hold a note on one cell for 1 second to place an X. Tap a cell to hear it in the sound set of the game.</li>
+        <li>The board has the views and layouts of the game, under Settings: the tower (drag to turn it) or flat, in a grid, side by side, top to bottom or in steps. The game and this room share the choice. When your voice moves to a layer out of view, the page scrolls to it.</li>
         <li>Targets: a cell lights with a dashed ring. Slide until your light sits on it and hold it. Hot and cold tell you how near you are. 10 targets against the clock.</li>
         <li>Echo: the game plays the sound of a cell, as the ear training does. Find it by ear, then sing to it and hold it. 100 points for the right cell, 25 fewer for each step off. 8 rounds.</li>
         <li>Levels: Easy keeps targets near each other with a short hold. Hard spreads them over the board, holds longer, and has no stickiness. Each mode and level keeps its own best, here and on the leaderboard.</li>

@@ -136,23 +136,23 @@
 }
 
 /* The target: the X color with a dashed ring, so it reads apart from the light of the pitch. */
-.input-deck .cell.target {
+.voice-board .cell.target {
   outline: 3px dashed var(--x);
   outline-offset: 2px;
   background: color-mix(in srgb, var(--x) 30%, var(--surface));
 }
 
-.input-deck .cell.target.lit {
+.voice-board .cell.target.lit {
   background: var(--win);
 }
 
 /* An echo answer on another cell than the target. */
-.input-deck .cell.answer:not(.target) {
+.voice-board .cell.answer:not(.target) {
   background: var(--danger);
 }
 
 /* A hit: the cell pops, and a ring flies out. */
-.input-deck .cell.hit {
+.voice-board .cell.hit {
   animation: practice-hit 0.6s ease-out;
 }
 
@@ -208,7 +208,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .input-deck .cell.hit {
+  .voice-board .cell.hit {
     animation: none;
   }
 }

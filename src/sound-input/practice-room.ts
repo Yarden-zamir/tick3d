@@ -26,7 +26,7 @@ import {
 import { element } from '../element.ts';
 import type { Code, SessionView } from '../protocol.ts';
 import { sounds } from '../sound.ts';
-import type { Deck } from '../sound-training/deck.ts';
+import type { Board } from '../board/board.ts';
 import type { Voice, VoiceFrame } from '../voice/engine.ts';
 import { cellOfStep, stepOfCell } from '../voice/mapping.ts';
 import { type Rail, showRailTarget } from '../voice/rail.ts';
@@ -36,12 +36,11 @@ export type Tab = 'free' | PracticeMode | 'playoff';
 
 type Context = {
   voice: Voice;
-  deck: Deck;
+  board: Board;
   rail: Rail;
   // Opens the microphone from a tap. False when it does not open (the page shows why).
   startMic: () => Promise<boolean>;
   show: (message: string) => void;
-  fit: () => void;
 };
 
 const COUNTDOWN_MS = 3000;
@@ -91,7 +90,7 @@ function loadBests(): Bests {
   }
 }
 
-export function createPracticeRoom({ voice, deck, rail, startMic, show, fit }: Context) {
+export function createPracticeRoom({ voice, board, rail, startMic, show }: Context) {
   const panel = element('#practice', HTMLDivElement);
   const levels = element('#levels', HTMLFieldSetElement);
   const setupNote = element('#setup-note', HTMLParagraphElement);
@@ -114,9 +113,9 @@ export function createPracticeRoom({ voice, deck, rail, startMic, show, fit }: C
   const resultsEl = element('#results', HTMLElement);
   const summaryEl = element('#summary', HTMLDivElement);
   const bestsEl = element('#bests', HTMLDivElement);
-  const boardTitle = element('#board-title', HTMLHeadingElement);
-  const boardNote = element('#board-note', HTMLParagraphElement);
-  const boardEl = element('#board', HTMLOListElement);
+  const boardTitle = element('#leaders-title', HTMLHeadingElement);
+  const boardNote = element('#leaders-note', HTMLParagraphElement);
+  const boardEl = element('#leaders', HTMLOListElement);
 
   let tab: Tab = 'free';
   let run: Run | undefined;
@@ -143,12 +142,12 @@ export function createPracticeRoom({ voice, deck, rail, startMic, show, fit }: C
   }
 
   function mark(cell: number | undefined, name: 'target' | 'answer'): void {
-    for (const button of deck.cells) button.classList.remove(name);
-    if (cell !== undefined) deck.cells[cell]?.classList.add(name);
+    for (const button of board.cells) button.classList.remove(name);
+    if (cell !== undefined) board.cells[cell]?.classList.add(name);
   }
 
   function burst(cell: number): void {
-    const button = deck.cells[cell];
+    const button = board.cells[cell];
     if (button === undefined) return;
     button.classList.remove('hit');
     // Read the layout, so the animation starts again on a second hit of the same cell.
@@ -483,7 +482,6 @@ export function createPracticeRoom({ voice, deck, rail, startMic, show, fit }: C
       }
     }
     updateButtons();
-    fit();
   }
 
   function leavePlayoff(): void {

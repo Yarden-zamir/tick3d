@@ -46,26 +46,26 @@ test('a steady note lights its cell, a held note places an X, and Stop puts the 
   const errors = trackErrors(page);
   const response = await page.goto('/sound-input');
   expect(response?.status()).toBe(200);
-  await expect(page.locator('#deck .cell')).toHaveCount(64);
-  await expect(page.locator('#deck .cell.lit')).toHaveCount(0);
+  await expect(page.locator('#board .cell')).toHaveCount(64);
+  await expect(page.locator('#board .cell.lit')).toHaveCount(0);
 
   const mic = page.locator('#mic');
   await mic.click();
   await expect(mic).toHaveText('Stop');
-  const lit = page.locator('#deck .cell.lit');
+  const lit = page.locator('#board .cell.lit');
   await expect(lit).toHaveCount(1);
   await expect(lit).toHaveAttribute('data-cell', String(G5_CELL));
   await expect(page.locator('#cell')).toHaveText('Layer 2, row 2, column 3');
   await expect(page.locator('#rail .rail-cursor')).toBeVisible();
   await expect(page.locator('#note')).toContainText('G5');
   // The hold is on by default: after a second on one cell, the cell gets an X.
-  await expect(page.locator(`#deck .cell[data-cell="${G5_CELL}"]`)).toHaveClass(/\bx\b/);
+  await expect(page.locator(`#board .cell[data-cell="${G5_CELL}"]`)).toHaveClass(/\bx\b/);
 
   await mic.click();
   await expect(mic).toHaveText('Turn on the microphone');
   await expect(lit).toHaveCount(0);
   await page.locator('#clear').click();
-  await expect(page.locator('#deck .cell.x')).toHaveCount(0);
+  await expect(page.locator('#board .cell.x')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -80,7 +80,7 @@ test('a blocked microphone shows what to do, and the page stays usable', async (
   await expect(page.locator('#message')).toContainText('blocked');
   await expect(mic).toHaveText('Turn on the microphone');
   await expect(mic).toBeEnabled();
-  await expect(page.locator('#deck .cell.lit')).toHaveCount(0);
+  await expect(page.locator('#board .cell.lit')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -130,7 +130,7 @@ test('a calibration from 300 Hz to 1200 Hz splits the rows over that range, and 
   await expect(page.locator('#cell')).toContainText('row 3,');
   // A tone above the range lights the top edge: layer 4, row 1, column 4 (cell 3 × 16 + 3).
   await setTone(page, 3000);
-  await expect(page.locator('#deck .cell.lit')).toHaveAttribute('data-cell', String(3 * 16 + 3));
+  await expect(page.locator('#board .cell.lit')).toHaveAttribute('data-cell', String(3 * 16 + 3));
 
   await page.reload();
   await expect(mode).toHaveText(/^Calibrated: /);
@@ -171,11 +171,11 @@ test('the stickiness settings stay after a reload', async ({ page }) => {
 // target moves on. The settings are the defaults, so the range is DEFAULT_RANGE.
 async function singTargets(page: Page, rounds: number): Promise<void> {
   for (let round = 0; round < rounds; round++) {
-    const target = page.locator('#deck .cell.target');
+    const target = page.locator('#board .cell.target');
     await expect(target).toHaveCount(1, { timeout: 15_000 });
     const cell = Number(await target.getAttribute('data-cell'));
     await setTone(page, frequencyAt(stepOfCell(cell) + 0.5, DEFAULT_RANGE));
-    await expect(page.locator(`#deck .cell.target[data-cell="${cell}"]`)).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator(`#board .cell.target[data-cell="${cell}"]`)).toHaveCount(0, { timeout: 15_000 });
   }
 }
 
@@ -191,7 +191,7 @@ test('a target run times each target, keeps the best, and puts the run on the le
   await expect(page.locator('#round')).toHaveText('Done');
   await expect(page.locator('#summary tbody tr')).toHaveCount(10);
   await expect(page.locator('#bests')).toContainText(/Targets, Easy: \d+\.\d s/);
-  await expect(page.locator('#board li').first()).toBeVisible();
+  await expect(page.locator('#leaders li').first()).toBeVisible();
   await page.goto('/stats');
   await expect(page.getByRole('heading', { name: 'Voice room practice' })).toBeVisible();
   expect(errors).toEqual([]);
@@ -204,7 +204,7 @@ test('an echo round plays a cell, takes the held cell as the answer, and shows t
   await setTone(page, 600);
   await expect(page.locator('#round')).toHaveText('Round 1 of 8', { timeout: 10_000 });
   await expect(page.locator('#message')).toContainText('points', { timeout: 15_000 });
-  await expect(page.locator('#deck .cell.target')).toHaveCount(1);
+  await expect(page.locator('#board .cell.target')).toHaveCount(1);
   await page.locator('#start').click();
   await expect(page.locator('#round')).toHaveText('Stopped');
 });

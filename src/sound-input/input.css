@@ -216,13 +216,24 @@
   translate: -100% 0;
 }
 
+/* The board of the game (src/board/) in its stage. The stage of the game page takes a named grid area;
+   here it is one more part of the card. */
+.train-card > .voice-stage {
+  grid-area: auto;
+}
+
+.voice-view {
+  display: grid;
+  gap: 0.6rem;
+}
+
 /* The light: the cell of the pitch now. A cell that loses the light fades back slowly, so a slide
    leaves a short trail. */
-.input-deck .cell {
+.voice-board .cell {
   transition: background 0.7s ease-out, translate 0.08s, box-shadow 0.08s;
 }
 
-.input-deck .cell.lit {
+.voice-board .cell.lit {
   background: var(--win);
   transition: none;
   translate: -2px -2px;
@@ -231,7 +242,7 @@
 
 /* While the hold is on, a ring in the X color fills the lit cell in 1 second (HOLD_MS in main.ts).
    A calibration places no X, so the ring does not show while the calibration box is open. */
-.train:has(#hold:checked):has(#calibration[hidden]) .input-deck .cell.lit:not(.x) {
+.train:has(#hold:checked):has(#calibration[hidden]) .voice-board .cell.lit:not(.x) {
   animation: input-hold 1s linear forwards;
 }
 

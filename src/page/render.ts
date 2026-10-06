@@ -1,5 +1,6 @@
 // Draws the whole page from the settings and the open session.
 import { hasLimit } from '../clock.ts';
+import { showSegmented } from '../board/view-controls.ts';
 import { type Player, other, type Game, replay, toCoords, winnerOf } from '../game.ts';
 import { applyCamera, cells, marks } from './board.ts';
 import { renderChat } from './chat.ts';
@@ -33,7 +34,7 @@ import { showAccount } from '../header/header.ts';
 import { LOCK_CLOSED_ICON, LOCK_OPEN_ICON, SOUND_OFF_ICON, SOUND_ON_ICON } from '../icons.ts';
 import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
-import { settings, type Settings, type Toggle } from './settings.ts';
+import { settings, type Toggle } from './settings.ts';
 import { me, page, shared, current, isLive, matchOptions, settingsLocked, canChangeMatch, bothSeated } from './state.ts';
 
 // One name per seat, the same in the score, status, chat, clocks, keypad, history and end card.
@@ -187,18 +188,7 @@ export function render(): void {
   document.querySelectorAll<HTMLElement>('[data-show-mode], [data-needs-session]').forEach((field) => {
     field.hidden = !applies(field);
   });
-  document.querySelectorAll<HTMLElement>('[data-show-view]').forEach((field) => {
-    field.hidden = field.dataset.showView !== settings.view;
-  });
-  document.querySelectorAll<HTMLElement>('.segmented').forEach((group) => {
-    const value = settings[group.dataset.setting as keyof Settings];
-    // Segmented controls exist for the text settings only (mode, level, view and the like).
-    if (typeof value !== 'string') throw new Error(`segmented control for a setting that is not text: ${group.dataset.setting}`);
-    group.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
-      button.setAttribute('aria-pressed', String(button.dataset.value === value));
-      button.disabled = frozen;
-    });
-  });
+  showSegmented(document, settings, frozen);
   document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) => {
     button.setAttribute('aria-pressed', String(options[button.dataset.toggle as Toggle]));
     button.disabled = frozen || page.busy || !canChangeMatch();

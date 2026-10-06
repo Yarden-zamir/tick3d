@@ -1,7 +1,7 @@
 // The Voice room (/sound-input): the pitch from the microphone lights a cell of the board, live. It holds the
 // calibration and the stickiness settings, free play, and the practice modes (practice-room.ts): targets,
-// echo and the playoff. The voice engine (src/voice/engine.ts) does the listening; the deck of the ear
-// training draws the board.
+// echo and the playoff. The voice engine (src/voice/engine.ts) does the listening. The board is the board of
+// the game (src/board/), with the view and the layout that the game stores.
 import '../style.css';
 import '../sound-training/training.css';
 import './input.css';
@@ -9,12 +9,13 @@ import './practice.css';
 import { element } from '../element.ts';
 import { toCoords } from '../game.ts';
 import { setupPageHeader } from '../header/header.ts';
-import { settings as gameSettings } from '../page/settings.ts';
-import { normalizeCode } from '../protocol.ts';
+import { applyCamera, boardClass, buildBoard, showMark } from '../board/board.ts';
+import { setupSpinDrag } from '../board/spin-drag.ts';
+import { onSegmented, showSegmented } from '../board/view-controls.ts';
+import { DEFAULTS, oneOf, saveSettings, settings as gameSettings } from '../page/settings.ts';
+import { LAYOUTS, VIEWS, normalizeCode } from '../protocol.ts';
 import { SOUND_SETS, type SoundSetId } from '../sound-sets.ts';
 import { setSoundSet, sounds } from '../sound.ts';
-import { buildDeck, fitDeck } from '../sound-training/deck.ts';
-import { DISPLAY_MIN_CELL } from '../sound-training/fit.ts';
 import { isSmallRange, median, rangeFrom, type Retry } from '../voice/calibration.ts';
 import { type VoiceFrame, createVoice } from '../voice/engine.ts';
 import { noteName } from '../voice/mapping.ts';
@@ -46,9 +47,10 @@ const cellEl = element('#cell', HTMLElement);
 const levelEl = element('#level', HTMLDivElement);
 const messageEl = element('#message', HTMLParagraphElement);
 const railEl = element('#rail', HTMLDivElement);
-const cardEl = element('#card', HTMLElement);
-const deckEl = element('#deck', HTMLDivElement);
-const dotsEl = element('#deck-dots', HTMLDivElement);
+const stageEl = element('#stage', HTMLDivElement);
+const boardEl = element('#board', HTMLDivElement);
+const viewControls = element('#view-controls', HTMLDivElement);
+const resetAngleButton = element('#reset-angle', HTMLButtonElement);
 const stickinessInput = element('#stickiness', HTMLInputElement);
 const stickinessValue = element('#stickiness-value', HTMLOutputElement);
 const buildUpInput = element('#build-up', HTMLInputElement);
@@ -60,6 +62,9 @@ const clearButton = element('#clear', HTMLButtonElement);
 const HOLD_MS = 1000;
 // Each calibration step needs this much time with a clear pitch.
 const STEP_MS = 2000;
+// The page scrolls to the layer of the voice once its cell holds this long, so a passing slide does not
+// make the page jump between layers.
+const SCROLL_AFTER_MS = 300;
 
 // One calibration in progress. `heard` holds the pitches of the step now, and `lows` the pitches of the
 // low step once it is done.
@@ -70,20 +75,31 @@ let calibration: Calibration | undefined;
 let tab: Tab = 'free';
 let lit: number | undefined;
 let holdDone = false;
+// The layer that the page scrolled to last.
+let shownLayer: number | undefined;
 
-const deck = buildDeck(deckEl, dotsEl);
-// The X piece of the game, for the cells that a held note places.
-for (const button of deck.cells) {
-  const piece = document.createElement('span');
-  piece.className = 'piece';
-  button.append(piece);
-}
+const board = buildBoard(boardEl);
 const rail = buildRail(railEl);
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
-// A short landscape screen puts the deck beside the other card parts, as in training.css. The deck
-// fits again when a part above it shows or hides.
-const sideLayout = matchMedia('(orientation: landscape) and (max-height: 32rem)');
-const fit = (): void => fitDeck(deckEl, cardEl, sideLayout.matches, DISPLAY_MIN_CELL);
+// The view and the layout of the game (src/page/settings.ts): the game and this room share them.
+function showBoard(): void {
+  boardEl.className = `${boardClass(gameSettings.view, gameSettings.layout)} voice-board`;
+  applyCamera(board, gameSettings.view, gameSettings.spin);
+  showSegmented(viewControls, gameSettings, false);
+  resetAngleButton.disabled = gameSettings.spin === DEFAULTS.spin;
+}
+
+// Scrolls the layer into view when part of it is out of view: out of the window, or out of a board that
+// scrolls sideways.
+function showLayer(layer: number): void {
+  const layerEl = board.layers[layer];
+  if (layerEl === undefined) throw new RangeError(`no layer ${layer}`);
+  const rect = layerEl.getBoundingClientRect();
+  const box = boardEl.getBoundingClientRect();
+  const inView = rect.top >= 0 && rect.bottom <= innerHeight && rect.left >= Math.max(0, box.left) && rect.right <= Math.min(innerWidth, box.right);
+  if (!inView) layerEl.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: reducedMotion.matches ? 'instant' : 'smooth' });
+}
 
 const show = (message: string): void => {
   messageEl.textContent = message;
@@ -109,6 +125,7 @@ async function startMic(): Promise<boolean> {
 
 function stopMic(message: string): void {
   voice.stop();
+  shownLayer = undefined;
   endCalibration();
   practice.stopped(message);
   showRailPitch(rail, null, null, 0);
@@ -120,7 +137,7 @@ function stopMic(message: string): void {
   show(message);
 }
 
-const practice = createPracticeRoom({ voice, deck, rail, startMic, show, fit });
+const practice = createPracticeRoom({ voice, board, rail, startMic, show });
 
 // ---- Display ----
 
@@ -132,7 +149,6 @@ function showRange(): void {
   hintEl.hidden = settings.range === null || !isSmallRange(settings.range);
   showRailRange(rail, voice.range());
   practice.settingsChanged();
-  fit();
 }
 
 function showStickiness(): void {
@@ -155,21 +171,27 @@ function showProgress(share: number): void {
 
 // Lights `cell` and lets the light of the cell before fade (input.css). undefined puts the light out.
 function light(cell: number | undefined, heldMs: number): void {
+  if (cell !== undefined && heldMs >= SCROLL_AFTER_MS) {
+    const { layer } = toCoords(cell);
+    if (layer !== shownLayer) {
+      shownLayer = layer;
+      showLayer(layer);
+    }
+  }
   if (cell === lit) {
     if (cell !== undefined && tab === 'free' && holdBox.checked && calibration === undefined && !holdDone && heldMs >= HOLD_MS) {
       holdDone = true;
-      deck.cells[cell]?.classList.add('x');
+      showMark(board, cell, 'X');
     }
     return;
   }
-  if (lit !== undefined) deck.cells[lit]?.classList.remove('lit');
+  if (lit !== undefined) board.cells[lit]?.classList.remove('lit');
   lit = cell;
   holdDone = false;
   if (cell === undefined) return;
-  deck.cells[cell]?.classList.add('lit');
+  board.cells[cell]?.classList.add('lit');
   const { layer, row, column } = toCoords(cell);
   cellEl.textContent = `Layer ${layer + 1}, row ${row + 1}, column ${column + 1}`;
-  deck.dots.forEach((dot, index) => dot.classList.toggle('right', index === layer));
 }
 
 // ---- Tabs ----
@@ -180,7 +202,6 @@ function setTab(next: Tab): void {
   for (const button of tabButtons) button.setAttribute('aria-pressed', String(button.dataset.tab === tab));
   document.body.dataset.tab = tab;
   practice.setTab(tab);
-  fit();
 }
 
 // ---- Calibration ----
@@ -204,7 +225,6 @@ function showStep(step: Calibration['step']): void {
   progressEl.hidden = false;
   retryButton.hidden = true;
   showProgress(0);
-  fit();
 }
 
 async function startCalibration(): Promise<void> {
@@ -219,7 +239,6 @@ function endCalibration(): void {
   calibration = undefined;
   calibrationEl.hidden = true;
   calibrateButton.disabled = false;
-  fit();
 }
 
 // One clear frame of the calibration: `frequency` is its pitch, and `elapsed` the time since the frame before.
@@ -243,7 +262,6 @@ function calibrate(active: Calibration, frequency: number, elapsed: number): voi
     stepEl.textContent = RETRY_TEXT[result];
     progressEl.hidden = true;
     retryButton.hidden = false;
-    fit();
     return;
   }
   voice.saveSettings({ ...voice.settings(), range: result });
@@ -305,9 +323,34 @@ buildUpInput.addEventListener('input', () => {
   showStickiness();
 });
 clearButton.addEventListener('click', () => {
-  for (const button of deck.cells) button.classList.remove('x');
+  for (let cell = 0; cell < board.cells.length; cell++) showMark(board, cell, null);
 });
-deck.cells.forEach((button, cell) =>
+onSegmented(viewControls, (setting, value) => {
+  if (setting === 'view') gameSettings.view = oneOf(VIEWS, value, gameSettings.view);
+  else if (setting === 'layout') gameSettings.layout = oneOf(LAYOUTS, value, gameSettings.layout);
+  else throw new Error(`unknown board setting ${setting}`);
+  saveSettings();
+  showBoard();
+});
+resetAngleButton.addEventListener('click', () => {
+  gameSettings.spin = DEFAULTS.spin;
+  saveSettings();
+  showBoard();
+});
+setupSpinDrag(stageEl, {
+  active: () => gameSettings.view === 'tower',
+  spin: () => gameSettings.spin,
+  turn: (spin) => {
+    gameSettings.spin = spin;
+    applyCamera(board, gameSettings.view, spin);
+  },
+  started: () => undefined,
+  ended: () => {
+    saveSettings();
+    showBoard();
+  },
+});
+board.cells.forEach((button, cell) =>
   button.addEventListener('click', () => {
     if (!practice.running()) sounds.place('X', cell);
   }),
@@ -318,9 +361,8 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden && voice.isListening()) stopMic('The microphone stops when the page is out of view. Turn it on again to go on.');
 });
 addEventListener('pagehide', () => voice.stop());
-addEventListener('resize', fit);
-sideLayout.addEventListener('change', fit);
 
+showBoard();
 showStickiness();
 showRange();
 // ?mode= opens a tab. ?code= is an online game: the playoff tab, for a playoff with the other player.
@@ -335,5 +377,3 @@ if (code !== undefined) {
 } else {
   setTab('free');
 }
-// The web font changes the height of the text above the deck, so fit again once it is in.
-void document.fonts.ready.then(fit);

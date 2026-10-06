@@ -110,8 +110,7 @@ export function paint(deck: Deck, marks: Paint): void {
 
 // Sizes the deck to the room that the card leaves on screen. `side` is true when the card puts the
 // deck beside the other parts (a short landscape screen, training.css), and false when they stack.
-// `minCell` goes to chooseLayout.
-export function fitDeck(root: HTMLElement, card: HTMLElement, side: boolean, minCell?: number): void {
+export function fitDeck(root: HTMLElement, card: HTMLElement, side: boolean): void {
   const style = getComputedStyle(root);
   const width = root.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
   const rootRect = root.getBoundingClientRect();
@@ -125,7 +124,7 @@ export function fitDeck(root: HTMLElement, card: HTMLElement, side: boolean, min
   const top = rootRect.top + scrollY;
   const bottomMargin = 16;
   const height = innerHeight - top - below - bottomMargin - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
-  const layout = chooseLayout(Math.max(1, width), Math.max(1, height), minCell);
+  const layout = chooseLayout(Math.max(1, width), Math.max(1, height));
   root.dataset.mode = layout.mode;
   root.style.setProperty('--cell', `${layout.cell}px`);
   root.dispatchEvent(new Event('scroll'));
