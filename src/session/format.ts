@@ -114,7 +114,8 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
     name,
     games: doc.games.map(readGame),
     seats: { X: readSeat(seats.X), O: readSeat(seats.O) },
-    options: { hideBoard: options.hideBoard === true, hideHistory: options.hideHistory === true },
+    // A field that an older writer left out reads as false.
+    options: { hideBoard: options.hideBoard === true, hideHistory: options.hideHistory === true, hideCoordinates: options.hideCoordinates === true },
     lockedGame,
     clock,
     chat: chat.slice(-CHAT_KEEP),

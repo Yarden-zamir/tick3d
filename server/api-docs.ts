@@ -111,6 +111,17 @@ const object = (description: string, properties: Record<string, Schema>, optiona
   required: Object.keys(properties).filter((key) => !optional.includes(key)),
   additionalProperties: false,
 });
+// The match options. hideCoordinates is optional only in a request: an older client sends no such field.
+const matchOptions = (description: string, optionalCoordinates = false): Schema =>
+  object(
+    description,
+    {
+      hideBoard: { type: 'boolean' },
+      hideHistory: { type: 'boolean' },
+      hideCoordinates: { type: 'boolean', description: 'The keypad hides the coordinates of the last move. A missing value means false.' },
+    },
+    optionalCoordinates ? ['hideCoordinates'] : [],
+  );
 const limit = (kind: keyof typeof LIMIT_RANGE, description: string): Schema => ({
   type: ['integer', 'null'],
   minimum: LIMIT_RANGE[kind].min,
@@ -179,7 +190,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     games: { type: 'array', items: ref('GameRecord'), minItems: 1, description: 'Every game, oldest first. The last one is the live game.' },
     seats: object('True when a player holds the seat.', { X: { type: 'boolean' }, O: { type: 'boolean' } }),
     you: { ...nullable(ref('Player')), description: 'Your seat, from your X-Player header. null when you watch.' },
-    options: object('Display options for both players and watchers.', { hideBoard: { type: 'boolean' }, hideHistory: { type: 'boolean' } }),
+    options: matchOptions('Display options for both players and watchers.'),
     locked: { type: 'boolean', description: 'True when a player locked the settings until the live game ends.' },
     clock: { ...ref('TimeControl'), description: 'The time limit for the next game.' },
     now: { type: 'number', description: 'Server time in epoch milliseconds.' },
@@ -206,9 +217,10 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
         name,
         hideBoard: { type: 'boolean', description: 'Hide the board for both players.' },
         hideHistory: { type: 'boolean', description: 'Hide all marks except the last move.' },
+        hideCoordinates: { type: 'boolean', description: 'Hide the coordinates of the last move on the keypad, for play by ear.' },
         clock: { ...ref('TimeControl'), description: 'The time limit from the next game on.' },
       },
-      ['name', 'hideBoard', 'hideHistory', 'clock'],
+      ['name', 'hideBoard', 'hideHistory', 'hideCoordinates', 'clock'],
     ),
     minProperties: 1,
   },
@@ -255,7 +267,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     difficulty: { type: ['string', 'null'], enum: [...DIFFICULTIES, null] },
     finishedAt: { type: 'number' },
     publicId: { ...nullable(ref('GameId')), description: 'An id of 8 characters that the device made, for the game link. Optional.' },
-    options: { ...object('The hide settings at the end of the game. Optional.', { hideBoard: { type: 'boolean' }, hideHistory: { type: 'boolean' } }) },
+    options: matchOptions('The hide settings at the end of the game. Optional.', true),
     tuned: { type: 'boolean', description: 'A computer game with changed advanced settings. Optional.' },
     metrics: { ...nullable(ref('Metrics')), description: 'What the device saw during the game. Optional.' },
     guest: {
@@ -284,7 +296,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     id: ref('GameId'),
     mode: strings(SESSION_MODES),
     game: ref('GameRecord'),
-    options: object('The hide settings at the end of the game.', { hideBoard: { type: 'boolean' }, hideHistory: { type: 'boolean' } }),
+    options: matchOptions('The hide settings at the end of the game.'),
     difficulty: { type: ['string', 'null'], enum: [...DIFFICULTIES, null], description: 'The computer level, in a computer game.' },
     tuned: { type: 'boolean', description: 'A computer with changed advanced settings.' },
     computer: { ...nullable(ref('Player')), description: 'The seat of the computer, in a computer game.' },
@@ -419,7 +431,7 @@ function view(fields: Record<string, unknown>): Record<string, unknown> {
     games: [{ moves: [], times: [], clock: NO_LIMIT, timedOut: false }],
     seats,
     you: 'X',
-    options: { hideBoard: false, hideHistory: false },
+    options: { hideBoard: false, hideHistory: false, hideCoordinates: false },
     locked: false,
     clock: NO_LIMIT,
     now: T0,
@@ -677,7 +689,7 @@ export const ROUTES = {
         id: `${EXAMPLE_CODE}-1`,
         mode: 'online',
         game: game(X_WINS),
-        options: { hideBoard: false, hideHistory: false },
+        options: { hideBoard: false, hideHistory: false, hideCoordinates: false },
         difficulty: null,
         tuned: false,
         computer: null,

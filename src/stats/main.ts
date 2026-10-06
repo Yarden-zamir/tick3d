@@ -253,6 +253,10 @@ const ENDING_NAMES: Record<string, string> = {
 };
 const HIDE_NAMES: Record<string, string> = { none: 'Nothing hidden', board: 'Board hidden', history: 'History hidden', both: 'Both hidden' };
 const modeName = (key: string) => MODE_NAMES[key] ?? capital(key);
+function hideName(setting: string, coordinates: boolean): string {
+  if (!coordinates) return HIDE_NAMES[setting] ?? setting;
+  return setting === 'none' ? 'Coordinates hidden' : `${HIDE_NAMES[setting] ?? setting}, coordinates too`;
+}
 
 function draw(stats: Stats): void {
   tiles(stats);
@@ -329,7 +333,7 @@ function draw(stats: Stats): void {
   table(
     card('Hide board and history', false, 'Win rate: games that the player won against the computer.'),
     ['Setting', 'Games', 'vs computer', 'Win rate'],
-    stats.hide.map((row) => [HIDE_NAMES[row.setting] ?? row.setting, row.games, row.computerGames, percent(row.humanWins, row.computerGames)]),
+    stats.hide.map((row) => [hideName(row.setting, row.coordinates), row.games, row.computerGames, percent(row.humanWins, row.computerGames)]),
   );
   bars(
     card('Time limits'),

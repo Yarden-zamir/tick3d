@@ -7,7 +7,7 @@ import { reject, showError } from './feedback.ts';
 import { nearbyKind, endNearby, openNearby } from './nearby.ts';
 import { render } from './render.ts';
 import { leaveSession, createSession, openLocalSession, withBusy, applyView, startNewGame } from './sessions.ts';
-import { LAYOUTS, VIEWS } from '../protocol.ts';
+import { LAYOUTS, MATCH_OPTIONS, VIEWS } from '../protocol.ts';
 import { settings, oneOf, MODES, PLAYERS, saveSettings } from './settings.ts';
 import { page, settingsLocked, isLive } from './state.ts';
 
@@ -100,15 +100,15 @@ export function setupControls(): void {
 
   document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) => {
     const toggle = button.dataset.toggle;
-    if (toggle !== 'hideBoard' && toggle !== 'hideHistory') throw new Error(`unknown toggle ${toggle}`);
+    const option = MATCH_OPTIONS.find((known) => known === toggle);
+    if (option === undefined) throw new Error(`unknown toggle ${toggle}`);
     button.addEventListener('click', () => {
       if (settingsLocked()) return reject(undefined, 'locked');
       if (page.session === undefined) return reject(undefined, 'no-session');
       if (page.session.you === null) return reject(undefined, 'spectator');
       sounds.click();
       const { code, backend } = page.session;
-      const value = !page.session.options[toggle];
-      const changes = toggle === 'hideBoard' ? { hideBoard: value } : { hideHistory: value };
+      const changes = { [option]: !page.session.options[option] };
       void withBusy(async () => applyView(await backend.update(code, changes)));
     });
   });

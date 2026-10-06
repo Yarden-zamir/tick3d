@@ -26,6 +26,7 @@ import {
   showCardButton,
   lockButton,
   soundButton,
+  trainLink,
 } from './dom.ts';
 import { openCard } from './end-card.ts';
 import { renderGameView, viewerName } from './game-view.ts';
@@ -208,6 +209,8 @@ export function render(): void {
     button.setAttribute('aria-pressed', String(options[button.dataset.toggle as Toggle]));
     button.disabled = frozen || page.busy || !canChangeMatch();
   });
+  // With the coordinates hidden, the game goes by ear: the ear training link stands out.
+  trainLink.classList.toggle('highlight', options.hideCoordinates);
 
   // Online box
   const onlineSession = page.session?.mode === 'online' ? page.session : undefined;

@@ -246,7 +246,8 @@ input::placeholder {
 .coords button,
 .review button,
 .history button,
-.end-card-actions button {
+.end-card-actions button,
+.train button:where(:not(.cell, .train-dot)) {
   padding: 0.55rem 0.85rem;
   border-radius: 8px;
   border: var(--border) solid var(--line);
@@ -258,12 +259,14 @@ input::placeholder {
 }
 
 :is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:hover:not(:disabled),
+.train button:where(:not(.cell, .train-dot)):hover:not(:disabled),
 .lock:hover:not(:disabled) {
   translate: -1px -1px;
   box-shadow: 4px 4px 0 var(--shadow);
 }
 
 :is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:active:not(:disabled),
+.train button:where(:not(.cell, .train-dot)):active:not(:disabled),
 .lock:active:not(:disabled) {
   translate: 3px 3px;
   box-shadow: 0 0 0 var(--shadow);
@@ -1026,11 +1029,14 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .toggles {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.6rem;
 }
 
+/* Three hide options share the row of the panel, so the sides are narrow. */
 .toggles button {
   flex: 1;
+  padding-inline: 0.5rem;
   color: var(--muted);
   font-weight: 600;
 }
@@ -1045,6 +1051,53 @@ body[data-turn='O'] .status[data-state='playing'] {
   opacity: 1;
   background: var(--primary);
   color: var(--on-color);
+}
+
+/* The link to the ear training, at the bottom of the panel. Hide coordinates highlights it. */
+.train-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.85rem;
+  border: var(--border) solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--shadow);
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: none;
+  transition: translate 0.08s, box-shadow 0.08s, background 0.15s;
+}
+
+.train-link svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.train-link:hover {
+  translate: -1px -1px;
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+.train-link:active {
+  translate: 3px 3px;
+  box-shadow: 0 0 0 var(--shadow);
+}
+
+.train-link.highlight {
+  background: var(--primary);
+  color: var(--on-color);
+  font-weight: 800;
+  animation: train-pulse 0.7s ease-in-out 3;
+}
+
+/* A short pulse when the highlight starts. The reduced motion rule below turns it off. */
+@keyframes train-pulse {
+  50% {
+    scale: 1.04;
+    box-shadow: 6px 6px 0 var(--shadow);
+  }
 }
 
 .help {
@@ -1062,6 +1115,11 @@ body[data-turn='O'] .status[data-state='playing'] {
 .help p {
   margin: 0.5rem 0 0;
   line-height: 1.45;
+}
+
+.help a {
+  color: var(--ink);
+  font-weight: 800;
 }
 
 .tuning fieldset {
@@ -1201,9 +1259,30 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.55rem;
 }
 
+.coords-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 2.25rem;
+}
+
 .coords-title {
   font-size: 0.9rem;
   font-weight: 800;
+  line-height: 1.2;
+}
+
+/* A small square icon button, like the rules button. `.coords button` gives the border, the shadow
+   and the hover and press moves; this rule only makes it square and keeps the icon centered. */
+.coords .coords-hear {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  color: var(--ink);
 }
 
 /* Three read-only slots: layer, row, column. The next one to fill is highlighted. */

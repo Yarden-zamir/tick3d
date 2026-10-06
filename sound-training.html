@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Train your ear for tick3d: hear a cell of the 4×4×4 board and find its layer, row and column." />
+    <script>
+      // Apply the stored theme of the game before the first paint, as index.html does.
+      try {
+        const theme = JSON.parse(localStorage.getItem('tick3d.settings') ?? 'null')?.theme;
+        // Keep this list in step with THEMES in src/protocol.ts.
+        const themes = ['light', 'dark', 'snow', 'candy', 'mint', 'retro', 'midnight', 'synthwave', 'bloodmoon', 'coffee', 'batman', 'mono'];
+        if (themes.includes(theme)) {
+          document.documentElement.dataset.theme = theme;
+        }
+      } catch {}
+    </script>
+    <title>tick3d · ear training</title>
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <main class="train">
+      <header class="brand train-head">
+        <h1><a href="/" class="home-link">tick<span>3d</span></a> ear training</h1>
+      </header>
+
+      <section class="train-card" id="card" aria-label="Card">
+        <p class="train-kind" id="card-kind"></p>
+        <h2 id="card-title">Loading…</h2>
+        <button type="button" class="train-play" id="play" aria-keyshortcuts="Space">▶ Play</button>
+        <p class="train-answer" id="card-answer" hidden></p>
+        <div class="train-deck-wrap">
+          <div class="board flat train-deck" id="deck" role="group" aria-label="Board: tap your answer"></div>
+          <div class="train-dots" id="deck-dots"></div>
+        </div>
+        <div class="train-actions">
+          <button type="button" class="primary" id="check" aria-keyshortcuts="Enter">Check</button>
+          <button type="button" id="yours" hidden>Hear yours</button>
+          <button type="button" class="primary" id="next" aria-keyshortcuts="Enter" hidden>Next</button>
+        </div>
+        <p class="train-feedback" id="card-feedback" aria-live="polite"></p>
+        <p class="train-keys">Keys: Space plays. Arrows move on the board, Enter or Space picks, Enter again checks.</p>
+      </section>
+
+      <section class="train-progress" aria-labelledby="progress-title">
+        <h2 id="progress-title">What you hear</h2>
+        <p class="train-intro">Hear a cell and find its place on the board. Headphones help with the columns.</p>
+        <p class="train-hint" id="hint"></p>
+        <div class="train-dimensions" id="dimensions"></div>
+        <p class="train-totals" id="totals"></p>
+        <button type="button" class="train-reset" id="reset">Reset progress</button>
+      </section>
+    </main>
+    <dialog class="end-card home-confirm" id="reset-confirm" aria-labelledby="reset-confirm-text">
+      <p id="reset-confirm-text">Reset your ear training? Every sound starts as new again.</p>
+      <div class="end-card-actions">
+        <button type="button" class="primary" id="reset-yes">Reset</button>
+        <button type="button" id="reset-no">Keep</button>
+      </div>
+    </dialog>
+    <script type="module" src="/src/sound-training/main.ts"></script>
+  </body>
+</html>

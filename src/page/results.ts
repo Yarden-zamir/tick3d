@@ -155,17 +155,18 @@ export async function syncRecords(): Promise<void> {
 // A game that the computer won: the moves it lasted can beat the record of its setup.
 // The hide options count as they are at the end of the game.
 export function noteSurvival(open: Session, game: Game, index: number): void {
-  const { hideBoard, hideHistory } = open.options;
-  const { records, news } = addLoss(loadRecords(), { difficulty: settings.difficulty, clock: game.clock, hideBoard, hideHistory, tuned: !isDefaultTuning(computerTuning()) }, game.moves.length);
+  const { records, news } = addLoss(loadRecords(), { difficulty: settings.difficulty, clock: game.clock, ...open.options, tuned: !isDefaultTuning(computerTuning()) }, game.moves.length);
   saveRecords(records);
   if (news === undefined) return;
   recordNews.set(`${open.code}:${index}`, news);
   showToast(`New record: you lasted ${news.moves} moves. Your best was ${news.previous}.`);
 }
 
-export function hideLabel({ hideBoard, hideHistory }: MatchOptions): string | undefined {
-  if (hideBoard && hideHistory) return 'Board and history hidden';
-  if (hideBoard) return 'Board hidden';
-  if (hideHistory) return 'History hidden';
-  return undefined;
+// For example "Board hidden", "Board and history hidden" or "Board, history and coordinates hidden".
+export function hideLabel({ hideBoard, hideHistory, hideCoordinates }: MatchOptions): string | undefined {
+  const parts = [hideBoard && 'board', hideHistory && 'history', hideCoordinates && 'coordinates'].filter((part) => part !== false);
+  const last = parts.pop();
+  if (last === undefined) return undefined;
+  const text = parts.length === 0 ? last : `${parts.join(', ')} and ${last}`;
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)} hidden`;
 }

@@ -13,7 +13,8 @@ describe('parseDoc', () => {
     expect(doc.games.map((game) => game.moves.length)).toEqual([7, 3, 0]);
     expect(doc.games[1]?.timedOut).toBe(true);
     expect(doc.seats.O).toBe('bbbbbbbb-0000-4000-8000-000000000002');
-    expect(doc.options).toEqual({ hideBoard: true, hideHistory: false });
+    // The fixture is from before hide coordinates: the missing field reads as false.
+    expect(doc.options).toEqual({ hideBoard: true, hideHistory: false, hideCoordinates: false });
   });
 
   it('fills defaults for optional fields that an older writer left out', () => {
@@ -26,7 +27,7 @@ describe('parseDoc', () => {
       name: 'Minimal',
       games: [{ moves: [5], times: [0], clock: { perMove: null, perGame: null }, timedOut: false }],
       seats: { X: null, O: null },
-      options: { hideBoard: false, hideHistory: false },
+      options: { hideBoard: false, hideHistory: false, hideCoordinates: false },
       lockedGame: null,
       clock: { perMove: null, perGame: null },
     });

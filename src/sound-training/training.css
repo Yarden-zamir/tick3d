@@ -1,0 +1,340 @@
+/* The ear training page. It uses the theme tokens of style.css, so it follows the saved theme.
+   style.css gives the .train buttons the brutalist look, but not the board cells and the dots. */
+.train {
+  display: grid;
+  gap: 1.2rem;
+  max-width: 100rem;
+  margin: 0 auto;
+  padding: max(1rem, env(safe-area-inset-top)) 1rem 3rem;
+}
+
+.train-head {
+  /* .brand of style.css places the title in the grid of the game page. Here it spans the top row. */
+  grid-area: auto;
+  grid-column: 1 / -1;
+  justify-content: start;
+}
+
+/* A small title, so the card and its board fit the screen. */
+.train-head h1 {
+  font-size: clamp(1.5rem, 6vw, 2.2rem);
+}
+
+.train-card,
+.train-progress {
+  display: grid;
+  align-content: start;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: var(--border) solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 6px 6px 0 var(--shadow);
+}
+
+.train h2,
+.train h3 {
+  margin: 0;
+  font-weight: 800;
+}
+
+.train h2 {
+  font-size: 1.4rem;
+}
+
+.train h3 {
+  font-size: 1rem;
+}
+
+.train-kind {
+  justify-self: start;
+  margin: 0;
+  padding: 0.1rem 0.55rem;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--toggle-on);
+  color: var(--on-color);
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.train .train-play {
+  min-height: 4.5rem;
+  background: var(--primary);
+  color: var(--on-color);
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.train-answer {
+  margin: 0;
+  padding: 0.7rem 0.8rem;
+  border: 2px dashed var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.train-answer strong {
+  padding: 0 0.25rem;
+  border-radius: 4px;
+  background: var(--win);
+  color: var(--on-color);
+  font-weight: 800;
+}
+
+/* The answer deck: the flat board of the game (.board.flat in style.css). src/sound-training/fit.ts picks
+   data-mode and --cell from the room on screen. The gap matches LAYER_GAP in fit.ts. */
+.train-deck-wrap {
+  display: grid;
+  align-content: start;
+  align-self: start;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.train .train-deck {
+  gap: 16px;
+}
+
+.train-deck[data-mode='row'] {
+  grid-template-columns: repeat(4, auto);
+}
+
+.train-deck[data-mode='grid'] {
+  grid-template-columns: repeat(2, auto);
+}
+
+/* A phone: one row of layers that scrolls sideways and stops at each layer. */
+.train .train-deck[data-mode='scroll'] {
+  display: flex;
+  justify-content: flex-start;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+}
+
+.train-deck[data-mode='scroll'] .layer {
+  flex: none;
+  scroll-snap-align: start;
+  scroll-margin-left: 0.25rem;
+}
+
+.train-deck[data-asked='learn'] .cell {
+  cursor: help;
+}
+
+/* The pick, and the feedback: the right area in the win color, a wrong pick in the danger color. */
+.train-deck .cell.picked {
+  background: var(--toggle-on);
+}
+
+.train-deck .cell.right {
+  background: var(--win);
+}
+
+.train-deck .cell.wrong {
+  background: var(--danger);
+}
+
+/* The exact cell that the player tapped: a ring in the pick color inside a line outline, on top of the
+   right or the wrong area. */
+.train-deck .cell.tapped {
+  outline: 3px solid var(--line);
+  outline-offset: 2px;
+  box-shadow: inset 0 0 0 calc(var(--cell) * 0.12) var(--toggle-on);
+  z-index: 1;
+}
+
+/* The dots under a scroll deck: which layers are in view, and where the pick and the answer are. */
+.train-dots {
+  display: none;
+  justify-content: center;
+  gap: 0.2rem;
+}
+
+.train-deck[data-mode='scroll'] + .train-dots {
+  display: flex;
+}
+
+.train-dot {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.train-dot::before {
+  content: '';
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 2px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.train-dot.picked::before {
+  background: var(--toggle-on);
+}
+
+.train-dot.wrong::before {
+  background: var(--danger);
+}
+
+/* A layer that holds both the answer and a wrong pick shows the answer. */
+.train-dot.right::before {
+  background: var(--win);
+}
+
+.train-dot.current::before {
+  outline: 2px solid var(--line);
+  outline-offset: 2px;
+}
+
+.train-feedback {
+  margin: 0;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.train-feedback:empty {
+  display: none;
+}
+
+.train-feedback.all-right::before {
+  content: '✓ ';
+}
+
+.train-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.train-actions button {
+  flex: 1;
+  min-height: 3.2rem;
+}
+
+.train .primary {
+  background: var(--primary);
+  color: var(--on-color);
+  font-weight: 800;
+}
+
+.train-keys,
+.train-hint,
+.train-totals,
+.train-bar-value {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.train-hint {
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.train-dimensions {
+  display: grid;
+  gap: 1rem;
+}
+
+.train-dimension {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.train-bar {
+  height: 1rem;
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.train-bar i {
+  display: block;
+  height: 100%;
+  background: var(--o);
+}
+
+.train-values {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.train .train-value {
+  display: grid;
+  gap: 0.1rem;
+  min-height: 3rem;
+  padding: 0.35rem 0.3rem;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.train-value small {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  white-space: pre;
+}
+
+.train .train-value[data-box='new'] {
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.train .train-all,
+.train .train-reset {
+  justify-self: start;
+  min-height: 2.75rem;
+}
+
+/* Wide screens: the progress sits beside the card, so the board can take the width of the card. */
+@media (min-width: 64rem) {
+  .train {
+    grid-template-columns: minmax(0, 1fr) 24rem;
+    align-items: start;
+  }
+}
+
+/* Short landscape screens (a phone on its side): the board sits beside the other card parts.
+   Keep this query in step with sideLayout in src/sound-training/main.ts. */
+@media (orientation: landscape) and (max-height: 32rem) {
+  .train-card {
+    grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+    column-gap: 1rem;
+  }
+
+  .train-card > * {
+    grid-column: 1;
+  }
+
+  .train-card > .train-deck-wrap {
+    grid-column: 2;
+    grid-row: 1 / span 7;
+  }
+
+  .train .train-play {
+    min-height: 3rem;
+  }
+
+  .train-head h1 {
+    font-size: 1.4rem;
+  }
+
+  /* A phone on its side seldom has a keyboard, and the line needs room. */
+  .train-keys {
+    display: none;
+  }
+}

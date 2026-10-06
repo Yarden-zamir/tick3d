@@ -34,7 +34,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png}'],
         // A page address opens the cached app. API calls always go to the network.
         navigateFallback: 'index.html',
-        // /stats needs no entry: the precache serves it from stats.html (clean URLs), online and offline.
+        // /stats and /sound-training need no entry: the precache serves them from their .html files
+        // (clean URLs), online and offline.
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
@@ -61,8 +62,8 @@ export default defineConfig({
       },
     }),
   ],
-  // Two pages: the game, and the hidden stats page that Caddy serves at /stats.
-  build: { rollupOptions: { input: { main: 'index.html', stats: 'stats.html' } } },
+  // Three pages: the game, the hidden stats page at /stats, and the ear training at /sound-training.
+  build: { rollupOptions: { input: { main: 'index.html', stats: 'stats.html', training: 'sound-training.html' } } },
   // Vitest runs the unit tests only. Playwright runs the e2e/ tests against a deployed site (npm run e2e).
   test: { include: ['{src,server}/**/*.test.ts'] },
 });

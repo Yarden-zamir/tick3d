@@ -2,7 +2,7 @@
 import { type Difficulty, DIFFICULTIES } from '../ai.ts';
 import { type TimeControl, NO_LIMIT, parseClock } from '../clock.ts';
 import type { Player } from '../game.ts';
-import { LAYOUTS, THEMES, VIEWS } from '../protocol.ts';
+import { LAYOUTS, type MATCH_OPTIONS, THEMES, VIEWS } from '../protocol.ts';
 
 export const MODES = ['computer', 'friend', 'online', 'nearby'] as const;
 export const PLAYERS = ['X', 'O'] as const;
@@ -38,7 +38,7 @@ export type Settings = {
   spin: number;
   theme: Theme;
 };
-export type Toggle = 'hideBoard' | 'hideHistory';
+export type Toggle = (typeof MATCH_OPTIONS)[number];
 
 export const DEFAULTS: Settings = {
   mode: 'computer',

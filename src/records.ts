@@ -8,6 +8,7 @@ export type RecordSetup = {
   clock: TimeControl;
   hideBoard: boolean;
   hideHistory: boolean;
+  hideCoordinates: boolean;
   // A computer with changed advanced settings plays another game, so it keeps separate records.
   tuned: boolean;
 };
@@ -16,10 +17,10 @@ export type Records = Readonly<Record<string, number>>;
 export type RecordNews = { moves: number; previous: number };
 
 export function recordKey(setup: RecordSetup): string {
-  const { difficulty, clock, hideBoard, hideHistory, tuned } = setup;
+  const { difficulty, clock, hideBoard, hideHistory, hideCoordinates, tuned } = setup;
   const parts = [difficulty, `game:${clock.perGame ?? 'none'}`, `move:${clock.perMove ?? 'none'}`, `board:${hideBoard}`, `history:${hideHistory}`];
-  // Only a tuned setup adds a part, so the keys of the default computer stay as they were.
-  return [...parts, ...(tuned ? ['tuned'] : [])].join('|');
+  // Hidden coordinates and a tuned computer add a part only when they are on, so the older keys stay as they were.
+  return [...parts, ...(hideCoordinates ? ['coordinates'] : []), ...(tuned ? ['tuned'] : [])].join('|');
 }
 
 // Stored records come from an older visit or a hand edit, so keep only whole positive move counts.

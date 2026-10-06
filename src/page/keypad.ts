@@ -2,11 +2,11 @@
 import { toCell, other, toCoords, SIZE } from '../game.ts';
 import { sounds } from '../sound.ts';
 import { cells } from './board.ts';
-import { coordsSlots, coordsSlotsEl, coordsTitle, digitButtons, coordsBack, coordsPlace, coordsForm } from './dom.ts';
+import { coordsSlots, coordsSlotsEl, coordsTitle, coordsHear, digitButtons, coordsBack, coordsPlace, coordsForm } from './dom.ts';
 import { showProblem } from './feedback.ts';
 import { playerName } from './render.ts';
 import { humanMove } from './sessions.ts';
-import { page, current } from './state.ts';
+import { page, current, matchOptions } from './state.ts';
 
 // The cell the keypad points at once layer, row and column are all chosen.
 function coordTarget(): number | undefined {
@@ -22,10 +22,11 @@ export function renderCoords(): void {
   const last = game.moves.at(-1);
   const showLast = page.coordDigits.length === 0 && last !== undefined;
   const lastPlayer = other(game.turn);
-  let digits = page.coordDigits;
+  let digits: readonly (number | string)[] = page.coordDigits;
   if (showLast) {
     const { layer, row, column } = toCoords(last);
-    digits = [layer + 1, row + 1, column + 1];
+    // Hide coordinates keeps the last move a secret to the eye. The speaker still plays it.
+    digits = matchOptions().hideCoordinates ? ['?', '?', '?'] : [layer + 1, row + 1, column + 1];
   }
   coordsSlots.forEach((slot, i) => {
     slot.textContent = String(digits[i] ?? '');
@@ -39,6 +40,8 @@ export function renderCoords(): void {
   const target = coordTarget();
   cells.forEach((button, cell) => button.classList.toggle('aim', cell === target));
   const full = page.coordDigits.length === 3;
+  // The speaker plays the typed cell, or else the last move, so a game works by ear.
+  coordsHear.hidden = !full && !showLast;
   digitButtons.forEach((button) => (button.disabled = full));
   coordsBack.disabled = page.coordDigits.length === 0;
   coordsPlace.disabled = !full;
@@ -51,9 +54,20 @@ export function setupKeypad(): void {
       if (!Number.isInteger(digit) || digit < 1 || digit > SIZE) throw new Error(`bad keypad digit ${button.dataset.digit}`);
       if (page.coordDigits.length >= 3) return;
       page.coordDigits = [...page.coordDigits, digit];
-      sounds.click();
+      const target = coordTarget();
+      // The third number names a cell: its own sound tells the player which cell Place takes.
+      if (target === undefined) sounds.click();
+      else sounds.preview(target);
       renderCoords();
     });
+  });
+
+  coordsHear.addEventListener('click', () => {
+    const target = coordTarget();
+    const game = current();
+    const last = game.moves.at(-1);
+    if (target !== undefined) sounds.preview(target);
+    else if (last !== undefined) sounds.place(other(game.turn), last);
   });
 
   coordsBack.addEventListener('click', () => {

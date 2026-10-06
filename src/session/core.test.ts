@@ -155,11 +155,19 @@ describe('match options and lock', () => {
     expect(status(() => core.lock(doc, carol))).toBe(403);
     expect(view(doc, alice).locked).toBe(true);
     expect(status(() => core.update(doc, alice, { hideBoard: true }))).toBe(409);
+    expect(status(() => core.update(doc, alice, { hideCoordinates: true }))).toBe(409);
     expect(status(() => core.update(doc, alice, { clock: { perMove: 30, perGame: null } }))).toBe(409);
     expect(core.update(doc, alice, { name: 'Renamed' }).name).toBe('Renamed');
     doc = play(doc, X_WINS);
     expect(view(doc, alice).locked).toBe(false);
     expect(core.update(doc, bob, { hideBoard: true }).options.hideBoard).toBe(true);
+  });
+
+  it('shares hide coordinates with both players and watchers, and keeps the other options', () => {
+    const doc = core.update(core.update(onlineDoc(), bob, { hideHistory: true }), alice, { hideCoordinates: true });
+    for (const who of [alice, bob, carol]) expect(view(doc, who).options).toEqual({ hideBoard: false, hideHistory: true, hideCoordinates: true });
+    expect(core.update(doc, bob, { hideCoordinates: false }).options).toEqual({ hideBoard: false, hideHistory: true, hideCoordinates: false });
+    expect(status(() => core.update(doc, carol, { hideCoordinates: false }))).toBe(403);
   });
 
   it('keeps the limit of a started game and applies a change from the next game', () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { NO_LIMIT } from './clock.ts';
 import { type RecordSetup, addLoss, mergeRecords, parseRecords, recordKey } from './records.ts';
 
-const setup: RecordSetup = { difficulty: 'hard', clock: NO_LIMIT, hideBoard: false, hideHistory: false, tuned: false };
+const setup: RecordSetup = { difficulty: 'hard', clock: NO_LIMIT, hideBoard: false, hideHistory: false, hideCoordinates: false, tuned: false };
 
 describe('survival records', () => {
   it('sets a first record without news, then reports only a longer game', () => {
@@ -23,6 +23,7 @@ describe('survival records', () => {
       { ...setup, clock: { perMove: null, perGame: 10 * 60 } },
       { ...setup, hideBoard: true },
       { ...setup, hideHistory: true },
+      { ...setup, hideCoordinates: true },
       { ...setup, tuned: true },
     ];
     for (const other of others) {
@@ -37,8 +38,9 @@ describe('survival records', () => {
     expect(parseRecords([3])).toEqual({});
   });
 
-  it('keeps the keys of untuned setups unchanged', () => {
+  it('keeps the keys of untuned setups without hidden coordinates unchanged', () => {
     expect(recordKey(setup)).toBe('hard|game:none|move:none|board:false|history:false');
+    expect(recordKey({ ...setup, hideCoordinates: true })).toBe('hard|game:none|move:none|board:false|history:false|coordinates');
   });
 
   it('refuses a game without moves', () => {
