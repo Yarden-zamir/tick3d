@@ -34,7 +34,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png}'],
         // A page address opens the cached app. API calls always go to the network.
         navigateFallback: 'index.html',
-        // /stats and /sound-training need no entry: the precache serves them from their .html files
+        // /stats, /sound-training and /sound-input need no entry: the precache serves them from their .html files
         // (clean URLs), online and offline.
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
@@ -62,8 +62,9 @@ export default defineConfig({
       },
     }),
   ],
-  // Three pages: the game, the hidden stats page at /stats, and the ear training at /sound-training.
-  build: { rollupOptions: { input: { main: 'index.html', stats: 'stats.html', training: 'sound-training.html' } } },
+  // Four pages: the game, the hidden stats page at /stats, the ear training at /sound-training, and the
+  // microphone toy at /sound-input.
+  build: { rollupOptions: { input: { main: 'index.html', stats: 'stats.html', training: 'sound-training.html', input: 'sound-input.html' } } },
   // Vitest runs the unit tests only. Playwright runs the e2e/ tests against a deployed site (npm run e2e).
   test: { include: ['{src,server}/**/*.test.ts'] },
 });

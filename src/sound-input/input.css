@@ -1,0 +1,96 @@
+/* The sound input page. It uses the layout of the ear training (training.css) and the theme tokens of
+   style.css. This file adds the readout, the level meter and the light on the deck. */
+
+.input-readout {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.7rem 0.8rem;
+  border: 2px dashed var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-weight: 600;
+}
+
+.input-readout p {
+  margin: 0;
+}
+
+.input-readout b {
+  font-size: clamp(1.05rem, 4.6vw, 1.3rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.input-label {
+  display: inline-block;
+  min-width: 3rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.input-readout[data-state='off'] b,
+.input-readout[data-state='off'] #note {
+  opacity: 0.5;
+}
+
+/* The level meter: the fill width comes from --level (0 to 1), which main.ts sets. */
+.input-level i {
+  width: calc(var(--level, 0) * 100%);
+  background: var(--muted);
+  transition: width 0.05s linear;
+}
+
+.input-readout[data-state='heard'] .input-level i {
+  background: var(--win);
+}
+
+/* The light: the cell of the pitch now. A cell that loses the light fades back slowly, so a slide
+   leaves a short trail. */
+.input-deck .cell {
+  transition: background 0.7s ease-out, translate 0.08s, box-shadow 0.08s;
+}
+
+.input-deck .cell.lit {
+  background: var(--win);
+  transition: none;
+  translate: -2px -2px;
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+/* While the hold is on, a ring in the X color fills the lit cell in 1 second (HOLD_MS in main.ts). */
+.train-card:has(#hold:checked) .input-deck .cell.lit:not(.x) {
+  animation: input-hold 1s linear forwards;
+}
+
+@keyframes input-hold {
+  from {
+    box-shadow: 4px 4px 0 var(--shadow), inset 0 0 0 0 var(--x);
+  }
+
+  to {
+    box-shadow: 4px 4px 0 var(--shadow), inset 0 0 0 calc(var(--cell) * 0.5) var(--x);
+  }
+}
+
+.input-how p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.input-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+  font-weight: 600;
+}
+
+.input-actions label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.input-actions button {
+  min-height: 2.75rem;
+}
