@@ -208,10 +208,15 @@ function playClip(ctx: BaseAudioContext, clip: VoiceClip, midi: number, start: n
   source.stop(start + CLIP_SECONDS);
 }
 
+// The clip that a note of the song plays: the clip of its move, else none (the synthesized note only).
+// The chords, the bass and the ending have no move, so they never take a clip.
+export const clipOf = (note: SongNote, clips: VoiceClips): VoiceClip | undefined =>
+  note.kind === 'melody' && note.move !== undefined ? clips.get(note.move) : undefined;
+
 function scheduleSong(song: Song, set: SoundSet, ctx: BaseAudioContext, delay: number, clips: VoiceClips): { output: AudioNode } {
   const mix = songMix(ctx);
   for (const note of song.notes) {
-    const clip = note.kind === 'melody' && note.move !== undefined ? clips.get(note.move) : undefined;
+    const clip = clipOf(note, clips);
     // A move that the voice placed plays the player's own note, over a soft synthesized one.
     if (clip !== undefined) playClip(ctx, clip, note.midi, ctx.currentTime + delay + note.at, mix.input);
     play(noteVoices(note, set), clip === undefined ? 1 : UNDER_CLIP, delay + note.at, ctx, mix.input);

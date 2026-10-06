@@ -6,6 +6,7 @@ import { MIC_ICON } from '../icons.ts';
 import { type VoiceClip, type VoiceClips, liveSoundUntil, sounds } from '../sound.ts';
 import { type Voice, type VoiceFrame, createVoice } from '../voice/engine.ts';
 import { type Rail, buildRail, showRailPitch, showRailRange } from '../voice/rail.ts';
+import { withReturn } from '../return-path.ts';
 import { voiceButton, voicePanel, voiceRailEl, voiceRoomLink, voiceStateEl } from './dom.ts';
 import { showProblem } from './feedback.ts';
 import { renderCoords } from './keypad.ts';
@@ -42,11 +43,17 @@ export function voiceClips(index: number): VoiceClips {
   return clips !== undefined && clips.game === gameKey(index) ? clips.byMove : new Map();
 }
 
-// The last moment of the held note, from the voice engine.
-// Limit: the engine has no clip call yet, so a voice move keeps the synthesized note in the song.
-// Revisit when src/voice/engine.ts exports clip(ms): return it here with the frequency of the frame.
-function takeClip(_frame: VoiceFrame): VoiceClip | undefined {
-  return undefined;
+// A clip holds the held note and a short lead-in before it, at most CLIP_MAX_MS.
+const CLIP_LEAD_MS = 150;
+const CLIP_MAX_MS = 1500;
+
+// The held note of `frame`, from the voice engine, with the pitch that the engine heard.
+// undefined when the engine does not listen.
+function takeClip(frame: VoiceFrame): VoiceClip | undefined {
+  if (voice === undefined) return undefined;
+  if (frame.frequency === null) throw new Error('a frame that places a move has a pitch');
+  const clip = voice.clip(Math.min(CLIP_MAX_MS, frame.heldMs + CLIP_LEAD_MS));
+  return clip === null ? undefined : { ...clip, frequency: frame.frequency };
 }
 
 // Keeps the clip of move `move`, which the voice just placed in the newest game.
@@ -170,7 +177,8 @@ export function syncVoice(): void {
   voicePanel.hidden = !settings.voice || voiceButton.hidden;
   // In a seated online game, the Voice room opens on its playoff for this game.
   const online = page.session?.mode === 'online' && page.session.you !== null ? page.session.code : undefined;
-  voiceRoomLink.href = online === undefined ? '/sound-input' : `/sound-input?code=${online}`;
+  // The Voice room links back to this page.
+  voiceRoomLink.href = withReturn(online === undefined ? '/sound-input' : `/sound-input?code=${online}`, `${location.pathname}${location.search}`);
   showState(!voice.isListening() && state !== 'off' ? 'paused' : state);
 }
 
