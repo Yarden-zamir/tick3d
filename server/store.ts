@@ -443,7 +443,9 @@ export async function openStore(
       const player = accountOf(own[0]?.login ?? null, own[0]?.avatar ?? null);
       if (player !== null && logins.has(player.login)) continue;
       if (player !== null) logins.add(player.login);
-      watchers.push({ id: watcherId(code, token), token, player });
+      // A logged-in watcher takes a seat for the account, like a join. The id stays from the device token.
+      const account = own.map((row) => String(row.linked)).find((linkedToken) => linkedToken.startsWith(ACCOUNT_TOKEN_PREFIX));
+      watchers.push({ id: watcherId(code, token), token: account ?? token, player });
     }
     const name = await namesOf([doc.seats.X, doc.seats.O, doc.seatRequest?.watcher ?? null, ...watchers.map((watcher) => watcher.token)]);
     return { presence, watchers, name };

@@ -703,6 +703,27 @@ describe('seat controls', () => {
   });
 });
 
+describe('seat controls with accounts', () => {
+  it('gives a seat to a logged-in watcher as an account seat, so a logout drops it from that device', async () => {
+    let open: PlayerToken[] = [];
+    store = await openStore(':memory:', { open: () => open });
+    const { code } = await store.create(bob, 'Give');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    open = [bob, alicePhone];
+    const watching = await store.get(code, alicePhone);
+    expect(watching.watchers).toMatchObject([{ player: { login: 'alice' } }]);
+    expect(watching.youWatcher).toBe(watching.watchers[0]?.id);
+    const id = watching.watchers[0]?.id;
+    if (id === undefined) throw new Error('no watcher');
+    await store.seat(code, bob, { action: 'seat', watcher: id });
+    expect((await store.get(code, alice)).you).toBe('O');
+    await store.unlinkToken(alicePhone);
+    expect((await store.get(code, alicePhone)).you).toBeNull();
+    expect((await store.get(code, alice)).you).toBe('O');
+  });
+});
+
 describe('custom names', () => {
   it('shows a custom name in views, history, My games, game links and stats, and goes back on reset', async () => {
     const code = await session();
