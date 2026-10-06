@@ -103,6 +103,8 @@ export const settingsLocked = () => page.session !== undefined && page.session.l
 export const bothSeated = () => page.session !== undefined && page.session.seats.X && page.session.seats.O;
 // A game with another device: online, or Nearby. An undo needs the other player, and chat is open.
 export const shared = () => page.session?.mode === 'online' || page.session?.mode === 'nearby';
+// A screen that watches a game with another device: it holds no seat.
+export const isWatching = () => shared() && page.session?.you === null;
 
 // The hide options belong to the session. With another device they apply to both players.
 export function matchOptions(): MatchOptions {

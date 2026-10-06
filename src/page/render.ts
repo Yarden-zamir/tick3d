@@ -35,7 +35,7 @@ import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
 import { renderPlayers } from './players.ts';
 import { settings, type Settings, type Toggle } from './settings.ts';
-import { me, page, shared, current, isLive, matchOptions, settingsLocked, canChangeMatch, bothSeated } from './state.ts';
+import { me, page, shared, current, isLive, isWatching, matchOptions, settingsLocked, canChangeMatch, bothSeated } from './state.ts';
 
 // One name per seat, the same in the score, status, chat, clocks, keypad, history and end card.
 // This screen's own seat is "You". Then come "Computer", the GitHub login and the generated name.
@@ -278,7 +278,8 @@ export function render(): void {
   undoButton.disabled = frozen || page.thinking || page.busy || page.review !== undefined || undoProblem !== undefined;
   undoButton.title = undoProblem ?? (shared() ? 'Ask the other player to take back your last move.' : 'Take back the last move.');
   // Undo is for a live game, and the result card for a finished one. So they share one place in the actions row.
-  if (!isLive()) undoButton.hidden = true;
+  // A watcher has no move to take back, so a watcher sees no Undo at all.
+  if (!isLive() || isWatching()) undoButton.hidden = true;
   showCardButton.hidden = isLive() || page.review !== undefined;
   renderClockEditor(frozen);
   renderClocks();
