@@ -1,6 +1,11 @@
 import { mkdtemp } from 'node:fs/promises';
 import { DuckDBInstance } from '@duckdb/node-api';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// Each test opens its own DuckDB database. On a busy machine (the deploy server runs several
+// builds at once) that alone can take seconds, so the 5 s default timed out now and then.
+// Revisit if a single store test takes over 20 s: that points at a slow query, not at load.
+vi.setConfig({ testTimeout: 20_000 });
 import { replay } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
 import { type Code, type GameId, type Metrics, type PlayerToken, type ResultUpload, parseGameId, toRecord } from '../src/protocol.ts';
