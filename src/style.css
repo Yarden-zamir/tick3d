@@ -247,7 +247,7 @@ input::placeholder {
 .review button,
 .history button,
 .end-card-actions button,
-.train button:where(:not(.cell, .train-dot)) {
+.train button:where(:not(.cell, .train-dot, .brand-links *)) {
   padding: 0.55rem 0.85rem;
   border-radius: 8px;
   border: var(--border) solid var(--line);
@@ -259,14 +259,14 @@ input::placeholder {
 }
 
 :is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:hover:not(:disabled),
-.train button:where(:not(.cell, .train-dot)):hover:not(:disabled),
+.train button:where(:not(.cell, .train-dot, .brand-links *)):hover:not(:disabled),
 .lock:hover:not(:disabled) {
   translate: -1px -1px;
   box-shadow: 4px 4px 0 var(--shadow);
 }
 
 :is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:active:not(:disabled),
-.train button:where(:not(.cell, .train-dot)):active:not(:disabled),
+.train button:where(:not(.cell, .train-dot, .brand-links *)):active:not(:disabled),
 .lock:active:not(:disabled) {
   translate: 3px 3px;
   box-shadow: 0 0 0 var(--shadow);

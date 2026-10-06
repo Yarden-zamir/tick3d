@@ -7,6 +7,8 @@ import { setSoundSet, sounds } from '../sound.ts';
 import { SOUND_SETS, type SoundSetId } from '../sound-sets.ts';
 import { settings } from '../page/settings.ts';
 import { setupSoundSets } from '../page/sound-set.ts';
+import { element } from '../element.ts';
+import { setupPageHeader } from '../header/header.ts';
 import { buildDeck, fitDeck, paint } from './deck.ts';
 import {
   type Asked,
@@ -31,11 +33,7 @@ import {
   weakest,
 } from './schedule.ts';
 
-function element<T extends HTMLElement>(selector: string, type: new () => T): T {
-  const found = document.querySelector(selector);
-  if (!(found instanceof type)) throw new Error(`sound-training.html misses ${selector}`);
-  return found;
-}
+setupPageHeader();
 
 const kindEl = element('#card-kind', HTMLParagraphElement);
 const titleEl = element('#card-title', HTMLHeadingElement);
