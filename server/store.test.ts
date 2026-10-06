@@ -728,6 +728,31 @@ describe('seat controls with accounts', () => {
   });
 });
 
+describe('seat controls for an account without an account row', () => {
+  it('seats a logged-in watcher whose account linked before account seats, and resolves the name', async () => {
+    let open: PlayerToken[] = [];
+    const path = `${await mkdtemp('/tmp/tick3d-store-')}/watcher.duckdb`;
+    store = await openStore(path, { open: () => open });
+    const { code } = await store.create(bob, 'Seat an old account');
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    store.close();
+    const instance = await DuckDBInstance.create(path);
+    const db = await instance.connect();
+    await db.run("DELETE FROM player_tokens WHERE token LIKE 'account-%'");
+    db.closeSync();
+    instance.closeSync();
+    store = await openStore(path, { open: () => open });
+    open = [bob, alicePhone];
+    const watching = await store.get(code, alicePhone);
+    expect(watching.youWatcher).toBe(watching.watchers[0]?.id);
+    const id = watching.watchers[0]?.id;
+    if (id === undefined) throw new Error('no watcher');
+    await store.seat(code, bob, { action: 'seat', watcher: id });
+    expect((await store.get(code, bob)).players.O?.login).toBe('alice');
+    expect((await store.get(code, alicePhone)).you).toBe('O');
+  });
+});
+
 describe('custom names', () => {
   it('shows a custom name in views, history, My games, game links and stats, and goes back on reset', async () => {
     const code = await session();

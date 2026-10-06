@@ -389,11 +389,13 @@ export async function openStore(
   async function identityOf(token: PlayerToken | undefined): Promise<core.Identity> {
     if (token === undefined) return new Set();
     const linked = await rows(
-      `FROM player_tokens SELECT token
+      `FROM player_tokens SELECT token, github_id
        WHERE github_id = (FROM player_tokens SELECT github_id WHERE token = $token)`,
       { token },
     );
-    return new Set([token, ...linked.map((row) => String(row.token))]);
+    // The account token counts also before its own row exists (an account that linked before account seats).
+    const account = linked[0] === undefined ? [] : [accountToken(linked[0].github_id as number | bigint)];
+    return new Set([token, ...account, ...linked.map((row) => String(row.token))]);
   }
 
   async function playersOf(doc: SessionDoc): Promise<Record<Player, PlayerInfo | null>> {
@@ -429,7 +431,7 @@ export async function openStore(
         ? []
         : await rows(
             `FROM player_tokens a JOIN player_tokens b USING (github_id) JOIN users u USING (github_id)
-             SELECT a.token AS token, b.token AS linked, u.login, u.avatar WHERE list_contains($tokens, a.token)`,
+             SELECT a.token AS token, b.token AS linked, u.github_id, u.login, u.avatar WHERE list_contains($tokens, a.token)`,
             { tokens: listValue(tokens) },
           );
     const presence = { X: false, O: false };
@@ -444,8 +446,8 @@ export async function openStore(
       if (player !== null && logins.has(player.login)) continue;
       if (player !== null) logins.add(player.login);
       // A logged-in watcher takes a seat for the account, like a join. The id stays from the device token.
-      const account = own.map((row) => String(row.linked)).find((linkedToken) => linkedToken.startsWith(ACCOUNT_TOKEN_PREFIX));
-      watchers.push({ id: watcherId(code, token), token: account ?? token, player });
+      const githubId = own[0]?.github_id as number | bigint | undefined;
+      watchers.push({ id: watcherId(code, token), token: githubId === undefined ? token : accountToken(githubId), player });
     }
     const name = await namesOf([doc.seats.X, doc.seats.O, doc.seatRequest?.watcher ?? null, ...watchers.map((watcher) => watcher.token)]);
     return { presence, watchers, name };
@@ -469,7 +471,12 @@ export async function openStore(
     return serialized(async () => {
       const row = await load(code);
       const identity = await identityOf(token);
-      const doc = rule(row.doc, identity, (await audience(code, row.doc)).watchers);
+      const { watchers } = await audience(code, row.doc);
+      // A rule can seat a logged-in watcher by its account token, so its row must exist first.
+      for (const watcher of watchers) {
+        if (watcher.token.startsWith(ACCOUNT_TOKEN_PREFIX)) await ensureAccountRow(BigInt(watcher.token.slice(ACCOUNT_TOKEN_PREFIX.length)));
+      }
+      const doc = rule(row.doc, identity, watchers);
       return view(doc === row.doc ? row : await save(row, doc), identity);
     });
   }
