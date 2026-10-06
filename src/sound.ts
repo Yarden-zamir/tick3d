@@ -56,7 +56,7 @@ const INSTRUMENTS = ['marimba', 'bell', 'pluck', 'whistle'] as const;
 const WIDTHS = [[1], [1, 3 / 2], [1, 2], [1, 3 / 2, 2]] as const;
 const PANS = [-0.75, -0.25, 0.25, 0.75] as const;
 
-export type Instrument = (typeof INSTRUMENTS)[number];
+type Instrument = (typeof INSTRUMENTS)[number];
 export type CellSound = { frequency: number; instrument: Instrument; intervals: readonly number[]; pan: number };
 
 export function cellSound(cell: number): CellSound {
