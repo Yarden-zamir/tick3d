@@ -603,6 +603,11 @@ input:disabled {
   row-gap: 0.9rem;
 }
 
+/* The header buttons stay at the right, also when they wrap under the wordmark. */
+.brand:has(> .status) > .brand-links {
+  margin-left: auto;
+}
+
 .status {
   order: 1;
   flex: 1 1 100%;
