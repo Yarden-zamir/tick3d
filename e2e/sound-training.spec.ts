@@ -153,3 +153,43 @@ test('on a phone, the prompt, Play, the board and Check fit the screen', async (
   // Every cell stays large enough to tap.
   expect((await box('#deck .cell')).width).toBeGreaterThanOrEqual(36);
 });
+
+test('the sound set menu on the trainer changes the set, keeps it after a reload, and the game uses it too', async ({ page }) => {
+  await page.goto('/sound-training');
+  const name = page.locator('#sound-set-name');
+  const totals = page.locator('#totals');
+  // The first row sound: the instrument in Cells, the chord in Harmony.
+  const firstRow = page.locator('.train-value[data-item="row-0"]');
+  await expect(name).toHaveText('Cells');
+  await expect(firstRow).toContainText('marimba');
+
+  const menu = page.locator('#sound-sets');
+  await page.getByRole('button', { name: 'Sound set', exact: true }).click();
+  await expect(menu).toBeVisible();
+  await menu.locator('[data-sound-set="harmony"]').click();
+  await expect(menu.locator('[data-sound-set="harmony"]')).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(name).toHaveText('Harmony');
+  await expect(totals).toContainText('Harmony sound set');
+  await expect(firstRow).toContainText('C major');
+  await expect(page.locator('.train-all').first()).toBeVisible();
+
+  await page.reload();
+  await expect(name).toHaveText('Harmony');
+  await expect(firstRow).toContainText('C major');
+
+  // The game page reads the same setting.
+  await page.goto('/');
+  await expect(page.locator('#sound-sets [data-sound-set="harmony"]')).toHaveAttribute('aria-pressed', 'true');
+
+  // Classic does not name cells: the menu shows it as the choice, and the trainer trains Cells.
+  await page.goto('/sound-training');
+  await page.getByRole('button', { name: 'Sound set', exact: true }).click();
+  await menu.locator('[data-sound-set="classic"]').click();
+  await page.keyboard.press('Escape');
+  await expect(name).toHaveText('Classic');
+  await expect(totals).toContainText('Cells sound set');
+  await expect(totals).toContainText('Classic does not name cells');
+  await expect(firstRow).toContainText('marimba');
+});
