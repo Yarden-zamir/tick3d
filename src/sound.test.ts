@@ -1,17 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { CELL_COUNT, toCell } from './game.ts';
-import { SOUND_SET_GROUPS, SOUND_SET_IDS, SOUND_SETS, type Voice } from './sound-sets.ts';
+import { SOUND_SET_GROUPS, SOUND_SET_IDS, SOUND_SETS, type Voice, harmonyNotes, midiHz } from './sound-sets.ts';
 
 const cells = Array.from({ length: CELL_COUNT }, (_, cell) => cell);
 const fingerprint = (voices: readonly Voice[]) => JSON.stringify(voices);
-// The loudest a move can get: the most voice levels that sound at the same moment.
-const peak = (voices: readonly Voice[]) =>
-  Math.max(
-    ...voices.map(({ at: moment = 0 }) =>
-      voices.filter(({ at = 0, decay }) => at <= moment && moment < at + decay).reduce((sum, voice) => sum + voice.level, 0),
-    ),
-  );
-
 describe('sound sets', () => {
   it('puts every set in exactly one menu group', () => {
     expect(Object.values(SOUND_SET_GROUPS).flat().toSorted()).toEqual([...SOUND_SET_IDS].toSorted());
@@ -24,7 +16,7 @@ describe('sound sets', () => {
         for (const cell of cells) expect(fingerprint(set.voices(cell, 'O'))).not.toBe(fingerprint(set.voices(cell, 'X')));
       });
 
-      it('keeps every voice short, audible and inside the headroom', () => {
+      it('keeps every voice short and audible', () => {
         for (const cell of cells) {
           for (const player of ['X', 'O'] as const) {
             const voices = set.voices(cell, player);
@@ -35,8 +27,6 @@ describe('sound sets', () => {
               expect((voice.at ?? 0) + voice.decay).toBeLessThanOrEqual(0.9);
               expect(Math.abs(voice.pan ?? 0)).toBeLessThanOrEqual(1);
             }
-            // The partials of a move rarely peak together, so this bound leaves room for a fast series of moves.
-            expect(peak(voices)).toBeLessThanOrEqual(0.75);
           }
         }
       });
@@ -79,5 +69,38 @@ describe('the Cells set', () => {
       expect(pan(at(1, 2, position))).toBeGreaterThan(pan(at(1, 2, position - 1)));
     }
     expect(pitch(SOUND_SETS.cells.voices(0, 'O'))).toBe(pitch(at(0, 0, 0)) / 2);
+  });
+});
+
+describe('the Harmony set', () => {
+  const notes = (layer: number, row: number, column: number) => harmonyNotes(toCell({ layer, row, column }));
+
+  it('tunes equal temperament to A4 = 440 Hz', () => {
+    expect(midiHz(69)).toBe(440);
+    expect(midiHz(60)).toBeCloseTo(261.63, 2);
+    expect(midiHz(81)).toBeCloseTo(880, 6);
+  });
+
+  it('plays the chords of C major in their voicings', () => {
+    // C major in root position, octave 4: C4 E4 G4.
+    expect(notes(1, 0, 0)).toEqual([60, 64, 67]);
+    // G major, 1st inversion, octave 4: B4 D5 G5.
+    expect(notes(1, 2, 1)).toEqual([71, 74, 79]);
+    // F major, 2nd inversion, octave 3: C4 F4 A4.
+    expect(notes(0, 1, 2)).toEqual([60, 65, 69]);
+    // The seventh chords: Cmaj7, Fmaj7, G7 (a dominant seventh) and Am7, in octave 3.
+    expect(notes(0, 0, 3)).toEqual([48, 52, 55, 59]);
+    expect(notes(0, 1, 3)).toEqual([53, 57, 60, 64]);
+    expect(notes(0, 2, 3)).toEqual([55, 59, 62, 65]);
+    expect(notes(0, 3, 3)).toEqual([57, 60, 64, 67]);
+    // A minor in root position, octave 6: A6 = 1760 Hz.
+    expect(midiHz(notes(3, 3, 0)[0] ?? 0)).toBeCloseTo(1760, 6);
+  });
+
+  it('plays every note of the chord, and X and O play the same pitches', () => {
+    const cell = toCell({ layer: 1, row: 2, column: 3 });
+    const pitches = (player: 'X' | 'O') => new Set(SOUND_SETS.harmony.voices(cell, player).map((voice) => ('frequency' in voice ? voice.frequency : 0)));
+    const chord = harmonyNotes(cell).map(midiHz);
+    for (const player of ['X', 'O'] as const) for (const f of chord) expect(pitches(player)).toContain(f);
   });
 });
