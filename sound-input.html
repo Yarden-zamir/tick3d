@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Whistle or hum to the tick3d board: the pitch of your voice lights a cell of the 4×4×4 cube, live." />
+    <script>
+      // Apply the stored theme of the game before the first paint, as index.html does.
+      try {
+        const theme = JSON.parse(localStorage.getItem('tick3d.settings') ?? 'null')?.theme;
+        // Keep this list in step with THEMES in src/protocol.ts.
+        const themes = ['light', 'dark', 'snow', 'candy', 'mint', 'retro', 'midnight', 'synthwave', 'bloodmoon', 'coffee', 'batman', 'mono'];
+        if (themes.includes(theme)) {
+          document.documentElement.dataset.theme = theme;
+        }
+      } catch {}
+    </script>
+    <title>tick3d · sound input</title>
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <main class="train">
+      <header class="brand train-head">
+        <h1><a href="/" class="home-link">tick<span>3d</span></a> sound input</h1>
+      </header>
+
+      <section class="train-card" id="card" aria-label="Sound input">
+        <p class="train-kind">Just for fun</p>
+        <h2>Whistle, hum or sing to the board</h2>
+        <button type="button" class="train-play" id="mic">Turn on the microphone</button>
+        <div class="input-readout" id="readout" data-state="off">
+          <p><span class="input-label">Pitch</span> <b id="frequency">–</b> <span id="note"></span></p>
+          <p><b id="cell">No cell yet</b></p>
+          <div class="train-bar input-level" id="level" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+        </div>
+        <p class="train-feedback" id="message" aria-live="polite"></p>
+        <div class="train-deck-wrap">
+          <div class="board flat train-deck input-deck" id="deck" role="group" aria-label="Board: the lit cell follows your pitch. Tap a cell to hear it."></div>
+          <div class="train-dots" id="deck-dots"></div>
+        </div>
+        <div class="input-actions">
+          <label><input type="checkbox" id="hold" checked /> Hold a note for 1 second to place an X</label>
+          <button type="button" id="clear">Clear the marks</button>
+        </div>
+      </section>
+
+      <section class="train-progress input-how" aria-labelledby="how-title">
+        <h2 id="how-title">How it works</h2>
+        <p class="train-intro">
+          The note picks the layer: C, D, E or G, the pitches of the game's layers. A slide up moves the light right along the
+          columns and on to the next layer. A higher octave lights a higher row, so whistle for the top rows and hum for the bottom
+          rows.
+        </p>
+        <p class="train-intro">Tap a cell to hear the game's sound for it. Headphones keep that sound out of the microphone.</p>
+        <p class="train-intro">The sound stays on your device: the page reads the microphone in the browser and sends nothing.</p>
+        <p class="train-intro"><a href="/sound-training">Train your ear</a> to learn the cell sounds of the game.</p>
+      </section>
+    </main>
+    <script type="module" src="/src/sound-input/main.ts"></script>
+  </body>
+</html>
