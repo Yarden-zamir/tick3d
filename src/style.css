@@ -2018,6 +2018,43 @@ body[data-turn='O'] .status[data-state='playing'] {
   border-radius: 10px;
 }
 
+/* The card image keeps its own shape (1080 x 1350), so the song light can sit over a cell in shares of its size. */
+.end-card-picture {
+  position: relative;
+  align-self: center;
+  width: min(100%, calc(70dvh * 1080 / 1350));
+  aspect-ratio: 1080 / 1350;
+}
+
+.end-card-picture img {
+  height: 100%;
+  max-height: none;
+}
+
+/* The cell of the note that sounds. With reduced motion, the global rule removes the pop. */
+.song-light {
+  position: absolute;
+  border: 4px solid var(--primary);
+  border-radius: 18%;
+  box-shadow: 0 0 0 3px var(--line), 0 0 18px var(--primary);
+  background: rgb(255 255 255 / 0.25);
+  pointer-events: none;
+  animation: song-pop 0.18s ease-out;
+}
+
+@keyframes song-pop {
+  from {
+    scale: 1.35;
+  }
+}
+
+/* A cell of the board that sounds in the song of a game from a link. */
+.cell.sung {
+  outline: 4px solid var(--primary);
+  outline-offset: 2px;
+  z-index: 2;
+}
+
 .include-options {
   display: flex;
   flex-wrap: wrap;
@@ -2043,6 +2080,23 @@ body[data-turn='O'] .status[data-state='playing'] {
 .end-card-actions {
   display: flex;
   gap: 0.6rem;
+}
+
+/* The song button sits at the end of the include options, near the card. A long press shares the song,
+   so a touch must not select its text or open the image menu. */
+.end-card .song {
+  margin-left: auto;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.end-card .song:is([data-state='held'], [data-state='rendering']) {
+  background: var(--primary);
+  color: var(--on-color);
+}
+
+.end-card .song[data-state='playing'] {
+  background: var(--surface-2);
 }
 
 .end-card-actions .btn {

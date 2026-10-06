@@ -76,6 +76,7 @@
             <span id="game-view-players"></span>
             <small id="game-view-details"></small>
           </div>
+          <button type="button" class="btn song" id="game-view-song" aria-label="Play the game as a song" data-tip="Play the game as a song. Hold to share it as a sound file."></button>
           <button type="button" class="btn btn-primary" id="game-view-play">Play</button>
         </div>
         <div class="clocks" id="clocks" hidden>
@@ -359,8 +360,12 @@
       </aside>
     </div>
     <dialog class="end-card" id="end-card" aria-label="Game result">
-      <!-- [html-validate-disable-next element-required-attributes: the page draws the card and sets src] -->
-      <img id="end-card-image" alt="" width="1080" height="1350" />
+      <!-- The light shows the cell of the note while the song plays. src/page/end-card.ts places it. -->
+      <div class="end-card-picture">
+        <!-- [html-validate-disable-next element-required-attributes: the page draws the card and sets src] -->
+        <img id="end-card-image" alt="" width="1080" height="1350" />
+        <span class="song-light" id="end-card-light" hidden></span>
+      </div>
       <div class="include-options">
         <label class="include" id="end-card-code-option">
           <input type="checkbox" id="end-card-code" checked />
@@ -370,6 +375,8 @@
           <input type="checkbox" id="end-card-link" checked />
           <span>Include the link</span>
         </label>
+        <!-- A click plays the game as a song. A long press or the context menu shares it as a WAV file. src/page/end-card.ts sets the icon. -->
+        <button type="button" class="btn btn-small song" id="end-card-song" aria-label="Play the game as a song" data-tip="Play the game as a song. Hold to share it as a sound file."></button>
       </div>
       <div class="end-card-actions">
         <button type="button" class="btn btn-primary" id="end-card-new-game">New game</button>

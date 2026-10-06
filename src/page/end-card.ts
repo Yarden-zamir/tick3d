@@ -1,5 +1,5 @@
 // The end of a game: sounds, confetti, and the end card.
-import { type CardInput, drawCard, shareImage, saveImage } from '../card.ts';
+import { type CardInput, cardCellBox, cardFilename, drawCard, shareImage, saveImage } from '../card.ts';
 import { formatClock, describeClock } from '../clock.ts';
 import { type Game, other, winnerOf } from '../game.ts';
 import { isTunedFor } from '../tuning.ts';
@@ -18,6 +18,8 @@ import {
   newGameButton,
   cardShareButton,
   cardSaveButton,
+  cardSongButton,
+  cardLight,
   cardCloseButton,
   showCardButton,
 } from './dom.ts';
@@ -29,6 +31,7 @@ import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnline
 import { setUrlGame, startNewGame } from './sessions.ts';
 import { playerName } from './render.ts';
 import { settings } from './settings.ts';
+import { songControl } from './song-control.ts';
 import { type Session, me, page, isLive, matchOptions } from './state.ts';
 
 const CARD_DELAY_MS = 1400;
@@ -167,11 +170,27 @@ export async function openCard(index: number): Promise<void> {
   if (!cardDialog.open) cardDialog.showModal();
 }
 
-function cardFilename(): string {
-  return `tick3d-${new Date().toISOString().slice(0, 10)}.png`;
+
+// Lights a cell of the card image while the song plays: a box over the image, placed in shares of its size.
+function lightCardCell(cell: number | undefined): void {
+  cardLight.hidden = cell === undefined;
+  if (cell === undefined) return;
+  const box = cardCellBox(cell);
+  cardLight.style.left = `${box.left * 100}%`;
+  cardLight.style.top = `${box.top * 100}%`;
+  cardLight.style.width = `${box.width * 100}%`;
+  cardLight.style.height = `${box.height * 100}%`;
 }
 
 export function setupEndCard(): void {
+  const song = songControl(cardSongButton, () => {
+    if (card === undefined) return undefined;
+    const game = page.games[card.index];
+    if (game === undefined) return undefined;
+    const input = cardInput(game, card.index, card.gameId);
+    return { game, filename: cardFilename('wav'), text: `${input.title}: ${input.subtitle} on tick3d, as a song.`, light: lightCardCell };
+  });
+  cardDialog.addEventListener('close', song.stop);
   cardShareButton.addEventListener('click', () => {
     if (card === undefined) return;
     const { canvas, index, gameId } = card;
@@ -182,14 +201,14 @@ export function setupEndCard(): void {
     const gameLink = gameId === undefined ? undefined : `${location.origin}/?game=${gameId}`;
     const url = cardLink.checked ? (gameLink ?? (isOnline ? location.href : location.origin)) : undefined;
     const code = cardCode.checked && isOnline && page.session ? ` Code ${page.session.code}.` : '';
-    void shareImage(canvas, cardFilename(), `${input.title}: ${input.subtitle} on tick3d.${code}`, url).then((outcome) => {
+    void shareImage(canvas, cardFilename('png'), `${input.title}: ${input.subtitle} on tick3d.${code}`, url).then((outcome) => {
       if (outcome === 'copied') showToast('Image copied. Paste it anywhere.');
       if (outcome === 'saved') showToast('Image saved.');
     });
   });
 
   cardSaveButton.addEventListener('click', () => {
-    if (card !== undefined) void saveImage(card.canvas, cardFilename());
+    if (card !== undefined) void saveImage(card.canvas, cardFilename('png'));
   });
   cardCloseButton.addEventListener('click', () => cardDialog.close());
   cardNewGameButton.addEventListener('click', () => {

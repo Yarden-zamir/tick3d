@@ -1,5 +1,6 @@
 import type { Player } from './game.ts';
-import { SOUND_SETS, type SoundSetId, type SoundSet, type Voice } from './sound-sets.ts';
+import type { Song, SongNote } from './song.ts';
+import { SOUND_SETS, type SoundSetId, type SoundSet, type Voice, midiHz } from './sound-sets.ts';
 
 // All sounds are synthesized with Web Audio, so the app ships no audio files.
 let context: AudioContext | undefined;
@@ -32,7 +33,7 @@ function tone({ frequency, at = 0, duration, type = 'sine', volume = 0.2, slideT
 let noiseBuffer: AudioBuffer | undefined;
 
 // One second of white noise, made once. Drums, wind and rain filter it.
-function noise(ctx: AudioContext): AudioBuffer {
+function noise(ctx: BaseAudioContext): AudioBuffer {
   if (noiseBuffer === undefined) {
     noiseBuffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const samples = noiseBuffer.getChannelData(0);
@@ -42,9 +43,9 @@ function noise(ctx: AudioContext): AudioBuffer {
 }
 
 // Plays the voices of src/sound-sets.ts. Each voice is a source, an envelope, an optional filter and a side.
-// `scale` makes all levels softer or louder, and `delay` starts all voices later.
-function play(voices: readonly Voice[], scale = 1, delay = 0): void {
-  const ctx = audio();
+// `scale` makes all levels softer or louder, and `delay` starts all voices later. `ctx` is the live
+// context, or an OfflineAudioContext that renders a sound file. `output` is the speaker, or the mix of a song.
+function play(voices: readonly Voice[], scale = 1, delay = 0, ctx: BaseAudioContext | undefined = audio(), output?: AudioNode): void {
   if (!ctx) return;
   for (const voice of voices) {
     if (!(voice.level > 0) || !(voice.decay > 0)) throw new RangeError(`a voice needs a level and a decay: ${JSON.stringify(voice)}`);
@@ -89,7 +90,7 @@ function play(voices: readonly Voice[], scale = 1, delay = 0): void {
     // Left (-1) to right (1). The column of a cell comes from its side on headphones.
     const panner = ctx.createStereoPanner();
     panner.pan.setValueAtTime(voice.pan ?? 0, start);
-    out.connect(panner).connect(ctx.destination);
+    out.connect(panner).connect(output ?? ctx.destination);
     source.start(start);
     source.stop(end);
   }
@@ -112,6 +113,92 @@ export function playDemo(id: SoundSetId): void {
 // One cell of a set, as a move of X: the sound when a player picks the set.
 export function playSample(id: SoundSetId): void {
   play(SOUND_SETS[id].voices(DEMO_CELLS[1], 'X'));
+}
+
+// ---- The game as a song (src/song.ts) ----
+
+// The voices of a melody note: the voices of its cell in the sound set, tuned to the note, so the song
+// has the timbre of the set. A set without a pitched voice plays a soft triangle. X sits on the left, O on the right.
+function melodyVoices(note: Extract<SongNote, { kind: 'melody' }>, set: SoundSet): Voice[] {
+  const target = midiHz(note.midi);
+  const pan = note.player === 'X' ? -0.35 : 0.35;
+  const voices = set.voices(note.cell, note.player);
+  const lead = voices.find((voice) => voice.wave !== 'noise');
+  if (lead === undefined || !('frequency' in lead)) return [{ wave: 'triangle', frequency: target, attack: 0.01, decay: 0.45, level: 0.2 * note.level, pan }];
+  const ratio = target / lead.frequency;
+  return voices.map((voice) => {
+    const filter = voice.filter && { ...voice.filter, frequency: voice.filter.frequency * ratio, ...(voice.filter.to === undefined ? {} : { to: voice.filter.to * ratio }) };
+    const tuned = { ...voice, level: voice.level * note.level, pan, ...(filter === undefined ? {} : { filter }) };
+    if (tuned.wave === 'noise') return tuned;
+    return { ...tuned, frequency: tuned.frequency * ratio, ...(tuned.slideTo === undefined ? {} : { slideTo: tuned.slideTo * ratio }) };
+  });
+}
+
+// A chord note is a soft pad that swells in. A bass note is a round triangle under a low filter.
+function noteVoices(note: SongNote, set: SoundSet): Voice[] {
+  const frequency = midiHz(note.midi);
+  switch (note.kind) {
+    case 'melody':
+      return melodyVoices(note, set);
+    case 'chord':
+      return [{ wave: 'sine', frequency, attack: 0.3, decay: note.length + 0.4, level: 0.035 }];
+    case 'bass':
+      return [{ wave: 'triangle', frequency, attack: 0.02, decay: note.length, level: 0.11, filter: { type: 'lowpass', frequency: 500 } }];
+  }
+}
+
+// The mix of a song: a little reverb from a generated impulse (decaying noise), and a limiter at the
+// end, so nothing clips. `input` takes the voices, and `output` goes to the speaker.
+function songMix(ctx: BaseAudioContext): { input: AudioNode; output: AudioNode } {
+  const input = ctx.createGain();
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.setValueAtTime(-6, 0);
+  limiter.ratio.setValueAtTime(20, 0);
+  limiter.attack.setValueAtTime(0.003, 0);
+  limiter.release.setValueAtTime(0.25, 0);
+  const impulse = ctx.createBuffer(2, Math.round(ctx.sampleRate * 1.8), ctx.sampleRate);
+  for (let channel = 0; channel < 2; channel++) {
+    const samples = impulse.getChannelData(channel);
+    for (let i = 0; i < samples.length; i++) samples[i] = (Math.random() * 2 - 1) * (1 - i / samples.length) ** 3;
+  }
+  const reverb = ctx.createConvolver();
+  reverb.buffer = impulse;
+  const wet = ctx.createGain();
+  wet.gain.setValueAtTime(0.22, 0);
+  input.connect(limiter);
+  input.connect(reverb).connect(wet).connect(limiter);
+  limiter.connect(ctx.destination);
+  return { input, output: limiter };
+}
+
+function scheduleSong(song: Song, set: SoundSet, ctx: BaseAudioContext, delay: number): { output: AudioNode } {
+  const mix = songMix(ctx);
+  for (const note of song.notes) play(noteVoices(note, set), 1, delay + note.at, ctx, mix.input);
+  return mix;
+}
+
+// A song that plays: `elapsed` reads the song time from the audio clock, so a highlight stays in sync.
+export type SongPlayback = { elapsed: () => number; stop: () => void };
+
+// Plays a finished game as a song in the sound set of the screen. undefined: the sound is off.
+export function playSong(song: Song): SongPlayback | undefined {
+  const ctx = audio();
+  if (!ctx) return undefined;
+  // A short lead, so the first note is not late.
+  const lead = 0.05;
+  const start = ctx.currentTime + lead;
+  const mix = scheduleSong(song, soundSet, ctx, lead);
+  return { elapsed: () => ctx.currentTime - start, stop: () => mix.output.disconnect() };
+}
+
+// The same song, rendered into stereo samples by the same voices and mix. The mute does not apply: the
+// player asks for a file.
+const SONG_RATE = 44_100;
+
+export function renderSong(song: Song): Promise<AudioBuffer> {
+  const ctx = new OfflineAudioContext(2, Math.ceil(song.duration * SONG_RATE), SONG_RATE);
+  scheduleSong(song, soundSet, ctx, 0);
+  return ctx.startRendering();
 }
 
 // The preview plays softer than a move: 0.12 against 0.28 in the Cells set.
