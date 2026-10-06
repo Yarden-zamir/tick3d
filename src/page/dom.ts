@@ -82,7 +82,6 @@ export const chatNoticeText = element('#chat-notice-text', HTMLSpanElement);
 export const accountButton = element('#account-button', HTMLButtonElement);
 export const accountAvatar = element('#account-avatar', HTMLImageElement);
 export const accountName = element('#account-name', HTMLSpanElement);
-export const offlineBadge = element('#offline-badge', HTMLSpanElement);
 export const updateBar = element('#update-bar', HTMLDivElement);
 export const updateReload = element('#update-reload', HTMLButtonElement);
 export const myGamesDialog = element('#my-games', HTMLDialogElement);

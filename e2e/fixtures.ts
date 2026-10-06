@@ -23,8 +23,8 @@ interface Seed {
 }
 
 // Runs in the page before the app. A seed goes in only when the key is empty, so a reload keeps the
-// changes that the app made. The toast observer keeps every message, because a later toast (for
-// example "Ready for offline play") replaces the text of an earlier one.
+// changes that the app made. The toast observer keeps every message, because a later toast
+// replaces the text of an earlier one.
 function seed({ settings, records }: Seed): void {
   // A new page starts on about:blank, which has no storage.
   if (!location.protocol.startsWith('http')) return;

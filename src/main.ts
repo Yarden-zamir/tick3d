@@ -11,7 +11,7 @@ import { applyCamera, setupBoard } from './page/board.ts';
 import { setupChat } from './page/chat.ts';
 import { setupClocks, tickClock } from './page/clocks.ts';
 import { setupControls } from './page/controls.ts';
-import { offlineBadge, updateBar, updateReload } from './page/dom.ts';
+import { updateBar, updateReload } from './page/dom.ts';
 import { setupEndCard } from './page/end-card.ts';
 import { showToast, showProblem, showError } from './page/feedback.ts';
 import { openGameView, setupGameView } from './page/game-view.ts';
@@ -36,10 +36,6 @@ setupNearby();
 setupMyGames();
 
 setupPwa({
-  onOfflineReady() {
-    offlineBadge.hidden = false;
-    showToast('Ready for offline play. Computer and friend games work without a network now.');
-  },
   onNeedRefresh(reload) {
     updateBar.hidden = false;
     updateReload.disabled = false;
@@ -51,10 +47,6 @@ setupPwa({
       void reload();
     };
   },
-});
-// A worker that is already active means this device had the game ready offline before.
-void navigator.serviceWorker?.getRegistration().then((registration) => {
-  if (registration?.active) offlineBadge.hidden = false;
 });
 
 setupClocks();

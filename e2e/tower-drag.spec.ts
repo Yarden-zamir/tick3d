@@ -50,7 +50,7 @@ test('a drag in the empty stage beside the tower turns it, and a drag on the key
 
 test('a drag that starts on a cell turns the tower and places no mark, and a tap places one', async ({ open }) => {
   const { page } = await open(friend);
-  // Cell 63 is on the top layer. The toast "Ready for offline play" can cover the bottom layer.
+  // Cell 63 is on the top layer, which shows without a scroll. At 1280×720 the bottom layer is out of view.
   const target = await box(cell(page, 63));
   await dragFrom(page, target.x + target.width / 2, target.y + target.height / 2);
   await expect(page.getByRole('button', { name: 'Reset angle' })).toBeEnabled();
