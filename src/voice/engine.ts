@@ -9,7 +9,7 @@
 //   voice.pause() before the page plays its own sound, voice.resume() after it.
 // Draw the range with rail.ts (buildRail, showRailRange, showRailPitch, showRailTarget).
 // The settings (range and stickiness) live in settings.ts. A page changes them with voice.saveSettings.
-import { DEFAULT_RANGE, type Range, cellOfStep, noteName } from './mapping.ts';
+import { DEFAULT_RANGE, type PitchMap, type Range, cellOfStep, noteName } from './mapping.ts';
 import { type Microphone, levelShare, micError, openMicrophone } from './microphone.ts';
 import { type VoiceSettings, loadVoiceSettings, saveVoiceSettings } from './settings.ts';
 import type { Held, Stickiness } from './sticky.ts';
@@ -54,6 +54,8 @@ export type Voice = {
   saveSettings(next: VoiceSettings): void;
   // The range in use: the calibrated range, else DEFAULT_RANGE.
   range(): Range;
+  // The range and the spread in use: give it to the functions of mapping.ts and rail.ts.
+  pitchMap(): PitchMap;
   // A stickiness for this page only (for example none on a hard level), or null for the stored one.
   overrideStickiness(stickiness: Stickiness | null): void;
 };
@@ -72,6 +74,7 @@ export function createVoice(): Voice {
   const listeners = new Set<(frame: VoiceFrame) => void>();
   const stopListeners = new Set<(message: string) => void>();
   const range = () => settings.range ?? DEFAULT_RANGE;
+  const pitchMap = (): PitchMap => ({ range: range(), spread: settings.spread });
 
   const emit = (frame: VoiceFrame) => {
     for (const listener of listeners) listener(frame);
@@ -94,7 +97,7 @@ export function createVoice(): Voice {
             const base = { now, elapsed, level: levelShare(level) };
             if (paused) return emit({ ...base, ...EMPTY });
             const raw = pitch?.frequency ?? null;
-            const tracked = tracker.feed(raw, now, range(), override ?? settings.stickiness);
+            const tracked = tracker.feed(raw, now, pitchMap(), override ?? settings.stickiness);
             if (tracked.kind === 'silent') last = undefined;
             if (tracked.kind === 'pitch') {
               last = {
@@ -153,6 +156,7 @@ export function createVoice(): Voice {
       last = undefined;
     },
     range,
+    pitchMap,
     overrideStickiness(stickiness) {
       override = stickiness;
       tracker.reset();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSmallRange, median, rangeFrom } from './calibration.ts';
+import { isSmallRange, median, rangeFrom, typedRange } from './calibration.ts';
 
 describe('calibration', () => {
   it('takes the median of each step, so a few odd frames do not move the range', () => {
@@ -20,5 +20,12 @@ describe('calibration', () => {
   it('flags a range under one octave as small', () => {
     expect(isSmallRange({ low: 300, high: 590 })).toBe(true);
     expect(isSmallRange({ low: 300, high: 600 })).toBe(false);
+  });
+
+  it('takes a typed range inside the detector range, with half an octave at least', () => {
+    expect(typedRange(200, 800)).toEqual({ low: 200, high: 800 });
+    for (const [low, high] of [[Number.NaN, 800], [50, 800], [200, 5000], [800, 200], [400, 560]] as const) {
+      expect(typeof typedRange(low, high), `${low} to ${high}`).toBe('string');
+    }
   });
 });

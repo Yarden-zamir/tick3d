@@ -4,8 +4,8 @@
 export type Pitch = { frequency: number; clarity: number };
 
 // A low male hum is near 80 Hz. A high whistle stays below 4 kHz.
-const MIN_FREQUENCY = 70;
-const MAX_FREQUENCY = 4000;
+export const MIN_FREQUENCY = 70;
+export const MAX_FREQUENCY = 4000;
 // Quieter input is silence. 0.01 is -40 dB below full scale.
 const MIN_RMS = 0.01;
 // A clear tone has a clarity near 1. Noise, breath and speech stay lower.

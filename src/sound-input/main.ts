@@ -16,9 +16,9 @@ import { DEFAULTS, oneOf, saveSettings, settings as gameSettings } from '../page
 import { LAYOUTS, VIEWS, normalizeCode } from '../protocol.ts';
 import { SOUND_SETS, type SoundSetId } from '../sound-sets.ts';
 import { setSoundSet, sounds } from '../sound.ts';
-import { isSmallRange, median, rangeFrom, type Retry } from '../voice/calibration.ts';
+import { isSmallRange, median, rangeFrom, type Retry, typedRange } from '../voice/calibration.ts';
 import { type VoiceFrame, createVoice } from '../voice/engine.ts';
-import { noteName } from '../voice/mapping.ts';
+import { SPREADS, STEPS, cellOfStep, frequencyAt, noteName } from '../voice/mapping.ts';
 import { buildRail, showRailPitch, showRailRange } from '../voice/rail.ts';
 import { type Tab, createPracticeRoom } from './practice-room.ts';
 
@@ -56,6 +56,14 @@ const stickinessValue = element('#stickiness-value', HTMLOutputElement);
 const buildUpInput = element('#build-up', HTMLInputElement);
 const buildUpValue = element('#build-up-value', HTMLOutputElement);
 const holdBox = element('#hold', HTMLInputElement);
+const rangeLow = element('#range-low', HTMLInputElement);
+const rangeHigh = element('#range-high', HTMLInputElement);
+const rangeLowNote = element('#range-low-note', HTMLOutputElement);
+const rangeHighNote = element('#range-high-note', HTMLOutputElement);
+const setLowButton = element('#set-low', HTMLButtonElement);
+const setHighButton = element('#set-high', HTMLButtonElement);
+const spreadSelect = element('#spread', HTMLSelectElement);
+const rangeNote = element('#range-note', HTMLParagraphElement);
 const clearButton = element('#clear', HTMLButtonElement);
 
 // A note on one cell for this long places an X there (free play).
@@ -65,6 +73,11 @@ const STEP_MS = 2000;
 // The page scrolls to the layer of the voice once its cell holds this long, so a passing slide does not
 // make the page jump between layers.
 const SCROLL_AFTER_MS = 300;
+// The board shows the frequency of each cell this long after a change of the range or the spread, for this long.
+const PREVIEW_AFTER_MS = 1000;
+const PREVIEW_MS = 4000;
+// The fade of the preview in input.css.
+const PREVIEW_FADE_MS = 600;
 
 // One calibration in progress. `heard` holds the pitches of the step now, and `lows` the pitches of the
 // low step once it is done.
@@ -77,6 +90,9 @@ let lit: number | undefined;
 let holdDone = false;
 // The layer that the page scrolled to last.
 let shownLayer: number | undefined;
+// The last smoothed pitch, and its frame time, for Use my note.
+let lastPitch: { frequency: number; at: number } | undefined;
+let previewTimers: ReturnType<typeof setTimeout>[] = [];
 
 const board = buildBoard(boardEl);
 const rail = buildRail(railEl);
@@ -141,14 +157,67 @@ const practice = createPracticeRoom({ voice, board, rail, startMic, show });
 
 // ---- Display ----
 
+// Shows the frequency of each cell on the board for a moment, a second after a change.
+function schedulePreview(): void {
+  for (const timer of previewTimers) clearTimeout(timer);
+  previewTimers = [setTimeout(showPreview, PREVIEW_AFTER_MS), setTimeout(endPreview, PREVIEW_AFTER_MS + PREVIEW_MS)];
+}
+
+function showPreview(): void {
+  const map = voice.pitchMap();
+  for (let step = 0; step < STEPS; step++) {
+    const button = board.cells[cellOfStep(step)];
+    if (button !== undefined) button.dataset.preview = String(Math.round(frequencyAt(step + 0.5, map)));
+  }
+  boardEl.classList.add('previewing');
+}
+
+function endPreview(): void {
+  if (!boardEl.classList.contains('previewing')) return;
+  boardEl.classList.remove('previewing');
+  previewTimers.push(
+    setTimeout(() => {
+      for (const button of board.cells) delete button.dataset.preview;
+    }, PREVIEW_FADE_MS),
+  );
+}
+
 function showRange(): void {
   const settings = voice.settings();
   const { low, high } = voice.range();
-  modeEl.textContent = `${settings.range === null ? 'Default range' : 'Calibrated'}: ${Math.round(low)}–${Math.round(high)} Hz`;
+  rangeLow.value = String(Math.round(low));
+  rangeHigh.value = String(Math.round(high));
+  rangeLowNote.textContent = noteName(low);
+  rangeHighNote.textContent = noteName(high);
+  spreadSelect.value = settings.spread;
+  modeEl.textContent = `${settings.range === null ? 'Default range' : 'Your range'}: ${Math.round(low)}–${Math.round(high)} Hz`;
   resetButton.hidden = settings.range === null;
   hintEl.hidden = settings.range === null || !isSmallRange(settings.range);
-  showRailRange(rail, voice.range());
+  showRailRange(rail, voice.pitchMap());
   practice.settingsChanged();
+}
+
+// A new range from the inputs or a sung note. A range that does not work stays out, with a message.
+function applyRange(low: number, high: number): void {
+  const result = typedRange(low, high);
+  if (typeof result === 'string') {
+    rangeNote.textContent = result;
+    showRange();
+    return;
+  }
+  rangeNote.textContent = '';
+  voice.saveSettings({ ...voice.settings(), range: result });
+  showRange();
+  schedulePreview();
+}
+
+// Use my note: the pitch that the player holds now (heard in the last half second).
+function sungPitch(): number | undefined {
+  if (lastPitch === undefined || performance.now() - lastPitch.at > 500) {
+    rangeNote.textContent = voice.isListening() ? 'Hold the note, then tap Use my note.' : 'Turn on the microphone, hold the note, then tap Use my note.';
+    return undefined;
+  }
+  return lastPitch.frequency;
 }
 
 function showStickiness(): void {
@@ -267,6 +336,7 @@ function calibrate(active: Calibration, frequency: number, elapsed: number): voi
   voice.saveSettings({ ...voice.settings(), range: result });
   calibrationEl.hidden = true;
   showRange();
+  schedulePreview();
   show(`Calibrated to your voice: ${noteName(result.low)} to ${noteName(result.high)}.`);
 }
 
@@ -274,6 +344,11 @@ function calibrate(active: Calibration, frequency: number, elapsed: number): voi
 
 function onFrame(frame: VoiceFrame): void {
   showLevel(frame.level);
+  if (frame.frequency !== null) {
+    lastPitch = { frequency: frame.frequency, at: frame.now };
+    // The preview steps aside when the player sings.
+    endPreview();
+  }
   if (frame.cell === null) {
     readoutEl.dataset.state = 'listening';
     showRailPitch(rail, null, null, 0);
@@ -309,7 +384,25 @@ cancelButton.addEventListener('click', endCalibration);
 resetButton.addEventListener('click', () => {
   voice.saveSettings({ ...voice.settings(), range: null });
   showRange();
+  schedulePreview();
   show('Back to the default range.');
+});
+rangeLow.addEventListener('change', () => applyRange(Number(rangeLow.value), voice.range().high));
+rangeHigh.addEventListener('change', () => applyRange(voice.range().low, Number(rangeHigh.value)));
+setLowButton.addEventListener('click', () => {
+  const frequency = sungPitch();
+  if (frequency !== undefined) applyRange(frequency, voice.range().high);
+});
+setHighButton.addEventListener('click', () => {
+  const frequency = sungPitch();
+  if (frequency !== undefined) applyRange(voice.range().low, frequency);
+});
+spreadSelect.addEventListener('change', () => {
+  const spread = SPREADS.find((known) => known === spreadSelect.value);
+  if (spread === undefined) throw new Error(`unknown spread ${spreadSelect.value}`);
+  voice.saveSettings({ ...voice.settings(), spread });
+  showRange();
+  schedulePreview();
 });
 stickinessInput.addEventListener('input', () => {
   const settings = voice.settings();

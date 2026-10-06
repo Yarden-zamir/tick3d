@@ -2,21 +2,22 @@
 // The Voice room (/sound-input) changes them, and every page that listens to the voice reads them.
 // A stored value comes from an older visit or a hand edit, so each field is checked, and a bad field
 // takes its default.
-import type { Range } from './mapping.ts';
+import { type Range, SPREADS, type Spread } from './mapping.ts';
 import { DEFAULT_STICKINESS, MAX_BUILD_UP_MS, MAX_SHARE, type Stickiness } from './sticky.ts';
 
 const STORAGE_KEY = 'tick3d.voice';
 const STORAGE_VERSION = 1;
 
 // `range` is null when the player did not calibrate: the page uses DEFAULT_RANGE then.
-export type VoiceSettings = { range: Range | null; stickiness: Stickiness };
+// `spread` says how the 64 cells share the range (SPREADS in mapping.ts).
+export type VoiceSettings = { range: Range | null; spread: Spread; stickiness: Stickiness };
 
-export const DEFAULT_VOICE_SETTINGS: VoiceSettings = { range: null, stickiness: DEFAULT_STICKINESS };
+export const DEFAULT_VOICE_SETTINGS: VoiceSettings = { range: null, spread: 'log', stickiness: DEFAULT_STICKINESS };
 
 const isFrequency = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0;
 const inRange = (value: unknown, max: number): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= max;
 
-export const toStorage = ({ range, stickiness }: VoiceSettings) => ({ version: STORAGE_VERSION, range, stickiness });
+export const toStorage = ({ range, spread, stickiness }: VoiceSettings) => ({ version: STORAGE_VERSION, range, spread, stickiness });
 
 function parseRange(value: unknown): Range | null {
   if (typeof value !== 'object' || value === null) return null;
@@ -35,9 +36,9 @@ function parseStickiness(value: unknown): Stickiness {
 
 export function parseVoiceSettings(value: unknown): VoiceSettings {
   if (typeof value !== 'object' || value === null) return DEFAULT_VOICE_SETTINGS;
-  const { version, range, stickiness } = value as Record<string, unknown>;
+  const { version, range, spread, stickiness } = value as Record<string, unknown>;
   if (version !== STORAGE_VERSION) return DEFAULT_VOICE_SETTINGS;
-  return { range: parseRange(range), stickiness: parseStickiness(stickiness) };
+  return { range: parseRange(range), spread: SPREADS.find((known) => known === spread) ?? DEFAULT_VOICE_SETTINGS.spread, stickiness: parseStickiness(stickiness) };
 }
 
 export function loadVoiceSettings(): VoiceSettings {

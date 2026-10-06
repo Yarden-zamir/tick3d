@@ -2,7 +2,7 @@
 // each layer and each column, a cursor at the pitch now, the sticky band around the lit cell, and an
 // optional target cell. rail.css draws it. The places come from positionOf in mapping.ts (0 to STEPS).
 import './rail.css';
-import { frequencyAt, type Range, STEPS } from './mapping.ts';
+import { type PitchMap, STEPS, frequencyAt } from './mapping.ts';
 import type { Held } from './sticky.ts';
 
 export type Rail = {
@@ -51,9 +51,9 @@ export function buildRail(root: HTMLElement): Rail {
   return { cursor, band, target, labels };
 }
 
-export function showRailRange(rail: Rail, range: Range): void {
+export function showRailRange(rail: Rail, map: PitchMap): void {
   rail.labels.forEach((label, index) => {
-    label.textContent = `${Math.round(frequencyAt((index * STEPS) / 4, range))}`;
+    label.textContent = `${Math.round(frequencyAt((index * STEPS) / 4, map))}`;
   });
 }
 

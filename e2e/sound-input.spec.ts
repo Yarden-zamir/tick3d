@@ -121,7 +121,7 @@ test('a calibration from 300 Hz to 1200 Hz splits the rows over that range, and 
   await expect(calibration).toHaveAttribute('data-step', 'high', { timeout: 10_000 });
   await setTone(page, 1200);
   await expect(calibration).toBeHidden({ timeout: 10_000 });
-  await expect(mode).toHaveText(/^Calibrated: (29\d|30\d)–(119\d|120\d) Hz$/);
+  await expect(mode).toHaveText(/^Your range: (29\d|30\d)–(119\d|120\d) Hz$/);
   // Two octaves: no small range hint.
   await expect(page.locator('#range-hint')).toBeHidden();
 
@@ -133,7 +133,7 @@ test('a calibration from 300 Hz to 1200 Hz splits the rows over that range, and 
   await expect(page.locator('#board .cell.lit')).toHaveAttribute('data-cell', String(3 * 16 + 3));
 
   await page.reload();
-  await expect(mode).toHaveText(/^Calibrated: /);
+  await expect(mode).toHaveText(/^Your range: /);
   await page.locator('#range-reset').click();
   await expect(mode).toHaveText('Default range: 150–2400 Hz');
   await page.reload();
@@ -174,7 +174,7 @@ async function singTargets(page: Page, rounds: number): Promise<void> {
     const target = page.locator('#board .cell.target');
     await expect(target).toHaveCount(1, { timeout: 15_000 });
     const cell = Number(await target.getAttribute('data-cell'));
-    await setTone(page, frequencyAt(stepOfCell(cell) + 0.5, DEFAULT_RANGE));
+    await setTone(page, frequencyAt(stepOfCell(cell) + 0.5, { range: DEFAULT_RANGE, spread: 'log' }));
     await expect(page.locator(`#board .cell.target[data-cell="${cell}"]`)).toHaveCount(0, { timeout: 15_000 });
   }
 }
@@ -233,4 +233,30 @@ test('a playoff: the other player gets an invite, both sing the same targets, an
     await expect(page.locator('#playoff-text')).toContainText(/win|tie/i, { timeout: 15_000 });
     await expect(page.locator('#race-them')).toHaveAttribute('aria-valuenow', '10');
   }
+});
+
+test('a typed range and a spread apply, the board previews the frequency of each cell, and both stay after a reload', async ({ page }) => {
+  await page.goto('/sound-input');
+  await page.locator('#range-low').fill('200');
+  await page.locator('#range-low').dispatchEvent('change');
+  await page.locator('#range-high').fill('800');
+  await page.locator('#range-high').dispatchEvent('change');
+  await expect(page.locator('#range-mode')).toHaveText('Your range: 200–800 Hz');
+  // Less than half an octave stays out, with a message.
+  await page.locator('#range-high').fill('250');
+  await page.locator('#range-high').dispatchEvent('change');
+  await expect(page.locator('#range-note')).toContainText('half an octave');
+  await expect(page.locator('#range-high')).toHaveValue('800');
+
+  await page.locator('#spread').selectOption('linear');
+  const board = page.locator('#board');
+  await expect(board).toHaveClass(/previewing/, { timeout: 3000 });
+  await expect(page.locator('#board .cell[data-preview]')).toHaveCount(64);
+  // The lowest step of a linear spread from 200 to 800 Hz has its middle at 200 + 600 / 128 Hz.
+  await expect(page.locator('#board .cell[data-preview="205"]')).toHaveCount(1);
+  await expect(board).not.toHaveClass(/previewing/, { timeout: 8000 });
+
+  await page.reload();
+  await expect(page.locator('#range-mode')).toHaveText('Your range: 200–800 Hz');
+  await expect(page.locator('#spread')).toHaveValue('linear');
 });

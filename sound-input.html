@@ -156,6 +156,31 @@
             </div>
           </div>
         </div>
+        <fieldset class="voice-range" id="range-editor">
+          <legend>Range</legend>
+          <div class="voice-range-end">
+            <label for="range-low">Low</label>
+            <input type="number" id="range-low" min="70" max="4000" step="1" inputmode="numeric" />
+            <span>Hz <output id="range-low-note" for="range-low"></output></span>
+            <button type="button" class="btn btn-small" id="set-low" data-tip="Hold your low note, then tap">Use my note</button>
+          </div>
+          <div class="voice-range-end">
+            <label for="range-high">High</label>
+            <input type="number" id="range-high" min="70" max="4000" step="1" inputmode="numeric" />
+            <span>Hz <output id="range-high-note" for="range-high"></output></span>
+            <button type="button" class="btn btn-small" id="set-high" data-tip="Hold your high note, then tap">Use my note</button>
+          </div>
+          <div class="voice-range-end">
+            <label for="spread">Spread</label>
+            <select id="spread">
+              <option value="log">Musical: the same interval for each cell</option>
+              <option value="linear">Even in Hz: wide low cells, narrow high cells</option>
+              <option value="middle">Wider middle: more room in the middle of the range</option>
+              <option value="notes">Game notes: layers on C, D, E and G, one octave for each row</option>
+            </select>
+          </div>
+          <p class="input-note" id="range-note">Type the ends, or hold a note and tap Use my note. Calibrate to your voice does both ends for you. The range needs half an octave at least.</p>
+        </fieldset>
         <div class="input-slider">
           <label for="stickiness">Stickiness</label>
           <input type="range" id="stickiness" min="0" max="100" step="5" />
@@ -187,6 +212,7 @@
       <ul>
         <li>The rail is your range, low at the left and high at the right. It holds the 64 cells: four rows of 16. A higher pitch lights a higher row. Inside a row, a slide up moves from layer 1, column 1 to layer 4, column 4.</li>
         <li>The default range is 150 to 2400 Hz, one octave for each row: hum for rows 4 and 3, whistle for rows 2 and 1. Calibrate to your voice: make your lowest comfortable sound for 2 seconds, then your highest. The rows then split your own range. Reset to default goes back.</li>
+        <li>Range and spread, under Settings: type the low and high ends, or hold a note and tap Use my note. The spread says how the 64 cells share the range: the same musical interval for each cell, the same Hz, more room in the middle, or the game notes (the layer is the nearest of C, D, E and G, and each row is one octave). A second after a change, each cell shows its frequency in Hz for a moment.</li>
         <li>Stickiness keeps a held cell lit when your pitch wobbles. It grows while you hold the cell. The band on the rail shows it.</li>
         <li>Free play: hold a note on one cell for 1 second to place an X. Tap a cell to hear it in the sound set of the game.</li>
         <li>The board has the views and layouts of the game, under Settings: the tower (drag to turn it) or flat, in a grid, side by side, top to bottom or in steps. The game and this room share the choice. When your voice moves to a layer out of view, the page scrolls to it.</li>
