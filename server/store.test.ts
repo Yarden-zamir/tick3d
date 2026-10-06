@@ -198,6 +198,32 @@ describe('accounts', () => {
     await store.move(code, alice, { game: 0, moveCount: 0, cell: 5 });
   });
 
+  it('adds the account row for an account that linked before account seats, at a join and at a logout', async () => {
+    const path = `${await mkdtemp('/tmp/tick3d-store-')}/linked.duckdb`;
+    store = await openStore(path);
+    const { code } = await store.create(alicePhone, 'Old seat');
+    const other = (await store.create(bob, 'Join later')).code;
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    store.close();
+    // A database from before account seats has no account row.
+    const instance = await DuckDBInstance.create(path);
+    const db = await instance.connect();
+    await db.run("DELETE FROM player_tokens WHERE token LIKE 'account-%'");
+    db.closeSync();
+    instance.closeSync();
+    store = await openStore(path);
+    // A join of a logged-in laptop takes the seat for the account, and the name resolves.
+    await store.join(other, alice);
+    expect((await store.get(other, bob)).players.O?.login).toBe('alice');
+    expect((await store.get(other, alicePhone)).you).toBe('O');
+    // A logout moves the phone's seat to the account, and the name resolves.
+    await store.unlinkToken(alicePhone);
+    expect((await store.get(code, bob)).players.X?.login).toBe('alice');
+    expect((await store.get(code, alice)).you).toBe('X');
+    expect((await store.get(code, alicePhone)).you).toBeNull();
+  });
+
   it('refreshes a renamed account', async () => {
     const code = await session();
     await store.linkToken(alice, ALICE_GITHUB);

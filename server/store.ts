@@ -115,14 +115,11 @@ const SCHEMA = [
      received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
      PRIMARY KEY (public_id, seat)
    )`,
-  // Account seats: every account has a row for its account token (accountToken below), so the joins
-  // through player_tokens resolve an account seat to its user, as they do for a device token.
-  `INSERT INTO player_tokens (token, github_id)
-   SELECT '${ACCOUNT_TOKEN_PREFIX}' || lpad(github_id::VARCHAR, 16, '0'), github_id FROM users
-   ON CONFLICT (token) DO NOTHING`,
 ];
 
-// The token that a seat holds when a logged-in player takes it. Every device of the account holds it
+// The token that a seat holds when a logged-in player takes it. The account has a player_tokens row
+// for it (ensureAccountRow), so the joins through player_tokens resolve an account seat to its user.
+// The row comes before any seat names the token: at the login, and again before a seat or a logout uses it. Every device of the account holds it
 // through identityOf, and a device that logs out does not. It passes the token checks of a stored
 // document, so the format does not change. asPlayerToken refuses it as an X-Player value.
 const accountToken = (githubId: number | bigint): string => `${ACCOUNT_TOKEN_PREFIX}${String(githubId).padStart(16, '0')}`;
@@ -356,10 +353,20 @@ export async function openStore(
     return row.stale ? save(row, row.doc) : row;
   }
 
+  // Adds the player_tokens row of an account token, for an account that linked before account seats.
+  async function ensureAccountRow(githubId: number | bigint): Promise<string> {
+    const account = accountToken(githubId);
+    await db.run('INSERT INTO player_tokens (token, github_id) VALUES ($token, $id) ON CONFLICT (token) DO NOTHING', {
+      token: account,
+      id: githubId,
+    });
+    return account;
+  }
+
   // The token that a new seat of this device holds: the account token when the device is logged in.
   async function seatTokenOf(token: PlayerToken): Promise<string> {
     const [linked] = await rows('FROM player_tokens SELECT github_id WHERE token = $token', { token });
-    return linked === undefined ? token : accountToken(linked.github_id as number | bigint);
+    return linked === undefined ? token : ensureAccountRow(linked.github_id as number | bigint);
   }
 
   // The token plus the tokens of the same GitHub account (the account token among them), so a
@@ -498,10 +505,7 @@ export async function openStore(
            ON CONFLICT (token) DO UPDATE SET github_id = excluded.github_id, linked_at = now()`,
           { token, id: user.id },
         );
-        await db.run('INSERT INTO player_tokens (token, github_id) VALUES ($token, $id) ON CONFLICT (token) DO NOTHING', {
-          token: accountToken(user.id),
-          id: user.id,
-        });
+        await ensureAccountRow(user.id);
       }),
 
     // Logout: this browser no longer acts for its account. The other devices of the account stay linked.
@@ -513,7 +517,7 @@ export async function openStore(
       serialized(async () => {
         const [linked] = await rows('FROM player_tokens SELECT github_id WHERE token = $token', { token });
         if (linked === undefined) return;
-        const account = accountToken(linked.github_id as number | bigint);
+        const account = await ensureAccountRow(linked.github_id as number | bigint);
         const held = await rows(
           'FROM sessions SELECT code WHERE doc.seats.X::VARCHAR = $token OR doc.seats.O::VARCHAR = $token',
           { token },
