@@ -1,4 +1,5 @@
-import { type Player, toCoords } from './game.ts';
+import type { Player } from './game.ts';
+import { SOUND_SETS, type SoundSetId, type SoundSet, type Voice } from './sound-sets.ts';
 
 // All sounds are synthesized with Web Audio, so the app ships no audio files.
 let context: AudioContext | undefined;
@@ -25,127 +26,104 @@ function audio(): AudioContext | undefined {
 type Tone = { frequency: number; at?: number; duration: number; type?: OscillatorType; volume?: number; slideTo?: number; pan?: number };
 
 function tone({ frequency, at = 0, duration, type = 'sine', volume = 0.2, slideTo, pan = 0 }: Tone): void {
+  play([{ wave: type, frequency, at, attack: 0.01, decay: duration, level: volume, ...(slideTo === undefined ? {} : { slideTo }), pan }]);
+}
+
+let noiseBuffer: AudioBuffer | undefined;
+
+// One second of white noise, made once. Drums, wind and rain filter it.
+function noise(ctx: AudioContext): AudioBuffer {
+  if (noiseBuffer === undefined) {
+    noiseBuffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const samples = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+  }
+  return noiseBuffer;
+}
+
+// Plays the voices of src/sound-sets.ts. Each voice is a source, an envelope, an optional filter and a side.
+// `scale` makes all levels softer or louder, and `delay` starts all voices later.
+function play(voices: readonly Voice[], scale = 1, delay = 0): void {
   const ctx = audio();
   if (!ctx) return;
-  const start = ctx.currentTime + at;
-  const oscillator = ctx.createOscillator();
-  const gain = ctx.createGain();
-  oscillator.type = type;
-  oscillator.frequency.setValueAtTime(frequency, start);
-  if (slideTo !== undefined) oscillator.frequency.exponentialRampToValueAtTime(slideTo, start + duration);
-  gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.exponentialRampToValueAtTime(volume, start + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-  // Left (-1) to right (1). The column of a cell comes from its side on headphones.
-  const panner = ctx.createStereoPanner();
-  panner.pan.setValueAtTime(pan, start);
-  oscillator.connect(gain).connect(panner).connect(ctx.destination);
-  oscillator.start(start);
-  oscillator.stop(start + duration + 0.02);
-}
-
-// Every cell has its own single sound, so a player can follow the game by ear. One strike carries all three
-// coordinates at once:
-// - the layer is the pitch: C, D, E or G of the C major pentatonic scale, higher layers higher;
-// - the row is the instrument: 1 wooden marimba, 2 glass bell, 3 plucked string, 4 airy whistle;
-// - the column is the width: 1 one voice, 2 with a fifth, 3 with an octave, 4 with both, and on
-//   headphones it also comes from the left (1) to the right (4). The width works on a mono speaker too.
-// O sounds one octave below X, so the strike also tells whose move it was.
-const LAYER_NOTES = [523.25, 587.33, 659.25, 783.99] as const; // C5, D5, E5, G5
-const INSTRUMENTS = ['marimba', 'bell', 'pluck', 'whistle'] as const;
-const WIDTHS = [[1], [1, 3 / 2], [1, 2], [1, 3 / 2, 2]] as const;
-const PANS = [-0.75, -0.25, 0.25, 0.75] as const;
-
-// The words for each sound part, by coordinate (0 to 3). The ear training page shows them.
-export const SOUND_NAMES = {
-  layer: ['C', 'D', 'E', 'G'],
-  row: INSTRUMENTS,
-  column: ['thin, left', 'fifth, mid-left', 'octave, mid-right', 'wide, right'],
-} as const;
-
-type Instrument = (typeof INSTRUMENTS)[number];
-export type CellSound = { frequency: number; instrument: Instrument; intervals: readonly number[]; pan: number };
-
-export function cellSound(cell: number): CellSound {
-  const { layer, row, column } = toCoords(cell);
-  const frequency = LAYER_NOTES[layer as 0 | 1 | 2 | 3];
-  const instrument = INSTRUMENTS[row as 0 | 1 | 2 | 3];
-  return { frequency, instrument, intervals: WIDTHS[column as 0 | 1 | 2 | 3], pan: PANS[column as 0 | 1 | 2 | 3] };
-}
-
-// One voice of an instrument at `frequency`, into `out`. Each instrument has its own partials and envelope.
-function voice(ctx: AudioContext, out: AudioNode, instrument: Instrument, frequency: number, volume: number): void {
-  const start = ctx.currentTime;
-  const partial = (ratio: number, level: number, decay: number, type: OscillatorType = 'sine', attack = 0.005, to: AudioNode = out): OscillatorNode => {
-    const oscillator = ctx.createOscillator();
+  for (const voice of voices) {
+    if (!(voice.level > 0) || !(voice.decay > 0)) throw new RangeError(`a voice needs a level and a decay: ${JSON.stringify(voice)}`);
+    const start = ctx.currentTime + delay + (voice.at ?? 0);
+    const end = start + voice.decay + 0.02;
     const gain = ctx.createGain();
-    oscillator.type = type;
-    oscillator.frequency.setValueAtTime(frequency * ratio, start);
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(volume * level, start + attack);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + decay);
-    oscillator.connect(gain).connect(to);
-    oscillator.start(start);
-    oscillator.stop(start + decay + 0.02);
-    return oscillator;
-  };
-  switch (instrument) {
-    case 'marimba':
-      // A short wooden knock: the note and its fourth harmonic, both gone fast.
-      partial(1, 1, 0.35);
-      partial(4, 0.3, 0.08);
-      return;
-    case 'bell':
-      // Glass: partials that are not whole multiples ring on after the strike.
-      partial(1, 0.8, 0.9);
-      partial(2.76, 0.45, 0.6);
-      partial(5.4, 0.2, 0.3);
-      return;
-    case 'pluck': {
-      // A string: a bright sawtooth whose filter closes fast, like a plucked string loses its edge.
+    gain.gain.exponentialRampToValueAtTime(voice.level * scale, start + (voice.attack ?? 0.005));
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + voice.decay);
+    let source: AudioScheduledSourceNode;
+    if (voice.wave === 'noise') {
+      const buffer = ctx.createBufferSource();
+      buffer.buffer = noise(ctx);
+      buffer.loop = true;
+      source = buffer;
+    } else {
+      const oscillator = ctx.createOscillator();
+      oscillator.type = voice.wave;
+      oscillator.frequency.setValueAtTime(voice.frequency, start);
+      if (voice.slideTo !== undefined) oscillator.frequency.exponentialRampToValueAtTime(voice.slideTo, start + (voice.slideTime ?? voice.decay));
+      if (voice.vibrato !== undefined) {
+        const lfo = ctx.createOscillator();
+        const depth = ctx.createGain();
+        lfo.frequency.setValueAtTime(voice.vibrato.rate, start);
+        depth.gain.setValueAtTime(voice.frequency * voice.vibrato.depth, start);
+        lfo.connect(depth).connect(oscillator.frequency);
+        lfo.start(start);
+        lfo.stop(end);
+      }
+      source = oscillator;
+    }
+    let out: AudioNode = source.connect(gain);
+    if (voice.filter !== undefined) {
+      const { type, frequency, to, time, q } = voice.filter;
       const filter = ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(frequency * 8, start);
-      filter.frequency.exponentialRampToValueAtTime(frequency * 1.2, start + 0.3);
-      filter.connect(out);
-      partial(1, 0.7, 0.45, 'sawtooth', 0.004, filter);
-      return;
+      filter.type = type;
+      filter.frequency.setValueAtTime(frequency, start);
+      if (to !== undefined) filter.frequency.exponentialRampToValueAtTime(to, start + (time ?? voice.decay));
+      if (q !== undefined) filter.Q.setValueAtTime(q, start);
+      out = out.connect(filter);
     }
-    case 'whistle': {
-      // Air: a soft attack and a gentle vibrato.
-      const tone = partial(1, 0.9, 0.5, 'sine', 0.06);
-      partial(2, 0.08, 0.4, 'triangle', 0.06);
-      const vibrato = ctx.createOscillator();
-      const depth = ctx.createGain();
-      vibrato.frequency.setValueAtTime(5.5, start);
-      depth.gain.setValueAtTime(frequency * 0.006, start);
-      vibrato.connect(depth).connect(tone.frequency);
-      vibrato.start(start);
-      vibrato.stop(start + 0.52);
-      return;
-    }
+    // Left (-1) to right (1). The column of a cell comes from its side on headphones.
+    const panner = ctx.createStereoPanner();
+    panner.pan.setValueAtTime(voice.pan ?? 0, start);
+    out.connect(panner).connect(ctx.destination);
+    source.start(start);
+    source.stop(end);
   }
 }
 
-function strike(cell: number, octave: number, volume: number): void {
-  const ctx = audio();
-  if (!ctx) return;
-  const { frequency, instrument, intervals, pan } = cellSound(cell);
-  const panner = ctx.createStereoPanner();
-  panner.pan.setValueAtTime(pan, ctx.currentTime);
-  panner.connect(ctx.destination);
-  // More voices at the same level sound louder, so each voice gets a share.
-  const share = volume / Math.sqrt(intervals.length);
-  for (const interval of intervals) voice(ctx, panner, instrument, frequency * octave * interval, share);
+let soundSet: SoundSet = SOUND_SETS.cells;
+
+export function setSoundSet(id: SoundSetId): void {
+  soundSet = SOUND_SETS[id];
 }
+
+// The demo of a set: the main diagonal of the tower, X and O in turn, one layer after the other.
+const DEMO_CELLS = [0, 21, 42, 63] as const;
+const DEMO_GAP = 0.42;
+
+export function playDemo(id: SoundSetId): void {
+  DEMO_CELLS.forEach((cell, index) => play(SOUND_SETS[id].voices(cell, index % 2 === 0 ? 'X' : 'O'), 1, index * DEMO_GAP));
+}
+
+// One cell of a set, as a move of X: the sound when a player picks the set.
+export function playSample(id: SoundSetId): void {
+  play(SOUND_SETS[id].voices(DEMO_CELLS[1], 'X'));
+}
+
+// The preview plays softer than a move: 0.12 against 0.28 in the Cells set.
+const PREVIEW_SCALE = 0.12 / 0.28;
 
 export const sounds = {
   place(player: Player, cell: number): void {
-    strike(cell, player === 'X' ? 1 : 1 / 2, 0.28);
+    play(soundSet.voices(cell, player));
   },
   // The sound of a cell before it is played, for example from the keypad: the same strike, softer.
   preview(cell: number): void {
-    strike(cell, 1, 0.12);
+    play(soundSet.voices(cell, 'X'), PREVIEW_SCALE);
   },
   invalid(): void {
     tone({ frequency: 180, duration: 0.12, type: 'square', volume: 0.06 });

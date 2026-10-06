@@ -134,6 +134,16 @@
           <button type="button" class="primary" id="new-game" data-needs-session>New game</button>
           <button type="button" id="undo" data-show-mode="computer friend">Undo</button>
           <button type="button" id="sound" aria-label="Sound"></button>
+          <button type="button" id="sound-set" popovertarget="sound-sets" aria-label="Sound set" title="Sound set"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg></button>
+        </div>
+        <!-- The sound set menu. A popover closes on a tap outside it or on Escape. src/page/sound-set.ts fills the list. -->
+        <div popover id="sound-sets" class="sound-sets" role="dialog" aria-labelledby="sound-sets-title">
+          <div class="sound-sets-head">
+            <h2 id="sound-sets-title">Sound set</h2>
+            <button type="button" popovertarget="sound-sets" popovertargetaction="hide" aria-label="Close the sound sets">✕</button>
+          </div>
+          <p class="sound-sets-note">The sound of each move. ▶ plays four moves of the set.</p>
+          <div id="sound-set-list"></div>
         </div>
         <button type="button" class="lock" id="show-card" hidden>🏆 Result card</button>
 
