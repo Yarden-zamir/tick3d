@@ -27,6 +27,9 @@ export type SoundSet = {
   description: string;
   // The words for the parts of the sound. Classic has none: one note for each layer does not name a cell.
   parts?: Record<Dimension, Part>;
+  // False keeps a cell typed on the keypad quiet until Place: the third number plays a click, and the
+  // speaker plays only the last move. Every other set plays the typed cell.
+  keypadPreview?: false;
   voices(cell: number, player: Player): Voice[];
 };
 
@@ -55,6 +58,7 @@ const LAYER_NOTES: Four<number> = [523.25, 587.33, 659.25, 783.99]; // C5, D5, E
 const classic: SoundSet = {
   name: 'Classic',
   description: 'The first sound: one note for each layer. It does not name the row or the column.',
+  keypadPreview: false,
   voices(cell, player) {
     const note = at4(LAYER_NOTES, toCoords(cell).layer);
     return [

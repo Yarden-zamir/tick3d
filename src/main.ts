@@ -16,7 +16,7 @@ import { setupEndCard } from './page/end-card.ts';
 import { showToast, showProblem, showError } from './page/feedback.ts';
 import { openGameView, setupGameView } from './page/game-view.ts';
 import { setupHome } from './page/home.ts';
-import { setupKeypad } from './page/keypad.ts';
+import { renderCoords, setupKeypad } from './page/keypad.ts';
 import { setupReports } from './page/metrics.ts';
 import { refreshAccount, setupMyGames } from './page/my-games.ts';
 import { setupPreviews } from './page/previews.ts';
@@ -56,7 +56,11 @@ setupClocks();
 setupAdvanced();
 setupEndCard();
 setupTheme();
-setupSoundSets(soundSetList, setSoundSet);
+setupSoundSets(soundSetList, (id) => {
+  setSoundSet(id);
+  // The speaker by the keypad depends on the set.
+  renderCoords();
+});
 setupKeypad();
 setupChat();
 setupOnlineBox();

@@ -104,3 +104,9 @@ describe('the Harmony set', () => {
     for (const player of ['X', 'O'] as const) for (const f of chord) expect(pitches(player)).toContain(f);
   });
 });
+
+describe('keypad previews', () => {
+  it('stay off for Classic only, so a typed cell sounds first on Place', () => {
+    expect(SOUND_SET_IDS.filter((id) => SOUND_SETS[id].keypadPreview === false)).toEqual(['classic']);
+  });
+});

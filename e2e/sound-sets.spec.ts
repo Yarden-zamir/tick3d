@@ -76,3 +76,32 @@ test('the ear trainer follows the chosen set, and uses Cells for Classic', async
     await expect(page.locator('#totals')).toContainText(`${name} sound set`);
   }
 });
+
+// Classic keeps a typed cell quiet until Place. Cells plays it on the third number.
+test('the keypad plays the typed cell only on Place with Classic', async ({ open }) => {
+  const { page, context } = await open({ settings: { mode: 'friend', soundSet: 'classic' } });
+  await context.addInitScript(recordOscillators);
+  await page.reload();
+  const click = 'sine 1200.00';
+  const tap = async (...digits: number[]) => {
+    for (const digit of digits) await page.locator(`[data-digit="${digit}"]`).click();
+  };
+
+  // Layer 2 is D5 in Classic.
+  await tap(2, 3);
+  await oscillators(page);
+  await tap(4);
+  expect(await oscillators(page)).toEqual([click]);
+  await expect(page.locator('#coords-hear')).toBeHidden();
+  await page.locator('#coords-place').click();
+  await expect.poll(async () => await oscillators(page)).toContain('triangle 587.33');
+
+  await page.getByRole('button', { name: 'Sound set', exact: true }).click();
+  await page.locator('[data-sound-set="cells"]').click();
+  await page.keyboard.press('Escape');
+  await tap(1, 1);
+  await oscillators(page);
+  await tap(1);
+  await expect.poll(async () => (await oscillators(page)).filter((entry) => entry !== click).length).toBeGreaterThan(0);
+  await expect(page.locator('#coords-hear')).toBeVisible();
+});

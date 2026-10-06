@@ -101,6 +101,9 @@ export function setSoundSet(id: SoundSetId): void {
   soundSet = SOUND_SETS[id];
 }
 
+// Whether the keypad plays a typed cell before Place. Classic keeps it quiet.
+export const keypadPreviews = (): boolean => soundSet.keypadPreview !== false;
+
 // The demo of a set: the main diagonal of the tower, X and O in turn, one layer after the other.
 const DEMO_CELLS = [0, 21, 42, 63] as const;
 const DEMO_GAP = 0.42;
