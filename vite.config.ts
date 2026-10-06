@@ -35,7 +35,9 @@ export default defineConfig({
         // A page address opens the cached app. API calls always go to the network.
         navigateFallback: 'index.html',
         // /stats, /sound-training and /sound-input need no entry: the precache serves them from their .html files
-        // (clean URLs), online and offline.
+        // (clean URLs), online and offline. The query of a page address (?code=, ?mode=, ?return=) is for the page
+        // script only, so the precache ignores it. Else /sound-input?code=… finds no entry and gets index.html.
+        ignoreURLParametersMatching: [/./],
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
