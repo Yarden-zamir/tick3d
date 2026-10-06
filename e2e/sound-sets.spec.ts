@@ -44,7 +44,7 @@ test('the sound set menu picks a set, keeps it after a reload, and the moves use
   await page.getByRole('button', { name: 'Sound set', exact: true }).click();
   const menu = page.locator('#sound-sets');
   await expect(menu).toBeVisible();
-  await expect(menu.locator('.sound-set-play')).toHaveCount(12);
+  await expect(menu.locator('.sound-set-play')).toHaveCount(13);
   await expect(menu.locator('[data-sound-set="cells"]')).toHaveAttribute('aria-pressed', 'true');
 
   // A demo button plays four moves.

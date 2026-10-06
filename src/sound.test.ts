@@ -58,6 +58,21 @@ describe('the Classic set', () => {
   });
 });
 
+describe('the Classic, pitched set', () => {
+  it('keeps the Classic tone and note, and moves it by octaves for the rows and sideways for the columns', () => {
+    const at = (layer: number, row: number, column: number, player: 'X' | 'O' = 'X') =>
+      SOUND_SETS.pitched.voices(toCell({ layer, row, column }), player);
+    const classic = SOUND_SETS.classic.voices(toCell({ layer: 1, row: 0, column: 0 }), 'X');
+    // Row 2 sounds as Classic did, apart from the side.
+    expect(at(1, 1, 0).map(({ pan: _pan, ...voice }) => voice)).toEqual(classic);
+    for (const [row, octave] of [[0, 2], [2, 1 / 2], [3, 1 / 4]] as const) {
+      expect(at(1, row, 0)[0]).toMatchObject({ wave: 'triangle', frequency: 587.33 * octave });
+    }
+    expect(at(1, 1, 0, 'O')[0]).toMatchObject({ frequency: 587.33 / 2 });
+    expect(at(1, 1, 0)[0]?.pan).toBeLessThan(at(1, 1, 3)[0]?.pan ?? -1);
+  });
+});
+
 describe('the Cells set', () => {
   const pitch = (voices: readonly Voice[]) => Math.min(...voices.map((voice) => ('frequency' in voice ? voice.frequency : Infinity)));
   const pan = (voices: readonly Voice[]) => voices[0]?.pan ?? 0;
