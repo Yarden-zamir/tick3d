@@ -7,6 +7,7 @@ export function element<T extends HTMLElement>(selector: string, type: new () =>
   return found;
 }
 
+export const stageEl = element('#stage', HTMLElement);
 export const boardEl = element('#board', HTMLDivElement);
 export const boardHiddenEl = element('#board-hidden', HTMLDivElement);
 export const statusEl = element('#status', HTMLDivElement);
