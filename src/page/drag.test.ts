@@ -25,8 +25,8 @@ function at(selector: string): Element {
 }
 
 describe('startsDrag', () => {
-  it('starts a drag on the empty stage, the status, the board and a board cell', () => {
-    for (const selector of ['#stage', '#status', '#clocks', '#board', '#board-hidden', '#game-view-title', '#test-cell', '#test-cell .piece']) {
+  it('starts a drag on the empty stage, the clocks, the board and a board cell', () => {
+    for (const selector of ['#stage', '#clocks', '#board', '#board-hidden', '#game-view-title', '#test-cell', '#test-cell .piece']) {
       expect(startsDrag(at(selector)), selector).toBe(true);
     }
   });
