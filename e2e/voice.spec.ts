@@ -43,7 +43,7 @@ test('a held note places the move on its cell, and the computer replies', async 
   await expect(voice).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#voice-panel')).toBeVisible();
   await expect(page.locator('#voice-rail .rail-track')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Calibrate and practice' })).toHaveAttribute('href', '/sound-input');
+  await expect(page.getByRole('link', { name: 'Calibrate and practice' })).toHaveAttribute('href', '/sound-input?return=%2F');
   await expect(voice).toHaveAttribute('data-state', 'listening');
 
   await setTone(page, toneOf(TARGET));
