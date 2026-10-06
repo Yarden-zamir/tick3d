@@ -20,6 +20,8 @@ import {
   cardSaveButton,
   cardSongButton,
   cardLight,
+  cardVoiceOption,
+  cardVoice,
   cardCloseButton,
   showCardButton,
 } from './dom.ts';
@@ -32,6 +34,8 @@ import { setUrlGame, startNewGame } from './sessions.ts';
 import { playerName } from './render.ts';
 import { settings } from './settings.ts';
 import { songControl } from './song-control.ts';
+import { lightSungCell } from './board.ts';
+import { voiceClips } from './voice.ts';
 import { type Session, me, page, isLive, matchOptions } from './state.ts';
 
 const CARD_DELAY_MS = 1400;
@@ -156,6 +160,9 @@ export async function openCard(index: number): Promise<void> {
   if (game === undefined || game.status.kind === 'playing') throw new Error(`game ${index} has no result to show`);
   // A local game has no code, so only the link option applies.
   cardCodeOption.hidden = page.session?.mode !== 'online';
+  cardVoiceOption.hidden = voiceClips(index).size === 0;
+  // "Include my voice" is off each time the card opens. A redraw of the open card keeps the choice.
+  if (!cardDialog.open) cardVoice.checked = false;
   const gameId = page.session === undefined ? undefined : await gameIdOf(page.session, index);
   const input = cardInput(game, index, gameId);
   const canvas = await drawCard(input);
@@ -188,7 +195,13 @@ export function setupEndCard(): void {
     const game = page.games[card.index];
     if (game === undefined) return undefined;
     const input = cardInput(game, card.index, card.gameId);
-    return { game, filename: cardFilename('wav'), text: `${input.title}: ${input.subtitle} on tick3d, as a song.`, light: lightCardCell };
+    // The board behind the card shows the same game only when the card is of the newest game.
+    const onBoard = card.index === page.games.length - 1 && page.review === undefined;
+    const light = (cell: number | undefined) => {
+      lightCardCell(cell);
+      if (onBoard) lightSungCell(cell);
+    };
+    return { game, filename: cardFilename('wav'), text: `${input.title}: ${input.subtitle} on tick3d, as a song.`, light, clips: voiceClips(card.index), shareVoice: cardVoice.checked };
   });
   cardDialog.addEventListener('close', song.stop);
   cardShareButton.addEventListener('click', () => {

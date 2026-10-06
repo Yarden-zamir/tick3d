@@ -3,7 +3,7 @@
 // so a calibration in the Voice room (/sound-input) applies here too. voice-gate.ts decides when it listens.
 import { toCoords } from '../game.ts';
 import { MIC_ICON } from '../icons.ts';
-import { liveSoundUntil, sounds } from '../sound.ts';
+import { type VoiceClip, type VoiceClips, liveSoundUntil, sounds } from '../sound.ts';
 import { type Voice, type VoiceFrame, createVoice } from '../voice/engine.ts';
 import { type Rail, buildRail, showRailPitch, showRailRange } from '../voice/rail.ts';
 import { voiceButton, voicePanel, voiceRailEl, voiceRoomLink, voiceStateEl } from './dom.ts';
@@ -30,6 +30,44 @@ let enginePaused = false;
 let blockedStep: number | undefined;
 // The cell that the voice shows on the board and on the keypad.
 let aim: number | undefined;
+// The player's voice for each move that the voice placed in one game, by move index. They stay in memory
+// only: the page never uploads them. syncVoice drops them at the next game, and drops undone moves.
+// `game` is "<session code>:<game index>".
+let clips: { game: string; byMove: Map<number, VoiceClip> } | undefined;
+
+const gameKey = (index: number) => `${page.session?.code ?? ''}:${index}`;
+
+// The clips of game `index` of the open session: none for another game.
+export function voiceClips(index: number): VoiceClips {
+  return clips !== undefined && clips.game === gameKey(index) ? clips.byMove : new Map();
+}
+
+// The last moment of the held note, from the voice engine.
+// Limit: the engine has no clip call yet, so a voice move keeps the synthesized note in the song.
+// Revisit when src/voice/engine.ts exports clip(ms): return it here with the frequency of the frame.
+function takeClip(_frame: VoiceFrame): VoiceClip | undefined {
+  return undefined;
+}
+
+// Keeps the clip of move `move`, which the voice just placed in the newest game.
+function keepClip(frame: VoiceFrame, move: number): void {
+  const clip = takeClip(frame);
+  if (clip === undefined) return;
+  const game = gameKey(page.games.length - 1);
+  if (clips?.game !== game) clips = { game, byMove: new Map() };
+  clips.byMove.set(move, clip);
+}
+
+// Drops the clips of an older game, and of moves that are not in the newest game any more (an undo).
+function dropOldClips(): void {
+  if (clips === undefined) return;
+  if (clips.game !== gameKey(page.games.length - 1)) {
+    clips = undefined;
+    return;
+  }
+  const moves = page.games.at(-1)?.moves.length ?? 0;
+  for (const move of clips.byMove.keys()) if (move >= moves) clips.byMove.delete(move);
+}
 
 function gate(): VoiceGate {
   const session = page.session;
@@ -94,8 +132,10 @@ function onFrame(frame: VoiceFrame): void {
   if (!holdPlaces(step, frame.heldMs, blockedStep)) return;
   blockedStep = step;
   aimAt(undefined);
-  // The normal move path: the same checks, refusals and sounds as a tap.
+  // The normal move path: the same checks, refusals and sounds as a tap. It shows an accepted move at once.
+  const move = current().moves.length;
   humanMove(frame.cell, 'keypad');
+  if (page.games.at(-1)?.moves.length === move + 1) keepClip(frame, move);
 }
 
 function turnOff(problem: string): void {
@@ -118,6 +158,7 @@ async function openVoice(engine: Voice): Promise<void> {
 
 // Opens or closes the microphone for the state of the page. render() calls it after every change.
 export function syncVoice(): void {
+  dropOldClips();
   if (voice === undefined) return;
   const state = voiceState(gate());
   if (state === 'off') {

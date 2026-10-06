@@ -2100,7 +2100,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   }
 }
 
-/* A cell of the board that sounds in the song of a game from a link. */
+/* A cell of the board that sounds in the song: of a game from a link, or of the newest game behind its end card. */
 .cell.sung {
   outline: 4px solid var(--primary);
   outline-offset: 2px;

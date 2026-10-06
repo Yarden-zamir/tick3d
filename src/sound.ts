@@ -176,9 +176,46 @@ function songMix(ctx: BaseAudioContext): { input: AudioNode; output: AudioNode }
   return { input, output: limiter };
 }
 
-function scheduleSong(song: Song, set: SoundSet, ctx: BaseAudioContext, delay: number): { output: AudioNode } {
+// A short recording of the player's voice for a move that the voice placed (src/page/voice.ts).
+// `frequency` is the pitch that the voice engine heard.
+export type VoiceClip = { samples: Float32Array<ArrayBuffer>; sampleRate: number; frequency: number };
+// The clips of a game by move index. Most games have none.
+export type VoiceClips = ReadonlyMap<number, VoiceClip>;
+
+// A clip in the song plays this long at most, and the synthesized note under it this soft.
+const CLIP_SECONDS = 0.6;
+const UNDER_CLIP = 0.35;
+
+// Plays a clip at the note of the song: playbackRate moves its pitch, at most one octave either way.
+function playClip(ctx: BaseAudioContext, clip: VoiceClip, midi: number, start: number, output: AudioNode): void {
+  if (!(clip.frequency > 0) || clip.samples.length === 0) throw new RangeError(`a voice clip needs samples and a pitch: ${clip.frequency} Hz`);
+  const buffer = ctx.createBuffer(1, clip.samples.length, clip.sampleRate);
+  buffer.copyToChannel(clip.samples, 0);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.playbackRate.setValueAtTime(Math.min(2, Math.max(0.5, midiHz(midi) / clip.frequency)), start);
+  // The loudest sample of the clip goes to about half of full scale.
+  let peak = 0;
+  for (const sample of clip.samples) peak = Math.max(peak, Math.abs(sample));
+  const level = peak > 0 ? 0.5 / peak : 0;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, start);
+  gain.gain.linearRampToValueAtTime(level, start + 0.02);
+  gain.gain.setValueAtTime(level, start + CLIP_SECONDS - 0.08);
+  gain.gain.linearRampToValueAtTime(0, start + CLIP_SECONDS);
+  source.connect(gain).connect(output);
+  source.start(start);
+  source.stop(start + CLIP_SECONDS);
+}
+
+function scheduleSong(song: Song, set: SoundSet, ctx: BaseAudioContext, delay: number, clips: VoiceClips): { output: AudioNode } {
   const mix = songMix(ctx);
-  for (const note of song.notes) play(noteVoices(note, set), 1, delay + note.at, ctx, mix.input);
+  for (const note of song.notes) {
+    const clip = note.kind === 'melody' && note.move !== undefined ? clips.get(note.move) : undefined;
+    // A move that the voice placed plays the player's own note, over a soft synthesized one.
+    if (clip !== undefined) playClip(ctx, clip, note.midi, ctx.currentTime + delay + note.at, mix.input);
+    play(noteVoices(note, set), clip === undefined ? 1 : UNDER_CLIP, delay + note.at, ctx, mix.input);
+  }
   return mix;
 }
 
@@ -186,13 +223,13 @@ function scheduleSong(song: Song, set: SoundSet, ctx: BaseAudioContext, delay: n
 export type SongPlayback = { elapsed: () => number; stop: () => void };
 
 // Plays a finished game as a song in the sound set of the screen. undefined: the sound is off.
-export function playSong(song: Song): SongPlayback | undefined {
+export function playSong(song: Song, clips: VoiceClips): SongPlayback | undefined {
   const ctx = audio();
   if (!ctx) return undefined;
   // A short lead, so the first note is not late.
   const lead = 0.05;
   const start = ctx.currentTime + lead;
-  const mix = scheduleSong(song, soundSet, ctx, lead);
+  const mix = scheduleSong(song, soundSet, ctx, lead, clips);
   return { elapsed: () => ctx.currentTime - start, stop: () => mix.output.disconnect() };
 }
 
@@ -200,9 +237,9 @@ export function playSong(song: Song): SongPlayback | undefined {
 // player asks for a file.
 const SONG_RATE = 44_100;
 
-export function renderSong(song: Song): Promise<AudioBuffer> {
+export function renderSong(song: Song, clips: VoiceClips): Promise<AudioBuffer> {
   const ctx = new OfflineAudioContext(2, Math.ceil(song.duration * SONG_RATE), SONG_RATE);
-  scheduleSong(song, soundSet, ctx, 0);
+  scheduleSong(song, soundSet, ctx, 0, clips);
   return ctx.startRendering();
 }
 

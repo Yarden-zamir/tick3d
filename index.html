@@ -382,6 +382,11 @@
           <input type="checkbox" id="end-card-link" checked />
           <span>Include the link</span>
         </label>
+        <!-- Only after a game with moves by voice. Off by default: the shared song then has a recording of the player. -->
+        <label class="include" id="end-card-voice-option" hidden>
+          <input type="checkbox" id="end-card-voice" />
+          <span>Include my voice</span>
+        </label>
         <!-- A click plays the game as a song. A long press or the context menu shares it as a WAV file. src/page/end-card.ts sets the icon. -->
         <button type="button" class="btn btn-small song" id="end-card-song" aria-label="Play the game as a song" data-tip="Play the game as a song. Hold to share it as a sound file."></button>
       </div>

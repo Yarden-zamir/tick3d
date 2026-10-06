@@ -19,6 +19,15 @@ export function cellButton(cell: number): HTMLButtonElement {
   return button;
 }
 
+// The cell that sounds in the song of a finished game (src/page/song-control.ts), or none.
+let sung: number | undefined;
+
+export function lightSungCell(cell: number | undefined): void {
+  if (sung !== undefined) cellButton(sung).classList.remove('sung');
+  sung = cell;
+  if (cell !== undefined) cellButton(cell).classList.add('sung');
+}
+
 function highlightColumn(cell: number | undefined): void {
   const target = cell === undefined ? undefined : toCoords(cell);
   cells.forEach((button, index) => {

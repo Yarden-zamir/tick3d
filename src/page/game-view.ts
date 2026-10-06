@@ -6,7 +6,7 @@ import { nameOf } from '../names.ts';
 import { api, OnlineError, token } from '../online.ts';
 import { type GameId, type PublicGame, parseResultUpload, toGame } from '../protocol.ts';
 import { cardFilename } from '../card.ts';
-import { cellButton } from './board.ts';
+import { lightSungCell } from './board.ts';
 import { gameViewEl, gameViewTitle, gameViewPlayers, gameViewDetails, gameViewPlay, gameViewSong, reviewExit } from './dom.ts';
 import { showError, showProblem } from './feedback.ts';
 import { openNearby } from './nearby.ts';
@@ -101,14 +101,6 @@ function modeLabel(shown: PublicGame): string {
   }
 }
 
-// The cell on the board that sounds in the song.
-let sung: number | undefined;
-
-function lightBoardCell(cell: number | undefined): void {
-  if (sung !== undefined) cellButton(sung).classList.remove('sung');
-  sung = cell;
-  if (cell !== undefined) cellButton(cell).classList.add('sung');
-}
 
 let song: ReturnType<typeof songControl> | undefined;
 
@@ -132,7 +124,7 @@ export function setupGameView(): void {
   song = songControl(gameViewSong, () => {
     const shown = page.viewing;
     if (shown === undefined) return undefined;
-    return { game: toGame(shown.game), filename: cardFilename('wav'), text: `${gameViewTitle.textContent ?? 'A game'} on tick3d, as a song.`, light: lightBoardCell };
+    return { game: toGame(shown.game), filename: cardFilename('wav'), text: `${gameViewTitle.textContent ?? 'A game'} on tick3d, as a song.`, light: lightSungCell, clips: new Map(), shareVoice: false };
   });
   gameViewPlay.addEventListener('click', () => void closeGameView().catch(showError));
 }

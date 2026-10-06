@@ -23,7 +23,8 @@ const MODES = {
   dorian: [0, 2, 3, 5, 7, 9, 10],
 } as const satisfies Record<string, readonly number[]>;
 type Mode = keyof typeof MODES;
-const MODE_NAMES = Object.keys(MODES) as Mode[];
+// The hash picks from this list. Major pentatonic is the default mode: it has half of the places.
+const MODE_PICKS: readonly Mode[] = ['major pentatonic', 'major pentatonic', 'minor pentatonic', 'dorian'];
 
 // The chords as semitones above the tonic, one for each bar: I–V–vi–IV in major, i–VI–III–VII in minor.
 const MAJOR_LOOP = [[0, 4, 7], [7, 11, 14], [9, 12, 16], [5, 9, 12]] as const;
@@ -33,8 +34,9 @@ const MINOR_LOOP = [[0, 3, 7], [8, 12, 15], [3, 7, 10], [10, 14, 17]] as const;
 export type Key = { root: number; mode: Mode };
 
 export type SongNote =
-  // A melody note of a player. `cell` is the cell of the move, for the timbre and the highlight.
-  | { kind: 'melody'; at: number; midi: number; player: Player; cell: number; level: number }
+  // A melody note of a player. `cell` is the cell of the move, for the timbre and the highlight. `move` is
+  // the index of the move in the game, for the notes of the moves (not for the ending).
+  | { kind: 'melody'; at: number; midi: number; player: Player; cell: number; level: number; move?: number }
   // A soft pad note of a chord, or the bass note under it.
   | { kind: 'chord' | 'bass'; at: number; midi: number; length: number };
 export type Song = { key: Key; notes: readonly SongNote[]; duration: number };
@@ -43,7 +45,7 @@ export type Song = { key: Key; notes: readonly SongNote[]; duration: number };
 function keyOf(game: Game): Key {
   let hash = 0x811c9dc5;
   for (const value of [game.first === 'X' ? 64 : 65, ...game.moves]) hash = Math.imul(hash ^ value, 0x01000193) >>> 0;
-  const mode = MODE_NAMES[(hash >>> 4) % MODE_NAMES.length];
+  const mode = MODE_PICKS[(hash >>> 4) % MODE_PICKS.length];
   if (mode === undefined) throw new Error('no mode');
   return { root: hash % 12, mode };
 }
@@ -110,7 +112,7 @@ export function songOf(game: Game): Song {
       const fits = (candidate: number) => candidate >= 0 && tones.includes(pitchOf(candidate, base, key.mode) % 12);
       degree = [0, -1, 1, -2, 2].map((shift) => degree + shift).find(fits) ?? degree;
     }
-    notes.push({ kind: 'melody', at: position * EIGHTH, midi: pitchOf(degree, base, key.mode), player, cell, level: strong ? 0.75 : 0.6 });
+    notes.push({ kind: 'melody', at: position * EIGHTH, midi: pitchOf(degree, base, key.mode), player, cell, level: strong ? 0.75 : 0.6, move: index });
     const now = game.times[index];
     const next = game.times[index + 1];
     position += eighthsOf(now === undefined || next === undefined ? undefined : next - now);

@@ -6,12 +6,13 @@ import { shareFile } from '../card.ts';
 import type { Game } from '../game.ts';
 import { SOUND_ON_ICON } from '../icons.ts';
 import { EIGHTH, songOf } from '../song.ts';
-import { type SongPlayback, playSong, renderSong } from '../sound.ts';
+import { type SongPlayback, type VoiceClips, playSong, renderSong } from '../sound.ts';
 import { encodeWav } from '../wav.ts';
 import { showToast } from './feedback.ts';
 
-// `light` shows the cell of the note that sounds, or none.
-export type SongSource = { game: Game; filename: string; text: string; light: (cell: number | undefined) => void };
+// `light` shows the cell of the note that sounds, or none. `clips` holds the player's voice for the moves
+// that the voice placed: the song plays them, and a shared file has them only when `shareVoice` is true.
+export type SongSource = { game: Game; filename: string; text: string; light: (cell: number | undefined) => void; clips: VoiceClips; shareVoice: boolean };
 
 // A press this long shares the song as a file.
 const LONG_PRESS_MS = 600;
@@ -21,8 +22,8 @@ type State = 'idle' | 'playing' | 'held' | 'rendering';
 const LABELS: Record<State, string> = { idle: 'Song', playing: 'Stop', held: 'Release to share', rendering: 'Making the file…' };
 
 // Renders the song offline with the voices and the mix of live play, into a WAV file.
-async function songFile(game: Game, filename: string): Promise<File> {
-  const buffer = await renderSong(songOf(game));
+async function songFile({ game, filename, clips, shareVoice }: SongSource): Promise<File> {
+  const buffer = await renderSong(songOf(game), shareVoice ? clips : new Map());
   const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) => buffer.getChannelData(channel));
   return new File([encodeWav(channels, buffer.sampleRate)], filename, { type: 'audio/wav' });
 }
@@ -50,7 +51,7 @@ export function songControl(button: HTMLButtonElement, source: () => SongSource 
     const shown = source();
     if (shown === undefined) return;
     const song = songOf(shown.game);
-    const playback = playSong(song);
+    const playback = playSong(song, shown.clips);
     if (playback === undefined) return showToast('Turn the sound on to hear the song.');
     const melody = song.notes.filter((note) => note.kind === 'melody');
     // The highlight reads the audio clock on every frame, so it cannot drift from the sound.
@@ -92,7 +93,7 @@ export function songControl(button: HTMLButtonElement, source: () => SongSource 
       file: undefined,
       timer: setTimeout(() => {
         // The render starts during the press, so the file is ready soon after the release.
-        started.file = songFile(shown.game, shown.filename);
+        started.file = songFile(source() ?? shown);
         show('held');
       }, LONG_PRESS_MS),
     };
@@ -127,7 +128,7 @@ export function songControl(button: HTMLButtonElement, source: () => SongSource 
     event.preventDefault();
     const shown = source();
     if (press !== undefined || shown === undefined || button.dataset.state !== 'idle') return;
-    void share(songFile(shown.game, shown.filename), shown.text);
+    void share(songFile(shown), shown.text);
   });
   return { stop };
 }
