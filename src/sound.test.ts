@@ -6,7 +6,7 @@ const cells = Array.from({ length: CELL_COUNT }, (_, cell) => cell);
 const fingerprint = (voices: readonly Voice[]) => JSON.stringify(voices);
 describe('sound sets', () => {
   it('puts every set in exactly one menu group', () => {
-    expect(Object.values(SOUND_SET_GROUPS).flat().toSorted()).toEqual([...SOUND_SET_IDS].toSorted());
+    expect(SOUND_SET_GROUPS.flatMap((group) => group.ids).toSorted()).toEqual([...SOUND_SET_IDS].toSorted());
   });
 
   for (const id of SOUND_SET_IDS) {

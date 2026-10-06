@@ -1093,8 +1093,14 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-size: 0.85rem;
 }
 
+.sound-set-group p {
+  margin: 0 0 0.45rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .sound-set-group h3 {
-  margin: 0.8rem 0 0.4rem;
+  margin: 0.8rem 0 0.15rem;
   color: var(--muted);
   font-size: 0.75rem;
   text-transform: uppercase;

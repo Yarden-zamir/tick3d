@@ -541,10 +541,11 @@ export const SOUND_SETS = {
 export type SoundSetId = keyof typeof SOUND_SETS;
 export const SOUND_SET_IDS = Object.keys(SOUND_SETS) as SoundSetId[];
 
-// The groups of the sound set menu, in menu order. Every set is in exactly one group.
-export const SOUND_SET_GROUPS: Record<string, readonly SoundSetId[]> = {
-  'Like Cells': ['cells', 'soft', 'orchestra', 'lofi'],
-  'New ideas': ['gamelan', 'chiptune', 'kalimba', 'percussion', 'choir', 'nature'],
-  'For musicians': ['harmony'],
-  Classic: ['classic'],
-};
+// The groups of the sound set menu, by character, in menu order. Every set is in exactly one group.
+export const SOUND_SET_GROUPS: readonly { title: string; subtitle: string; ids: readonly SoundSetId[] }[] = [
+  { title: 'Instruments', subtitle: 'Same map as Cells: pitch = layer, instrument = row, width = column.', ids: ['cells', 'soft', 'orchestra', 'lofi'] },
+  { title: 'World and voice', subtitle: 'Bronze, tines and voices, each with its own map.', ids: ['gamelan', 'kalimba', 'choir'] },
+  { title: 'Playful', subtitle: 'Game blips, drums and nature sounds, each with its own map.', ids: ['chiptune', 'percussion', 'nature'] },
+  { title: 'For musicians', subtitle: 'Real chords in C major, named as in a music lesson.', ids: ['harmony'] },
+  { title: 'Original', subtitle: 'The first sounds: one note per layer.', ids: ['classic'] },
+];

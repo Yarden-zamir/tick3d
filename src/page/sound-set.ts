@@ -44,12 +44,14 @@ function applySoundSet(): void {
 
 export function setupSoundSets(): void {
   soundSetList.replaceChildren(
-    ...Object.entries(SOUND_SET_GROUPS).map(([title, ids]) => {
+    ...SOUND_SET_GROUPS.map(({ title, subtitle, ids }) => {
       const group = document.createElement('section');
       group.className = 'sound-set-group';
       const heading = document.createElement('h3');
       heading.textContent = title;
-      group.append(heading, ...ids.map(option));
+      const note = document.createElement('p');
+      note.textContent = subtitle;
+      group.append(heading, note, ...ids.map(option));
       return group;
     }),
   );
