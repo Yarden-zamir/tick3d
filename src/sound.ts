@@ -44,44 +44,101 @@ function tone({ frequency, at = 0, duration, type = 'sine', volume = 0.2, slideT
   oscillator.stop(start + duration + 0.02);
 }
 
-// Every cell has its own motif, so a player can follow the game by sound only:
-// three quick rising notes for the layer, the row and the column, in a low, middle and high register.
-// In each register, positions 1 to 4 are the steps C, D, E and G of the C major pentatonic scale, so
-// every motif sounds good and a player learns one pattern. The column also comes from the side
-// (left to right) on headphones. Example: layer 2, row 1, column 4 is D4, C5, G6, heard on the right.
-const STEPS = [1, 9 / 8, 5 / 4, 3 / 2] as const; // C, D, E, G above a C
-const REGISTERS = [261.63, 523.25, 1046.5] as const; // C4 for the layer, C5 for the row, C6 for the column
+// Every cell has its own single sound, so a player can follow the game by ear. One strike carries all three
+// coordinates at once:
+// - the layer is the pitch: C, D, E or G of the C major pentatonic scale, higher layers higher;
+// - the row is the instrument: 1 wooden marimba, 2 glass bell, 3 plucked string, 4 airy whistle;
+// - the column is the width: 1 one voice, 2 with a fifth, 3 with an octave, 4 with both, and on
+//   headphones it also comes from the left (1) to the right (4). The width works on a mono speaker too.
+// O sounds one octave below X, so the strike also tells whose move it was.
+const LAYER_NOTES = [523.25, 587.33, 659.25, 783.99] as const; // C5, D5, E5, G5
+const INSTRUMENTS = ['marimba', 'bell', 'pluck', 'whistle'] as const;
+const WIDTHS = [[1], [1, 3 / 2], [1, 2], [1, 3 / 2, 2]] as const;
 const PANS = [-0.75, -0.25, 0.25, 0.75] as const;
 
-export type Motif = { notes: readonly [number, number, number]; pan: number };
+export type Instrument = (typeof INSTRUMENTS)[number];
+export type CellSound = { frequency: number; instrument: Instrument; intervals: readonly number[]; pan: number };
 
-export function cellMotif(cell: number): Motif {
+export function cellSound(cell: number): CellSound {
   const { layer, row, column } = toCoords(cell);
-  const step = (position: number, register: number) => {
-    const ratio = STEPS[position as 0 | 1 | 2 | 3];
-    const base = REGISTERS[register as 0 | 1 | 2];
-    return base * ratio;
-  };
-  return { notes: [step(layer, 0), step(row, 1), step(column, 2)], pan: PANS[column as 0 | 1 | 2 | 3] };
+  const frequency = LAYER_NOTES[layer as 0 | 1 | 2 | 3];
+  const instrument = INSTRUMENTS[row as 0 | 1 | 2 | 3];
+  return { frequency, instrument, intervals: WIDTHS[column as 0 | 1 | 2 | 3], pan: PANS[column as 0 | 1 | 2 | 3] };
 }
 
-const NOTE_GAP = 0.09;
+// One voice of an instrument at `frequency`, into `out`. Each instrument has its own partials and envelope.
+function voice(ctx: AudioContext, out: AudioNode, instrument: Instrument, frequency: number, volume: number): void {
+  const start = ctx.currentTime;
+  const partial = (ratio: number, level: number, decay: number, type: OscillatorType = 'sine', attack = 0.005, to: AudioNode = out): OscillatorNode => {
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency * ratio, start);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(volume * level, start + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + decay);
+    oscillator.connect(gain).connect(to);
+    oscillator.start(start);
+    oscillator.stop(start + decay + 0.02);
+    return oscillator;
+  };
+  switch (instrument) {
+    case 'marimba':
+      // A short wooden knock: the note and its fourth harmonic, both gone fast.
+      partial(1, 1, 0.35);
+      partial(4, 0.3, 0.08);
+      return;
+    case 'bell':
+      // Glass: partials that are not whole multiples ring on after the strike.
+      partial(1, 0.8, 0.9);
+      partial(2.76, 0.45, 0.6);
+      partial(5.4, 0.2, 0.3);
+      return;
+    case 'pluck': {
+      // A string: a bright sawtooth whose filter closes fast, like a plucked string loses its edge.
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(frequency * 8, start);
+      filter.frequency.exponentialRampToValueAtTime(frequency * 1.2, start + 0.3);
+      filter.connect(out);
+      partial(1, 0.7, 0.45, 'sawtooth', 0.004, filter);
+      return;
+    }
+    case 'whistle': {
+      // Air: a soft attack and a gentle vibrato.
+      const tone = partial(1, 0.9, 0.5, 'sine', 0.06);
+      partial(2, 0.08, 0.4, 'triangle', 0.06);
+      const vibrato = ctx.createOscillator();
+      const depth = ctx.createGain();
+      vibrato.frequency.setValueAtTime(5.5, start);
+      depth.gain.setValueAtTime(frequency * 0.006, start);
+      vibrato.connect(depth).connect(tone.frequency);
+      vibrato.start(start);
+      vibrato.stop(start + 0.52);
+      return;
+    }
+  }
+}
 
-// X sounds bright (triangle), O sounds round (sine), so the motif also tells whose move it was.
-// A preview, before a move, is soft and neutral.
-function playMotif(cell: number, voice: OscillatorType, volume: number): void {
-  const { notes, pan } = cellMotif(cell);
-  // Higher notes sound louder at the same level, so each register is a little softer than the last.
-  notes.forEach((frequency, i) => tone({ frequency, at: i * NOTE_GAP, duration: 0.16, type: voice, volume: volume * (1 - i * 0.2), pan }));
+function strike(cell: number, octave: number, volume: number): void {
+  const ctx = audio();
+  if (!ctx) return;
+  const { frequency, instrument, intervals, pan } = cellSound(cell);
+  const panner = ctx.createStereoPanner();
+  panner.pan.setValueAtTime(pan, ctx.currentTime);
+  panner.connect(ctx.destination);
+  // More voices at the same level sound louder, so each voice gets a share.
+  const share = volume / Math.sqrt(intervals.length);
+  for (const interval of intervals) voice(ctx, panner, instrument, frequency * octave * interval, share);
 }
 
 export const sounds = {
   place(player: Player, cell: number): void {
-    playMotif(cell, player === 'X' ? 'triangle' : 'sine', player === 'X' ? 0.22 : 0.3);
+    strike(cell, player === 'X' ? 1 : 1 / 2, 0.28);
   },
-  // The motif of a cell before it is played, for example from the keypad.
+  // The sound of a cell before it is played, for example from the keypad: the same strike, softer.
   preview(cell: number): void {
-    playMotif(cell, 'sine', 0.14);
+    strike(cell, 1, 0.12);
   },
   invalid(): void {
     tone({ frequency: 180, duration: 0.12, type: 'square', volume: 0.06 });
