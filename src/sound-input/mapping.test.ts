@@ -1,55 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { toCell, toCoords } from '../game.ts';
-import { SOUND_SETS } from '../sound-sets.ts';
-import { cellOf, noteName } from './mapping.ts';
+import { toCoords } from '../game.ts';
+import { DEFAULT_RANGE, STEPS, cellOf, cellOfStep, frequencyAt, noteName, positionOf, stepOfCell } from './mapping.ts';
 
 const semitones = (frequency: number, steps: number) => frequency * 2 ** (steps / 12);
-const coordsOf = (frequency: number, range: { low: number; high: number } | null = null) => toCoords(cellOf(frequency, range));
+const coordsOf = (frequency: number, range = DEFAULT_RANGE) => toCoords(cellOf(frequency, range));
 
-// The note of a layer in the game: the Classic set plays one note for each layer.
-function layerNote(layer: number): number {
-  const voice = SOUND_SETS.classic.voices(toCell({ layer, row: 0, column: 0 }), 'X')[0];
-  if (voice === undefined || !('frequency' in voice)) throw new Error('the Classic set plays no note');
-  return voice.frequency;
-}
-
-describe('frequency to cell, default bands', () => {
-  it('lights the layer of each game note: C, D, E and G', () => {
-    for (const layer of [0, 1, 2, 3]) {
-      const frequency = layerNote(layer);
-      expect(coordsOf(frequency).layer).toBe(layer);
-      // An octave up or down keeps the layer.
-      expect(coordsOf(frequency * 2).layer).toBe(layer);
-      expect(coordsOf(frequency / 2).layer).toBe(layer);
-    }
-  });
-
-  it('maps every other pitch class to the nearest of C, D, E and G', () => {
-    const C5 = 523.25;
-    // Semitones above C, a little sharp: C# and D# lean up, F to E, F# and A to G, A# and B to the next C.
-    const expected: Record<number, number> = { 1: 1, 3: 2, 5: 2, 6: 3, 8: 3, 9: 3, 10: 0, 11: 0 };
-    for (const [steps, layer] of Object.entries(expected)) {
-      expect(coordsOf(semitones(C5, Number(steps) + 0.1)).layer, `${steps} semitones above C`).toBe(layer);
-    }
-  });
-
-  it('moves right along the columns, then to the next layer, on a slide up', () => {
-    const cells: number[] = [];
-    for (let steps = -2.4; steps < 9.5; steps += 0.05) cells.push(cellOf(semitones(523.25, steps), null));
-    const path = cells.filter((cell, index) => cell !== cells[index - 1]).map(toCoords);
-    expect(path.map(({ layer, column }) => layer * 4 + column)).toEqual([...Array(16).keys()]);
-    // The whole slide stays in one row.
-    expect(new Set(path.map(({ row }) => row)).size).toBe(1);
-  });
-
-  it('puts higher octaves on higher rows: a whistle on top, a hum at the bottom', () => {
-    const rows = [1100, 600, 300, 150, 60].map((frequency) => coordsOf(frequency).row);
-    expect(rows).toEqual([0, 1, 2, 3, 3]);
-    expect(coordsOf(3000).row).toBe(0);
-  });
-});
-
-describe('frequency to cell, calibrated range', () => {
+describe('frequency to cell', () => {
   const range = { low: 200, high: 1600 };
   // The range is 3 octaves, so each row is 3/4 of an octave.
   const edge = (row: number) => range.low * 2 ** ((3 * row) / 4);
@@ -61,7 +17,7 @@ describe('frequency to cell, calibrated range', () => {
     }
   });
 
-  it('sweeps all 16 cells of a row on a slide across the row band', () => {
+  it('sweeps all 16 cells of a row, layer 1 column 1 to layer 4 column 4, on a slide across the row band', () => {
     const cells: number[] = [];
     for (let share = 0; share < 1; share += 0.002) cells.push(cellOf(edge(1) * (edge(2) / edge(1)) ** share, range));
     const path = cells.filter((cell, index) => cell !== cells[index - 1]).map(toCoords);
@@ -69,14 +25,32 @@ describe('frequency to cell, calibrated range', () => {
     expect(new Set(path.map(({ row }) => row))).toEqual(new Set([2]));
   });
 
-  it('clamps a pitch outside the range to the edge cells', () => {
-    expect(cellOf(50, range)).toBe(cellOf(range.low, range));
+  it('takes the nearest edge for a pitch outside the range', () => {
     expect(coordsOf(50, range)).toEqual({ layer: 0, row: 3, column: 0 });
     expect(coordsOf(5000, range)).toEqual({ layer: 3, row: 0, column: 3 });
     expect(coordsOf(range.high, range)).toEqual({ layer: 3, row: 0, column: 3 });
+    expect(positionOf(range.high, range)).toBeLessThan(STEPS);
   });
 
-  it('refuses a range that is not one', () => {
+  it('gives each row one octave in the default range: a hum low, a whistle high', () => {
+    expect([200, 400, 800, 1600].map((frequency) => coordsOf(frequency).row)).toEqual([3, 2, 1, 0]);
+    // One octave holds 16 cells, so one cell is 3/4 of a semitone.
+    expect(Math.floor(positionOf(semitones(300, 0.76), DEFAULT_RANGE)) - Math.floor(positionOf(300 * 1.0001, DEFAULT_RANGE))).toBe(1);
+  });
+
+  it('turns steps and cells back and forth, and places frequencies back on their steps', () => {
+    for (let step = 0; step < STEPS; step++) {
+      expect(stepOfCell(cellOfStep(step))).toBe(step);
+      expect(Math.floor(positionOf(frequencyAt(step + 0.5, range), range))).toBe(step);
+    }
+    expect(new Set(Array.from({ length: STEPS }, (_, step) => cellOfStep(step))).size).toBe(STEPS);
+    expect(() => cellOfStep(64)).toThrow(RangeError);
+    expect(() => cellOfStep(1.5)).toThrow(RangeError);
+  });
+
+  it('refuses a frequency or a range that is not one', () => {
+    expect(() => cellOf(0, range)).toThrow(RangeError);
+    expect(() => cellOf(Number.NaN, range)).toThrow(RangeError);
     expect(() => cellOf(300, { low: 400, high: 400 })).toThrow(RangeError);
   });
 });
@@ -85,10 +59,5 @@ describe('note names', () => {
   it('names the nearest note with its offset', () => {
     expect(noteName(440)).toBe('A4 +0¢');
     expect(noteName(semitones(523.25, -0.2))).toBe('C5 −20¢');
-  });
-
-  it('refuses a frequency that is not positive', () => {
-    expect(() => cellOf(0, null)).toThrow(RangeError);
-    expect(() => cellOf(Number.NaN, { low: 100, high: 200 })).toThrow(RangeError);
   });
 });

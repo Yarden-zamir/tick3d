@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSmallRange, median, parseRange, rangeFrom, storedRange } from './calibration.ts';
+import { isSmallRange, median, rangeFrom } from './calibration.ts';
 
 describe('calibration', () => {
   it('takes the median of each step, so a few odd frames do not move the range', () => {
@@ -8,23 +8,17 @@ describe('calibration', () => {
     expect(() => median([])).toThrow(RangeError);
   });
 
-  it('asks for a retry when a step has no pitch, or the low sound is not below the high sound', () => {
-    expect(rangeFrom([], [800])).toBeNull();
-    expect(rangeFrom([400], [])).toBeNull();
-    expect(rangeFrom([600], [600])).toBeNull();
-    expect(rangeFrom([900], [300])).toBeNull();
+  it('asks for a retry when a step has no pitch, the low sound is not below the high sound, or the gap is under half an octave', () => {
+    expect(rangeFrom([], [800])).toBe('silent');
+    expect(rangeFrom([400], [])).toBe('silent');
+    expect(rangeFrom([600], [600])).toBe('order');
+    expect(rangeFrom([900], [300])).toBe('order');
+    expect(rangeFrom([400], [560])).toBe('narrow');
+    expect(rangeFrom([400], [570])).toEqual({ low: 400, high: 570 });
   });
 
   it('flags a range under one octave as small', () => {
     expect(isSmallRange({ low: 300, high: 590 })).toBe(true);
     expect(isSmallRange({ low: 300, high: 600 })).toBe(false);
-  });
-
-  it('reads back a stored range, and treats anything else as not calibrated', () => {
-    const range = { low: 210, high: 1350 };
-    expect(parseRange(JSON.parse(JSON.stringify(storedRange(range))))).toEqual(range);
-    for (const bad of [null, 'x', 42, {}, { low: 210, high: 1350 }, { version: 2, low: 210, high: 1350 }, { version: 1, low: 1350, high: 210 }, { version: 1, low: -1, high: 300 }, { version: 1, low: 210, high: '1350' }, { version: 1, low: 210, high: Infinity }]) {
-      expect(parseRange(bad), JSON.stringify(bad)).toBeNull();
-    }
   });
 });

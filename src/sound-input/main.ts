@@ -1,6 +1,7 @@
 // The sound input page (/sound-input): the pitch from the microphone lights a cell of the board, live.
-// pitch.ts finds the pitch, mapping.ts picks the cell, calibration.ts holds the player's own range, and the
-// deck of the ear training draws the board.
+// pitch.ts finds the pitch, mapping.ts places it in the range, sticky.ts holds a cell against a wobble,
+// rail.ts draws the range, calibration.ts measures the player's own range, and stored.ts keeps the choices.
+// The deck of the ear training draws the board.
 import '../style.css';
 import '../sound-training/training.css';
 import './input.css';
@@ -10,9 +11,12 @@ import { setupPageHeader } from '../header/header.ts';
 import { settings } from '../page/settings.ts';
 import { setSoundSet, sounds } from '../sound.ts';
 import { buildDeck, fitDeck } from '../sound-training/deck.ts';
-import { type Range, STORAGE_KEY, isSmallRange, median, parseRange, rangeFrom, storedRange } from './calibration.ts';
-import { LAYER_NAMES, cellOf, noteName } from './mapping.ts';
+import { isSmallRange, median, rangeFrom, type Retry } from './calibration.ts';
+import { DEFAULT_RANGE, type Range, cellOfStep, noteName, positionOf } from './mapping.ts';
 import { bufferSize, detectPitch, rms } from './pitch.ts';
+import { buildRail, showRailPitch, showRailRange } from './rail.ts';
+import { STORAGE_KEY, type Stored, parseStored, toStorage } from './stored.ts';
+import { type Held, holdStep, marginAt } from './sticky.ts';
 
 setupPageHeader();
 // A tap on a cell plays it in the sound set of the game. The game page and the trainer change the set.
@@ -35,9 +39,14 @@ const noteEl = element('#note', HTMLSpanElement);
 const cellEl = element('#cell', HTMLElement);
 const levelEl = element('#level', HTMLDivElement);
 const messageEl = element('#message', HTMLParagraphElement);
+const railEl = element('#rail', HTMLDivElement);
 const cardEl = element('#card', HTMLElement);
 const deckEl = element('#deck', HTMLDivElement);
 const dotsEl = element('#deck-dots', HTMLDivElement);
+const stickinessInput = element('#stickiness', HTMLInputElement);
+const stickinessValue = element('#stickiness-value', HTMLOutputElement);
+const buildUpInput = element('#build-up', HTMLInputElement);
+const buildUpValue = element('#build-up-value', HTMLOutputElement);
 const holdBox = element('#hold', HTMLInputElement);
 const clearButton = element('#clear', HTMLButtonElement);
 
@@ -51,6 +60,9 @@ const HOLD_MS = 1000;
 const STEP_MS = 2000;
 // A longer gap between two frames (a slow device) counts as this much, so one gap does not end a step.
 const MAX_FRAME_MS = 100;
+// The deck mainly shows the light, so its cells can be smaller than tap targets. On a phone this keeps all
+// four layers in view (2 × 2) while the player sings.
+const DISPLAY_MIN_CELL = 20;
 
 type Listening = {
   stream: MediaStream;
@@ -68,12 +80,15 @@ type Calibration = { step: 'low' | 'high'; heard: number[]; lows: number[]; time
 let listening: Listening | undefined;
 let starting = false;
 let calibration: Calibration | undefined;
-let range: Range | null = loadRange();
+let stored: Stored = loadStored();
 let recent: number[] = [];
 let misses = 0;
+let held: Held | null = null;
 let lit: number | undefined;
 let litSince = 0;
 let holdDone = false;
+
+const range = (): Range => stored.range ?? DEFAULT_RANGE;
 
 const deck = buildDeck(deckEl, dotsEl);
 // The X piece of the game, for the cells that a held note places.
@@ -82,28 +97,28 @@ for (const button of deck.cells) {
   piece.className = 'piece';
   button.append(piece);
 }
+const rail = buildRail(railEl);
 
 // A short landscape screen puts the deck beside the other card parts, as in training.css. The deck
 // fits again when a part above it shows or hides.
 const sideLayout = matchMedia('(orientation: landscape) and (max-height: 32rem)');
-const fit = (): void => fitDeck(deckEl, cardEl, sideLayout.matches);
+const fit = (): void => fitDeck(deckEl, cardEl, sideLayout.matches, DISPLAY_MIN_CELL);
 
 // ---- Storage ----
 
-function loadRange(): Range | null {
+function loadStored(): Stored {
   try {
-    return parseRange(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null'));
+    return parseStored(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null'));
   } catch {
-    return null;
+    return parseStored(null);
   }
 }
 
-function saveRange(): void {
+function save(): void {
   try {
-    if (range === null) localStorage.removeItem(STORAGE_KEY);
-    else localStorage.setItem(STORAGE_KEY, JSON.stringify(storedRange(range)));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toStorage(stored)));
   } catch {
-    // Private mode or a full storage: the range still works for this visit.
+    // Private mode or a full storage: the choices still work for this visit.
   }
 }
 
@@ -114,17 +129,26 @@ function show(message: string): void {
 }
 
 function showRange(): void {
-  modeEl.textContent = range === null ? 'Default bands' : `Calibrated: ${Math.round(range.low)}–${Math.round(range.high)} Hz`;
-  resetButton.hidden = range === null;
-  hintEl.hidden = range === null || !isSmallRange(range);
+  const { low, high } = range();
+  modeEl.textContent = `${stored.range === null ? 'Default range' : 'Calibrated'}: ${Math.round(low)}–${Math.round(high)} Hz`;
+  resetButton.hidden = stored.range === null;
+  hintEl.hidden = stored.range === null || !isSmallRange(stored.range);
+  showRailRange(rail, range());
+  held = null;
   fit();
+}
+
+function showStickiness(): void {
+  const { share, buildUpMs } = stored.stickiness;
+  stickinessInput.value = String(Math.round(share * 100));
+  buildUpInput.value = String(buildUpMs / 1000);
+  stickinessValue.textContent = share === 0 ? 'Off' : `${Math.round(share * 100)}% of a cell`;
+  buildUpValue.textContent = `${(buildUpMs / 1000).toFixed(1)} s`;
 }
 
 function describeCell(cell: number): string {
   const { layer, row, column } = toCoords(cell);
-  // The note name of a layer holds only in the default bands.
-  const note = range === null ? ` (${LAYER_NAMES[layer as 0 | 1 | 2 | 3]})` : '';
-  return `Layer ${layer + 1}${note}, row ${row + 1}, column ${column + 1}`;
+  return `Layer ${layer + 1}, row ${row + 1}, column ${column + 1}`;
 }
 
 // `level` is the RMS of the samples. The meter shows -60 dB to 0 dB below full scale.
@@ -148,7 +172,6 @@ function light(cell: number | undefined, now: number): void {
     }
     return;
   }
-  const before = lit === undefined ? undefined : toCoords(lit).layer;
   if (lit !== undefined) deck.cells[lit]?.classList.remove('lit');
   lit = cell;
   litSince = now;
@@ -158,13 +181,6 @@ function light(cell: number | undefined, now: number): void {
   cellEl.textContent = describeCell(cell);
   const { layer } = toCoords(cell);
   deck.dots.forEach((dot, index) => dot.classList.toggle('right', index === layer));
-  // On a phone the deck shows one layer at a time: follow the light to its layer. Only the deck scrolls
-  // (scrollIntoView also scrolls the page), so the page stays still while the player whistles.
-  const target = deck.layers[layer];
-  if (layer !== before && deckEl.dataset.mode === 'scroll' && target !== undefined) {
-    const left = deckEl.scrollLeft + target.getBoundingClientRect().left - deckEl.getBoundingClientRect().left;
-    deckEl.scrollTo({ left, behavior: 'smooth' });
-  }
 }
 
 // ---- Calibration ----
@@ -173,6 +189,12 @@ const STEP_TEXT = {
   low: 'Step 1 of 2: make your lowest comfortable sound, and hold it.',
   high: 'Step 2 of 2: now make your highest comfortable sound, and hold it.',
 } as const;
+
+const RETRY_TEXT: Record<Retry, string> = {
+  silent: 'No clear sound came in. Try again, a little louder.',
+  order: 'Your high sound was not above your low sound. Try again, with a bigger gap between the two.',
+  narrow: 'Your two sounds were less than half an octave apart. Try again, with a bigger gap between the two.',
+};
 
 function showStep(step: Calibration['step']): void {
   calibrationEl.hidden = false;
@@ -217,19 +239,18 @@ function calibrate(active: Calibration, frequency: number, elapsed: number): voi
   const result = rangeFrom(active.lows, active.heard);
   calibration = undefined;
   calibrateButton.disabled = false;
-  if (result === null) {
+  if (typeof result === 'string') {
     calibrationEl.dataset.step = 'retry';
-    stepEl.textContent = 'Your high sound was not above your low sound. Try again, with a bigger gap between the two.';
+    stepEl.textContent = RETRY_TEXT[result];
     progressEl.hidden = true;
     retryButton.hidden = false;
     fit();
     return;
   }
-  range = result;
-  saveRange();
-  showRange();
+  stored = { ...stored, range: result };
+  save();
   calibrationEl.hidden = true;
-  fit();
+  showRange();
   show(`Calibrated to your voice: ${noteName(result.low)} to ${noteName(result.high)}.`);
 }
 
@@ -247,17 +268,22 @@ function listen(now: number): void {
     misses++;
     if (misses >= MISS_FRAMES) {
       recent = [];
+      held = null;
       readoutEl.dataset.state = 'listening';
+      showRailPitch(rail, null, null, 0);
       light(undefined, now);
     }
   } else {
     misses = 0;
     recent = [...recent, pitch.frequency].slice(-SMOOTH_FRAMES);
     const frequency = median(recent);
+    const position = positionOf(frequency, range());
+    held = holdStep(held, position, now, stored.stickiness);
     readoutEl.dataset.state = 'heard';
     frequencyEl.textContent = `${Math.round(frequency)} Hz`;
     noteEl.textContent = noteName(frequency);
-    light(cellOf(frequency, range), now);
+    showRailPitch(rail, position, held, marginAt(now - held.since, stored.stickiness));
+    light(cellOfStep(held.step), now);
     if (calibration !== undefined) calibrate(calibration, pitch.frequency, elapsed);
   }
   listening.frame = requestAnimationFrame(listen);
@@ -331,6 +357,8 @@ function stop(message = ''): void {
   endCalibration();
   recent = [];
   misses = 0;
+  held = null;
+  showRailPitch(rail, null, null, 0);
   light(undefined, 0);
   showLevel(0);
   micButton.textContent = 'Turn on the microphone';
@@ -349,10 +377,20 @@ calibrateButton.addEventListener('click', () => void startCalibration());
 retryButton.addEventListener('click', () => void startCalibration());
 cancelButton.addEventListener('click', endCalibration);
 resetButton.addEventListener('click', () => {
-  range = null;
-  saveRange();
+  stored = { ...stored, range: null };
+  save();
   showRange();
-  show('Back to the default bands.');
+  show('Back to the default range.');
+});
+stickinessInput.addEventListener('input', () => {
+  stored = { ...stored, stickiness: { ...stored.stickiness, share: Number(stickinessInput.value) / 100 } };
+  save();
+  showStickiness();
+});
+buildUpInput.addEventListener('input', () => {
+  stored = { ...stored, stickiness: { ...stored.stickiness, buildUpMs: Math.round(Number(buildUpInput.value) * 1000) } };
+  save();
+  showStickiness();
 });
 clearButton.addEventListener('click', () => {
   for (const button of deck.cells) button.classList.remove('x');
@@ -367,6 +405,7 @@ addEventListener('pagehide', () => stop());
 
 addEventListener('resize', fit);
 sideLayout.addEventListener('change', fit);
+showStickiness();
 showRange();
 // The web font changes the height of the text above the deck, so fit again once it is in.
 void document.fonts.ready.then(fit);

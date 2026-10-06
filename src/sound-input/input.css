@@ -1,105 +1,12 @@
 /* The sound input page. It uses the layout of the ear training (training.css) and the theme tokens of
-   style.css. This file adds the readout, the level meter and the light on the deck. */
+   style.css. This file adds the readout, the meters, the pitch rail, the light on the deck and the settings. */
 
-.input-readout {
-  display: grid;
-  gap: 0.4rem;
-  padding: 0.7rem 0.8rem;
-  border: 2px dashed var(--line);
-  border-radius: 10px;
-  background: var(--surface-2);
-  font-weight: 600;
-}
-
-.input-readout p {
-  margin: 0;
-}
-
-.input-readout b {
-  font-size: clamp(1.05rem, 4.6vw, 1.3rem);
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-.input-label {
-  display: inline-block;
-  min-width: 3rem;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.input-readout[data-state='off'] b,
-.input-readout[data-state='off'] #note {
-  opacity: 0.5;
-}
-
-/* The level meter and the calibration progress: the fill width comes from --level (0 to 1), which main.ts sets. */
-.input-level i,
-.input-calibration .train-bar i {
-  width: calc(var(--level, 0) * 100%);
-  background: var(--muted);
-  transition: width 0.05s linear;
-}
-
-.input-readout[data-state='heard'] .input-level i {
-  background: var(--win);
-}
-
-/* The light: the cell of the pitch now. A cell that loses the light fades back slowly, so a slide
-   leaves a short trail. */
-.input-deck .cell {
-  transition: background 0.7s ease-out, translate 0.08s, box-shadow 0.08s;
-}
-
-.input-deck .cell.lit {
-  background: var(--win);
-  transition: none;
-  translate: -2px -2px;
-  box-shadow: 4px 4px 0 var(--shadow);
-}
-
-/* While the hold is on, a ring in the X color fills the lit cell in 1 second (HOLD_MS in main.ts).
-   A calibration places no X, so the ring does not show while the calibration box is open. */
-.train-card:has(#hold:checked):has(#calibration[hidden]) .input-deck .cell.lit:not(.x) {
-  animation: input-hold 1s linear forwards;
-}
-
-@keyframes input-hold {
-  from {
-    box-shadow: 4px 4px 0 var(--shadow), inset 0 0 0 0 var(--x);
-  }
-
-  to {
-    box-shadow: 4px 4px 0 var(--shadow), inset 0 0 0 calc(var(--cell) * 0.5) var(--x);
-  }
-}
-
-/* One card: the Info popover of the header holds the explanation, so the page has no second column. */
+/* One column: the Info popover of the header holds the explanation. The settings come under the card. */
 @media (min-width: 64rem) {
   .train.input-page {
     grid-template-columns: minmax(0, 1fr);
     max-width: 64rem;
   }
-}
-
-.input-intro,
-.input-mode,
-.input-hint {
-  margin: 0;
-  font-weight: 600;
-  line-height: 1.45;
-}
-
-.input-mode {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem 0.8rem;
-  color: var(--muted);
-}
-
-.input-hint {
-  color: var(--ink);
 }
 
 .input-mic {
@@ -110,6 +17,85 @@
 
 .train .input-calibrate {
   font-weight: 800;
+}
+
+/* The range and Reset on one small line. */
+.input-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.8rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.train .input-mode button {
+  min-height: 2rem;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.input-hint,
+.input-note {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.input-note {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.input-readout {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.5rem 0.8rem;
+  border: 2px dashed var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-weight: 600;
+}
+
+.input-readout p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.6rem;
+  margin: 0;
+}
+
+.input-readout b {
+  font-size: clamp(1rem, 4.4vw, 1.25rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.input-readout #cell {
+  margin-left: auto;
+}
+
+.input-readout[data-state='off'] b,
+.input-readout[data-state='off'] #note {
+  opacity: 0.5;
+}
+
+/* The level meter and the calibration progress: the fill width comes from --level (0 to 1), which main.ts sets. */
+.input-level {
+  height: 0.6rem;
+}
+
+.input-level i,
+.input-calibration .train-bar i {
+  width: calc(var(--level, 0) * 100%);
+  background: var(--muted);
+  transition: width 0.05s linear;
+}
+
+.input-readout[data-state='heard'] .input-level i {
+  background: var(--win);
 }
 
 .input-calibration {
@@ -135,9 +121,140 @@
   gap: 0.6rem;
 }
 
-.input-calibration-actions button,
-.input-mode button {
+.input-calibration-actions button {
   min-height: 2.75rem;
+}
+
+/* The pitch rail (src/sound-input/rail.ts): 64 steps from low at the left to high at the right. The four
+   row bands are grid cells. The ticks are gradients: a short one for each cell, a long one for each layer. */
+.rail {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.rail-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  height: 2.4rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background-color: var(--surface);
+  background-image:
+    repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 6.25%),
+    repeating-linear-gradient(to right, var(--muted) 0 1px, transparent 1px 1.5625%);
+  background-position: bottom left;
+  background-repeat: no-repeat;
+  background-size:
+    100% 55%,
+    100% 25%;
+  overflow: hidden;
+}
+
+.rail-row {
+  padding: 0.1rem 0.3rem;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.rail-row:first-child {
+  border-left: 0;
+}
+
+/* Every second row band is shaded, so the rows read apart. */
+.rail-row:nth-child(even) {
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+}
+
+.rail-band,
+.rail-cursor,
+.rail-target {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+/* The lit cell and its sticky margin: the band widens while the player holds the cell. */
+.rail-band {
+  background: color-mix(in srgb, var(--win) 55%, transparent);
+  transition: left 0.08s, width 0.08s;
+}
+
+.rail-target {
+  background: color-mix(in srgb, var(--x) 45%, transparent);
+  outline: 2px solid var(--x);
+}
+
+.rail-cursor {
+  width: 3px;
+  margin-left: -1px;
+  background: var(--ink);
+}
+
+.rail-labels {
+  position: relative;
+  height: 1rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.rail-labels span {
+  position: absolute;
+  translate: -50% 0;
+}
+
+.rail-labels span:first-child {
+  translate: 0 0;
+}
+
+.rail-labels span:last-child {
+  translate: -100% 0;
+}
+
+/* The light: the cell of the pitch now. A cell that loses the light fades back slowly, so a slide
+   leaves a short trail. */
+.input-deck .cell {
+  transition: background 0.7s ease-out, translate 0.08s, box-shadow 0.08s;
+}
+
+.input-deck .cell.lit {
+  background: var(--win);
+  transition: none;
+  translate: -2px -2px;
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+/* While the hold is on, a ring in the X color fills the lit cell in 1 second (HOLD_MS in main.ts).
+   A calibration places no X, so the ring does not show while the calibration box is open. */
+.train:has(#hold:checked):has(#calibration[hidden]) .input-deck .cell.lit:not(.x) {
+  animation: input-hold 1s linear forwards;
+}
+
+@keyframes input-hold {
+  from {
+    box-shadow: 4px 4px 0 var(--shadow), inset 0 0 0 0 var(--x);
+  }
+
+  to {
+    box-shadow: 4px 4px 0 var(--shadow), inset 0 0 0 calc(var(--cell) * 0.5) var(--x);
+  }
+}
+
+.input-slider {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr) 7rem;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 700;
+}
+
+.input-slider output {
+  font-variant-numeric: tabular-nums;
 }
 
 .input-actions {
@@ -158,9 +275,37 @@
   min-height: 2.75rem;
 }
 
-/* A phone: the calibration button goes under the microphone button. */
+/* A phone: smaller buttons, so the board stays in view while the player sings. */
 @media (max-width: 30rem) {
-  .input-mic {
-    grid-template-columns: minmax(0, 1fr);
+  .train .input-mic button {
+    min-height: 2.8rem;
+    padding: 0.2rem 0.4rem;
+    font-size: 0.8rem;
+    line-height: 1.15;
+  }
+
+  .train .input-mic .train-play {
+    font-size: 1.1rem;
+  }
+
+  .train-card {
+    gap: 0.55rem;
+  }
+
+  .train .train-feedback {
+    font-size: 0.85rem;
+  }
+
+  .rail-track {
+    height: 1.9rem;
+  }
+
+  .input-slider {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .input-slider input {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 }
