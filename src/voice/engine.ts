@@ -7,10 +7,11 @@
 //   const off = voice.subscribe((frame) => { if (frame.cell !== null) light(frame.cell); });
 //   button.onclick = async () => { const problem = await voice.start(); if (problem !== null) show(problem); };
 //   voice.pause() before the page plays its own sound, voice.resume() after it.
+//   const clip = voice.clip(1000); // the last second of the microphone, for a replay: { samples, sampleRate }
 // Draw the range with rail.ts (buildRail, showRailRange, showRailPitch, showRailTarget).
 // The settings (range and stickiness) live in settings.ts. A page changes them with voice.saveSettings.
 import { DEFAULT_RANGE, type PitchMap, type Range, cellOfStep, noteName } from './mapping.ts';
-import { type Microphone, levelShare, micError, openMicrophone } from './microphone.ts';
+import { type Clip, type Microphone, levelShare, micError, openMicrophone } from './microphone.ts';
 import { type VoiceSettings, loadVoiceSettings, saveVoiceSettings } from './settings.ts';
 import type { Held, Stickiness } from './sticky.ts';
 import { createTracker } from './tracker.ts';
@@ -56,6 +57,12 @@ export type Voice = {
   range(): Range;
   // The range and the spread in use: give it to the functions of mapping.ts and rail.ts.
   pitchMap(): PitchMap;
+  // A copy of the last `ms` of the raw microphone audio, for a replay (for example the voice in the song of a
+  // game). The engine keeps the last 3 s while it listens, so a longer `ms` gives at most 3 s, and a clip
+  // right after start() gives less. Audio while paused is not in it. null when the microphone does not
+  // listen. A clip in a subscriber holds the audio up to that frame. The audio stays in memory on the device:
+  // the engine never sends or stores it.
+  clip(ms: number): Clip | null;
   // A stickiness for this page only (for example none on a hard level), or null for the stored one.
   overrideStickiness(stickiness: Stickiness | null): void;
 };
@@ -118,6 +125,7 @@ export function createVoice(): Voice {
             for (const listener of stopListeners) listener('The microphone stopped. Turn it on again to go on.');
           },
         );
+        mic.record(!paused);
         // The page went out of view while the browser asked.
         if (document.hidden) {
           stop();
@@ -134,11 +142,13 @@ export function createVoice(): Voice {
     isListening: () => mic !== undefined,
     pause() {
       paused = true;
+      mic?.record(false);
       tracker.reset();
       last = undefined;
     },
     resume() {
       paused = false;
+      mic?.record(true);
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -157,6 +167,7 @@ export function createVoice(): Voice {
     },
     range,
     pitchMap,
+    clip: (ms) => mic?.clip(ms) ?? null,
     overrideStickiness(stickiness) {
       override = stickiness;
       tracker.reset();
