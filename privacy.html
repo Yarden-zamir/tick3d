@@ -65,6 +65,9 @@
           <li><b>Game results and stats.</b> Every finished game, also games against the computer, with a friend and Nearby. A game also stores counts about how it was played: the device kind (phone, tablet or computer), the theme, the view, and how many moves came from the board or the keypad.</li>
           <li><b>Voice room runs.</b> The mode, the times and the score of a finished practice run. No audio.</li>
           <li><b>GitHub login</b>, only if you log in: your GitHub id, login name and picture address. A login cookie keeps you logged in for 90 days.</li>
+          <li><b>Reports.</b> When you report a message or a player: the reason, your note, the session code, a copy of the message and the name at that time, and your person id.</li>
+          <li><b>Blocks.</b> The people that you block, with their names, for your player or your GitHub account.</li>
+          <li><b>Moderation log.</b> Each time a maintainer hides a message or clears a name: the maintainer's login, the action and its target.</li>
           <li><b>Error reports.</b> The error message, the file and line, and the app version, without your token.</li>
         </ul>
         <p>Nearby uses your network address to find devices on the same Wi-Fi. The server keeps it in memory only while your Nearby game is open, and never writes it to disk.</p>
@@ -80,6 +83,8 @@
           <li>Anyone with the code or link of an online session sees its players, moves and chat.</li>
           <li>Anyone with the link to a finished game sees its moves and the player names.</li>
           <li>The Stats page shows totals of all games, without names.</li>
+          <li>Other players see your person id: a short hash of your token, never the token itself.</li>
+          <li>The maintainers of tick3d read reports. They can hide a reported message or clear a reported name.</li>
           <li>Your GitHub picture loads from GitHub.</li>
         </ul>
         <p>All data goes over HTTPS.</p>
@@ -94,6 +99,7 @@
         <ul>
           <li><b>Clear history</b> in My games hides your games from your history. The games still count in the totals.</li>
           <li><b>Reset to generated name</b> in My games removes your custom name.</li>
+          <li><b>Unblock</b> in My games removes a block.</li>
           <li><b>Log out</b> unlinks this browser from your GitHub account.</li>
           <li>To delete the data on your device, clear the site data of tick3d in your browser, or uninstall the app.</li>
           <li>To delete all your data on the server, email <a href="mailto:dev@yarden-zamir.com">dev@yarden-zamir.com</a>. Give your player name or GitHub login, and a game link if you have one. The data is deleted within 30 days.</li>

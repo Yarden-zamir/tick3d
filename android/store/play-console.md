@@ -20,9 +20,10 @@ Privacy policy: https://tick3d.yarden-zamir.com/privacy
 | Data type (Play name) | What it is | Required or optional | Purposes |
 | --- | --- | --- | --- |
 | Personal info: Name | Custom player name | Optional | App functionality |
-| Personal info: User IDs | Random player token, GitHub id and login | Token required, GitHub optional | App functionality, Account management |
+| Personal info: User IDs | Random player token, its person id (a hash), GitHub id and login | Token required, GitHub optional | App functionality, Account management |
 | Personal info: Other info | GitHub picture address | Optional | App functionality |
-| Messages: Other in-app messages | Chat in online games | Optional | App functionality |
+| Messages: Other in-app messages | Chat in online games, and a copy of a reported message | Optional | App functionality |
+| App activity: Other user-generated content | Reports (reason, note), blocks, the moderation log | Optional | App functionality, Fraud prevention, security and compliance |
 | App activity: App interactions | Moves, game results, Voice room runs, device kind, theme, input counts | Required | App functionality, Analytics |
 | App info and performance: Diagnostics | Error message, file and line, and app version, without the player token | Required | Analytics |
 
