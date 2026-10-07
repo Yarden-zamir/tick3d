@@ -1,0 +1,85 @@
+import { cell, expect, status, test } from './fixtures.ts';
+import type { Locator, Page } from '@playwright/test';
+
+// A control that shows, hides or changes its label with the game state must not move the controls
+// around it. The test records the geometry of each row and compares it across the game states.
+// It checks the boxes only, not the pixels or the text.
+
+const friend = { settings: { mode: 'friend' } };
+// X takes the space diagonal 0, 21, 42, 63. O takes 1, 2, 3, which is no line.
+const X_WINS = [0, 1, 21, 2, 42, 3, 63];
+// The rows that hold controls or text that change with the game state: the actions row, the score and the header.
+const ROWS = ['.actions', '.score', '.brand'] as const;
+const VIEWPORTS = { phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 900 } } as const;
+
+interface Edges {
+  left: number;
+  right: number;
+}
+
+interface RowGeometry {
+  height: number;
+  // The left and right edges of each child, by its position and id. A child with display: none has zero edges.
+  children: Record<string, Edges>;
+  // The children with a box that leaves the row: an overflow or a label that pushes out of its slot.
+  outside: string[];
+}
+
+async function rowGeometry(row: Locator): Promise<RowGeometry> {
+  return row.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const children: Record<string, Edges> = {};
+    const outside: string[] = [];
+    [...element.children].forEach((child, index) => {
+      const own = child.getBoundingClientRect();
+      const key = `${index}:${child.id || child.className}`;
+      children[key] = { left: Math.round(own.left), right: Math.round(own.right) };
+      const shown = own.width > 0;
+      if (shown && (own.left < box.left - 0.5 || own.right > box.right + 0.5 || own.height > box.height + 0.5)) outside.push(key);
+    });
+    return { height: Math.round(box.height), children, outside };
+  });
+}
+
+const geometry = async (page: Page) => Object.fromEntries(await Promise.all(ROWS.map(async (row) => [row, await rowGeometry(page.locator(row))] as const)));
+
+// The hover and press effects of a button move it by a pixel or two, so the pointer leaves the panel first.
+// The poll waits for the end of those short transitions.
+async function expectSameGeometry(page: Page, baseline: Awaited<ReturnType<typeof geometry>>, state: string): Promise<void> {
+  await page.mouse.move(0, 0);
+  await expect.poll(() => geometry(page), { message: `the rows moved: ${state}` }).toEqual(baseline);
+}
+
+for (const [name, viewport] of Object.entries(VIEWPORTS)) {
+  test(`${name}: the actions row, the score and the header keep their geometry from the first move to the next game`, async ({ open }) => {
+    const { page } = await open(friend);
+    await page.setViewportSize(viewport);
+    // The web font changes the width of each label, so the baseline waits for it.
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    await expect(page.locator('#undo')).toBeVisible();
+    await page.mouse.move(0, 0);
+    const baseline = await geometry(page);
+    for (const row of ROWS) expect(baseline[row]?.outside, `${row} children inside the row`).toEqual([]);
+
+    await cell(page, X_WINS[0] ?? 0).click();
+    await expectSameGeometry(page, baseline, 'after the first move');
+
+    for (const index of X_WINS.slice(1)) await cell(page, index).click();
+    await expect(status(page)).toHaveAttribute('data-state', 'won');
+    await page.locator('#end-card-close').click();
+    await expect(page.locator('#show-card')).toBeVisible();
+    await expect(page.locator('#undo')).toBeHidden();
+    await expectSameGeometry(page, baseline, 'game over');
+
+    // The specific case: the result card takes the slot of Undo, with the same edges.
+    const undoBox = await page.locator('#undo').boundingBox();
+    const cardBox = await page.locator('#show-card').boundingBox();
+    expect(cardBox?.x).toBeCloseTo(undoBox?.x ?? Number.NaN, 0);
+    expect(cardBox?.width).toBeCloseTo(undoBox?.width ?? Number.NaN, 0);
+
+    await page.locator('#new-game').click();
+    await expect(status(page)).toHaveAttribute('data-state', 'playing');
+    await expect(page.locator('#undo')).toBeVisible();
+    await expectSameGeometry(page, baseline, 'a new game');
+  });
+}

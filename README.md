@@ -170,7 +170,8 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Result card (after a game) | yes | yes | in a game | in a game | no |
 | Chat | no | no | yes | yes | no |
 
-- The score and the actions row are at the top of the panel. The row has New game (wide), then Undo during a game or Result card after it, then the sound control. On a phone, the panel is under the board, so this row is right under the board.
+- The score and the actions row are at the top of the panel. The row has New game (wide), then Undo during a game or Result card after it, then the sound control. Undo and Result card are icon buttons that share one slot. On a phone, the panel is under the board, so this row is right under the board.
+- The actions row has fixed slots (`.slot-row` in `src/style.css`). A control that shows, hides or changes with the game state keeps its slot, so it never moves another control. In the header row on a wide screen, the status has one width for every text. `e2e/row-layout.spec.ts` checks this geometry on a phone and on a desktop.
 - "In a game" means after a create or a join (Online), or after Host or Join (Nearby).
 - Join a friend is in the Online mode only. In another mode, a link with `?code=` opens the online game of a friend.
 - Nearby has no Join a friend: a code there is an online game, and Nearby has its own Join.
