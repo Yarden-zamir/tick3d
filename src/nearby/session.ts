@@ -1,7 +1,9 @@
 // Nearby sessions. The host device holds the session in its device backend (src/local.ts) and
 // answers guests over WebRTC with the same session rules as the server (src/session/core.ts).
 // A guest reaches the host through the same calls as the server, so the page treats both alike.
+import { isRecord } from '../guards.ts';
 import type { Player } from '../game.ts';
+import { epochNow } from '../epoch.ts';
 import type { LocalBackend } from '../local.ts';
 import { nameOf } from '../names.ts';
 import {
@@ -28,8 +30,7 @@ import type { Hello } from './signal.ts';
 type Guest = { hello: Hello; token: PlayerToken | undefined; id: string; server: ReturnType<typeof rpcServer> };
 type GuestSummary = { hello: Hello; seat: Player | null };
 
-const argsOf = (args: unknown): Record<string, unknown> =>
-  typeof args === 'object' && args !== null && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
+const argsOf = (args: unknown): Record<string, unknown> => (isRecord(args) ? args : {});
 
 const randomWatcherId = () =>
   Array.from(crypto.getRandomValues(new Uint8Array(WATCHER_ID_LENGTH / 2)), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -84,7 +85,7 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
       names.set(token, guest.hello.name);
     }
     const identity: core.Identity = new Set(guest.token ? [guest.token] : []);
-    const now = Date.now();
+    const now = epochNow();
     const rule = ((): ((doc: SessionDoc) => SessionDoc) => {
       switch (method) {
         case 'get':
@@ -125,14 +126,14 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
     const { doc, version } = await local.change(code, rule);
     // A new token makes a new watcher or a new seat for the other devices.
     if (method === 'join' || (unknownBefore && guest.token !== undefined)) guestsChanged();
-    return core.viewOf(doc, { code, version, identity, now: Date.now(), audience: audience(doc), players: { X: null, O: null } });
+    return core.viewOf(doc, { code, version, identity, now: epochNow(), audience: audience(doc), players: { X: null, O: null } });
   }
 
   return {
     code,
     addGuest(channel: Channel, hello: Hello): void {
-      const guest: Guest = { hello, token: undefined, id: randomWatcherId(), server: undefined as never };
-      guest.server = rpcServer(channel, (method, args) => handle(guest, method, args));
+      // The server calls handle only after a message arrives, so `guest` exists by then.
+      const guest: Guest = { hello, token: undefined, id: randomWatcherId(), server: rpcServer(channel, (method, args) => handle(guest, method, args)) };
       guests.add(guest);
       channel.onClose(() => {
         guests.delete(guest);
@@ -186,9 +187,12 @@ export function createNearbyGuest(channel: Channel, token: PlayerToken, onBye: (
   rpc.onBye(end);
   channel.onClose(() => end('The connection to the host closed.'));
   const view = async (method: RpcMethod, args: unknown = {}) => parseSessionView(await rpc.call(method, args));
+  // The token tells the host who watches, so a player can give a seat to this device.
+  const load = () => view('get', { token });
   return {
-    // The token tells the host who watches, so a player can give a seat to this device.
-    load: (_code: Code) => view('get', { token }),
+    load: (_code: Code) => load(),
+    // The first view, before the guest knows the code of the hosted session.
+    loadHosted: load,
     join: (_code: Code) => view('join', { token }),
     move: (_code: Code, request: unknown) => view('move', request),
     newGame: (_code: Code) => view('newGame'),

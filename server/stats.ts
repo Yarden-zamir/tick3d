@@ -1,5 +1,6 @@
 // The aggregates of the public stats page (/stats), in DuckDB SQL. Everyone gets counts only: no
-// names, no page faults. Mine adds the names of your opponents. Never a token, a result id or a game id leaves this file.
+// names, no page faults. Mine adds the names of your opponents. The practice part (server/practice.ts)
+// adds the Voice room leaderboard, which GET /api/practice/best shows too. Never a token, a result id or a game id leaves this file.
 // An opponent without a login shows with a custom or a generated name.
 import { type DuckDBValue, listValue } from '@duckdb/node-api';
 import { DIFFICULTIES } from '../src/ai.ts';
@@ -18,7 +19,7 @@ import {
   type StatsFilter,
 } from '../src/protocol.ts';
 
-type Rows = (sql: string, values: Record<string, DuckDBValue>) => Promise<Record<string, unknown>[]>;
+export type Rows = (sql: string, values: Record<string, DuckDBValue>) => Promise<Record<string, unknown>[]>;
 
 // The token of each seat of a result row. A row from before game links has no player columns:
 // its uploader (`token`) holds the seat `doc.you`, or both seats in a friend game.
@@ -89,9 +90,9 @@ const METRICS = `${GAMES}, m AS (
 )`;
 
 // One identity per person: the GitHub account, else the browser token. Used only to group rows.
-const PERSON = `coalesce('github:' || pt.github_id, token)`;
+export const PERSON = `coalesce('github:' || pt.github_id, token)`;
 
-function num(value: unknown): number {
+export function num(value: unknown): number {
   const result = typeof value === 'bigint' ? Number(value) : value;
   if (typeof result !== 'number' || !Number.isFinite(result)) throw new Error(`a stats value is not a number: ${String(value)}`);
   return result;
@@ -104,12 +105,12 @@ const text = (value: unknown) => {
 };
 const textOrNull = (value: unknown) => (value === null ? null : text(value));
 // The GitHub login of a person (PERSON), else their custom name, else the generated name of their token.
-// The token itself stays here.
-const personName = (row: Record<string, unknown>) => textOrNull(row.login) ?? textOrNull(row.custom) ?? nameOf(text(row.person));
+// The token itself stays here. A query that uses it selects `login`, `custom` and `person`.
+export const personName = (row: Record<string, unknown>) => textOrNull(row.login) ?? textOrNull(row.custom) ?? nameOf(text(row.person));
 const counts = (found: Record<string, unknown>[]): Count[] =>
   found.map((row) => ({ key: row.key === null ? 'unknown' : text(row.key), count: num(row.count) }));
 
-function oneOf<T extends string>(options: readonly T[], value: unknown): T {
+export function oneOf<T extends string>(options: readonly T[], value: unknown): T {
   const found = options.find((option) => option === value);
   if (found === undefined) throw new Error(`unexpected stats value ${String(value)}`);
   return found;
@@ -171,7 +172,8 @@ const SIDED_GAMES = 5000;
 // Limit: revisit this when a call takes more than about 1 s: then keep the game columns in results itself.
 // `tokens`: the tokens of one player for the Mine scope, else null.
 // The caller runs one call at a time on the connection (the store queue), so one temporary table is enough.
-export async function computeStats(rows: Rows, now: number, filter: StatsFilter, tokens: readonly string[] | null): Promise<Stats> {
+// The practice part comes from server/practice.ts.
+export async function computeStats(rows: Rows, now: number, filter: StatsFilter, tokens: readonly string[] | null): Promise<Omit<Stats, 'practice'>> {
   if ((filter.scope === 'mine') !== (tokens !== null)) throw new Error('the Mine scope needs the tokens of the player, and only Mine takes them');
   await rows(`CREATE OR REPLACE TEMP TABLE ${GAMES_TABLE} AS ${FILTERED_GAMES}`, filterValues(filter, tokens, now));
   try {
@@ -181,7 +183,7 @@ export async function computeStats(rows: Rows, now: number, filter: StatsFilter,
   }
 }
 
-async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now: number): Promise<Stats> {
+async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now: number): Promise<Omit<Stats, 'practice'>> {
   const q = (sql: string) => rows(sql, {});
 
   const [totals] = await q(`${GAMES}, seats AS (SELECT unnest([player_x, player_o]) AS token FROM g)

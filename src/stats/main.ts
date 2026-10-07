@@ -2,6 +2,7 @@
 // Colors come from the theme tokens in style.css, so every chart follows the saved theme.
 // The filters live in the address (parseStatsFilter), so a view survives a reload and a link shares it.
 import '../style.css';
+import { PRESETS, type PracticeMode, type PresetId } from '../practice/practice.ts';
 import './stats.css';
 import { DIFFICULTIES } from '../ai.ts';
 import { describeClock } from '../clock.ts';
@@ -429,6 +430,23 @@ function draw(stats: Stats): void {
     'games',
     'Games by number of moves',
   );
+
+  // The practice modes of the Voice room (/sound-input). A practice run has no game mode, level or seat,
+  // so these numbers show for Everyone without a mode or level filter, over all time. The Voice room shows its
+  // own leaderboards; this public page shows no names of people.
+  if (stats.filter.scope === 'everyone' && stats.filter.mode === null && stats.filter.level === null) {
+    const practiceName = (mode: PracticeMode, preset: PresetId) => `${mode === 'echo' ? 'Echo' : 'Targets'}, ${PRESETS[preset].name}`;
+    const practice = card('Voice room practice', false, 'Practice runs per mode and level, all time. Average: the mean time of one target or echo round.');
+    if (stats.practice.runs.length === 0) empty(practice);
+    else {
+      table(
+        practice,
+        ['Mode and level', 'Runs', 'Players', 'Average'],
+        stats.practice.runs.map((row) => [practiceName(row.mode, row.preset), row.runs, row.players, seconds(row.avgRoundMs)]),
+      );
+    }
+  }
+
   table(
     card('Game length by mode', false, 'Moves per finished game.'),
     ['Mode', 'Games', 'Average', 'Median', '90th percentile'],

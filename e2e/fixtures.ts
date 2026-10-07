@@ -37,7 +37,8 @@ function seed({ settings, records }: Seed): void {
   const toasts: string[] = [];
   (window as unknown as { e2eToasts: string[] }).e2eToasts = toasts;
   addEventListener('DOMContentLoaded', () => {
-    // Only the game page has toasts. A test can go on to another page, such as /stats.
+    // Only the game page (/) has a toast. A test can go on to another page of the site in the same context,
+    // for example the Voice room from the game. That page has no toast to watch.
     if (location.pathname !== '/') return;
     const toast = document.querySelector('#toast');
     if (toast === null) throw new Error('the page has no #toast');
@@ -143,3 +144,26 @@ export async function playComputerUntilEnd(page: Page, order: readonly number[])
   }
   await expect(status(page)).not.toHaveAttribute('data-state', 'playing');
 }
+
+// Runs in the page before the app: the microphone is an oscillator. window.e2eTone(frequency) sets its
+// pitch, and window.e2eTone(null) makes it silent.
+export function oscillatorMic(): void {
+  navigator.mediaDevices.getUserMedia = async () => {
+    const context = new AudioContext();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    gain.gain.value = 0;
+    const output = context.createMediaStreamDestination();
+    oscillator.connect(gain).connect(output);
+    oscillator.start();
+    (window as unknown as { e2eTone: (frequency: number | null) => void }).e2eTone = (frequency) => {
+      gain.gain.setValueAtTime(frequency === null ? 0 : 0.5, context.currentTime);
+      if (frequency !== null) oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+    };
+    await context.resume();
+    return output.stream;
+  };
+}
+
+export const setTone = (page: Page, frequency: number | null) =>
+  page.evaluate((value) => (window as unknown as { e2eTone: (frequency: number | null) => void }).e2eTone(value), frequency);

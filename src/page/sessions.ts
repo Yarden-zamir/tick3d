@@ -1,5 +1,6 @@
 // Opening, leaving and switching sessions, moves of the player, and answers from a backend.
 import { sameClock, describeClock } from '../clock.ts';
+import { checkPlayoffInvite } from './playoff-invite.ts';
 import { play, newGame, type Player, other } from '../game.ts';
 import { OnlineError, api } from '../online.ts';
 import { type Code, type GameId, type SessionView, parseSessionView, toGame } from '../protocol.ts';
@@ -125,7 +126,10 @@ export function applyView(view: SessionView): void {
     redrawNearby();
   }
   if (page.review && page.review.game >= page.games.length) page.review = undefined;
-  if (page.session.mode === 'online') void page.deviceDb?.put('remote', { code: page.session.code, view, savedAt: Date.now() });
+  if (page.session.mode === 'online') {
+    void page.deviceDb?.put('remote', { code: page.session.code, view, savedAt: Date.now() });
+    checkPlayoffInvite(view);
+  }
   render();
 }
 

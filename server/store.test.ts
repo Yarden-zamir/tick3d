@@ -1,4 +1,5 @@
 import { mkdtemp } from 'node:fs/promises';
+import { toEpochMs as ms } from '../src/epoch.ts';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +10,7 @@ vi.setConfig({ testTimeout: 20_000 });
 import { replay } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
 import { type Code, type GameId, type Metrics, type PlayerToken, type ResultUpload, type StatsFilter, ALL_STATS, parseGameId, toRecord } from '../src/protocol.ts';
+import type { PracticeRun } from '../src/practice/practice.ts';
 import { SessionError } from '../src/session/core.ts';
 import { type Store, openStore } from './store.ts';
 
@@ -46,9 +48,9 @@ async function playMoves(code: Code, cells: number[], game = 0): Promise<void> {
 }
 
 function result(id: string, overrides: Partial<ResultUpload> = {}): ResultUpload {
-  const game = toRecord(replay(X_WINS, { times: X_WINS.map((_, i) => 1_000 + i) }));
+  const game = toRecord(replay(X_WINS, { times: X_WINS.map((_, i) => ms(1_000 + i)) }));
   const options = { hideBoard: false, hideHistory: false, hideCoordinates: false };
-  return { id, mode: 'computer', game, you: 'X', difficulty: 'hard', finishedAt: 2_000, publicId: null, options, tuned: false, metrics: null, guest: null, ...overrides };
+  return { id, mode: 'computer', game, you: 'X', difficulty: 'hard', finishedAt: ms(2_000), publicId: null, options, tuned: false, metrics: null, guest: null, ...overrides };
 }
 
 describe('pruning empty sessions', () => {
@@ -58,7 +60,7 @@ describe('pruning empty sessions', () => {
     let watched: Code | undefined;
     store = await openStore(':memory:', {
       // The clock runs `later` ahead, so rows written now count as old.
-      now: () => Date.now() + later,
+      now: () => ms(Date.now() + later),
       open: (code) => (code === watched ? [alice] : []),
     });
     const empty = (await store.create(alice, 'Never played')).code;
@@ -113,7 +115,7 @@ describe('sessions', () => {
   it('reports every write, also a timeout that a read records', async () => {
     let time = 1_000_000;
     const changed: Code[] = [];
-    store = await openStore(':memory:', { now: () => time, onChange: (code) => changed.push(code) });
+    store = await openStore(':memory:', { now: () => ms(time), onChange: (code) => changed.push(code) });
     const { code } = await store.create(alice, 'Blitz', { perMove: 3, perGame: null });
     await store.join(code, bob);
     await playMoves(code, [0, 1]);
@@ -253,7 +255,7 @@ describe('accounts', () => {
       result('eeeeeeee-1111-4000-8000-000000000001', { ...nearby, you: 'X', publicId: id, guest: bob, metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } }),
     ]);
     await store.addResults(bob, [
-      result('eeeeeeee-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: 2_034, metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } }),
+      result('eeeeeeee-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: ms(2_034), metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } }),
     ]);
     await store.unlinkToken(bob);
     expect((await store.history(bob, 0)).games).toEqual([]);
@@ -285,7 +287,9 @@ describe('results', () => {
     const unfinished = { ...result('22222222-0000-4000-8000-000000000001'), game: toRecord(replay([0, 1])) };
     expect(await status(() => store.addResults(alice, [result('22222222-0000-4000-8000-000000000002'), unfinished]))).toBe(400);
     expect(await status(() => store.addResults(alice, [{ id: 'short' }]))).toBe(400);
-    expect(await status(() => store.addResults(alice, [result('22222222-0000-4000-8000-000000000003', { finishedAt: 1e300 })]))).toBe(400);
+    expect(await status(() => store.addResults(alice, [{ ...result('22222222-0000-4000-8000-000000000003'), finishedAt: 1e300 }]))).toBe(400);
+    // DuckDB make_timestamptz throws on a fraction of a millisecond, so the parser must refuse it first.
+    expect(await status(() => store.addResults(alice, [{ ...result('22222222-0000-4000-8000-000000000004'), finishedAt: 1.5 }]))).toBe(400);
     expect((await store.myGames(alice)).total.played).toBe(0);
   });
 });
@@ -332,7 +336,7 @@ const METRICS: Metrics = {
 };
 
 function finishedGame(cells: number[]) {
-  return toRecord(replay(cells, { times: cells.map((_, i) => 1_000 + i * 1_500) }));
+  return toRecord(replay(cells, { times: cells.map((_, i) => ms(1_000 + i * 1_500)) }));
 }
 
 const gameId = (text: string): GameId => {
@@ -412,7 +416,7 @@ describe('game links', () => {
 
   it('records an online game that ends on time', async () => {
     let time = 1_000_000;
-    store = await openStore(':memory:', { now: () => time });
+    store = await openStore(':memory:', { now: () => ms(time) });
     const { code } = await store.create(alice, 'Blitz', { perMove: 3, perGame: null });
     await store.join(code, bob);
     await playMoves(code, [0, 1]);
@@ -433,7 +437,7 @@ describe('match history', () => {
     await playMoves(code, X_WINS);
     await store.addResults(alice, [
       result('66666666-0000-4000-8000-000000000001', { you: 'O' }),
-      result('66666666-0000-4000-8000-000000000002', { mode: 'friend', you: null, difficulty: null, finishedAt: 3_000 }),
+      result('66666666-0000-4000-8000-000000000002', { mode: 'friend', you: null, difficulty: null, finishedAt: ms(3_000) }),
     ]);
     await store.linkToken(bob, { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' });
     const mine = await store.history(alice, 0);
@@ -464,7 +468,7 @@ describe('match history', () => {
     ]);
     await store.addResults(bob, [
       // The guest's copy can have a slightly later time for the last move.
-      result('dddddddd-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: 2_034, metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } }),
+      result('dddddddd-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: ms(2_034), metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } }),
     ]);
     const theirs = await store.history(bob, 0);
     expect(theirs.games).toMatchObject([{ id, mode: 'nearby', result: 'lost', opponentName: nameOf(alice) }]);
@@ -483,7 +487,7 @@ describe('match history', () => {
   it('pages through the history', async () => {
     store = await openStore(':memory:');
     const uploads = Array.from({ length: 51 }, (_, i) =>
-      result(`77777777-0000-4000-8000-${String(i).padStart(12, '0')}`, { finishedAt: 10_000 + i }),
+      result(`77777777-0000-4000-8000-${String(i).padStart(12, '0')}`, { finishedAt: ms(10_000 + i) }),
     );
     await store.addResults(alice, uploads);
     const first = await store.history(alice, 0);
@@ -642,7 +646,7 @@ describe('stats', () => {
 
   it('keeps the answer for a minute', async () => {
     let time = 1_000_000;
-    store = await openStore(':memory:', { now: () => time });
+    store = await openStore(':memory:', { now: () => ms(time) });
     const first = await store.stats();
     await store.addResults(alice, [result('bbbbbbbb-1111-4000-8000-000000000001')]);
     expect((await store.stats()).totals.games).toBe(first.totals.games);
@@ -660,16 +664,16 @@ describe('stats filters', () => {
   // 10 days ago, and a friend game a day ago. Bob: a computer loss (hard) 40 days ago.
   // Every game is X_WINS, 7 moves that X wins.
   async function seeded(): Promise<void> {
-    store = await openStore(':memory:', { now: () => NOW });
+    store = await openStore(':memory:', { now: () => ms(NOW) });
     const { code } = await store.create(alice, 'Friday match');
     await store.join(code, bob);
     await playMoves(code, X_WINS);
     await store.addResults(alice, [
-      result('ffffffff-1111-4000-8000-000000000001', { finishedAt: NOW - DAY, metrics: METRICS }),
-      result('ffffffff-1111-4000-8000-000000000002', { you: 'O', difficulty: 'easy', finishedAt: NOW - 10 * DAY }),
-      result('ffffffff-1111-4000-8000-000000000003', { mode: 'friend', you: null, difficulty: null, finishedAt: NOW - DAY }),
+      result('ffffffff-1111-4000-8000-000000000001', { finishedAt: ms(NOW - DAY), metrics: METRICS }),
+      result('ffffffff-1111-4000-8000-000000000002', { you: 'O', difficulty: 'easy', finishedAt: ms(NOW - 10 * DAY) }),
+      result('ffffffff-1111-4000-8000-000000000003', { mode: 'friend', you: null, difficulty: null, finishedAt: ms(NOW - DAY) }),
     ]);
-    await store.addResults(bob, [result('ffffffff-1111-4000-8000-000000000004', { you: 'O', finishedAt: NOW - 40 * DAY })]);
+    await store.addResults(bob, [result('ffffffff-1111-4000-8000-000000000004', { you: 'O', finishedAt: ms(NOW - 40 * DAY) })]);
     await store.addEvent({ kind: 'error', message: 'TypeError: x is undefined (index.js:1)', version: 'index-abc123' });
   }
 
@@ -743,6 +747,74 @@ describe('stats filters', () => {
   it('refuses Mine without a player', async () => {
     store = await openStore(':memory:');
     expect(await status(() => store.stats({ ...all, scope: 'mine' }))).toBe(400);
+  });
+});
+
+describe('sound practice', () => {
+  const run = (id: string, totalMs: number, mode: 'targets' | 'echo' = 'targets', score = 10): PracticeRun => {
+    const rounds = mode === 'targets' ? 10 : 8;
+    const roundMs = Array.from({ length: rounds }, (_, i) => Math.floor(totalMs / rounds) + (i === 0 ? totalMs % rounds : 0));
+    return { id, mode, preset: 'normal', roundMs, score };
+  };
+
+  it('stores a run once, ranks each person by their best run, and names them', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    expect(await store.addPracticeRun(alice, run('run-alice-1', 30_000))).toEqual({ stored: true });
+    expect(await store.addPracticeRun(alice, run('run-alice-1', 30_000))).toEqual({ stored: false });
+    await store.addPracticeRun(alicePhone, run('run-alice-2', 20_000));
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addPracticeRun(bob, run('run-bob-1', 25_000));
+    const board = await store.practiceBoard('targets', 'normal', bob);
+    expect(board.top.map(({ player, totalMs }) => [player, totalMs])).toEqual([
+      ['alice', 20_000],
+      [nameOf(bob), 25_000],
+    ]);
+    expect(board.you).toEqual({ totalMs: 25_000, score: 10 });
+    expect((await store.practiceBoard('targets', 'normal', alice)).you?.totalMs).toBe(20_000);
+    expect((await store.practiceBoard('targets', 'normal', undefined)).you).toBeNull();
+    expect((await store.practiceBoard('targets', 'easy', undefined)).top).toEqual([]);
+    const { practice } = await store.stats();
+    expect(practice.runs).toEqual([{ mode: 'targets', preset: 'normal', runs: 3, players: 2, avgRoundMs: 2500 }]);
+    expect(practice.best.map((entry) => entry.player)).toEqual(['alice', nameOf(bob)]);
+  });
+
+  it('shows a custom name on the practice board and in the practice stats', async () => {
+    store = await openStore(':memory:');
+    await store.setName(bob, 'Bea');
+    await store.addPracticeRun(bob, run('run-bob-named', 25_000));
+    expect((await store.practiceBoard('targets', 'normal', undefined)).top.map((entry) => entry.player)).toEqual(['Bea']);
+    expect((await store.stats()).practice.best.map((entry) => entry.player)).toEqual(['Bea']);
+  });
+
+  it('ranks echo runs by points first, then time', async () => {
+    store = await openStore(':memory:');
+    await store.addPracticeRun(alice, run('run-echo-a', 40_000, 'echo', 700));
+    await store.addPracticeRun(bob, run('run-echo-b', 20_000, 'echo', 600));
+    const board = await store.practiceBoard('echo', 'normal', undefined);
+    expect(board.top.map(({ score }) => score)).toEqual([700, 600]);
+  });
+
+  it('runs a playoff in a session: both join, both hit every target, and the session keeps it', async () => {
+    let clock = 1_000;
+    store = await openStore(':memory:', { now: () => ms(clock) });
+    const { code } = await store.create(alice, 'Playoff');
+    expect(await status(() => store.playoff(code, alice, { action: 'start', preset: 'easy', seed: 5 }))).toBe(409);
+    await store.join(code, bob);
+    expect(await status(() => store.playoff(code, carol, { action: 'start', preset: 'easy', seed: 5 }))).toBe(403);
+    const started = await store.playoff(code, alice, { action: 'start', preset: 'easy', seed: 5 });
+    expect(started.playoff).toMatchObject({ id: 1, by: 'X', startAt: null });
+    const joined = await store.playoff(code, bob, { action: 'join', id: 1 });
+    const startAt = joined.playoff?.startAt ?? 0;
+    expect(startAt).toBe(clock + 3000);
+    clock = startAt + 10;
+    for (let index = 0; index < 10; index++) {
+      await store.playoff(code, alice, { action: 'hit', id: 1, index, ms: 1000 });
+      await store.playoff(code, bob, { action: 'hit', id: 1, index, ms: 1200 });
+    }
+    const done = await store.get(code, carol);
+    expect(done.playoff?.ended).toBe('done');
+    expect(done.playoff?.seats.X.times).toHaveLength(10);
   });
 });
 

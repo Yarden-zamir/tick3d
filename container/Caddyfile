@@ -55,6 +55,11 @@ http:// {
 		rewrite /sound-training /sound-training.html
 		header @training Cache-Control "no-cache"
 
+		# The sound input page. It is public, like the ear training.
+		@input path /sound-input /sound-input.html
+		rewrite /sound-input /sound-input.html
+		header @input Cache-Control "no-cache"
+
 		# The service worker, its Workbox runtime and the manifest have fixed names. A browser must
 		# check them on every visit, or a new version never reaches a player who has the old one.
 		@pwa path /sw.js /workbox-*.js /manifest.webmanifest

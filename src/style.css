@@ -956,7 +956,7 @@ body[data-turn='O'] .status[data-state='playing'] {
     drop-shadow(0 -1px 0 var(--line));
 }
 
-/* The view picker, and Reset angle beside it for the tower. */
+/* The view picker. */
 .view-row {
   display: flex;
   align-items: center;
@@ -965,10 +965,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .view-row .segmented {
   flex: 1;
-}
-
-.reset-angle {
-  flex: none;
 }
 
 /* Flat: the four layers as plain grids, in one of four layouts. */
@@ -1217,6 +1213,72 @@ body[data-turn='O'] .status[data-state='playing'] {
 .sound-control #sound-set {
   padding-inline: 0.3rem;
   border-left: 2px solid var(--line);
+}
+
+/* Play by voice. On, the button takes the toggle color. A dot in its corner shows the state: green and
+   pulsing while the microphone listens, muted while it pauses. */
+#voice {
+  position: relative;
+}
+
+#voice[aria-pressed='true'] {
+  background: var(--toggle-on);
+  color: var(--on-color);
+}
+
+#voice[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+#voice[aria-pressed='true'][data-state='listening']::after {
+  background: var(--win);
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  50% {
+    scale: 1.4;
+  }
+}
+
+.voice-panel {
+  display: grid;
+  gap: 0.3rem;
+  width: min(100%, 26rem);
+  margin-inline: auto;
+}
+
+.voice-status {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.voice-status a {
+  color: inherit;
+  font-weight: 600;
+}
+
+.voice-panel #voice-recentre {
+  justify-self: center;
+}
+
+/* Play by voice: the hold fills the Place button with the color of the mark, as it fills the lit cell
+   (src/voice/visuals.css). --voice-hold (0 to 1) comes from src/page/voice.ts. */
+.keypad .btn.place.voice-hold {
+  background: linear-gradient(to right, var(--voice-hold-color, var(--x)) calc(var(--voice-hold, 0) * 100%), var(--win) 0);
+}
+
+.keypad .btn.place[data-voice-mark='O'] {
+  --voice-hold-color: var(--o);
 }
 
 /* The sound set menu: a popover in the middle of the screen, so it fits a phone too. */
@@ -2070,6 +2132,43 @@ body[data-turn='O'] .status[data-state='playing'] {
   border-radius: 10px;
 }
 
+/* The card image keeps its own shape (1080 x 1350), so the song light can sit over a cell in shares of its size. */
+.end-card-picture {
+  position: relative;
+  align-self: center;
+  width: min(100%, calc(70dvh * 1080 / 1350));
+  aspect-ratio: 1080 / 1350;
+}
+
+.end-card-picture img {
+  height: 100%;
+  max-height: none;
+}
+
+/* The cell of the note that sounds. With reduced motion, the global rule removes the pop. */
+.song-light {
+  position: absolute;
+  border: 4px solid var(--primary);
+  border-radius: 18%;
+  box-shadow: 0 0 0 3px var(--line), 0 0 18px var(--primary);
+  background: rgb(255 255 255 / 0.25);
+  pointer-events: none;
+  animation: song-pop 0.18s ease-out;
+}
+
+@keyframes song-pop {
+  from {
+    scale: 1.35;
+  }
+}
+
+/* A cell of the board that sounds in the song: of a game from a link, or of the newest game behind its end card. */
+.cell.sung {
+  outline: 4px solid var(--primary);
+  outline-offset: 2px;
+  z-index: 2;
+}
+
 .include-options {
   display: flex;
   flex-wrap: wrap;
@@ -2095,6 +2194,23 @@ body[data-turn='O'] .status[data-state='playing'] {
 .end-card-actions {
   display: flex;
   gap: 0.6rem;
+}
+
+/* The song button sits at the end of the include options, near the card. A long press shares the song,
+   so a touch must not select its text or open the image menu. */
+.end-card .song {
+  margin-left: auto;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.end-card .song:is([data-state='held'], [data-state='rendering']) {
+  background: var(--primary);
+  color: var(--on-color);
+}
+
+.end-card .song[data-state='playing'] {
+  background: var(--surface-2);
 }
 
 .end-card-actions .btn {

@@ -3,6 +3,7 @@
 // No function here does I/O: each takes a document and returns a new one, or throws a SessionError.
 import type { Difficulty } from '../ai.ts';
 import { NO_LIMIT, type TimeControl, isFlagged } from '../clock.ts';
+import { type EpochMs, toEpochMs } from '../epoch.ts';
 import { type Game, type Player, other, play, timeOut, undo as undoGame } from '../game.ts';
 import { nameOf } from '../names.ts';
 import {
@@ -22,6 +23,7 @@ import {
   toGame,
   toRecord,
 } from '../protocol.ts';
+import { PlayoffError, type PlayoffRequest, applyPlayoff } from '../practice/playoff.ts';
 import { CURRENT_FORMAT, type SessionDoc } from './format.ts';
 
 export class SessionError extends Error {
@@ -99,6 +101,7 @@ export function createDoc({ name, mode, clock = NO_LIMIT, seats, computer }: New
     lockedGame: null,
     clock,
     chat: [],
+    playoff: null,
     seatRequest: null,
   };
 }
@@ -111,7 +114,7 @@ export function join(doc: SessionDoc, identity: Identity, token: string): Sessio
   throw new SessionError(409, 'Both seats are taken. You can watch this game.');
 }
 
-export function move(doc: SessionDoc, identity: Identity, request: MoveRequest, now: number): SessionDoc {
+export function move(doc: SessionDoc, identity: Identity, request: MoveRequest, now: EpochMs): SessionDoc {
   const seats = requireSeat(doc, identity);
   const game = currentGame(doc);
   // The caller sends what it saw. A mismatch means another move landed first.
@@ -192,13 +195,27 @@ export function lock(doc: SessionDoc, identity: Identity): SessionDoc {
 }
 
 // Only the two players write. A message comes from the seat of the caller (X in a friend game).
-export function chat(doc: SessionDoc, identity: Identity, text: unknown, now: number): SessionDoc {
+export function chat(doc: SessionDoc, identity: Identity, text: unknown, now: EpochMs): SessionDoc {
   const [seat] = requireSeat(doc, identity);
   if (seat === undefined) throw new Error('requireSeat returned no seat');
   const message = normalizeChat(text);
   if (message === undefined) throw new SessionError(400, `A message needs 1 to ${CHAT_MAX_LENGTH} characters.`);
   const id = (doc.chat.at(-1)?.id ?? 0) + 1;
   return { ...doc, chat: [...doc.chat, { id, from: seat, text: message, at: now }].slice(-CHAT_KEEP) };
+}
+
+// A request of a player for the sound playoff of an online session (src/practice/playoff.ts).
+export function playoff(doc: SessionDoc, identity: Identity, request: PlayoffRequest, now: number): SessionDoc {
+  if (doc.mode !== 'online') throw new SessionError(409, 'A playoff needs an online game.');
+  const [seat] = requireSeat(doc, identity);
+  if (seat === undefined) throw new Error('requireSeat returned no seat');
+  try {
+    const next = applyPlayoff(doc.playoff, seat, doc.seats.X !== null && doc.seats.O !== null, request, now);
+    return next === doc.playoff ? doc : { ...doc, playoff: next };
+  } catch (error) {
+    if (error instanceof PlayoffError) throw new SessionError(error.status === 409 ? 409 : 400, error.message);
+    throw error;
+  }
 }
 
 // ---- Seats ----
@@ -218,7 +235,7 @@ function requireShared(doc: SessionDoc): void {
   if (doc.mode !== 'online' && doc.mode !== 'nearby') throw new SessionError(409, 'Seat changes need a game with another device.');
 }
 
-function openRequest(doc: SessionDoc, now: number): SessionDoc['seatRequest'] {
+function openRequest(doc: SessionDoc, now: EpochMs): SessionDoc['seatRequest'] {
   const request = doc.seatRequest;
   return request !== null && now < request.at + SEAT_REQUEST_MS ? request : null;
 }
@@ -243,6 +260,11 @@ function undoProblem(doc: SessionDoc, from: Player): string | undefined {
 }
 
 // Every applied change closes an open request, because the request was about the state before it.
+// A change of the seats also ends a sound playoff: the playoff is stored by seat, so a new holder of a
+// seat must not take over the progress of the player before. Both pages see the playoff go to null.
+// Limit: the next playoff starts again at id 1, so a late request for the ended playoff can reach it.
+// That needs a request in flight across a seat change, and a playoff is friendly. Revisit this if a
+// stale hit ever shows in a new playoff: then keep a playoff counter in the session document.
 function applySeatChange(doc: SessionDoc, { kind, from, watcher }: SeatChange): SessionDoc {
   if (kind === 'undo') {
     const problem = undoProblem(doc, from);
@@ -271,14 +293,14 @@ function applySeatChange(doc: SessionDoc, { kind, from, watcher }: SeatChange): 
       seats[to] = null;
       break;
   }
-  return { ...doc, seats, seatRequest: null };
+  return { ...doc, seats, seatRequest: null, playoff: null };
 }
 
 // A seated player changes the seats, or takes back the own last move (undo). A change of the other
 // player's seat or game (swap, unseat, replace, undo) becomes a request that the other player must accept. A change of the own seat, or of an empty seat,
 // applies at once. Watchers cannot change seats; they can only take an empty seat with join.
 // A swap is allowed during a game: the players trade sides, and each clock stays with its seat.
-export function seat(doc: SessionDoc, identity: Identity, request: SeatAction, watchers: readonly OpenWatcher[], now: number): SessionDoc {
+export function seat(doc: SessionDoc, identity: Identity, request: SeatAction, watchers: readonly OpenWatcher[], now: EpochMs): SessionDoc {
   requireShared(doc);
   const [from] = requireSeat(doc, identity);
   if (from === undefined) throw new Error('requireSeat returned no seat');
@@ -302,7 +324,7 @@ export function seat(doc: SessionDoc, identity: Identity, request: SeatAction, w
 
 // The other player accepts or declines an open request. The player who asked can only cancel it
 // (accept: false). Accept checks again that the change still applies, and then applies it.
-export function answerSeat(doc: SessionDoc, identity: Identity, accept: boolean, watchers: readonly OpenWatcher[], now: number): SessionDoc {
+export function answerSeat(doc: SessionDoc, identity: Identity, accept: boolean, watchers: readonly OpenWatcher[], now: EpochMs): SessionDoc {
   requireShared(doc);
   const seats = requireSeat(doc, identity);
   const request = openRequest(doc, now);
@@ -323,7 +345,7 @@ export function answerSeat(doc: SessionDoc, identity: Identity, accept: boolean,
 // Records a timeout that happened since the last change, and drops a seat request that ended.
 // Returns undefined when there is nothing to record.
 // The holder of the session calls this on every read, so a flagged clock never depends on a page.
-export function settle(doc: SessionDoc, now: number): SessionDoc | undefined {
+export function settle(doc: SessionDoc, now: EpochMs): SessionDoc | undefined {
   const game = currentGame(doc);
   let next = isFlagged(game, now) ? replaceCurrent(doc, timeOut(game)) : doc;
   if (doc.seatRequest !== null && openRequest(doc, now) === null) next = { ...next, seatRequest: null };
@@ -334,7 +356,7 @@ type ViewContext = {
   code: Code;
   version: number;
   identity: Identity;
-  now: number;
+  now: EpochMs;
   audience: Audience;
   players: Record<Player, PlayerInfo | null>;
 };
@@ -371,9 +393,10 @@ export function viewOf(doc: SessionDoc, { code, version, identity, now, audience
               requestWatcher === null
                 ? null
                 : { name: name(requestWatcher), player: watchers.find((watcher) => watcher.token === requestWatcher)?.player ?? null },
-            expiresAt: request.at + SEAT_REQUEST_MS,
+            expiresAt: toEpochMs(request.at + SEAT_REQUEST_MS),
           },
     turn: live.status.kind === 'playing' ? live.turn : null,
     status: live.status,
+    playoff: doc.playoff,
   };
 }

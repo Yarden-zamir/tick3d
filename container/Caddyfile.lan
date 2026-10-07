@@ -17,6 +17,8 @@
 		rewrite /stats /stats.html
 		# The ear training page.
 		rewrite /sound-training /sound-training.html
+		# The Voice room.
+		rewrite /sound-input /sound-input.html
 		file_server
 	}
 }

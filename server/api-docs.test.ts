@@ -1,4 +1,5 @@
 import { Validator } from '@seriousme/openapi-schema-validator';
+import { toEpochMs as ms } from '../src/epoch.ts';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import { parseAnnounce, parseAnnounced, parseAnswerRequest, parseLobbyHosts } from '../src/nearby/lobby.ts';
@@ -22,6 +23,8 @@ import {
   parseSeatAction,
   parseSeatAnswer,
 } from '../src/protocol.ts';
+import { parsePlayoffRequest } from '../src/practice/playoff.ts';
+import { parsePracticeBoard, parsePracticeRun } from '../src/practice/practice.ts';
 import { PATH_PARAMS, ROUTES, ROUTE_NAMES, type Route, SCHEMAS, type SchemaName, matchRoute, splitRoute } from './api-docs.ts';
 import { curlOf, openApi, swaggerHtml } from './api-docs-render.ts';
 import { openStore } from './store.ts';
@@ -44,7 +47,7 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   ChatRequest: (value) => (isRecord(value) ? normalizeChat(value.text) : undefined),
   // server/main.ts checks the list, and the store checks each result with parseResultUpload.
   ResultsRequest: (value) =>
-    isRecord(value) && Array.isArray(value.results) && value.results.every((result) => parseResultUpload(result, Date.now()) !== undefined)
+    isRecord(value) && Array.isArray(value.results) && value.results.every((result) => parseResultUpload(result, ms(Date.now())) !== undefined)
       ? value
       : undefined,
   Me: parseMe,
@@ -58,6 +61,9 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   NearbyHosts: parseLobbyHosts,
   NearbyAnswer: parseAnswerRequest,
   Previews: parsePreviews,
+  PlayoffRequest: parsePlayoffRequest,
+  PracticeRun: parsePracticeRun,
+  PracticeBoard: parsePracticeBoard,
   SeatAction: parseSeatAction,
   SeatAnswer: parseSeatAnswer,
   // server/main.ts reads `name` and checks it with parseCustomName.

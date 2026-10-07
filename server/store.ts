@@ -2,6 +2,7 @@ import { createHmac, randomBytes, randomInt } from 'node:crypto';
 import { type DuckDBValue, DuckDBInstance, listValue } from '@duckdb/node-api';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { NO_LIMIT, type TimeControl } from '../src/clock.ts';
+import { type EpochMs, MAX_EPOCH_MS, epochNow, toEpochMs } from '../src/epoch.ts';
 import { type LineKind, type Player, lineKind, other, winnerOf } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
 import {
@@ -47,6 +48,9 @@ import {
 import { type Records, addLoss } from '../src/records.ts';
 import * as core from '../src/session/core.ts';
 import { CURRENT_FORMAT, type SessionDoc, parseDoc } from '../src/session/format.ts';
+import type { PlayoffRequest } from '../src/practice/playoff.ts';
+import type { PracticeBoard, PracticeMode, PracticeRun, PresetId } from '../src/practice/practice.ts';
+import { practiceBoard, practiceStats } from './practice.ts';
 import { computeStats, SEAT_O, SEAT_X } from './stats.ts';
 
 const { SessionError } = core;
@@ -120,6 +124,19 @@ const SCHEMA = [
      metrics VARIANT NOT NULL,
      received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
      PRIMARY KEY (public_id, seat)
+   )`,
+  // Finished runs of the sound practice room (src/practice/practice.ts). `id` comes from the page, so a
+  // page can send a run again after a lost answer. `score` is the echo points, or the target count.
+  `CREATE TABLE IF NOT EXISTS practice_runs (
+     token VARCHAR NOT NULL,
+     id VARCHAR NOT NULL,
+     mode VARCHAR NOT NULL CHECK (mode IN ('targets', 'echo')),
+     preset VARCHAR NOT NULL CHECK (preset IN ('easy', 'normal', 'hard')),
+     total_ms INTEGER NOT NULL CHECK (total_ms >= 0),
+     round_ms INTEGER[] NOT NULL,
+     score INTEGER NOT NULL CHECK (score >= 0),
+     finished_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     PRIMARY KEY (token, id)
    )`,
   // The names that players without a GitHub login chose (parseCustomName in src/protocol.ts).
   // A player without a row shows with the generated name of the token (src/names.ts).
@@ -197,7 +214,7 @@ function readStored(json: unknown): StoredGame {
     return { mode: 'online', game, you: null, difficulty: null, options, tuned: false };
   }
   // The finish time was checked when the result arrived.
-  const upload = parseResultUpload(doc, Infinity);
+  const upload = parseResultUpload(doc, MAX_EPOCH_MS);
   if (upload === undefined) throw new Error('a stored result does not parse');
   return upload;
 }
@@ -240,7 +257,7 @@ const SEAT_ACCOUNTS = `
 const SEAT_ACCOUNT_COLUMNS = 'ux.login AS x_login, ux.avatar AS x_avatar, uo.login AS o_login, uo.avatar AS o_avatar';
 
 type StoreOptions = {
-  now?: () => number;
+  now?: () => EpochMs;
   // The player tokens that have a session open now. The HTTP layer knows; tests pass nothing.
   open?: (code: Code) => readonly PlayerToken[];
   // Runs after every write to a session, also a write during a read (a timeout, a format upgrade).
@@ -250,7 +267,7 @@ type StoreOptions = {
 
 export async function openStore(
   path: string,
-  { now = Date.now, open = () => [], onChange = () => undefined }: StoreOptions = {},
+  { now = epochNow, open = () => [], onChange = () => undefined }: StoreOptions = {},
 ) {
   // Watcher ids hide the token behind a keyed hash. The key lives in this process only, so the ids
   // change on a restart. That is fine: pages read the list again with every change.
@@ -294,7 +311,7 @@ export async function openStore(
     id: string;
     token: string;
     doc: object;
-    finishedAt: number;
+    finishedAt: EpochMs;
     publicId: GameId;
     seats: Record<Player, string | null>;
     game: GameRecord;
@@ -328,7 +345,7 @@ export async function openStore(
 
   // Records a finished game of an online session in `results`, so every mode has rows in one table.
   // A second call for the same game changes nothing.
-  async function recordOnline(code: Code, doc: SessionDoc, index: number, finishedAt: number): Promise<void> {
+  async function recordOnline(code: Code, doc: SessionDoc, index: number, finishedAt: EpochMs): Promise<void> {
     const game = doc.games[index];
     if (game === undefined || !isFinished(game)) throw new Error(`game ${index} of ${code} is not finished`);
     const token = doc.seats.X ?? doc.seats.O;
@@ -560,6 +577,33 @@ export async function openStore(
     lock: (code: Code, token: PlayerToken) => change(code, token, core.lock),
     chat: (code: Code, token: PlayerToken, text: unknown) =>
       change(code, token, (doc, identity) => core.chat(doc, identity, text, now())),
+    playoff: (code: Code, token: PlayerToken, request: PlayoffRequest) =>
+      change(code, token, (doc, identity) => core.playoff(doc, identity, request, now())),
+
+    // Stores a finished practice run. A run with an id that this player sent before changes nothing.
+    addPracticeRun: (token: PlayerToken, run: PracticeRun): Promise<{ stored: boolean }> =>
+      serialized(async () => {
+        const inserted = await rows(
+          `INSERT INTO practice_runs (token, id, mode, preset, total_ms, round_ms, score, finished_at)
+           VALUES ($token, $id, $mode, $preset, $total, $rounds::INTEGER[], $score, make_timestamptz($now * 1000))
+           ON CONFLICT DO NOTHING RETURNING id`,
+          {
+            token,
+            id: run.id,
+            mode: run.mode,
+            preset: run.preset,
+            total: run.roundMs.reduce((sum, ms) => sum + ms, 0),
+            rounds: listValue(run.roundMs),
+            score: run.score,
+            now: now(),
+          },
+        );
+        return { stored: inserted.length > 0 };
+      }),
+
+    // The leaderboard of one mode and preset, and the best run of the caller on all linked devices.
+    practiceBoard: (mode: PracticeMode, preset: PresetId, token: PlayerToken | undefined): Promise<PracticeBoard> =>
+      serialized(async () => practiceBoard(rows, mode, preset, [...(await identityOf(token))])),
     seat: (code: Code, token: PlayerToken, action: SeatAction) =>
       change(code, token, (doc, identity, watchers) => core.seat(doc, identity, action, watchers, now())),
     answerSeat: (code: Code, token: PlayerToken, accept: boolean) =>
@@ -736,7 +780,7 @@ export async function openStore(
             moves: Number(row.moves),
             opponent: you === 'X' ? accountOf(row.o_login, row.o_avatar) : you === 'O' ? accountOf(row.x_login, row.x_avatar) : null,
             opponentName: you === 'X' ? core.seatName(tokenOf(row.token_o), name) : you === 'O' ? core.seatName(tokenOf(row.token_x), name) : null,
-            finishedAt: Number(row.finished),
+            finishedAt: toEpochMs(Number(row.finished)),
           };
         });
         // The same check as on the page, so a wrong cast above fails here and not in a browser.
@@ -811,12 +855,12 @@ export async function openStore(
       serialized(async () => {
         if (filter.scope === 'mine') {
           if (token === null) throw new SessionError(400, 'Your stats need the X-Player header.');
-          return computeStats(rows, now(), filter, [...(await identityOf(token))]);
+          return { ...(await computeStats(rows, now(), filter, [...(await identityOf(token))])), practice: await practiceStats(rows) };
         }
         const key = statsQuery(filter);
         const cached = statsCache.get(key);
         if (cached !== undefined && now() - cached.generatedAt < STATS_CACHE_MS) return cached;
-        const fresh = await computeStats(rows, now(), filter, null);
+        const fresh = { ...(await computeStats(rows, now(), filter, null)), practice: await practiceStats(rows) };
         statsCache.set(key, fresh);
         return fresh;
       }),
@@ -861,7 +905,7 @@ export async function openStore(
             opponent: (await playersOf(doc))[other(you)],
             opponentName: core.seatName(doc.seats[other(you)], await namesOf([doc.seats[other(you)]])),
             yourTurn: live.status.kind === 'playing' && live.turn === you && doc.seats[other(you)] !== null,
-            updatedAt: Number(row.updated),
+            updatedAt: toEpochMs(Number(row.updated)),
           });
         }
 
@@ -898,7 +942,7 @@ export async function openStore(
     // player on the page stays, so an open page never loses its game. Returns the codes it deleted.
     pruneEmpty: (ageMs: number) =>
       serialized(async () => {
-        const cutoff = now() - ageMs;
+        const cutoff = toEpochMs(now() - ageMs);
         const old = await rows('FROM sessions SELECT code, doc::JSON AS doc WHERE updated_at < make_timestamptz($cutoff * 1000)', {
           cutoff,
         });

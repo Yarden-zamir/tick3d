@@ -35,17 +35,17 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         // A page address opens the cached app. API calls always go to the network.
         navigateFallback: 'index.html',
-        // /stats and /sound-training need no entry: the precache serves them from their .html files
-        // (clean URLs), online and offline.
+        // /stats, /sound-training and /sound-input need no entry: the precache serves them from their .html files
+        // (clean URLs), online and offline. The query of a page address (?code=, ?mode=, ?return=) is for the page
+        // script only, so the precache ignores it. Else /sound-input?code=… finds no entry and gets index.html.
+        ignoreURLParametersMatching: [/./],
         navigateFallbackDenylist: [/^\/api\//],
-        // The filters of /stats (parseStatsFilter in src/protocol.ts) do not change the page file, so a
-        // filtered address still matches stats.html. Without this, it falls back to the game page.
-        ignoreURLParametersMatching: [/^utm_/, /^fbclid$/, /^scope$/, /^range$/, /^mode$/, /^level$/],
       },
     }),
   ],
-  // Three pages: the game, the public stats page at /stats, and the ear training at /sound-training.
-  build: { rollupOptions: { input: { main: 'index.html', stats: 'stats.html', training: 'sound-training.html' } } },
+  // Four pages: the game, the public stats page at /stats, the ear training at /sound-training, and the
+  // microphone toy at /sound-input.
+  build: { rollupOptions: { input: { main: 'index.html', stats: 'stats.html', training: 'sound-training.html', input: 'sound-input.html' } } },
   // Vitest runs the unit tests only. Playwright runs the e2e/ tests against a deployed site (npm run e2e).
   test: { include: ['{src,server}/**/*.test.ts'] },
 });
