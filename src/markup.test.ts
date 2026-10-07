@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { PAGES } from './pages.ts';
 
 // The page scripts find their elements by id at start-up and stop when one is missing. The type
 // checker cannot see that, so this test reads the modules and the HTML pages and checks every id
@@ -35,8 +36,8 @@ function block(html: string, start: string, end: string): string {
   return html.slice(from, to + end.length);
 }
 
-const GAME = '../index.html';
-const PAGES = [GAME, '../stats.html', '../sound-training.html', '../sound-input.html'];
+const GAME = `../${PAGES.main.file}`;
+const PAGE_FILES = Object.values(PAGES).map(({ file }) => `../${file}`);
 
 describe('page markup', () => {
   it('has every element id that the game page script looks up', () => {
@@ -51,11 +52,26 @@ describe('page markup', () => {
     const links = (html: string) => block(html, '<div class="brand-links">', '</div>');
     const previews = (html: string) => block(html, '<dialog class="end-card my-games" id="previews"', '</dialog>');
     const game = read(GAME);
-    for (const page of PAGES) {
+    for (const page of PAGE_FILES) {
       const html = read(page);
       expect(missingIn(html, [...ids, 'info-panel', 'info-title']), page).toEqual([]);
       expect(links(html), page).toBe(links(game));
       expect(previews(html), page).toBe(previews(game));
+    }
+  });
+});
+
+// The Caddyfiles, the Dockerfile and html-validate take every root *.html file. The build takes src/pages.ts.
+describe('the pages table', () => {
+  it('lists every root HTML file, and nothing else', () => {
+    const files = readdirSync(new URL('../', import.meta.url)).filter((name) => name.endsWith('.html'));
+    expect(Object.values(PAGES).map(({ file }) => file).toSorted()).toEqual(files.toSorted());
+  });
+
+  // Caddy serves a page address from the file of the same name with .html (container/Caddyfile).
+  it('gives each page the address that Caddy serves it at', () => {
+    for (const { file, path } of Object.values(PAGES)) {
+      expect(path === '/' ? 'index.html' : `${path.slice(1)}.html`).toBe(file);
     }
   });
 });
