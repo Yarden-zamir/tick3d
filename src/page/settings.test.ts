@@ -17,10 +17,10 @@ describe('the sound set setting', () => {
     expect((await loadWith({ soundSet: 'gamelan' })).settings.soundSet).toBe('gamelan');
   });
 
-  it('falls back to cells for an unknown, missing or wrong value', async () => {
+  it('falls back to Classic, pitched for an unknown, missing or wrong value', async () => {
     for (const stored of [{ soundSet: 'kazoo' }, {}, { soundSet: 3 }, null]) {
       vi.resetModules();
-      expect((await loadWith(stored)).settings.soundSet).toBe('cells');
+      expect((await loadWith(stored)).settings.soundSet).toBe('pitched');
     }
   });
 });
