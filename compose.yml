@@ -23,7 +23,7 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # Online sessions: a Node API with a SQLite file on the sessions volume. Caddy in `site` proxies /api/* here.
+  # Online sessions: a Node API with a DuckDB file on the sessions volume. Caddy in `site` proxies /api/* here.
   api:
     build:
       context: .
