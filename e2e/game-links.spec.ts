@@ -106,11 +106,11 @@ test('an online game gets the link <CODE>-<n>, which anybody can open, and a cle
   await alice.locator('#my-games-clear').click();
   await expect(alice.locator('#clear-confirm')).toHaveAttribute('open');
   await alice.locator('#clear-confirm-yes').click();
-  await expect(alice.locator('#my-games-history li')).toHaveCount(0);
+  await expect(alice.locator('#my-games-history li:not(.empty)')).toHaveCount(0);
   // The clear holds after the dialog loads the history again.
   await alice.locator('#my-games-close').click();
   await alice.locator('#account-button').click();
-  await expect(alice.locator('#my-games-history li')).toHaveCount(0);
+  await expect(alice.locator('#my-games-history li:not(.empty)')).toHaveCount(0);
   await bob.locator('#my-games-close').click();
   await bob.locator('#account-button').click();
   await expect(bob.locator('#my-games-history li').first()).toContainText('Lost · Online');
