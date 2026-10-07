@@ -9,4 +9,8 @@ export const STORAGE_KEYS = {
   tuning: 'tick3d.tuning',
   name: 'tick3d.name',
   soundTraining: 'tick3d.sound-training',
+  // The last block list from the server, so a game without a network still hides blocked people.
+  blocks: 'tick3d.blocks',
+  // The chat messages that this device reported, as "<code>:<id>". They stay hidden here.
+  reported: 'tick3d.reported',
 } as const;

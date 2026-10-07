@@ -130,7 +130,7 @@
       </section>
 
       <section class="chat" id="chat" aria-labelledby="chat-title" hidden>
-        <span class="chat-title" id="chat-title">Chat</span>
+        <span class="chat-title" id="chat-title" data-tip="Hold or right-click a message to report or block">Chat</span>
         <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
         <form class="chat-form" id="chat-form" autocomplete="off">
           <input type="text" id="chat-input" maxlength="200" placeholder="Message the other player" enterkeyhint="send" aria-label="Message" />
@@ -159,7 +159,7 @@
         <section class="players" id="players" aria-labelledby="players-title" data-show-mode="online nearby" data-needs-session>
           <!-- The seat lock: X and O swap after each game unless it is on (src/page/controls.ts). -->
           <div class="field-head">
-            <span class="label" id="players-title">Players</span>
+            <span class="label" id="players-title" data-tip="Hold or right-click a player to report or block">Players</span>
             <button type="button" class="btn btn-small btn-icon lock" data-seat-lock aria-label="Keep the seats" aria-pressed="false"></button>
           </div>
           <ul class="players-list" id="players-list"></ul>
@@ -436,6 +436,10 @@
           <button type="button" class="btn btn-small my-games-more" id="my-games-clear" hidden>Clear history</button>
         </div>
       </section>
+      <section id="my-games-blocked-box" hidden>
+        <h3>Blocked people</h3>
+        <ul class="my-games-list" id="my-games-blocked"></ul>
+      </section>
       <section id="my-games-online-box">
         <h3>Online sessions</h3>
         <ul class="my-games-list" id="my-games-online"></ul>
@@ -475,6 +479,29 @@
         <button type="button" class="btn" id="clear-confirm-no">Keep</button>
       </div>
     </dialog>
+    <!-- Report and block a person: src/page/safety.ts. -->
+    <dialog class="end-card home-confirm safety-menu" id="safety-menu" aria-labelledby="safety-title">
+      <p id="safety-title"></p>
+      <div class="end-card-actions" id="safety-actions">
+        <button type="button" class="btn" id="safety-report">Report</button>
+        <button type="button" class="btn" id="safety-block">Block</button>
+        <button type="button" class="btn" id="safety-cancel">Cancel</button>
+      </div>
+      <form class="safety-report" id="safety-report-form" hidden>
+        <fieldset>
+          <legend>What is wrong?</legend>
+          <label><input type="radio" name="reason" value="spam" required /> Spam</label>
+          <label><input type="radio" name="reason" value="abuse" /> Abuse</label>
+          <label><input type="radio" name="reason" value="name" /> Inappropriate name</label>
+          <label><input type="radio" name="reason" value="other" /> Other</label>
+        </fieldset>
+        <textarea id="safety-note" maxlength="200" rows="2" placeholder="A short note (optional)" aria-label="Note"></textarea>
+        <div class="end-card-actions">
+          <button type="submit" class="btn btn-primary" id="safety-send">Send report</button>
+          <button type="button" class="btn" id="safety-back">Back</button>
+        </div>
+      </form>
+    </dialog>
     <dialog class="end-card home-confirm" id="seat-prompt" aria-labelledby="seat-prompt-text">
       <p id="seat-prompt-text"></p>
       <div class="end-card-actions">
@@ -506,6 +533,7 @@
         <li>Online: share the code or link. Nearby: devices on the same Wi-Fi.</li>
         <li>Players: any player manages the seats. A change that affects the other player, and an undo, wait until that player accepts.</li>
         <li>Hover or long-press an icon to see what it does.</li>
+        <li>Hold or right-click a message or player to report or block.</li>
       </ul>
       <div class="info-actions">
         <a class="btn btn-small" id="info-stats-link" href="/stats"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>Stats of all games</a>

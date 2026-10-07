@@ -37,6 +37,7 @@ import { LOCK_CLOSED_ICON, LOCK_OPEN_ICON, SOUND_OFF_ICON, SOUND_ON_ICON } from 
 import { seatIn } from '../protocol.ts';
 import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
+import { markPerson } from './person-mark.ts';
 import { renderPlayers, seatPerson } from './players.ts';
 import { settings, type Toggle } from './settings.ts';
 import { syncVoice } from './voice.ts';
@@ -52,7 +53,7 @@ export function playerName(player: Player): string {
   if (session === undefined || session.mode === 'friend') return `Player ${player}`;
   if (player === me()) return 'You';
   if (session.mode === 'computer') return 'Computer';
-  return session.players[player]?.login ?? session.names[player] ?? `Player ${player}`;
+  return seatPerson(session, player).name;
 }
 
 const TALLY_AVATAR_PIXELS = 24;
@@ -259,6 +260,9 @@ export function render(): void {
       if (key !== 'draw' && session !== undefined && (session.players[key] !== null || (shared() && session.seats[key]))) {
         name.append(avatarFor(seatPerson(session, key), TALLY_AVATAR_PIXELS));
       }
+      // Another player's name opens the report and block menu (src/page/safety.ts).
+      const person = key === 'draw' || session === undefined || !shared() || key === session.you ? null : session.people[key];
+      if (person !== null) markPerson(name, { person, name: label, message: null });
       name.append(key === away ? `${label} · away` : label);
       tally.append(count, name);
       return tally;

@@ -177,6 +177,10 @@ export function createAuth(config: AuthConfig, fetchImpl: typeof fetch = fetch, 
 
 export type Auth = ReturnType<typeof createAuth>;
 
+// The GitHub logins that can read reports and moderate. GitHub logins ignore case.
+const MAINTAINERS = ['yarden-zamir', 'tomcohendev'];
+export const isMaintainer = (login: string): boolean => MAINTAINERS.includes(login.toLowerCase());
+
 // ---- Request limits ----
 
 // The address of the client. Caddy writes the client address as the last X-Forwarded-For entry.
@@ -187,15 +191,23 @@ export function clientOf(req: IncomingMessage): string {
   return last || req.socket.remoteAddress || 'unknown';
 }
 
-// The answer of a limiter: allowed, or refused with the time until the window of the client ends.
-export type Limit = { ok: true } | { ok: false; retryAfterMs: number };
+// A refused request: the server answers 429 with Retry-After in whole seconds.
+export class TooManyRequests extends Error {
+  readonly status = 429;
+  readonly headers: Record<string, string>;
+  constructor(message: string, retryAfterMs: number) {
+    super(message);
+    this.headers = { 'retry-after': String(Math.max(1, Math.ceil(retryAfterMs / 1000))) };
+  }
+}
 
-// Allows each client `limit` actions per window, and refuses more until the window ends.
+// Allows each client `limit` actions per window, and throws TooManyRequests for more until the window ends.
+// It returns nothing, so a caller cannot test the answer by mistake instead of the refusal.
 // It keeps at most `maxClients` windows: when full, it forgets the client with the oldest window.
-export function createLimiter(limit: number, windowMs: number, maxClients: number) {
+export function createLimiter(limit: number, windowMs: number, maxClients: number, message: string) {
   if (!(limit >= 1 && windowMs > 0 && maxClients >= 1)) throw new RangeError('a limiter needs positive settings');
   const windows = new Map<string, { count: number; endsAt: number }>();
-  return (client: string, now: number): Limit => {
+  return (client: string, now: number): void => {
     let window = windows.get(client);
     if (window === undefined || window.endsAt <= now) {
       // Delete first, so the new window goes to the end of the map's insertion order.
@@ -206,6 +218,6 @@ export function createLimiter(limit: number, windowMs: number, maxClients: numbe
       windows.set(client, window);
     }
     window.count++;
-    return window.count <= limit ? { ok: true } : { ok: false, retryAfterMs: window.endsAt - now };
+    if (window.count > limit) throw new TooManyRequests(message, window.endsAt - now);
   };
 }

@@ -46,6 +46,7 @@ import { openGameView } from './game-view.ts';
 import { startReview } from './controls.ts';
 import { openCard } from './end-card.ts';
 import { render, resultText } from './render.ts';
+import { loadBlocks, renderBlockedList } from './safety.ts';
 import { deleteSentResults, flushResults, forgetRecords, syncRecords } from './results.ts';
 import { openDeviceSession, joinSession, refresh } from './sessions.ts';
 import { ownName, page, current, saveAccount, settingsLocked } from './state.ts';
@@ -192,6 +193,7 @@ let myGamesRequest = 0;
 export async function openMyGames(returnTo?: string): Promise<void> {
   const request = ++myGamesRequest;
   myGamesDialog.showModal();
+  renderBlockedList();
   // Account
   accountBox.replaceChildren();
   if (page.account.user) {
@@ -418,6 +420,8 @@ export async function refreshAccount(): Promise<void> {
   try {
     saveAccount(await api.me());
     void syncRecords();
+    // The blocks follow a login, so they load after the account.
+    void loadBlocks().catch(showError);
   } catch (error) {
     if (!(error instanceof OnlineError)) throw error;
   }
