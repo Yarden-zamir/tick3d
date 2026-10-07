@@ -212,7 +212,7 @@ export const REPORT_REASONS = ['spam', 'abuse', 'name', 'other'] as const;
 export type ReportReason = (typeof REPORT_REASONS)[number];
 export const REPORT_NOTE_MAX_LENGTH = 200;
 // A report names one chat message of an online session, or one person in it.
-export type ReportTarget = { message: number } | { person: PersonId };
+type ReportTarget = { message: number } | { person: PersonId };
 export type ReportRequest = { code: Code; target: ReportTarget; reason: ReportReason; note: string | null };
 
 const isMessageId = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;

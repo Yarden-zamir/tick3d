@@ -8,6 +8,7 @@ import { type LinkIntent, withWatch } from '../session-link.ts';
 import type { SessionDoc } from '../session/format.ts';
 import { sounds } from '../sound.ts';
 import { notifyChat } from './chat.ts';
+import { ownPerson, visibleChat } from './safety.ts';
 import { scheduleComputer } from './computer.ts';
 import { burstEl } from './dom.ts';
 import { announce, finish } from './end-card.ts';
@@ -135,7 +136,9 @@ export function applyView(view: SessionView): void {
   // A live game is not the finished game that the address links to.
   if (after.status.kind === 'playing' && new URLSearchParams(location.search).has('game')) setUrlGame(undefined);
   const lastSeen = previous.chat.at(-1)?.id ?? -1;
-  const incoming = page.session.chat.filter((message) => message.id > lastSeen && message.from !== page.session?.you);
+  // Messages from a blocked person or reported here give no sound and no notice.
+  const own = ownPerson(page.session);
+  const incoming = visibleChat(page.session).filter((message) => message.id > lastSeen && (message.by === undefined ? message.from !== page.session?.you : message.by !== own));
   const newest = incoming.at(-1);
   if (newest !== undefined && shared()) {
     sounds.message();

@@ -1,9 +1,11 @@
 // The chat with the other player in a game with another device.
 import { other } from '../game.ts';
-import { type ChatMessage, normalizeChat } from '../protocol.ts';
+import { type ChatMessage, type SessionView, normalizeChat } from '../protocol.ts';
 import { sounds } from '../sound.ts';
 import { chatEl, chatInput, chatSend, chatLog, chatNoticeFrom, chatNoticeText, chatNotice, chatForm } from './dom.ts';
-import { chatGroups } from './chat-log.ts';
+import { type Sender, chatGroups } from './chat-log.ts';
+import { nameOf } from '../names.ts';
+import { authorOf, ownPerson, shownPerson, visibleChat } from './safety.ts';
 import { reject, showToast, showError } from './feedback.ts';
 import { seatPerson } from './players.ts';
 import { playerName, render } from './render.ts';
@@ -19,6 +21,20 @@ let chatNoticeTimer: ReturnType<typeof setTimeout> | undefined;
 let unread = 0;
 const baseTitle = document.title;
 
+// The sender of a message, by its person id. A message without one shows with the holder of its seat.
+function senderOf(session: SessionView, message: ChatMessage): Sender {
+  const id = authorOf(session, message);
+  const mine = id === null ? message.from === session.you : id === ownPerson(session);
+  const seat = id === null ? message.from : (['X', 'O'] as const).find((entry) => session.people[entry] === id);
+  const watcher = session.watchers.find((entry) => entry.person !== null && entry.person === id);
+  // An author who left the game shows with the generated name of the person id.
+  const person =
+    seat !== undefined
+      ? seatPerson(session, seat)
+      : shownPerson(id, watcher === undefined ? { player: null, name: nameOf(id ?? message.from) } : { player: watcher.player, name: watcher.player?.login ?? watcher.name });
+  return { label: mine ? 'You' : person.name, person, id, mine };
+}
+
 export function renderChat(): void {
   chatEl.hidden = !shared();
   if (page.session === undefined || !shared()) {
@@ -31,19 +47,20 @@ export function renderChat(): void {
   const you = page.session.you;
   chatInput.placeholder = you === null ? 'Only the two players can chat' : `Message ${playerName(other(you))}`;
 
-  // A swap of the seats changes the sender seat of every message, so the key holds it too.
-  const shown = `${page.session.code}:${page.session.chat.map((message) => `${message.id}${message.from}`).join(',')}`;
+  const session = page.session;
+  const messages = visibleChat(session);
+  // A block changes the shown names, so the key holds the shown sender of every message.
+  const shown = `${session.code}:${messages.map((message) => `${message.id}:${senderOf(session, message).label}`).join(',')}`;
   if (shown === chatShown) return;
   chatShown = shown;
-  if (page.session.chat.length === 0) {
+  if (messages.length === 0) {
     const empty = document.createElement('li');
     empty.className = 'chat-empty';
     empty.textContent = canWrite ? 'No messages yet. Say hi.' : 'No messages yet.';
     chatLog.replaceChildren(empty);
     return;
   }
-  const session = page.session;
-  chatLog.replaceChildren(...chatGroups(session.chat, (seat) => ({ label: playerName(seat), person: seatPerson(session, seat) }), session.you));
+  chatLog.replaceChildren(...chatGroups(messages, (message) => senderOf(session, message)));
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
@@ -62,7 +79,7 @@ export function notifyChat(message: ChatMessage, count: number): void {
     document.title = `(${unread}) ${baseTitle}`;
   }
   if (chatInView()) return;
-  chatNoticeFrom.textContent = playerName(message.from);
+  if (page.session !== undefined) chatNoticeFrom.textContent = senderOf(page.session, message).label;
   chatNoticeText.textContent = message.text;
   chatNotice.classList.toggle('from-x', message.from === 'X');
   chatNotice.classList.toggle('from-o', message.from === 'O');
