@@ -23,9 +23,8 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <!-- The service worker plugin writes the manifest (manifest.webmanifest) and adds its link. -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet" />
+    <!-- The page font (src/style.css). The preload starts the download before the stylesheet asks for it. -->
+    <link rel="preload" href="/src/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
     <script>
@@ -36,7 +35,7 @@
         if (color !== '') document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
       }
     </script>
-    <div class="app">
+    <main class="app">
       <header class="brand">
         <h1><a href="/" class="home-link" id="home-link" title="Home">tick<span>3d</span></a></h1>
         <div class="status" id="status" aria-live="polite"></div>
@@ -54,7 +53,7 @@
               <path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
             </svg>
           </button>
-          <button type="button" class="repo-link" id="previews-button" aria-haspopup="dialog" aria-label="Previews of open pull requests" data-tip="Previews of open pull requests">
+          <button type="button" class="repo-link" id="previews-button" aria-haspopup="dialog" aria-label="kitshn: previews of open pull requests" data-tip="Previews of open pull requests">
             <!-- The KitSHn pot, drawn inline so that it works offline. -->
             <svg viewBox="0 0 14 14" width="18" height="18" fill="currentColor" aria-hidden="true"><rect x="6" y="1.2" width="2" height="1.6" rx="0.5"/><rect x="2.2" y="3.4" width="9.6" height="1.5" rx="0.75"/><rect x="3" y="5.6" width="8" height="6.6" rx="1.6"/><rect x="0.8" y="6.8" width="2.4" height="1.4" rx="0.7"/><rect x="10.8" y="6.8" width="2.4" height="1.4" rx="0.7"/></svg>
             <span>kitshn</span>
@@ -375,7 +374,7 @@
           </section>
         </details>
       </aside>
-    </div>
+    </main>
     <dialog class="end-card" id="end-card" aria-label="Game result">
       <!-- The light shows the cell of the note while the song plays. src/page/end-card.ts places it. -->
       <div class="end-card-picture">

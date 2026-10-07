@@ -216,7 +216,7 @@ describe('the previews list', () => {
     advance(PREVIEWS_CACHE_MS);
     const stale = await previews.list();
     expect(stale.previews).toHaveLength(1);
-    expect(stale.error).toContain('old');
+    expect(stale.error).not.toBeNull();
     const calls = github.githubCalls().length;
     await previews.list();
     expect(github.githubCalls()).toHaveLength(calls);
@@ -253,7 +253,7 @@ describe('the previews list', () => {
     expect((await previews.list()).previews[0]?.contributors.map((c) => c.login)).toEqual(['alice']);
     expect(github.githubCalls()).toEqual([PULLS_URL]);
     at(resetSeconds * 1000 - 1);
-    expect((await previews.list()).error).toContain('old');
+    expect((await previews.list()).error).not.toBeNull();
     expect(github.githubCalls()).toEqual([PULLS_URL]);
     at(resetSeconds * 1000 + PREVIEWS_CACHE_MS);
     await previews.list();

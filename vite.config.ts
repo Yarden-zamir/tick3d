@@ -31,7 +31,8 @@ export default defineConfig({
       },
       workbox: {
         // The plugin adds manifest.webmanifest itself.
-        globPatterns: ['**/*.{js,css,html,svg,png}'],
+        // woff2: the page font (src/fonts), so the game keeps its look offline.
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         // A page address opens the cached app. API calls always go to the network.
         navigateFallback: 'index.html',
         // /stats, /sound-training and /sound-input need no entry: the precache serves them from their .html files
@@ -39,28 +40,6 @@ export default defineConfig({
         // script only, so the precache ignores it. Else /sound-input?code=… finds no entry and gets index.html.
         ignoreURLParametersMatching: [/./],
         navigateFallbackDenylist: [/^\/api\//],
-        runtimeCaching: [
-          {
-            // The font list from Google changes rarely. Keep a copy for offline use.
-            urlPattern: ({ url }) => url.origin === 'https://fonts.googleapis.com',
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-css',
-              expiration: { maxEntries: 10, maxAgeSeconds: 365 * 24 * 60 * 60 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            // Font files have versioned addresses, so a cached file never goes stale.
-            urlPattern: ({ url }) => url.origin === 'https://fonts.gstatic.com',
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-files',
-              expiration: { maxEntries: 30, maxAgeSeconds: 365 * 24 * 60 * 60 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
       },
     }),
   ],
