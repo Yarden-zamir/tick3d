@@ -187,6 +187,8 @@ docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr.17.
 
 See [kitshn.md](kitshn.md). A push to `main` deploys production.
 
+The paid Android app on Google Play wraps the production site. The `android` workflow builds it from [android/twa-manifest.json](android/twa-manifest.json).
+
 ## License
 
 [MIT](LICENSE)
