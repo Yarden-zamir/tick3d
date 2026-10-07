@@ -15,7 +15,8 @@ const pull = (number: number, fields: Record<string, unknown> = {}) => ({
   updated_at: '2026-10-05T10:00:00Z',
   draft: false,
   user: user('alice', 1),
-  head: { sha: `sha-${number}` },
+  head: { sha: `sha-${number}`, label: `octo:branch-${number}` },
+  base: { label: 'octo:main' },
   ...fields,
 });
 
@@ -68,6 +69,8 @@ describe('reading the GitHub answers', () => {
     expect(parsePull(pull(3, { html_url: 'https://evil.example.org/pull/3' }))).toBeUndefined();
     expect(parsePull(pull(3, { updated_at: 'yesterday' }))).toBeUndefined();
     expect(parsePull(pull(3, { head: null }))).toBeUndefined();
+    expect(parsePull(pull(3, { base: null }))).toBeUndefined();
+    expect(parsePull(pull(3, { head: { sha: 'sha-3' } }))).toBeUndefined();
     expect(parsePull(null)).toBeUndefined();
   });
 
@@ -172,6 +175,7 @@ describe('the previews list', () => {
           { login: 'bob', avatar: avatar(2), url: 'https://github.com/bob' },
           { login: 'alice', avatar: avatar(1), url: 'https://github.com/alice' },
         ],
+        parent: null,
       },
     ]);
     // The page parser takes what the server sends.
@@ -193,7 +197,7 @@ describe('the previews list', () => {
   it('reads the commits again when the head commit changes', async () => {
     let head = 'a';
     const { previews, github, advance } = setup({
-      [PULLS_URL]: () => ({ body: [pull(5, { head: { sha: head } })] }),
+      [PULLS_URL]: () => ({ body: [pull(5, { head: { sha: head, label: 'octo:branch-5' } })] }),
       [commitsUrl(5)]: { body: [] },
       [healthUrl(5)]: LIVE,
     });
@@ -216,7 +220,7 @@ describe('the previews list', () => {
     advance(PREVIEWS_CACHE_MS);
     const stale = await previews.list();
     expect(stale.previews).toHaveLength(1);
-    expect(stale.error).toContain('old');
+    expect(stale.error).not.toBeNull();
     const calls = github.githubCalls().length;
     await previews.list();
     expect(github.githubCalls()).toHaveLength(calls);
@@ -253,12 +257,41 @@ describe('the previews list', () => {
     expect((await previews.list()).previews[0]?.contributors.map((c) => c.login)).toEqual(['alice']);
     expect(github.githubCalls()).toEqual([PULLS_URL]);
     at(resetSeconds * 1000 - 1);
-    expect((await previews.list()).error).toContain('old');
+    expect((await previews.list()).error).not.toBeNull();
     expect(github.githubCalls()).toEqual([PULLS_URL]);
     at(resetSeconds * 1000 + PREVIEWS_CACHE_MS);
     await previews.list();
     // The new answer says that a new hour started long ago, so the commits call goes out too.
     expect(github.githubCalls()).toEqual([PULLS_URL, PULLS_URL, commitsUrl(5)]);
+  });
+
+  it('nests a stacked pull request under the listed pull request whose head branch is its base, more than one level deep', async () => {
+    const stacked = (number: number, base: string) => pull(number, { base: { label: base } });
+    const routes: Record<string, Answer> = {
+      [PULLS_URL]: {
+        body: [
+          stacked(4, 'octo:branch-3'),
+          stacked(3, 'octo:branch-2'),
+          stacked(2, 'octo:main'),
+          // 6 depends on 5, which has no live preview, so 6 is top level.
+          stacked(6, 'octo:branch-5'),
+          stacked(5, 'octo:main'),
+          // A fork branch with the same name as a branch of this repository is not a parent.
+          pull(7, { head: { sha: 'sha-7', label: 'fork:feature' } }),
+          stacked(8, 'octo:feature'),
+        ],
+      },
+    };
+    for (const n of [2, 3, 4, 6, 7, 8]) {
+      routes[commitsUrl(n)] = { body: [] };
+      routes[healthUrl(n)] = LIVE;
+    }
+    const { previews, github } = setup(routes);
+    const list = await previews.list();
+    expect(Object.fromEntries(list.previews.map((preview) => [preview.number, preview.parent]))).toEqual({ 2: null, 3: 2, 4: 3, 6: null, 7: null, 8: null });
+    // The parents come from the pull request list: no extra GitHub call.
+    expect(github.githubCalls().filter((url) => !url.includes('/commits'))).toEqual([PULLS_URL]);
+    expect(parsePreviews(list)).toEqual(list);
   });
 
   it('reads at most MAX_PULLS pull requests and MAX_COMMITS commits each', async () => {
@@ -288,6 +321,7 @@ describe('the previews list on a preview server', () => {
     updatedAt: Date.parse('2026-10-05T10:00:00Z'),
     draft: false,
     contributors: [{ login: 'alice', avatar: avatar(1), url: 'https://github.com/alice' }],
+    parent: null,
   };
 
   function setup(routes: Record<string, Answer | (() => Answer)>) {
@@ -303,6 +337,14 @@ describe('the previews list on a preview server', () => {
     expect(await previews.list()).toEqual(answer);
     expect(fake.githubCalls()).toEqual([]);
     expect(fake.calls).toEqual([PRODUCTION_URL]);
+  });
+
+  it('passes the parent through, and reads a list from an older production without parents as top level', async () => {
+    const child = { ...preview, number: 6, previewUrl: 'https://pr.6.game.example.com', parent: 5 };
+    const { previews } = setup({ [PRODUCTION_URL]: { body: { main: 'https://game.example.com', previews: [preview, child], error: null } } });
+    expect((await previews.list()).previews.map((p) => p.parent)).toEqual([null, 5]);
+    const { parent: _, ...older } = preview;
+    expect(parsePreviews({ main: null, previews: [older], error: null }).previews[0]?.parent).toBeNull();
   });
 
   it('asks production once per relay period, also for requests at the same time', async () => {

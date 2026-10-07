@@ -2,6 +2,32 @@
    A theme sets data-theme on <html> (index.html applies a stored one before the first paint).
    Without data-theme, the page is light. The theme rules match any element, so the theme
    picker draws each preview with that theme's own tokens. */
+
+/* Bricolage Grotesque (SIL Open Font License, src/fonts/OFL.txt), served from this site: no
+   render-blocking request to another origin, and the service worker keeps it for offline play.
+   One variable file holds every weight. The files are the latin and latin-ext subsets from
+   Google Fonts. The browser fetches latin-ext only when a page shows one of its characters.
+   Each HTML page preloads the latin file. */
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('./fonts/bricolage-grotesque-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('./fonts/bricolage-grotesque-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
   /* Piece and accent colors with black text. Batman overrides them with greys. */
   --x: #ff5277;
@@ -704,11 +730,12 @@ input:disabled {
   transition: background 0.2s;
 }
 
+/* In the header row the status keeps one width, whatever its text, so a new status never moves the
+   wordmark or the header buttons (see .slot-row). It shrinks only when the window is narrow. */
 @media (min-width: 64rem) {
   .status {
     order: 0;
-    flex: 0 1 auto;
-    max-width: 28rem;
+    flex: 0 1 28rem;
   }
 }
 
@@ -754,6 +781,15 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: flex;
   gap: 0.5rem;
   max-width: 100%;
+}
+
+/* src/page/board.ts builds the board after the first paint on a slow device. Until then the empty
+   board keeps the height of the tower (four layers, three gaps and the bottom padding, see
+   .board.tower), so the controls under it do not jump. Limit: the flat view is shorter, so a
+   player who saved it sees the page close up once. Revisit if flat becomes the default view.
+   The rule names the stage, so the ear training deck (also a .board) keeps its own size. */
+.stage > .board:empty {
+  min-height: calc(var(--side) * (0.72 * 4 + 0.3) + 0.5rem * 3);
 }
 
 .board.thinking {
@@ -912,7 +948,7 @@ body[data-turn='O'] .status[data-state='playing'] {
     drop-shadow(0 -1px 0 var(--line));
 }
 
-/* The view picker, and Reset angle beside it for the tower. */
+/* The view picker. */
 .view-row {
   display: flex;
   align-items: center;
@@ -921,10 +957,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .view-row .segmented {
   flex: 1;
-}
-
-.reset-angle {
-  flex: none;
 }
 
 /* Flat: the four layers as plain grids, in one of four layouts. */
@@ -1091,6 +1123,14 @@ body[data-turn='O'] .status[data-state='playing'] {
   text-align: center;
 }
 
+/* The score stays empty until the page script draws the tallies. Until then it keeps the tally
+   height (padding, border, the count line and the name line, about 1.2rem with the page font), so
+   the panel under it does not jump.
+   Limit: the height follows the .tally rules below by hand. Revisit when a tally changes its lines. */
+.score:empty {
+  min-height: calc(0.9rem + var(--border) * 2 + 1.7rem * 1.1 + 1.2rem);
+}
+
 .tally {
   padding: 0.45rem 0.25rem;
   border: var(--border) solid var(--line);
@@ -1121,27 +1161,50 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
-/* New game takes the free width. Undo, the result card and the sound control keep their own width. */
-.actions {
-  display: flex;
+/* A row of fixed slots. A control that shows, hides or changes with the game state must not move another control.
+   - Each control has its own grid area. Two controls that take turns share one area, so the slot fits the wider one.
+   - A hidden control keeps its box: it is invisible and takes no click or focus, but its slot stays.
+   - A label never wraps, so a control never grows taller.
+   e2e/row-layout.spec.ts checks this geometry. */
+.slot-row {
+  display: grid;
+  align-items: stretch;
   gap: 0.6rem;
 }
 
-.actions > .btn {
-  flex: none;
+.slot-row > * {
+  white-space: nowrap;
 }
 
-.actions > .btn-primary {
-  flex: 1;
+/* Every child of a slot row is a flex box (.btn and the sound control), so display: flex brings the box back.
+   The global [hidden] rule uses !important, so this more specific rule needs it too. */
+.slot-row > [hidden] {
+  display: flex !important;
+  visibility: hidden;
+}
+
+/* New game takes the free width, but never less than its label. Undo and the result card take turns in one slot.
+   max-content, not auto: a row that is too narrow overflows, and e2e/row-layout.spec.ts sees it.
+   An auto column shrinks the sound control instead and clips its icons without a sign. */
+.actions {
+  grid-template-areas: 'new swap sound';
+  grid-template-columns: minmax(max-content, 1fr) max-content max-content;
+}
+
+#new-game {
+  grid-area: new;
+}
+
+#undo,
+#show-card {
+  grid-area: swap;
 }
 
 /* One box with two parts: the speaker turns the sound on and off, the narrow caret opens the sound sets. */
-/* margin-left: auto keeps the control at the right end when it is alone in the row (Nearby before a game). */
 .sound-control {
-  flex: none;
+  grid-area: sound;
   display: flex;
   min-height: 2.6rem;
-  margin-left: auto;
   border: var(--border) solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -2719,6 +2782,26 @@ body[data-turn='O'] .status[data-state='playing'] {
 .preview-foot a:first-of-type {
   background: var(--primary);
   color: var(--on-color);
+}
+
+/* Stacked pull requests: a nested list inside the card of the parent, with a line on the left. */
+.previews-list .preview-children {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.2rem 0 0;
+  padding: 0 0 0 0.6rem;
+  border-left: 3px solid var(--line);
+  list-style: none;
+}
+
+/* The nested card stands out from the parent card behind it. */
+.previews-list .preview-children .preview {
+  background: var(--surface);
+}
+
+.badge-quiet {
+  background: var(--surface);
+  color: var(--ink);
 }
 
 /* Narrow phones: the time takes its own row, so both links stay together on the next row. */

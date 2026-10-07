@@ -1,6 +1,7 @@
 // The messages between the page and the move search in src/ai-worker.ts, and the page side of the search.
 // Each side checks every message, so a bad message fails loudly instead of playing a wrong cell.
 // A Worker does not exist in Node, so the tests drive these functions with a fake worker.
+import { isCount, isRecord } from './guards.ts';
 import { type Difficulty, DIFFICULTIES, chooseMove } from './ai.ts';
 import { type Board, type Player, CELL_COUNT } from './game.ts';
 import { type Tuning, parseTuning } from './tuning.ts';
@@ -8,8 +9,6 @@ import { type Tuning, parseTuning } from './tuning.ts';
 export type SearchRequest = { id: number; board: Board; player: Player; difficulty: Difficulty; tuning: Tuning };
 export type SearchAnswer = { id: number; cell: number } | { id: number; error: string };
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
-const isId = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 const isPlayer = (value: unknown): value is Player => value === 'X' || value === 'O';
 const isDifficulty = (value: unknown): value is Difficulty => DIFFICULTIES.some((level) => level === value);
 const isBoard = (value: unknown): value is Board =>
@@ -18,7 +17,7 @@ const isBoard = (value: unknown): value is Board =>
 export function parseRequest(value: unknown): SearchRequest | undefined {
   if (!isRecord(value)) return undefined;
   const { id, board, player, difficulty, tuning } = value;
-  if (!isId(id) || !isBoard(board) || !isPlayer(player) || !isDifficulty(difficulty)) return undefined;
+  if (!isCount(id) || !isBoard(board) || !isPlayer(player) || !isDifficulty(difficulty)) return undefined;
   // The page sends its own checked settings, so parseTuning changes nothing in normal use.
   return { id, board, player, difficulty, tuning: parseTuning(tuning) };
 }
@@ -26,7 +25,7 @@ export function parseRequest(value: unknown): SearchRequest | undefined {
 // The worker's whole job: one answer for each message. An error goes back to the page, which shows it.
 export function answerRequest(value: unknown): SearchAnswer {
   const request = parseRequest(value);
-  if (request === undefined) return { id: isRecord(value) && isId(value.id) ? value.id : -1, error: 'invalid search request' };
+  if (request === undefined) return { id: isRecord(value) && isCount(value.id) ? value.id : -1, error: 'invalid search request' };
   try {
     return { id: request.id, cell: chooseMove(request.board, request.player, request.difficulty, Math.random, request.tuning) };
   } catch (error) {
@@ -37,7 +36,7 @@ export function answerRequest(value: unknown): SearchAnswer {
 export function parseAnswer(value: unknown): SearchAnswer | undefined {
   if (!isRecord(value)) return undefined;
   const { id, cell, error } = value;
-  if (!isId(id) && id !== -1) return undefined;
+  if (!isCount(id) && id !== -1) return undefined;
   if (typeof cell === 'number' && error === undefined) return { id, cell };
   if (typeof error === 'string' && cell === undefined) return { id, error };
   return undefined;

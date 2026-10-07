@@ -10,6 +10,7 @@
 // - on any GitHub failure, the server keeps the last good list and adds a note.
 // "Live" means that https://pr.<n>.<domain>/api/health answers { ok: true } now. That costs no GitHub call.
 import { PREVIEWS_CACHE_MS, PREVIEWS_RELAY_CACHE_MS } from './api-docs.ts';
+import { type EpochMs, isEpochMs } from '../src/epoch.ts';
 import { type Contributor, type PlayerInfo, type Preview, type Previews, PREVIEW_DESCRIPTION_LENGTH, parsePlayerInfo, parsePreviews } from '../src/protocol.ts';
 
 // GitHub returns at most this many pull requests in one page, the most recently updated first.
@@ -62,18 +63,32 @@ function accountOf(value: unknown): PlayerInfo | undefined {
   return parsePlayerInfo({ login: value.login, avatar: value.avatar_url });
 }
 
-type Pull = { number: number; title: string; body: string; url: string; updatedAt: number; draft: boolean; head: string; author: PlayerInfo | undefined };
+// `branch` and `base` are GitHub labels (owner:branch), so a fork branch never matches a branch of this repository.
+type Pull = {
+  number: number;
+  title: string;
+  body: string;
+  url: string;
+  updatedAt: EpochMs;
+  draft: boolean;
+  head: string;
+  branch: string;
+  base: string;
+  author: PlayerInfo | undefined;
+};
 
 // One pull request from GET /repos/{repo}/pulls. Returns undefined for an entry that is not as documented.
 export function parsePull(value: unknown): Pull | undefined {
-  if (!isRecord(value) || !isRecord(value.head)) return undefined;
+  if (!isRecord(value) || !isRecord(value.head) || !isRecord(value.base)) return undefined;
   const { number, title, body, html_url: url, updated_at: updated, draft } = value;
-  const head = value.head.sha;
+  const { sha: head, label: branch } = value.head;
+  const base = value.base.label;
   if (typeof number !== 'number' || !Number.isInteger(number) || number < 1) return undefined;
   if (typeof title !== 'string' || typeof url !== 'string' || !url.startsWith('https://github.com/')) return undefined;
   if (typeof head !== 'string' || typeof updated !== 'string') return undefined;
+  if (typeof branch !== 'string' || typeof base !== 'string') return undefined;
   const updatedAt = Date.parse(updated);
-  if (Number.isNaN(updatedAt)) return undefined;
+  if (!isEpochMs(updatedAt)) return undefined;
   return {
     number,
     title,
@@ -82,6 +97,8 @@ export function parsePull(value: unknown): Pull | undefined {
     updatedAt,
     draft: draft === true,
     head,
+    branch,
+    base,
     author: accountOf(value.user),
   };
 }
@@ -193,6 +210,12 @@ function stripLineMarks(line: string): string {
   return line;
 }
 
+// The parent of each stacked pull request: the listed pull request whose head branch is its base branch.
+// A pull request whose parent is not in the list (closed, or without a live preview) is top level.
+function parentOf(pull: Pick<Pull, 'base'>, listed: readonly Pick<Pull, 'number' | 'branch'>[]): number | null {
+  return listed.find((other) => other.branch === pull.base)?.number ?? null;
+}
+
 // ---- The list ----
 
 class GitHubError extends Error {}
@@ -272,10 +295,11 @@ export function createPreviews(config: PreviewsConfig, fetchImpl: typeof fetch =
       .map(parsePull)
       .filter((pull) => pull !== undefined);
     const fresh = new Map<number, { head: string; contributors: Contributor[] }>();
+    const live = await Promise.all(pulls.map((pull) => isLive(pull.number)));
+    const listed = pulls.filter((_, index) => live[index] === true);
     const previews = await Promise.all(
-      pulls.map(async (pull): Promise<Preview | undefined> => {
-        if (!(await isLive(pull.number))) return undefined;
-        return {
+      listed.map(
+        async (pull): Promise<Preview> => ({
           number: pull.number,
           title: pull.title,
           description: summaryOf(pull.body),
@@ -284,12 +308,13 @@ export function createPreviews(config: PreviewsConfig, fetchImpl: typeof fetch =
           updatedAt: pull.updatedAt,
           draft: pull.draft,
           contributors: await contributorsOf(pull, fresh),
-        };
-      }),
+          parent: parentOf(pull, listed),
+        }),
+      ),
     );
     // Closed pull requests drop out of the cache here.
     contributorCache = fresh;
-    return previews.filter((preview) => preview !== undefined);
+    return previews;
   }
 
   const main = `https://${config.domain}`;

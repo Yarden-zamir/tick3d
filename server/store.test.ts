@@ -1,4 +1,5 @@
 import { mkdtemp } from 'node:fs/promises';
+import { toEpochMs as ms } from '../src/epoch.ts';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -46,9 +47,9 @@ async function playMoves(code: Code, cells: number[], game = 0): Promise<void> {
 }
 
 function result(id: string, overrides: Partial<ResultUpload> = {}): ResultUpload {
-  const game = toRecord(replay(X_WINS, { times: X_WINS.map((_, i) => 1_000 + i) }));
+  const game = toRecord(replay(X_WINS, { times: X_WINS.map((_, i) => ms(1_000 + i)) }));
   const options = { hideBoard: false, hideHistory: false, hideCoordinates: false };
-  return { id, mode: 'computer', game, you: 'X', difficulty: 'hard', finishedAt: 2_000, publicId: null, options, tuned: false, metrics: null, guest: null, ...overrides };
+  return { id, mode: 'computer', game, you: 'X', difficulty: 'hard', finishedAt: ms(2_000), publicId: null, options, tuned: false, metrics: null, guest: null, ...overrides };
 }
 
 describe('pruning empty sessions', () => {
@@ -58,7 +59,7 @@ describe('pruning empty sessions', () => {
     let watched: Code | undefined;
     store = await openStore(':memory:', {
       // The clock runs `later` ahead, so rows written now count as old.
-      now: () => Date.now() + later,
+      now: () => ms(Date.now() + later),
       open: (code) => (code === watched ? [alice] : []),
     });
     const empty = (await store.create(alice, 'Never played')).code;
@@ -113,7 +114,7 @@ describe('sessions', () => {
   it('reports every write, also a timeout that a read records', async () => {
     let time = 1_000_000;
     const changed: Code[] = [];
-    store = await openStore(':memory:', { now: () => time, onChange: (code) => changed.push(code) });
+    store = await openStore(':memory:', { now: () => ms(time), onChange: (code) => changed.push(code) });
     const { code } = await store.create(alice, 'Blitz', { perMove: 3, perGame: null });
     await store.join(code, bob);
     await playMoves(code, [0, 1]);
@@ -253,7 +254,7 @@ describe('accounts', () => {
       result('eeeeeeee-1111-4000-8000-000000000001', { ...nearby, you: 'X', publicId: id, guest: bob, metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } }),
     ]);
     await store.addResults(bob, [
-      result('eeeeeeee-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: 2_034, metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } }),
+      result('eeeeeeee-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: ms(2_034), metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } }),
     ]);
     await store.unlinkToken(bob);
     expect((await store.history(bob, 0)).games).toEqual([]);
@@ -285,7 +286,9 @@ describe('results', () => {
     const unfinished = { ...result('22222222-0000-4000-8000-000000000001'), game: toRecord(replay([0, 1])) };
     expect(await status(() => store.addResults(alice, [result('22222222-0000-4000-8000-000000000002'), unfinished]))).toBe(400);
     expect(await status(() => store.addResults(alice, [{ id: 'short' }]))).toBe(400);
-    expect(await status(() => store.addResults(alice, [result('22222222-0000-4000-8000-000000000003', { finishedAt: 1e300 })]))).toBe(400);
+    expect(await status(() => store.addResults(alice, [{ ...result('22222222-0000-4000-8000-000000000003'), finishedAt: 1e300 }]))).toBe(400);
+    // DuckDB make_timestamptz throws on a fraction of a millisecond, so the parser must refuse it first.
+    expect(await status(() => store.addResults(alice, [{ ...result('22222222-0000-4000-8000-000000000004'), finishedAt: 1.5 }]))).toBe(400);
     expect((await store.myGames(alice)).total.played).toBe(0);
   });
 });
@@ -333,7 +336,7 @@ const METRICS: Metrics = {
 };
 
 function finishedGame(cells: number[]) {
-  return toRecord(replay(cells, { times: cells.map((_, i) => 1_000 + i * 1_500) }));
+  return toRecord(replay(cells, { times: cells.map((_, i) => ms(1_000 + i * 1_500)) }));
 }
 
 const gameId = (text: string): GameId => {
@@ -413,7 +416,7 @@ describe('game links', () => {
 
   it('records an online game that ends on time', async () => {
     let time = 1_000_000;
-    store = await openStore(':memory:', { now: () => time });
+    store = await openStore(':memory:', { now: () => ms(time) });
     const { code } = await store.create(alice, 'Blitz', { perMove: 3, perGame: null });
     await store.join(code, bob);
     await playMoves(code, [0, 1]);
@@ -434,7 +437,7 @@ describe('match history', () => {
     await playMoves(code, X_WINS);
     await store.addResults(alice, [
       result('66666666-0000-4000-8000-000000000001', { you: 'O' }),
-      result('66666666-0000-4000-8000-000000000002', { mode: 'friend', you: null, difficulty: null, finishedAt: 3_000 }),
+      result('66666666-0000-4000-8000-000000000002', { mode: 'friend', you: null, difficulty: null, finishedAt: ms(3_000) }),
     ]);
     await store.linkToken(bob, { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' });
     const mine = await store.history(alice, 0);
@@ -465,7 +468,7 @@ describe('match history', () => {
     ]);
     await store.addResults(bob, [
       // The guest's copy can have a slightly later time for the last move.
-      result('dddddddd-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: 2_034, metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } }),
+      result('dddddddd-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: ms(2_034), metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } }),
     ]);
     const theirs = await store.history(bob, 0);
     expect(theirs.games).toMatchObject([{ id, mode: 'nearby', result: 'lost', opponentName: nameOf(alice) }]);
@@ -484,7 +487,7 @@ describe('match history', () => {
   it('pages through the history', async () => {
     store = await openStore(':memory:');
     const uploads = Array.from({ length: 51 }, (_, i) =>
-      result(`77777777-0000-4000-8000-${String(i).padStart(12, '0')}`, { finishedAt: 10_000 + i }),
+      result(`77777777-0000-4000-8000-${String(i).padStart(12, '0')}`, { finishedAt: ms(10_000 + i) }),
     );
     await store.addResults(alice, uploads);
     const first = await store.history(alice, 0);
@@ -648,7 +651,7 @@ describe('stats', () => {
 
   it('keeps the answer for a minute', async () => {
     let time = 1_000_000;
-    store = await openStore(':memory:', { now: () => time });
+    store = await openStore(':memory:', { now: () => ms(time) });
     const first = await store.stats();
     await store.addResults(alice, [result('bbbbbbbb-1111-4000-8000-000000000001')]);
     expect((await store.stats()).totals.games).toBe(first.totals.games);

@@ -1,10 +1,9 @@
 // The board: its cells and sheets, the tower camera, and the drag in the stage that turns the tower.
 import { SIZE, toCell, CELL_COUNT, toCoords } from '../game.ts';
-import { sounds } from '../sound.ts';
-import { boardEl, resetAngleButton, stageEl } from './dom.ts';
+import { boardEl, stageEl } from './dom.ts';
 import { startsDrag } from './drag.ts';
 import { humanMove } from './sessions.ts';
-import { settings, DEFAULTS, wrapSpin, saveSettings } from './settings.ts';
+import { settings, wrapSpin, saveSettings } from './settings.ts';
 
 export const cells: HTMLButtonElement[] = [];
 // The tower draws each layer as flat sheets stacked in 3D, from the bottom up: the plate (the
@@ -62,7 +61,6 @@ export function applyCamera(): void {
       element.style.transform = turn && `${turn} translateZ(calc(var(--cell) * ${SHEETS[sheet]}))`;
     }
   }
-  resetAngleButton.disabled = settings.spin === DEFAULTS.spin;
 }
 
 type Drag = { pointer: number; x: number; spin: number; moved: boolean };
@@ -163,13 +161,6 @@ export function setupBoard(): void {
     },
     true,
   );
-
-  resetAngleButton.addEventListener('click', () => {
-    settings.spin = DEFAULTS.spin;
-    saveSettings();
-    sounds.click();
-    applyCamera();
-  });
 
   // The refusal flash ends by itself. Removing the class lets the next refusal play it again.
   for (const button of cells) {

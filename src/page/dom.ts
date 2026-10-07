@@ -44,7 +44,6 @@ export const lockButton = element('#lock', HTMLButtonElement);
 // The seat locks: next to "You play" and in the Players box. Both show the same setting.
 export const seatLockButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-seat-lock]')];
 if (seatLockButtons.length !== 2) throw new Error(`index.html has ${seatLockButtons.length} seat locks, not 2`);
-export const resetAngleButton = element('#reset-angle', HTMLButtonElement);
 export const clockSummary = element('#clock-summary', HTMLParagraphElement);
 export const clocksEl = element('#clocks', HTMLDivElement);
 export const clockNote = element('#clock-note', HTMLSpanElement);

@@ -1,4 +1,5 @@
 // Results of games away from the server, game ids, and the survival records against the computer.
+import { epochNow } from '../epoch.ts';
 import type { Game } from '../game.ts';
 import { type RecordNews, type Records, parseRecords, addLoss, mergeRecords } from '../records.ts';
 import { isTunedFor } from '../tuning.ts';
@@ -46,7 +47,7 @@ export async function recordResult(open: Session, game: Game, index: number): Pr
     game: toRecord(game),
     you,
     difficulty: open.mode === 'computer' ? settings.difficulty : null,
-    finishedAt: game.times.at(-1) ?? Date.now(),
+    finishedAt: game.times.at(-1) ?? epochNow(),
     publicId: newGameId(),
     options: open.options,
     tuned,

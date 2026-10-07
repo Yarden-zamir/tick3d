@@ -10,6 +10,7 @@
 // fixtures/format-1.json holds a real format 1 document. Its test proves that old data still reads.
 import { DIFFICULTIES, type Difficulty } from '../ai.ts';
 import { NO_LIMIT, type TimeControl, parseClock } from '../clock.ts';
+import { type EpochMs, isEpochMs, toEpochMs } from '../epoch.ts';
 import type { Player } from '../game.ts';
 import {
   CHAT_KEEP,
@@ -57,7 +58,7 @@ export type SessionDoc = {
 
 // `watcher` is the player token of the watcher that takes the other seat (replace), else null.
 // `at` is the time of the request. The request ends SEAT_REQUEST_MS (core.ts) later.
-type StoredSeatRequest = { kind: ConsentAction; from: Player; watcher: string | null; at: number };
+type StoredSeatRequest = { kind: ConsentAction; from: Player; watcher: string | null; at: EpochMs };
 
 // Against the computer the player starts every game until they unlock the seats. Two people swap by default.
 export const defaultFixedSeats = (mode: SessionMode): boolean => mode === 'computer';
@@ -75,8 +76,8 @@ const isRecord = (value: unknown): value is RawDoc => typeof value === 'object' 
 function readGame(value: unknown, index: number): GameRecord {
   if (!isRecord(value) || !isMoveList(value.moves)) throw new FormatError(`game ${index} has no valid moves`);
   const moves = value.moves;
-  const times = Array.isArray(value.times) ? value.times : moves.map(() => 0);
-  if (times.length !== moves.length || !times.every((time) => typeof time === 'number' && Number.isFinite(time))) {
+  const times: unknown[] = Array.isArray(value.times) ? value.times : moves.map(() => toEpochMs(0));
+  if (times.length !== moves.length || !times.every(isEpochMs)) {
     throw new FormatError(`game ${index} has invalid move times`);
   }
   const clock = value.clock === undefined ? NO_LIMIT : parseClock(value.clock);
@@ -153,7 +154,7 @@ function readSeatRequest(value: unknown): StoredSeatRequest {
   if (!isRecord(value)) throw new FormatError('the seat request is invalid');
   const kind = CONSENT_ACTIONS.find((known) => known === value.kind);
   const { from, watcher, at } = value;
-  if (kind === undefined || (from !== 'X' && from !== 'O') || typeof at !== 'number' || !Number.isFinite(at)) {
+  if (kind === undefined || (from !== 'X' && from !== 'O') || !isEpochMs(at)) {
     throw new FormatError('the seat request is invalid');
   }
   const target = kind === 'replace' ? (typeof watcher === 'string' ? watcher : undefined) : watcher === null ? null : undefined;

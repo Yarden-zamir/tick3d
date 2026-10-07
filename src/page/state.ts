@@ -1,6 +1,7 @@
 // The open session and the state that more than one module reads and changes.
 import type { TimeControl } from '../clock.ts';
 import type { DeviceDb } from '../device-db.ts';
+import { type EpochMs, toEpochMs } from '../epoch.ts';
 import { type Game, type Player, newGame } from '../game.ts';
 import type { LocalBackend } from '../local.ts';
 import { nameOf } from '../names.ts';
@@ -116,7 +117,7 @@ export function nextClock(): TimeControl {
   return page.session?.clock ?? settings.clock;
 }
 
-export const nowMs = () => Date.now() + page.serverOffset;
+export const nowMs = (): EpochMs => toEpochMs(Date.now() + page.serverOffset);
 
 // Watchers cannot change a session.
 export const canChangeMatch = () => page.session !== undefined && page.session.you !== null;

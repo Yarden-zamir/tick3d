@@ -1,8 +1,10 @@
 // The device backend: computer and friend games, and Nearby games this device hosts. It runs the
 // same session rules as the server (src/session/core.ts) over IndexedDB, so these games work offline.
+import { isRecord } from './guards.ts';
 import type { Difficulty } from './ai.ts';
 import type { TimeControl } from './clock.ts';
 import type { Player } from './game.ts';
+import { epochNow } from './epoch.ts';
 import type { DeviceDb, DeviceSession } from './device-db.ts';
 import {
   CODE_ALPHABET,
@@ -14,6 +16,7 @@ import {
   type SeatAction,
   type SessionUpdate,
   type SessionView,
+  normalizeCode,
 } from './protocol.ts';
 import { nameOf } from './names.ts';
 import * as core from './session/core.ts';
@@ -66,7 +69,10 @@ export function createLocalBackend(
   const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel('tick3d-local');
   const fire = (code: Code) => listeners.get(code)?.forEach((listener) => listener());
   if (channel) channel.onmessage = (event: MessageEvent<unknown>) => {
-    if (typeof event.data === 'string') fire(event.data as Code);
+    // Only this file posts on the channel, always a valid code.
+    const code = typeof event.data === 'string' ? normalizeCode(event.data) : undefined;
+    if (code === undefined) throw new Error(`unexpected message on the local channel: ${String(event.data)}`);
+    fire(code);
   };
 
   // One change at a time in this tab, like the server queue. Two tabs that change the same
@@ -106,7 +112,7 @@ export function createLocalBackend(
       code: row.code,
       version: row.version,
       identity: identity(),
-      now: Date.now(),
+      now: epochNow(),
       audience: audienceOf(row.code, doc),
       players: { X: seatInfo('X'), O: seatInfo('O') },
     });
@@ -117,8 +123,8 @@ export function createLocalBackend(
     return serialized(async () => {
       const loaded = await read(code);
       let row: DeviceSession = loaded;
-      let doc = core.settle(loaded.parsed, Date.now()) ?? loaded.parsed;
-      const stale = (loaded.doc as { format?: unknown }).format !== CURRENT_FORMAT;
+      let doc = core.settle(loaded.parsed, epochNow()) ?? loaded.parsed;
+      const stale = !isRecord(loaded.doc) || loaded.doc.format !== CURRENT_FORMAT;
       if (doc !== loaded.parsed || stale) row = await write(row, doc);
       const next = rule(doc);
       if (next !== doc) {
@@ -154,22 +160,22 @@ export function createLocalBackend(
       }),
 
     load: (code: Code) => change(code, (doc) => doc),
-    move: (code: Code, request: MoveRequest) => change(code, (doc) => core.move(doc, identity(), request, Date.now())),
+    move: (code: Code, request: MoveRequest) => change(code, (doc) => core.move(doc, identity(), request, epochNow())),
     // The page plays the computer's moves through this, with the computer's token added.
     computerMove: (code: Code, request: MoveRequest) =>
-      change(code, (doc) => core.move(doc, identity(true), request, Date.now())),
+      change(code, (doc) => core.move(doc, identity(true), request, epochNow())),
     newGame: (code: Code) => change(code, (doc) => core.newGame(doc, identity())),
     update: (code: Code, changes: SessionUpdate) => change(code, (doc) => core.update(doc, identity(), changes)),
     lock: (code: Code) => change(code, (doc) => core.lock(doc, identity())),
-    chat: (code: Code, text: string) => change(code, (doc) => core.chat(doc, identity(), text, Date.now())),
+    chat: (code: Code, text: string) => change(code, (doc) => core.chat(doc, identity(), text, epochNow())),
     undo: (code: Code, count: number) => change(code, (doc) => core.undo(doc, identity(true), count)),
     // A device-held session has nobody else to join; a Nearby guest joins through the host.
     join: (code: Code) => change(code, (doc) => doc),
     // The seat changes of the host's player in a Nearby game.
     seat: (code: Code, action: SeatAction) =>
-      change(code, (doc) => core.seat(doc, identity(), action, audienceOf(code, doc).watchers, Date.now())),
+      change(code, (doc) => core.seat(doc, identity(), action, audienceOf(code, doc).watchers, epochNow())),
     answerSeat: (code: Code, accept: boolean) =>
-      change(code, (doc) => core.answerSeat(doc, identity(), accept, audienceOf(code, doc).watchers, Date.now())),
+      change(code, (doc) => core.answerSeat(doc, identity(), accept, audienceOf(code, doc).watchers, epochNow())),
 
     // For a Nearby host: who is connected, and a nudge to redraw when a guest comes or goes.
     setAudience(code: Code, audience: ((doc: SessionDoc) => core.Audience) | undefined): void {

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { chooseMove } from './ai.ts';
 import { type Board, CELL_COUNT, type Mark } from './game.ts';
 import { answerRequest, createSearch, parseAnswer, parseRequest, type SearchRequest, type SearchWorker } from './move-search.ts';
 import { DEFAULT_TUNING } from './tuning.ts';
@@ -123,7 +122,7 @@ describe('createSearch', () => {
       starts++;
       throw new Error('module workers are not supported');
     });
-    await expect(search(winning, 'O', 'hard', DEFAULT_TUNING)).resolves.toBe(chooseMove(winning, 'O', 'hard'));
+    await expect(search(winning, 'O', 'hard', DEFAULT_TUNING)).resolves.toBe(3);
     await expect(search(winning, 'O', 'easy', DEFAULT_TUNING)).resolves.toBe(3);
     expect(starts).toBe(1);
   });
