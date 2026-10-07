@@ -35,7 +35,7 @@ import {
   matchRoute,
 } from './api-docs.ts';
 import { openApi, swaggerHtml } from './api-docs-render.ts';
-import { type Auth, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
+import { type Auth, TooManyRequests, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
 import { IDEMPOTENCY_TTL_MS, type StoredAnswer, createIdempotency, parseIdempotencyKey } from './idempotency.ts';
 import { LobbyError, createLobby, networkOf } from './lobby.ts';
 import { type PreviewList, createPreviews, previewsConfigFromEnv } from './previews.ts';
@@ -59,16 +59,16 @@ const waiters = createWaiters(MAX_WAITERS);
 // Limit: the counts live in this process only and reset on a restart. An IPv6 client can change
 // its address. Revisit this with more than one API process, a real attack, or real players that
 // share one address and hit the limit (a school, for example).
-const allowCreate = createLimiter(CREATES_PER_HOUR, 3_600_000, 10_000);
+const allowCreate = createLimiter(CREATES_PER_HOUR, 3_600_000, 10_000, 'Too many new games from this address. Try again later.');
 // Fault reports from pages: 30 per 10 minutes per address is plenty for a page that works, and
 // keeps a broken or hostile page from filling the events table. Same limits as allowCreate.
-const allowEvent = createLimiter(EVENTS_PER_10_MINUTES, 600_000, 10_000);
+const allowEvent = createLimiter(EVENTS_PER_10_MINUTES, 600_000, 10_000, 'Too many reports from this address. Try again later.');
 // Nearby lobby calls (announce and answer) per network. A host sends one announce per WAIT_MS and
 // one per guest, so the limit leaves room for several hosts on one home network. Same limits as allowCreate.
-const allowNearby = createLimiter(NEARBY_CALLS_PER_10_MINUTES, 600_000, 10_000);
+const allowNearby = createLimiter(NEARBY_CALLS_PER_10_MINUTES, 600_000, 10_000, 'Too many Nearby calls from this network. Try again later.');
 // Practice runs per address: a run takes about half a minute, so 60 per 10 minutes leaves room for a
 // classroom on one address. Same limits as allowCreate.
-const allowPracticeRun = createLimiter(PRACTICE_RUNS_PER_10_MINUTES, 600_000, 10_000);
+const allowPracticeRun = createLimiter(PRACTICE_RUNS_PER_10_MINUTES, 600_000, 10_000, 'Too many practice runs from this address. Try again later.');
 // Each entry holds at most one open request, so `total` also caps the open announce requests.
 const lobby = createLobby({ perNetwork: NEARBY_HOSTS_PER_NETWORK, total: 1000, waitMs: WAIT_MS, graceMs: NEARBY_GRACE_MS });
 
@@ -87,10 +87,6 @@ class HttpError extends Error {
     this.headers = headers;
   }
 }
-
-// A 429 that says in Retry-After how many whole seconds the client waits.
-const tooMany = (message: string, retryAfterMs: number) =>
-  new HttpError(429, message, { 'retry-after': String(Math.max(1, Math.ceil(retryAfterMs / 1000))) });
 
 const dbPath = process.env.DB_PATH;
 if (!dbPath) throw new Error('DB_PATH is required');
@@ -236,8 +232,7 @@ function requireNetwork(req: IncomingMessage): string {
 }
 
 function requireNearbyCall(network: string): void {
-  const limit = allowNearby(network, Date.now());
-  if (!limit.ok) throw tooMany('Too many Nearby calls from this network. Try again later.', limit.retryAfterMs);
+  allowNearby(network, Date.now());
 }
 
 // Decodes a signal code fully, so the lobby never holds a code that a device cannot read.
@@ -400,15 +395,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return send(res, 200, { stored: await store.addSeatMetrics(id, requirePlayer(req), metrics) });
     }
     case 'POST /api/events': {
-      const limit = allowEvent(clientOf(req), Date.now());
-      if (!limit.ok) throw tooMany('Too many reports from this address. Try again later.', limit.retryAfterMs);
+      allowEvent(clientOf(req), Date.now());
       const event = parseClientEvent(await readJson(req, MAX_EVENT_BODY_BYTES));
       if (event === undefined) throw new HttpError(400, 'An event needs a kind, a message of 1 to 300 characters and a version.');
       await store.addEvent(event);
       return send(res, 200, { ok: true });
     }
     case 'POST /api/practice/runs': {
-      if (!allowPracticeRun(clientOf(req), Date.now())) throw new HttpError(429, 'Too many practice runs from this address. Try again later.');
+      allowPracticeRun(clientOf(req), Date.now());
       const token = requirePlayer(req);
       const run = parsePracticeRun(await readJson(req));
       if (run === undefined) throw new HttpError(400, 'The run is not one that the practice room can make.');
@@ -434,8 +428,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return send(res, 200, previews === undefined ? { main: null, previews: [], error: 'This server has no previews.' } : await previews.list());
 
     case 'POST /api/sessions': {
-      const limit = allowCreate(clientOf(req), Date.now());
-      if (!limit.ok) throw tooMany('Too many new games from this address. Try again later.', limit.retryAfterMs);
+      allowCreate(clientOf(req), Date.now());
       const body = parseNewSession(await readJson(req));
       if (body === undefined) throw new HttpError(400, 'A new game needs a name of 1 to 40 characters, and a valid clock or none.');
       return send(res, 201, await store.create(requirePlayer(req), body.name, body.clock));
@@ -535,6 +528,7 @@ const server = createServer((req, res) => {
   route(req, res).catch((error: unknown) => {
     if (error instanceof SessionError) return send(res, error.status, { error: error.message, ...(error.code === undefined ? {} : { code: error.code }) });
     if (error instanceof HttpError) return send(res, error.status, { error: error.message }, error.headers);
+    if (error instanceof TooManyRequests) return send(res, error.status, { error: error.message }, error.headers);
     if (error instanceof LobbyError) return send(res, error.status, { error: error.message }, error.headers);
     console.error(error);
     if (!res.headersSent) send(res, 500, { error: 'Server error.' });
