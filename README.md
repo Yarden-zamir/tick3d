@@ -25,6 +25,7 @@
 - Survival records: the longest game against each computer level and setup.
 - Twelve themes.
 - The same header on every page, with My games, Info, kitshn and GitHub (`src/header/`).
+- The kitshn button lists the production site and the open pull request previews. A stacked pull request shows inside its parent.
 - The browser keeps the settings in `localStorage`, and the page checks each stored value.
 
 ![The flat view in the grid layout, Midnight theme](docs/screenshots/flat.png)
@@ -138,7 +139,7 @@ The page is plain TypeScript built with Vite, with no runtime dependencies. The 
 - `/api/openapi.json`: the OpenAPI 3.1 document, with every route, shape, error and a curl example.
 - `/api/docs`: the same document in Swagger UI.
 
-Both come from `server/api-docs.ts`.
+Both come from `server/api-docs.ts`. The routes that change a game accept an `Idempotency-Key` header, and every 429 has a `Retry-After` header.
 
 ## Stats page and what is logged
 
