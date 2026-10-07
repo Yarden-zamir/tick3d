@@ -785,8 +785,9 @@ body[data-turn='O'] .status[data-state='playing'] {
 /* src/page/board.ts builds the board after the first paint on a slow device. Until then the empty
    board keeps the height of the tower (four layers, three gaps and the bottom padding, see
    .board.tower), so the controls under it do not jump. Limit: the flat view is shorter, so a
-   player who saved it sees the page close up once. Revisit if flat becomes the default view. */
-.board:empty {
+   player who saved it sees the page close up once. Revisit if flat becomes the default view.
+   The rule names the stage, so the ear training deck (also a .board) keeps its own size. */
+.stage > .board:empty {
   min-height: calc(var(--side) * (0.72 * 4 + 0.3) + 0.5rem * 3);
 }
 
@@ -1123,6 +1124,14 @@ body[data-turn='O'] .status[data-state='playing'] {
   grid-template-columns: repeat(3, 1fr);
   gap: 0.6rem;
   text-align: center;
+}
+
+/* The score stays empty until the page script draws the tallies. Until then it keeps the tally
+   height (padding, border, the count line and the name line, about 1.2rem with the page font), so
+   the panel under it does not jump.
+   Limit: the height follows the .tally rules below by hand. Revisit when a tally changes its lines. */
+.score:empty {
+  min-height: calc(0.9rem + var(--border) * 2 + 1.7rem * 1.1 + 1.2rem);
 }
 
 .tally {
