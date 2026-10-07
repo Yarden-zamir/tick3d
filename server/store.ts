@@ -37,7 +37,9 @@ import {
   isGameRecord,
   parseMatchOptions,
   newGameId,
+  isOnlineGameId,
   onlineGameId,
+  onlineGameParts,
   outcomeOf,
   parseHistoryPage,
   parsePublicGame,
@@ -505,16 +507,15 @@ export async function openStore(
   // The finished game of an online id ("<CODE>-<n>") in its session, or a 404.
   async function finishedOnlineGame(id: GameId): Promise<{ row: Row; game: GameRecord; index: number }> {
     const notFound = new SessionError(404, 'No game with this link.');
-    const [code, number] = id.split('-');
-    if (code === undefined || number === undefined) throw notFound;
+    if (!isOnlineGameId(id)) throw notFound;
+    const { code, index } = onlineGameParts(id);
     let row: Row;
     try {
-      row = await loadRaw(code as Code);
+      row = await loadRaw(code);
     } catch (error) {
       if (error instanceof SessionError) throw notFound;
       throw error;
     }
-    const index = Number(number) - 1;
     const game = row.doc.games[index];
     if (game === undefined || !isFinished(game)) throw notFound;
     return { row, game, index };
@@ -836,7 +837,7 @@ export async function openStore(
     // counts, so a page that sends again changes nothing. Returns false for a repeat.
     addSeatMetrics: (id: GameId, token: PlayerToken, metrics: Metrics): Promise<boolean> =>
       serialized(async () => {
-        if (!id.includes('-')) throw new SessionError(400, 'Only an online game takes metrics here. Other games send them with the result.');
+        if (!isOnlineGameId(id)) throw new SessionError(400, 'Only an online game takes metrics here. Other games send them with the result.');
         const { row, index } = await finishedOnlineGame(id);
         const seatNow = core.seatsOf(row.doc, await identityOf(token))[0];
         if (seatNow === undefined) throw new SessionError(403, 'Only the two players can send metrics for this game.');

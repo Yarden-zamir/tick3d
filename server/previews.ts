@@ -12,6 +12,7 @@
 import { PREVIEWS_CACHE_MS, PREVIEWS_RELAY_CACHE_MS } from './api-docs.ts';
 import { type EpochMs, isEpochMs } from '../src/epoch.ts';
 import { type Contributor, type PlayerInfo, type Preview, type Previews, PREVIEW_DESCRIPTION_LENGTH, parsePlayerInfo, parsePreviews } from '../src/protocol.ts';
+import { isRecord } from '../src/guards.ts';
 
 // GitHub returns at most this many pull requests in one page, the most recently updated first.
 export const MAX_PULLS = 30;
@@ -55,7 +56,6 @@ export function previewsConfigFromEnv(env: NodeJS.ProcessEnv): PreviewsConfig | 
 
 // ---- Reading the GitHub answers ----
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
 // A GitHub account that is a person. parsePlayerInfo refuses the "[bot]" logins and avatars from other hosts.
 function accountOf(value: unknown): PlayerInfo | undefined {

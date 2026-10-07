@@ -8,7 +8,7 @@ import { renderQr } from '../nearby/qr.ts';
 import { type NearbyHost, type NearbyGuest, createNearbyHost, createNearbyGuest } from '../nearby/session.ts';
 import { type Hello, HELLO_NAME_MAX_LENGTH, decodeSignal } from '../nearby/signal.ts';
 import { OnlineError, api, token } from '../online.ts';
-import type { GameId, Metrics } from '../protocol.ts';
+import type { DeviceGameId, Metrics } from '../protocol.ts';
 import { sounds } from '../sound.ts';
 import {
   nearbyNameInput,
@@ -543,7 +543,7 @@ export function setupNearby(): void {
 }
 
 // The host gives the link of a finished game to its guests (see useHostLink in end-card.ts).
-export function shareGameLink(game: number, id: GameId): void {
+export function shareGameLink(game: number, id: DeviceGameId): void {
   if (nearby.kind === 'hosting') nearby.host.shareLink(game, id);
 }
 
