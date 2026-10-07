@@ -33,8 +33,8 @@ import {
   parseSessionView,
   statsQuery,
 } from './protocol.ts';
+import { STORAGE_KEYS } from './storage-keys.ts';
 
-const TOKEN_KEY = 'tick3d.player';
 
 // crypto.randomUUID exists only on HTTPS and localhost. A phone on the local network loads the dev
 // server over plain HTTP, so fall back to random hex from getRandomValues, which works everywhere.
@@ -52,10 +52,10 @@ function newToken(): PlayerToken {
 // One token per browser. It survives reloads, so a player keeps the seat after a refresh.
 function playerToken(): PlayerToken {
   try {
-    const stored = asPlayerToken(localStorage.getItem(TOKEN_KEY));
+    const stored = asPlayerToken(localStorage.getItem(STORAGE_KEYS.player));
     if (stored !== undefined) return stored;
     const created = newToken();
-    localStorage.setItem(TOKEN_KEY, created);
+    localStorage.setItem(STORAGE_KEYS.player, created);
     return created;
   } catch {
     // Storage is blocked. The seat then lasts for this page load only.

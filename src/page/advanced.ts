@@ -4,12 +4,12 @@ import { agentCopy, agentSnippet, tuningEl, tuningReset } from './dom.ts';
 import { copyText, showProblem, showToast, reject } from './feedback.ts';
 import { render } from './render.ts';
 import { settingsLocked } from './state.ts';
+import { STORAGE_KEYS } from '../storage-keys.ts';
 
-const TUNING_KEY = 'tick3d.tuning';
 
 function loadTuning(): Tuning {
   try {
-    return parseTuning(JSON.parse(localStorage.getItem(TUNING_KEY) ?? 'null'));
+    return parseTuning(JSON.parse(localStorage.getItem(STORAGE_KEYS.tuning) ?? 'null'));
   } catch {
     return DEFAULT_TUNING;
   }
@@ -22,8 +22,8 @@ export const computerTuning = () => tuning;
 function saveTuning(next: Tuning): void {
   tuning = next;
   try {
-    if (isDefaultTuning(next)) localStorage.removeItem(TUNING_KEY);
-    else localStorage.setItem(TUNING_KEY, JSON.stringify(next));
+    if (isDefaultTuning(next)) localStorage.removeItem(STORAGE_KEYS.tuning);
+    else localStorage.setItem(STORAGE_KEYS.tuning, JSON.stringify(next));
   } catch {
     // Storage is blocked (private mode). The settings then last for this visit only.
   }

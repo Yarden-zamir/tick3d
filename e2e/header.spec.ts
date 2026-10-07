@@ -51,7 +51,7 @@ for (const name of keysOf(PAGES)) {
 
 test('the account button of /stats opens My games on the game page, and a login returns to /stats', async ({ page }) => {
   await fakeLogin(page);
-  await page.goto('/stats');
+  await page.goto(PAGES.stats.path);
   // The header shows the login, as on the game page.
   await expect(page.locator('#account-name')).toHaveText(USER.login);
   await expect(page.locator('#account-button')).toHaveAttribute('aria-label', `My games, logged in as ${USER.login}`);
@@ -66,5 +66,5 @@ test('the account button of /stats opens My games on the game page, and a login 
   const login = page.locator('.login-link');
   await expect(login).toHaveCount(1);
   const href = new URL((await login.getAttribute('href')) ?? '', page.url());
-  expect(new URL(href.searchParams.get('return') ?? '').pathname).toBe('/stats');
+  expect(new URL(href.searchParams.get('return') ?? '').pathname).toBe(PAGES.stats.path);
 });

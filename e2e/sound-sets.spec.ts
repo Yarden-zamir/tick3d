@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { DEFAULTS } from '../src/page/settings.ts';
 import { cell, expect, test } from './fixtures.ts';
 
 // Runs in the page before the app: every oscillator frequency that the page sets goes into a log.
@@ -44,7 +45,7 @@ test('the sound set menu picks a set, keeps it after a reload, and the moves use
   await page.getByRole('button', { name: 'Sound set', exact: true }).click();
   const menu = page.locator('#sound-sets');
   await expect(menu).toBeVisible();
-  await expect(menu.locator('[data-sound-set="pitched"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(menu.locator(`[data-sound-set="${DEFAULTS.soundSet}"]`)).toHaveAttribute('aria-pressed', 'true');
 
   // A demo button plays four moves.
   await oscillators(page);
@@ -63,7 +64,7 @@ test('the sound set menu picks a set, keeps it after a reload, and the moves use
   await page.reload();
   await page.getByRole('button', { name: 'Sound set', exact: true }).click();
   await expect(page.locator('[data-sound-set="chiptune"]')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('[data-sound-set="pitched"]')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator(`[data-sound-set="${DEFAULTS.soundSet}"]`)).toHaveAttribute('aria-pressed', 'false');
 });
 
 // Classic keeps a typed cell quiet until Place. Every other set plays it on the third number.

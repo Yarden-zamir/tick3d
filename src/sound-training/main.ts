@@ -32,6 +32,7 @@ import {
   splitItem,
   weakest,
 } from './schedule.ts';
+import { STORAGE_KEYS } from '../storage-keys.ts';
 
 setupPageHeader();
 
@@ -76,11 +77,10 @@ let training = trainingOf(settings.soundSet);
 
 // ---- Storage ----
 
-const STORAGE_KEY = 'tick3d.sound-training';
 
 function load(): Progress {
   try {
-    return parseProgress(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null'));
+    return parseProgress(JSON.parse(localStorage.getItem(STORAGE_KEYS.soundTraining) ?? 'null'));
   } catch {
     return freshProgress();
   }
@@ -88,7 +88,7 @@ function load(): Progress {
 
 function save(): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+    localStorage.setItem(STORAGE_KEYS.soundTraining, JSON.stringify(progress));
   } catch {
     // Private mode or a full storage: the training still works for this visit.
   }

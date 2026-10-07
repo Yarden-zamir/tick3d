@@ -1,4 +1,4 @@
-import { cell, createOnline, expect, expectToast, marks, status, test } from './fixtures.ts';
+import { cell, createOnline, expect, expectToast, marks, status, storedSettings, test } from './fixtures.ts';
 
 test('home asks before it drops a game in progress', async ({ open }) => {
   const { page } = await open({ settings: { mode: 'computer' } });
@@ -27,7 +27,7 @@ test('home from an online session drops the code and returns to the computer', a
   await expect(page.locator('#home-confirm-text')).toContainText('online');
   await page.locator('#home-confirm-leave').click();
   await expect.poll(() => new URL(page.url()).search).toBe('');
-  await expect.poll(() => page.evaluate(() => (JSON.parse(localStorage.getItem('tick3d.settings') ?? '{}') as { mode?: string }).mode)).toBe('computer');
+  await expect.poll(async () => (await storedSettings(page)).mode).toBe('computer');
   await expect(page.locator('#online-code')).toBeHidden();
 });
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { toEpochMs as ms } from '../epoch.ts';
 import type { TimeControl } from '../clock.ts';
 import { nameOf } from '../names.ts';
-import { type Code, seatIn } from '../protocol.ts';
+import { CHAT_KEEP, CHAT_MAX_LENGTH, type Code, seatIn } from '../protocol.ts';
 import * as core from './core.ts';
 import type { SessionDoc } from './format.ts';
 
@@ -245,10 +245,12 @@ describe('chat', () => {
     ]);
     expect(status(() => core.chat(doc, carol, 'hi', ms(7)))).toBe(403);
     expect(status(() => core.chat(doc, alice, '   ', ms(7)))).toBe(400);
-    expect(status(() => core.chat(doc, alice, 'x'.repeat(201), ms(7)))).toBe(400);
-    for (let i = 0; i < 60; i++) doc = core.chat(doc, alice, `m${i}`, ms(i));
-    expect(doc.chat).toHaveLength(50);
-    expect(doc.chat.at(-1)).toMatchObject({ id: 62, text: 'm59' });
+    expect(status(() => core.chat(doc, alice, 'x'.repeat(CHAT_MAX_LENGTH + 1), ms(7)))).toBe(400);
+    const sent = CHAT_KEEP + 10;
+    for (let i = 0; i < sent; i++) doc = core.chat(doc, alice, `m${i}`, ms(i));
+    expect(doc.chat).toHaveLength(CHAT_KEEP);
+    // Two messages came before the loop, so the ids go on from 3.
+    expect(doc.chat.at(-1)).toMatchObject({ id: sent + 2, text: `m${sent - 1}` });
   });
 });
 
