@@ -1,4 +1,4 @@
-import { cell, expect, status, test } from './fixtures.ts';
+import { cell, expect, oscillatorMic, status, test } from './fixtures.ts';
 import type { Locator, Page } from '@playwright/test';
 
 // A control that shows, hides or changes its label with the game state must not move the controls
@@ -10,6 +10,8 @@ const friend = { settings: { mode: 'friend' } };
 const X_WINS = [0, 1, 21, 2, 42, 3, 63];
 // The rows that hold controls or text that change with the game state: the actions row, the score and the header.
 const ROWS = ['.actions', '.score', '.brand'] as const;
+// The rows of the voice panel, while the voice is on.
+const VOICE_ROWS = ['.voice-panel', '.voice-status'] as const;
 // A small Android phone, a common phone and a desktop.
 const VIEWPORTS = { 'small phone': { width: 360, height: 800 }, phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 900 } } as const;
 
@@ -42,18 +44,24 @@ async function rowGeometry(row: Locator): Promise<RowGeometry> {
   });
 }
 
-const geometry = async (page: Page) => Object.fromEntries(await Promise.all(ROWS.map(async (row) => [row, await rowGeometry(page.locator(row))] as const)));
+const geometry = async (page: Page, rows: readonly string[] = ROWS) =>
+  Object.fromEntries(await Promise.all(rows.map(async (row) => [row, await rowGeometry(page.locator(row))] as const)));
 
 // The hover and press effects of a button move it by a pixel or two, so the pointer leaves the panel first.
 // The poll waits for the end of those short transitions.
-async function expectSameGeometry(page: Page, baseline: Awaited<ReturnType<typeof geometry>>, state: string): Promise<void> {
+async function expectSameGeometry(page: Page, baseline: Awaited<ReturnType<typeof geometry>>, state: string, rows: readonly string[] = ROWS): Promise<void> {
   await page.mouse.move(0, 0);
-  await expect.poll(() => geometry(page), { message: `the rows moved: ${state}` }).toEqual(baseline);
+  await expect.poll(() => geometry(page, rows), { message: `the rows moved: ${state}` }).toEqual(baseline);
 }
 
 for (const [name, viewport] of Object.entries(VIEWPORTS)) {
-  test(`${name}: the actions row, the score and the header keep their geometry from the first move to the next game`, async ({ open }) => {
-    const { page } = await open(friend);
+  test(`${name}: the actions row, the score, the header and the voice panel keep their geometry from the first move to the next game`, async ({ open }) => {
+    // A full game, a new game and the voice: under the software 3D board of CI, each click takes seconds,
+    // and the 90 s default ends the test before the last check ("Target page, context or browser has been closed").
+    test.setTimeout(180_000);
+    const { page, context } = await open(friend);
+    await context.addInitScript(oscillatorMic);
+    await page.reload();
     await page.setViewportSize(viewport);
     // The web font changes the width of each label, so the baseline waits for it.
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
@@ -65,12 +73,24 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     await cell(page, X_WINS[0] ?? 0).click();
     await expectSameGeometry(page, baseline, 'after the first move');
 
-    for (const index of X_WINS.slice(1)) await cell(page, index).click();
+    // The voice starts before the winning move, not earlier: each click is slow while the microphone listens,
+    // and the whole test must end within the time limit of a test.
+    for (const index of X_WINS.slice(1, -1)) await cell(page, index).click();
+    const voice = page.getByRole('button', { name: 'Play by voice' });
+    await voice.click();
+    await expect(voice).toHaveAttribute('data-state', 'listening');
+    await expectSameGeometry(page, baseline, 'voice on');
+    await page.mouse.move(0, 0);
+    const voiceBaseline = await geometry(page, VOICE_ROWS);
+    for (const row of VOICE_ROWS) expect(voiceBaseline[row]?.outside, `${row} children inside the row`).toEqual([]);
+
+    await cell(page, X_WINS.at(-1) ?? 0).click();
     await expect(status(page)).toHaveAttribute('data-state', 'won');
     await page.locator('#end-card-close').click();
     await expect(page.locator('#show-card')).toBeVisible();
     await expect(page.locator('#undo')).toBeHidden();
     await expectSameGeometry(page, baseline, 'game over');
+    await expectSameGeometry(page, voiceBaseline, 'game over, voice panel', VOICE_ROWS);
 
     // The specific case: the result card takes the slot of Undo, with the same edges.
     const undoBox = await page.locator('#undo').boundingBox();
@@ -82,5 +102,11 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     await expect(status(page)).toHaveAttribute('data-state', 'playing');
     await expect(page.locator('#undo')).toBeVisible();
     await expectSameGeometry(page, baseline, 'a new game');
+    await expect(voice).toHaveAttribute('data-state', 'listening');
+    await expectSameGeometry(page, voiceBaseline, 'a new game, voice panel', VOICE_ROWS);
+
+    await voice.click();
+    await expect(voice).toHaveAttribute('aria-pressed', 'false');
+    await expectSameGeometry(page, baseline, 'voice off');
   });
 }

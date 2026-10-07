@@ -1183,16 +1183,23 @@ body[data-turn='O'] .status[data-state='playing'] {
   visibility: hidden;
 }
 
-/* New game takes the free width, but never less than its label. Undo and the result card take turns in one slot.
-   max-content, not auto: a row that is too narrow overflows, and e2e/row-layout.spec.ts sees it.
-   An auto column shrinks the sound control instead and clips its icons without a sign. */
+/* New game has the first line. Under it, three equal slots: Undo or the result card (they take turns in one slot),
+   the sound control and the microphone of play by voice. One line for all four does not fit a 360 px phone or the desktop panel.
+   minmax(max-content, ...): a row that is too narrow overflows, and e2e/row-layout.spec.ts sees it. */
 .actions {
-  grid-template-areas: 'new swap sound';
-  grid-template-columns: minmax(max-content, 1fr) max-content max-content;
+  grid-template-areas:
+    'new new new'
+    'swap sound voice';
+  grid-template-columns: repeat(3, minmax(max-content, 1fr));
 }
 
 #new-game {
   grid-area: new;
+}
+
+/* An icon button fills its slot, like the sound control next to it. */
+.actions > .btn-icon {
+  width: auto;
 }
 
 #undo,
@@ -1210,6 +1217,11 @@ body[data-turn='O'] .status[data-state='playing'] {
   background: var(--surface);
   box-shadow: 3px 3px 0 var(--shadow);
   overflow: hidden;
+}
+
+/* The speaker takes the width of the slot, the caret keeps its narrow width. */
+.sound-control #sound {
+  flex: 1;
 }
 
 .sound-control button {
@@ -1233,6 +1245,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 /* Play by voice. On, the button takes the toggle color. A dot in its corner shows the state: green and
    pulsing while the microphone listens, muted while it pauses. */
 #voice {
+  grid-area: voice;
   position: relative;
 }
 
@@ -1277,6 +1290,20 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 700;
 }
 
+/* The texts of all voice states share one grid cell. Only the text of the current state shows (src/page/voice.ts). */
+.voice-state {
+  display: inline-grid;
+}
+
+.voice-state > span {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+
+.voice-state > [data-shown] {
+  visibility: visible;
+}
+
 .voice-status a {
   color: inherit;
   font-weight: 600;
@@ -1284,6 +1311,17 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .voice-panel #voice-recentre {
   justify-self: center;
+}
+
+/* Recentre tilt shows only after the first tilt reading, a moment after the voice starts.
+   On a touch screen it keeps its box while hidden, so it does not push the keypad down when it shows.
+   Limit: a touch screen without a tilt sensor keeps an empty line, and a desktop with a sensor moves once.
+   Revisit if players report the empty line. */
+@media (pointer: coarse) {
+  .voice-panel #voice-recentre[hidden] {
+    display: inline-flex !important;
+    visibility: hidden;
+  }
 }
 
 /* Play by voice: the hold fills the Place button with the color of the mark, as it fills the lit cell
