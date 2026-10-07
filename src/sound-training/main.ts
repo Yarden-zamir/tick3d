@@ -118,12 +118,14 @@ function guessedCell(pick: number): number {
 
 // ---- Sound ----
 
-let timers: number[] = [];
+// Seconds between two cells of a series.
+const CELL_GAP_S = 0.75;
+let stopCells = (): void => undefined;
 
 // Plays the cells one after the other. A new call stops the rest of an earlier one.
 function playCells(cells: readonly number[]): void {
-  for (const timer of timers) clearTimeout(timer);
-  timers = cells.map((cell, index) => window.setTimeout(() => sounds.place('X', cell), index * 750));
+  stopCells();
+  stopCells = sounds.placeSeries('X', cells, CELL_GAP_S);
 }
 
 // ---- Card ----
