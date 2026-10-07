@@ -3,16 +3,12 @@
 This repository deploys tick3d to `tick3d.yarden-zamir.com` with KitSHn.
 
 - A push to `main` deploys `prod`. A pull request deploys to `pr.<number>.tick3d.yarden-zamir.com`.
-- The workflow runs a `check` job: the type check, the linters, the unit tests and the build, in about half a minute. A production or manual deploy waits for it, and a failure stops it. A PR preview starts at once, next to the check, so it is ready sooner; a failing check still marks the PR red. A PR teardown skips the check.
-- The `Dockerfile` has three stages. The `build` stage only builds the page (`vite build`). The checks run in the workflow's `check` job before the deploy, not in the image.
-- The `site` service (`caddy:2.11-alpine`) serves `dist/` and listens on the KitSHn Unix socket (`container/Caddyfile`). The host Caddy routes the hostname to that socket (`Caddyfile.j2`).
-- The `api` service (`node:26-alpine`) serves `/api/*` for online play. The `site` Caddy proxies `/api/*` to `api:8080`. The API keeps sessions in DuckDB at `/data/tick3d.duckdb` on the `sessions` volume.
-- Each environment has its own `sessions` volume, so a pull request preview never touches production sessions.
-- The kitshn button of the page lists the previews (`GET /api/previews`). The API reads the open pull requests of `PREVIEWS_REPO` from the public GitHub API, without a token, and keeps the answer for 2 minutes. A pull request is in the list when `https://pr.<number>.<PREVIEWS_DOMAIN>/api/health` answers. Both values are in `compose.yml`. A fork changes them. The LAN host sets neither, so it shows no previews.
-- GitHub login needs the repository variable `KITSHN_GITHUB_CLIENT_ID` and the secrets `KITSHN_GITHUB_CLIENT_SECRET` and `KITSHN_AUTH_SECRET` (at least 32 random characters). Without all three, login is off. With only some of them, the API stops at start, so a half setup never goes unnoticed.
-- The GitHub App [`tick3d-game`](https://github.com/apps/tick3d-game) handles the login. It is public and asks for no permissions. Its callback is `https://tick3d.yarden-zamir.com/api/auth/github/callback`. Previews send a login to production and read its cookie, which is valid for every subdomain.
-- Files in `/assets/` have a content hash in the name, so Caddy caches them for one year. `index.html` and `stats.html` are not cached. Caddy serves `stats.html` at `/stats` with an `X-Robots-Tag: noindex` header, and `sound-training.html` at `/sound-training` without one.
-- The login values are repository-wide, so previews get them too. Only people who can open pull requests from this repository get them.
+- The `check` job of `.github/workflows/kitshn.yml` runs `npm run check` and `npm run build`. A production or manual deploy waits for it. A pull request preview starts at once, next to the check.
+- The `site` service (Caddy, `container/Caddyfile`) serves `dist/` on the KitSHn Unix socket. The host Caddy (`Caddyfile.j2`) routes the hostname to that socket.
+- The `api` service serves `/api/*`. It keeps data in DuckDB at `/data/tick3d.duckdb` on the `sessions` volume. Each environment has its own volume.
+- The kitshn button lists the previews of `PREVIEWS_REPO` at `PREVIEWS_DOMAIN`. Both values are in `compose.yml`. A fork changes them.
+- GitHub login needs the repository variable `KITSHN_GITHUB_CLIENT_ID` and the secrets `KITSHN_GITHUB_CLIENT_SECRET` and `KITSHN_AUTH_SECRET` (at least 32 random characters). Without all three, login is off. With only some of them, the API stops at start.
+- The GitHub App [`tick3d-game`](https://github.com/apps/tick3d-game) handles the login. Its callback is `https://tick3d.yarden-zamir.com/api/auth/github/callback`. Previews use the production login.
 
 ## Files
 
@@ -23,10 +19,10 @@ This repository deploys tick3d to `tick3d.yarden-zamir.com` with KitSHn.
 Run these on the VPS. They take `--environment <env>` and default to `prod`.
 
 - `kitshn diagnose Yarden-zamir/tick3d`: checks Compose, sockets, Caddy routing and config.
-- `kitshn status Yarden-zamir/tick3d`: ref, services, health, route, socket, and last deploy, as JSON.
-- `kitshn logs Yarden-zamir/tick3d site`: Docker logs for the site container.
-- `kitshn logs Yarden-zamir/tick3d api`: Docker logs for the API container.
-- To query the database by hand, stop the `api` service first. While the API runs, DuckDB lets no other process open the file. Then run `kitshn compose Yarden-zamir/tick3d -- run --rm api node --input-type=module -e "<script>"` with `@duckdb/node-api`, and start `api` again.
+- `kitshn status Yarden-zamir/tick3d`: ref, services, health, route, socket and last deploy, as JSON.
+- `kitshn logs Yarden-zamir/tick3d site`: the logs of the site container.
+- `kitshn logs Yarden-zamir/tick3d api`: the logs of the API container.
+- To query the database by hand, stop the `api` service first, because DuckDB lets only one process open the file. Then run `kitshn compose Yarden-zamir/tick3d -- run --rm api node --input-type=module -e "<script>"` with `@duckdb/node-api`, and start `api` again.
 
 ## Origin
 
