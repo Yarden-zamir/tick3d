@@ -187,12 +187,15 @@ export function clientOf(req: IncomingMessage): string {
   return last || req.socket.remoteAddress || 'unknown';
 }
 
-// Allows each client `limit` actions per window, and returns false for more.
+// The answer of a limiter: allowed, or refused with the time until the window of the client ends.
+export type Limit = { ok: true } | { ok: false; retryAfterMs: number };
+
+// Allows each client `limit` actions per window, and refuses more until the window ends.
 // It keeps at most `maxClients` windows: when full, it forgets the client with the oldest window.
 export function createLimiter(limit: number, windowMs: number, maxClients: number) {
   if (!(limit >= 1 && windowMs > 0 && maxClients >= 1)) throw new RangeError('a limiter needs positive settings');
   const windows = new Map<string, { count: number; endsAt: number }>();
-  return (client: string, now: number): boolean => {
+  return (client: string, now: number): Limit => {
     let window = windows.get(client);
     if (window === undefined || window.endsAt <= now) {
       // Delete first, so the new window goes to the end of the map's insertion order.
@@ -203,6 +206,6 @@ export function createLimiter(limit: number, windowMs: number, maxClients: numbe
       windows.set(client, window);
     }
     window.count++;
-    return window.count <= limit;
+    return window.count <= limit ? { ok: true } : { ok: false, retryAfterMs: window.endsAt - now };
   };
 }
