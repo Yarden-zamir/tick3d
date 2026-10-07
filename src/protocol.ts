@@ -903,6 +903,8 @@ export type Preview = {
   draft: boolean;
   // The author of the pull request and the commit authors, most commits first.
   contributors: Contributor[];
+  // A stacked pull request: the number of the listed pull request whose head branch is its base branch. null when it is top level.
+  parent: number | null;
 };
 // `main` is the production site, built from the main branch. null on a server without previews.
 // `error` says why the list is empty or old. null when the list is fresh.
@@ -918,6 +920,9 @@ function parseContributor(value: unknown): Contributor | undefined {
 function parsePreview(value: unknown): Preview | undefined {
   if (!isRecord(value)) return undefined;
   const { number, title, description, url, previewUrl, updatedAt, draft, contributors } = value;
+  // A production server from before stacked pull requests sends no parent.
+  const parent = value.parent ?? null;
+  if (parent !== null && (typeof parent !== 'number' || !Number.isInteger(parent) || parent < 1 || parent === number)) return undefined;
   if (typeof number !== 'number' || !Number.isInteger(number) || number < 1) return undefined;
   if (typeof title !== 'string' || typeof description !== 'string' || description.length > PREVIEW_DESCRIPTION_LENGTH) return undefined;
   // The page puts both addresses in links, so each must go to the expected kind of site.
@@ -926,7 +931,7 @@ function parsePreview(value: unknown): Preview | undefined {
   if (!isEpochMs(updatedAt) || typeof draft !== 'boolean' || !Array.isArray(contributors)) return undefined;
   const people = contributors.map(parseContributor);
   if (!people.every((person) => person !== undefined)) return undefined;
-  return { number, title, description, url, previewUrl, updatedAt, draft, contributors: people };
+  return { number, title, description, url, previewUrl, updatedAt, draft, contributors: people, parent };
 }
 
 export function parsePreviews(value: unknown): Previews {

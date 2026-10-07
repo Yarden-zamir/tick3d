@@ -6,6 +6,7 @@ import {
   normalizeChat,
   normalizeCode,
   parsePlayerInfo,
+  parsePreviews,
   parseResultUpload,
   parseClientEvent,
   parseGameId,
@@ -418,5 +419,29 @@ describe('parseStatsFilter', () => {
     expect(statsQuery({ ...ALL_STATS, scope: 'mine' })).toBe('?scope=mine');
     const filter = { scope: 'mine', range: '30d', mode: 'computer', level: 'medium' } as const;
     expect(parse(statsQuery(filter))).toEqual(filter);
+  });
+});
+
+describe('parsePreviews', () => {
+  const preview = (number: number, parent: unknown) => ({
+    number,
+    title: `Pull ${number}`,
+    description: '',
+    url: `https://github.com/octo/game/pull/${number}`,
+    previewUrl: `https://pr.${number}.game.example.com`,
+    updatedAt: 0,
+    draft: false,
+    contributors: [],
+    parent,
+  });
+  const answer = (previews: unknown[]) => ({ main: 'https://game.example.com', previews, error: null });
+
+  it('keeps the parent of a stacked pull request through a round trip', () => {
+    const list = answer([preview(1, null), preview(2, 1)]);
+    expect(parsePreviews(JSON.parse(JSON.stringify(parsePreviews(list))))).toEqual(list);
+  });
+
+  it.each([0, -1, 1.5, '1', 2])('refuses the parent %j', (parent) => {
+    expect(() => parsePreviews(answer([preview(2, parent)]))).toThrow();
   });
 });
