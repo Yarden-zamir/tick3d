@@ -76,6 +76,13 @@ test('the song button of the end card plays the game, and a long press downloads
   expect(wav.readUInt32LE(40)).toBeGreaterThan(2 * 44_100 * 4);
   // The long press does not also play the song.
   await expect(song).toHaveAttribute('data-state', 'idle');
+  // A right click after the long press shares the song again, and a later click plays it.
+  const again = page.waitForEvent('download');
+  await song.click({ button: 'right' });
+  expect((await again).suggestedFilename()).toMatch(/\.wav$/);
+  await expect(song).toHaveAttribute('data-state', 'idle');
+  await song.click();
+  await expect(song).toHaveAttribute('data-state', 'playing');
 });
 
 test('a finished game from its link plays its song and lights the cells of the board', async ({ open }) => {

@@ -1,4 +1,5 @@
 // Draws the whole page from the settings and the open session.
+import { avatarFor } from '../avatar.ts';
 import { hasLimit } from '../clock.ts';
 import { showSegmented } from '../board/view-controls.ts';
 import { type Player, other, type Game, replay, toCoords, winnerOf } from '../game.ts';
@@ -36,7 +37,7 @@ import { LOCK_CLOSED_ICON, LOCK_OPEN_ICON, SOUND_OFF_ICON, SOUND_ON_ICON } from 
 import { seatIn } from '../protocol.ts';
 import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
-import { renderPlayers } from './players.ts';
+import { renderPlayers, seatPerson } from './players.ts';
 import { settings, type Toggle } from './settings.ts';
 import { syncVoice } from './voice.ts';
 import { me, page, shared, current, isLive, isWatching, matchOptions, settingsLocked, canChangeMatch, bothSeated } from './state.ts';
@@ -53,6 +54,8 @@ export function playerName(player: Player): string {
   if (session.mode === 'computer') return 'Computer';
   return session.players[player]?.login ?? session.names[player] ?? `Player ${player}`;
 }
+
+const TALLY_AVATAR_PIXELS = 24;
 
 // The seat now of the player who held `seat` in game `index`, and the reverse: the seats can rotate between games.
 export const seatNow = (index: number, seat: Player): Player => seatIn(page.session?.flipped ?? [], index, seat);
@@ -250,13 +253,11 @@ export function render(): void {
       const count = document.createElement('b');
       count.textContent = String(value);
       const name = document.createElement('span');
-      const info = key === 'draw' || page.session === undefined ? null : page.session.players[key];
-      if (info) {
-        const avatar = document.createElement('img');
-        avatar.src = `${info.avatar}&s=48`;
-        avatar.alt = '';
-        avatar.className = 'avatar';
-        name.append(avatar);
+      // A GitHub account shows in every mode. A generated picture shows only with another device,
+      // where the seat is a person and not "Computer" or a friend on this device.
+      const session = page.session;
+      if (key !== 'draw' && session !== undefined && (session.players[key] !== null || (shared() && session.seats[key]))) {
+        name.append(avatarFor(seatPerson(session, key), TALLY_AVATAR_PIXELS));
       }
       name.append(key === away ? `${label} · away` : label);
       tally.append(count, name);

@@ -26,7 +26,9 @@ export function checkPlayoffInvite(view: SessionView): void {
     if (dialog.open && asked?.code === view.code) {
       dialog.close();
       // A change of the seats ends the playoff (src/session/core.ts): the server sets it to null.
-      if (playoff === null) showToast('The playoff ended because the seats changed.', 'info');
+      // The seat change shows its own toast ("You watch now.") right after this view, in the same task.
+      // The microtask runs after it, so the playoff note is the one that stays.
+      if (playoff === null) queueMicrotask(() => showToast('The playoff ended because the seats changed.', 'info'));
     }
     return;
   }
