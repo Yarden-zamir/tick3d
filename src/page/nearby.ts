@@ -41,7 +41,7 @@ import { copyText, showProblem, showToast, showError } from './feedback.ts';
 import { render } from './render.ts';
 import { defaultSessionName, openSession, leaveSession } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
-import { ownName, page } from './state.ts';
+import { newSwitch, ownName, page } from './state.ts';
 
 type NearbyState =
   | { kind: 'idle' }
@@ -357,7 +357,7 @@ async function inviteGuest(): Promise<void> {
 }
 
 async function hostNearby(): Promise<void> {
-  page.navigation++; // a slow load of another session must not replace this one
+  newSwitch(); // a slow load of another session must not replace this one
   const backend = page.local;
   if (backend === undefined) throw new Error('the device backend is not ready');
   const starting: NearbyState = { kind: 'starting' };
@@ -414,7 +414,7 @@ async function connectGuest(joining: JoiningState, offerCode: string, deliver: (
 }
 
 function startJoining(): JoiningState {
-  page.navigation++; // a slow load of another session must not replace the joined one
+  newSwitch(); // a slow load of another session must not replace the joined one
   const joining: JoiningState = { kind: 'joining' };
   nearby = joining;
   void renderNearby();

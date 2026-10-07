@@ -27,7 +27,29 @@ type Screen =
 
 let screen: Screen = { kind: 'empty' };
 
+// Async work holds a token from its start, and drops its result when the token is stale:
+// a newer token of the same kind exists.
+export type Token = { readonly isStale: () => boolean };
+
+function tokens(): { next: () => Token; now: () => Token } {
+  let latest = 0;
+  const at = (mine: number): Token => ({ isStale: () => mine !== latest });
+  return { next: () => at(++latest), now: () => at(latest) };
+}
+
+// Every switch to another session takes a new token. A slow load of an older switch then opens
+// nothing, so a quick Easy → Hard or Online → Computer ends on the last choice.
+const switches = tokens();
+export const newSwitch = switches.next;
+
+// A round is one game position that the computer can answer. A new screen, a new game and an undo
+// start a new round, so a computer move found for the old round is dropped.
+const rounds = tokens();
+export const newRound = (): void => void rounds.next();
+export const currentRound = rounds.now;
+
 export function showSession(session: Session): void {
+  rounds.next();
   screen = { kind: 'session', session, review: undefined, thinking: false };
 }
 
@@ -38,10 +60,12 @@ export function updateSession(session: Session): void {
 }
 
 export function showGame(game: PublicGame, review: Review): void {
+  rounds.next();
   screen = { kind: 'viewing', game, review };
 }
 
 export function clearScreen(): void {
+  rounds.next();
   screen = { kind: 'empty' };
 }
 
@@ -84,16 +108,10 @@ type PageState = {
   // drops the entries of the moves that it takes back. A game that this page did not see from its first
   // move keeps a shorter list (see src/page/computer.ts).
   computerThinkMs: number[];
-  // Increments on every new local game, so a computer move scheduled for an old game is dropped.
-  round: number;
   // Session holder time minus local time. Move times come from the server or the Nearby host, so the clocks use its time.
   serverOffset: number;
   // The keypad entry: layer, row, column, each 1..4. A tap fills the next one.
   coordDigits: number[];
-  // Every switch to another session takes a new number. A slow load of an older switch then opens
-  // nothing, so a quick Easy → Hard or Online → Computer ends on the last choice. A switch also ends
-  // a Nearby game, so a host never serves guests in the background.
-  navigation: number;
   // A finished game opened from its link (/?game=<id>), read-only. No session is open meanwhile.
   readonly viewing: PublicGame | undefined;
 };
@@ -138,10 +156,8 @@ export const page: PageState = {
   },
   busy: false,
   computerThinkMs: [],
-  round: 0,
   serverOffset: 0,
   coordDigits: [],
-  navigation: 0,
   get viewing() {
     return screen.kind === 'viewing' ? screen.game : undefined;
   },

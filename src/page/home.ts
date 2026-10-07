@@ -18,7 +18,7 @@ import { nearbyKind, endNearby } from './nearby.ts';
 import { render } from './render.ts';
 import { leaveSession, openLocalSession, applyView } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
-import { page, isLive, current, setThinking } from './state.ts';
+import { page, isLive, current, newRound, setThinking } from './state.ts';
 
 // What a player loses when they go home now, or undefined when there is nothing to lose.
 function homeWarning(): string | undefined {
@@ -43,7 +43,7 @@ async function goHome(): Promise<void> {
   const opened = page.session;
   if (opened === undefined || current().moves.length === 0) return;
   // The newest computer session holds a game with moves: a new game gives the empty board.
-  page.round++;
+  newRound();
   page.computerThinkMs = [];
   setThinking(false);
   burstEl.replaceChildren();
