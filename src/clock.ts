@@ -1,4 +1,5 @@
 // Time limits, like a chess clock. The page and the server both use this file.
+import type { EpochMs } from './epoch.ts';
 import { type Game, type Player, other } from './game.ts';
 
 // Seconds, or null for no limit of that kind. With both limits, the first one to run out decides.
@@ -59,7 +60,7 @@ export type PlayerClock = { left: number; game: number | null; move: number | nu
 // The clock of each player at `now`, or null when the game has no limit.
 // The first move of each player is untimed, so the clocks start once both players moved once.
 // This also keeps the clock still while an online game waits for the second player.
-export function remaining(game: Game, now: number): Record<Player, PlayerClock> | null {
+export function remaining(game: Game, now: EpochMs): Record<Player, PlayerClock> | null {
   const { perMove, perGame } = game.clock;
   if (perMove === null && perGame === null) return null;
   const bank: Record<Player, number | null> = {
@@ -86,7 +87,7 @@ export function remaining(game: Game, now: number): Record<Player, PlayerClock> 
   return { X: clockOf('X'), O: clockOf('O') };
 }
 
-export function isFlagged(game: Game, now: number): boolean {
+export function isFlagged(game: Game, now: EpochMs): boolean {
   const clocks = remaining(game, now);
   return game.status.kind === 'playing' && clocks !== null && clocks[game.turn].left <= 0;
 }

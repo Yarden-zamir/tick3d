@@ -1,4 +1,5 @@
 import { Validator } from '@seriousme/openapi-schema-validator';
+import { toEpochMs as ms } from '../src/epoch.ts';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import { parseAnnounce, parseAnnounced, parseAnswerRequest, parseLobbyHosts } from '../src/nearby/lobby.ts';
@@ -43,7 +44,7 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   ChatRequest: (value) => (isRecord(value) ? normalizeChat(value.text) : undefined),
   // server/main.ts checks the list, and the store checks each result with parseResultUpload.
   ResultsRequest: (value) =>
-    isRecord(value) && Array.isArray(value.results) && value.results.every((result) => parseResultUpload(result, Date.now()) !== undefined)
+    isRecord(value) && Array.isArray(value.results) && value.results.every((result) => parseResultUpload(result, ms(Date.now())) !== undefined)
       ? value
       : undefined,
   Me: parseMe,

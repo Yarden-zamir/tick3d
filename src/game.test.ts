@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { toEpochMs as ms } from './epoch.ts';
 import { CELL_COUNT, LINES, type Game, lineKind, linesThrough, newGame, parseCoordinates, play, replay, timeOut, toCell, undo } from './game.ts';
 
 // Move i happens at time i, so results compare equal across calls.
 function playAll(cells: number[], game: Game = newGame()): Game {
   return cells.reduce((current, cell, i) => {
-    const result = play(current, cell, i);
+    const result = play(current, cell, ms(i));
     if (!result.ok) throw new Error(`move ${cell} failed: ${result.error}`);
     return result.game;
   }, game);

@@ -2,6 +2,7 @@
 // answers guests over WebRTC with the same session rules as the server (src/session/core.ts).
 // A guest reaches the host through the same calls as the server, so the page treats both alike.
 import type { Player } from '../game.ts';
+import { epochNow } from '../epoch.ts';
 import type { LocalBackend } from '../local.ts';
 import { nameOf } from '../names.ts';
 import {
@@ -84,7 +85,7 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
       names.set(token, guest.hello.name);
     }
     const identity: core.Identity = new Set(guest.token ? [guest.token] : []);
-    const now = Date.now();
+    const now = epochNow();
     const rule = ((): ((doc: SessionDoc) => SessionDoc) => {
       switch (method) {
         case 'get':
@@ -125,7 +126,7 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
     const { doc, version } = await local.change(code, rule);
     // A new token makes a new watcher or a new seat for the other devices.
     if (method === 'join' || (unknownBefore && guest.token !== undefined)) guestsChanged();
-    return core.viewOf(doc, { code, version, identity, now: Date.now(), audience: audience(doc), players: { X: null, O: null } });
+    return core.viewOf(doc, { code, version, identity, now: epochNow(), audience: audience(doc), players: { X: null, O: null } });
   }
 
   return {
