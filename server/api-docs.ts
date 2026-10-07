@@ -28,7 +28,7 @@ import {
   VIEWS,
   WATCHER_ID_LENGTH,
 } from '../src/protocol.ts';
-import { ERROR_CODES, SEAT_REQUEST_MS } from '../src/session/core.ts';
+import { EMPTY_SESSION_TTL_MS, ERROR_CODES, SEAT_REQUEST_MS } from '../src/session/core.ts';
 
 // Long polls wait at most this long. Proxies keep an idle request open for longer.
 export const WAIT_MS = 25_000;
@@ -168,7 +168,7 @@ const tally = (description: string, keys: readonly string[]): Schema =>
   object(description, Object.fromEntries(keys.map((key) => [key, ref('Tally')])));
 
 export const SCHEMAS: Record<SchemaName, Schema> = {
-  Player: { type: 'string', enum: ['X', 'O'], description: 'A seat. X moves first in every game.' },
+  Player: { type: 'string', enum: ['X', 'O'], description: 'A seat. X moves first in every game. The players swap X and O for each new game, unless fixedSeats is true.' },
   Cell: {
     type: 'integer',
     minimum: 0,
@@ -200,7 +200,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
   },
   ChatMessage: object('A chat message.', {
     id: { type: 'integer', description: 'Grows by 1 with each message.' },
-    from: ref('Player'),
+    from: { ...ref('Player'), description: 'The seat that the sender holds now. When the players swap X and O, every message swaps with them.' },
     text: chatText,
     at: { type: 'number', description: 'Server time in epoch milliseconds.' },
   }),
@@ -231,10 +231,16 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     name,
     games: { type: 'array', items: ref('GameRecord'), minItems: 1, description: 'Every game, oldest first. The last one is the live game.' },
     seats: object('True when a player holds the seat.', { X: { type: 'boolean' }, O: { type: 'boolean' } }),
-    you: { ...nullable(ref('Player')), description: 'Your seat, from your X-Player header. null when you watch.' },
+    you: { ...nullable(ref('Player')), description: 'Your seat in the live game, from your X-Player header. null when you watch. The seats can swap for each new game, so read it again after each new game.' },
     options: matchOptions('Display options for both players and watchers.'),
     locked: { type: 'boolean', description: 'True when a player locked the settings until the live game ends.' },
     clock: { ...ref('TimeControl'), description: 'The time limit for the next game.' },
+    fixedSeats: { type: 'boolean', description: 'false (the default): the players swap X and O for each new game, so the first move alternates. true: the seats stay the same.' },
+    flipped: {
+      type: 'array',
+      items: { type: 'boolean' },
+      description: 'One entry per game in `games`: true when the two players sat the other way round in that game. Then the player on seat X now played O in that game. The live game is always false.',
+    },
     now: { type: 'number', description: 'Server time in epoch milliseconds.' },
     version: { type: 'integer', description: 'Grows with every change. Send it as ?wait=<version> to wait for the next change.' },
     chat: { type: 'array', items: ref('ChatMessage'), maxItems: CHAT_KEEP, description: `The newest ${CHAT_KEEP} messages, oldest first.` },
@@ -264,8 +270,9 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
         hideHistory: { type: 'boolean', description: 'Hide all marks except the last move.' },
         hideCoordinates: { type: 'boolean', description: 'Hide the coordinates of the last move on the keypad, for play by ear.' },
         clock: { ...ref('TimeControl'), description: 'The time limit from the next game on.' },
+        fixedSeats: { type: 'boolean', description: 'true: keep the seats for the next games. false: swap X and O for each new game.' },
       },
-      ['name', 'hideBoard', 'hideHistory', 'hideCoordinates', 'clock'],
+      ['name', 'hideBoard', 'hideHistory', 'hideCoordinates', 'clock', 'fixedSeats'],
     ),
     minProperties: 1,
   },
@@ -536,6 +543,8 @@ function view(fields: Record<string, unknown>): Record<string, unknown> {
     options: { hideBoard: false, hideHistory: false, hideCoordinates: false },
     locked: false,
     clock: NO_LIMIT,
+    fixedSeats: false,
+    flipped: [false],
     now: T0,
     version: 1,
     chat: [],
@@ -763,14 +772,15 @@ export const ROUTES = {
     operationId: 'newGame',
     tag: 'Play',
     summary: 'Start the next game.',
-    description: 'Either player can start the next game after the live game ends. X moves first again.',
+    description:
+      'Either player can start the next game after the live game ends. Then the players swap X and O, so the player who was O moves first, unless fixedSeats is true. Read `you` again from this answer: your seat can change.',
     player: 'required',
     idempotencyKey: true,
     response: {
       status: 200,
       description: 'The session with a new, empty live game.',
       schema: 'SessionView',
-      example: view({ games: [game(X_WINS), game([])], seats: { X: true, O: true }, version: 10 }),
+      example: view({ games: [game(X_WINS), game([])], flipped: [true, false], seats: { X: true, O: true }, you: 'O', version: 10 }),
     },
     errors: [BAD_PLAYER, BAD_CODE, NOT_A_PLAYER, NO_GAME, { status: 409, when: 'The live game is not over, or the settings are locked until it ends.' }, ...KEY_ERRORS],
     examplePlayer: AGENT_A,
@@ -795,8 +805,8 @@ export const ROUTES = {
   'PATCH /api/sessions/{code}': {
     operationId: 'updateSession',
     tag: 'Play',
-    summary: 'Rename a session, or change its options or time limit.',
-    description: 'A new time limit starts with the next game. During a lock, only the name can change.',
+    summary: 'Rename a session, or change its options, time limit or seat rotation.',
+    description: 'A new time limit starts with the next game. `fixedSeats` decides if X and O swap for each new game. During a lock, only the name can change.',
     player: 'required',
     idempotencyKey: true,
     body: { schema: 'SessionUpdate', example: { name: 'Rematch' } },
@@ -1284,7 +1294,7 @@ curl -s "{origin}/api/sessions/CODE?wait=VERSION" -H "X-Player: $ME"
 curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
   -H 'content-type: application/json' -d '{"game":0,"moveCount":0,"cell":21}'
 
-# 6. Repeat 4 and 5 until status.kind is not "playing". Then POST /api/sessions/CODE/games starts the next game.`,
+# 6. Repeat 4 and 5 until status.kind is not "playing". Then POST /api/sessions/CODE/games starts the next game. The seats swap: read "you" again.`,
       },
     ],
   },
@@ -1369,10 +1379,25 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
     ],
   },
   {
+    title: 'Errors and reconnect',
+    blocks: [
+      {
+        list: [
+          'Send an `Idempotency-Key` header with each change: a new random key per request, and the same key on a retry.',
+          'After a 5xx or a network error, retry. Wait 2 s first, and double the wait up to 30 s.',
+          'Keep the same player id. It still holds your seat.',
+          'After the server answers again, read the session and continue from the live game.',
+          'A 409 with the code `already-played` means that your move counted.',
+          'After a 429, wait the seconds in `Retry-After`.',
+        ],
+      },
+    ],
+  },
+  {
     title: 'After a game, and chat',
     blocks: [
       { p: 'A finished game has its own read-only link: `{origin}/?game=<CODE>-<n>`, where n is the game number in the session, counted from 1 (`games.length` for the live game). It shows the final board and a replay. After a game, this is the best link to give your user. `GET /api/games/<CODE>-<n>` returns the same game as JSON.' },
-      { p: 'A game ends when `status.kind` is "won", "timeout" or "draw". Either player starts the next game with `POST /api/sessions/<code>/games`. The new game is the last item of `games`, and X moves first again. A session keeps every game.' },
+      { p: 'A game ends when `status.kind` is "won", "timeout" or "draw". Either player starts the next game with `POST /api/sessions/<code>/games`. The new game is the last item of `games`. X moves first in every game, but the players swap X and O for each new game: the player who was O is now X. Read `you` again after each new game. To keep the seats, send `PATCH /api/sessions/<code>` with `{"fixedSeats":true}`. A session keeps every game.' },
       { p: `Chat with \`POST /api/sessions/<code>/chat\` and \`{"text":"Good luck!"}\`. A message has 1 to ${CHAT_MAX_LENGTH} characters. Only the two players can write. Watchers read along. The session keeps the newest ${CHAT_KEEP} messages.` },
     ],
   },
@@ -1405,7 +1430,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
           `One address can create ${CREATES_PER_HOUR} sessions per hour. More gets 429. Play a session again with a new game instead of a new session.`,
           'Wait with `?wait=<version>`. Do not poll more than once per second.',
           'An error answer is JSON: `{"error":"<message>"}`. Read the message: it says what to do.',
-          'Sessions never expire. A player can come back later, and the game waits for the move.',
+          `A session with a move never expires. A player can come back later, and the game waits for the move. A session where no game has a move goes after ${EMPTY_SESSION_TTL_MS / 3_600_000} hours without a change. A long poll is not a change.`,
         ],
       },
     ],

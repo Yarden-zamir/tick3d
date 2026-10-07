@@ -31,7 +31,8 @@ export function renderChat(): void {
   const you = page.session.you;
   chatInput.placeholder = you === null ? 'Only the two players can chat' : `Message ${playerName(other(you))}`;
 
-  const shown = `${page.session.code}:${page.session.chat.map((message) => message.id).join(',')}`;
+  // A swap of the seats changes the sender seat of every message, so the key holds it too.
+  const shown = `${page.session.code}:${page.session.chat.map((message) => `${message.id}${message.from}`).join(',')}`;
   if (shown === chatShown) return;
   chatShown = shown;
   if (page.session.chat.length === 0) {
