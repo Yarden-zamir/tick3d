@@ -1,5 +1,6 @@
 // The account button and the My games dialog.
 import { winnerOf } from '../game.ts';
+import { avatarFor, type Person } from '../avatar.ts';
 import { nameOf } from '../names.ts';
 import { type Me, api, OnlineError, token } from '../online.ts';
 import {
@@ -7,6 +8,7 @@ import {
   HISTORY_PAGE_SIZE,
   type HistoryEntry,
   type Outcome,
+  type PlayerInfo,
   type SessionMode,
   type SessionSummary,
   type Tally,
@@ -61,8 +63,12 @@ function tallyBox(label: string, tally: Tally): HTMLElement {
 // A button of a list item. A click closes the dialog first.
 type Action = { label: string; run: () => void };
 
-function listItem(title: string, detail: string, actions: readonly Action[], badge?: string): HTMLLIElement {
+const LIST_AVATAR_PIXELS = 28;
+
+// `person` is the other player of the game, when there is one: their picture leads the item.
+function listItem(title: string, detail: string, actions: readonly Action[], badge?: string, person?: Person): HTMLLIElement {
   const item = document.createElement('li');
+  if (person !== undefined) item.append(avatarFor(person, LIST_AVATAR_PIXELS));
   const text = document.createElement('div');
   const name = document.createElement('b');
   name.textContent = title;
@@ -105,10 +111,15 @@ async function deviceTallies(): Promise<Tally> {
 }
 
 // The same rule as playerName in render.ts. A null name means that the other seat is still empty.
-function opponentOf(summary: SessionSummary): string {
-  const name = summary.opponent?.login ?? summary.opponentName;
-  return name === null ? 'Waiting for a second player' : `vs ${name}`;
+function opponentOf({ opponent, opponentName }: { opponent: PlayerInfo | null; opponentName: string | null }): Person | undefined {
+  const name = opponent?.login ?? opponentName;
+  return name === null ? undefined : { player: opponent, name };
 }
+
+const opponentText = (summary: SessionSummary) => {
+  const person = opponentOf(summary);
+  return person === undefined ? 'Waiting for a second player' : `vs ${person.name}`;
+};
 
 const gameCount = (count: number) => `${count} ${count === 1 ? 'game' : 'games'}`;
 
@@ -122,13 +133,13 @@ function viewGame(id: GameId): void {
 
 function historyItem(entry: HistoryEntry): HTMLLIElement {
   const level = entry.difficulty === null ? '' : `, ${entry.difficulty}`;
-  const opponentName = entry.opponent?.login ?? entry.opponentName;
-  const opponent = opponentName === null ? '' : ` · vs ${opponentName}`;
+  const person = opponentOf(entry);
+  const opponent = person === undefined ? '' : ` · vs ${person.name}`;
   const title = `${OUTCOME_NAMES[entry.result]} · ${MODE_NAMES[entry.mode]}${level}`;
   const detail = `${entry.moves} moves${opponent} · ${ago(entry.finishedAt)}`;
   // A game stored before game links has no link to view.
   const id = entry.id;
-  return listItem(title, detail, id === null ? [] : [{ label: 'View', run: () => viewGame(id) }]);
+  return listItem(title, detail, id === null ? [] : [{ label: 'View', run: () => viewGame(id) }], undefined, person);
 }
 
 // The finished games on this device that have a link, newest first, for when the server is out of reach.
@@ -168,6 +179,8 @@ async function loadHistory(request: number, append: boolean): Promise<void> {
   myGamesMore.hidden = !next.more;
 }
 
+const ACCOUNT_AVATAR_PIXELS = 32;
+
 // Opening the dialog again while a list loads starts over, so a late answer never adds a second copy.
 let myGamesRequest = 0;
 
@@ -178,10 +191,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
   // Account
   accountBox.replaceChildren();
   if (page.account.user) {
-    const avatar = document.createElement('img');
-    avatar.className = 'avatar';
-    avatar.src = `${page.account.user.avatar}&s=64`;
-    avatar.alt = '';
+    const avatar = avatarFor({ player: page.account.user, name: page.account.user.login }, ACCOUNT_AVATAR_PIXELS);
     const name = document.createElement('b');
     name.textContent = page.account.user.login;
     const logout = document.createElement('button');
@@ -196,7 +206,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     const name = document.createElement('b');
     name.textContent = ownName();
     text.append('You play as ', name, '.');
-    accountBox.append(text);
+    accountBox.append(avatarFor({ player: null, name: ownName() }, ACCOUNT_AVATAR_PIXELS), text);
     if (navigator.onLine) accountBox.append(renameControls());
     if (page.account.loginAvailable && navigator.onLine) {
       text.append(' Log in with GitHub to use your GitHub name.');
@@ -245,9 +255,10 @@ export async function openMyGames(returnTo?: string): Promise<void> {
       ...mine.sessions.map((summary) =>
         listItem(
           summary.name,
-          `${opponentOf(summary)} · ${gameCount(summary.games)} · ${ago(summary.updatedAt)}`,
+          `${opponentText(summary)} · ${gameCount(summary.games)} · ${ago(summary.updatedAt)}`,
           [{ label: 'Continue', run: () => (settingsLocked() ? reject(undefined, 'locked') : void joinSession(summary.code)) }],
           summary.yourTurn ? 'Your turn' : undefined,
+          opponentOf(summary),
         ),
       ),
     );

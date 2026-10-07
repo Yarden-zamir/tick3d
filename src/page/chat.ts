@@ -3,7 +3,9 @@ import { other } from '../game.ts';
 import { type ChatMessage, normalizeChat } from '../protocol.ts';
 import { sounds } from '../sound.ts';
 import { chatEl, chatInput, chatSend, chatLog, chatNoticeFrom, chatNoticeText, chatNotice, chatForm } from './dom.ts';
+import { chatGroups } from './chat-log.ts';
 import { reject, showToast, showError } from './feedback.ts';
+import { seatPerson } from './players.ts';
 import { playerName, render } from './render.ts';
 import { applyView } from './sessions.ts';
 import { shared, page } from './state.ts';
@@ -40,20 +42,8 @@ export function renderChat(): void {
     chatLog.replaceChildren(empty);
     return;
   }
-  chatLog.replaceChildren(
-    ...page.session.chat.map((message) => {
-      const item = document.createElement('li');
-      item.className = `chat-message from-${message.from.toLowerCase()}`;
-      item.classList.toggle('mine', message.from === page.session?.you);
-      const name = document.createElement('b');
-      name.textContent = playerName(message.from);
-      const text = document.createElement('span');
-      text.dir = 'auto'; // Hebrew and Arabic messages read right to left
-      text.textContent = message.text;
-      item.append(name, text);
-      return item;
-    }),
-  );
+  const session = page.session;
+  chatLog.replaceChildren(...chatGroups(session.chat, (seat) => ({ label: playerName(seat), person: seatPerson(session, seat) }), session.you));
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
