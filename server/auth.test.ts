@@ -1,6 +1,7 @@
 import type { IncomingMessage } from 'node:http';
 import { describe, expect, it } from 'vitest';
-import { type AuthConfig, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
+import { PRACTICE_RUNS_PER_10_MINUTES } from './api-docs.ts';
+import { type AuthConfig, TooManyRequests, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
 
 const config: AuthConfig = {
   clientId: 'client-id',
@@ -104,29 +105,47 @@ describe('request limits', () => {
     expect(clientOf(from({}))).toBe('10.0.0.9');
   });
 
+  // The answer of one call: allowed, or refused with the Retry-After header in whole seconds.
+  const answer = (allow: (client: string, now: number) => void, client: string, now: number): string => {
+    try {
+      allow(client, now);
+      return 'ok';
+    } catch (error) {
+      if (!(error instanceof TooManyRequests)) throw error;
+      expect(error.status).toBe(429);
+      expect(error.message).toBe('slow down');
+      return error.headers['retry-after'] ?? 'no header';
+    }
+  };
+
   it('allows a client the limit per window, and again after the window', () => {
-    const allow = createLimiter(2, 1_000, 10);
-    const ok = (client: string, now: number) => allow(client, now).ok;
-    expect([ok('a', 0), ok('a', 1), ok('a', 2)]).toEqual([true, true, false]);
-    expect(ok('b', 2)).toBe(true);
-    expect(ok('a', 1_000)).toBe(true);
+    const allow = createLimiter(2, 1_000, 10, 'slow down');
+    expect([answer(allow, 'a', 0), answer(allow, 'a', 1), answer(allow, 'a', 2)]).toEqual(['ok', 'ok', '1']);
+    expect(answer(allow, 'b', 2)).toBe('ok');
+    expect(answer(allow, 'a', 1_000)).toBe('ok');
   });
 
-  it('says when the window of a refused client ends', () => {
-    const allow = createLimiter(1, 1_000, 10);
+  it('says in whole seconds, rounded up, when the window of a refused client ends', () => {
+    const allow = createLimiter(1, 600_000, 10, 'slow down');
     allow('a', 100);
-    expect(allow('a', 400)).toEqual({ ok: false, retryAfterMs: 700 });
-    expect(allow('a', 1_100).ok).toBe(true);
+    expect(answer(allow, 'a', 1_000)).toBe('600');
+    expect(answer(allow, 'a', 599_950)).toBe('1');
+    expect(answer(allow, 'a', 600_100)).toBe('ok');
+  });
+
+  it('refuses the practice run after the documented limit', () => {
+    const allow = createLimiter(PRACTICE_RUNS_PER_10_MINUTES, 600_000, 10, 'slow down');
+    for (let run = 0; run < PRACTICE_RUNS_PER_10_MINUTES; run++) expect(answer(allow, 'a', run)).toBe('ok');
+    expect(answer(allow, 'a', PRACTICE_RUNS_PER_10_MINUTES)).toBe('600');
   });
 
   it('keeps a bounded number of clients and forgets the oldest first', () => {
-    const allow = createLimiter(1, 1_000, 2);
-    const ok = (client: string, now: number) => allow(client, now).ok;
-    ok('a', 0);
-    ok('b', 1);
-    expect(ok('b', 2)).toBe(false);
-    ok('c', 3);
-    expect(ok('a', 4)).toBe(true);
-    expect(ok('c', 5)).toBe(false);
+    const allow = createLimiter(1, 1_000, 2, 'slow down');
+    answer(allow, 'a', 0);
+    answer(allow, 'b', 1);
+    expect(answer(allow, 'b', 2)).toBe('1');
+    answer(allow, 'c', 3);
+    expect(answer(allow, 'a', 4)).toBe('ok');
+    expect(answer(allow, 'c', 5)).toBe('1');
   });
 });
