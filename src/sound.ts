@@ -259,6 +259,22 @@ export const sounds = {
   place(player: Player, cell: number): void {
     play(soundSet.voices(cell, player));
   },
+  // Plays the cells as moves of `player`, `gap` seconds apart, on the audio clock: a busy page or a
+  // background tab does not move them. Returns a function that drops the cells that did not start yet.
+  placeSeries(player: Player, cells: readonly number[], gap: number): () => void {
+    const ctx = audio();
+    if (!ctx) return () => undefined;
+    const notes = cells.map((cell, index) => {
+      // One output per cell, so a stop cuts the later cells and lets the sounding one ring out.
+      const output = ctx.createGain();
+      output.connect(ctx.destination);
+      play(soundSet.voices(cell, player), 1, index * gap, ctx, output);
+      return { start: ctx.currentTime + index * gap, output };
+    });
+    return () => {
+      for (const note of notes) if (note.start > ctx.currentTime) note.output.disconnect();
+    };
+  },
   // The sound of a cell before it is played, for example from the keypad: the same strike, softer.
   preview(cell: number): void {
     play(soundSet.voices(cell, 'X'), PREVIEW_SCALE);
