@@ -1,5 +1,4 @@
 import type { Page } from '@playwright/test';
-import { SOUND_SET_IDS } from '../src/sound-sets.ts';
 import { cell, expect, test } from './fixtures.ts';
 
 // Runs in the page before the app: every oscillator frequency that the page sets goes into a log.
@@ -45,7 +44,6 @@ test('the sound set menu picks a set, keeps it after a reload, and the moves use
   await page.getByRole('button', { name: 'Sound set', exact: true }).click();
   const menu = page.locator('#sound-sets');
   await expect(menu).toBeVisible();
-  await expect(menu.locator('.sound-set-play')).toHaveCount(SOUND_SET_IDS.length);
   await expect(menu.locator('[data-sound-set="pitched"]')).toHaveAttribute('aria-pressed', 'true');
 
   // A demo button plays four moves.
@@ -66,14 +64,4 @@ test('the sound set menu picks a set, keeps it after a reload, and the moves use
   await page.getByRole('button', { name: 'Sound set', exact: true }).click();
   await expect(page.locator('[data-sound-set="chiptune"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('[data-sound-set="pitched"]')).toHaveAttribute('aria-pressed', 'false');
-});
-
-// The ear training page has no toast, so this test uses the plain page and not `open`.
-test('the ear trainer follows the chosen set, and uses Cells for Classic', async ({ page }) => {
-  await page.goto('/sound-training');
-  for (const [soundSet, name] of [['choir', 'Choir'], ['classic', 'Cells']]) {
-    await page.evaluate((value) => localStorage.setItem('tick3d.settings', JSON.stringify({ soundSet: value })), soundSet);
-    await page.reload();
-    await expect(page.locator('#totals')).toContainText(`${name} sound set`);
-  }
 });

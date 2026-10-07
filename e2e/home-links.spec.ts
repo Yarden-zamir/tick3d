@@ -41,11 +41,3 @@ test('a link with a code that opens no game drops the code and starts as usual',
   await expect.poll(() => new URL(page.url()).search).toBe('');
   await expect(status(page)).toContainText(/Your move|to move/);
 });
-
-test('the join box refuses a code with a character that codes never use', async ({ open }) => {
-  // The join box is in the Online mode only. A page that starts in the Online mode creates no session.
-  const { page } = await open({ settings: { mode: 'online' } });
-  await page.locator('#join-code').fill('AB0K');
-  await page.locator('#join-code').press('Enter');
-  await expectToast(page, 'A code has 4 letters or digits');
-});

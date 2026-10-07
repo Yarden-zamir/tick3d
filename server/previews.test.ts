@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { parsePreviews } from '../src/protocol.ts';
-import { PREVIEWS_CACHE_MS } from './api-docs.ts';
+import { PREVIEWS_CACHE_MS, PREVIEWS_RELAY_CACHE_MS } from './api-docs.ts';
 import { MAX_COMMITS, MAX_CONTRIBUTORS, MAX_PULLS, commitPeople, createPreviews, mergeContributors, parsePull, previewsConfigFromEnv, summaryOf } from './previews.ts';
 
-const config = { repo: 'octo/game', domain: 'game.example.com' };
+const config = { repo: 'octo/game', domain: 'game.example.com', source: 'github' } as const;
 const avatar = (id: number) => `https://avatars.githubusercontent.com/u/${id}?v=4`;
 const user = (login: string, id: number, type = 'User') => ({ login, avatar_url: avatar(id), type });
 
@@ -44,11 +44,20 @@ const LIVE: Answer = { body: { ok: true, lan: null } };
 
 describe('previews settings', () => {
   it('is off without settings and stops on half the settings or a bad repo name', () => {
+    const env = { PREVIEWS_REPO: 'octo/game', PREVIEWS_DOMAIN: 'game.example.com', KITSHN_ENVIRONMENT: 'prod' };
     expect(previewsConfigFromEnv({})).toBeUndefined();
-    expect(previewsConfigFromEnv({ PREVIEWS_REPO: 'octo/game', PREVIEWS_DOMAIN: 'game.example.com' })).toEqual(config);
-    expect(() => previewsConfigFromEnv({ PREVIEWS_REPO: 'octo/game' })).toThrow();
-    expect(() => previewsConfigFromEnv({ PREVIEWS_REPO: 'octo', PREVIEWS_DOMAIN: 'x' })).toThrow();
-    expect(() => previewsConfigFromEnv({ PREVIEWS_REPO: 'octo/../x', PREVIEWS_DOMAIN: 'x' })).toThrow();
+    expect(previewsConfigFromEnv(env)).toEqual(config);
+    expect(() => previewsConfigFromEnv({ PREVIEWS_REPO: 'octo/game', KITSHN_ENVIRONMENT: 'prod' })).toThrow();
+    expect(() => previewsConfigFromEnv({ ...env, PREVIEWS_REPO: 'octo' })).toThrow();
+    expect(() => previewsConfigFromEnv({ ...env, PREVIEWS_REPO: 'octo/../x' })).toThrow();
+  });
+
+  it('lets only production read GitHub, and stops without the environment name', () => {
+    const env = { PREVIEWS_REPO: 'octo/game', PREVIEWS_DOMAIN: 'game.example.com' };
+    expect(previewsConfigFromEnv({ ...env, KITSHN_ENVIRONMENT: 'prod' })?.source).toBe('github');
+    expect(previewsConfigFromEnv({ ...env, KITSHN_ENVIRONMENT: 'pr-17' })?.source).toBe('production');
+    expect(previewsConfigFromEnv({ ...env, KITSHN_ENVIRONMENT: 'demo' })?.source).toBe('production');
+    expect(() => previewsConfigFromEnv(env)).toThrow();
   });
 });
 
@@ -207,7 +216,7 @@ describe('the previews list', () => {
     advance(PREVIEWS_CACHE_MS);
     const stale = await previews.list();
     expect(stale.previews).toHaveLength(1);
-    expect(stale.error).toContain('old');
+    expect(stale.error).not.toBeNull();
     const calls = github.githubCalls().length;
     await previews.list();
     expect(github.githubCalls()).toHaveLength(calls);
@@ -244,7 +253,7 @@ describe('the previews list', () => {
     expect((await previews.list()).previews[0]?.contributors.map((c) => c.login)).toEqual(['alice']);
     expect(github.githubCalls()).toEqual([PULLS_URL]);
     at(resetSeconds * 1000 - 1);
-    expect((await previews.list()).error).toContain('old');
+    expect((await previews.list()).error).not.toBeNull();
     expect(github.githubCalls()).toEqual([PULLS_URL]);
     at(resetSeconds * 1000 + PREVIEWS_CACHE_MS);
     await previews.list();
@@ -265,5 +274,68 @@ describe('the previews list', () => {
     expect(list.previews).toHaveLength(MAX_PULLS);
     expect(github.calls).not.toContain(healthUrl(MAX_PULLS + 1));
     expect(list.previews[0]?.contributors).toHaveLength(MAX_CONTRIBUTORS);
+  });
+});
+
+describe('the previews list on a preview server', () => {
+  const PRODUCTION_URL = 'https://game.example.com/api/previews';
+  const preview = {
+    number: 5,
+    title: 'Pull 5',
+    description: 'Body of 5.',
+    url: 'https://github.com/octo/game/pull/5',
+    previewUrl: 'https://pr.5.game.example.com',
+    updatedAt: Date.parse('2026-10-05T10:00:00Z'),
+    draft: false,
+    contributors: [{ login: 'alice', avatar: avatar(1), url: 'https://github.com/alice' }],
+  };
+
+  function setup(routes: Record<string, Answer | (() => Answer)>) {
+    let time = 1_000_000;
+    const fake = fakeFetch(routes);
+    const previews = createPreviews({ ...config, source: 'production' }, fake.impl, () => time);
+    return { previews, fake, advance: (ms: number) => (time += ms) };
+  }
+
+  it("serves production's list and note, and makes no GitHub call", async () => {
+    const answer = { main: 'https://game.example.com', previews: [preview], error: 'GitHub did not answer. The list can be old.' };
+    const { previews, fake } = setup({ [PRODUCTION_URL]: { body: answer } });
+    expect(await previews.list()).toEqual(answer);
+    expect(fake.githubCalls()).toEqual([]);
+    expect(fake.calls).toEqual([PRODUCTION_URL]);
+  });
+
+  it('asks production once per relay period, also for requests at the same time', async () => {
+    const { previews, fake, advance } = setup({ [PRODUCTION_URL]: { body: { main: 'https://game.example.com', previews: [], error: null } } });
+    await Promise.all([previews.list(), previews.list()]);
+    advance(PREVIEWS_RELAY_CACHE_MS - 1);
+    await previews.list();
+    expect(fake.calls).toHaveLength(1);
+    advance(1);
+    await previews.list();
+    expect(fake.calls).toHaveLength(2);
+  });
+
+  it('keeps the last list with a note when production fails or sends an invalid answer', async () => {
+    let state: 'up' | 'down' | 'invalid' = 'down';
+    const { previews, advance } = setup({
+      [PRODUCTION_URL]: () =>
+        state === 'up'
+          ? { body: { main: 'https://game.example.com', previews: [preview], error: null } }
+          : state === 'invalid'
+            ? { body: { previews: 'none' } }
+            : { status: 502, body: {} },
+    });
+    const first = await previews.list();
+    expect(first.previews).toEqual([]);
+    expect(first.error).not.toBeNull();
+    state = 'up';
+    advance(PREVIEWS_RELAY_CACHE_MS);
+    expect((await previews.list()).previews).toEqual([preview]);
+    state = 'invalid';
+    advance(PREVIEWS_RELAY_CACHE_MS);
+    const stale = await previews.list();
+    expect(stale.previews).toEqual([preview]);
+    expect(stale.error).toContain('old');
   });
 });

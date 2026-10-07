@@ -7,6 +7,7 @@ This repository deploys tick3d to `tick3d.yarden-zamir.com` with KitSHn.
 - The `site` service (Caddy, `container/Caddyfile`) serves `dist/` on the KitSHn Unix socket. The host Caddy (`Caddyfile.j2`) routes the hostname to that socket.
 - The `api` service serves `/api/*`. It keeps data in DuckDB at `/data/tick3d.duckdb` on the `sessions` volume. Each environment has its own volume.
 - The kitshn button lists the previews of `PREVIEWS_REPO` at `PREVIEWS_DOMAIN`. Both values are in `compose.yml`. A fork changes them.
+- Only production (`KITSHN_ENVIRONMENT=prod`) calls GitHub for that list, because all environments share one GitHub rate limit. A preview reads the list from production.
 - GitHub login needs the repository variable `KITSHN_GITHUB_CLIENT_ID` and the secrets `KITSHN_GITHUB_CLIENT_SECRET` and `KITSHN_AUTH_SECRET` (at least 32 random characters). Without all three, login is off. With only some of them, the API stops at start.
 - The GitHub App [`tick3d-game`](https://github.com/apps/tick3d-game) handles the login. Its callback is `https://tick3d.yarden-zamir.com/api/auth/github/callback`. Previews use the production login.
 

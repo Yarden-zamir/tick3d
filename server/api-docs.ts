@@ -42,8 +42,17 @@ export const NEARBY_CALLS_PER_10_MINUTES = 120;
 export const NEARBY_HOSTS_PER_NETWORK = 10;
 // A Nearby host stays in the list for this long after its announce request ends.
 export const NEARBY_GRACE_MS = 10_000;
-// The previews list is at most this old. server/previews.ts enforces it.
-export const PREVIEWS_CACHE_MS = 120_000;
+// The previews list on production is at most this old. server/previews.ts enforces it.
+// Only production calls GitHub, without a token: 60 calls per hour, 5 of them kept in reserve, so 55.
+// The calls per hour at about 10 open pull requests:
+// - the pull request list: 60 / 3 = 20;
+// - the commits, once per new head commit: about 15 pushes per hour;
+// - after a production restart, the commits of every open pull request again: about 10 for one deploy of main.
+// That is about 45 of 55. Above the budget, production makes no call until the limit resets, and keeps the last list.
+// Revisit with more than about 15 open pull requests or about 25 pushes per hour: then use a GitHub token (5000 per hour).
+export const PREVIEWS_CACHE_MS = 180_000;
+// A preview server keeps production's list for this long. It costs no GitHub call, only a request to production.
+export const PREVIEWS_RELAY_CACHE_MS = 15_000;
 
 // ---- Shapes (JSON Schema 2020-12, as OpenAPI 3.1 uses) ----
 
@@ -949,7 +958,7 @@ export const ROUTES = {
     operationId: 'previews',
     tag: 'Account',
     summary: 'The open pull requests that have a live preview. The kitshn button of the page uses it.',
-    description: `The server reads GitHub at most once per ${PREVIEWS_CACHE_MS / 60_000} minutes, and keeps the last list when GitHub fails. A preview is live when its /api/health answers. A server without previews (a LAN host) returns an empty list with an error.`,
+    description: `Production reads GitHub at most once per ${PREVIEWS_CACHE_MS / 60_000} minutes, and keeps the last list when GitHub fails. A preview server returns the list of production, at most ${PREVIEWS_RELAY_CACHE_MS / 1000} seconds old, and makes no GitHub call. A preview is live when its /api/health answers. A server without previews (a LAN host) returns an empty list with an error.`,
     player: 'none',
     response: { status: 200, description: 'The previews. Never an error status: a problem goes in `error`.', schema: 'Previews', example: PREVIEWS_EXAMPLE },
     errors: [],
