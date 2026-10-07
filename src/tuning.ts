@@ -1,3 +1,4 @@
+import { keysOf } from './guards.ts';
 import type { Difficulty } from './ai.ts';
 
 // Every number that shapes the computer player. The defaults are the tested levels, and the
@@ -94,7 +95,7 @@ function styleFields(level: StyledLevel): TuningField[] {
   const group = level === 'easy' ? 'Easy' : 'Medium';
   const setStyle = (tuning: Tuning, change: Partial<StyleTuning>): Tuning => ({ ...tuning, [level]: { ...tuning[level], ...change } });
   const feelFields = (['fresh', 'tired'] as const).flatMap((state) =>
-    (Object.keys(FEEL_LABELS) as (keyof Feel)[]).map((key): TuningField => {
+    keysOf(FEEL_LABELS).map((key): TuningField => {
       const [label, min, max, step] = FEEL_LABELS[key];
       return {
         group,

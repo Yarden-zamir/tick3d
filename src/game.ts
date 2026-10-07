@@ -179,7 +179,8 @@ export function parseCoordinates(text: string): Coords | undefined {
   if (parts.length !== 3) return undefined;
   const values = parts.map(Number);
   if (!values.every((value) => Number.isInteger(value) && value >= 1 && value <= SIZE)) return undefined;
-  const [layer, row, column] = values as [number, number, number];
+  const [layer, row, column] = values;
+  if (layer === undefined || row === undefined || column === undefined) return undefined;
   return { layer: layer - 1, row: row - 1, column: column - 1 };
 }
 

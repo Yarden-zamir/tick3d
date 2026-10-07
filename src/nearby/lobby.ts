@@ -1,6 +1,7 @@
 // The Nearby lobby contract between the page and the server (see server/lobby.ts).
 // A host announces its open game with an offer code. A guest on the same network reads the list,
 // and sends its answer code to the host through the server.
+import { isRecord } from '../guards.ts';
 import { DEVICE_KINDS, type DeviceKind } from './device.ts';
 import { MAX_CODE_LENGTH } from './signal.ts';
 
@@ -19,7 +20,6 @@ export type LobbyHost = { id: HostId; name: string; device: DeviceKind; age: num
 // The answer to an announcement: the host id, and the answer code of a guest, when one came.
 export type Announced = { id: HostId; answer: string | null };
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 // Only the shape. The server decodes each code fully before it uses it (decodeSignal in signal.ts).
 const isCode = (value: unknown): value is string => typeof value === 'string' && value.length >= 1 && value.length <= MAX_CODE_LENGTH;
 

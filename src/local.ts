@@ -1,5 +1,6 @@
 // The device backend: computer and friend games, and Nearby games this device hosts. It runs the
 // same session rules as the server (src/session/core.ts) over IndexedDB, so these games work offline.
+import { isRecord } from './guards.ts';
 import type { Difficulty } from './ai.ts';
 import type { TimeControl } from './clock.ts';
 import type { Player } from './game.ts';
@@ -15,6 +16,7 @@ import {
   type SeatAction,
   type SessionUpdate,
   type SessionView,
+  normalizeCode,
 } from './protocol.ts';
 import { nameOf } from './names.ts';
 import * as core from './session/core.ts';
@@ -67,7 +69,10 @@ export function createLocalBackend(
   const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel('tick3d-local');
   const fire = (code: Code) => listeners.get(code)?.forEach((listener) => listener());
   if (channel) channel.onmessage = (event: MessageEvent<unknown>) => {
-    if (typeof event.data === 'string') fire(event.data as Code);
+    // Only this file posts on the channel, always a valid code.
+    const code = typeof event.data === 'string' ? normalizeCode(event.data) : undefined;
+    if (code === undefined) throw new Error(`unexpected message on the local channel: ${String(event.data)}`);
+    fire(code);
   };
 
   // One change at a time in this tab, like the server queue. Two tabs that change the same
@@ -118,7 +123,7 @@ export function createLocalBackend(
       const loaded = await read(code);
       let row: DeviceSession = loaded;
       let doc = core.settle(loaded.parsed, epochNow()) ?? loaded.parsed;
-      const stale = (loaded.doc as { format?: unknown }).format !== CURRENT_FORMAT;
+      const stale = !isRecord(loaded.doc) || loaded.doc.format !== CURRENT_FORMAT;
       if (doc !== loaded.parsed || stale) row = await write(row, doc);
       const next = rule(doc);
       if (next !== doc) {
