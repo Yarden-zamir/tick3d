@@ -376,24 +376,27 @@ function draw(stats: Stats): void {
       'Win rate over time',
       true,
       mine
-        ? `Your share of wins in your last ${FORM_WINDOW} games, after each game. Friend games do not count.`
-        : `The players' share of wins against the computer in the last ${FORM_WINDOW} games, after each game.`,
+        ? `Your share of wins in your last ${FORM_WINDOW} games, after each game. Friend games do not count. The dashed lines mark 25%, 50% and 75%.`
+        : `The players' share of wins against the computer in the last ${FORM_WINDOW} games, after each game. The dashed lines mark 25%, 50% and 75%.`,
     ),
     stats.form,
-    'var(--win)',
+    'var(--toggle-on)',
     'Win rate',
   );
   if (stats.personal !== null) personalCards(stats.personal);
 
   const days = stats.perDay.length;
   columns(card('Games per day', true, `The last ${days} days, UTC.`), stats.perDay.map((day) => ({ label: day.day.slice(5), value: day.games })), 'var(--o)', 'games', 'Games per day');
-  columns(
-    card('Players per day', true, 'Different players with a finished game that day.'),
-    stats.perDay.map((day) => ({ label: day.day.slice(5), value: day.players })),
-    'var(--x)',
-    'players',
-    'Players per day',
-  );
+  // Your own games always have you as a player, so Mine leaves this chart out.
+  if (!mine) {
+    columns(
+      card('Players per day', true, 'Different players with a finished game that day.'),
+      stats.perDay.map((day) => ({ label: day.day.slice(5), value: day.players })),
+      'var(--x)',
+      'players',
+      'Players per day',
+    );
+  }
   heatmap(card('When people play', true, 'Weekday and hour, UTC. Darker means more games.'), stats.hours);
 
   bars(card('Games by mode'), stats.byMode, 'var(--o)', modeName);
@@ -426,7 +429,7 @@ function draw(stats: Stats): void {
   columns(
     card('Game length', true, 'How many games ended after each number of moves. A win needs 7 moves at least.'),
     lengthColumns(stats.lengths),
-    'var(--toggle-on)',
+    'var(--o)',
     'games',
     'Games by number of moves',
   );
@@ -467,7 +470,7 @@ function draw(stats: Stats): void {
   cube(
     card('Best openings for X', true, `How often X won after each first move. Darker wins more. Cells with fewer than ${MIN_OPENINGS} games stay blank.`),
     openingRates(stats),
-    'var(--win)',
+    'var(--toggle-on)',
     (value, cell) => ((stats.openings[cell] ?? 0) < MIN_OPENINGS ? 'too few games' : `X won ${value}% of ${stats.openings[cell] ?? 0} games`),
     100,
   );

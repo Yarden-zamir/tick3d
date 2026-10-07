@@ -158,13 +158,20 @@ describe('the SessionView schema', () => {
       expect(schemaErrors('HistoryPage', await store.history(alice, 0))).toBe('');
       expect(schemaErrors('Records', { records: await store.records(alice) })).toBe('');
       expect(schemaErrors('Stats', await store.stats())).toBe('');
-      const mine = await store.stats({ ...ALL_STATS, scope: 'mine' }, alice);
+    } finally {
+      store.close();
+    }
+    // DuckDB writes for each move. A busy CI machine needs more than the default 5 s.
+  }, 20_000);
+  it('matches the Mine stats, which add your own results', async () => {
+    const store = await openStore(':memory:');
+    try {
+      const mine = await store.stats({ ...ALL_STATS, scope: 'mine' }, 'agent-aaaaaaaaaaaaaaaa' as PlayerToken);
       expect(mine.personal).not.toBeNull();
       expect(schemaErrors('Stats', mine)).toBe('');
     } finally {
       store.close();
     }
-    // DuckDB writes for each move. A busy CI machine needs more than the default 5 s.
   }, 20_000);
 });
 

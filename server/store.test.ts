@@ -733,13 +733,18 @@ describe('stats filters', () => {
     // Only the reports of Alice's own devices.
     expect(mine.metricsGames).toBe(1);
     expect(mine.errors).toEqual([]);
+    const text = JSON.stringify(mine);
+    for (const token of [alice, alicePhone, bob]) expect(text).not.toContain(token);
+  });
 
+  it('applies the other filters to Mine too, and names the opponent by the GitHub login', async () => {
+    await seeded();
+    await store.linkToken(alice, ALICE_GITHUB);
     const bobs = await store.stats({ ...all, scope: 'mine', range: '30d' }, bob);
     // Bob's computer loss is 40 days old.
     expect(bobs.totals.games).toBe(1);
     expect(bobs.personal).toMatchObject({ bestStreak: 0, currentStreak: { outcome: 'lost', length: 1 }, opponents: [{ player: 'alice', games: 1, lost: 1 }] });
-    const text = JSON.stringify([mine, bobs]);
-    for (const token of [alice, alicePhone, bob]) expect(text).not.toContain(token);
+    expect(JSON.stringify(bobs)).not.toContain(bob);
   });
 
   it('refuses Mine without a player', async () => {
