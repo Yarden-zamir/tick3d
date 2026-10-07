@@ -1,5 +1,6 @@
 // Storage on this device, in IndexedDB. Every session ever played on the device stays here:
 // there is no limit until storage use calls for one.
+import { keysOf } from './guards.ts';
 import type { Code, ResultUpload, SessionView } from './protocol.ts';
 
 // A session that this device holds: computer and friend games, and Nearby games it hosts.
@@ -17,7 +18,8 @@ const DB_NAME = 'tick3d';
 // Version 1 creates the stores. To add a store or an index, raise the version and add a step
 // in onupgradeneeded. Never change a step that a released version already ran.
 const DB_VERSION = 1;
-const KEYS: Record<StoreName, string> = { sessions: 'code', results: 'id', remote: 'code' };
+// The key path of each store: a field of its rows, so a renamed field breaks the build.
+const KEYS: { readonly [S in StoreName]: keyof Stores[S] & string } = { sessions: 'code', results: 'id', remote: 'code' };
 
 function request<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -37,7 +39,7 @@ export async function openDeviceDb(factory: IDBFactory = indexedDB, name: string
   const open = factory.open(name, DB_VERSION);
   open.onupgradeneeded = () => {
     const db = open.result;
-    for (const store of Object.keys(KEYS) as StoreName[]) {
+    for (const store of keysOf(KEYS)) {
       if (!db.objectStoreNames.contains(store)) db.createObjectStore(store, { keyPath: KEYS[store] });
     }
   };
@@ -72,7 +74,7 @@ export async function openDeviceDb(factory: IDBFactory = indexedDB, name: string
 // Storage for one visit only, for a browser that blocks IndexedDB (some private modes).
 export function memoryDeviceDb(): DeviceDb {
   const stores: { [S in StoreName]: Map<string, Stores[S]> } = { sessions: new Map(), results: new Map(), remote: new Map() };
-  const keyOf = <S extends StoreName>(name: S, value: Stores[S]): string => String((value as Record<string, unknown>)[KEYS[name]]);
+  const keyOf = <S extends StoreName>(name: S, value: Stores[S]): string => String(value[KEYS[name]]);
   return {
     async get(name, key) {
       return structuredClone(stores[name].get(key));

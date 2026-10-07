@@ -1,6 +1,7 @@
 // A finished game from its link (/?game=<id>), read-only: the final board with the replay
 // controls, the players and the game details. No moves, and no next game.
 import { describeClock } from '../clock.ts';
+import { MAX_EPOCH_MS } from '../epoch.ts';
 import { type Player, other, winnerOf } from '../game.ts';
 import { nameOf } from '../names.ts';
 import { api, OnlineError, token } from '../online.ts';
@@ -19,7 +20,7 @@ async function deviceCopy(id: GameId): Promise<PublicGame | undefined> {
   for (const { upload } of (await page.deviceDb?.all('results')) ?? []) {
     if (upload.publicId !== id) continue;
     // The same check as on the server, so a result from an older version gets its defaults.
-    const result = parseResultUpload(upload, Infinity);
+    const result = parseResultUpload(upload, MAX_EPOCH_MS);
     if (result === undefined) throw new Error(`the stored result of game ${id} does not parse`);
     // The same seats as on the server: this device's player holds `you`, or both seats in a friend game.
     const mine = (seat: Player) => result.you === null || result.you === seat;
