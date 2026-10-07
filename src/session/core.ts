@@ -26,11 +26,18 @@ import {
 import { PlayoffError, type PlayoffRequest, applyPlayoff } from '../practice/playoff.ts';
 import { CURRENT_FORMAT, type SessionDoc } from './format.ts';
 
+// A code that a client can test, for a refusal that needs a specific reaction.
+// already-played: the move is in the game already, so an earlier copy of the request counted.
+export const ERROR_CODES = ['already-played'] as const;
+export type ErrorCode = (typeof ERROR_CODES)[number];
+
 export class SessionError extends Error {
   status: 400 | 403 | 404 | 409;
-  constructor(status: 400 | 403 | 404 | 409, message: string) {
+  code: ErrorCode | undefined;
+  constructor(status: 400 | 403 | 404 | 409, message: string, code?: ErrorCode) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -114,11 +121,20 @@ export function join(doc: SessionDoc, identity: Identity, token: string): Sessio
   throw new SessionError(409, 'Both seats are taken. You can watch this game.');
 }
 
+// True when the game and the move index of the request hold its cell, played by a seat of the caller.
+// Then an earlier copy of the request counted, for example one whose answer got lost.
+function isPlayed(doc: SessionDoc, seats: readonly Player[], request: MoveRequest): boolean {
+  const played = doc.games[request.game]?.moves[request.moveCount];
+  const mover: Player = request.moveCount % 2 === 0 ? 'X' : 'O';
+  return played === request.cell && seats.includes(mover);
+}
+
 export function move(doc: SessionDoc, identity: Identity, request: MoveRequest, now: EpochMs): SessionDoc {
   const seats = requireSeat(doc, identity);
   const game = currentGame(doc);
-  // The caller sends what it saw. A mismatch means another move landed first.
+  // The caller sends what it saw. A mismatch means another move landed first, or this move did.
   if (request.game !== doc.games.length - 1 || request.moveCount !== game.moves.length) {
+    if (isPlayed(doc, seats, request)) throw new SessionError(409, 'This move is played already.', 'already-played');
     throw new SessionError(409, 'The board changed. It now shows the latest moves.');
   }
   if (game.status.kind === 'timeout') throw new SessionError(409, `Time is up. ${other(game.status.winner)} ran out of time.`);

@@ -1,4 +1,5 @@
 import { hostname } from 'node:os';
+import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import {
   type Code,
@@ -26,11 +27,14 @@ import {
   NEARBY_GRACE_MS,
   NEARBY_HOSTS_PER_NETWORK,
   PRACTICE_RUNS_PER_10_MINUTES,
+  ROUTES,
+  type Route,
   WAIT_MS,
   matchRoute,
 } from './api-docs.ts';
 import { openApi, swaggerHtml } from './api-docs-render.ts';
 import { type Auth, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
+import { IDEMPOTENCY_TTL_MS, type StoredAnswer, createIdempotency, parseIdempotencyKey } from './idempotency.ts';
 import { LobbyError, createLobby, networkOf } from './lobby.ts';
 import { type PreviewList, createPreviews, previewsConfigFromEnv } from './previews.ts';
 import { parsePlayoffRequest } from '../src/practice/playoff.ts';
@@ -66,13 +70,25 @@ const allowPracticeRun = createLimiter(PRACTICE_RUNS_PER_10_MINUTES, 600_000, 10
 // Each entry holds at most one open request, so `total` also caps the open announce requests.
 const lobby = createLobby({ perNetwork: NEARBY_HOSTS_PER_NETWORK, total: 1000, waitMs: WAIT_MS, graceMs: NEARBY_GRACE_MS });
 
+// Answers to requests with an Idempotency-Key (server/idempotency.ts). An answer is a few kB, so
+// 5000 keys keep the memory small. Revisit this when keys go before their time (more than 5000 changes per hour).
+const idempotency = createIdempotency({ ttlMs: IDEMPOTENCY_TTL_MS, max: 5000 });
+// The keyed requests that run now, by their response. send() stores the answer of each.
+const keyed = new WeakMap<ServerResponse, { finish(answer: StoredAnswer): void; abandon(): void }>();
+
 class HttpError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  headers: Record<string, string>;
+  constructor(status: number, message: string, headers: Record<string, string> = {}) {
     super(message);
     this.status = status;
+    this.headers = headers;
   }
 }
+
+// A 429 that says in Retry-After how many whole seconds the client waits.
+const tooMany = (message: string, retryAfterMs: number) =>
+  new HttpError(429, message, { 'retry-after': String(Math.max(1, Math.ceil(retryAfterMs / 1000))) });
 
 const dbPath = process.env.DB_PATH;
 if (!dbPath) throw new Error('DB_PATH is required');
@@ -108,8 +124,16 @@ function notify(code: Code): void {
 }
 
 function send(res: ServerResponse, status: number, body: unknown, headers: Record<string, string | string[]> = {}): void {
+  const text = JSON.stringify(body);
+  const request = keyed.get(res);
+  if (request !== undefined) {
+    keyed.delete(res);
+    // A server error is not the answer to the request, so a retry runs it again.
+    if (status >= 500) request.abandon();
+    else request.finish({ status, body: text, headers });
+  }
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers });
-  res.end(JSON.stringify(body));
+  res.end(text);
 }
 
 function sendText(res: ServerResponse, contentType: string, body: string): void {
@@ -123,19 +147,64 @@ function redirect(res: ServerResponse, location: string, cookies: string[]): voi
   res.end();
 }
 
+// The body of each request, read once: a keyed request reads it before its route, to compare repeats.
+const bodies = new WeakMap<IncomingMessage, Promise<Buffer>>();
+
+function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
+  const known = bodies.get(req);
+  if (known !== undefined) return known;
+  const reading = (async () => {
+    let size = 0;
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      const buffer = chunk as Buffer;
+      size += buffer.length;
+      if (size > limit) throw new HttpError(413, 'Request body is too large.');
+      chunks.push(buffer);
+    }
+    return Buffer.concat(chunks);
+  })();
+  bodies.set(req, reading);
+  return reading;
+}
+
 async function readJson(req: IncomingMessage, limit: number = MAX_BODY_BYTES): Promise<unknown> {
-  let size = 0;
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    const buffer = chunk as Buffer;
-    size += buffer.length;
-    if (size > limit) throw new HttpError(413, 'Request body is too large.');
-    chunks.push(buffer);
-  }
+  const body = await readBody(req, limit);
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+    return JSON.parse(body.toString('utf8') || '{}');
   } catch {
     throw new HttpError(400, 'Request body is not valid JSON.');
+  }
+}
+
+// Handles the Idempotency-Key header of a route that accepts it. Returns true when a stored answer went out.
+// Without a valid X-Player header, the route refuses the request itself, so nothing is stored.
+async function replayed(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
+  const key = parseIdempotencyKey(req.headers['idempotency-key']);
+  if (key instanceof Error) throw new HttpError(400, key.message);
+  const player = asPlayerToken(req.headers['x-player']);
+  if (key === undefined || player === undefined) return false;
+  const body = await readBody(req, MAX_BODY_BYTES);
+  const request = `${req.method ?? ''} ${path}\n${createHash('sha256').update(body).digest('base64')}`;
+  const claim = idempotency.claim(`${player}\n${path}`, key, request, Date.now());
+  switch (claim.kind) {
+    case 'mismatch':
+      throw new HttpError(422, 'This Idempotency-Key came with another request before. Use a new key for a new request.');
+    case 'running':
+      throw new HttpError(409, 'The first request with this Idempotency-Key still runs. Try again in a moment.');
+    case 'replay':
+      res.writeHead(claim.answer.status, { 'content-type': 'application/json', 'cache-control': 'no-store', ...claim.answer.headers });
+      res.end(claim.answer.body);
+      return true;
+    case 'run':
+      keyed.set(res, claim);
+      // A request that ends without an answer (the client left, for example) frees its key.
+      res.on('close', () => {
+        if (keyed.get(res) !== claim) return;
+        keyed.delete(res);
+        claim.abandon();
+      });
+      return false;
   }
 }
 
@@ -165,7 +234,8 @@ function requireNetwork(req: IncomingMessage): string {
 }
 
 function requireNearbyCall(network: string): void {
-  if (!allowNearby(network, Date.now())) throw new HttpError(429, 'Too many Nearby calls from this network. Try again later.');
+  const limit = allowNearby(network, Date.now());
+  if (!limit.ok) throw tooMany('Too many Nearby calls from this network. Try again later.', limit.retryAfterMs);
 }
 
 // Decodes a signal code fully, so the lobby never holds a code that a device cannot read.
@@ -232,6 +302,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const match = matchRoute(method, url.pathname);
   if (match === undefined) throw new HttpError(404, 'Not found.');
   if (match === 'wrong-method') throw new HttpError(405, 'Method not allowed.');
+  const doc: Route = ROUTES[match.route];
+  if (doc.idempotencyKey === true && (await replayed(req, res, url.pathname))) return;
   const code = () => sessionCode(match.params.code);
   const gameId = () => {
     const id = parseGameId(match.params.id ?? '');
@@ -326,7 +398,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return send(res, 200, { stored: await store.addSeatMetrics(id, requirePlayer(req), metrics) });
     }
     case 'POST /api/events': {
-      if (!allowEvent(clientOf(req), Date.now())) throw new HttpError(429, 'Too many reports from this address. Try again later.');
+      const limit = allowEvent(clientOf(req), Date.now());
+      if (!limit.ok) throw tooMany('Too many reports from this address. Try again later.', limit.retryAfterMs);
       const event = parseClientEvent(await readJson(req, MAX_EVENT_BODY_BYTES));
       if (event === undefined) throw new HttpError(400, 'An event needs a kind, a message of 1 to 300 characters and a version.');
       await store.addEvent(event);
@@ -355,7 +428,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return send(res, 200, previews === undefined ? { main: null, previews: [], error: 'This server has no previews.' } : await previews.list());
 
     case 'POST /api/sessions': {
-      if (!allowCreate(clientOf(req), Date.now())) throw new HttpError(429, 'Too many new games from this address. Try again later.');
+      const limit = allowCreate(clientOf(req), Date.now());
+      if (!limit.ok) throw tooMany('Too many new games from this address. Try again later.', limit.retryAfterMs);
       const body = parseNewSession(await readJson(req));
       if (body === undefined) throw new HttpError(400, 'A new game needs a name of 1 to 40 characters, and a valid clock or none.');
       return send(res, 201, await store.create(requirePlayer(req), body.name, body.clock));
@@ -453,7 +527,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
 const server = createServer((req, res) => {
   route(req, res).catch((error: unknown) => {
-    if (error instanceof SessionError || error instanceof HttpError || error instanceof LobbyError) return send(res, error.status, { error: error.message });
+    if (error instanceof SessionError) return send(res, error.status, { error: error.message, ...(error.code === undefined ? {} : { code: error.code }) });
+    if (error instanceof HttpError) return send(res, error.status, { error: error.message }, error.headers);
+    if (error instanceof LobbyError) return send(res, error.status, { error: error.message }, error.headers);
     console.error(error);
     if (!res.headersSent) send(res, 500, { error: 'Server error.' });
     else res.end();

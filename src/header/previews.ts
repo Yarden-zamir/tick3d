@@ -1,7 +1,8 @@
 // The kitshn button and the Previews dialog: the production site and the open pull requests with a live preview.
+// A stacked pull request shows in a nested list inside the card of its parent.
 import { api, OnlineError } from '../online.ts';
-import type { Preview } from '../protocol.ts';
 import { element } from '../element.ts';
+import { type PreviewNode, previewTree } from './preview-tree.ts';
 
 const previewsButton = element('#previews-button', HTMLButtonElement);
 export const previewsDialog = element('#previews', HTMLDialogElement);
@@ -43,23 +44,25 @@ function link(text: string, href: string): HTMLAnchorElement {
   return anchor;
 }
 
-function badge(text: string): HTMLSpanElement {
+function badge(text: string, className = 'badge'): HTMLSpanElement {
   const mark = document.createElement('span');
-  mark.className = 'badge';
+  mark.className = className;
   mark.textContent = text;
   return mark;
 }
 
-function previewItem(preview: Preview, here: boolean): HTMLLIElement {
+// One card, with the cards of its stacked pull requests nested inside. `here` is the number of this page's preview.
+function previewItem({ preview, children }: PreviewNode, here: number | undefined): HTMLLIElement {
   const item = document.createElement('li');
-  item.className = here ? 'preview here' : 'preview';
+  item.className = preview.number === here ? 'preview here' : 'preview';
   const head = document.createElement('div');
   head.className = 'preview-head';
   const title = document.createElement('b');
   title.textContent = `${preview.title} #${preview.number}`;
   head.append(title);
+  if (preview.parent !== null) head.append(badge(`Depends on #${preview.parent}`, 'badge badge-quiet'));
   if (preview.draft) head.append(badge('Draft'));
-  if (here) head.append(badge('You are here'));
+  if (preview.number === here) head.append(badge('You are here'));
   item.append(head);
   if (preview.description !== '') {
     const description = document.createElement('p');
@@ -84,6 +87,13 @@ function previewItem(preview: Preview, here: boolean): HTMLLIElement {
   updated.textContent = `Updated ${timeAgo(preview.updatedAt, Date.now())}`;
   foot.append(updated, link('Open preview', preview.previewUrl), link('Pull request', preview.url));
   item.append(people, foot);
+  if (children.length > 0) {
+    const stacked = document.createElement('ul');
+    stacked.className = 'preview-children';
+    stacked.setAttribute('aria-label', `Stacked on #${preview.number}`);
+    stacked.append(...children.map((child) => previewItem(child, here)));
+    item.append(stacked);
+  }
   return item;
 }
 
@@ -132,7 +142,7 @@ async function openPreviews(): Promise<void> {
       previewsNote.classList.add('error');
     }
     const here = previewNumberOf(location.hostname);
-    const items = previews.map((preview) => previewItem(preview, preview.number === here));
+    const items = previewTree(previews).map((node) => previewItem(node, here));
     if (main !== null) items.unshift(mainItem(main));
     previewsList.replaceChildren(...items);
     if (items.length === 0) showMessage('No open previews.');
