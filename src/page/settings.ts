@@ -53,7 +53,7 @@ export const DEFAULTS: Settings = {
   muted: false,
   spin: 45,
   theme: 'light',
-  soundSet: 'cells',
+  soundSet: 'pitched',
 };
 const STORAGE_KEY = 'tick3d.settings';
 

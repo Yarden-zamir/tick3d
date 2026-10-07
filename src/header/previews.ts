@@ -121,12 +121,16 @@ async function openPreviews(): Promise<void> {
   const mine = ++request;
   previewsDialog.showModal();
   previewsNote.textContent = 'The production site and the open pull requests with a live preview.';
+  previewsNote.classList.remove('error');
   showMessage('Loading…');
   if (!navigator.onLine) return showMessage('You are offline. The list needs a network.');
   try {
     const { main, previews, error } = await api.previews();
     if (mine !== request) return;
-    if (error !== null) previewsNote.textContent = error;
+    if (error !== null) {
+      previewsNote.textContent = error;
+      previewsNote.classList.add('error');
+    }
     const here = previewNumberOf(location.hostname);
     const items = previews.map((preview) => previewItem(preview, preview.number === here));
     if (main !== null) items.unshift(mainItem(main));

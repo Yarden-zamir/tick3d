@@ -158,10 +158,10 @@ test('the sound set menu on the trainer changes the set, keeps it after a reload
   await page.goto('/sound-training');
   const name = page.locator('#sound-set-name');
   const totals = page.locator('#totals');
-  // The first row sound: the instrument in Cells, the chord in Harmony.
+  // The first row sound: the octave in Classic, pitched (the default), the chord in Harmony.
   const firstRow = page.locator('.train-value[data-item="row-0"]');
-  await expect(name).toHaveText('Cells');
-  await expect(firstRow).toContainText('marimba');
+  await expect(name).toHaveText('Classic, pitched');
+  await expect(firstRow).toContainText('highest');
 
   const menu = page.locator('#sound-sets');
   await page.getByRole('button', { name: 'Sound set', exact: true }).click();
