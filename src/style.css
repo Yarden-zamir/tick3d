@@ -730,11 +730,12 @@ input:disabled {
   transition: background 0.2s;
 }
 
+/* In the header row the status keeps one width, whatever its text, so a new status never moves the
+   wordmark or the header buttons (see .slot-row). It shrinks only when the window is narrow. */
 @media (min-width: 64rem) {
   .status {
     order: 0;
-    flex: 0 1 auto;
-    max-width: 28rem;
+    flex: 0 1 28rem;
   }
 }
 
@@ -1160,27 +1161,50 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
-/* New game takes the free width. Undo, the result card and the sound control keep their own width. */
-.actions {
-  display: flex;
+/* A row of fixed slots. A control that shows, hides or changes with the game state must not move another control.
+   - Each control has its own grid area. Two controls that take turns share one area, so the slot fits the wider one.
+   - A hidden control keeps its box: it is invisible and takes no click or focus, but its slot stays.
+   - A label never wraps, so a control never grows taller.
+   e2e/row-layout.spec.ts checks this geometry. */
+.slot-row {
+  display: grid;
+  align-items: stretch;
   gap: 0.6rem;
 }
 
-.actions > .btn {
-  flex: none;
+.slot-row > * {
+  white-space: nowrap;
 }
 
-.actions > .btn-primary {
-  flex: 1;
+/* Every child of a slot row is a flex box (.btn and the sound control), so display: flex brings the box back.
+   The global [hidden] rule uses !important, so this more specific rule needs it too. */
+.slot-row > [hidden] {
+  display: flex !important;
+  visibility: hidden;
+}
+
+/* New game takes the free width, but never less than its label. Undo and the result card take turns in one slot.
+   max-content, not auto: a row that is too narrow overflows, and e2e/row-layout.spec.ts sees it.
+   An auto column shrinks the sound control instead and clips its icons without a sign. */
+.actions {
+  grid-template-areas: 'new swap sound';
+  grid-template-columns: minmax(max-content, 1fr) max-content max-content;
+}
+
+#new-game {
+  grid-area: new;
+}
+
+#undo,
+#show-card {
+  grid-area: swap;
 }
 
 /* One box with two parts: the speaker turns the sound on and off, the narrow caret opens the sound sets. */
-/* margin-left: auto keeps the control at the right end when it is alone in the row (Nearby before a game). */
 .sound-control {
-  flex: none;
+  grid-area: sound;
   display: flex;
   min-height: 2.6rem;
-  margin-left: auto;
   border: var(--border) solid var(--line);
   border-radius: 8px;
   background: var(--surface);

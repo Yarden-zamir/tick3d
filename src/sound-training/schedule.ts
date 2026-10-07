@@ -1,7 +1,7 @@
 // The ear training schedule: which card comes next, and what the player hears well.
 // It uses Leitner boxes with intervals counted in cards, so it works in one session and across sessions.
 // The page keeps no clock: a card that the player finishes is one step of time.
-import { isRecord } from '../guards.ts';
+import { isCount, isRecord } from '../guards.ts';
 import type { Random } from '../ai.ts';
 import { CELL_COUNT, SIZE, toCell, toCoords, type Coords } from '../game.ts';
 
@@ -202,8 +202,6 @@ export function answerFull(progress: Progress, cell: number, guess: Coords): Pro
 }
 
 // ---- Storage ----
-
-const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0;
 
 function parseItem(value: unknown): Item | undefined {
   if (!isRecord(value)) return undefined;
