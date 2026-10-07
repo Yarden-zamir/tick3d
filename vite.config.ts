@@ -37,6 +37,9 @@ export default defineConfig({
         // /stats and /sound-training need no entry: the precache serves them from their .html files
         // (clean URLs), online and offline.
         navigateFallbackDenylist: [/^\/api\//],
+        // The filters of /stats (parseStatsFilter in src/protocol.ts) do not change the page file, so a
+        // filtered address still matches stats.html. Without this, it falls back to the game page.
+        ignoreURLParametersMatching: [/^utm_/, /^fbclid$/, /^scope$/, /^range$/, /^mode$/, /^level$/],
         runtimeCaching: [
           {
             // The font list from Google changes rarely. Keep a copy for offline use.

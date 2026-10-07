@@ -37,6 +37,8 @@ function seed({ settings, records }: Seed): void {
   const toasts: string[] = [];
   (window as unknown as { e2eToasts: string[] }).e2eToasts = toasts;
   addEventListener('DOMContentLoaded', () => {
+    // Only the game page has toasts. A test can go on to another page, such as /stats.
+    if (location.pathname !== '/') return;
     const toast = document.querySelector('#toast');
     if (toast === null) throw new Error('the page has no #toast');
     new MutationObserver(() => {
