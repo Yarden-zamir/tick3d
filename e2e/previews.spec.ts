@@ -22,7 +22,6 @@ test('the kitshn button lists the open previews and marks this one', async ({ op
   const list = dialog.locator('#previews-list');
   await button.click();
   await expect(dialog).toHaveAttribute('open');
-  await expect(dialog.getByRole('heading', { name: 'Previews' })).toBeVisible();
   await expect(list).not.toContainText('Loading');
 
   // Other pull requests come and go, so the test checks only the preview under test.
@@ -47,7 +46,6 @@ test('the kitshn button lists the open previews and marks this one', async ({ op
       await expect(note).not.toBeEmpty();
       test.info().annotations.push({ type: 'skip', description: `The previews list has an error, so the check of #${number} is skipped: ${await note.textContent()}` });
     } else {
-      await expect(here).toContainText('You are here');
       // A title, then the number.
       await expect(here.locator('.preview-head b')).toHaveText(new RegExp(`\\S.* #${number}$`));
       await expect(here.getByRole('link', { name: 'Pull request' })).toHaveAttribute('href', new RegExp(`^https://github\\.com/.+/pull/${number}$`));

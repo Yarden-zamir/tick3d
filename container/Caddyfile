@@ -32,12 +32,17 @@ http:// {
 				header Content-Type application/javascript*
 				header Content-Type text/javascript*
 				header Content-Type image/svg+xml*
+				header Content-Type application/manifest+json*
+				# favicon.ico holds raw bitmaps, so it shrinks to half.
+				header Content-Type image/vnd.microsoft.icon*
 			}
 		}
 
 		# Vite puts a content hash in every asset file name, so assets never change.
 		header /assets/* Cache-Control "public, max-age=31536000, immutable"
-		header / Cache-Control "no-cache"
+		# Pages have fixed names, so a browser checks them on every visit. This covers /index.html too.
+		@pages path / *.html
+		header @pages Cache-Control "no-cache"
 
 		# The stats page. It is public: the game links to it, and search engines may list it.
 		# Caddy sets headers before the rewrite, so the matcher names both paths.
