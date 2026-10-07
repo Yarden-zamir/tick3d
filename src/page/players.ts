@@ -112,7 +112,7 @@ function answer(accept: boolean): void {
   });
 }
 
-const PLAYERS_AVATAR_PIXELS = 22;
+const PLAYERS_AVATAR_PIXELS = 28;
 
 function row(mark: Player | 'watcher', person: Person | null, name: string, note: string, actions: HTMLButtonElement[]): HTMLLIElement {
   const item = document.createElement('li');

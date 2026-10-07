@@ -1722,6 +1722,8 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .chat-group > .avatar {
   flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .chat-group-body {
@@ -2902,6 +2904,12 @@ body[data-turn='O'] .status[data-state='playing'] {
 .players-mark.o {
   background: var(--o);
   color: var(--on-color);
+}
+
+.players-name .avatar {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .players-name {

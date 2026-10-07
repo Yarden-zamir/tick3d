@@ -4,7 +4,7 @@ import { avatarFor, type Person } from '../avatar.ts';
 import type { Player } from '../game.ts';
 import type { ChatMessage } from '../protocol.ts';
 
-const AVATAR_PIXELS = 22;
+const AVATAR_PIXELS = 28;
 
 // `label` is the name over the bubbles ("You" for this screen's seat). `person` gives the picture.
 export type Sender = { label: string; person: Person };
