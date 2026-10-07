@@ -14,6 +14,8 @@ import { showToast } from './feedback.ts';
 // that the voice placed: the song plays them, and a shared file has them only when `shareVoice` is true.
 export type SongSource = { game: Game; filename: string; text: string; light: (cell: number | undefined) => void; clips: VoiceClips; shareVoice: boolean };
 
+// A click this soon after the end of a long press belongs to that press.
+const CLICK_AFTER_PRESS_MS = 400;
 // A press this long shares the song as a file.
 const LONG_PRESS_MS = 600;
 // A cell stays lit for one beat after its note starts, or until the next note.
@@ -32,6 +34,9 @@ export function songControl(button: HTMLButtonElement, source: () => SongSource 
   // A pointer press. `file` is the render that starts when the press becomes long.
   let press: { timer: ReturnType<typeof setTimeout>; file: Promise<File> | undefined } | undefined;
   let playing: { playback: SongPlayback; frame: number; source: SongSource } | undefined;
+  // The end of the last long press. The click right after it must not also play the song. The browser can
+  // skip that click (the label of the button changes during the press), so a time limit ends the drop.
+  let longPressEnd = -Infinity;
 
   const show = (state: State) => {
     button.dataset.state = state;
@@ -80,8 +85,11 @@ export function songControl(button: HTMLButtonElement, source: () => SongSource 
   function endPress(): void {
     if (press === undefined) return;
     clearTimeout(press.timer);
-    if (press.file === undefined) press = undefined;
-    else if (button.dataset.state === 'held') show('idle');
+    if (press.file !== undefined) {
+      longPressEnd = performance.now();
+      if (button.dataset.state === 'held') show('idle');
+    }
+    press = undefined;
   }
 
   show('idle');
@@ -109,16 +117,11 @@ export function songControl(button: HTMLButtonElement, source: () => SongSource 
   });
   // A pointer that leaves the button cancels the press.
   for (const type of ['pointerleave', 'pointercancel'] as const) {
-    button.addEventListener(type, () => {
-      endPress();
-      press = undefined;
-    });
+    button.addEventListener(type, endPress);
   }
   button.addEventListener('click', () => {
     // The click after a long press does not also play the song.
-    const long = press?.file !== undefined;
-    press = undefined;
-    if (long) return;
+    if (performance.now() - longPressEnd < CLICK_AFTER_PRESS_MS) return;
     if (playing !== undefined) stop();
     else if (button.dataset.state === 'idle') play();
   });

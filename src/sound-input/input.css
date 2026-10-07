@@ -144,6 +144,11 @@
   font-weight: 700;
 }
 
+/* The theme color, as the checkboxes of the end card. */
+.input-slider input {
+  accent-color: var(--toggle-on);
+}
+
 .input-slider output {
   font-variant-numeric: tabular-nums;
 }
