@@ -19,9 +19,11 @@ import type { PlayerToken } from '../src/protocol.ts';
 
 export class LobbyError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  headers: Record<string, string>;
+  constructor(status: number, message: string, headers: Record<string, string> = {}) {
     super(message);
     this.status = status;
+    this.headers = headers;
   }
 }
 
@@ -108,7 +110,12 @@ export function createLobby(options: { perNetwork: number; total: number; waitMs
       } else {
         if (entries.size >= total) throw new LobbyError(503, 'Too many games are in the list now. Try again later.');
         const onNetwork = [...entries.values()].filter((other) => other.network === host.network).length;
-        if (onNetwork >= perNetwork) throw new LobbyError(429, `This network has ${perNetwork} games in the list already.`);
+        if (onNetwork >= perNetwork) {
+          // Limit: no time frees a slot for sure, because a host that stays keeps its slot. This is the
+          // longest time that a host that left without a word stays. Revisit when hosts fill a network often.
+          const retryAfter = String(Math.ceil((waitMs + graceMs) / 1000));
+          throw new LobbyError(429, `This network has ${perNetwork} games in the list already.`, { 'retry-after': retryAfter });
+        }
         entry = { ...host, id: newId(), used: false, since: now, endedAt: now, held: undefined, answer: undefined };
         entries.set(entry.id, entry);
       }

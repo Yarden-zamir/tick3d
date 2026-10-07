@@ -106,18 +106,27 @@ describe('request limits', () => {
 
   it('allows a client the limit per window, and again after the window', () => {
     const allow = createLimiter(2, 1_000, 10);
-    expect([allow('a', 0), allow('a', 1), allow('a', 2)]).toEqual([true, true, false]);
-    expect(allow('b', 2)).toBe(true);
-    expect(allow('a', 1_000)).toBe(true);
+    const ok = (client: string, now: number) => allow(client, now).ok;
+    expect([ok('a', 0), ok('a', 1), ok('a', 2)]).toEqual([true, true, false]);
+    expect(ok('b', 2)).toBe(true);
+    expect(ok('a', 1_000)).toBe(true);
+  });
+
+  it('says when the window of a refused client ends', () => {
+    const allow = createLimiter(1, 1_000, 10);
+    allow('a', 100);
+    expect(allow('a', 400)).toEqual({ ok: false, retryAfterMs: 700 });
+    expect(allow('a', 1_100).ok).toBe(true);
   });
 
   it('keeps a bounded number of clients and forgets the oldest first', () => {
     const allow = createLimiter(1, 1_000, 2);
-    allow('a', 0);
-    allow('b', 1);
-    expect(allow('b', 2)).toBe(false);
-    allow('c', 3);
-    expect(allow('a', 4)).toBe(true);
-    expect(allow('c', 5)).toBe(false);
+    const ok = (client: string, now: number) => allow(client, now).ok;
+    ok('a', 0);
+    ok('b', 1);
+    expect(ok('b', 2)).toBe(false);
+    ok('c', 3);
+    expect(ok('a', 4)).toBe(true);
+    expect(ok('c', 5)).toBe(false);
   });
 });

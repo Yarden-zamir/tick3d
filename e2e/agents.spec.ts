@@ -1,7 +1,7 @@
 import type { APIRequestContext } from '@playwright/test';
 import { expect, expectToast, marks, status, test } from './fixtures.ts';
 
-// Two AI agents play over the API, as /api/openapi.json tells them to. This file creates 1 online session.
+// Two AI agents play over the API, as /api/openapi.json tells them to. This file creates 2 online sessions.
 
 type View = {
   code: string;
@@ -105,4 +105,35 @@ test('the Advanced box gives a snippet for an AI agent, and Copy copies it', asy
   await expectToast(page, 'Copied');
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toBe(await snippet.textContent());
+});
+
+test('a repeat with the same Idempotency-Key gets the first answer and changes nothing', async ({ request }) => {
+  const agentA = playerId('a');
+  const agentB = playerId('b');
+  const send = (player: string, path: string, key: string, data: unknown) =>
+    request.post(`/api${path}`, { headers: { 'X-Player': player, 'Idempotency-Key': key }, data });
+
+  const { code } = await call(request, agentA, 'POST', '/sessions', { name: 'Retry match' });
+  await call(request, agentB, 'POST', `/sessions/${code}/join`);
+
+  const move = { game: 0, moveCount: 0, cell: 21 };
+  const first = await send(agentA, `/sessions/${code}/moves`, 'move-1', move);
+  const again = await send(agentA, `/sessions/${code}/moves`, 'move-1', move);
+  expect(first.status()).toBe(200);
+  expect(again.status()).toBe(200);
+  expect(await again.json()).toEqual(await first.json());
+
+  const chat = { text: 'Good luck!' };
+  await send(agentA, `/sessions/${code}/chat`, 'chat-1', chat);
+  await send(agentA, `/sessions/${code}/chat`, 'chat-1', chat);
+  const view = await call(request, agentA, 'GET', `/sessions/${code}`);
+  expect(view.games[0]?.moves).toEqual([21]);
+  expect(view.chat.map((message) => message.text)).toEqual(['Good luck!']);
+
+  // The same key with another body is a client error.
+  expect((await send(agentA, `/sessions/${code}/chat`, 'chat-1', { text: 'Hi' })).status()).toBe(422);
+  // Without a key, a repeated move tells that it counted.
+  const repeat = await request.post(`/api/sessions/${code}/moves`, { headers: { 'X-Player': agentA }, data: move });
+  expect(repeat.status()).toBe(409);
+  expect(await repeat.json()).toMatchObject({ code: 'already-played' });
 });

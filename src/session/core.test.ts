@@ -117,6 +117,27 @@ describe('moves', () => {
     expect(core.move(one, bob, { game: 0, moveCount: 1, cell: 1 }, 1).games[0]?.moves).toEqual([0, 1]);
   });
 
+  it('marks a repeat of a move that counted as already-played, and only that', () => {
+    const codeOf = (fn: () => unknown) => {
+      try {
+        fn();
+      } catch (error) {
+        if (error instanceof core.SessionError) return [error.status, error.code];
+        throw error;
+      }
+      return undefined;
+    };
+    const first = { game: 0, moveCount: 0, cell: 21 };
+    const one = core.move(onlineDoc(), alice, first, 0);
+    expect(codeOf(() => core.move(one, alice, first, 1))).toEqual([409, 'already-played']);
+    // Also after the other player answered, and after the game ended.
+    const two = core.move(one, bob, { game: 0, moveCount: 1, cell: 5 }, 1);
+    expect(codeOf(() => core.move(two, alice, first, 2))).toEqual([409, 'already-played']);
+    // Another cell, or the other player sending the same request, is a real conflict.
+    expect(codeOf(() => core.move(one, alice, { ...first, cell: 22 }, 1))).toEqual([409, undefined]);
+    expect(codeOf(() => core.move(one, bob, first, 1))).toEqual([409, undefined]);
+  });
+
   it('never changes the document it was given', () => {
     const doc = onlineDoc();
     const before = JSON.stringify(doc);
