@@ -49,7 +49,7 @@ async function deviceCopy(id: GameId): Promise<PublicGame | undefined> {
 // Opens the game of a link. Returns false when it opens nothing: the problem shows already, or
 // the player chose another game meanwhile.
 export async function openGameView(id: GameId): Promise<boolean> {
-  const switchNumber = beginSwitch();
+  const switching = beginSwitch();
   let shown: PublicGame;
   try {
     shown = (await deviceCopy(id)) ?? (await api.game(id));
@@ -58,7 +58,7 @@ export async function openGameView(id: GameId): Promise<boolean> {
     showProblem(error.status === undefined ? 'This game is not on this device. Open its link with a network.' : error.message);
     return false;
   }
-  if (switchNumber !== page.navigation) return false;
+  if (switching.isStale()) return false;
   leaveSession();
   const game = toGame(shown.game);
   // The replay controls start at the final position.

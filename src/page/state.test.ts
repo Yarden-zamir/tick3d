@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import type { PublicGame, SessionView } from '../protocol.ts';
-import { type Session, clearScreen, page, setReview, setThinking, showGame, showSession, updateSession } from './state.ts';
+import { type Session, clearScreen, currentRound, newRound, newSwitch, page, setReview, setThinking, showGame, showSession, updateSession } from './state.ts';
 
 // Only the fields that the screen functions read. The screen keeps the object as it is.
 const session = (code: string) => ({ code }) as unknown as Session;
@@ -42,5 +42,30 @@ describe('the screen of the page', () => {
     setReview(undefined);
     setThinking(false);
     expect(page.review).toBeUndefined();
+  });
+});
+
+describe('staleness tokens', () => {
+  it('makes a computer round stale on every new screen, new game and undo, not on a newer view', () => {
+    showSession(session('AB3K'));
+    const round = currentRound();
+    updateSession(session('AB3K'));
+    setThinking(true);
+    expect(round.isStale()).toBe(false);
+    newRound();
+    expect(round.isStale()).toBe(true);
+    for (const change of [() => showSession(session('AB3K')), clearScreen, () => showGame(shown, { game: 0, move: 0 })]) {
+      const before = currentRound();
+      change();
+      expect(before.isStale()).toBe(true);
+    }
+  });
+
+  it('makes only the older switch stale, and keeps a switch apart from a round', () => {
+    const first = newSwitch();
+    const second = newSwitch();
+    newRound();
+    clearScreen();
+    expect([first.isStale(), second.isStale()]).toEqual([true, false]);
   });
 });
