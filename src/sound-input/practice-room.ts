@@ -420,7 +420,9 @@ export function createPracticeRoom({ voice, board, rail, cells, startMic, show }
     for (const button of levels.querySelectorAll('button')) button.disabled = running || joined || invited;
     replayButton.hidden = tab !== 'echo';
     // Without a seat in an online game, the Playoff tab shows only how to start one (practice.css).
-    panel.toggleAttribute('data-no-playoff', tab === 'playoff' && !running && (session === undefined || you === null));
+    const noPlayoff = tab === 'playoff' && !running && (session === undefined || you === null);
+    panel.toggleAttribute('data-no-playoff', noPlayoff);
+    resultsEl.hidden = tab === 'free' || noPlayoff;
     statusEl.dataset.state = running ? 'running' : 'idle';
   }
 
@@ -547,7 +549,6 @@ export function createPracticeRoom({ voice, board, rail, cells, startMic, show }
     setTab(next: Tab): void {
       tab = next;
       panel.hidden = tab === 'free';
-      resultsEl.hidden = tab === 'free';
       playoffEl.hidden = tab !== 'playoff';
       if (tab === 'playoff' && session === undefined) {
         playoffText.textContent = 'A playoff runs in an online game. In the game, open the Voice room from the panel, and the other player gets an invite.';

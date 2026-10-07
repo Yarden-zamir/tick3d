@@ -17,10 +17,18 @@
   gap: 0.6rem;
 }
 
+/* Start takes the whole row when Hear it again is hidden (outside Echo). */
 .practice-start {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  display: flex;
   gap: 0.6rem;
+}
+
+.practice-start #start {
+  flex: 2;
+}
+
+.practice-start #replay {
+  flex: 1;
 }
 
 /* Without a seat in an online game, the Playoff tab shows only its text (practice-room.ts). */
