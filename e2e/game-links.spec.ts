@@ -123,16 +123,20 @@ test('a link to an unknown game shows the problem and starts the page as usual',
 });
 
 // A plain context: the seed script of `open` expects the game page.
-test('the stats page shows the numbers and stays out of search engines', async ({ browser, baseURL }) => {
+test('the stats page shows the numbers, and search engines may list it', async ({ browser, baseURL }) => {
   const context = await browser.newContext(baseURL === undefined ? {} : { baseURL });
   const page = await context.newPage();
   const errors: Error[] = [];
   page.on('pageerror', (error) => errors.push(error));
   const response = await page.goto('/stats');
-  expect(response?.headers()['x-robots-tag']).toContain('noindex');
+  // The page is public.
+  expect(response?.headers()['x-robots-tag']).toBeUndefined();
+  await expect(page.locator('meta[name="robots"]')).toHaveCount(0);
   await expect(page.locator('.stats-card').first()).toBeVisible();
   await expect(page.locator('.stats-tile').first()).toContainText('Games');
-  await expect(page.locator('.stats-card h2')).toContainText(['Totals', 'Games per day', 'Opening moves', 'Failures']);
+  await expect(page.locator('.stats-card h2')).toContainText(['Totals', 'Win rate over time', 'Games per day', 'Opening moves']);
+  // No page faults and no leaderboards of people in public.
+  await expect(page.locator('.stats-card h2', { hasText: /Failures|Slowest thinkers|Survival records/ })).toHaveCount(0);
   expect(errors).toEqual([]);
   await context.close();
 });

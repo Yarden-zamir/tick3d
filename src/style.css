@@ -510,6 +510,15 @@ input:disabled {
   justify-self: end;
 }
 
+/* A link to another page, then Close at the end. */
+.info-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
 @keyframes banner-in {
   from {
     translate: -50% -150%;

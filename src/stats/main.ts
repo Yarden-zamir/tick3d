@@ -1,4 +1,4 @@
-// The hidden stats page (/stats): the aggregates of GET /api/stats as hand-made SVG charts.
+// The public stats page (/stats): the aggregates of GET /api/stats as hand-made SVG charts.
 // Colors come from the theme tokens in style.css, so every chart follows the saved theme.
 // The filters live in the address (parseStatsFilter), so a view survives a reload and a link shares it.
 import '../style.css';
@@ -329,6 +329,11 @@ function personalCards(personal: NonNullable<Stats['personal']>): void {
     ],
   );
   table(
+    card('Your survival records', false, 'Per level, your longest game that the computer won. Default computer only.'),
+    ['Level', 'Moves'],
+    personal.survival.map((row) => [capital(row.level), row.moves]),
+  );
+  table(
     card('Favourite opponents', false, 'The players that you played most, and how it went.'),
     ['Player', 'Games', 'Won', 'Drawn', 'Lost'],
     personal.opponents.map((row) => [row.player, row.games, row.won, row.drawn, row.lost]),
@@ -417,15 +422,6 @@ function draw(stats: Stats): void {
     stats.levels.map((level) => [capital(level.level), level.games, percent(level.won, level.games), level.avgMoves, level.medianMoves, level.tuned]),
   );
 
-  const survival = card('Survival records', false, 'The longest games that the computer won. Default computer only.');
-  for (const level of ['easy', 'medium', 'hard'] as const) {
-    const rows = stats.survival.filter((entry) => entry.level === level);
-    if (rows.length === 0) continue;
-    survival.append(el('h3', '', capital(level)));
-    table(survival, ['#', 'Player', 'Moves'], rows.map((entry) => [entry.rank, entry.player, entry.moves]));
-  }
-  if (stats.survival.length === 0) empty(survival);
-
   columns(
     card('Game length', true, 'How many games ended after each number of moves. A win needs 7 moves at least.'),
     lengthColumns(stats.lengths),
@@ -450,12 +446,6 @@ function draw(stats: Stats): void {
     ['Level or mode', 'Players', 'Computer', 'Search'],
     stats.thinkTimes.map((row) => [modeName(row.key), seconds(row.humanMs), seconds(row.computerMs), seconds(row.searchMs)]),
   );
-  table(
-    card('Slowest thinkers', false, 'Median time per move, players with 20 moves or more.'),
-    ['Player', 'Median', 'Moves'],
-    stats.slowest.map((row) => [row.player, seconds(row.medianMs), row.moves]),
-  );
-
   stacked(
     card('First-player advantage', false, 'X always moves first.'),
     stats.firstPlayer.map((row) => ({ label: modeName(row.mode), parts: [row.x, row.draws, row.o] })),
@@ -512,14 +502,6 @@ function draw(stats: Stats): void {
   bars(card('Refused actions'), stats.refusals, 'var(--danger)', (key) => key);
   bars(card('Nearby device mixes', false, 'The host device and the other player\'s device.'), stats.nearbyMixes, 'var(--o)');
 
-  // A fault has no player and no mode, so only the time range applies to it.
-  if (stats.filter.scope === 'everyone' && stats.filter.mode === null && stats.filter.level === null) {
-    table(
-      card('Failures', true, 'Errors that pages report, and bursts of refused moves.'),
-      ['Kind', 'Message', 'Count', 'Last'],
-      stats.errors.map((row) => [row.kind, row.message, row.count, new Date(row.lastAt).toLocaleString()]),
-    );
-  }
 }
 
 // The page only displays the answer, so a light shape check is enough here.

@@ -1,5 +1,6 @@
-// The aggregates of the stats page (/stats), in DuckDB SQL. Only counts and player names leave
-// this file: never a token, a result id or a game id. A player without a login shows with a custom or a generated name.
+// The aggregates of the public stats page (/stats), in DuckDB SQL. Everyone gets counts only: no
+// names, no page faults. Mine adds the names of your opponents. Never a token, a result id or a game id leaves this file.
+// An opponent without a login shows with a custom or a generated name.
 import { type DuckDBValue, listValue } from '@duckdb/node-api';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { CELL_COUNT } from '../src/game.ts';
@@ -71,8 +72,7 @@ const GAMES = `WITH g AS (
 const STEPS = `${GAMES}, steps AS (
   SELECT mode, level, i, times[i] - times[i - 1] AS ms,
     CASE WHEN i % 2 = 1 THEN 'X' ELSE 'O' END AS mover,
-    CASE WHEN (CASE WHEN i % 2 = 1 THEN 'X' ELSE 'O' END) = computer THEN 'computer' ELSE 'human' END AS who,
-    CASE WHEN i % 2 = 1 THEN player_x ELSE player_o END AS token
+    CASE WHEN (CASE WHEN i % 2 = 1 THEN 'X' ELSE 'O' END) = computer THEN 'computer' ELSE 'human' END AS who
   FROM (SELECT *, unnest(range(2, len(times) + 1)) AS i FROM g)
   WHERE times[i] - times[i - 1] > 0
 )`;
@@ -207,16 +207,6 @@ export async function computeStats(rows: Rows, now: number, filter: StatsFilter,
       count(*) FILTER (tuned)::INTEGER AS tuned
     FROM g WHERE mode = 'computer' GROUP BY level`);
 
-  const survival = await q(`${GAMES},
-    losses AS (SELECT level, CASE you WHEN 'X' THEN player_x ELSE player_o END AS token, len(moves) AS moves
-      FROM g WHERE mode = 'computer' AND winner = computer AND NOT tuned),
-    best AS (SELECT level, ${PERSON} AS person, any_value(u.login) AS login, any_value(pn.name) AS custom, max(moves) AS moves
-      FROM losses LEFT JOIN player_tokens pt USING (token) LEFT JOIN users u ON u.github_id = pt.github_id
-        LEFT JOIN player_names pn USING (token)
-      GROUP BY level, person)
-    SELECT level, row_number() OVER (PARTITION BY level ORDER BY moves DESC, login NULLS LAST, person)::INTEGER AS rank, login, custom, person, moves::INTEGER AS moves
-    FROM best QUALIFY rank <= 10 ORDER BY level, rank`);
-
   const lengthByMode = await q(`${GAMES} SELECT mode, count(*)::INTEGER AS games, avg(len(moves)) AS avg,
     median(len(moves)) AS median, quantile_cont(len(moves), 0.9) AS p90 FROM g GROUP BY mode ORDER BY games DESC`);
 
@@ -233,13 +223,6 @@ export async function computeStats(rows: Rows, now: number, filter: StatsFilter,
     search AS (SELECT level AS key, median(t) AS search_ms
       FROM (SELECT level, unnest(metrics.thinkMs::DOUBLE[]) AS t FROM g WHERE mode = 'computer') GROUP BY level)
     SELECT key, human_ms, computer_ms, search_ms FROM timed LEFT JOIN search USING (key) ORDER BY key`);
-
-  const slowest = await q(`${STEPS},
-    people AS (SELECT ${PERSON} AS person, any_value(u.login) AS login, any_value(pn.name) AS custom, median(ms) AS median_ms, count(*)::INTEGER AS moves
-      FROM steps LEFT JOIN player_tokens pt USING (token) LEFT JOIN users u ON u.github_id = pt.github_id
-        LEFT JOIN player_names pn USING (token)
-      WHERE who = 'human' AND token IS NOT NULL GROUP BY person HAVING count(*) >= 20)
-    SELECT login, custom, person, median_ms, moves FROM people ORDER BY median_ms DESC LIMIT 10`);
 
   const firstPlayer = await q(`${GAMES} SELECT mode, count(*) FILTER (winner = 'X')::INTEGER AS x,
     count(*) FILTER (winner = 'O')::INTEGER AS o, count(*) FILTER (winner IS NULL)::INTEGER AS draws
@@ -289,17 +272,6 @@ export async function computeStats(rows: Rows, now: number, filter: StatsFilter,
       count(*)::INTEGER AS count
     FROM g WHERE mode = 'nearby' AND metrics.nearby.role::VARCHAR = 'host' GROUP BY key ORDER BY count DESC`);
 
-  // Faults have no player and no mode, so only the time range applies to them.
-  const errors =
-    filter.scope === 'everyone' && filter.mode === null && filter.level === null
-      ? await rows(
-          `FROM events SELECT kind, message, count(*)::INTEGER AS count, epoch_ms(max(created_at)) AS last_at
-           WHERE $since::BIGINT IS NULL OR created_at >= make_timestamptz($since::BIGINT * 1000)
-           GROUP BY kind, message ORDER BY count DESC LIMIT 20`,
-          { since: values.since ?? null },
-        )
-      : [];
-
   const personal = tokens === null ? null : await personalStats(q, sidedGames.map((game) => game.outcome));
 
   return {
@@ -325,12 +297,6 @@ export async function computeStats(rows: Rows, now: number, filter: StatsFilter,
       medianMoves: num(row.median_moves),
       tuned: num(row.tuned),
     })),
-    survival: survival.map((row) => ({
-      level: oneOf(DIFFICULTIES, row.level),
-      rank: num(row.rank),
-      player: personName(row),
-      moves: num(row.moves),
-    })),
     lengthByMode: lengthByMode.map((row) => ({
       mode: oneOf(SESSION_MODES, row.mode),
       games: num(row.games),
@@ -348,7 +314,6 @@ export async function computeStats(rows: Rows, now: number, filter: StatsFilter,
       computerMs: numOrNull(row.computer_ms),
       searchMs: numOrNull(row.search_ms),
     })),
-    slowest: slowest.map((row) => ({ player: personName(row), medianMs: num(row.median_ms), moves: num(row.moves) })),
     firstPlayer: firstPlayer.map((row) => ({ mode: oneOf(SESSION_MODES, row.mode), x: num(row.x), o: num(row.o), draws: num(row.draws) })),
     openings: perCell(openings),
     openingWinsX: perCell(openings, 'x_wins'),
@@ -374,7 +339,6 @@ export async function computeStats(rows: Rows, now: number, filter: StatsFilter,
     undo: { gamesWithUndo: num(usage.games_with_undo), undos: num(usage.undos) },
     offlineGames: num(usage.offline),
     nearbyMixes: counts(nearbyMixes),
-    errors: errors.map((row) => ({ kind: text(row.kind), message: text(row.message), count: num(row.count), lastAt: num(row.last_at) })),
     filter,
     form: formOf(sidedGames),
     lengths: lengthCounts(lengths),
@@ -410,7 +374,11 @@ async function personalStats(q: (sql: string) => Promise<Record<string, unknown>
         LEFT JOIN player_names pn USING (token)
       WHERE token IS NOT NULL GROUP BY person)
     SELECT * FROM people ORDER BY games DESC, login NULLS LAST, person LIMIT 5`);
+  // Your survival records: per level, the most moves of a game that the default computer won.
+  const survival = await q(`${GAMES} SELECT level, max(len(moves))::INTEGER AS moves
+    FROM g WHERE mode = 'computer' AND side IS NOT NULL AND winner = computer AND NOT tuned GROUP BY level ORDER BY level`);
   return {
+    survival: survival.map((row) => ({ level: oneOf(DIFFICULTIES, row.level), moves: num(row.moves) })),
     results: results.map((row) => ({
       mode: oneOf(SESSION_MODES, row.mode),
       level: row.level === null ? null : oneOf(DIFFICULTIES, row.level),

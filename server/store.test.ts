@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.setConfig({ testTimeout: 20_000 });
 import { replay } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
-import { type Code, type GameId, type Metrics, type PlayerToken, type ResultUpload, type StatsFilter, parseGameId, toRecord } from '../src/protocol.ts';
+import { type Code, type GameId, type Metrics, type PlayerToken, type ResultUpload, type StatsFilter, ALL_STATS, parseGameId, toRecord } from '../src/protocol.ts';
 import { SessionError } from '../src/session/core.ts';
 import { type Store, openStore } from './store.ts';
 
@@ -546,7 +546,7 @@ describe('rows from before game links', () => {
     expect(await store.records(alice)).toEqual({ 'easy|game:none|move:none|board:false|history:false': 9 });
     const stats = await store.stats();
     expect(stats.levels).toEqual([expect.objectContaining({ level: 'easy', games: 1, lost: 1 })]);
-    expect(stats.survival).toEqual([{ level: 'easy', rank: 1, player: nameOf(alice), moves: 9 }]);
+    expect((await store.stats({ ...ALL_STATS, scope: 'mine' }, alice)).personal?.survival).toEqual([{ level: 'easy', moves: 9 }]);
     expect(stats.endings).toEqual([{ key: 'won', count: 1 }]);
     // The old row stays as it was: the one-off migration fills it, not the server.
     expect((await store.history(alice, 0)).games[0]?.id).toBeNull();
@@ -611,7 +611,7 @@ describe('online game metrics', () => {
 });
 
 describe('stats', () => {
-  it('counts games, levels, records, moves and faults, with names but no tokens', async () => {
+  it('counts games, levels, moves and metrics, with no names, no page faults and no tokens', async () => {
     const code = await session();
     await playMoves(code, X_WINS);
     await store.linkToken(bob, { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' });
@@ -626,11 +626,6 @@ describe('stats', () => {
     expect(stats.totals).toMatchObject({ games: 4, players: 3, accounts: 1, sessions: 1, moves: 7 + 9 + 7 + 7 });
     expect(stats.byMode).toEqual(expect.arrayContaining([{ key: 'online', count: 1 }, { key: 'computer', count: 3 }]));
     expect(stats.levels).toEqual([expect.objectContaining({ level: 'hard', games: 3, won: 1, lost: 2, drawn: 0 })]);
-    expect(stats.survival).toEqual([
-      { level: 'hard', rank: 1, player: 'bob', moves: 9 },
-      // Carol has no GitHub login, so she shows with her generated name.
-      { level: 'hard', rank: 2, player: nameOf(carol), moves: 7 },
-    ]);
     expect(stats.openings[0]).toBe(3);
     expect(stats.openings[5]).toBe(1);
     expect(stats.endings).toEqual([{ key: 'axis', count: 4 }]);
@@ -639,10 +634,10 @@ describe('stats', () => {
     expect(stats.refusals).toEqual([{ key: 'occupied', count: 4 }]);
     expect(stats.input).toEqual({ board: 6, keypad: 2 });
     expect(stats.hide).toEqual(expect.arrayContaining([expect.objectContaining({ setting: 'board', coordinates: true, games: 1, computerGames: 1, humanWins: 0 })]));
-    expect(stats.errors).toEqual([expect.objectContaining({ kind: 'error', count: 2 })]);
     expect(stats.moveTimes.reduce((sum, bucket) => sum + bucket.human + bucket.computer, 0)).toBeGreaterThan(0);
+    // The page is public: no person and no page fault shows in the Everyone answer.
     const text = JSON.stringify(stats);
-    for (const token of [alice, bob, carol]) expect(text).not.toContain(token);
+    for (const secret of [alice, bob, carol, 'bob', nameOf(carol), 'TypeError']) expect(text).not.toContain(secret);
   });
 
   it('keeps the answer for a minute', async () => {
@@ -684,7 +679,6 @@ describe('stats filters', () => {
     await seeded();
     const everything = await store.stats(all);
     expect(everything.totals.games).toBe(5);
-    expect(everything.errors).toEqual([expect.objectContaining({ count: 1 })]);
     expect(await games({ range: '30d' })).toBe(4);
     expect(await games({ range: '7d' })).toBe(3);
   });
@@ -697,8 +691,6 @@ describe('stats filters', () => {
     expect(computer.lengths[X_WINS.length]).toBe(3);
     expect(computer.openings[0]).toBe(3);
     expect(computer.openingWinsX[0]).toBe(3);
-    // A fault has no mode, so a mode filter shows none.
-    expect(computer.errors).toEqual([]);
     expect(await games({ mode: 'computer', level: 'hard' })).toBe(2);
     expect(await games({ level: 'easy' })).toBe(1);
   });
@@ -720,6 +712,8 @@ describe('stats filters', () => {
     // Oldest first: lost on easy, won on hard, won online. The friend game has no side.
     expect(mine.form.map((point) => point.rate)).toEqual([0, 1 / 2, 2 / 3]);
     expect(mine.personal).toEqual({
+      // The computer won the easy game after 7 moves.
+      survival: [{ level: 'easy', moves: X_WINS.length }],
       results: expect.arrayContaining([
         { mode: 'computer', level: 'easy', won: 0, drawn: 0, lost: 1 },
         { mode: 'computer', level: 'hard', won: 1, drawn: 0, lost: 0 },
@@ -732,7 +726,6 @@ describe('stats filters', () => {
     expect(mine.personal?.results).toHaveLength(3);
     // Only the reports of Alice's own devices.
     expect(mine.metricsGames).toBe(1);
-    expect(mine.errors).toEqual([]);
     const text = JSON.stringify(mine);
     for (const token of [alice, alicePhone, bob]) expect(text).not.toContain(token);
   });
@@ -859,9 +852,8 @@ describe('custom names', () => {
     expect((await store.history(bob, 0)).games[0]).toMatchObject({ opponentName: 'Dana' });
     expect((await store.myGames(bob)).sessions[0]).toMatchObject({ opponentName: 'Dana' });
     expect((await store.game(gameId(`${code}-1`))).names.X).toBe('Dana');
-    // The computer (X) wins this game against Alice, so it counts for her survival record.
-    await store.addResults(alice, [result('66666666-0000-4000-8000-000000000002', { you: 'O', difficulty: 'easy' })]);
-    expect((await store.stats()).survival).toEqual([expect.objectContaining({ player: 'Dana' })]);
+    // Bob's own stats name Alice as his opponent.
+    expect((await store.stats({ ...ALL_STATS, scope: 'mine' }, bob)).personal?.opponents).toEqual([expect.objectContaining({ player: 'Dana' })]);
     expect(await store.customName(alice)).toBe('Dana');
     await store.clearName(alice);
     expect(await store.customName(alice)).toBeNull();

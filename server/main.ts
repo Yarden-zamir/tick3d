@@ -328,7 +328,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       await store.addEvent(event);
       return send(res, 200, { ok: true });
     }
-    // Aggregates only (see server/stats.ts), so the hidden stats page needs no login.
+    // Aggregates only (see server/stats.ts), so the public stats page needs no login.
     // Mine needs the X-Player header: the stats of that player on all linked devices.
     case 'GET /api/stats': {
       const filter = parseStatsFilter(url.searchParams);

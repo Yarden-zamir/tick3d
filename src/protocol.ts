@@ -754,8 +754,8 @@ export type MyGames = {
 
 // ---- Stats ----
 
-// The aggregates of the stats page (/stats). Only counts and player names: never a token, a
-// result id or a game id. `player` is a GitHub login, or the generated name of a player without a login.
+// The aggregates of the public stats page (/stats). Counts only: never a token, a result id, a game id
+// or a page fault. Only `personal` (Mine) names players: your opponents.
 export type Count = { key: string; count: number };
 export type Stats = {
   generatedAt: number;
@@ -767,15 +767,12 @@ export type Stats = {
   byMode: Count[];
   // Against the computer, from the player's side.
   levels: { level: Difficulty; games: number; won: number; drawn: number; lost: number; avgMoves: number; medianMoves: number; tuned: number }[];
-  // The longest games that the computer won, per level and player. Default computer only.
-  survival: { level: Difficulty; rank: number; player: string; moves: number }[];
   lengthByMode: { mode: SessionMode; games: number; avg: number; median: number; p90: number }[];
   // Time between two moves, in buckets (MOVE_TIME_BUCKETS).
   moveTimes: { bucket: number; human: number; computer: number }[];
   // Median time per move in milliseconds, per computer level and per other mode. `searchMs` is the
   // computer's own thinking time that devices report, without the pause before its move.
   thinkTimes: { key: string; humanMs: number | null; computerMs: number | null; searchMs: number | null }[];
-  slowest: { player: string; medianMs: number; moves: number }[];
   firstPlayer: { mode: SessionMode; x: number; o: number; draws: number }[];
   // CELL_COUNT counts each: first moves, and all moves.
   openings: number[];
@@ -798,8 +795,6 @@ export type Stats = {
   undo: { gamesWithUndo: number; undos: number };
   offlineGames: number;
   nearbyMixes: Count[];
-  // Page faults have no player and no mode, so this list is empty for Mine and for a mode or level filter.
-  errors: { kind: string; message: string; count: number; lastAt: number }[];
   // The filters that made these numbers.
   filter: StatsFilter;
   // The win rate over time, oldest first: at each game, the share of wins in the FORM_WINDOW games up to it.
@@ -816,6 +811,8 @@ export type Stats = {
 // A game result from the side of one player. A friend game has no side.
 export type SideOutcome = Exclude<Outcome, 'played'>;
 export type PersonalStats = {
+  // Your survival records: per level, the most moves of a game that the default computer won.
+  survival: { level: Difficulty; moves: number }[];
   // Per mode, and per level in computer games. Friend games have no side, so they are not here.
   results: { mode: SessionMode; level: Difficulty | null; won: number; drawn: number; lost: number }[];
   // The longest run of won games, and the run of equal results that ends with the newest game.

@@ -65,7 +65,7 @@ export default defineConfig({
       },
     }),
   ],
-  // Three pages: the game, the hidden stats page at /stats, and the ear training at /sound-training.
+  // Three pages: the game, the public stats page at /stats, and the ear training at /sound-training.
   build: { rollupOptions: { input: { main: 'index.html', stats: 'stats.html', training: 'sound-training.html' } } },
   // Vitest runs the unit tests only. Playwright runs the e2e/ tests against a deployed site (npm run e2e).
   test: { include: ['{src,server}/**/*.test.ts'] },
