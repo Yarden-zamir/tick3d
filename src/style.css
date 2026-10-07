@@ -1318,12 +1318,13 @@ body[data-turn='O'] .status[data-state='playing'] {
   justify-self: center;
 }
 
-/* Recentre tilt shows only after the first tilt reading, a moment after the voice starts.
-   On a touch screen it keeps its box while hidden, so it does not push the keypad down when it shows.
+/* Recentre tilt shows only with tilt on, after the first tilt reading, a moment after the voice starts.
+   With tilt on, a touch screen keeps its box while hidden, so it does not push the keypad down when it shows.
+   With tilt off (the default), it keeps no box (.tilt-on comes from src/page/voice.ts).
    Limit: a touch screen without a tilt sensor keeps an empty line, and a desktop with a sensor moves once.
    Revisit if players report the empty line. */
 @media (pointer: coarse) {
-  .voice-panel #voice-recentre[hidden] {
+  .voice-panel.tilt-on #voice-recentre[hidden] {
     display: inline-flex !important;
     visibility: hidden;
   }

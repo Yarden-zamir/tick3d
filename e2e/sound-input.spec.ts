@@ -283,3 +283,47 @@ test('a typed range and a spread apply, the board previews the frequency of each
   await expect(page.locator('#range-mode')).toHaveText('Your range: 200–800 Hz');
   await expect(page.locator('#spread [data-value="linear"]')).toHaveAttribute('aria-pressed', 'true');
 });
+
+test('on a touch screen, tilt is off by default, asks for the sensor only when the player turns it on, and stays at most 3 cells', async ({ browser, baseURL }) => {
+  if (baseURL === undefined) throw new Error('the config sets no baseURL');
+  const context = await browser.newContext({ baseURL, hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  // The iOS question for the sensor: the stub counts each ask.
+  await context.addInitScript(() => {
+    const asks = { count: 0 };
+    (window as unknown as { e2eTiltAsks: typeof asks }).e2eTiltAsks = asks;
+    Object.assign(DeviceOrientationEvent, {
+      requestPermission: () => {
+        asks.count++;
+        return Promise.resolve('granted');
+      },
+    });
+  });
+  const page = await context.newPage();
+  const errors = trackErrors(page);
+  const asks = () => page.evaluate(() => (window as unknown as { e2eTiltAsks: { count: number } }).e2eTiltAsks.count);
+  await page.goto('/sound-input');
+
+  const tiltOn = page.locator('#tilt-on');
+  const recentre = page.locator('#tilt-recentre');
+  const strength = page.locator('#tilt-steps');
+  await expect(page.locator('#tilt-editor')).toBeVisible();
+  await expect(tiltOn).not.toBeChecked();
+  await expect(recentre).toBeHidden();
+  await expect(strength).toHaveValue('2');
+  await expect(strength).toHaveAttribute('max', '3');
+
+  // The mic starts with tilt off: no question for the sensor.
+  await page.locator('#mic').click();
+  await expect(page.locator('#mic')).toHaveText('Stop');
+  expect(await asks()).toBe(0);
+
+  // The tap that turns tilt on asks, and Recentre shows.
+  await tiltOn.click();
+  await expect(tiltOn).toBeChecked();
+  await expect(recentre).toBeVisible();
+  await expect.poll(asks).toBe(1);
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('tick3d.voice') ?? 'null') as { tilt: unknown });
+  expect(stored.tilt).toEqual({ on: true, steps: 2 });
+  expect(errors).toEqual([]);
+  await context.close();
+});

@@ -23,7 +23,7 @@
 - Lock: no setting changes until the game ends.
 - Seat lock: keeps X and O between games. It sits next to "You play" (computer) and in the Players box (online, Nearby). Either player can change it.
 - Sound sets where each cell has its own sound, and an ear trainer at `/sound-training`.
-- Play by voice: tap the mic, then hold a note on a free cell for 1 second to place your move. On a phone, a small tilt nudges the cell.
+- Play by voice: tap the mic, then hold a note on a free cell for 1 second to place your move. On a phone, turn on Tilt in the Voice room settings (off by default): a small tilt nudges the cell up to 3 cells.
 - The Voice room at `/sound-input`: calibrate the mic to your voice, then practice with Free play, Targets, Echo, or a Playoff against the other player of an online game. The page finds the pitch on the device and sends no sound.
 - Your game as a song: the Song button on the end card and on a game link. A long press shares the song as a WAV file, with your voice on the moves that your voice placed.
 - An end card with the result, to share or save as an image.

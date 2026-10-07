@@ -11,7 +11,8 @@ const STORAGE_VERSION = 1;
 
 // `range` is null when the player did not calibrate: the page uses DEFAULT_RANGE then.
 // `spread` says how the 64 cells share the range (SPREADS in mapping.ts). `tilt` is the tilt fine-tuning
-// (tilt.ts). A store from before the tilt has no `tilt` field: it takes DEFAULT_TILT.
+// (tilt.ts). A store from before the tilt has no `tilt` field: it takes DEFAULT_TILT. A stored tilt keeps its
+// on or off, so only a player with no stored choice gets the new default.
 export type VoiceSettings = { range: Range | null; spread: Spread; stickiness: Stickiness; tilt: TiltSettings };
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = { range: null, spread: 'log', stickiness: DEFAULT_STICKINESS, tilt: DEFAULT_TILT };
@@ -41,7 +42,8 @@ function parseTilt(value: unknown): TiltSettings {
   const { on, steps } = value as Record<string, unknown>;
   return {
     on: typeof on === 'boolean' ? on : DEFAULT_TILT.on,
-    steps: inRange(steps, MAX_TILT_STEPS) && steps >= 1 ? steps : DEFAULT_TILT.steps,
+    // A strength above the maximum (an older store allowed up to 8) takes the maximum.
+    steps: typeof steps === 'number' && Number.isFinite(steps) && steps >= 1 ? Math.min(steps, MAX_TILT_STEPS) : DEFAULT_TILT.steps,
   };
 }
 

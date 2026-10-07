@@ -81,3 +81,25 @@ test('a blocked microphone shows what to do, and turns the voice off', async ({ 
   await expect(voice).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#voice-panel')).toBeHidden();
 });
+
+test('on a touch screen, the voice panel keeps the space of Recentre tilt only with tilt on', async ({ browser, baseURL }) => {
+  if (baseURL === undefined) throw new Error('the config sets no baseURL');
+  for (const tilt of [null, { on: true, steps: 2 }]) {
+    const context = await browser.newContext({ baseURL, hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+    await context.addInitScript(oscillatorMic);
+    await context.addInitScript((stored) => {
+      if (localStorage.getItem('tick3d.settings') === null) localStorage.setItem('tick3d.settings', JSON.stringify({ mode: 'friend' }));
+      if (stored !== null && localStorage.getItem('tick3d.voice') === null) localStorage.setItem('tick3d.voice', JSON.stringify({ version: 1, range: null, spread: 'log', stickiness: { share: 0.3, buildUpMs: 1500 }, tilt: stored }));
+    }, tilt);
+    const page = await context.newPage();
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Play by voice' }).click();
+    await expect(page.locator('#voice-panel')).toBeVisible();
+    const recentre = page.locator('#voice-recentre');
+    // No tilt reading in the test browser: the button stays hidden in both cases.
+    await expect(recentre).toBeHidden();
+    const display = await recentre.evaluate((element) => getComputedStyle(element).display);
+    expect(display, `tilt ${JSON.stringify(tilt)}`).toBe(tilt === null ? 'none' : 'inline-flex');
+    await context.close();
+  }
+});

@@ -5,7 +5,7 @@ import { DEFAULT_TILT } from './tilt.ts';
 
 describe('voice settings', () => {
   it('reads back what it stores', () => {
-    const stored = { range: { low: 210, high: 1350 }, spread: 'middle' as const, stickiness: { share: 0.3, buildUpMs: 2500 }, tilt: { on: false, steps: 6 } };
+    const stored = { range: { low: 210, high: 1350 }, spread: 'middle' as const, stickiness: { share: 0.3, buildUpMs: 2500 }, tilt: { on: true, steps: 3 } };
     expect(parseVoiceSettings(JSON.parse(JSON.stringify(toStorage(stored))))).toEqual(stored);
     expect(parseVoiceSettings(JSON.parse(JSON.stringify(toStorage(DEFAULT_VOICE_SETTINGS))))).toEqual(DEFAULT_VOICE_SETTINGS);
   });
@@ -37,5 +37,17 @@ describe('voice settings', () => {
       const parsed = parseVoiceSettings({ ...before, tilt }).tilt;
       expect(parsed.on === DEFAULT_TILT.on || parsed.steps === DEFAULT_TILT.steps, JSON.stringify(tilt)).toBe(true);
     }
+  });
+
+  it('gives a player with no stored tilt the tilt off, with a strength of 2', () => {
+    expect(DEFAULT_VOICE_SETTINGS.tilt).toEqual({ on: false, steps: 2 });
+    expect(parseVoiceSettings({ version: 1, range: null, spread: 'log', stickiness: DEFAULT_STICKINESS }).tilt).toEqual({ on: false, steps: 2 });
+  });
+
+  it('keeps a stored tilt on, and clamps a stored strength above 3 down to 3', () => {
+    const before = { version: 1, range: null, spread: 'log', stickiness: DEFAULT_STICKINESS };
+    expect(parseVoiceSettings({ ...before, tilt: { on: true, steps: 4 } }).tilt).toEqual({ on: true, steps: 3 });
+    expect(parseVoiceSettings({ ...before, tilt: { on: true, steps: 8 } }).tilt).toEqual({ on: true, steps: 3 });
+    expect(parseVoiceSettings({ ...before, tilt: { on: false, steps: 1 } }).tilt).toEqual({ on: false, steps: 1 });
   });
 });
