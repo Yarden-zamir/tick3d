@@ -2,7 +2,7 @@
 import { DIFFICULTIES, type Difficulty } from './ai.ts';
 import { NO_LIMIT, type TimeControl, parseClock } from './clock.ts';
 import { type EpochMs, isEpochMs } from './epoch.ts';
-import { CELL_COUNT, type Game, type Player, type Status, replay, timeOut } from './game.ts';
+import { CELL_COUNT, type Game, type Player, type Status, other, replay, timeOut } from './game.ts';
 import type { DeviceKind } from './nearby/device.ts';
 import { type Tuning, isTuning, parseTuning } from './tuning.ts';
 
@@ -34,6 +34,7 @@ export function parseMatchOptions(value: unknown): MatchOptions | undefined {
   return { hideBoard: value.hideBoard, hideHistory: value.hideHistory, hideCoordinates };
 }
 
+// `from` is the seat that the sender holds now. A swap of the seats swaps it in every message.
 export type ChatMessage = { id: number; from: Player; text: string; at: EpochMs };
 // A GitHub account linked to a seat. Shown next to the seat, never required to play.
 export type PlayerInfo = { login: string; avatar: string };
@@ -44,6 +45,10 @@ export const SESSION_MODES = ['online', 'computer', 'friend', 'nearby'] as const
 export type SessionMode = (typeof SESSION_MODES)[number];
 // One game as stored: moves, the time of each move, its time limit, and whether the player to move ran out of time.
 export type GameRecord = { moves: number[]; times: EpochMs[]; clock: TimeControl; timedOut: boolean };
+
+// The seat in game `index` of the player on `seat` now, and the reverse: a swap is its own inverse.
+// `flipped` has one entry per game: true when the two players sat the other way round in that game.
+export const seatIn = (flipped: readonly boolean[], index: number, seat: Player): Player => (flipped[index] === true ? other(seat) : seat);
 
 export type SessionView = {
   code: Code;
@@ -56,6 +61,11 @@ export type SessionView = {
   locked: boolean;
   // The time limit for the next game. Each game keeps the limit it started with.
   clock: TimeControl;
+  // False: the players swap X and O for each new game, so X (who moves first) alternates.
+  // True: the seats stay the same from game to game.
+  fixedSeats: boolean;
+  // One entry per game: true when the two players sat the other way round in that game (see seatIn).
+  flipped: boolean[];
   // Server time when the view was made. Pages use it to correct their own clock.
   now: EpochMs;
   version: number;
@@ -163,7 +173,7 @@ export function parseCustomName(value: unknown): string | undefined {
   return /^[\p{L}\p{M}\p{Nd} _-]+$/u.test(name) && /[\p{L}\p{Nd}]/u.test(name) ? name : undefined;
 }
 
-export type SessionUpdate = { name?: string; clock?: TimeControl } & Partial<MatchOptions>;
+export type SessionUpdate = { name?: string; clock?: TimeControl; fixedSeats?: boolean } & Partial<MatchOptions>;
 
 export function toGame(record: GameRecord): Game {
   const game = replay(record.moves, { times: record.times, clock: record.clock });
@@ -260,7 +270,7 @@ export function parseMoveRequest(value: unknown): MoveRequest | undefined {
 export function parseSessionUpdate(value: unknown): SessionUpdate | undefined {
   if (!isRecord(value)) return undefined;
   const keys = Object.keys(value);
-  const known = ['name', ...MATCH_OPTIONS, 'clock'];
+  const known = ['name', ...MATCH_OPTIONS, 'clock', 'fixedSeats'];
   if (keys.length === 0 || !keys.every((key) => known.includes(key))) return undefined;
   const update: SessionUpdate = {};
   if ('name' in value) {
@@ -272,6 +282,10 @@ export function parseSessionUpdate(value: unknown): SessionUpdate | undefined {
     const clock = parseClock(value.clock);
     if (clock === undefined) return undefined;
     update.clock = clock;
+  }
+  if ('fixedSeats' in value) {
+    if (typeof value.fixedSeats !== 'boolean') return undefined;
+    update.fixedSeats = value.fixedSeats;
   }
   for (const option of MATCH_OPTIONS) {
     if (!(option in value)) continue;
@@ -296,6 +310,9 @@ export function parseSessionView(value: unknown): SessionView {
   const watchers = value.watchers === undefined ? [] : Array.isArray(value.watchers) ? value.watchers.map(parseWatcher) : undefined;
   const youWatcher = value.youWatcher === undefined || value.youWatcher === null ? null : isWatcherId(value.youWatcher) ? value.youWatcher : undefined;
   const seatRequest = value.seatRequest === undefined || value.seatRequest === null ? null : parseSeatRequestView(value.seatRequest);
+  // An older server, an older Nearby host or a cached view sends no seat rotation: the seats stayed fixed then.
+  const fixedSeats = value.fixedSeats ?? true;
+  const flipped = value.flipped ?? (Array.isArray(games) ? games.map(() => false) : undefined);
   const clock = parseClock(value.clock);
   if (code === undefined) return fail('code');
   if (name === undefined) return fail('name');
@@ -318,6 +335,8 @@ export function parseSessionView(value: unknown): SessionView {
   if (watchers === undefined || !watchers.every((watcher) => watcher !== undefined)) return fail('watchers');
   if (seatRequest === undefined) return fail('seatRequest');
   if (youWatcher === undefined) return fail('youWatcher');
+  if (typeof fixedSeats !== 'boolean') return fail('fixedSeats');
+  if (!Array.isArray(flipped) || flipped.length !== games.length || !flipped.every((entry): entry is boolean => typeof entry === 'boolean')) return fail('flipped');
   // The rules give the live status. A sender without these fields (an older server, a Nearby host
   // or a cached view) is fine. A sender with fields that disagree with the moves is not.
   const last: unknown = games.at(-1);
@@ -340,6 +359,8 @@ export function parseSessionView(value: unknown): SessionView {
     options: matchOptions,
     locked,
     clock,
+    fixedSeats,
+    flipped,
     now,
     version,
     chat: chat.map(({ id, from, text, at }) => ({ id, from, text, at })),

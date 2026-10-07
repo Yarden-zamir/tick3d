@@ -312,7 +312,8 @@ describe('my games', () => {
     expect(mine.byMode.friend).toEqual({ played: 1, won: 0, lost: 0, drawn: 0 });
     expect(mine.byDifficulty.easy.lost).toBe(1);
     expect(mine.total.played).toBe(4);
-    expect(mine.sessions).toMatchObject([{ code, you: 'X', games: 1, yourTurn: true }]);
+    // The new game swapped the seats: Alice plays O now, and Bob moves first. Her win as X still counts.
+    expect(mine.sessions).toMatchObject([{ code, you: 'O', games: 1, yourTurn: false }]);
     expect((await store.myGames(carol)).total.played).toBe(0);
   });
 });
@@ -796,5 +797,20 @@ describe('custom names', () => {
     await store.linkToken(carol, ALICE_GITHUB);
     expect(await status(() => store.setName(bob, 'ALICE'))).toBe(409);
     expect(await store.customName(bob)).toBeNull();
+  });
+});
+
+describe('seat rotation', () => {
+  it('records each game with the players that held its seats, so history and my games count each game by its seat', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    expect((await store.newGame(code, bob)).you).toBe('X');
+    // Bob moves first in game 2, and wins it as X.
+    for (const [moveCount, cell] of X_WINS.entries()) await store.move(code, moveCount % 2 === 0 ? bob : alice, { game: 1, moveCount, cell });
+    expect((await store.game(gameId(`${code}-1`))).names).toEqual({ X: nameOf(alice), O: nameOf(bob) });
+    expect((await store.game(gameId(`${code}-2`))).names).toEqual({ X: nameOf(bob), O: nameOf(alice) });
+    expect((await store.history(alice, 0)).games.map((entry) => entry.result)).toEqual(['lost', 'won']);
+    expect((await store.myGames(alice)).byMode.online).toEqual({ played: 2, won: 1, lost: 1, drawn: 0 });
+    expect((await store.myGames(bob)).byMode.online).toEqual({ played: 2, won: 1, lost: 1, drawn: 0 });
   });
 });

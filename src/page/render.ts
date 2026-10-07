@@ -7,6 +7,7 @@ import { renderClockEditor, renderClocks } from './clocks.ts';
 import {
   boardEl,
   boardHiddenEl,
+  seatLockButtons,
   statusEl,
   reviewEl,
   reviewLabel,
@@ -31,6 +32,7 @@ import { renderCoords } from './keypad.ts';
 import { renderSessionGames } from './my-games.ts';
 import { showAccount } from '../header/header.ts';
 import { LOCK_CLOSED_ICON, LOCK_OPEN_ICON, SOUND_OFF_ICON, SOUND_ON_ICON } from '../icons.ts';
+import { seatIn } from '../protocol.ts';
 import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
 import { renderPlayers } from './players.ts';
@@ -50,6 +52,9 @@ export function playerName(player: Player): string {
   return session.players[player]?.login ?? session.names[player] ?? `Player ${player}`;
 }
 
+// The seat now of the player who held `seat` in game `index`, and the reverse: the seats can rotate between games.
+export const seatNow = (index: number, seat: Player): Player => seatIn(page.session?.flipped ?? [], index, seat);
+
 // "You win!", or the winner's name: "Computer wins!", "braveOtter wins!", "Player X wins!".
 const winText = (winner: Player) => (winner === me() ? 'You win!' : `${playerName(winner)} wins!`);
 
@@ -60,12 +65,13 @@ function awayPlayer(): Player | undefined {
   return page.session.seats[opponent] && !page.session.presence[opponent] ? opponent : undefined;
 }
 
-export function resultText(game: Game): string {
+// The result of game `index` of the open session, with the name of the player who won it.
+export function resultText(game: Game, index: number): string {
   switch (game.status.kind) {
     case 'won':
-      return `${playerName(game.status.winner)} won`;
+      return `${playerName(seatNow(index, game.status.winner))} won`;
     case 'timeout':
-      return `${playerName(game.status.winner)} won on time`;
+      return `${playerName(seatNow(index, game.status.winner))} won on time`;
     case 'draw':
       return 'Draw';
     case 'playing':
@@ -233,11 +239,11 @@ export function render(): void {
   joinCodeInput.disabled = frozen || page.busy;
   newCodeButton.disabled = frozen || page.busy;
 
-  // Score: finished games of this session only.
+  // Score: finished games of this session only, per player. The seats can rotate between games.
   const score = { X: 0, O: 0, draw: 0 };
-  for (const g of page.games) {
+  for (const [index, g] of page.games.entries()) {
     const winner = winnerOf(g.status);
-    if (winner !== null) score[winner]++;
+    if (winner !== null) score[seatNow(index, winner)]++;
     if (g.status.kind === 'draw') score.draw++;
   }
   const away = awayPlayer();
@@ -295,7 +301,20 @@ export function render(): void {
       : 'Lock: waits for the second player.';
   lockButton.innerHTML = locked ? `${LOCK_CLOSED_ICON}<span>Locked</span>` : `${LOCK_OPEN_ICON}<span>Lock</span>`;
   lockButton.setAttribute('aria-pressed', String(locked));
+  renderSeatLocks(frozen);
   showAccount(page.account.user);
   soundButton.innerHTML = settings.muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
   soundButton.setAttribute('aria-pressed', String(!settings.muted));
+}
+
+// The seat lock next to "You play" (computer) and in the Players box (online, Nearby). Off: X and O
+// swap after each game. On: the seats stay. A friend game has one device on both seats: no lock there.
+function renderSeatLocks(frozen: boolean): void {
+  const fixed = page.session?.fixedSeats ?? false;
+  for (const button of seatLockButtons) {
+    button.innerHTML = fixed ? LOCK_CLOSED_ICON : LOCK_OPEN_ICON;
+    button.setAttribute('aria-pressed', String(fixed));
+    button.disabled = frozen || page.busy || !canChangeMatch();
+    button.dataset.tip = fixed ? 'Keep seats' : 'Swap seats each game';
+  }
 }

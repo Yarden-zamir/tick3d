@@ -2,15 +2,15 @@
 import { DIFFICULTIES } from '../ai.ts';
 import { sounds, setMuted } from '../sound.ts';
 import { undoMove } from './computer.ts';
-import { reviewEl, newGameButton, undoButton, lockButton, soundButton } from './dom.ts';
-import { reject, showError } from './feedback.ts';
+import { reviewEl, newGameButton, undoButton, lockButton, seatLockButtons, soundButton } from './dom.ts';
+import { reject, showError, showToast } from './feedback.ts';
 import { infoButton } from '../header/header.ts';
 import { nearbyKind, endNearby, openNearby } from './nearby.ts';
 import { render } from './render.ts';
-import { leaveSession, createSession, openLocalSession, withBusy, applyView, startNewGame } from './sessions.ts';
+import { leaveSession, createSession, openLocalSession, withBusy, applyView, startNewGame, seatLockText } from './sessions.ts';
 import { LAYOUTS, MATCH_OPTIONS, VIEWS } from '../protocol.ts';
 import { settings, oneOf, MODES, PLAYERS, saveSettings } from './settings.ts';
-import { page, settingsLocked, isLive } from './state.ts';
+import { page, settingsLocked, isLive, shared } from './state.ts';
 
 export function startReview(index: number): void {
   const game = page.games[index];
@@ -107,6 +107,23 @@ export function setupControls(): void {
   newGameButton.addEventListener('click', startNewGame);
 
   undoButton.addEventListener('click', undoMove);
+
+  // The seat lock: on, X and O stay the same between games. Off, they swap after each game.
+  for (const button of seatLockButtons) {
+    button.addEventListener('click', () => {
+      if (settingsLocked()) return reject(undefined, 'locked');
+      if (page.session === undefined) return reject(undefined, 'no-session');
+      if (page.session.you === null) return reject(undefined, 'spectator');
+      sounds.click();
+      const { code, backend } = page.session;
+      const fixedSeats = !page.session.fixedSeats;
+      void withBusy(async () => {
+        applyView(await backend.update(code, { fixedSeats }));
+        // With another device, applyView shows the message, as for every change of the match.
+        if (!shared()) showToast(seatLockText(fixedSeats));
+      });
+    });
+  }
 
   lockButton.addEventListener('click', () => {
     if (!isLive() || page.review || page.session === undefined || page.session.locked) return;

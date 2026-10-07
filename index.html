@@ -147,7 +147,11 @@
         </div>
         <!-- The Players box of online and Nearby games: seats, watchers and seat controls (src/page/players.ts). -->
         <section class="players" id="players" aria-labelledby="players-title" data-show-mode="online nearby" data-needs-session>
-          <span class="label" id="players-title">Players</span>
+          <!-- The seat lock: X and O swap after each game unless it is on (src/page/controls.ts). -->
+          <div class="field-head">
+            <span class="label" id="players-title">Players</span>
+            <button type="button" class="btn btn-small btn-icon lock" data-seat-lock aria-label="Keep the seats" aria-pressed="false"></button>
+          </div>
           <ul class="players-list" id="players-list"></ul>
           <div class="players-request" id="players-request" aria-live="polite" hidden>
             <p id="players-request-text"></p>
@@ -184,7 +188,10 @@
         </div>
 
         <div class="field" data-show-mode="computer">
-          <span class="label">You play</span>
+          <div class="field-head">
+            <span class="label">You play</span>
+            <button type="button" class="btn btn-small btn-icon lock" data-seat-lock aria-label="Keep the seats" aria-pressed="false"></button>
+          </div>
           <div class="segmented" data-setting="human">
             <button type="button" data-value="X">X · first</button>
             <button type="button" data-value="O">O · second</button>

@@ -48,11 +48,20 @@ export type SessionDoc = {
   chat: ChatMessage[];
   // A seat change that waits for the other player (see seat in core.ts), or null.
   seatRequest: StoredSeatRequest | null;
+  // False: the players swap X and O for each new game (newGame in core.ts). True: the seats stay.
+  // The default depends on the mode (defaultFixedSeats).
+  fixedSeats: boolean;
+  // One entry per game: true when the two players sat the other way round in that game (seatIn in protocol.ts).
+  // The live game is always false while it goes on.
+  flipped: boolean[];
 };
 
 // `watcher` is the player token of the watcher that takes the other seat (replace), else null.
 // `at` is the time of the request. The request ends SEAT_REQUEST_MS (core.ts) later.
 type StoredSeatRequest = { kind: ConsentAction; from: Player; watcher: string | null; at: EpochMs };
+
+// Against the computer the player starts every game until they unlock the seats. Two people swap by default.
+export const defaultFixedSeats = (mode: SessionMode): boolean => mode === 'computer';
 
 type RawDoc = Record<string, unknown>;
 export type Upgrade = (doc: RawDoc) => RawDoc;
@@ -118,6 +127,11 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
   if (!Array.isArray(chat) || !chat.every(isChatMessage)) throw new FormatError('the chat is invalid');
   // A document from before seat controls has no seat request.
   const seatRequest = doc.seatRequest === undefined || doc.seatRequest === null ? null : readSeatRequest(doc.seatRequest);
+  // A document from before seat rotation gets the default of its mode. Its earlier games sat as the seats are now.
+  const flipped = doc.flipped === undefined ? doc.games.map(() => false) : doc.flipped;
+  if (!Array.isArray(flipped) || flipped.length !== doc.games.length || !flipped.every((entry): entry is boolean => typeof entry === 'boolean')) {
+    throw new FormatError('the flipped seats do not match the games');
+  }
   return {
     format: CURRENT_FORMAT,
     mode,
@@ -131,6 +145,8 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
     clock,
     chat: chat.slice(-CHAT_KEEP),
     seatRequest,
+    fixedSeats: doc.fixedSeats === undefined ? defaultFixedSeats(mode) : doc.fixedSeats === true,
+    flipped,
   };
 }
 
