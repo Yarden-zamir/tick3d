@@ -24,7 +24,7 @@ import {
   toRecord,
 } from '../protocol.ts';
 import { PlayoffError, type PlayoffRequest, applyPlayoff } from '../practice/playoff.ts';
-import { CURRENT_FORMAT, type SessionDoc } from './format.ts';
+import { CURRENT_FORMAT, type SessionDoc, defaultFixedSeats } from './format.ts';
 
 // A code that a client can test, for a refusal that needs a specific reaction.
 // already-played: the move is in the game already, so an earlier copy of the request counted.
@@ -110,6 +110,8 @@ export function createDoc({ name, mode, clock = NO_LIMIT, seats, computer }: New
     chat: [],
     playoff: null,
     seatRequest: null,
+    fixedSeats: defaultFixedSeats(mode),
+    flipped: [false],
   };
 }
 
@@ -173,14 +175,39 @@ export function newGame(doc: SessionDoc, identity: Identity): SessionDoc {
   const sharedGame = doc.mode === 'online' || doc.mode === 'nearby';
   if (sharedGame && game.status.kind === 'playing' && game.moves.length > 0) throw new SessionError(409, 'Finish this game first.');
   // An empty live game is replaced, so a new game never leaves an empty one in the history.
-  const games = game.moves.length === 0 ? doc.games.slice(0, -1) : doc.games;
-  return { ...doc, games: [...games, emptyRecord(doc.clock)] };
+  const played = game.moves.length > 0;
+  const games = played ? doc.games : doc.games.slice(0, -1);
+  const flipped = played ? doc.flipped : doc.flipped.slice(0, -1);
+  // An open seat request stays, and a swap keeps it with its player. An undo request cannot be open
+  // here: a move ends it, and a timed game has no undo.
+  const next: SessionDoc = { ...doc, games: [...games, emptyRecord(doc.clock)], flipped: [...flipped, false] };
+  // After a played game the players swap X and O, so the first move alternates. A friend game
+  // holds both seats on one device, so it has nothing to swap.
+  return played && !doc.fixedSeats && doc.mode !== 'friend' ? swapSeats(next) : next;
 }
 
-// The name stays open during a lock. The match options and the clock do not.
+// X and O trade players. Each chat message and an open request stay with their player, and each
+// game that is over keeps who played it (flipped). A live game goes on with the new seats.
+function swapSeats(doc: SessionDoc): SessionDoc {
+  const last = doc.games.length - 1;
+  const live = currentGame(doc).status.kind === 'playing';
+  return {
+    ...doc,
+    seats: { X: doc.seats.O, O: doc.seats.X },
+    computer: doc.computer === null ? null : { ...doc.computer, seat: other(doc.computer.seat) },
+    chat: doc.chat.map((message) => ({ ...message, from: other(message.from) })),
+    seatRequest: doc.seatRequest === null ? null : { ...doc.seatRequest, from: other(doc.seatRequest.from) },
+    // The rotation is not a seat change by a player, so a sound playoff goes on, with each player's progress.
+    playoff: doc.playoff === null ? null : { ...doc.playoff, by: other(doc.playoff.by), seats: { X: doc.playoff.seats.O, O: doc.playoff.seats.X } },
+    flipped: doc.flipped.map((entry, index) => (index === last && live ? entry : !entry)),
+  };
+}
+
+// The name stays open during a lock. The match options, the clock and the seat rotation do not.
 export function update(doc: SessionDoc, identity: Identity, changes: SessionUpdate): SessionDoc {
   requireSeat(doc, identity);
-  const changesMatch = MATCH_OPTIONS.some((option) => changes[option] !== undefined) || changes.clock !== undefined;
+  const changesMatch =
+    MATCH_OPTIONS.some((option) => changes[option] !== undefined) || changes.clock !== undefined || changes.fixedSeats !== undefined;
   if (changesMatch && isLocked(doc)) throw new SessionError(409, 'Settings are locked until this game ends.');
   const next: SessionDoc = {
     ...doc,
@@ -191,6 +218,7 @@ export function update(doc: SessionDoc, identity: Identity, changes: SessionUpda
       hideCoordinates: changes.hideCoordinates ?? doc.options.hideCoordinates,
     },
     clock: changes.clock ?? doc.clock,
+    fixedSeats: changes.fixedSeats ?? doc.fixedSeats,
   };
   // A game keeps the limit it started with. A game without moves has not started yet.
   const live = next.games.at(-1);
@@ -288,13 +316,10 @@ function applySeatChange(doc: SessionDoc, { kind, from, watcher }: SeatChange): 
     return { ...replaceCurrent(doc, undoGame(currentGame(doc), 1)), seatRequest: null };
   }
   if ((kind === 'give' || kind === 'seat' || kind === 'replace') && watcher === null) throw new Error(`${kind} without a watcher`);
+  if (kind === 'swap') return { ...swapSeats(doc), seatRequest: null };
   const to = other(from);
   const seats = { ...doc.seats };
   switch (kind) {
-    case 'swap':
-      seats[from] = doc.seats[to];
-      seats[to] = doc.seats[from];
-      break;
     case 'leave':
       seats[from] = null;
       break;
@@ -391,6 +416,8 @@ export function viewOf(doc: SessionDoc, { code, version, identity, now, audience
     options: doc.options,
     locked: isLocked(doc),
     clock: doc.clock,
+    fixedSeats: doc.fixedSeats,
+    flipped: doc.flipped,
     now,
     version,
     chat: doc.chat,

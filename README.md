@@ -10,6 +10,7 @@
 
 - Two players take turns. X moves first.
 - Four marks in a straight line win. The cube has 76 lines.
+- In an online or Nearby session, X and O swap for each new game, so the first move alternates. Against the computer you start every game unless you unlock the seats.
 - A full cube with no line is a draw.
 
 ## Features
@@ -20,6 +21,7 @@
 - Play by coordinates on the keypad, with the board or the marks hidden.
 - Time limits per game, per move, or both. A player who runs out loses.
 - Lock: no setting changes until the game ends.
+- Seat lock: keeps X and O between games. It sits next to "You play" (computer) and in the Players box (online, Nearby). Either player can change it.
 - Sound sets where each cell has its own sound, and an ear trainer at `/sound-training`.
 - Play by voice: tap the mic, then hold a note on a free cell for 1 second to place your move. On a phone, a small tilt nudges the cell.
 - The Voice room at `/sound-input`: calibrate the mic to your voice, then practice with Free play, Targets, Echo, or a Playoff against the other player of an online game. The page finds the pitch on the device and sends no sound.
@@ -47,6 +49,7 @@
 - Choose Online to create a session with a 4 character code (`?code=AB3K`). Share the link or the QR code.
 - The creator plays X, the first other browser plays O, and further browsers watch.
 - Either player controls the seats. A change to the other player's seat, and an undo, waits until that player accepts.
+- After each new game, the seats swap unless a player locked them. The score and My games count each game for the player who played it.
 - Chat, the hide options, the lock and the time limit belong to the session, so both players share them.
 - The server decides a timeout, so a page that closes cannot avoid a loss on time.
 - A session with moves never expires. A player can leave and come back, so a game can run asynchronously.
@@ -84,6 +87,7 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | --- | --- | --- | --- | --- | --- |
 | Opponent, view, layout, theme, sound | yes | yes | yes | yes | yes |
 | Difficulty, You play, Advanced | yes | no | no | no | no |
+| Seat lock (keep X and O between games) | next to You play | no | in the Players box | in the Players box | no |
 | Game code, Link, QR code, session name | no | no | yes | no | no |
 | Host, Join with a code, Games near you, device list | no | no | no | yes | no |
 | Join a friend (code and New code) | no | no | yes | no | no |

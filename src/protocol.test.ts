@@ -51,6 +51,8 @@ describe('parseSessionView', () => {
     options: { hideBoard: true, hideHistory: false, hideCoordinates: true },
     locked: false,
     clock: { perMove: 30, perGame: 300 },
+    fixedSeats: false,
+    flipped: [false],
     now: 30,
     version: 2,
     chat: [{ id: 7, from: 'O', text: 'good luck', at: 1_700_000_000_000 }],
@@ -90,6 +92,11 @@ describe('parseSessionView', () => {
     expect(parseSessionView(older)).toMatchObject({ watchers: [], youWatcher: null, seatRequest: null });
   });
 
+  it('reads fixed seats when an older sender has no seat rotation: its seats never rotated', () => {
+    const { fixedSeats: _fixed, flipped: _flipped, ...older } = valid;
+    expect(parseSessionView(older)).toMatchObject({ fixedSeats: true, flipped: [false] });
+  });
+
   it('fills turn and status from the moves when a sender has no such fields', () => {
     const { turn: _turn, status: _status, ...older } = valid;
     expect(parseSessionView(older)).toEqual(valid);
@@ -126,6 +133,9 @@ describe('parseSessionView', () => {
     ['seatRequest', { ...valid, seatRequest: { ...valid.seatRequest, kind: 'leave' } }],
     ['seatRequest', { ...valid, seatRequest: { ...valid.seatRequest, watcher: null } }],
     ['seatRequest', { ...valid, seatRequest: { kind: 'swap', from: 'X', watcher: { name: 'Carol', player: null }, expiresAt: 90 } }],
+    ['fixedSeats', { ...valid, fixedSeats: 'yes' }],
+    ['flipped', { ...valid, flipped: [] }],
+    ['flipped', { ...valid, flipped: ['no'] }],
   ])('throws on a bad %s field', (_, input) => {
     expect(() => parseSessionView(input)).toThrow();
   });
@@ -137,9 +147,10 @@ describe('parseSessionUpdate', () => {
     expect(parseSessionUpdate({ hideHistory: false })).toEqual({ hideHistory: false });
     expect(parseSessionUpdate({ hideCoordinates: true })).toEqual({ hideCoordinates: true });
     expect(parseSessionUpdate({ clock: { perMove: 30, perGame: null } })).toEqual({ clock: { perMove: 30, perGame: null } });
+    expect(parseSessionUpdate({ fixedSeats: true })).toEqual({ fixedSeats: true });
   });
 
-  it.each([{}, { name: '' }, { hideBoard: 'true' }, { hideCoordinates: 1 }, { locked: true }, { clock: { perMove: 2, perGame: null } }, null])('rejects %j', (input) => {
+  it.each([{}, { name: '' }, { hideBoard: 'true' }, { hideCoordinates: 1 }, { fixedSeats: 'on' }, { locked: true }, { clock: { perMove: 2, perGame: null } }, null])('rejects %j', (input) => {
     expect(parseSessionUpdate(input)).toBeUndefined();
   });
 });

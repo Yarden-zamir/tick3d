@@ -85,12 +85,12 @@ test('two agents play and chat over the API with long polls, and a person watche
   await expect(page.locator('#chat-log')).toContainText('Good game, agent A!');
   await expect(page.locator('#chat-log')).toContainText('Thanks, agent B!');
 
-  // The next game reaches the watcher live.
+  // The next game reaches the watcher live. The seats swap, so agent B (O before) is X and moves first.
   const next = await call(request, agentB, 'POST', `/sessions/${code}/games`);
-  expect(next.turn).toBe('X');
+  expect(next).toMatchObject({ turn: 'X', you: 'X', flipped: [true, false] });
   await expect(marks(page)).toHaveCount(0);
   await expect(status(page)).toContainText('Watching');
-  await call(request, agentA, 'POST', `/sessions/${code}/moves`, { game: next.games.length - 1, moveCount: 0, cell: 21 });
+  await call(request, agentB, 'POST', `/sessions/${code}/moves`, { game: next.games.length - 1, moveCount: 0, cell: 21 });
   await expect(marks(page)).toHaveCount(1);
 });
 

@@ -447,7 +447,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     case 'PATCH /api/sessions/{code}': {
       const changes = parseSessionUpdate(await readJson(req));
       if (changes === undefined) {
-        throw new HttpError(400, 'An update needs a name of 1 to 40 characters, hideBoard, hideHistory, hideCoordinates or a valid clock.');
+        throw new HttpError(400, 'An update needs a name of 1 to 40 characters, hideBoard, hideHistory, hideCoordinates, fixedSeats or a valid clock.');
       }
       return send(res, 200, await store.update(code(), requirePlayer(req), changes));
     }
