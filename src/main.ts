@@ -5,6 +5,7 @@ import { EMPTY_SESSION_TTL_MS } from './session/core.ts';
 import { setupPwa } from './pwa.ts';
 import { token } from './online.ts';
 import { normalizeCode, parseGameId } from './protocol.ts';
+import { readLinkIntent } from './session-link.ts';
 import { setMuted, setSoundSet } from './sound.ts';
 import { setupAdvanced } from './page/advanced.ts';
 import { applyCamera, setupBoard } from './page/board.ts';
@@ -114,7 +115,10 @@ async function start(): Promise<void> {
     showToast(`The link code "${linkCode}" is not valid.`);
   }
   if (code !== undefined) {
-    await joinSession(code);
+    const intent = readLinkIntent(params);
+    // A broken watch value still only watches: a seat taken by mistake is worse than no seat.
+    if (intent === 'invalid') showToast(`The link value watch="${params.getAll('watch').join(',')}" is not valid. Use watch=1.`);
+    await joinSession(code, intent === 'play' ? 'play' : 'watch');
     if (page.session?.code === code) return;
     // The code opened no game (none with that code, or no network), and the error shows already.
     // The address drops the code, so a reload does not repeat the error, and the page starts as usual.

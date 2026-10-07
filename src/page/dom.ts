@@ -29,6 +29,7 @@ export const digitButtons = document.querySelectorAll<HTMLButtonElement>('[data-
 export const onlineCodeEl = element('#online-code', HTMLElement);
 export const shareButton = element('#share', HTMLButtonElement);
 export const shareQrButton = element('#share-qr', HTMLButtonElement);
+export const shareWatchButton = element('#share-watch', HTMLButtonElement);
 export const onlineQr = element('#online-qr', HTMLDivElement);
 export const onlineQrImage = element('#online-qr-image', HTMLDivElement);
 export const onlineQrCaption = element('#online-qr-caption', HTMLSpanElement);
