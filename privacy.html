@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="What tick3d stores about players, what stays on the device, and how to delete it." />
+    <script>
+      // Apply the stored theme of the game before the first paint, as index.html does.
+      try {
+        const theme = JSON.parse(localStorage.getItem('tick3d.settings') ?? 'null')?.theme;
+        // Keep this list in step with THEMES in src/protocol.ts.
+        const themes = ['light', 'dark', 'snow', 'candy', 'mint', 'retro', 'midnight', 'synthwave', 'bloodmoon', 'coffee', 'batman', 'mono'];
+        if (themes.includes(theme)) {
+          document.documentElement.dataset.theme = theme;
+        }
+      } catch {}
+    </script>
+    <title>tick3d · privacy</title>
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <!-- The page font (src/style.css). The preload starts the download before the stylesheet asks for it. -->
+    <link rel="preload" href="/src/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin />
+  </head>
+  <body>
+    <main class="privacy">
+      <header class="brand privacy-head">
+        <h1><a href="/" class="home-link" id="home-link" title="Home">tick<span>3d</span></a></h1>
+        <p class="page-title">Privacy</p>
+        <div class="brand-links">
+          <a class="repo-link account-button" id="account-button" href="/?open=my-games" aria-label="My games" data-tip="My games">
+            <!-- [html-validate-disable-next element-required-attributes: the page sets src after login] -->
+            <img class="avatar" id="account-avatar" alt="" hidden />
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0V4ZM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 13v3M8 20h8l-1-4H9l-1 4Z"/></svg>
+            <span id="account-name">My games</span>
+          </a>
+          <button type="button" class="info-button" id="info-button" popovertarget="info-panel" aria-label="Info" data-tip="Info: how this page works">
+            <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+              <circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" stroke-width="1.6" />
+              <circle cx="8" cy="4.9" r="1.05" fill="currentColor" />
+              <path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+            </svg>
+          </button>
+          <button type="button" class="repo-link" id="previews-button" aria-haspopup="dialog" aria-label="kitshn: previews of open pull requests" data-tip="Previews of open pull requests">
+            <!-- The KitSHn pot, drawn inline so that it works offline. -->
+            <svg viewBox="0 0 14 14" width="18" height="18" fill="currentColor" aria-hidden="true"><rect x="6" y="1.2" width="2" height="1.6" rx="0.5"/><rect x="2.2" y="3.4" width="9.6" height="1.5" rx="0.75"/><rect x="3" y="5.6" width="8" height="6.6" rx="1.6"/><rect x="0.8" y="6.8" width="2.4" height="1.4" rx="0.7"/><rect x="10.8" y="6.8" width="2.4" height="1.4" rx="0.7"/></svg>
+            <span>kitshn</span>
+          </button>
+          <a class="repo-link" href="https://github.com/Yarden-zamir/tick3d" target="_blank" rel="noopener" aria-label="GitHub" data-tip="The source code on GitHub">
+            <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+              <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+            </svg>
+            <span>GitHub</span>
+          </a>
+        </div>
+      </header>
+      <article class="privacy-text">
+        <p class="privacy-date">Last change: 8 October 2026</p>
+        <p>tick3d is a game by Yarden Zamir. This policy covers the website and the Android app. The app shows the same website.</p>
+        <p>tick3d has no ads, no trackers and no analytics services. It does not sell your data or give it to others.</p>
+
+        <h2>What the server stores</h2>
+        <ul>
+          <li><b>Player token.</b> A random id that the game makes on your first visit. It holds no name, email or device id. Your browser keeps it and sends it with online calls.</li>
+          <li><b>Custom name.</b> The name that you choose, if you choose one.</li>
+          <li><b>Online sessions.</b> The moves, the seats, the session name and the chat. A session keeps its last 50 chat messages.</li>
+          <li><b>Game results and stats.</b> Every finished game, also games against the computer, with a friend and Nearby. A game also stores counts about how it was played: the device kind (phone, tablet or computer), the theme, the view, and how many moves came from the board or the keypad.</li>
+          <li><b>Voice room runs.</b> The mode, the times and the score of a finished practice run. No audio.</li>
+          <li><b>GitHub login</b>, only if you log in: your GitHub id, login name and picture address. A login cookie keeps you logged in for 90 days.</li>
+          <li><b>Error reports.</b> The error message and the app version, without your token.</li>
+        </ul>
+        <p>Nearby uses your network address to find devices on the same Wi-Fi. The server keeps it in memory only while your Nearby game is open, and never writes it to disk.</p>
+
+        <h2>What stays on your device</h2>
+        <ul>
+          <li><b>Microphone audio.</b> Voice play reads the microphone on your device only. The audio and the voice clips for a replay stay in memory on the device. The game never uploads or saves them.</li>
+          <li>Your settings, your voice calibration, and the games of this device, in the storage of your browser.</li>
+        </ul>
+
+        <h2>Who sees what</h2>
+        <ul>
+          <li>Anyone with the code or link of an online session sees its players, moves and chat.</li>
+          <li>Anyone with the link to a finished game sees its moves and the player names.</li>
+          <li>The Stats page shows totals of all games, without names.</li>
+          <li>Your GitHub picture loads from GitHub.</li>
+        </ul>
+        <p>All data goes over HTTPS.</p>
+
+        <h2>How long it stays</h2>
+        <ul>
+          <li>An online session without a move: deleted after 9 hours.</li>
+          <li>Everything else: until you ask to delete it.</li>
+        </ul>
+
+        <h2>Delete your data</h2>
+        <ul>
+          <li><b>Clear history</b> in My games hides your games from your history. The games still count in the totals.</li>
+          <li><b>Reset to generated name</b> in My games removes your custom name.</li>
+          <li><b>Log out</b> unlinks this browser from your GitHub account.</li>
+          <li>To delete the data on your device, clear the site data of tick3d in your browser, or uninstall the app.</li>
+          <li>To delete all your data on the server, email <a href="mailto:dev@yarden-zamir.com">dev@yarden-zamir.com</a>. Give your player name or GitHub login, and a game link if you have one. The data is deleted within 30 days.</li>
+        </ul>
+
+        <h2>Children</h2>
+        <p>tick3d is for players of 13 and older.</p>
+
+        <h2>Contact</h2>
+        <p>Questions and requests: <a href="mailto:dev@yarden-zamir.com">dev@yarden-zamir.com</a>.</p>
+      </article>
+    </main>
+    <dialog class="end-card my-games" id="previews" aria-labelledby="previews-title">
+      <div class="my-games-head">
+        <h2 id="previews-title">Previews</h2>
+        <button type="button" class="btn btn-small btn-icon" id="previews-close" aria-label="Close"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <p class="my-games-note" id="previews-note"></p>
+      <ul class="my-games-list previews-list" id="previews-list"></ul>
+    </dialog>
+    <div class="info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
+      <h2 id="info-title">About this page</h2>
+      <p>The privacy policy of tick3d: the website and the Android app.</p>
+      <button type="button" class="btn btn-small info-close" popovertarget="info-panel" popovertargetaction="hide">Close</button>
+    </div>
+    <script type="module" src="/src/privacy/main.ts"></script>
+  </body>
+</html>

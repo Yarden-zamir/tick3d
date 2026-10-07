@@ -6,6 +6,8 @@ RUN npm ci
 COPY tsconfig.json *.html vite.config.ts ./
 # Vite copies public/ (the favicons and icons) into dist as is. The PWA plugin writes the manifest.
 COPY public public
+# The build reads the package id and the key fingerprints of the Android app for /.well-known/assetlinks.json.
+COPY android/twa-manifest.json android/
 COPY src src
 COPY server server
 # Only the page build. The type check, the linters and the tests run in the check job of the workflow

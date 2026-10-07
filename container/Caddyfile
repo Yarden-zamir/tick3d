@@ -55,6 +55,9 @@ http:// {
 		@pwa path /sw.js /workbox-*.js /manifest.webmanifest
 		header @pwa Cache-Control "no-cache"
 
+		# Digital Asset Links of the Android app (src/assetlinks.ts). Android requires JSON, without a redirect.
+		header /.well-known/assetlinks.json Content-Type application/json
+
 		file_server
 	}
 }
