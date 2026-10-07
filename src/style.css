@@ -782,6 +782,14 @@ body[data-turn='O'] .status[data-state='playing'] {
   max-width: 100%;
 }
 
+/* src/page/board.ts builds the board after the first paint on a slow device. Until then the empty
+   board keeps the height of the tower (four layers, three gaps and the bottom padding, see
+   .board.tower), so the controls under it do not jump. Limit: the flat view is shorter, so a
+   player who saved it sees the page close up once. Revisit if flat becomes the default view. */
+.board:empty {
+  min-height: calc(var(--side) * (0.72 * 4 + 0.3) + 0.5rem * 3);
+}
+
 .board.thinking {
   cursor: progress;
 }
