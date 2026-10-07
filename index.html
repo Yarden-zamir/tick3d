@@ -75,6 +75,7 @@
             <span id="game-view-players"></span>
             <small id="game-view-details"></small>
           </div>
+          <button type="button" class="btn song" id="game-view-song" aria-label="Play the game as a song" data-tip="Play as a song. Hold to share."></button>
           <button type="button" class="btn btn-primary" id="game-view-play">Play</button>
         </div>
         <div class="clocks" id="clocks" hidden>
@@ -108,6 +109,13 @@
             <span class="slot"><small>Layer</small><b></b></span>
             <span class="slot"><small>Row</small><b></b></span>
             <span class="slot"><small>Column</small><b></b></span>
+          </div>
+          <!-- Play by voice aims here: the slots show the cell of the pitch. src/page/voice.ts shows this part while the voice is on. -->
+          <div class="voice-panel" id="voice-panel" hidden>
+            <div class="rail" id="voice-rail" role="img" aria-label="Pitch rail: your range from low at the left to high at the right, with the four rows"></div>
+            <p class="voice-status" role="status"><span class="voice-state" id="voice-state"></span><a id="voice-room" href="/sound-input">Calibrate and practice</a></p>
+            <!-- Tilt fine-tuning: src/page/voice.ts shows this button once the device sends a tilt reading. -->
+            <button type="button" class="btn btn-small" id="voice-recentre" hidden data-tip="Take this angle as level">Recentre tilt</button>
           </div>
           <div class="keypad">
             <button type="button" class="btn" data-digit="1">1</button>
@@ -144,6 +152,8 @@
             <button type="button" id="sound" aria-label="Sound" data-tip="Sound on or off"></button>
             <button type="button" id="sound-set" popovertarget="sound-sets" aria-label="Sound set" data-tip="Sound set: the sound of each move"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
           </div>
+          <!-- Play by voice: a held note places your move. src/page/voice.ts sets the icon and shows the button where this screen has a seat. -->
+          <button type="button" class="btn btn-icon" id="voice" aria-label="Play by voice" aria-pressed="false" data-tip="Play by voice: hold a note to place" hidden></button>
         </div>
         <!-- The Players box of online and Nearby games: seats, watchers and seat controls (src/page/players.ts). -->
         <section class="players" id="players" aria-labelledby="players-title" data-show-mode="online nearby" data-needs-session>
@@ -356,6 +366,7 @@
         </div>
 
         <a class="train-link" id="train-link" href="/sound-training"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 3-2 4-3 5.5S14 18 12 19.5 8 19 8 17"/><path d="M10 9.5a2 2 0 0 1 4 0c0 1.2-1 1.6-1.5 2.2"/></svg><span>Train your ear</span></a>
+        <a class="train-link" id="voice-room-link" href="/sound-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span>Voice room</span></a>
 
         <details class="help advanced" id="advanced" data-show-mode="computer" hidden>
           <summary>Advanced: computer player</summary>
@@ -372,8 +383,12 @@
       </aside>
     </main>
     <dialog class="end-card" id="end-card" aria-label="Game result">
-      <!-- [html-validate-disable-next element-required-attributes: the page draws the card and sets src] -->
-      <img id="end-card-image" alt="" width="1080" height="1350" />
+      <!-- The light shows the cell of the note while the song plays. src/page/end-card.ts places it. -->
+      <div class="end-card-picture">
+        <!-- [html-validate-disable-next element-required-attributes: the page draws the card and sets src] -->
+        <img id="end-card-image" alt="" width="1080" height="1350" />
+        <span class="song-light" id="end-card-light" hidden></span>
+      </div>
       <div class="include-options">
         <label class="include" id="end-card-code-option">
           <input type="checkbox" id="end-card-code" checked />
@@ -383,6 +398,13 @@
           <input type="checkbox" id="end-card-link" checked />
           <span>Include the link</span>
         </label>
+        <!-- Only after a game with moves by voice. Off by default: the shared song then has a recording of the player. -->
+        <label class="include" id="end-card-voice-option" hidden>
+          <input type="checkbox" id="end-card-voice" />
+          <span>Include my voice</span>
+        </label>
+        <!-- A click plays the game as a song. A long press or the context menu shares it as a WAV file. src/page/end-card.ts sets the icon. -->
+        <button type="button" class="btn btn-small song" id="end-card-song" aria-label="Play the game as a song" data-tip="Play as a song. Hold to share."></button>
       </div>
       <div class="end-card-actions">
         <button type="button" class="btn btn-primary" id="end-card-new-game">New game</button>
@@ -429,6 +451,14 @@
       <p class="my-games-note" id="previews-note"></p>
       <ul class="my-games-list previews-list" id="previews-list"></ul>
     </dialog>
+    <!-- The other player started a sound playoff (src/page/playoff-invite.ts). -->
+    <dialog class="end-card home-confirm" id="playoff-invite" aria-labelledby="playoff-invite-text">
+      <p id="playoff-invite-text"></p>
+      <div class="end-card-actions">
+        <button type="button" class="btn btn-primary" id="playoff-join">Join</button>
+        <button type="button" class="btn" id="playoff-not-now">Not now</button>
+      </div>
+    </dialog>
     <dialog class="end-card home-confirm" id="home-confirm" aria-labelledby="home-confirm-text">
       <p id="home-confirm-text"></p>
       <div class="end-card-actions">
@@ -467,6 +497,8 @@
         <li>Drag around the tower to turn it.</li>
         <li>Keypad: tap the layer, row and column, then Place.</li>
         <li>Every cell has its own sound. The arrow next to the speaker opens the sound sets and their maps.</li>
+        <li>Play by voice: tap the mic, then hold a note on a cell to place. On a phone, a small tilt nudges the cell. Calibrate in the Voice room.</li>
+        <li>The Song button plays a finished game as music. Hold it to share.</li>
         <li>Time limits work like a chess clock. A player who runs out loses.</li>
         <li>Lock stops setting changes until the game ends.</li>
         <li>Online: share the code or link. Nearby: devices on the same Wi-Fi.</li>

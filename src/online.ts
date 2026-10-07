@@ -1,5 +1,7 @@
 import type { TimeControl } from './clock.ts';
 import { type Announced, type HostId, type LobbyHost, parseAnnounced, parseLobbyHosts } from './nearby/lobby.ts';
+import type { PlayoffRequest } from './practice/playoff.ts';
+import { type PracticeBoard, type PracticeMode, type PracticeRun, type PresetId, parsePracticeBoard } from './practice/practice.ts';
 import { type Records, parseRecords } from './records.ts';
 import {
   type ClientEvent,
@@ -133,6 +135,12 @@ export const api = {
   update: (code: Code, changes: SessionUpdate) => request('PATCH', `/${code}`, changes),
   lock: (code: Code) => request('POST', `/${code}/lock`),
   chat: (code: Code, text: string) => request('POST', `/${code}/chat`, { text }),
+  playoff: (code: Code, body: PlayoffRequest) => request('POST', `/${code}/playoff`, body),
+
+  // The practice modes of the Voice room (/sound-input).
+  practiceRun: (run: PracticeRun) => call('POST', '/practice/runs', run),
+  practiceBest: async (mode: PracticeMode, preset: PresetId): Promise<PracticeBoard> =>
+    parsePracticeBoard(await call('GET', `/practice/best?mode=${mode}&preset=${preset}`)),
   seat: (code: Code, action: SeatAction) => request('POST', `/${code}/seats`, action),
   answerSeat: (code: Code, accept: boolean) => request('POST', `/${code}/seats/answer`, { accept }),
 

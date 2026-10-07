@@ -1,6 +1,7 @@
 // The hidden stats page (/stats): the aggregates of GET /api/stats as hand-made SVG charts.
 // Colors come from the theme tokens in style.css, so every chart follows the saved theme.
 import '../style.css';
+import { PRACTICE_MODES, PRESETS, PRESET_IDS, type PracticeMode, type PresetId } from '../practice/practice.ts';
 import './stats.css';
 import { describeClock } from '../clock.ts';
 import { CELL_COUNT, SIZE } from '../game.ts';
@@ -293,6 +294,28 @@ function draw(stats: Stats): void {
     table(survival, ['#', 'Player', 'Moves'], rows.map((entry) => [entry.rank, entry.player, entry.moves]));
   }
   if (stats.survival.length === 0) empty(survival);
+
+  // The practice modes of the Voice room (/sound-input).
+  const practiceName = (mode: PracticeMode, preset: PresetId) => `${mode === 'echo' ? 'Echo' : 'Targets'}, ${PRESETS[preset].name}`;
+  const practice = card('Voice room practice', false, 'Practice runs per mode and level. Average: the mean time of one target or echo round.');
+  if (stats.practice.runs.length === 0) empty(practice);
+  else {
+    table(
+      practice,
+      ['Mode and level', 'Runs', 'Players', 'Average'],
+      stats.practice.runs.map((row) => [practiceName(row.mode, row.preset), row.runs, row.players, seconds(row.avgRoundMs)]),
+    );
+  }
+  const leaders = card('Voice room leaderboards', false, 'The best 5 per mode and level. Targets rank by total time, echo by points and then time.');
+  for (const mode of PRACTICE_MODES) {
+    for (const preset of PRESET_IDS) {
+      const rows = stats.practice.best.filter((entry) => entry.mode === mode && entry.preset === preset);
+      if (rows.length === 0) continue;
+      leaders.append(el('h3', '', practiceName(mode, preset)));
+      table(leaders, ['#', 'Player', 'Time', ...(mode === 'echo' ? ['Points'] : [])], rows.map((entry) => [entry.rank, entry.player, seconds(entry.totalMs), ...(mode === 'echo' ? [entry.score] : [])]));
+    }
+  }
+  if (stats.practice.best.length === 0) empty(leaders);
 
   table(
     card('Game length', false, 'Moves per finished game.'),

@@ -23,6 +23,7 @@ import {
   toGame,
   toRecord,
 } from '../protocol.ts';
+import { PlayoffError, type PlayoffRequest, applyPlayoff } from '../practice/playoff.ts';
 import { CURRENT_FORMAT, type SessionDoc, defaultFixedSeats } from './format.ts';
 
 // A code that a client can test, for a refusal that needs a specific reaction.
@@ -107,6 +108,7 @@ export function createDoc({ name, mode, clock = NO_LIMIT, seats, computer }: New
     lockedGame: null,
     clock,
     chat: [],
+    playoff: null,
     seatRequest: null,
     fixedSeats: defaultFixedSeats(mode),
     flipped: [false],
@@ -195,6 +197,8 @@ function swapSeats(doc: SessionDoc): SessionDoc {
     computer: doc.computer === null ? null : { ...doc.computer, seat: other(doc.computer.seat) },
     chat: doc.chat.map((message) => ({ ...message, from: other(message.from) })),
     seatRequest: doc.seatRequest === null ? null : { ...doc.seatRequest, from: other(doc.seatRequest.from) },
+    // The same two players hold the seats, so a sound playoff goes on, with each player's progress.
+    playoff: doc.playoff === null ? null : { ...doc.playoff, by: other(doc.playoff.by), seats: { X: doc.playoff.seats.O, O: doc.playoff.seats.X } },
     flipped: doc.flipped.map((entry, index) => (index === last && live ? entry : !entry)),
   };
 }
@@ -244,6 +248,20 @@ export function chat(doc: SessionDoc, identity: Identity, text: unknown, now: Ep
   return { ...doc, chat: [...doc.chat, { id, from: seat, text: message, at: now }].slice(-CHAT_KEEP) };
 }
 
+// A request of a player for the sound playoff of an online session (src/practice/playoff.ts).
+export function playoff(doc: SessionDoc, identity: Identity, request: PlayoffRequest, now: number): SessionDoc {
+  if (doc.mode !== 'online') throw new SessionError(409, 'A playoff needs an online game.');
+  const [seat] = requireSeat(doc, identity);
+  if (seat === undefined) throw new Error('requireSeat returned no seat');
+  try {
+    const next = applyPlayoff(doc.playoff, seat, doc.seats.X !== null && doc.seats.O !== null, request, now);
+    return next === doc.playoff ? doc : { ...doc, playoff: next };
+  } catch (error) {
+    if (error instanceof PlayoffError) throw new SessionError(error.status === 409 ? 409 : 400, error.message);
+    throw error;
+  }
+}
+
 // ---- Seats ----
 
 // Who has the session open, as its holder knows it: the server from its event streams, a Nearby host
@@ -286,6 +304,12 @@ function undoProblem(doc: SessionDoc, from: Player): string | undefined {
 }
 
 // Every applied change closes an open request, because the request was about the state before it.
+// A change of who holds a seat also ends a sound playoff: the playoff is stored by seat, so a new holder of a
+// seat must not take over the progress of the player before. Both pages see the playoff go to null.
+// A swap keeps the same two players, so the playoff goes on with them (swapSeats).
+// Limit: the next playoff starts again at id 1, so a late request for the ended playoff can reach it.
+// That needs a request in flight across a seat change, and a playoff is friendly. Revisit this if a
+// stale hit ever shows in a new playoff: then keep a playoff counter in the session document.
 function applySeatChange(doc: SessionDoc, { kind, from, watcher }: SeatChange): SessionDoc {
   if (kind === 'undo') {
     const problem = undoProblem(doc, from);
@@ -311,7 +335,7 @@ function applySeatChange(doc: SessionDoc, { kind, from, watcher }: SeatChange): 
       seats[to] = null;
       break;
   }
-  return { ...doc, seats, seatRequest: null };
+  return { ...doc, seats, seatRequest: null, playoff: null };
 }
 
 // A seated player changes the seats, or takes back the own last move (undo). A change of the other
@@ -417,5 +441,6 @@ export function viewOf(doc: SessionDoc, { code, version, identity, now, audience
           },
     turn: live.status.kind === 'playing' ? live.turn : null,
     status: live.status,
+    playoff: doc.playoff,
   };
 }

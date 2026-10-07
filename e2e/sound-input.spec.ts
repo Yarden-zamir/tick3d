@@ -1,0 +1,285 @@
+import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { Page } from '@playwright/test';
+import { DEFAULT_RANGE, frequencyAt, stepOfCell } from '../src/voice/mapping.ts';
+import { createOnline, expect, joinAsO, test } from './fixtures.ts';
+
+// Chromium plays a WAV file as a fake microphone and grants the microphone without a prompt.
+// The file is a steady G5 (784 Hz). In the default range (150 to 2400 Hz, 64 steps) that is step 38:
+// row 2, and step 6 of that row, so layer 2, column 3.
+const RATE = 48_000;
+const G5 = 784;
+const G5_CELL = 1 * 16 + 1 * 4 + 2;
+
+function sineWav(frequency: number, seconds: number): Buffer {
+  const count = RATE * seconds;
+  const wav = Buffer.alloc(44 + count * 2);
+  wav.write('RIFF', 0);
+  wav.writeUInt32LE(36 + count * 2, 4);
+  wav.write('WAVEfmt ', 8);
+  wav.writeUInt32LE(16, 16); // The size of the format block.
+  wav.writeUInt16LE(1, 20); // PCM.
+  wav.writeUInt16LE(1, 22); // One channel.
+  wav.writeUInt32LE(RATE, 24);
+  wav.writeUInt32LE(RATE * 2, 28); // Bytes per second.
+  wav.writeUInt16LE(2, 32); // Bytes per frame.
+  wav.writeUInt16LE(16, 34); // Bits per sample.
+  wav.write('data', 36);
+  wav.writeUInt32LE(count * 2, 40);
+  for (let index = 0; index < count; index++) wav.writeInt16LE(Math.round(16_000 * Math.sin((2 * Math.PI * frequency * index) / RATE)), 44 + index * 2);
+  return wav;
+}
+
+// One file for each worker process, so no worker reads a file that another one writes.
+const fakeMic = join(tmpdir(), `tick3d-g5-${process.pid}.wav`);
+writeFileSync(fakeMic, sineWav(G5, 2));
+test.use({ launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${fakeMic}`] } });
+
+function trackErrors(page: Page): Error[] {
+  const errors: Error[] = [];
+  page.on('pageerror', (error) => errors.push(error));
+  return errors;
+}
+
+test('a steady note lights its cell, a held note places an X, and Stop puts the light out', async ({ page }) => {
+  const errors = trackErrors(page);
+  const response = await page.goto('/sound-input');
+  expect(response?.status()).toBe(200);
+  await expect(page.locator('#board .cell')).toHaveCount(64);
+  await expect(page.locator('#board .cell.lit')).toHaveCount(0);
+
+  const mic = page.locator('#mic');
+  await mic.click();
+  await expect(mic).toHaveText('Stop');
+  const lit = page.locator('#board .cell.lit');
+  await expect(lit).toHaveCount(1);
+  await expect(lit).toHaveAttribute('data-cell', String(G5_CELL));
+  await expect(page.locator('#cell')).toHaveText('Layer 2, row 2, column 3');
+  await expect(page.locator('#rail .rail-cursor')).toBeVisible();
+  await expect(page.locator('#note')).toContainText('G5');
+  // The hold is on by default: after a second on one cell, the cell gets an X.
+  await expect(page.locator(`#board .cell[data-cell="${G5_CELL}"]`)).toHaveClass(/\bx\b/);
+
+  await mic.click();
+  await expect(mic).toHaveText('Turn on the mic');
+  await expect(lit).toHaveCount(0);
+  await page.locator('#clear').click();
+  await expect(page.locator('#board .cell.x')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('a blocked microphone shows what to do, and the page stays usable', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
+  });
+  await page.goto('/sound-input');
+  const mic = page.locator('#mic');
+  await mic.click();
+  await expect(page.locator('#message')).toContainText('blocked');
+  await expect(mic).toHaveText('Turn on the mic');
+  await expect(mic).toBeEnabled();
+  await expect(page.locator('#board .cell.lit')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+// The calibration needs two tones in turn, so this test feeds the page an oscillator as its microphone.
+// window.e2eTone(frequency) changes the tone. The test above covers the real fake device of Chromium.
+async function oscillatorMic(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const context = new AudioContext();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      gain.gain.value = 0.5;
+      const output = context.createMediaStreamDestination();
+      oscillator.connect(gain).connect(output);
+      oscillator.start();
+      (window as unknown as { e2eTone: (frequency: number) => void }).e2eTone = (frequency) => oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+      await context.resume();
+      return output.stream;
+    };
+  });
+}
+
+const setTone = (page: Page, frequency: number) =>
+  page.evaluate((value) => (window as unknown as { e2eTone: (frequency: number) => void }).e2eTone(value), frequency);
+
+test('a calibration from 300 Hz to 1200 Hz splits the rows over that range, and the device keeps it', async ({ page }) => {
+  const errors = trackErrors(page);
+  await oscillatorMic(page);
+  await page.goto('/sound-input');
+  const mode = page.locator('#range-mode');
+  await expect(mode).toHaveText('Default range: 150–2400 Hz');
+
+  await page.locator('#calibrate').click();
+  await setTone(page, 300);
+  const calibration = page.locator('#calibration');
+  await expect(calibration).toHaveAttribute('data-step', 'low');
+  await expect(page.locator('#calibration-heard')).toContainText('Hz');
+  await expect(calibration).toHaveAttribute('data-step', 'high', { timeout: 10_000 });
+  await setTone(page, 1200);
+  await expect(calibration).toBeHidden({ timeout: 10_000 });
+  await expect(mode).toHaveText(/^Your range: (29\d|30\d)–(119\d|120\d) Hz$/);
+  // Two octaves: no small range hint.
+  await expect(page.locator('#range-hint')).toBeHidden();
+
+  // 2 octaves make 4 rows of half an octave. 504 Hz is in the middle of the second row from the bottom (row 3).
+  await setTone(page, 504);
+  await expect(page.locator('#cell')).toContainText('row 3,');
+  // A tone above the range lights the top edge: layer 4, row 1, column 4 (cell 3 × 16 + 3).
+  await setTone(page, 3000);
+  await expect(page.locator('#board .cell.lit')).toHaveAttribute('data-cell', String(3 * 16 + 3));
+
+  await page.reload();
+  await expect(mode).toHaveText(/^Your range: /);
+  await page.locator('#range-reset').click();
+  await expect(mode).toHaveText('Default range: 150–2400 Hz');
+  await page.reload();
+  await expect(mode).toHaveText('Default range: 150–2400 Hz');
+  expect(errors).toEqual([]);
+});
+
+test('a high sound below the low sound asks for a retry, and Cancel closes the calibration', async ({ page }) => {
+  await oscillatorMic(page);
+  await page.goto('/sound-input');
+  await page.locator('#calibrate').click();
+  await setTone(page, 800);
+  const calibration = page.locator('#calibration');
+  await expect(calibration).toHaveAttribute('data-step', 'high', { timeout: 10_000 });
+  await setTone(page, 400);
+  await expect(calibration).toHaveAttribute('data-step', 'retry', { timeout: 10_000 });
+  await expect(page.locator('#calibration-retry')).toBeVisible();
+  await expect(page.locator('#range-mode')).toHaveText(/^Default range/);
+  await page.locator('#calibration-cancel').click();
+  await expect(calibration).toBeHidden();
+  await expect(page.locator('#calibrate')).toBeEnabled();
+});
+
+test('the back button leaves a calibration on the tab of the player, with no change and no extra history entry', async ({ page }) => {
+  await oscillatorMic(page);
+  await page.goto('/sound-input?mode=echo');
+  await page.locator('#calibrate').click();
+  const calibration = page.locator('#calibration');
+  await expect(calibration).toBeVisible();
+  await expect(page.locator('#tabs')).toBeHidden();
+  await page.goBack();
+  await expect(calibration).toBeHidden();
+  await expect(page).toHaveURL(/\/sound-input\?mode=echo$/);
+  await expect(page.locator('#tabs button[data-tab="echo"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#range-mode')).toHaveText(/^Default range/);
+});
+
+test('from a link with a return, Cancel leaves the calibration back to that page', async ({ page }) => {
+  await oscillatorMic(page);
+  await page.goto(`/sound-input?${new URLSearchParams({ return: '/?from=voice' })}`);
+  await page.locator('#calibrate').click();
+  await expect(page.locator('#calibration')).toBeVisible();
+  await page.locator('#calibration-cancel').click();
+  await expect(page).toHaveURL(/\/\?from=voice$/);
+});
+
+test('the stickiness settings stay after a reload', async ({ page }) => {
+  await page.goto('/sound-input');
+  await page.locator('#stickiness').fill('0');
+  await expect(page.locator('#stickiness-value')).toHaveText('Off');
+  await page.locator('#build-up').fill('2.5');
+  await page.reload();
+  await expect(page.locator('#stickiness-value')).toHaveText('Off');
+  await expect(page.locator('#build-up-value')).toHaveText('2.5 s');
+});
+
+// Sings each target of a run: reads the target cell, plays the middle pitch of its step, and waits until the
+// target moves on. The settings are the defaults, so the range is DEFAULT_RANGE.
+async function singTargets(page: Page, rounds: number): Promise<void> {
+  for (let round = 0; round < rounds; round++) {
+    const target = page.locator('#board .cell.target');
+    await expect(target).toHaveCount(1, { timeout: 15_000 });
+    const cell = Number(await target.getAttribute('data-cell'));
+    await setTone(page, frequencyAt(stepOfCell(cell) + 0.5, { range: DEFAULT_RANGE, spread: 'log' }));
+    await expect(page.locator(`#board .cell.target[data-cell="${cell}"]`)).toHaveCount(0, { timeout: 15_000 });
+  }
+}
+
+test('a target run times each target, keeps the best, and puts the run on the leaderboard and the stats page', async ({ page }) => {
+  const errors = trackErrors(page);
+  await oscillatorMic(page);
+  await page.goto('/sound-input?mode=targets');
+  await expect(page.locator('#practice')).toBeVisible();
+  await page.locator('#levels [data-value="easy"]').click();
+  await page.locator('#start').click();
+  await setTone(page, 150);
+  await singTargets(page, 10);
+  await expect(page.locator('#round')).toHaveText('Done');
+  await expect(page.locator('#summary tbody tr')).toHaveCount(10);
+  await expect(page.locator('#bests')).toContainText(/Targets, Easy: \d+\.\d s/);
+  await expect(page.locator('#leaders li').first()).toBeVisible();
+  await page.goto('/stats');
+  await expect(page.getByRole('heading', { name: 'Voice room practice' })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('an echo round plays a cell, takes the held cell as the answer, and shows the points', async ({ page }) => {
+  await oscillatorMic(page);
+  await page.goto('/sound-input?mode=echo');
+  await page.locator('#start').click();
+  await setTone(page, 600);
+  await expect(page.locator('#round')).toHaveText('Round 1 of 8', { timeout: 10_000 });
+  await expect(page.locator('#message')).toContainText('points', { timeout: 15_000 });
+  await expect(page.locator('#board .cell.target')).toHaveCount(1);
+  await page.locator('#start').click();
+  await expect(page.locator('#round')).toHaveText('Stopped');
+});
+
+test('a playoff: the other player gets an invite, both sing the same targets, and both see the winner', async ({ open }) => {
+  const alice = await open({ settings: { mode: 'computer' } });
+  const code = await createOnline(alice.page);
+  const bob = await joinAsO(open, `/?code=${code}`);
+  await oscillatorMic(alice.page);
+  await oscillatorMic(bob.page);
+  await alice.page.locator('#voice-room-link').click();
+  await expect(alice.page).toHaveURL(new RegExp(`/sound-input\\?code=${code}`));
+  await expect(alice.page.locator('#playoff')).toBeVisible();
+  await alice.page.locator('#start').click();
+  await expect(alice.page.locator('#start')).toHaveText('Waiting…');
+
+  const invite = bob.page.locator('#playoff-invite');
+  await expect(invite).toBeVisible();
+  await bob.page.locator('#playoff-join').click();
+  await expect(bob.page).toHaveURL(new RegExp(`/sound-input\\?code=${code}`));
+  await expect(bob.page.locator('#start')).toHaveText('Join the playoff');
+  await bob.page.locator('#start').click();
+
+  await Promise.all([singTargets(alice.page, 10), singTargets(bob.page, 10)]);
+  for (const page of [alice.page, bob.page]) {
+    await expect(page.locator('#playoff-text')).toContainText(/win|tie/i, { timeout: 15_000 });
+    await expect(page.locator('#race-them')).toHaveAttribute('aria-valuenow', '10');
+  }
+});
+
+test('a typed range and a spread apply, the board previews the frequency of each cell, and both stay after a reload', async ({ page }) => {
+  await page.goto('/sound-input');
+  await page.locator('#range-low').fill('200');
+  await page.locator('#range-low').dispatchEvent('change');
+  await page.locator('#range-high').fill('800');
+  await page.locator('#range-high').dispatchEvent('change');
+  await expect(page.locator('#range-mode')).toHaveText('Your range: 200–800 Hz');
+  // Less than half an octave stays out, with a message.
+  await page.locator('#range-high').fill('250');
+  await page.locator('#range-high').dispatchEvent('change');
+  await expect(page.locator('#range-note')).toContainText('half an octave');
+  await expect(page.locator('#range-high')).toHaveValue('800');
+
+  await page.locator('#spread [data-value="linear"]').click();
+  const board = page.locator('#board');
+  await expect(board).toHaveClass(/previewing/, { timeout: 3000 });
+  await expect(page.locator('#board .cell[data-preview]')).toHaveCount(64);
+  // The lowest step of a linear spread from 200 to 800 Hz has its middle at 200 + 600 / 128 Hz.
+  await expect(page.locator('#board .cell[data-preview="205"]')).toHaveCount(1);
+  await expect(board).not.toHaveClass(/previewing/, { timeout: 8000 });
+
+  await page.reload();
+  await expect(page.locator('#range-mode')).toHaveText('Your range: 200–800 Hz');
+  await expect(page.locator('#spread [data-value="linear"]')).toHaveAttribute('aria-pressed', 'true');
+});

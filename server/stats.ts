@@ -6,7 +6,7 @@ import { CELL_COUNT } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
 import { type Count, MOVE_TIME_BUCKETS, REFUSALS, SESSION_MODES, type Stats } from '../src/protocol.ts';
 
-type Rows = (sql: string, values: Record<string, DuckDBValue>) => Promise<Record<string, unknown>[]>;
+export type Rows = (sql: string, values: Record<string, DuckDBValue>) => Promise<Record<string, unknown>[]>;
 
 // The token of each seat of a result row. A row from before game links has no player columns:
 // its uploader (`token`) holds the seat `doc.you`, or both seats in a friend game.
@@ -56,9 +56,9 @@ const STEPS = `${GAMES}, steps AS (
 const METRICS = `${GAMES}, m AS (SELECT metrics FROM g WHERE metrics IS NOT NULL UNION ALL SELECT metrics FROM seat_metrics)`;
 
 // One identity per person: the GitHub account, else the browser token. Used only to group rows.
-const PERSON = `coalesce('github:' || pt.github_id, token)`;
+export const PERSON = `coalesce('github:' || pt.github_id, token)`;
 
-function num(value: unknown): number {
+export function num(value: unknown): number {
   const result = typeof value === 'bigint' ? Number(value) : value;
   if (typeof result !== 'number' || !Number.isFinite(result)) throw new Error(`a stats value is not a number: ${String(value)}`);
   return result;
@@ -71,12 +71,12 @@ const text = (value: unknown) => {
 };
 const textOrNull = (value: unknown) => (value === null ? null : text(value));
 // The GitHub login of a person (PERSON), else their custom name, else the generated name of their token.
-// The token itself stays here.
-const personName = (row: Record<string, unknown>) => textOrNull(row.login) ?? textOrNull(row.custom) ?? nameOf(text(row.person));
+// The token itself stays here. A query that uses it selects `login`, `custom` and `person`.
+export const personName = (row: Record<string, unknown>) => textOrNull(row.login) ?? textOrNull(row.custom) ?? nameOf(text(row.person));
 const counts = (found: Record<string, unknown>[]): Count[] =>
   found.map((row) => ({ key: row.key === null ? 'unknown' : text(row.key), count: num(row.count) }));
 
-function oneOf<T extends string>(options: readonly T[], value: unknown): T {
+export function oneOf<T extends string>(options: readonly T[], value: unknown): T {
   const found = options.find((option) => option === value);
   if (found === undefined) throw new Error(`unexpected stats value ${String(value)}`);
   return found;
@@ -96,7 +96,8 @@ function perCell(found: Record<string, unknown>[]): number[] {
 // Limit: about 20 queries over every stored game, while other requests wait in the store queue.
 // The store keeps the answer for a minute. Revisit this when a call takes more than about 200 ms:
 // then keep daily totals in their own table.
-export async function computeStats(rows: Rows, now: number): Promise<Stats> {
+// The practice part comes from server/practice.ts.
+export async function computeStats(rows: Rows, now: number): Promise<Omit<Stats, 'practice'>> {
   const q = (sql: string) => rows(sql, {});
 
   const [totals] = await q(`${GAMES}, seats AS (SELECT unnest([player_x, player_o]) AS token FROM g)

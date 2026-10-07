@@ -1,5 +1,5 @@
 // The end-of-game card. It is drawn on a canvas, so the picture on screen is the file that is shared.
-import { type Game, SIZE, toCell } from './game.ts';
+import { type Game, SIZE, toCell, toCoords } from './game.ts';
 import type { RecordNews } from './records.ts';
 
 export type CardInput = {
@@ -187,18 +187,38 @@ function oPiece(ctx: CanvasRenderingContext2D, t: Theme, x: number, y: number, s
   }
 }
 
-// The four layers in a 2 x 2 grid of slabs, with the winning line filled and the last move dashed.
-function board(ctx: CanvasRenderingContext2D, t: Theme, game: Game, top: number): void {
-  const cell = 58;
-  const gap = 9;
-  const side = SIZE * cell + (SIZE + 1) * gap;
-  const columnGap = 80;
-  const left = (WIDTH - (2 * side + columnGap)) / 2;
+// The board of the card: four layers in a 2 x 2 grid of slabs.
+const BOARD_TOP = 490;
+const CELL = 58;
+const CELL_GAP = 9;
+const SLAB = SIZE * CELL + (SIZE + 1) * CELL_GAP;
+const SLAB_GAP = 80;
+const slabOrigin = (layer: number) => ({
+  x: (WIDTH - (2 * SLAB + SLAB_GAP)) / 2 + (layer % 2) * (SLAB + SLAB_GAP),
+  y: BOARD_TOP + Math.floor(layer / 2) * (SLAB + 84),
+});
+
+// The place of a cell in the card, as shares of the card width and height, for a highlight over the image.
+export function cardCellBox(index: number): { left: number; top: number; width: number; height: number } {
+  const { layer, row, column } = toCoords(index);
+  const { x, y } = slabOrigin(layer);
+  return {
+    left: (x + CELL_GAP + column * (CELL + CELL_GAP)) / WIDTH,
+    top: (y + CELL_GAP + row * (CELL + CELL_GAP)) / HEIGHT,
+    width: CELL / WIDTH,
+    height: CELL / HEIGHT,
+  };
+}
+
+// The four layers, with the winning line filled and the last move dashed.
+function board(ctx: CanvasRenderingContext2D, t: Theme, game: Game): void {
+  const cell = CELL;
+  const gap = CELL_GAP;
+  const side = SLAB;
   const winLine: readonly number[] = game.status.kind === 'won' ? game.status.line : [];
   const last = game.moves.at(-1);
   for (let layer = 0; layer < SIZE; layer++) {
-    const x0 = left + (layer % 2) * (side + columnGap);
-    const y0 = top + Math.floor(layer / 2) * (side + 84);
+    const { x: x0, y: y0 } = slabOrigin(layer);
     block(ctx, t, { x: x0, y: y0 - 50, w: 128, h: 38, fill: t.surface, radius: 8, border: 3, shadow: 3 });
     text(ctx, `Layer ${layer + 1}`, x0 + 64, y0 - 22, 24, 800, t.ink, 'center');
     block(ctx, t, { x: x0, y: y0, w: side, h: side, fill: t.slab, radius: 16, border: 5, shadow: 8 });
@@ -245,7 +265,7 @@ export async function drawCard(input: CardInput): Promise<HTMLCanvasElement> {
   fittedText(ctx, input.subtitle, WIDTH / 2, 378, 38, 600, bannerText, WIDTH - 220, 'center');
   if (input.record !== undefined) recordSticker(ctx, t, input.record);
   // Board rows: 490 + 2 slabs of 277 + 84 between them ends at 1128, clear of the box at 1170.
-  board(ctx, t, input.game, 490);
+  board(ctx, t, input.game);
   block(ctx, t, { x: 80, y: 1170, w: WIDTH - 160, h: input.footer === '' ? 104 : 140, fill: t.surface, radius: 14, border: 5, shadow: 10 });
   fittedText(ctx, input.matchup, 110, 1220, 38, 800, t.ink, WIDTH - 220);
   fittedText(ctx, input.details, 110, 1258, 26, 600, t.muted, WIDTH - 220);
@@ -259,8 +279,18 @@ function toBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   });
 }
 
+// The file name of a card image, or of the song of the game.
+export function cardFilename(extension: 'png' | 'wav'): string {
+  return `tick3d-${new Date().toISOString().slice(0, 10)}.${extension}`;
+}
+
 export async function saveImage(canvas: HTMLCanvasElement, filename: string): Promise<void> {
-  const url = URL.createObjectURL(await toBlob(canvas));
+  saveFile(await toBlob(canvas), filename);
+}
+
+// Downloads the file.
+function saveFile(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
@@ -270,25 +300,39 @@ export async function saveImage(canvas: HTMLCanvasElement, filename: string): Pr
 
 export type ShareOutcome = 'shared' | 'cancelled' | 'copied' | 'saved';
 
+// The system share sheet. 'unsupported' means that the browser cannot share these files, or that the
+// share failed for another reason than a cancel.
+async function systemShare(data: ShareData): Promise<'shared' | 'cancelled' | 'unsupported'> {
+  if (typeof navigator.canShare !== 'function' || !navigator.canShare(data)) return 'unsupported';
+  try {
+    await navigator.share(data);
+    return 'shared';
+  } catch (error) {
+    return error instanceof DOMException && error.name === 'AbortError' ? 'cancelled' : 'unsupported';
+  }
+}
+
 // Shares the image with the system share sheet. Without file sharing (most desktop browsers),
 // the image goes to the clipboard, and without clipboard images it downloads.
 export async function shareImage(canvas: HTMLCanvasElement, filename: string, text: string, url?: string): Promise<ShareOutcome> {
   const blob = await toBlob(canvas);
   const data: ShareData = { files: [new File([blob], filename, { type: 'image/png' })], title: 'tick3d', text };
   if (url !== undefined) data.url = url;
-  if (typeof navigator.canShare === 'function' && navigator.canShare(data)) {
-    try {
-      await navigator.share(data);
-      return 'shared';
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled';
-    }
-  }
+  const shared = await systemShare(data);
+  if (shared !== 'unsupported') return shared;
   try {
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
     return 'copied';
   } catch {
-    await saveImage(canvas, filename);
+    saveFile(blob, filename);
     return 'saved';
   }
+}
+
+// Shares a file with the system share sheet. Without file sharing (most desktop browsers), it downloads.
+export async function shareFile(file: File, text: string): Promise<Exclude<ShareOutcome, 'copied'>> {
+  const shared = await systemShare({ files: [file], title: 'tick3d', text });
+  if (shared !== 'unsupported') return shared;
+  saveFile(file, file.name);
+  return 'saved';
 }

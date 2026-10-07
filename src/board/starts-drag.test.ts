@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { startsDrag } from './drag.ts';
+import { startsDrag } from './starts-drag.ts';
 
 // The rule runs against the real stage markup, so a new control in the stage shows up here.
 // The stage only: the rest of the page loads scripts and styles that the test does not need.

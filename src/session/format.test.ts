@@ -30,10 +30,17 @@ describe('parseDoc', () => {
       options: { hideBoard: false, hideHistory: false, hideCoordinates: false },
       lockedGame: null,
       clock: { perMove: null, perGame: null },
+      playoff: null,
       seatRequest: null,
       fixedSeats: false,
       flipped: [false],
     });
+  });
+
+  it('reads a stored playoff, and refuses a broken one', () => {
+    const playoff = { id: 1, seed: 7, preset: 'easy', by: 'X', seats: { X: { joined: true, times: [1200] }, O: { joined: true, times: [] } }, startAt: 5000, ended: null };
+    expect(parseDoc({ name: 'With playoff', games: [{ moves: [] }], playoff }).playoff).toEqual(playoff);
+    expect(() => parseDoc({ name: 'Broken', games: [{ moves: [] }], playoff: { ...playoff, preset: 'insane' } })).toThrow();
   });
 
   it('reads a seat request, and a stored document from before seat controls as having none', () => {
