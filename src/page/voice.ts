@@ -57,9 +57,7 @@ function takeClip(frame: VoiceFrame): VoiceClip | undefined {
 }
 
 // Keeps the clip of move `move`, which the voice just placed in the newest game.
-function keepClip(frame: VoiceFrame, move: number): void {
-  const clip = takeClip(frame);
-  if (clip === undefined) return;
+function keepClip(clip: VoiceClip, move: number): void {
   const game = gameKey(page.games.length - 1);
   if (clips?.game !== game) clips = { game, byMove: new Map() };
   clips.byMove.set(move, clip);
@@ -141,8 +139,10 @@ function onFrame(frame: VoiceFrame): void {
   aimAt(undefined);
   // The normal move path: the same checks, refusals and sounds as a tap. It shows an accepted move at once.
   const move = current().moves.length;
+  // The clip comes before the move: a move that ends the game stops the engine, and the engine has no clip then.
+  const clip = takeClip(frame);
   humanMove(frame.cell, 'keypad');
-  if (page.games.at(-1)?.moves.length === move + 1) keepClip(frame, move);
+  if (clip !== undefined && page.games.at(-1)?.moves.length === move + 1) keepClip(clip, move);
 }
 
 function turnOff(problem: string): void {

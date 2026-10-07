@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CELL_COUNT, type Game, newGame, play, replay } from './game.ts';
-import { EIGHTH, MAX_EIGHTHS, MIN_EIGHTHS, type SongNote, eighthsOf, scaleOf, songOf } from './song.ts';
+import { SIXTEENTH, type SongNote, scaleOf, songOf } from './song.ts';
 
 // X takes 0, 1, 2, 3 (a row) and O takes 16, 17, 18.
 const WON = replay([0, 16, 1, 17, 2, 18, 3], { times: [0, 1000, 3000, 4000, 9000, 10_000, 60_000] });
@@ -13,7 +13,11 @@ const O_FIRST = (() => {
   if (!result.ok) throw new Error('the move is legal');
   return { ...result.game, status: { kind: 'timeout', winner: 'O' } } as Game;
 })();
-const GAMES = [WON, LONG, DRAW, TIMEOUT, O_FIRST];
+// The longest game: 64 moves, every cell once, a draw. songOf reads only the moves, the first player and the status.
+const FULL: Game = { ...newGame(), moves: Array.from({ length: CELL_COUNT }, (_, cell) => cell), status: { kind: 'draw' } };
+const GAMES = [WON, LONG, DRAW, TIMEOUT, O_FIRST, FULL];
+// The longest song, in seconds.
+const CAP_SECONDS = 15;
 
 const melody = (notes: readonly SongNote[]) => notes.filter((note) => note.kind === 'melody');
 
@@ -40,31 +44,37 @@ describe('songOf', () => {
     }
   });
 
-  it('plays each move in order, by its player, on the eighth-note grid', () => {
+  it('plays each move in order, by its player, one eighth note apart', () => {
     const notes = melody(songOf(WON).notes).slice(0, WON.moves.length);
     expect(notes.map((note) => note.cell)).toEqual(WON.moves);
     expect(notes.map((note) => note.player)).toEqual(['X', 'O', 'X', 'O', 'X', 'O', 'X']);
-    for (const note of notes) expect(Math.abs(note.at / EIGHTH - Math.round(note.at / EIGHTH))).toBeLessThan(1e-9);
+    for (const [index, note] of notes.entries()) expect(note.at).toBeCloseTo(index * 2 * SIXTEENTH, 9);
     // X and O sit an octave apart.
     const average = (player: string) => notes.filter((note) => note.player === player).reduce((sum, note) => sum + note.midi, 0) / 3;
     expect(average('X')).toBeGreaterThan(average('O'));
   });
 
-  it('keeps each move between an eighth note and a half note, so a long think leaves no silence', () => {
-    expect(eighthsOf(1)).toBe(MIN_EIGHTHS);
-    expect(eighthsOf(600_000)).toBe(MAX_EIGHTHS);
-    const notes = melody(songOf(WON).notes).slice(0, WON.moves.length);
-    for (const [index, note] of notes.slice(1).entries()) {
-      const gap = (note.at - (notes[index]?.at ?? 0)) / EIGHTH;
-      expect(gap).toBeGreaterThanOrEqual(MIN_EIGHTHS - 1e-9);
-      expect(gap).toBeLessThanOrEqual(MAX_EIGHTHS + 1e-9);
+  it('takes the rhythm from the grid, not from the move times', () => {
+    const fast = replay(WON.moves);
+    expect(songOf(WON).notes).toEqual(songOf(fast).notes);
+  });
+
+  it('gives a long game one sixteenth note for each move, and stays under the cap for 64 moves', () => {
+    const notes = melody(songOf(FULL).notes).slice(0, CELL_COUNT);
+    for (const [index, note] of notes.entries()) expect(note.at).toBeCloseTo(index * SIXTEENTH, 9);
+    for (const game of GAMES) {
+      const song = songOf(game);
+      expect(song.duration).toBeGreaterThan(song.notes.reduce((end, note) => Math.max(end, note.at), 0));
+      expect(song.duration).toBeLessThan(CAP_SECONDS);
     }
   });
 
-  it('stays bounded for the longest game', () => {
-    const song = songOf(WON);
-    expect(song.duration).toBeGreaterThan(song.notes.reduce((end, note) => Math.max(end, note.at), 0));
-    expect(CELL_COUNT * MAX_EIGHTHS * EIGHTH).toBeLessThan(80);
+  it('ends in under 2 seconds after the last move', () => {
+    for (const game of GAMES) {
+      const song = songOf(game);
+      const lastMove = melody(song.notes).filter((note) => note.move !== undefined).reduce((end, note) => Math.max(end, note.at), 0);
+      expect(song.duration - lastMove).toBeLessThan(2);
+    }
   });
 
   it('gives different games different keys or melodies', () => {

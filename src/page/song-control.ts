@@ -5,7 +5,7 @@
 import { shareFile } from '../card.ts';
 import type { Game } from '../game.ts';
 import { SOUND_ON_ICON } from '../icons.ts';
-import { EIGHTH, songOf } from '../song.ts';
+import { SIXTEENTH, songOf } from '../song.ts';
 import { type SongPlayback, type VoiceClips, playSong, renderSong } from '../sound.ts';
 import { encodeWav } from '../wav.ts';
 import { showToast } from './feedback.ts';
@@ -16,8 +16,8 @@ export type SongSource = { game: Game; filename: string; text: string; light: (c
 
 // A press this long shares the song as a file.
 const LONG_PRESS_MS = 600;
-// A cell stays lit for this long after its note starts.
-const LIGHT_SECONDS = 2 * EIGHTH;
+// A cell stays lit for one beat after its note starts, or until the next note.
+const LIGHT_SECONDS = 4 * SIXTEENTH;
 type State = 'idle' | 'playing' | 'held' | 'rendering';
 const LABELS: Record<State, string> = { idle: 'Song', playing: 'Stop', held: 'Release to share', rendering: 'Making the file…' };
 

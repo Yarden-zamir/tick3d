@@ -1,21 +1,26 @@
-// "Your game as a song": the moves of a finished game as a short piece of music, as plain data.
-// The moves make each song its own: the cells give the melody, the move times give the rhythm, and a
-// hash of the moves picks the key and the mode. Music theory keeps it musical:
+// "Your game as a song": the moves of a finished game as a short, brisk piece of music, as plain data.
+// The moves make each song its own: the cells give the melody, and a hash of the moves picks the key and
+// the mode. The rhythm is fixed, so every song has the same even pulse:
+// - each move is one eighth note at 136 BPM, or one sixteenth note in a long game. The move times do not
+//   change the rhythm, so a long think leaves no gap;
 // - every melody note is on the scale of the song. The pentatonic scales have no clashing intervals;
-// - the notes sit on an eighth-note grid at a fixed tempo, over a loop of four chords, one for each bar;
-// - on a strong beat, the melody takes the nearest note of the chord;
-// - X and O answer each other an octave apart, and the song ends on the tonic.
+// - a loop of four chords, one for each bar. On each beat, the melody takes the nearest note of the chord,
+//   and a short bass note plays the root or the fifth of the chord;
+// - X and O answer each other an octave apart. The ending is short: the winner runs up the tonic chord on
+//   the winning line, and one final chord ends on the tonic.
 // src/sound.ts plays the notes with the voices of a sound set, live or into a sound file.
 import { type Game, type Player, other, toCoords } from './game.ts';
 
-const BPM = 112;
-export const EIGHTH = 60 / BPM / 2;
-const BAR = 8;
-// A move lasts one eighth note to one half note, from the time that the player took for the next move.
-export const MIN_EIGHTHS = 1;
-export const MAX_EIGHTHS = 4;
-// The reverb rings on after the last chord.
-const TAIL = 2;
+const BPM = 136;
+// The grid of the song. All times are whole sixteenth notes.
+export const SIXTEENTH = 60 / BPM / 4;
+const BEAT = 4;
+const BAR = 4 * BEAT;
+// A game with more moves than this gives each move a sixteenth note, not an eighth note. So the moves of
+// the longest game (64 moves) last as long as 32 eighth notes: about 7 seconds.
+const LONG_GAME = 32;
+// The final chord rings this long, in seconds.
+const FINAL_RING = 1;
 
 const MODES = {
   'major pentatonic': [0, 2, 4, 7, 9],
@@ -27,6 +32,7 @@ type Mode = keyof typeof MODES;
 const MODE_PICKS: readonly Mode[] = ['major pentatonic', 'major pentatonic', 'minor pentatonic', 'dorian'];
 
 // The chords as semitones above the tonic, one for each bar: I–V–vi–IV in major, i–VI–III–VII in minor.
+// The first step of a chord is its root, and the last step is its fifth.
 const MAJOR_LOOP = [[0, 4, 7], [7, 11, 14], [9, 12, 16], [5, 9, 12]] as const;
 const MINOR_LOOP = [[0, 3, 7], [8, 12, 15], [3, 7, 10], [10, 14, 17]] as const;
 
@@ -37,7 +43,7 @@ export type SongNote =
   // A melody note of a player. `cell` is the cell of the move, for the timbre and the highlight. `move` is
   // the index of the move in the game, for the notes of the moves (not for the ending).
   | { kind: 'melody'; at: number; midi: number; player: Player; cell: number; level: number; move?: number }
-  // A soft pad note of a chord, or the bass note under it.
+  // A note of the final chord, or a short bass note on a beat. `length` is in seconds.
   | { kind: 'chord' | 'bass'; at: number; midi: number; length: number };
 export type Song = { key: Key; notes: readonly SongNote[]; duration: number };
 
@@ -77,19 +83,15 @@ function baseOf(key: Key, player: Player): number {
   return player === 'X' ? x : x - 12;
 }
 
-// The time to the next move as eighth notes: about one more eighth for each doubling of the time.
-// Without times (an old record), each move is a quarter note.
-export function eighthsOf(gapMs: number | undefined): number {
-  if (gapMs === undefined || !(gapMs > 0)) return 2;
-  return Math.min(MAX_EIGHTHS, Math.max(MIN_EIGHTHS, Math.round(Math.log2(gapMs / 1000) + 1)));
-}
+// The bass octave: the tonic between C2 and B2.
+const bassOf = (key: Key) => 36 + key.root;
 
-// A chord as pad notes from the octave of C3, and its lowest note as a bass note one octave lower.
+// The notes of a chord from the octave of C3, and its root as a bass note, all for `length` seconds.
 function chord(key: Key, steps: readonly number[], at: number, length: number): SongNote[] {
   const base = 48 + key.root;
   return [
     ...steps.map((step) => ({ kind: 'chord' as const, at, midi: base + step, length })),
-    { kind: 'bass', at, midi: base - 12 + ((steps[0] ?? 0) % 12), length },
+    { kind: 'bass', at, midi: bassOf(key) + ((steps[0] ?? 0) % 12), length },
   ];
 }
 
@@ -97,47 +99,48 @@ export function songOf(game: Game): Song {
   if (game.moves.length === 0) throw new RangeError('a game without moves has no song');
   const key = keyOf(game);
   const loop = key.mode === 'major pentatonic' ? MAJOR_LOOP : MINOR_LOOP;
-  const chordAt = (eighth: number) => loop[Math.floor(eighth / BAR) % loop.length] ?? loop[0];
+  const chordAt = (sixteenth: number) => loop[Math.floor(sixteenth / BAR) % loop.length] ?? loop[0];
+  const step = game.moves.length > LONG_GAME ? 1 : 2;
   const notes: SongNote[] = [];
 
-  let position = 0;
   let player = game.first;
   game.moves.forEach((cell, index) => {
+    const position = index * step;
     const base = baseOf(key, player);
     let degree = degreeOf(cell);
-    // Beats 1 and 3 of a bar are strong: there the melody takes the nearest scale note of the chord.
-    const strong = position % 4 === 0;
-    if (strong) {
-      const tones = chordAt(position).map((step) => (key.root + step) % 12);
+    // On a beat, the melody takes the nearest scale note of the chord.
+    const onBeat = position % BEAT === 0;
+    if (onBeat) {
+      const tones = chordAt(position).map((semitones) => (key.root + semitones) % 12);
       const fits = (candidate: number) => candidate >= 0 && tones.includes(pitchOf(candidate, base, key.mode) % 12);
       degree = [0, -1, 1, -2, 2].map((shift) => degree + shift).find(fits) ?? degree;
     }
-    notes.push({ kind: 'melody', at: position * EIGHTH, midi: pitchOf(degree, base, key.mode), player, cell, level: strong ? 0.75 : 0.6, move: index });
-    const now = game.times[index];
-    const next = game.times[index + 1];
-    position += eighthsOf(now === undefined || next === undefined ? undefined : next - now);
+    notes.push({ kind: 'melody', at: position * SIXTEENTH, midi: pitchOf(degree, base, key.mode), player, cell, level: onBeat ? 0.8 : 0.6, move: index });
     player = other(player);
   });
 
-  // The chord loop plays under the moves, and the ending starts on the next bar.
-  const end = Math.ceil(position / BAR) * BAR;
-  for (let bar = 0; bar < end; bar += BAR) notes.push(...chord(key, chordAt(bar), bar * EIGHTH, BAR * EIGHTH));
-  const winner = game.status.kind === 'won' || game.status.kind === 'timeout' ? game.status.winner : null;
-  let last = end;
-  if (winner !== null) {
-    // The winner climbs the tonic chord to the tonic one octave up, on the cells of the winning line.
-    const cells = game.status.kind === 'won' ? game.status.line : [game.moves.at(-1) ?? 0];
-    [0, third(key), 7, 12].forEach((step, index) => {
-      const cell = cells[index % cells.length] ?? 0;
-      notes.push({ kind: 'melody', at: (end + index / 2) * EIGHTH, midi: baseOf(key, winner) + step, player: winner, cell, level: 0.7 });
-    });
-    last = end + 2;
-  } else {
-    // A draw: a suspended chord, then the tonic chord with the tonic on top.
-    notes.push(...chord(key, [0, 5, 7], end * EIGHTH, 4 * EIGHTH));
-    last = end + 4;
-    notes.push({ kind: 'melody', at: last * EIGHTH, midi: baseOf(key, game.first) + 12, player: game.first, cell: game.moves[0] ?? 0, level: 0.7 });
+  // The ending starts on the beat after the last move. Under the moves, the bass plays each beat: the root
+  // of the chord on beats 1 and 3, its fifth on beats 2 and 4, each one eighth note long.
+  const end = Math.ceil((game.moves.length * step) / BEAT) * BEAT;
+  for (let beat = 0; beat < end; beat += BEAT) {
+    const steps = chordAt(beat);
+    const root = bassOf(key) + (steps[0] % 12);
+    notes.push({ kind: 'bass', at: beat * SIXTEENTH, midi: (beat / BEAT) % 2 === 0 ? root : root + 7, length: 2 * SIXTEENTH });
   }
-  notes.push(...chord(key, [0, third(key), 7], last * EIGHTH, BAR * EIGHTH));
-  return { key, notes, duration: (last + BAR) * EIGHTH + TAIL };
+  const winner = game.status.kind === 'won' || game.status.kind === 'timeout' ? game.status.winner : null;
+  if (winner !== null) {
+    // The winner runs up the tonic chord to the tonic one octave up in sixteenth notes, on the cells of the winning line.
+    const cells = game.status.kind === 'won' ? game.status.line : [game.moves.at(-1) ?? 0];
+    [0, third(key), 7, 12].forEach((semitones, index) => {
+      const cell = cells[index % cells.length] ?? 0;
+      notes.push({ kind: 'melody', at: (end + index) * SIXTEENTH, midi: baseOf(key, winner) + semitones, player: winner, cell, level: 0.75 });
+    });
+  } else {
+    // A draw: a suspended chord, then the tonic on top of the final chord.
+    notes.push(...chord(key, [0, 5, 7], end * SIXTEENTH, 2 * SIXTEENTH));
+    notes.push({ kind: 'melody', at: (end + BEAT) * SIXTEENTH, midi: baseOf(key, game.first) + 12, player: game.first, cell: game.moves[0] ?? 0, level: 0.75 });
+  }
+  const last = (end + BEAT) * SIXTEENTH;
+  notes.push(...chord(key, [0, third(key), 7], last, FINAL_RING));
+  return { key, notes, duration: last + FINAL_RING + 0.1 };
 }

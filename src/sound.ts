@@ -122,58 +122,57 @@ export function playSample(id: SoundSetId): void {
 
 // ---- The game as a song (src/song.ts) ----
 
-// The voices of a melody note: the voices of its cell in the sound set, tuned to the note, so the song
-// has the timbre of the set. A set without a pitched voice plays a soft triangle. X sits on the left, O on the right.
+// A melody note of the song is a short pluck: each voice rises within PLUCK_ATTACK and fades out within
+// PLUCK_DECAY. A voice of the set that starts after LATE_VOICE (an echo, a run of notes) is left out.
+const PLUCK_ATTACK = 0.01;
+const PLUCK_DECAY = 0.28;
+const LATE_VOICE = 0.05;
+
+// The voices of a melody note: the voices of its cell in the sound set, tuned to the note and cut to a
+// pluck, so the song has the timbre of the set. A set without a pitched voice plays a soft triangle.
+// X sits on the left, O on the right.
 function melodyVoices(note: Extract<SongNote, { kind: 'melody' }>, set: SoundSet): Voice[] {
   const target = midiHz(note.midi);
   const pan = note.player === 'X' ? -0.35 : 0.35;
-  const voices = set.voices(note.cell, note.player);
+  const voices = set.voices(note.cell, note.player).filter((voice) => (voice.at ?? 0) < LATE_VOICE);
   const lead = voices.find((voice) => voice.wave !== 'noise');
-  if (lead === undefined || !('frequency' in lead)) return [{ wave: 'triangle', frequency: target, attack: 0.01, decay: 0.45, level: 0.2 * note.level, pan }];
+  if (lead === undefined || !('frequency' in lead)) return [{ wave: 'triangle', frequency: target, attack: 0.005, decay: 0.22, level: 0.2 * note.level, pan }];
   const ratio = target / lead.frequency;
   return voices.map((voice) => {
     const filter = voice.filter && { ...voice.filter, frequency: voice.filter.frequency * ratio, ...(voice.filter.to === undefined ? {} : { to: voice.filter.to * ratio }) };
-    const tuned = { ...voice, level: voice.level * note.level, pan, ...(filter === undefined ? {} : { filter }) };
+    const decay = Math.min(voice.decay, PLUCK_DECAY);
+    const attack = Math.min(voice.attack ?? 0.005, PLUCK_ATTACK, decay / 2);
+    const tuned = { ...voice, attack, decay, level: voice.level * note.level, pan, ...(filter === undefined ? {} : { filter }) };
     if (tuned.wave === 'noise') return tuned;
     return { ...tuned, frequency: tuned.frequency * ratio, ...(tuned.slideTo === undefined ? {} : { slideTo: tuned.slideTo * ratio }) };
   });
 }
 
-// A chord note is a soft pad that swells in. A bass note is a round triangle under a low filter.
+// A chord note is a plucked triangle that rings for its length. A bass note is a short round triangle under a low filter.
 function noteVoices(note: SongNote, set: SoundSet): Voice[] {
   const frequency = midiHz(note.midi);
   switch (note.kind) {
     case 'melody':
       return melodyVoices(note, set);
     case 'chord':
-      return [{ wave: 'sine', frequency, attack: 0.3, decay: note.length + 0.4, level: 0.035 }];
+      return [{ wave: 'triangle', frequency, attack: 0.005, decay: note.length, level: 0.07 }];
     case 'bass':
-      return [{ wave: 'triangle', frequency, attack: 0.02, decay: note.length, level: 0.11, filter: { type: 'lowpass', frequency: 500 } }];
+      return [{ wave: 'triangle', frequency, attack: 0.005, decay: note.length, level: 0.16, filter: { type: 'lowpass', frequency: 600 } }];
   }
 }
 
-// The mix of a song: a little reverb from a generated impulse (decaying noise), and a limiter at the
-// end, so nothing clips. `input` takes the voices, and `output` goes to the speaker.
-function songMix(ctx: BaseAudioContext): { input: AudioNode; output: AudioNode } {
-  const input = ctx.createGain();
+// The mix of a song: a gain that makes the short notes about as loud as a move sound, then a limiter, so
+// nothing clips. The voices go into the gain, and the limiter goes to the speaker.
+function songMix(ctx: BaseAudioContext): AudioNode {
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(1.6, 0);
   const limiter = ctx.createDynamicsCompressor();
   limiter.threshold.setValueAtTime(-6, 0);
   limiter.ratio.setValueAtTime(20, 0);
   limiter.attack.setValueAtTime(0.003, 0);
   limiter.release.setValueAtTime(0.25, 0);
-  const impulse = ctx.createBuffer(2, Math.round(ctx.sampleRate * 1.8), ctx.sampleRate);
-  for (let channel = 0; channel < 2; channel++) {
-    const samples = impulse.getChannelData(channel);
-    for (let i = 0; i < samples.length; i++) samples[i] = (Math.random() * 2 - 1) * (1 - i / samples.length) ** 3;
-  }
-  const reverb = ctx.createConvolver();
-  reverb.buffer = impulse;
-  const wet = ctx.createGain();
-  wet.gain.setValueAtTime(0.22, 0);
-  input.connect(limiter);
-  input.connect(reverb).connect(wet).connect(limiter);
-  limiter.connect(ctx.destination);
-  return { input, output: limiter };
+  gain.connect(limiter).connect(ctx.destination);
+  return gain;
 }
 
 // A short recording of the player's voice for a move that the voice placed (src/page/voice.ts).
@@ -182,18 +181,20 @@ export type VoiceClip = { samples: Float32Array<ArrayBuffer>; sampleRate: number
 // The clips of a game by move index. Most games have none.
 export type VoiceClips = ReadonlyMap<number, VoiceClip>;
 
-// A clip in the song plays this long at most, and the synthesized note under it this soft.
-const CLIP_SECONDS = 0.6;
+// A clip in the song plays this long at most, about two eighth notes, and the synthesized note under it this soft.
+const CLIP_SECONDS = 0.4;
 const UNDER_CLIP = 0.35;
 
 // Plays a clip at the note of the song: playbackRate moves its pitch, at most one octave either way.
+// The clip plays its end: the end of the held note, where the pitch is steady.
 function playClip(ctx: BaseAudioContext, clip: VoiceClip, midi: number, start: number, output: AudioNode): void {
   if (!(clip.frequency > 0) || clip.samples.length === 0) throw new RangeError(`a voice clip needs samples and a pitch: ${clip.frequency} Hz`);
   const buffer = ctx.createBuffer(1, clip.samples.length, clip.sampleRate);
   buffer.copyToChannel(clip.samples, 0);
   const source = ctx.createBufferSource();
   source.buffer = buffer;
-  source.playbackRate.setValueAtTime(Math.min(2, Math.max(0.5, midiHz(midi) / clip.frequency)), start);
+  const rate = Math.min(2, Math.max(0.5, midiHz(midi) / clip.frequency));
+  source.playbackRate.setValueAtTime(rate, start);
   // The loudest sample of the clip goes to about half of full scale.
   let peak = 0;
   for (const sample of clip.samples) peak = Math.max(peak, Math.abs(sample));
@@ -204,7 +205,7 @@ function playClip(ctx: BaseAudioContext, clip: VoiceClip, midi: number, start: n
   gain.gain.setValueAtTime(level, start + CLIP_SECONDS - 0.08);
   gain.gain.linearRampToValueAtTime(0, start + CLIP_SECONDS);
   source.connect(gain).connect(output);
-  source.start(start);
+  source.start(start, Math.max(0, buffer.duration - CLIP_SECONDS * rate));
   source.stop(start + CLIP_SECONDS);
 }
 
@@ -213,13 +214,13 @@ function playClip(ctx: BaseAudioContext, clip: VoiceClip, midi: number, start: n
 export const clipOf = (note: SongNote, clips: VoiceClips): VoiceClip | undefined =>
   note.kind === 'melody' && note.move !== undefined ? clips.get(note.move) : undefined;
 
-function scheduleSong(song: Song, set: SoundSet, ctx: BaseAudioContext, delay: number, clips: VoiceClips): { output: AudioNode } {
+function scheduleSong(song: Song, set: SoundSet, ctx: BaseAudioContext, delay: number, clips: VoiceClips): AudioNode {
   const mix = songMix(ctx);
   for (const note of song.notes) {
     const clip = clipOf(note, clips);
     // A move that the voice placed plays the player's own note, over a soft synthesized one.
-    if (clip !== undefined) playClip(ctx, clip, note.midi, ctx.currentTime + delay + note.at, mix.input);
-    play(noteVoices(note, set), clip === undefined ? 1 : UNDER_CLIP, delay + note.at, ctx, mix.input);
+    if (clip !== undefined) playClip(ctx, clip, note.midi, ctx.currentTime + delay + note.at, mix);
+    play(noteVoices(note, set), clip === undefined ? 1 : UNDER_CLIP, delay + note.at, ctx, mix);
   }
   return mix;
 }
@@ -235,7 +236,7 @@ export function playSong(song: Song, clips: VoiceClips): SongPlayback | undefine
   const lead = 0.05;
   const start = ctx.currentTime + lead;
   const mix = scheduleSong(song, soundSet, ctx, lead, clips);
-  return { elapsed: () => ctx.currentTime - start, stop: () => mix.output.disconnect() };
+  return { elapsed: () => ctx.currentTime - start, stop: () => mix.disconnect() };
 }
 
 // The same song, rendered into stereo samples by the same voices and mix. The mute does not apply: the
