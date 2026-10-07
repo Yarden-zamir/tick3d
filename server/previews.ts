@@ -10,6 +10,7 @@
 // - on any GitHub failure, the server keeps the last good list and adds a note.
 // "Live" means that https://pr.<n>.<domain>/api/health answers { ok: true } now. That costs no GitHub call.
 import { PREVIEWS_CACHE_MS, PREVIEWS_RELAY_CACHE_MS } from './api-docs.ts';
+import { type EpochMs, isEpochMs } from '../src/epoch.ts';
 import { type Contributor, type PlayerInfo, type Preview, type Previews, PREVIEW_DESCRIPTION_LENGTH, parsePlayerInfo, parsePreviews } from '../src/protocol.ts';
 
 // GitHub returns at most this many pull requests in one page, the most recently updated first.
@@ -62,7 +63,7 @@ function accountOf(value: unknown): PlayerInfo | undefined {
   return parsePlayerInfo({ login: value.login, avatar: value.avatar_url });
 }
 
-type Pull = { number: number; title: string; body: string; url: string; updatedAt: number; draft: boolean; head: string; author: PlayerInfo | undefined };
+type Pull = { number: number; title: string; body: string; url: string; updatedAt: EpochMs; draft: boolean; head: string; author: PlayerInfo | undefined };
 
 // One pull request from GET /repos/{repo}/pulls. Returns undefined for an entry that is not as documented.
 export function parsePull(value: unknown): Pull | undefined {
@@ -73,7 +74,7 @@ export function parsePull(value: unknown): Pull | undefined {
   if (typeof title !== 'string' || typeof url !== 'string' || !url.startsWith('https://github.com/')) return undefined;
   if (typeof head !== 'string' || typeof updated !== 'string') return undefined;
   const updatedAt = Date.parse(updated);
-  if (Number.isNaN(updatedAt)) return undefined;
+  if (!isEpochMs(updatedAt)) return undefined;
   return {
     number,
     title,

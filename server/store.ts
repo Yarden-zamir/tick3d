@@ -2,6 +2,7 @@ import { createHmac, randomBytes, randomInt } from 'node:crypto';
 import { type DuckDBValue, DuckDBInstance, listValue } from '@duckdb/node-api';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { NO_LIMIT, type TimeControl } from '../src/clock.ts';
+import { type EpochMs, MAX_EPOCH_MS, epochNow, toEpochMs } from '../src/epoch.ts';
 import { type LineKind, type Player, lineKind, other, winnerOf } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
 import {
@@ -194,7 +195,7 @@ function readStored(json: unknown): StoredGame {
     return { mode: 'online', game, you: null, difficulty: null, options, tuned: false };
   }
   // The finish time was checked when the result arrived.
-  const upload = parseResultUpload(doc, Infinity);
+  const upload = parseResultUpload(doc, MAX_EPOCH_MS);
   if (upload === undefined) throw new Error('a stored result does not parse');
   return upload;
 }
@@ -237,7 +238,7 @@ const SEAT_ACCOUNTS = `
 const SEAT_ACCOUNT_COLUMNS = 'ux.login AS x_login, ux.avatar AS x_avatar, uo.login AS o_login, uo.avatar AS o_avatar';
 
 type StoreOptions = {
-  now?: () => number;
+  now?: () => EpochMs;
   // The player tokens that have a session open now. The HTTP layer knows; tests pass nothing.
   open?: (code: Code) => readonly PlayerToken[];
   // Runs after every write to a session, also a write during a read (a timeout, a format upgrade).
@@ -247,7 +248,7 @@ type StoreOptions = {
 
 export async function openStore(
   path: string,
-  { now = Date.now, open = () => [], onChange = () => undefined }: StoreOptions = {},
+  { now = epochNow, open = () => [], onChange = () => undefined }: StoreOptions = {},
 ) {
   // Watcher ids hide the token behind a keyed hash. The key lives in this process only, so the ids
   // change on a restart. That is fine: pages read the list again with every change.
@@ -291,7 +292,7 @@ export async function openStore(
     id: string;
     token: string;
     doc: object;
-    finishedAt: number;
+    finishedAt: EpochMs;
     publicId: GameId;
     seats: Record<Player, string | null>;
     game: GameRecord;
@@ -325,7 +326,7 @@ export async function openStore(
 
   // Records a finished game of an online session in `results`, so every mode has rows in one table.
   // A second call for the same game changes nothing.
-  async function recordOnline(code: Code, doc: SessionDoc, index: number, finishedAt: number): Promise<void> {
+  async function recordOnline(code: Code, doc: SessionDoc, index: number, finishedAt: EpochMs): Promise<void> {
     const game = doc.games[index];
     if (game === undefined || !isFinished(game)) throw new Error(`game ${index} of ${code} is not finished`);
     const token = doc.seats.X ?? doc.seats.O;
@@ -732,7 +733,7 @@ export async function openStore(
             moves: Number(row.moves),
             opponent: you === 'X' ? accountOf(row.o_login, row.o_avatar) : you === 'O' ? accountOf(row.x_login, row.x_avatar) : null,
             opponentName: you === 'X' ? core.seatName(tokenOf(row.token_o), name) : you === 'O' ? core.seatName(tokenOf(row.token_x), name) : null,
-            finishedAt: Number(row.finished),
+            finishedAt: toEpochMs(Number(row.finished)),
           };
         });
         // The same check as on the page, so a wrong cast above fails here and not in a browser.
@@ -847,7 +848,7 @@ export async function openStore(
             opponent: (await playersOf(doc))[other(you)],
             opponentName: core.seatName(doc.seats[other(you)], await namesOf([doc.seats[other(you)]])),
             yourTurn: live.status.kind === 'playing' && live.turn === you && doc.seats[other(you)] !== null,
-            updatedAt: Number(row.updated),
+            updatedAt: toEpochMs(Number(row.updated)),
           });
         }
 
@@ -884,7 +885,7 @@ export async function openStore(
     // player on the page stays, so an open page never loses its game. Returns the codes it deleted.
     pruneEmpty: (ageMs: number) =>
       serialized(async () => {
-        const cutoff = now() - ageMs;
+        const cutoff = toEpochMs(now() - ageMs);
         const old = await rows('FROM sessions SELECT code, doc::JSON AS doc WHERE updated_at < make_timestamptz($cutoff * 1000)', {
           cutoff,
         });
