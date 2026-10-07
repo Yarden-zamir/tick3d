@@ -1,6 +1,7 @@
 // The messages between the page and the move search in src/ai-worker.ts, and the page side of the search.
 // Each side checks every message, so a bad message fails loudly instead of playing a wrong cell.
 // A Worker does not exist in Node, so the tests drive these functions with a fake worker.
+import { isRecord } from './guards.ts';
 import { type Difficulty, DIFFICULTIES, chooseMove } from './ai.ts';
 import { type Board, type Player, CELL_COUNT } from './game.ts';
 import { type Tuning, parseTuning } from './tuning.ts';
@@ -8,7 +9,6 @@ import { type Tuning, parseTuning } from './tuning.ts';
 export type SearchRequest = { id: number; board: Board; player: Player; difficulty: Difficulty; tuning: Tuning };
 export type SearchAnswer = { id: number; cell: number } | { id: number; error: string };
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 const isId = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 const isPlayer = (value: unknown): value is Player => value === 'X' || value === 'O';
 const isDifficulty = (value: unknown): value is Difficulty => DIFFICULTIES.some((level) => level === value);

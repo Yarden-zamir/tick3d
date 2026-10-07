@@ -9,6 +9,7 @@
 // with each candidate as [address, port, priority]. An mDNS address ("<uuid>.local") is packed as
 // "~" + base64url of its 16 bytes. Change the version digit when the format changes, so a code from
 // another version fails with a clear message.
+import { isUnknownArray, keysOf } from '../guards.ts';
 import type { DeviceKind } from './device.ts';
 
 export type Hello = { device: DeviceKind; name: string };
@@ -60,7 +61,8 @@ export function readSdp(sdp: string): SdpFields {
   const [algorithm, hex] = value('a=fingerprint:').split(' ');
   if (algorithm !== 'sha-256' || hex === undefined) throw new Error('the description has no SHA-256 fingerprint');
   const setup = value('a=setup:');
-  if (!(setup in SETUP_CODES)) throw new Error(`unknown setup role ${setup}`);
+  const role = keysOf(SETUP_CODES).find((known) => known === setup);
+  if (role === undefined) throw new Error(`unknown setup role ${setup}`);
   const candidates = lines
     .filter((line) => line.startsWith('a=candidate:'))
     .map((line) => line.slice('a=candidate:'.length).split(' '))
@@ -70,7 +72,7 @@ export function readSdp(sdp: string): SdpFields {
     ufrag: value('a=ice-ufrag:'),
     pwd: value('a=ice-pwd:'),
     fingerprint: Uint8Array.from(hex.split(':'), (pair) => Number.parseInt(pair, 16)),
-    setup: setup as Setup,
+    setup: role,
     candidates,
   };
 }
@@ -185,8 +187,8 @@ export async function encodeSignal(desc: RTCSessionDescriptionInit, hello: Hello
 const DAMAGED = 'This code is damaged. Scan or copy it again.';
 
 function readCandidate(value: unknown): SdpFields['candidates'][number] | undefined {
-  if (!Array.isArray(value) || value.length !== 3) return undefined;
-  const [packed, port, priority] = value as unknown[];
+  if (!isUnknownArray(value) || value.length !== 3) return undefined;
+  const [packed, port, priority] = value;
   const address = typeof packed === 'string' ? unpackAddress(packed) : undefined;
   if (address === undefined) return undefined;
   if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65_535) return undefined;
@@ -205,10 +207,10 @@ export async function decodeSignal(text: string): Promise<{ kind: 'offer' | 'ans
     try {
       const inflated = await pipeBytes(fromBase64Url(code.slice(OFFER_TAG.length)), new DecompressionStream('deflate-raw'), MAX_INFLATED_BYTES);
       const parsed: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(inflated));
-      if (!Array.isArray(parsed) || parsed.length !== 7) throw new Error('the code is not an array of 7 fields');
-      const [, , fingerprint, , rawCandidates] = parsed as unknown[];
+      if (!isUnknownArray(parsed) || parsed.length !== 7) throw new Error('the code is not an array of 7 fields');
+      const [, , fingerprint, , rawCandidates] = parsed;
       return {
-        value: parsed as unknown[],
+        value: parsed,
         fingerprintBytes: typeof fingerprint === 'string' ? fromBase64Url(fingerprint) : undefined,
         candidates: Array.isArray(rawCandidates) ? rawCandidates.map(readCandidate) : [],
       };
@@ -218,8 +220,8 @@ export async function decodeSignal(text: string): Promise<{ kind: 'offer' | 'ans
     }
   })();
   const [ufrag, pwd, , setupCode, , deviceCode, rawName] = value;
-  const setup = (Object.keys(SETUP_CODES) as Setup[]).find((role) => SETUP_CODES[role] === setupCode);
-  const device = (Object.keys(DEVICE_CODES) as DeviceKind[]).find((kindName) => DEVICE_CODES[kindName] === deviceCode);
+  const setup = keysOf(SETUP_CODES).find((role) => SETUP_CODES[role] === setupCode);
+  const device = keysOf(DEVICE_CODES).find((kindName) => DEVICE_CODES[kindName] === deviceCode);
   const name = normalizeHelloName(rawName);
   const valid =
     typeof ufrag === 'string' && ufrag.length >= 4 && ufrag.length <= 256 && onlyChars(ufrag, ICE_CHARS) &&
