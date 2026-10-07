@@ -197,7 +197,7 @@ function swapSeats(doc: SessionDoc): SessionDoc {
     computer: doc.computer === null ? null : { ...doc.computer, seat: other(doc.computer.seat) },
     chat: doc.chat.map((message) => ({ ...message, from: other(message.from) })),
     seatRequest: doc.seatRequest === null ? null : { ...doc.seatRequest, from: other(doc.seatRequest.from) },
-    // The rotation is not a seat change by a player, so a sound playoff goes on, with each player's progress.
+    // The same two players hold the seats, so a sound playoff goes on, with each player's progress.
     playoff: doc.playoff === null ? null : { ...doc.playoff, by: other(doc.playoff.by), seats: { X: doc.playoff.seats.O, O: doc.playoff.seats.X } },
     flipped: doc.flipped.map((entry, index) => (index === last && live ? entry : !entry)),
   };
@@ -304,8 +304,9 @@ function undoProblem(doc: SessionDoc, from: Player): string | undefined {
 }
 
 // Every applied change closes an open request, because the request was about the state before it.
-// A change of the seats also ends a sound playoff: the playoff is stored by seat, so a new holder of a
+// A change of who holds a seat also ends a sound playoff: the playoff is stored by seat, so a new holder of a
 // seat must not take over the progress of the player before. Both pages see the playoff go to null.
+// A swap keeps the same two players, so the playoff goes on with them (swapSeats).
 // Limit: the next playoff starts again at id 1, so a late request for the ended playoff can reach it.
 // That needs a request in flight across a seat change, and a playoff is friendly. Revisit this if a
 // stale hit ever shows in a new playoff: then keep a playoff counter in the session document.

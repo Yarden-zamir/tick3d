@@ -366,7 +366,7 @@ describe('seat controls', () => {
     expect(JSON.stringify(shown)).not.toContain(CAROL);
   });
 
-  it('ends a sound playoff when the seats change, so a new seat holder does not take over its progress', () => {
+  it('ends a sound playoff when a seat changes hands, so a new seat holder does not take over its progress', () => {
     const doc = onlineDoc();
     const started = core.playoff(doc, alice, { action: 'start', preset: 'easy', seed: 7 }, ms(0));
     expect(started.playoff).not.toBeNull();
@@ -376,12 +376,17 @@ describe('seat controls', () => {
     ] as const) {
       expect(core.seat(started, who, request, watchers, ms(0)).playoff, request.action).toBeNull();
     }
-    for (const request of [{ action: 'swap' }, { action: 'unseat' }, { action: 'replace', watcher: 'c0ffee0000000001' }] as const) {
+    for (const request of [{ action: 'unseat' }, { action: 'replace', watcher: 'c0ffee0000000001' }] as const) {
       const asked = core.seat(started, alice, request, watchers, ms(0));
       // A request alone changes no seat, so the playoff goes on until the other player accepts.
       expect(asked.playoff, request.action).toEqual(started.playoff);
       expect(core.answerSeat(asked, bob, true, watchers, ms(0)).playoff, request.action).toBeNull();
     }
+    // A swap keeps the same two players, so the playoff goes on with them.
+    const swapped = core.answerSeat(core.seat(started, alice, { action: 'swap' }, watchers, ms(0)), bob, true, watchers, ms(0));
+    const before = started.playoff;
+    if (before === null) throw new Error('the playoff did not start');
+    expect(swapped.playoff).toEqual({ ...before, by: 'O', seats: { X: before.seats.O, O: before.seats.X } });
     // An undo changes no seat, and keeps the playoff.
     const played = play(started, [0, 1]);
     const undone = core.answerSeat(core.seat(played, bob, { action: 'undo' }, watchers, ms(0)), alice, true, watchers, ms(0));
