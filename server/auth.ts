@@ -177,6 +177,10 @@ export function createAuth(config: AuthConfig, fetchImpl: typeof fetch = fetch, 
 
 export type Auth = ReturnType<typeof createAuth>;
 
+// The GitHub logins that can read reports and moderate. GitHub logins ignore case.
+const MAINTAINERS = ['yarden-zamir', 'tomcohendev'];
+export const isMaintainer = (login: string): boolean => MAINTAINERS.includes(login.toLowerCase());
+
 // ---- Request limits ----
 
 // The address of the client. Caddy writes the client address as the last X-Forwarded-For entry.

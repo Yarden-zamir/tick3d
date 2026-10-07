@@ -9,6 +9,7 @@ import { nameOf } from '../names.ts';
 import {
   type Code,
   type DeviceGameId,
+  type PersonId,
   type PlayerToken,
   type SeatAction,
   type SessionView,
@@ -19,6 +20,7 @@ import {
   parseSeatAnswer,
   parseSessionUpdate,
   parseSessionView,
+  personId,
 } from '../protocol.ts';
 import * as core from '../session/core.ts';
 import type { SessionDoc } from '../session/format.ts';
@@ -42,6 +44,12 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
   const hostId = randomWatcherId();
   // The device name of each guest token, kept after the guest leaves, so its seat keeps the name.
   const names = new Map<string, string>();
+  // The person id of each known token (personId is async, the views are not), kept like the names.
+  const persons = new Map<string, PersonId>();
+  void personId(hostToken).then((id) => {
+    persons.set(hostToken, id);
+    guestsChanged();
+  });
   // Calls that arrive after stop() get a refusal, also in the moment before each channel closes.
   let stopped = false;
 
@@ -55,6 +63,7 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
       presence: { X: doc.seats.X !== null && connected.has(doc.seats.X), O: doc.seats.O !== null && connected.has(doc.seats.O) },
       watchers: [...connected].filter(([token]) => !seated(token)).map(([token, id]) => ({ id, token, player: null })),
       name: (token) => (token === hostToken ? hostName() : (names.get(token) ?? nameOf(token))),
+      person: (token) => persons.get(token) ?? null,
     };
   }
   local.setAudience(code, audience);
@@ -83,6 +92,7 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
       }
       guest.token = token;
       names.set(token, guest.hello.name);
+      if (!persons.has(token)) persons.set(token, await personId(token));
     }
     const identity: core.Identity = new Set(guest.token ? [guest.token] : []);
     const now = epochNow();
@@ -110,7 +120,7 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
         case 'lock':
           return (doc) => core.lock(doc, identity);
         case 'chat':
-          return (doc) => core.chat(doc, identity, fields.text, now);
+          return (doc) => core.chat(doc, identity, fields.text, now, guest.token === undefined ? null : (persons.get(guest.token) ?? null));
         case 'seat': {
           const action = parseSeatAction(args);
           if (action === undefined) throw new RpcError(400, 'The seat change is not valid.');

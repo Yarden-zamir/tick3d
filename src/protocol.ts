@@ -37,8 +37,9 @@ export function parseMatchOptions(value: unknown): MatchOptions | undefined {
   return { hideBoard: value.hideBoard, hideHistory: value.hideHistory, hideCoordinates };
 }
 
-// `from` is the seat that the sender holds now. A swap of the seats swaps it in every message.
-export type ChatMessage = { id: number; from: Player; text: string; at: EpochMs };
+// `from` is the seat of the sender when they sent the message. `by` is the person id of the sender
+// (personId). A message from before person ids has no `by`: the page then shows the holder of `from`.
+export type ChatMessage = { id: number; from: Player; text: string; at: EpochMs; by?: PersonId };
 // A GitHub account linked to a seat. Shown next to the seat, never required to play.
 export type PlayerInfo = { login: string; avatar: string };
 // The generated name of each seat's player (src/names.ts). The server computes it from the seat's
@@ -80,6 +81,8 @@ export type SessionView = {
   players: Record<Player, PlayerInfo | null>;
   // The generated name of each seat's player (src/names.ts). Null for an empty seat and for the computer.
   names: SeatNames;
+  // The public person id of each seat's player (personId). Null for an empty seat, the computer, or a holder that sends none.
+  people: Record<Player, PersonId | null>;
   // The devices that have the session open without a seat, as the holder of the session knows them.
   watchers: Watcher[];
   // The watcher id of the caller, when the caller watches. Null for a player and for a caller that the holder does not see.
@@ -109,7 +112,8 @@ export type SeatAnswer = { accept: boolean };
 // A watcher id is an opaque handle that the holder of the session makes. It is never a player token.
 export const WATCHER_ID_LENGTH = 16;
 const WATCHER_ID_CHARS = '0123456789abcdef';
-type Watcher = { id: string; name: string; player: PlayerInfo | null };
+// `person` is the public person id of the watcher (personId), or null from a holder that sends none.
+type Watcher = { id: string; name: string; player: PlayerInfo | null; person: PersonId | null };
 export type SeatRequestView = {
   kind: ConsentAction;
   from: Player;
@@ -141,7 +145,9 @@ export function parseSeatAnswer(value: unknown): SeatAnswer | undefined {
 function parseWatcher(value: unknown): Watcher | undefined {
   if (!isRecord(value) || !isWatcherId(value.id) || !isDisplayName(value.name)) return undefined;
   const player = value.player === null ? null : parsePlayerInfo(value.player);
-  return player === undefined ? undefined : { id: value.id, name: value.name, player };
+  // An older server or Nearby host sends no person id.
+  const person = value.person === undefined || value.person === null ? null : parsePersonId(value.person);
+  return player === undefined || person === undefined ? undefined : { id: value.id, name: value.name, player, person };
 }
 
 function parseSeatRequestView(value: unknown): SeatRequestView | undefined {
@@ -158,6 +164,71 @@ function parseSeatRequestView(value: unknown): SeatRequestView | undefined {
   }
   if ((kind === 'replace') !== (watcher !== null)) return undefined;
   return { kind, from, watcher, expiresAt };
+}
+
+// ---- People: report and block ----
+
+// The public id of a person: the first PERSON_ID_LENGTH hex characters of SHA-256 over a prefix and
+// the token. A token is a random UUID, so the id does not reveal it. An account token
+// ("account-<GitHub id>") reveals only the GitHub id, which is public. The hash has no key, so the
+// server and a Nearby host give one device the same id, and DuckDB's sha256() finds the same id.
+export type PersonId = string & { readonly __brand: 'PersonId' };
+export const PERSON_ID_LENGTH = 16;
+export const PERSON_ID_PREFIX = 'tick3d-person:';
+const HEX_CHARS = '0123456789abcdef';
+
+export async function personId(token: string): Promise<PersonId> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${PERSON_ID_PREFIX}${token}`));
+  const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return hex.slice(0, PERSON_ID_LENGTH) as PersonId;
+}
+
+export function parsePersonId(value: unknown): PersonId | undefined {
+  return typeof value === 'string' && value.length === PERSON_ID_LENGTH && [...value].every((char) => HEX_CHARS.includes(char))
+    ? (value as PersonId)
+    : undefined;
+}
+
+// A person that the caller blocked. `name` is the name that the caller saw at the block, for the unblock list.
+export type BlockedPerson = { person: PersonId; name: string; at: EpochMs };
+
+// The answer of GET /api/me/blocks, newest first.
+export function parseBlocks(value: unknown): BlockedPerson[] {
+  const blocked = isRecord(value) ? value.blocked : undefined;
+  if (!isUnknownArray(blocked)) throw new Error('invalid answer from /api/me/blocks');
+  return blocked.map((entry) => {
+    const person = isRecord(entry) ? parsePersonId(entry.person) : undefined;
+    if (!isRecord(entry) || person === undefined || !isDisplayName(entry.name) || !isEpochMs(entry.at)) throw new Error('invalid blocked person');
+    return { person, name: entry.name, at: entry.at };
+  });
+}
+
+// The body of PUT /api/me/blocks/{person}.
+export function parseBlockRequest(value: unknown): { name: string } | undefined {
+  return isRecord(value) && hasOnlyKeys(value, ['name']) && isDisplayName(value.name) ? { name: value.name } : undefined;
+}
+
+export const REPORT_REASONS = ['spam', 'abuse', 'name', 'other'] as const;
+export type ReportReason = (typeof REPORT_REASONS)[number];
+export const REPORT_NOTE_MAX_LENGTH = 200;
+// A report names one chat message of an online session, or one person in it.
+type ReportTarget = { message: number } | { person: PersonId };
+export type ReportRequest = { code: Code; target: ReportTarget; reason: ReportReason; note: string | null };
+
+const isMessageId = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
+
+// The body of POST /api/reports: { code, message | person, reason, note? }. Exactly one target.
+export function parseReportRequest(value: unknown): ReportRequest | undefined {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['code', 'message', 'person', 'reason', 'note'])) return undefined;
+  const code = typeof value.code === 'string' ? normalizeCode(value.code) : undefined;
+  const reason = oneOf(REPORT_REASONS, value.reason);
+  const note = value.note === undefined || value.note === null ? '' : typeof value.note === 'string' ? value.note.trim() : undefined;
+  if (code === undefined || reason === undefined || note === undefined || note.length > REPORT_NOTE_MAX_LENGTH) return undefined;
+  if ((value.message === undefined) === (value.person === undefined)) return undefined;
+  const base = { code, reason, note: note === '' ? null : note };
+  if (value.message !== undefined) return isMessageId(value.message) ? { ...base, target: { message: value.message } } : undefined;
+  const person = parsePersonId(value.person);
+  return person === undefined ? undefined : { ...base, target: { person } };
 }
 
 // ---- Custom names ----
@@ -236,13 +307,14 @@ const isCell = (value: unknown): value is number =>
 
 export function isChatMessage(value: unknown): value is ChatMessage {
   if (!isRecord(value)) return false;
-  const { id, from, text, at } = value;
+  const { id, from, text, at, by } = value;
   return (
     typeof id === 'number' &&
     Number.isInteger(id) &&
     (from === 'X' || from === 'O') &&
     normalizeChat(text) === text &&
-    isEpochMs(at)
+    isEpochMs(at) &&
+    (by === undefined || parsePersonId(by) !== undefined)
   );
 }
 
@@ -311,6 +383,8 @@ export function parseSessionView(value: unknown): SessionView {
   const { games, seats, you, options, locked, now, version, chat, presence, players } = value;
   // An older server, an older Nearby host or a cached view sends no names, watchers or seat request.
   const names = value.names === undefined ? { X: null, O: null } : parseSeatNames(value.names);
+  // An older server, an older Nearby host or a cached view sends no person ids.
+  const people = value.people === undefined ? { X: null, O: null } : parsePeople(value.people);
   const watchers = value.watchers === undefined ? [] : Array.isArray(value.watchers) ? value.watchers.map(parseWatcher) : undefined;
   const youWatcher = value.youWatcher === undefined || value.youWatcher === null ? null : isWatcherId(value.youWatcher) ? value.youWatcher : undefined;
   const seatRequest = value.seatRequest === undefined || value.seatRequest === null ? null : parseSeatRequestView(value.seatRequest);
@@ -336,6 +410,7 @@ export function parseSessionView(value: unknown): SessionView {
   const playerO = players.O === null ? null : parsePlayerInfo(players.O);
   if (playerX === undefined || playerO === undefined) return fail('players');
   if (names === undefined) return fail('names');
+  if (people === undefined) return fail('people');
   // An older server, a Nearby host or a cached view sends no playoff.
   const playoff = value.playoff === undefined || value.playoff === null ? null : parsePlayoff(value.playoff);
   if (playoff === undefined) return fail('playoff');
@@ -370,10 +445,11 @@ export function parseSessionView(value: unknown): SessionView {
     flipped,
     now,
     version,
-    chat: chat.map(({ id, from, text, at }) => ({ id, from, text, at })),
+    chat: chat.map(({ id, from, text, at, by }) => ({ id, from, text, at, ...(by === undefined ? {} : { by }) })),
     presence: { X: presence.X, O: presence.O },
     players: { X: playerX, O: playerO },
     names,
+    people,
     watchers,
     youWatcher,
     seatRequest,
@@ -395,6 +471,13 @@ const GITHUB_LOGIN_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
 
 const isDisplayName = (value: unknown): value is string => typeof value === 'string' && value.length >= 1 && value.length <= NAME_MAX_LENGTH;
 const isSeatName = (value: unknown): value is string | null => value === null || isDisplayName(value);
+
+function parsePeople(value: unknown): Record<Player, PersonId | null> | undefined {
+  if (!isRecord(value)) return undefined;
+  const x = value.X === null ? null : parsePersonId(value.X);
+  const o = value.O === null ? null : parsePersonId(value.O);
+  return x === undefined || o === undefined ? undefined : { X: x, O: o };
+}
 
 function parseSeatNames(value: unknown): SeatNames | undefined {
   return isRecord(value) && isSeatName(value.X) && isSeatName(value.O) ? { X: value.X, O: value.O } : undefined;

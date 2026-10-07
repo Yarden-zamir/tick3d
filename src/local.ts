@@ -61,10 +61,10 @@ export function createLocalBackend(
 ) {
   const listeners = new Map<Code, Set<() => void>>();
   // A Nearby host reports which seats are connected, its watchers and their names.
-  // Other sessions on this device have both seats present and no watchers.
+  // Other sessions on this device have both seats present, no watchers, and no other person to block.
   const audiences = new Map<Code, (doc: SessionDoc) => core.Audience>();
   const audienceOf = (code: Code, doc: SessionDoc): core.Audience =>
-    audiences.get(code)?.(doc) ?? { presence: { X: doc.seats.X !== null, O: doc.seats.O !== null }, watchers: [], name: nameOf };
+    audiences.get(code)?.(doc) ?? { presence: { X: doc.seats.X !== null, O: doc.seats.O !== null }, watchers: [], name: nameOf, person: () => null };
   // Other tabs of this device hear about changes, so two open tabs show the same game.
   const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel('tick3d-local');
   const fire = (code: Code) => listeners.get(code)?.forEach((listener) => listener());
@@ -167,7 +167,7 @@ export function createLocalBackend(
     newGame: (code: Code) => change(code, (doc) => core.newGame(doc, identity())),
     update: (code: Code, changes: SessionUpdate) => change(code, (doc) => core.update(doc, identity(), changes)),
     lock: (code: Code) => change(code, (doc) => core.lock(doc, identity())),
-    chat: (code: Code, text: string) => change(code, (doc) => core.chat(doc, identity(), text, epochNow())),
+    chat: (code: Code, text: string) => change(code, (doc) => core.chat(doc, identity(), text, epochNow(), audienceOf(code, doc).person(token))),
     undo: (code: Code, count: number) => change(code, (doc) => core.undo(doc, identity(true), count)),
     // A device-held session has nobody else to join; a Nearby guest joins through the host.
     join: (code: Code) => change(code, (doc) => doc),

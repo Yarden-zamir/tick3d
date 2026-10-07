@@ -23,3 +23,6 @@ export const EYE_ICON = icon('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 1
 
 // A bar chart: the Stats button of My games.
 export const STATS_ICON = icon('<path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/>');
+// Report: a flag. Block: a circle with a slash.
+export const FLAG_ICON = icon('<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>');
+export const BLOCK_ICON = icon('<circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/>');
