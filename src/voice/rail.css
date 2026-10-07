@@ -44,6 +44,7 @@
 
 .rail-band,
 .rail-cursor,
+.rail-tilt,
 .rail-target {
   position: absolute;
   top: 0;
@@ -59,6 +60,34 @@
 .rail-target {
   background: color-mix(in srgb, var(--x) 45%, transparent);
   outline: 2px solid var(--x);
+}
+
+/* The tilt nudge: a bar in the O color from the place of the voice alone to the cursor, with an arrow head
+   at the cursor end. It sits in the lower half, under the row names. */
+.rail-tilt {
+  top: 55%;
+  bottom: 15%;
+  background: var(--o);
+  opacity: 0.85;
+}
+
+.rail-tilt::after {
+  content: '';
+  position: absolute;
+  top: -40%;
+  bottom: -40%;
+  width: 0.5rem;
+  background: var(--o);
+}
+
+.rail-tilt[data-way='up']::after {
+  right: -0.4rem;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.rail-tilt[data-way='down']::after {
+  left: -0.4rem;
+  clip-path: polygon(100% 0, 0 50%, 100% 100%);
 }
 
 .rail-cursor {

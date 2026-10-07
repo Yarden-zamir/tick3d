@@ -6,15 +6,17 @@ import { MIC_ICON } from '../icons.ts';
 import { type VoiceClip, type VoiceClips, liveSoundUntil, sounds } from '../sound.ts';
 import { type Voice, type VoiceFrame, createVoice } from '../voice/engine.ts';
 import { type Rail, buildRail, showRailPitch, showRailRange } from '../voice/rail.ts';
+import { type HoldFill, type VoiceCells, createVoiceCells } from '../voice/visuals.ts';
 import { withReturn } from '../return-path.ts';
-import { voiceButton, voicePanel, voiceRailEl, voiceRoomLink, voiceStateEl } from './dom.ts';
+import { cells } from './board.ts';
+import { coordsPlace, voiceButton, voicePanel, voiceRailEl, voiceRecentre, voiceRoomLink, voiceStateEl } from './dom.ts';
 import { showProblem } from './feedback.ts';
 import { renderCoords } from './keypad.ts';
 import { render } from './render.ts';
 import { humanMove } from './sessions.ts';
 import { saveSettings, settings } from './settings.ts';
 import { current, isLive, page } from './state.ts';
-import { type VoiceGate, type VoiceState, holdPlaces, voiceState } from './voice-gate.ts';
+import { HOLD_MS, type VoiceGate, type VoiceState, holdPlaces, voiceState } from './voice-gate.ts';
 
 const STATE_TEXT: Record<VoiceState, string> = {
   off: 'Voice: on in your next game',
@@ -24,6 +26,8 @@ const STATE_TEXT: Record<VoiceState, string> = {
 
 let voice: Voice | undefined;
 let rail: Rail | undefined;
+// The light, the hold fill and the burst on the board: the same as in the Voice room (src/voice/visuals.ts).
+let voiceCells: VoiceCells | undefined;
 let opening = false;
 // The game paused the engine. A paused engine sends empty frames, and they are not silence.
 let enginePaused = false;
@@ -101,6 +105,20 @@ function aimAt(cell: number | undefined): void {
   renderCoords();
 }
 
+// The lit cell and its hold fill, on the board and on the Place button of the keypad. The Place button
+// shows the hold with Hide board too.
+function showHold(cell: number | null, hold: HoldFill | null): void {
+  voiceCells?.show(cell, hold);
+  coordsPlace.classList.toggle('voice-hold', hold !== null);
+  if (hold === null) {
+    coordsPlace.style.removeProperty('--voice-hold');
+    delete coordsPlace.dataset.voiceMark;
+    return;
+  }
+  coordsPlace.style.setProperty('--voice-hold', String(Math.min(1, Math.max(0, hold.share))));
+  coordsPlace.dataset.voiceMark = hold.mark;
+}
+
 function showState(state: VoiceState): void {
   if (voiceButton.dataset.state === state) return;
   voiceButton.dataset.state = state;
@@ -116,7 +134,8 @@ function onFrame(frame: VoiceFrame): void {
     // A paused engine drops the input, so the sound of the game does not start a hold.
     voice.pause();
     enginePaused = true;
-    showRailPitch(rail, null, null, 0);
+    showRailPitch(rail, null, null, 0, null);
+    showHold(null, null);
     return aimAt(undefined);
   }
   if (enginePaused) {
@@ -125,24 +144,32 @@ function onFrame(frame: VoiceFrame): void {
     enginePaused = false;
     return;
   }
-  showRailPitch(rail, frame.position, frame.held, frame.margin);
+  voiceRecentre.hidden = !voice.hasTilt() || !voice.settings().tilt.on;
+  showRailPitch(rail, frame.position, frame.held, frame.margin, frame.tilt);
   if (frame.cell === null || frame.held === null) {
     // Silence ends the block of the last move.
     if (frame.raw === null) blockedStep = undefined;
+    showHold(null, null);
     return aimAt(undefined);
   }
   const { step } = frame.held;
   if (step !== blockedStep) blockedStep = undefined;
   aimAt(frame.cell);
+  // A taken cell and the cell of the last move fill nothing: a hold places nothing there.
+  const game = current();
+  const free = step !== blockedStep && game.board[frame.cell] === null;
+  showHold(frame.cell, free ? { share: frame.heldMs / HOLD_MS, mark: game.turn } : null);
   if (!holdPlaces(step, frame.heldMs, blockedStep)) return;
   blockedStep = step;
   aimAt(undefined);
+  showHold(frame.cell, null);
   // The normal move path: the same checks, refusals and sounds as a tap. It shows an accepted move at once.
   const move = current().moves.length;
   // The clip comes before the move: a move that ends the game stops the engine, and the engine has no clip then.
   const clip = takeClip(frame);
   humanMove(frame.cell, 'keypad');
   if (clip !== undefined && page.games.at(-1)?.moves.length === move + 1) keepClip(clip, move);
+  if (page.games.at(-1)?.moves.length === move + 1) voiceCells?.burst(frame.cell);
 }
 
 function turnOff(problem: string): void {
@@ -170,6 +197,8 @@ export function syncVoice(): void {
   const state = voiceState(gate());
   if (state === 'off') {
     voice.stop();
+    showHold(null, null);
+    if (rail !== undefined) showRailPitch(rail, null, null, 0, null);
     aimAt(undefined);
   } else if (!voice.isListening() && !opening) void openVoice(voice);
   voiceButton.hidden = page.viewing !== undefined || page.session === undefined || page.session.you === null;
@@ -186,6 +215,7 @@ export function setupVoice(): void {
   const engine = createVoice();
   voice = engine;
   rail = buildRail(voiceRailEl);
+  voiceCells = createVoiceCells(cells);
   showRailRange(rail, engine.pitchMap());
   engine.subscribe(onFrame);
   engine.onStop(turnOff);
@@ -196,6 +226,11 @@ export function setupVoice(): void {
     sounds.click();
     // The microphone opens during the tap, so the browser starts its audio.
     render();
+  });
+  // A tap: on iOS it also asks for the tilt sensor.
+  voiceRecentre.addEventListener('click', () => {
+    engine.recentre();
+    sounds.click();
   });
   document.addEventListener('visibilitychange', syncVoice);
   addEventListener('pagehide', () => engine.stop());

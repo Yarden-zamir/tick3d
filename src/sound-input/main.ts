@@ -21,6 +21,9 @@ import { isSmallRange, median, rangeFrom, type Retry, typedRange } from '../voic
 import { type VoiceFrame, createVoice } from '../voice/engine.ts';
 import { SPREADS, STEPS, cellOfStep, frequencyAt, noteName } from '../voice/mapping.ts';
 import { buildRail, showRailPitch, showRailRange } from '../voice/rail.ts';
+import { MAX_TILT_STEPS } from '../voice/tilt.ts';
+import { type HoldFill, createVoiceCells } from '../voice/visuals.ts';
+import { HOLD_MS } from '../page/voice-gate.ts';
 import { type Tab, createPracticeRoom } from './practice-room.ts';
 
 setupPageHeader();
@@ -66,9 +69,13 @@ const setHighButton = element('#set-high', HTMLButtonElement);
 const spreadSelect = element('#spread', HTMLSelectElement);
 const rangeNote = element('#range-note', HTMLParagraphElement);
 const clearButton = element('#clear', HTMLButtonElement);
+const tiltEditor = element('#tilt-editor', HTMLFieldSetElement);
+const tiltOn = element('#tilt-on', HTMLInputElement);
+const tiltSteps = element('#tilt-steps', HTMLInputElement);
+const tiltStepsValue = element('#tilt-steps-value', HTMLOutputElement);
+const tiltRecentre = element('#tilt-recentre', HTMLButtonElement);
 
-// A note on one cell for this long places an X there (free play).
-const HOLD_MS = 1000;
+// A note on one cell for HOLD_MS places an X there (free play), as in the game.
 // Each calibration step needs this much time with a clear pitch.
 const STEP_MS = 2000;
 // The page scrolls to the layer of the voice once its cell holds this long, so a passing slide does not
@@ -94,7 +101,7 @@ let closeTo: 'origin' | 'here' = 'origin';
 // The page that a link to this room asked to return to after a calibration (src/return-path.ts).
 const returnTo = readReturn(new URL(location.href));
 let tab: Tab = 'free';
-let lit: number | undefined;
+let lit: number | null = null;
 let holdDone = false;
 // The layer that the page scrolled to last.
 let shownLayer: number | undefined;
@@ -104,6 +111,7 @@ let previewTimers: ReturnType<typeof setTimeout>[] = [];
 
 const board = buildBoard(boardEl);
 const rail = buildRail(railEl);
+const voiceCells = createVoiceCells(board.cells);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
 // The view and the layout of the game (src/page/settings.ts): the game and this room share them.
@@ -152,8 +160,8 @@ function stopMic(message: string): void {
   shownLayer = undefined;
   closeCalibration('here');
   practice.stopped(message);
-  showRailPitch(rail, null, null, 0);
-  light(undefined, 0);
+  showRailPitch(rail, null, null, 0, null);
+  light(null);
   showLevel(0);
   micButton.textContent = 'Turn on the microphone';
   micButton.setAttribute('aria-pressed', 'false');
@@ -161,7 +169,7 @@ function stopMic(message: string): void {
   show(message);
 }
 
-const practice = createPracticeRoom({ voice, board, rail, startMic, show });
+const practice = createPracticeRoom({ voice, board, rail, cells: voiceCells, startMic, show });
 
 // ---- Display ----
 
@@ -236,6 +244,16 @@ function showStickiness(): void {
   buildUpValue.textContent = `${(buildUpMs / 1000).toFixed(1)} s`;
 }
 
+function showTilt(): void {
+  const { on, steps } = voice.settings().tilt;
+  tiltOn.checked = on;
+  tiltSteps.max = String(MAX_TILT_STEPS);
+  tiltSteps.value = String(steps);
+  tiltSteps.disabled = !on;
+  tiltRecentre.disabled = !on;
+  tiltStepsValue.textContent = `up to ${steps} ${steps === 1 ? 'cell' : 'cells'}`;
+}
+
 function showLevel(share: number): void {
   levelEl.setAttribute('aria-valuenow', String(Math.round(share * 100)));
   levelEl.style.setProperty('--level', String(share));
@@ -246,29 +264,37 @@ function showProgress(share: number): void {
   progressEl.style.setProperty('--level', String(share));
 }
 
-// Lights `cell` and lets the light of the cell before fade (input.css). undefined puts the light out.
-function light(cell: number | undefined, heldMs: number): void {
-  if (cell !== undefined && heldMs >= SCROLL_AFTER_MS) {
+// Lights the cell of `frame` (visuals.ts), or puts the light out (null). In free play with the hold on, the
+// hold fills the cell, and a full hold places an X. A practice run fills its own hold.
+function light(frame: VoiceFrame | null): void {
+  const cell = frame?.cell ?? null;
+  const heldMs = frame?.heldMs ?? 0;
+  if (cell !== null && heldMs >= SCROLL_AFTER_MS) {
     const { layer } = toCoords(cell);
     if (layer !== shownLayer) {
       shownLayer = layer;
       showLayer(layer);
     }
   }
-  if (cell === lit) {
-    if (cell !== undefined && tab === 'free' && holdBox.checked && calibration === undefined && !holdDone && heldMs >= HOLD_MS) {
-      holdDone = true;
-      showMark(board, cell, 'X');
+  if (cell !== lit) {
+    lit = cell;
+    // A cell that has an X already places nothing.
+    holdDone = cell !== null && board.cells[cell]?.classList.contains('x') === true;
+    if (cell !== null) {
+      const { layer, row, column } = toCoords(cell);
+      cellEl.textContent = `Layer ${layer + 1}, row ${row + 1}, column ${column + 1}`;
     }
-    return;
   }
-  if (lit !== undefined) board.cells[lit]?.classList.remove('lit');
-  lit = cell;
-  holdDone = false;
-  if (cell === undefined) return;
-  board.cells[cell]?.classList.add('lit');
-  const { layer, row, column } = toCoords(cell);
-  cellEl.textContent = `Layer ${layer + 1}, row ${row + 1}, column ${column + 1}`;
+  const freeHold = cell !== null && tab === 'free' && holdBox.checked && calibration === undefined && !holdDone;
+  if (cell !== null && freeHold && heldMs >= HOLD_MS) {
+    holdDone = true;
+    showMark(board, cell, 'X');
+    voiceCells.burst(cell);
+  }
+  let hold: HoldFill | null = null;
+  if (frame !== null && practice.running()) hold = practice.holdFill(frame);
+  else if (freeHold && !holdDone) hold = { share: heldMs / HOLD_MS, mark: 'X' };
+  voiceCells.show(cell, hold);
 }
 
 // ---- Tabs ----
@@ -380,16 +406,17 @@ function onFrame(frame: VoiceFrame): void {
     // The preview steps aside when the player sings.
     endPreview();
   }
+  if (voice.hasTilt()) tiltEditor.hidden = false;
   if (frame.cell === null) {
     readoutEl.dataset.state = 'listening';
-    showRailPitch(rail, null, null, 0);
-    light(undefined, 0);
+    showRailPitch(rail, null, null, 0, null);
+    light(null);
   } else if (frame.frequency !== null && frame.note !== null) {
     readoutEl.dataset.state = 'heard';
     frequencyEl.textContent = `${Math.round(frame.frequency)} Hz`;
     noteEl.textContent = frame.note;
-    showRailPitch(rail, frame.position, frame.held, frame.margin);
-    light(frame.cell, frame.heldMs);
+    showRailPitch(rail, frame.position, frame.held, frame.margin, frame.tilt);
+    light(frame);
   }
   if (calibration !== undefined && frame.raw !== null) calibrate(calibration, frame.raw, frame.elapsed);
   practice.frame(frame);
@@ -455,6 +482,20 @@ buildUpInput.addEventListener('input', () => {
   voice.saveSettings({ ...settings, stickiness: { ...settings.stickiness, buildUpMs: Math.round(Number(buildUpInput.value) * 1000) } });
   showStickiness();
 });
+tiltOn.addEventListener('change', () => {
+  voice.saveSettings({ ...voice.settings(), tilt: { ...voice.settings().tilt, on: tiltOn.checked } });
+  // The change is a tap: on iOS it asks for the sensor, and the angle now becomes neutral.
+  if (tiltOn.checked) voice.recentre();
+  showTilt();
+});
+tiltSteps.addEventListener('input', () => {
+  voice.saveSettings({ ...voice.settings(), tilt: { ...voice.settings().tilt, steps: Number(tiltSteps.value) } });
+  showTilt();
+});
+tiltRecentre.addEventListener('click', () => {
+  voice.recentre();
+  show('Tilt recentred: the angle now is neutral.');
+});
 clearButton.addEventListener('click', () => {
   for (let cell = 0; cell < board.cells.length; cell++) showMark(board, cell, null);
 });
@@ -497,6 +538,7 @@ addEventListener('pagehide', () => voice.stop());
 
 showBoard();
 showStickiness();
+showTilt();
 showRange();
 // ?mode= opens a tab. ?code= is an online game: the playoff tab, for a playoff with the other player.
 const params = new URLSearchParams(location.search);

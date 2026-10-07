@@ -151,27 +151,6 @@
   background: var(--danger);
 }
 
-/* A hit: the cell pops, and a ring flies out. */
-.voice-board .cell.hit {
-  animation: practice-hit 0.6s ease-out;
-}
-
-@keyframes practice-hit {
-  0% {
-    scale: 1;
-    box-shadow: 0 0 0 0 var(--win);
-  }
-
-  30% {
-    scale: 1.25;
-  }
-
-  100% {
-    scale: 1;
-    box-shadow: 0 0 0 calc(var(--cell) * 0.8) transparent;
-  }
-}
-
 .practice-facts {
   margin: 0;
   font-weight: 800;
@@ -205,12 +184,6 @@
   padding-left: 1.6rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .voice-board .cell.hit {
-    animation: none;
-  }
 }
 
 /* A calibration is one step on its own (main.ts): the tabs and the practice wait under it, and Cancel or the

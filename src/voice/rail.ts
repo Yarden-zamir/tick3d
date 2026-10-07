@@ -1,6 +1,6 @@
 // The pitch rail: the whole range as a strip, low at the left. It shows the four row bands, a tick for
-// each layer and each column, a cursor at the pitch now, the sticky band around the lit cell, and an
-// optional target cell. rail.css draws it. The places come from positionOf in mapping.ts (0 to STEPS).
+// each layer and each column, a cursor at the pitch now, the sticky band around the lit cell, the tilt
+// nudge (an arrow from the place of the voice alone to the cursor), and an optional target cell. rail.css draws it. The places come from positionOf in mapping.ts (0 to STEPS).
 import './rail.css';
 import { type PitchMap, STEPS, frequencyAt } from './mapping.ts';
 import type { Held } from './sticky.ts';
@@ -8,6 +8,7 @@ import type { Held } from './sticky.ts';
 export type Rail = {
   cursor: HTMLElement;
   band: HTMLElement;
+  tilt: HTMLElement;
   target: HTMLElement;
   labels: readonly HTMLElement[];
 };
@@ -34,7 +35,9 @@ export function buildRail(root: HTMLElement): Rail {
   }
   const target = part('rail-target', track);
   const band = part('rail-band', track);
+  const tilt = part('rail-tilt', track);
   const cursor = part('rail-cursor', track);
+  tilt.hidden = true;
   target.hidden = true;
   band.hidden = true;
   cursor.hidden = true;
@@ -48,7 +51,7 @@ export function buildRail(root: HTMLElement): Rail {
     return label;
   });
   root.append(track, scale);
-  return { cursor, band, target, labels };
+  return { cursor, band, tilt, target, labels };
 }
 
 export function showRailRange(rail: Rail, map: PitchMap): void {
@@ -57,10 +60,21 @@ export function showRailRange(rail: Rail, map: PitchMap): void {
   });
 }
 
-// `position` is the pitch now, or null when there is no clear pitch. `margin` is the sticky margin of the
-// held step, in steps.
-export function showRailPitch(rail: Rail, position: number | null, held: Held | null, margin: number): void {
+// A nudge below this many steps does not show, so the arrow does not flicker at the dead zone.
+const TILT_SHOWN = 0.1;
+
+// `position` is the pitch now after the tilt, or null when there is no clear pitch. `margin` is the sticky
+// margin of the held step, in steps. `tilt` is the tilt nudge in `position` (VoiceFrame.tilt).
+export function showRailPitch(rail: Rail, position: number | null, held: Held | null, margin: number, tilt: number | null): void {
   rail.cursor.hidden = position === null;
+  const nudge = position === null || tilt === null || Math.abs(tilt) < TILT_SHOWN ? null : tilt;
+  rail.tilt.hidden = nudge === null;
+  if (position !== null && nudge !== null) {
+    const from = Math.min(position, position - nudge);
+    rail.tilt.dataset.way = nudge > 0 ? 'up' : 'down';
+    rail.tilt.style.left = percent(from);
+    rail.tilt.style.width = `calc(${percent(from + Math.abs(nudge))} - ${percent(from)})`;
+  }
   rail.band.hidden = held === null;
   if (position !== null) rail.cursor.style.left = percent(position);
   if (held !== null) {

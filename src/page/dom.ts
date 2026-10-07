@@ -45,6 +45,7 @@ export const voicePanel = element('#voice-panel', HTMLDivElement);
 export const voiceRailEl = element('#voice-rail', HTMLDivElement);
 export const voiceRoomLink = element('#voice-room', HTMLAnchorElement);
 export const voiceStateEl = element('#voice-state', HTMLSpanElement);
+export const voiceRecentre = element('#voice-recentre', HTMLButtonElement);
 export const soundSetList = element('#sound-set-list', HTMLDivElement);
 export const lockButton = element('#lock', HTMLButtonElement);
 export const resetAngleButton = element('#reset-angle', HTMLButtonElement);

@@ -8,12 +8,16 @@
 //   button.onclick = async () => { const problem = await voice.start(); if (problem !== null) show(problem); };
 //   voice.pause() before the page plays its own sound, voice.resume() after it.
 //   const clip = voice.clip(1000); // the last second of the microphone, for a replay: { samples, sampleRate }
-// Draw the range with rail.ts (buildRail, showRailRange, showRailPitch, showRailTarget).
+// Draw the range with rail.ts (buildRail, showRailRange, showRailPitch, showRailTarget), and the light on the
+// board with visuals.ts (createVoiceCells).
+// Tilt: on a device with an orientation sensor, a small front-to-back tilt nudges the place (tilt.ts).
+// start() asks for the sensor in the same tap. voice.recentre() takes the angle now as neutral.
 // The settings (range and stickiness) live in settings.ts. A page changes them with voice.saveSettings.
 import { DEFAULT_RANGE, type PitchMap, type Range, cellOfStep, noteName } from './mapping.ts';
 import { type Clip, type Microphone, levelShare, micError, openMicrophone } from './microphone.ts';
 import { type VoiceSettings, loadVoiceSettings, saveVoiceSettings } from './settings.ts';
 import type { Held, Stickiness } from './sticky.ts';
+import { smoothToward, tiltTarget } from './tilt.ts';
 import { createTracker } from './tracker.ts';
 
 // One frame of the voice. When no clear pitch holds a cell, `cell`, `held`, `frequency`, `note` and
@@ -26,7 +30,10 @@ export type VoiceFrame = {
   level: number;
   // The pitch of this frame alone, before smoothing. Calibration uses it.
   raw: number | null;
-  // The smoothed pitch, its note name ("G5 +12¢") and its place in the range (0 to 64).
+  // The tilt nudge in steps, already in `position`: positive moves up the scale. null without a tilt reading
+  // (no sensor, no permission) or with the tilt off.
+  tilt: number | null;
+  // The smoothed pitch, its note name ("G5 +12¢") and its place in the range (0 to 64), after the tilt.
   frequency: number | null;
   note: string | null;
   position: number | null;
@@ -65,7 +72,23 @@ export type Voice = {
   clip(ms: number): Clip | null;
   // A stickiness for this page only (for example none on a hard level), or null for the stored one.
   overrideStickiness(stickiness: Stickiness | null): void;
+  // True once the device sent a tilt reading while the microphone listens. A desktop sends none.
+  hasTilt(): boolean;
+  // Takes the tilt now as neutral. Call it from a tap: on iOS it also asks for the sensor.
+  recentre(): void;
 };
+
+// iOS asks for the orientation sensor with DeviceOrientationEvent.requestPermission(), from a tap. Other
+// browsers do not have it, and send the events without a question.
+type AsksPermission = { requestPermission(): Promise<'granted' | 'denied'> };
+const asksPermission = (value: unknown): value is AsksPermission =>
+  typeof value === 'function' && 'requestPermission' in value && typeof value.requestPermission === 'function';
+
+function askForTilt(): void {
+  if (typeof DeviceOrientationEvent === 'undefined' || !asksPermission(DeviceOrientationEvent)) return;
+  // Without a tap the browser refuses, and a player who says no gets no tilt. Both leave the voice as it is.
+  DeviceOrientationEvent.requestPermission().catch(() => undefined);
+}
 
 const EMPTY = { raw: null, frequency: null, note: null, position: null, cell: null, held: null, heldMs: 0, margin: 0 } as const;
 
@@ -76,6 +99,24 @@ export function createVoice(): Voice {
   let starting = false;
   let paused = false;
   const tracker = createTracker();
+  // The last tilt reading (beta, in degrees), the neutral angle, and the nudge now, in steps.
+  let beta: number | null = null;
+  let neutral: number | null = null;
+  let nudge = 0;
+  const onOrientation = (event: DeviceOrientationEvent) => {
+    if (event.beta === null || !Number.isFinite(event.beta)) return;
+    beta = event.beta;
+    neutral ??= event.beta;
+  };
+  // The nudge for this frame, or null without a reading or with the tilt off.
+  const tiltNow = (elapsed: number): number | null => {
+    if (!settings.tilt.on || beta === null || neutral === null) {
+      nudge = 0;
+      return null;
+    }
+    nudge = smoothToward(nudge, tiltTarget(beta, neutral, settings.tilt.steps), elapsed);
+    return nudge;
+  };
   // The pitch part of the last frame with a pitch, until the light goes out.
   let last: { frequency: number; note: string; position: number; cell: number; held: Held; margin: number } | undefined;
   const listeners = new Set<(frame: VoiceFrame) => void>();
@@ -90,6 +131,10 @@ export function createVoice(): Voice {
   const stop = () => {
     mic?.stop();
     mic = undefined;
+    removeEventListener('deviceorientation', onOrientation);
+    beta = null;
+    neutral = null;
+    nudge = 0;
     tracker.reset();
     last = undefined;
   };
@@ -98,13 +143,16 @@ export function createVoice(): Voice {
     async start() {
       if (mic !== undefined || starting) return null;
       starting = true;
+      // In the same tap as the microphone, before the first await.
+      if (settings.tilt.on) askForTilt();
+      addEventListener('deviceorientation', onOrientation);
       try {
         mic = await openMicrophone(
           ({ now, elapsed, level, pitch }) => {
-            const base = { now, elapsed, level: levelShare(level) };
+            const base = { now, elapsed, level: levelShare(level), tilt: tiltNow(elapsed) };
             if (paused) return emit({ ...base, ...EMPTY });
             const raw = pitch?.frequency ?? null;
-            const tracked = tracker.feed(raw, now, pitchMap(), override ?? settings.stickiness);
+            const tracked = tracker.feed(raw, now, pitchMap(), override ?? settings.stickiness, base.tilt ?? 0);
             if (tracked.kind === 'silent') last = undefined;
             if (tracked.kind === 'pitch') {
               last = {
@@ -133,6 +181,7 @@ export function createVoice(): Voice {
         }
         return null;
       } catch (error) {
+        removeEventListener('deviceorientation', onOrientation);
         return micError(error);
       } finally {
         starting = false;
@@ -172,6 +221,12 @@ export function createVoice(): Voice {
       override = stickiness;
       tracker.reset();
       last = undefined;
+    },
+    hasTilt: () => beta !== null,
+    recentre() {
+      if (settings.tilt.on) askForTilt();
+      neutral = beta;
+      nudge = 0;
     },
   };
 }

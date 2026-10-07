@@ -47,11 +47,15 @@ test('a held note places the move on its cell, and the computer replies', async 
   await expect(voice).toHaveAttribute('data-state', 'listening');
 
   await setTone(page, toneOf(TARGET));
-  // The aim shows on the board and on the keypad.
+  // The aim shows on the board and on the keypad, with the light of the Voice room (src/voice/visuals.ts).
   await expect(cell(page, TARGET)).toHaveClass(/\baim\b/);
+  await expect(cell(page, TARGET)).toHaveClass(/\blit\b/);
   await expect(page.locator('#coords .slot b')).toHaveText(['2', '3', '2']);
   // After the hold time, the move is placed.
   await expect(cell(page, TARGET)).toHaveClass(/\bx\b/);
+  // A desktop has no tilt sensor: no tilt shows.
+  await expect(page.locator('#voice-recentre')).toBeHidden();
+  await expect(page.locator('#voice-rail .rail-tilt')).toBeHidden();
   await setTone(page, null);
   // The computer replies, and the voice listens again on the next turn.
   await expect(marks(page)).toHaveCount(2);

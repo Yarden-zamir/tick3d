@@ -1219,6 +1219,20 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
+.voice-panel #voice-recentre {
+  justify-self: center;
+}
+
+/* Play by voice: the hold fills the Place button with the color of the mark, as it fills the lit cell
+   (src/voice/visuals.css). --voice-hold (0 to 1) comes from src/page/voice.ts. */
+.keypad .btn.place.voice-hold {
+  background: linear-gradient(to right, var(--voice-hold-color, var(--x)) calc(var(--voice-hold, 0) * 100%), var(--win) 0);
+}
+
+.keypad .btn.place[data-voice-mark='O'] {
+  --voice-hold-color: var(--o);
+}
+
 /* The sound set menu: a popover in the middle of the screen, so it fits a phone too. */
 .sound-sets {
   width: min(28rem, calc(100vw - 2rem));

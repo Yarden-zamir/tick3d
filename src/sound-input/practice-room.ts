@@ -31,6 +31,7 @@ import type { Voice, VoiceFrame } from '../voice/engine.ts';
 import { cellOfStep, stepOfCell } from '../voice/mapping.ts';
 import { type Rail, showRailTarget } from '../voice/rail.ts';
 import { DEFAULT_STICKINESS, type Stickiness } from '../voice/sticky.ts';
+import type { HoldFill, VoiceCells } from '../voice/visuals.ts';
 
 export type Tab = 'free' | PracticeMode | 'playoff';
 
@@ -38,6 +39,8 @@ type Context = {
   voice: Voice;
   board: Board;
   rail: Rail;
+  // The light, the hold fill and the burst on the board (src/voice/visuals.ts), shared with the game.
+  cells: VoiceCells;
   // Opens the microphone from a tap. False when it does not open (the page shows why).
   startMic: () => Promise<boolean>;
   show: (message: string) => void;
@@ -91,7 +94,7 @@ function loadBests(): Bests {
   }
 }
 
-export function createPracticeRoom({ voice, board, rail, startMic, show }: Context) {
+export function createPracticeRoom({ voice, board, rail, cells, startMic, show }: Context) {
   const panel = element('#practice', HTMLDivElement);
   const levels = element('#levels', HTMLFieldSetElement);
   const setupNote = element('#setup-note', HTMLParagraphElement);
@@ -145,15 +148,6 @@ export function createPracticeRoom({ voice, board, rail, startMic, show }: Conte
   function mark(cell: number | undefined, name: 'target' | 'answer'): void {
     for (const button of board.cells) button.classList.remove(name);
     if (cell !== undefined) board.cells[cell]?.classList.add(name);
-  }
-
-  function burst(cell: number): void {
-    const button = board.cells[cell];
-    if (button === undefined) return;
-    button.classList.remove('hit');
-    // Read the layout, so the animation starts again on a second hit of the same cell.
-    void button.offsetWidth;
-    button.classList.add('hit');
   }
 
   // ---- Setup, bests and the leaderboard ----
@@ -313,7 +307,7 @@ export function createPracticeRoom({ voice, board, rail, startMic, show }: Conte
     mark(cell, 'target');
     mark(answer ?? undefined, 'answer');
     showRailTarget(rail, stepOfCell(cell));
-    if (points === ECHO_POINTS) burst(cell);
+    if (points === ECHO_POINTS) cells.burst(cell);
     show(
       answer === null
         ? `Time is up. It was ${describe(cell)}.`
@@ -326,7 +320,7 @@ export function createPracticeRoom({ voice, board, rail, startMic, show }: Conte
   function hit(active: Run, cell: number, ms: number, now: number): void {
     const index = active.times.length;
     active.times.push(ms);
-    burst(cell);
+    cells.burst(cell);
     voice.pause();
     sounds.place('X', cell);
     setTimeout(() => voice.resume(), 300);
@@ -558,6 +552,14 @@ export function createPracticeRoom({ voice, board, rail, startMic, show }: Conte
     },
     frame(frame: VoiceFrame): void {
       if (run !== undefined) step(run, frame);
+    },
+    // The hold fill of the lit cell during a round: the hold counts from the start of the round, as in
+    // step. A Targets round fills the target only, because no other cell counts.
+    holdFill(frame: VoiceFrame): HoldFill | null {
+      if (run === undefined || run.phase !== 'round' || frame.held === null || frame.cell === null) return null;
+      if (run.mode === 'targets' && frame.cell !== run.cells[run.index]) return null;
+      const heldFor = frame.now - Math.max(frame.held.since, run.roundStart);
+      return { share: heldFor / PRESETS[run.preset].holdMs, mark: 'X' };
     },
     // The microphone stopped: a run cannot go on.
     stopped(message: string): void {

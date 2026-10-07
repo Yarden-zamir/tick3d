@@ -136,35 +136,6 @@
   gap: 0.6rem;
 }
 
-/* The light: the cell of the pitch now. A cell that loses the light fades back slowly, so a slide
-   leaves a short trail. */
-.voice-board .cell {
-  transition: background 0.7s ease-out, translate 0.08s, box-shadow 0.08s;
-}
-
-.voice-board .cell.lit {
-  background: var(--win);
-  transition: none;
-  translate: -2px -2px;
-  box-shadow: 4px 4px 0 var(--shadow);
-}
-
-/* While the hold is on, a ring in the X color fills the lit cell in 1 second (HOLD_MS in main.ts).
-   A calibration places no X, so the ring does not show while the calibration box is open. */
-.train:has(#hold:checked):has(#calibration[hidden]) .voice-board .cell.lit:not(.x) {
-  animation: input-hold 1s linear forwards;
-}
-
-@keyframes input-hold {
-  from {
-    box-shadow: 4px 4px 0 var(--shadow), inset 0 0 0 0 var(--x);
-  }
-
-  to {
-    box-shadow: 4px 4px 0 var(--shadow), inset 0 0 0 calc(var(--cell) * 0.5) var(--x);
-  }
-}
-
 .input-slider {
   display: grid;
   grid-template-columns: 7rem minmax(0, 1fr) 7rem;
@@ -232,6 +203,8 @@
 
 /* The range and the spread under Settings. */
 .voice-range {
+  /* A fieldset is as wide as its content by default: the long spread options then widened the page on a phone. */
+  min-inline-size: 0;
   display: grid;
   gap: 0.5rem;
   margin: 0;
@@ -246,6 +219,7 @@
 }
 
 .voice-range-end {
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -262,6 +236,7 @@
 }
 
 .voice-range-end select {
+  min-width: 0;
   max-width: 100%;
 }
 

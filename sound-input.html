@@ -192,6 +192,20 @@
           <output id="build-up-value" for="build-up"></output>
         </div>
         <p class="input-note">A held cell stays lit until your pitch moves past its border by a margin. The margin grows from zero to the stickiness while you hold the cell, in the build-up time.</p>
+        <!-- Tilt fine-tuning: main.ts shows it once the device sends a tilt reading. A desktop sends none. -->
+        <fieldset class="voice-range" id="tilt-editor" hidden>
+          <legend>Tilt</legend>
+          <div class="input-actions">
+            <label><input type="checkbox" id="tilt-on" /> Tilt nudges your place on the scale</label>
+            <button type="button" class="btn btn-small" id="tilt-recentre" data-tip="Hold the device as you like it, then tap">Recentre</button>
+          </div>
+          <div class="input-slider">
+            <label for="tilt-steps">Tilt strength</label>
+            <input type="range" id="tilt-steps" min="1" max="8" step="1" />
+            <output id="tilt-steps-value" for="tilt-steps"></output>
+          </div>
+          <p class="input-note">Your voice picks the place, and a small tilt moves it a few cells. Tip the top edge toward you to go up, away from you to go down. Up to 2° does nothing, and 10° gives the full nudge. The arrow on the rail shows the nudge. The angle when the microphone starts is neutral. Recentre takes the angle now.</p>
+        </fieldset>
         <div class="input-actions">
           <label><input type="checkbox" id="hold" checked /> Free play: hold a note for 1 second to place an X</label>
           <button type="button" class="btn btn-small" id="clear">Clear the marks</button>
@@ -214,7 +228,8 @@
         <li>The default range is 150 to 2400 Hz, one octave for each row: hum for rows 4 and 3, whistle for rows 2 and 1. Calibrate to your voice: make your lowest comfortable sound for 2 seconds, then your highest. The rows then split your own range. Cancel or the back button leaves the calibration with no change. Reset to default goes back.</li>
         <li>Range and spread, under Settings: type the low and high ends, or hold a note and tap Use my note. The spread says how the 64 cells share the range: the same musical interval for each cell, the same Hz, more room in the middle, or the game notes (the layer is the nearest of C, D, E and G, and each row is one octave). A second after a change, each cell shows its frequency in Hz for a moment.</li>
         <li>Stickiness keeps a held cell lit when your pitch wobbles. It grows while you hold the cell. The band on the rail shows it.</li>
-        <li>Free play: hold a note on one cell for 1 second to place an X. Tap a cell to hear it in the sound set of the game.</li>
+        <li>Tilt, on a phone or a tablet: your voice picks the place, and a small front-to-back tilt moves it up to 4 cells up or down. Tip the top edge toward you to go up. The arrow on the rail shows the nudge. Settings has the strength, Recentre and an off switch. A computer has no tilt.</li>
+        <li>Free play: hold a note on one cell for 1 second to place an X. The X color fills the cell while you hold. Tap a cell to hear it in the sound set of the game.</li>
         <li>The board has the views and layouts of the game, under Settings: the tower (drag to turn it) or flat, in a grid, side by side, top to bottom or in steps. The game and this room share the choice. When your voice moves to a layer out of view, the page scrolls to it.</li>
         <li>Targets: a cell lights with a dashed ring. Slide until your light sits on it and hold it. Hot and cold tell you how near you are. 10 targets against the clock.</li>
         <li>Echo: the game plays the sound of a cell, as the ear training does. Find it by ear, then sing to it and hold it. 100 points for the right cell, 25 fewer for each step off. 8 rounds.</li>
