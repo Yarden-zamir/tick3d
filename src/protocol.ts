@@ -787,7 +787,7 @@ export type MyGames = {
 // or a page fault. Only `personal` (Mine) names players: your opponents.
 export type Count = { key: string; count: number };
 export type Stats = {
-  generatedAt: number;
+  generatedAt: EpochMs;
   totals: { games: number; moves: number; players: number; accounts: number; sessions: number; gamesLast7Days: number };
   // The last 60 days, oldest first, in UTC.
   perDay: { day: string; games: number; players: number }[];
@@ -828,7 +828,7 @@ export type Stats = {
   filter: StatsFilter;
   // The win rate over time, oldest first: at each game, the share of wins in the FORM_WINDOW games up to it.
   // Mine: your games with a side. Everyone: the games against the computer, from the player's side.
-  form: { at: number; rate: number }[];
+  form: { at: EpochMs; rate: number }[];
   // Games per number of moves: index n holds the games with n moves (0 to CELL_COUNT).
   lengths: number[];
   // CELL_COUNT counts: the games that X won, by the first move. Next to `openings`.

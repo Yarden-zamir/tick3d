@@ -4,6 +4,7 @@
 // An opponent without a login shows with a custom or a generated name.
 import { type DuckDBValue, listValue } from '@duckdb/node-api';
 import { DIFFICULTIES } from '../src/ai.ts';
+import type { EpochMs } from '../src/epoch.ts';
 import { isUnknownArray } from '../src/guards.ts';
 import { CELL_COUNT } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
@@ -20,7 +21,7 @@ import {
   type Stats,
   type StatsFilter,
 } from '../src/protocol.ts';
-import { type RowOf, type Rows, type Shape, bool, int, nullable, num, oneOf, text } from './sql.ts';
+import { type RowOf, type Rows, type Shape, bool, epoch, int, nullable, num, oneOf, text } from './sql.ts';
 
 
 // The token of each seat of a result row. A row from before game links has no player columns:
@@ -116,7 +117,7 @@ function perCell(found: readonly (readonly [cell: number, count: number])[]): nu
 }
 
 // At each game, the share of wins in the FORM_WINDOW games up to it. `games` is oldest first.
-function formOf(games: readonly { at: number; outcome: SideOutcome }[]): Stats['form'] {
+function formOf(games: readonly { at: EpochMs; outcome: SideOutcome }[]): Stats['form'] {
   let wins = 0;
   return games.map((game, i) => {
     if (game.outcome === 'won') wins++;
@@ -139,7 +140,7 @@ function streaksOf(outcomes: readonly SideOutcome[]): Pick<PersonalStats, 'bestS
 }
 
 // The bound values of the GAMES filters. `tokens` are the tokens of one player for Mine, else null.
-function filterValues(filter: StatsFilter, tokens: readonly string[] | null, now: number): Record<string, DuckDBValue> {
+function filterValues(filter: StatsFilter, tokens: readonly string[] | null, now: EpochMs): Record<string, DuckDBValue> {
   const days = RANGE_DAYS[filter.range];
   return {
     since: days === null ? null : now - days * 86_400_000,
@@ -159,7 +160,7 @@ const SIDED_GAMES = 5000;
 // `tokens`: the tokens of one player for the Mine scope, else null.
 // The caller runs one call at a time on the connection (the store queue), so one temporary table is enough.
 // The practice part comes from server/practice.ts.
-export async function computeStats(rows: Rows, now: number, filter: StatsFilter, tokens: readonly string[] | null): Promise<Omit<Stats, 'practice'>> {
+export async function computeStats(rows: Rows, now: EpochMs, filter: StatsFilter, tokens: readonly string[] | null): Promise<Omit<Stats, 'practice'>> {
   if ((filter.scope === 'mine') !== (tokens !== null)) throw new Error('the Mine scope needs the tokens of the player, and only Mine takes them');
   await rows(`CREATE OR REPLACE TEMP TABLE ${GAMES_TABLE} AS ${FILTERED_GAMES}`, filterValues(filter, tokens, now), {});
   try {
@@ -172,7 +173,7 @@ export async function computeStats(rows: Rows, now: number, filter: StatsFilter,
 // A query without bound values.
 type Query = <S extends Shape>(sql: string, shape: S) => Promise<RowOf<S>[]>;
 
-async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now: number): Promise<Omit<Stats, 'practice'>> {
+async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now: EpochMs): Promise<Omit<Stats, 'practice'>> {
   const q: Query = (sql, shape) => rows(sql, {}, shape);
 
   const [totals] = await q(`${GAMES}, seats AS (SELECT unnest([player_x, player_o]) AS token FROM g)
@@ -254,7 +255,7 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now:
   const sided = await q(`${GAMES} SELECT epoch_ms(finished_at) AS at,
       CASE WHEN winner IS NULL THEN 'drawn' WHEN winner = side THEN 'won' ELSE 'lost' END AS outcome
     FROM g WHERE side IS NOT NULL ORDER BY finished_at DESC LIMIT ${SIDED_GAMES}`,
-    { at: int, outcome: oneOf(['won', 'drawn', 'lost'] as const) },
+    { at: epoch, outcome: oneOf(['won', 'drawn', 'lost'] as const) },
   );
   const sidedGames = sided.toReversed();
   const cells = await q(`${GAMES} SELECT cell, count(*)::INTEGER AS count FROM (SELECT unnest(moves) AS cell FROM g) GROUP BY cell`, {
