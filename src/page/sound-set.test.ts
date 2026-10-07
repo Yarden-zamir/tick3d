@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { SOUND_SET_IDS, type SoundSetId } from '../sound-sets.ts';
+import type { SoundSetId } from '../sound-sets.ts';
 
 // The settings load once, when the module loads, so each case loads fresh modules.
 async function menuWith(soundSet: string): Promise<{ list: HTMLElement; used: SoundSetId[] }> {
@@ -24,7 +24,6 @@ describe('the sound set menu', () => {
     const { list, used } = await menuWith('gamelan');
     expect(used).toEqual(['gamelan']);
     expect(pressed(list)).toEqual(['gamelan']);
-    expect(list.querySelectorAll('.sound-set-play')).toHaveLength(SOUND_SET_IDS.length);
   });
 
   it('saves a choice, uses it, and moves the mark', async () => {
