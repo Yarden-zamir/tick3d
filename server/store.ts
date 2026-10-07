@@ -20,6 +20,15 @@ import {
   type Metrics,
   type MoveRequest,
   type MyGames,
+  type BlockedPerson,
+  PERSON_ID_LENGTH,
+  PERSON_ID_PREFIX,
+  type PersonId,
+  REPORT_REASONS,
+  type ReportReason,
+  type ReportRequest,
+  parsePersonId,
+  personId,
   type PlayerInfo,
   type PlayerToken,
   type PublicGame,
@@ -59,6 +68,12 @@ import { type Rows, bigId, bool, code as codeColumn, deviceGameId, epoch, gameId
 import { computeStats, SEAT_O, SEAT_X } from './stats.ts';
 
 const { SessionError } = core;
+
+function personColumn(value: unknown): PersonId {
+  const found = parsePersonId(value);
+  if (found === undefined) throw new Error(`not a person id: ${String(value)}`);
+  return found;
+}
 const SEATS = ['X', 'O'] as const satisfies readonly Player[];
 
 // Each statement is idempotent and runs on every start, in order. To change a table, append a
@@ -151,6 +166,40 @@ const SCHEMA = [
      name VARCHAR NOT NULL,
      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
+  // Blocks (report and block, src/page/safety.ts). `owner` is the token of the blocker: the account
+  // token when the device is linked, so a block follows the account. `person` is a public person id.
+  `CREATE TABLE IF NOT EXISTS blocks (
+     owner VARCHAR NOT NULL,
+     person VARCHAR NOT NULL,
+     name VARCHAR NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     PRIMARY KEY (owner, person)
+   )`,
+  // Reports of a chat message or a person. The text and the name are copies from the time of the
+  // report, because the chat keeps only the newest messages. `reporter` is a token: never send it.
+  'CREATE SEQUENCE IF NOT EXISTS report_order',
+  `CREATE TABLE IF NOT EXISTS reports (
+     id BIGINT PRIMARY KEY DEFAULT nextval('report_order'),
+     code VARCHAR NOT NULL,
+     message INTEGER,
+     message_text VARCHAR,
+     person VARCHAR,
+     person_name VARCHAR,
+     reason VARCHAR NOT NULL CHECK (reason IN ('spam', 'abuse', 'name', 'other')),
+     note VARCHAR,
+     reporter VARCHAR NOT NULL,
+     reporter_person VARCHAR NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  // Every moderation action of a maintainer, so each one can be traced.
+  `CREATE TABLE IF NOT EXISTS moderation_log (
+     login VARCHAR NOT NULL,
+     action VARCHAR NOT NULL CHECK (action IN ('hide-message', 'clear-name')),
+     code VARCHAR,
+     message INTEGER,
+     person VARCHAR,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
 ];
 
 // The token that a seat holds when a logged-in player takes it. The account has a player_tokens row
@@ -161,6 +210,32 @@ const SCHEMA = [
 const accountToken = (githubId: number | bigint): string => `${ACCOUNT_TOKEN_PREFIX}${String(githubId).padStart(16, '0')}`;
 
 export type GitHubUser = { id: number; login: string; avatar: string };
+
+// A stored report as a maintainer reads it (GET /api/reports). It holds person ids, never a token.
+export type StoredReport = {
+  id: number;
+  code: Code;
+  message: number | null;
+  text: string | null;
+  person: PersonId | null;
+  name: string | null;
+  reason: ReportReason;
+  note: string | null;
+  reporter: PersonId;
+  reporterLogin: string | null;
+  at: EpochMs;
+};
+export type ModerationAction = {
+  login: string;
+  action: 'hide-message' | 'clear-name';
+  code: Code | null;
+  message: number | null;
+  person: PersonId | null;
+  at: EpochMs;
+};
+const REPORTS_SHOWN = 200;
+export const REMOVED_MESSAGE = 'A moderator removed this message.';
+const BLOCKS_KEPT = 500;
 
 type Row = { code: Code; doc: SessionDoc; version: number; stale: boolean };
 
@@ -444,6 +519,41 @@ export async function openStore(
     return { X: info(doc.seats.X), O: info(doc.seats.O) };
   }
 
+  // The token that stands for a person: the account token of a linked device, else the token itself.
+  // Blocks and person ids use it, so they follow a logged-in account across devices.
+  async function canonical(tokens: readonly string[]): Promise<Map<string, string>> {
+    const known = [...new Set(tokens)];
+    const linked =
+      known.length === 0
+        ? []
+        : await rows('FROM player_tokens SELECT token, github_id WHERE list_contains($tokens, token)', { tokens: listValue(known) }, { token: text, github_id: bigId });
+    const accounts = new Map(linked.map((row) => [row.token, accountToken(row.github_id)]));
+    return new Map(known.map((token) => [token, accounts.get(token) ?? token]));
+  }
+
+  // The public person id of each token (personId in src/protocol.ts), through its canonical token.
+  async function personsOf(tokens: readonly (string | null)[]): Promise<(token: string) => PersonId | null> {
+    const known = tokens.filter((token): token is string => token !== null && token !== core.COMPUTER_TOKEN);
+    const canon = await canonical(known);
+    const ids = new Map(await Promise.all([...canon].map(async ([token, owner]) => [token, await personId(owner)] as const)));
+    return (token) => ids.get(token) ?? null;
+  }
+
+  // The canonical token of the caller, for the blocks table.
+  async function ownerOf(token: PlayerToken): Promise<string> {
+    return (await canonical([token])).get(token) ?? token;
+  }
+
+  async function logModeration(login: string, action: ModerationAction['action'], target: { code?: Code; message?: number; person?: PersonId }): Promise<void> {
+    await db.run('INSERT INTO moderation_log (login, action, code, message, person) VALUES ($login, $action, $code, $message, $person)', {
+      login,
+      action,
+      code: target.code ?? null,
+      message: target.message ?? null,
+      person: target.person ?? null,
+    });
+  }
+
   // The display name of each token: the custom name (player_names), else the generated name.
   // A GitHub login goes before both, through `players` or `player` in the view.
   async function namesOf(tokens: readonly (string | null)[]): Promise<core.NameOf> {
@@ -484,8 +594,8 @@ export async function openStore(
       // A logged-in watcher takes a seat for the account, like a join. The id stays from the device token.
       watchers.push({ id: watcherId(code, token), token: account === undefined ? token : accountToken(account.github_id), player });
     }
-    const name = await namesOf([doc.seats.X, doc.seats.O, doc.seatRequest?.watcher ?? null, ...watchers.map((watcher) => watcher.token)]);
-    return { presence, watchers, name };
+    const everyone = [doc.seats.X, doc.seats.O, doc.seatRequest?.watcher ?? null, ...watchers.map((watcher) => watcher.token)];
+    return { presence, watchers, name: await namesOf(everyone), person: await personsOf(everyone) };
   }
 
   async function view(row: Row, identity: core.Identity): Promise<SessionView> {
@@ -593,8 +703,10 @@ export async function openStore(
     update: (code: Code, token: PlayerToken, changes: SessionUpdate) =>
       change(code, token, (doc, identity) => core.update(doc, identity, changes)),
     lock: (code: Code, token: PlayerToken) => change(code, token, core.lock),
-    chat: (code: Code, token: PlayerToken, text: unknown) =>
-      change(code, token, (doc, identity) => core.chat(doc, identity, text, now())),
+    chat: async (code: Code, token: PlayerToken, text: unknown) => {
+      const author = await serialized(async () => personId(await ownerOf(token)));
+      return change(code, token, (doc, identity) => core.chat(doc, identity, text, now(), author));
+    },
     playoff: (code: Code, token: PlayerToken, request: PlayoffRequest) =>
       change(code, token, (doc, identity) => core.playoff(doc, identity, request, now())),
 
@@ -650,6 +762,123 @@ export async function openStore(
     clearName: (token: PlayerToken): Promise<void> =>
       serialized(async () => {
         await db.run('DELETE FROM player_names WHERE token = $token', { token });
+      }),
+
+    // ---- Report and block ----
+
+    // The people that the caller blocked, newest first, on every device of the account.
+    blocks: (token: PlayerToken): Promise<BlockedPerson[]> =>
+      serialized(async () => {
+        const found = await rows(
+          'FROM blocks SELECT person, name, epoch_ms(created_at) AS at WHERE owner = $owner ORDER BY created_at DESC, person',
+          { owner: await ownerOf(token) },
+          { person: personColumn, name: text, at: epoch },
+        );
+        return found;
+      }),
+    // Blocking twice keeps the first time and updates the name.
+    block: (token: PlayerToken, person: PersonId, name: string): Promise<void> =>
+      serialized(async () => {
+        const owner = await ownerOf(token);
+        if ((await personId(owner)) === person) throw new SessionError(400, 'You cannot block yourself.');
+        const [counted] = await rows('FROM blocks SELECT count(*) AS n WHERE owner = $owner', { owner }, { n: int });
+        if ((counted?.n ?? 0) >= BLOCKS_KEPT) throw new SessionError(409, `You can block at most ${BLOCKS_KEPT} people. Unblock someone first.`);
+        await db.run(
+          'INSERT INTO blocks (owner, person, name) VALUES ($owner, $person, $name) ON CONFLICT (owner, person) DO UPDATE SET name = excluded.name',
+          { owner, person, name },
+        );
+      }),
+    unblock: (token: PlayerToken, person: PersonId): Promise<void> =>
+      serialized(async () => {
+        await db.run('DELETE FROM blocks WHERE owner = $owner AND person = $person', { owner: await ownerOf(token), person });
+      }),
+
+    // Stores a report of a message or a person of an online session. The session must hold the target now.
+    report: (token: PlayerToken, request: ReportRequest): Promise<{ id: number }> =>
+      serialized(async () => {
+        const row = await load(request.code);
+        const { watchers } = await audience(row.code, row.doc);
+        const everyone = [row.doc.seats.X, row.doc.seats.O, ...watchers.map((watcher) => watcher.token)];
+        const person = await personsOf(everyone);
+        const name = await namesOf(everyone);
+        const reporter = await ownerOf(token);
+        let target: { message: number | null; text: string | null; person: PersonId | null; name: string | null };
+        if ('message' in request.target) {
+          const id = request.target.message;
+          const message = row.doc.chat.find((entry) => entry.id === id);
+          if (message === undefined) throw new SessionError(404, 'That message is not in the chat any more.');
+          const author = row.doc.seats[message.from];
+          target = { message: id, text: message.text, person: author === null ? null : person(author), name: author === null ? null : name(author) };
+        } else {
+          const id = request.target.person;
+          const found = everyone.find((candidate) => candidate !== null && person(candidate) === id);
+          if (found === undefined || found === null) throw new SessionError(404, 'That person is not in this game now.');
+          target = { message: null, text: null, person: id, name: name(found) };
+        }
+        const [stored] = await rows(
+          `INSERT INTO reports (code, message, message_text, person, person_name, reason, note, reporter, reporter_person)
+           VALUES ($code, $message, $text, $person, $name, $reason, $note, $reporter, $reporterPerson) RETURNING id`,
+          { code: row.code, ...target, reason: request.reason, note: request.note, reporter, reporterPerson: await personId(reporter) },
+          { id: int },
+        );
+        if (stored === undefined) throw new Error('a report insert returned no id');
+        return { id: stored.id };
+      }),
+
+    // The newest reports and moderation actions, for the maintainers.
+    reports: (): Promise<{ reports: StoredReport[]; actions: ModerationAction[] }> =>
+      serialized(async () => {
+        const reports = await rows(
+          `FROM reports r LEFT JOIN player_tokens t ON t.token = r.reporter LEFT JOIN users u ON u.github_id = t.github_id
+           SELECT r.id, r.code, r.message, r.message_text AS text, r.person, r.person_name AS name, r.reason, r.note,
+             r.reporter_person AS reporter, u.login AS reporterLogin, epoch_ms(r.created_at) AS at
+           ORDER BY r.id DESC LIMIT ${REPORTS_SHOWN}`,
+          {},
+          {
+            id: int,
+            code: codeColumn,
+            message: nullable(int),
+            text: nullable(text),
+            person: nullable(personColumn),
+            name: nullable(text),
+            reason: oneOf(REPORT_REASONS),
+            note: nullable(text),
+            reporter: personColumn,
+            reporterLogin: nullable(text),
+            at: epoch,
+          },
+        );
+        const actions = await rows(
+          `FROM moderation_log SELECT login, action, code, message, person, epoch_ms(created_at) AS at ORDER BY created_at DESC LIMIT ${REPORTS_SHOWN}`,
+          {},
+          { login: text, action: oneOf(['hide-message', 'clear-name'] as const), code: nullable(codeColumn), message: nullable(int), person: nullable(personColumn), at: epoch },
+        );
+        return { reports, actions };
+      }),
+
+    // A maintainer hides a chat message for everyone: its text becomes REMOVED_MESSAGE. The message
+    // keeps its id, so the next message never takes the id of a message that a page hid on report.
+    hideMessage: (code: Code, message: number, login: string): Promise<void> =>
+      serialized(async () => {
+        const row = await load(code);
+        if (!row.doc.chat.some((entry) => entry.id === message)) throw new SessionError(404, 'That message is not in the chat.');
+        const chat = row.doc.chat.map((entry) => (entry.id === message ? { ...entry, text: REMOVED_MESSAGE } : entry));
+        await save(row, { ...row.doc, chat });
+        await logModeration(login, 'hide-message', { code, message });
+      }),
+
+    // A maintainer clears the custom name of a person. Returns the tokens that lost a name, so the
+    // HTTP layer tells their open sessions. DuckDB's sha256 finds the token behind the person id.
+    clearNameOf: (person: PersonId, login: string): Promise<string[]> =>
+      serialized(async () => {
+        const cleared = await rows(
+          `DELETE FROM player_names WHERE left(sha256($prefix || token), ${PERSON_ID_LENGTH}) = $person RETURNING token`,
+          { prefix: PERSON_ID_PREFIX, person },
+          { token: text },
+        );
+        if (cleared.length === 0) throw new SessionError(404, 'That person has no custom name.');
+        await logModeration(login, 'clear-name', { person });
+        return cleared.map((row) => row.token);
       }),
 
     // Links this browser to a GitHub account, and refreshes the account's name and picture.

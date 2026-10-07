@@ -13,6 +13,7 @@ import {
   type Code,
   type GameRecord,
   type MoveRequest,
+  type PersonId,
   type PlayerInfo,
   type SeatAction,
   type SessionMode,
@@ -186,7 +187,7 @@ export function newGame(doc: SessionDoc, identity: Identity): SessionDoc {
   return played && !doc.fixedSeats && doc.mode !== 'friend' ? swapSeats(next) : next;
 }
 
-// X and O trade players. Each chat message and an open request stay with their player, and each
+// X and O trade players. An open request stays with its player, and each
 // game that is over keeps who played it (flipped). A live game goes on with the new seats.
 function swapSeats(doc: SessionDoc): SessionDoc {
   const last = doc.games.length - 1;
@@ -195,7 +196,6 @@ function swapSeats(doc: SessionDoc): SessionDoc {
     ...doc,
     seats: { X: doc.seats.O, O: doc.seats.X },
     computer: doc.computer === null ? null : { ...doc.computer, seat: other(doc.computer.seat) },
-    chat: doc.chat.map((message) => ({ ...message, from: other(message.from) })),
     seatRequest: doc.seatRequest === null ? null : { ...doc.seatRequest, from: other(doc.seatRequest.from) },
     // The same two players hold the seats, so a sound playoff goes on, with each player's progress.
     playoff: doc.playoff === null ? null : { ...doc.playoff, by: other(doc.playoff.by), seats: { X: doc.playoff.seats.O, O: doc.playoff.seats.X } },
@@ -239,13 +239,16 @@ export function lock(doc: SessionDoc, identity: Identity): SessionDoc {
 }
 
 // Only the two players write. A message comes from the seat of the caller (X in a friend game).
-export function chat(doc: SessionDoc, identity: Identity, text: unknown, now: EpochMs): SessionDoc {
+// `author` is the person id of the caller, from the holder of the session. Null when the holder has none
+// (a game on one device): then the message has no `by`.
+export function chat(doc: SessionDoc, identity: Identity, text: unknown, now: EpochMs, author: PersonId | null): SessionDoc {
   const [seat] = requireSeat(doc, identity);
   if (seat === undefined) throw new Error('requireSeat returned no seat');
   const message = normalizeChat(text);
   if (message === undefined) throw new SessionError(400, `A message needs 1 to ${CHAT_MAX_LENGTH} characters.`);
   const id = (doc.chat.at(-1)?.id ?? 0) + 1;
-  return { ...doc, chat: [...doc.chat, { id, from: seat, text: message, at: now }].slice(-CHAT_KEEP) };
+  const sent = { id, from: seat, text: message, at: now, ...(author === null ? {} : { by: author }) };
+  return { ...doc, chat: [...doc.chat, sent].slice(-CHAT_KEEP) };
 }
 
 // A request of a player for the sound playoff of an online session (src/practice/playoff.ts).
@@ -268,7 +271,8 @@ export function playoff(doc: SessionDoc, identity: Identity, request: PlayoffReq
 // from its connected guests. A watcher has the session open and holds no seat. Its `id` is an opaque
 // handle that the holder makes; the token never leaves the holder.
 export type OpenWatcher = { id: string; token: string; player: PlayerInfo | null };
-export type Audience = { presence: Record<Player, boolean>; watchers: OpenWatcher[]; name: NameOf };
+// `person` gives the public person id of a token (personId in src/protocol.ts), or null when the holder has none yet.
+export type Audience = { presence: Record<Player, boolean>; watchers: OpenWatcher[]; name: NameOf; person: (token: string) => PersonId | null };
 
 // A request that nobody answers ends after this time.
 export const SEAT_REQUEST_MS = 60_000;
@@ -405,7 +409,8 @@ type ViewContext = {
 
 export function viewOf(doc: SessionDoc, { code, version, identity, now, audience, players }: ViewContext): SessionView {
   const live = currentGame(doc);
-  const { presence, watchers, name } = audience;
+  const { presence, watchers, name, person } = audience;
+  const seatPerson = (token: string | null) => (token === null || token === COMPUTER_TOKEN ? null : person(token));
   const request = openRequest(doc, now);
   const requestWatcher = request?.watcher ?? null;
   return {
@@ -425,7 +430,8 @@ export function viewOf(doc: SessionDoc, { code, version, identity, now, audience
     presence,
     players,
     names: { X: seatName(doc.seats.X, name), O: seatName(doc.seats.O, name) },
-    watchers: watchers.map((watcher) => ({ id: watcher.id, name: name(watcher.token), player: watcher.player })),
+    people: { X: seatPerson(doc.seats.X), O: seatPerson(doc.seats.O) },
+    watchers: watchers.map((watcher) => ({ id: watcher.id, name: name(watcher.token), player: watcher.player, person: person(watcher.token) })),
     youWatcher: watchers.find((watcher) => identity.has(watcher.token))?.id ?? null,
     seatRequest:
       request === null

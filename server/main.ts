@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import {
   type Code,
+  type PersonId,
   type PlayerToken,
   RESULTS_PER_UPLOAD,
   asPlayerToken,
@@ -11,8 +12,11 @@ import {
   parseCustomName,
   parseGameId,
   parseMetrics,
+  parseBlockRequest,
   parseMoveRequest,
   parseNewSession,
+  parsePersonId,
+  parseReportRequest,
   parseSeatAction,
   parseSeatAnswer,
   parseSessionUpdate,
@@ -29,13 +33,14 @@ import {
   NEARBY_HOSTS_PER_NETWORK,
   STATS_FILTER_ERROR,
   PRACTICE_RUNS_PER_10_MINUTES,
+  REPORTS_PER_10_MINUTES,
   ROUTES,
   type Route,
   WAIT_MS,
   matchRoute,
 } from './api-docs.ts';
 import { openApi, swaggerHtml } from './api-docs-render.ts';
-import { type Auth, TooManyRequests, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
+import { type Auth, TooManyRequests, authConfigFromEnv, clientOf, createAuth, createLimiter, isMaintainer } from './auth.ts';
 import { IDEMPOTENCY_TTL_MS, type StoredAnswer, createIdempotency, parseIdempotencyKey } from './idempotency.ts';
 import { LobbyError, createLobby, networkOf } from './lobby.ts';
 import { type PreviewList, createPreviews, previewsConfigFromEnv } from './previews.ts';
@@ -44,7 +49,8 @@ import { parseBoardQuery, parsePracticeRun } from '../src/practice/practice.ts';
 import { openStore } from './store.ts';
 import { createWaiters } from './waiters.ts';
 
-const PORT = 8080;
+// PORT lets a test run its own server next to another one.
+const PORT = Number(process.env.PORT ?? 8080);
 const MAX_BODY_BYTES = 4096;
 // A result upload carries up to RESULTS_PER_UPLOAD finished games of about 1 kB each.
 const MAX_RESULTS_BODY_BYTES = 256 * 1024;
@@ -69,6 +75,9 @@ const allowNearby = createLimiter(NEARBY_CALLS_PER_10_MINUTES, 600_000, 10_000, 
 // Practice runs per address: a run takes about half a minute, so 60 per 10 minutes leaves room for a
 // classroom on one address. Same limits as allowCreate.
 const allowPracticeRun = createLimiter(PRACTICE_RUNS_PER_10_MINUTES, 600_000, 10_000, 'Too many practice runs from this address. Try again later.');
+// Reports of chat messages and people per address: a real report is rare, so this keeps a flood out
+// of the maintainers' list. Same limits as allowCreate.
+const allowReport = createLimiter(REPORTS_PER_10_MINUTES, 600_000, 10_000, 'Too many reports from this address. Try again later.');
 // Each entry holds at most one open request, so `total` also caps the open announce requests.
 const lobby = createLobby({ perNetwork: NEARBY_HOSTS_PER_NETWORK, total: 1000, waitMs: WAIT_MS, graceMs: NEARBY_GRACE_MS });
 
@@ -283,6 +292,23 @@ async function openStream(req: IncomingMessage, res: ServerResponse, code: Code,
   if (token !== undefined) notify(code);
 }
 
+function requirePerson(value: string | undefined): PersonId {
+  const person = parsePersonId(value);
+  if (person === undefined) throw new HttpError(400, 'A person id has 16 characters from 0-9 and a-f.');
+  return person;
+}
+
+// A maintainer, by the GitHub login of the account cookie. The X-Player header is also required,
+// so another site cannot send a moderation request with the cookie of a maintainer.
+function requireMaintainer(req: IncomingMessage): string {
+  requirePlayer(req);
+  if (auth === undefined) throw new HttpError(404, 'Login is not available on this server.');
+  const user = auth.user(req);
+  if (user === undefined) throw new HttpError(401, 'Log in with GitHub first.');
+  if (!isMaintainer(user.login)) throw new HttpError(403, 'Only the maintainers can do this.');
+  return user.login;
+}
+
 // The answer of GET /api/me: the login state and the custom name.
 async function me(token: PlayerToken, user: ReturnType<Auth['user']>) {
   return {
@@ -373,6 +399,45 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       await store.clearName(token);
       notifyPlayer(token);
       return send(res, 200, await me(token, auth?.user(req)));
+    }
+
+    case 'GET /api/me/blocks':
+      return send(res, 200, { blocked: await store.blocks(requirePlayer(req)) });
+    // A cross-site form cannot send the X-Player header, so another site cannot block for a player.
+    case 'PUT /api/me/blocks/{person}': {
+      const token = requirePlayer(req);
+      const person = requirePerson(match.params.person);
+      const body = parseBlockRequest(await readJson(req));
+      if (body === undefined) throw new HttpError(400, 'A block needs the name that you saw: 1 to 40 characters.');
+      await store.block(token, person, body.name);
+      return send(res, 200, { blocked: await store.blocks(token) });
+    }
+    case 'DELETE /api/me/blocks/{person}': {
+      const token = requirePlayer(req);
+      await store.unblock(token, requirePerson(match.params.person));
+      return send(res, 200, { blocked: await store.blocks(token) });
+    }
+    case 'POST /api/reports': {
+      allowReport(clientOf(req), Date.now());
+      const token = requirePlayer(req);
+      const report = parseReportRequest(await readJson(req));
+      if (report === undefined) throw new HttpError(400, 'A report needs a code, one message id or person id, a reason, and a note of at most 200 characters.');
+      return send(res, 201, await store.report(token, report));
+    }
+    case 'GET /api/reports':
+      requireMaintainer(req);
+      return send(res, 200, await store.reports());
+    case 'DELETE /api/sessions/{code}/chat/{message}': {
+      const login = requireMaintainer(req);
+      const message = Number(match.params.message);
+      if (!Number.isSafeInteger(message) || message < 1) throw new HttpError(400, 'A message id is a whole number from 1.');
+      await store.hideMessage(code(), message, login);
+      return send(res, 200, { ok: true });
+    }
+    case 'DELETE /api/players/{person}/name': {
+      const login = requireMaintainer(req);
+      for (const token of await store.clearNameOf(requirePerson(match.params.person), login)) notifyPlayer(token as PlayerToken);
+      return send(res, 200, { ok: true });
     }
 
     case 'POST /api/results': {
