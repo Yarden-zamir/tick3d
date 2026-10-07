@@ -40,13 +40,13 @@ test('the sound set menu picks a set, keeps it after a reload, and the moves use
   await page.reload();
 
   await cell(page, 0).click();
-  const cells = await soundOfTakenCell(page);
+  const byDefault = await soundOfTakenCell(page);
 
   await page.getByRole('button', { name: 'Sound set', exact: true }).click();
   const menu = page.locator('#sound-sets');
   await expect(menu).toBeVisible();
   await expect(menu.locator('.sound-set-play')).toHaveCount(SOUND_SET_IDS.length);
-  await expect(menu.locator('[data-sound-set="cells"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(menu.locator('[data-sound-set="pitched"]')).toHaveAttribute('aria-pressed', 'true');
 
   // A demo button plays four moves.
   await oscillators(page);
@@ -60,12 +60,12 @@ test('the sound set menu picks a set, keeps it after a reload, and the moves use
 
   // The same cell and the same mark sound different in another set.
   const chiptune = await soundOfTakenCell(page);
-  expect(chiptune).not.toEqual(cells);
+  expect(chiptune).not.toEqual(byDefault);
 
   await page.reload();
   await page.getByRole('button', { name: 'Sound set', exact: true }).click();
   await expect(page.locator('[data-sound-set="chiptune"]')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('[data-sound-set="cells"]')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('[data-sound-set="pitched"]')).toHaveAttribute('aria-pressed', 'false');
 });
 
 // The ear training page has no toast, so this test uses the plain page and not `open`.
