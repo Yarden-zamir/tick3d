@@ -2,7 +2,7 @@
 // The rows come back typed from the shape, and a column with an unexpected value throws.
 import type { DuckDBValue } from '@duckdb/node-api';
 import { type EpochMs, toEpochMs } from '../src/epoch.ts';
-import { type Code, type GameId, normalizeCode, parseGameId } from '../src/protocol.ts';
+import { type Code, type DeviceGameId, type GameId, normalizeCode, parseDeviceGameId, parseGameId } from '../src/protocol.ts';
 
 // Reads one column value, or throws.
 export type Column<T> = (value: unknown) => T;
@@ -74,6 +74,14 @@ export function gameId(value: unknown): GameId {
   const found = text(value);
   const parsed = parseGameId(found);
   if (parsed === undefined || parsed !== found) throw new Error(`not a game id: ${found}`);
+  return parsed;
+}
+
+// The public id of an uploaded result: only the exact form that a device makes.
+export function deviceGameId(value: unknown): DeviceGameId {
+  const found = text(value);
+  const parsed = parseDeviceGameId(found);
+  if (parsed === undefined) throw new Error(`not a device game id: ${found}`);
   return parsed;
 }
 

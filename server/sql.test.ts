@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bigId, epoch, int, nullable, oneOf, readRow, text } from './sql.ts';
+import { bigId, deviceGameId, epoch, int, nullable, oneOf, readRow, text } from './sql.ts';
 
 describe('readRow', () => {
   it('keeps only the columns of the shape, read by their guards', () => {
@@ -27,5 +27,12 @@ describe('column guards', () => {
 
   it('refuses a whole number that a double cannot hold exactly', () => {
     expect(() => int(2n ** 60n)).toThrow();
+  });
+
+  it('reads a device game id only in the exact form that a device makes', () => {
+    const id = 'Q7MZ4KTB';
+    expect(deviceGameId(id)).toBe(id);
+    expect(() => deviceGameId(id.toLowerCase())).toThrow();
+    expect(() => deviceGameId('ABCD-1')).toThrow();
   });
 });
