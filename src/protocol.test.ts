@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { toEpochMs as ms } from './epoch.ts';
 import { replay } from './game.ts';
 import {
   asPlayerToken,
@@ -170,9 +171,9 @@ describe('parseResultUpload', () => {
   const day = 86_400_000;
 
   it('accepts a finished game with a matching mode, seat and level', () => {
-    expect(parseResultUpload(valid, now)).toEqual({ ...valid, publicId: null, options: { hideBoard: false, hideHistory: false, hideCoordinates: false }, tuned: false, metrics: null, guest: null });
-    expect(parseResultUpload({ ...valid, mode: 'friend', you: null, difficulty: null }, now)).toBeDefined();
-    expect(parseResultUpload({ ...valid, finishedAt: now + day }, now)).toBeDefined();
+    expect(parseResultUpload(valid, ms(now))).toEqual({ ...valid, publicId: null, options: { hideBoard: false, hideHistory: false, hideCoordinates: false }, tuned: false, metrics: null, guest: null });
+    expect(parseResultUpload({ ...valid, mode: 'friend', you: null, difficulty: null }, ms(now))).toBeDefined();
+    expect(parseResultUpload({ ...valid, finishedAt: now + day }, ms(now))).toBeDefined();
   });
 
   it.each([
@@ -185,8 +186,9 @@ describe('parseResultUpload', () => {
     ['a finish time of zero', { ...valid, finishedAt: 0 }],
     ['a finish time more than a day ahead', { ...valid, finishedAt: now + day + 1 }],
     ['a finish time the database cannot store', { ...valid, finishedAt: 1e300 }],
+    ['a finish time with a fraction of a millisecond', { ...valid, finishedAt: 1.5 }],
   ])('refuses %s', (_, value) => {
-    expect(parseResultUpload(value, now)).toBeUndefined();
+    expect(parseResultUpload(value, ms(now))).toBeUndefined();
   });
 });
 
@@ -248,8 +250,8 @@ describe('parseMetrics', () => {
   it('refuses a whole upload with invalid metrics', () => {
     const game = toRecord(replay([0, 1, 16, 2, 32, 3, 48]));
     const upload = { id: 'aaaaaaaa-0000-4000-8000-000000000001-ab3k-0', mode: 'friend', game, you: null, difficulty: null, finishedAt: 5 };
-    expect(parseResultUpload({ ...upload, metrics: valid }, 10)).toBeDefined();
-    expect(parseResultUpload({ ...upload, metrics: { ...valid, extra: true } }, 10)).toBeUndefined();
+    expect(parseResultUpload({ ...upload, metrics: valid }, ms(10))).toBeDefined();
+    expect(parseResultUpload({ ...upload, metrics: { ...valid, extra: true } }, ms(10))).toBeUndefined();
   });
 });
 
@@ -259,7 +261,7 @@ describe('parseResultUpload, the guest of a Nearby host', () => {
   const nearby = { id: 'aaaaaaaa-0000-4000-8000-000000000001-ab3k-0', mode: 'nearby', game, you: 'X', difficulty: null, finishedAt: 5 };
 
   it('keeps the guest token of a Nearby game', () => {
-    expect(parseResultUpload({ ...nearby, guest }, 10)?.guest).toBe(guest);
+    expect(parseResultUpload({ ...nearby, guest }, ms(10))?.guest).toBe(guest);
   });
 
   it.each([
@@ -267,7 +269,7 @@ describe('parseResultUpload, the guest of a Nearby host', () => {
     ['a guest in a friend game', { ...nearby, mode: 'friend', you: null, guest }],
     ['a guest that is not a token', { ...nearby, guest: 'Not a token!' }],
   ])('refuses %s', (_, value) => {
-    expect(parseResultUpload(value, 10)).toBeUndefined();
+    expect(parseResultUpload(value, ms(10))).toBeUndefined();
   });
 });
 
@@ -277,12 +279,12 @@ describe('parseResultUpload, game link fields', () => {
 
   it('keeps a device id, the hide options and the tuned flag', () => {
     const options = { hideBoard: true, hideHistory: false, hideCoordinates: true };
-    expect(parseResultUpload({ ...valid, publicId: 'ABCDEFGH', options, tuned: true }, 10)).toMatchObject({ publicId: 'ABCDEFGH', options, tuned: true });
+    expect(parseResultUpload({ ...valid, publicId: 'ABCDEFGH', options, tuned: true }, ms(10))).toMatchObject({ publicId: 'ABCDEFGH', options, tuned: true });
   });
 
   it('reads hide options from an older device, without hideCoordinates, as not hidden', () => {
     const older = { ...valid, options: { hideBoard: true, hideHistory: false } };
-    expect(parseResultUpload(older, 10)?.options).toEqual({ hideBoard: true, hideHistory: false, hideCoordinates: false });
+    expect(parseResultUpload(older, ms(10))?.options).toEqual({ hideBoard: true, hideHistory: false, hideCoordinates: false });
   });
 
   it.each([
@@ -292,7 +294,7 @@ describe('parseResultUpload, game link fields', () => {
     ['bad options', { ...valid, options: { hideBoard: 'yes', hideHistory: false } }],
     ['an unknown key', { ...valid, token: 'x' }],
   ])('refuses %s', (_, value) => {
-    expect(parseResultUpload(value, 10)).toBeUndefined();
+    expect(parseResultUpload(value, ms(10))).toBeUndefined();
   });
 });
 

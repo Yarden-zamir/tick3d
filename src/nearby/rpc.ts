@@ -3,6 +3,7 @@
 // every guest when the session changed, gives the link of each finished game, and says goodbye when it stops.
 // Both sides check every message, because the other device is not trusted. The host checks the
 // arguments of each method with the protocol parsers (src/protocol.ts); here they stay unknown.
+import { isRecord } from '../guards.ts';
 import { type GameId, parseGameId } from '../protocol.ts';
 import type { Channel } from './peer.ts';
 
@@ -31,8 +32,6 @@ export class RpcError extends Error {
   }
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 const hasKeys = (value: Record<string, unknown>, keys: string[]) => {
   const own = Object.keys(value);
   return own.length === keys.length && keys.every((key) => own.includes(key));

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { toEpochMs as ms } from '../epoch.ts';
 import type { TimeControl } from '../clock.ts';
 import { nameOf } from '../names.ts';
 import type { Code } from '../protocol.ts';
@@ -22,7 +23,7 @@ function play(doc: SessionDoc, cells: number[], { start = 0, at = (i: number) =>
   return cells.reduce((current, cell, i) => {
     const moveCount = start + i;
     const who = moveCount % 2 === 0 ? alice : bob;
-    return core.move(current, who, { game: current.games.length - 1, moveCount, cell }, at(moveCount));
+    return core.move(current, who, { game: current.games.length - 1, moveCount, cell }, ms(at(moveCount)));
   }, doc);
 }
 
@@ -41,7 +42,7 @@ const view = (doc: SessionDoc, identity: core.Identity) =>
     code: 'ABCD' as Code,
     version: 1,
     identity,
-    now: 0,
+    now: ms(0),
     audience: { presence: { X: true, O: false }, watchers: [], name: nameOf },
     players: { X: null, O: null },
   });
@@ -66,7 +67,7 @@ describe('seats', () => {
 
   it('lets one device play both seats in a friend game', () => {
     const doc = core.createDoc({ name: 'Couch', mode: 'friend', seats: { X: ALICE, O: ALICE } });
-    const next = core.move(core.move(doc, alice, { game: 0, moveCount: 0, cell: 0 }, 0), alice, { game: 0, moveCount: 1, cell: 1 }, 1);
+    const next = core.move(core.move(doc, alice, { game: 0, moveCount: 0, cell: 0 }, ms(0)), alice, { game: 0, moveCount: 1, cell: 1 }, ms(1));
     expect(next.games[0]?.moves).toEqual([0, 1]);
   });
 
@@ -77,10 +78,10 @@ describe('seats', () => {
       seats: { X: ALICE, O: core.COMPUTER_TOKEN },
       computer: { difficulty: 'hard', seat: 'O' },
     });
-    const afterX = core.move(doc, alice, { game: 0, moveCount: 0, cell: 0 }, 0);
-    expect(status(() => core.move(afterX, alice, { game: 0, moveCount: 1, cell: 1 }, 1))).toBe(409);
+    const afterX = core.move(doc, alice, { game: 0, moveCount: 0, cell: 0 }, ms(0));
+    expect(status(() => core.move(afterX, alice, { game: 0, moveCount: 1, cell: 1 }, ms(1)))).toBe(409);
     const device = new Set([ALICE, core.COMPUTER_TOKEN]);
-    expect(core.move(afterX, device, { game: 0, moveCount: 1, cell: 1 }, 1).games[0]?.moves).toEqual([0, 1]);
+    expect(core.move(afterX, device, { game: 0, moveCount: 1, cell: 1 }, ms(1)).games[0]?.moves).toEqual([0, 1]);
   });
 });
 
@@ -109,12 +110,12 @@ describe('names', () => {
 describe('moves', () => {
   it('enforces seat, turn, stale state and occupied cells', () => {
     const doc = onlineDoc();
-    expect(status(() => core.move(doc, carol, { game: 0, moveCount: 0, cell: 0 }, 0))).toBe(403);
-    expect(status(() => core.move(doc, bob, { game: 0, moveCount: 0, cell: 0 }, 0))).toBe(409);
-    const one = core.move(doc, alice, { game: 0, moveCount: 0, cell: 0 }, 0);
-    expect(status(() => core.move(one, bob, { game: 0, moveCount: 0, cell: 1 }, 1))).toBe(409);
-    expect(status(() => core.move(one, bob, { game: 0, moveCount: 1, cell: 0 }, 1))).toBe(409);
-    expect(core.move(one, bob, { game: 0, moveCount: 1, cell: 1 }, 1).games[0]?.moves).toEqual([0, 1]);
+    expect(status(() => core.move(doc, carol, { game: 0, moveCount: 0, cell: 0 }, ms(0)))).toBe(403);
+    expect(status(() => core.move(doc, bob, { game: 0, moveCount: 0, cell: 0 }, ms(0)))).toBe(409);
+    const one = core.move(doc, alice, { game: 0, moveCount: 0, cell: 0 }, ms(0));
+    expect(status(() => core.move(one, bob, { game: 0, moveCount: 0, cell: 1 }, ms(1)))).toBe(409);
+    expect(status(() => core.move(one, bob, { game: 0, moveCount: 1, cell: 0 }, ms(1)))).toBe(409);
+    expect(core.move(one, bob, { game: 0, moveCount: 1, cell: 1 }, ms(1)).games[0]?.moves).toEqual([0, 1]);
   });
 
   it('never changes the document it was given', () => {
@@ -130,7 +131,7 @@ describe('games in a session', () => {
     const shared = play(onlineDoc(), [0, 1]);
     expect(status(() => core.newGame(shared, alice))).toBe(409);
     const local = core.createDoc({ name: 'Couch', mode: 'friend', seats: { X: ALICE, O: ALICE } });
-    const given = core.newGame(core.move(local, alice, { game: 0, moveCount: 0, cell: 5 }, 0), alice);
+    const given = core.newGame(core.move(local, alice, { game: 0, moveCount: 0, cell: 5 }, ms(0)), alice);
     expect(given.games.map((game) => game.moves)).toEqual([[5], []]);
   });
 
@@ -141,11 +142,11 @@ describe('games in a session', () => {
 
   it('undoes moves on one device only, and never in a timed game', () => {
     const local = core.createDoc({ name: 'Couch', mode: 'friend', seats: { X: ALICE, O: ALICE } });
-    const two = core.move(core.move(local, alice, { game: 0, moveCount: 0, cell: 0 }, 0), alice, { game: 0, moveCount: 1, cell: 1 }, 1);
+    const two = core.move(core.move(local, alice, { game: 0, moveCount: 0, cell: 0 }, ms(0)), alice, { game: 0, moveCount: 1, cell: 1 }, ms(1));
     expect(core.undo(two, alice, 1).games[0]?.moves).toEqual([0]);
     expect(status(() => core.undo(play(onlineDoc(), [0, 1]), alice, 1))).toBe(409);
     const timed = core.createDoc({ name: 'Timed', mode: 'friend', clock: { perMove: 30, perGame: null }, seats: { X: ALICE, O: ALICE } });
-    expect(status(() => core.undo(core.move(timed, alice, { game: 0, moveCount: 0, cell: 0 }, 0), alice, 1))).toBe(409);
+    expect(status(() => core.undo(core.move(timed, alice, { game: 0, moveCount: 0, cell: 0 }, ms(0)), alice, 1))).toBe(409);
   });
 });
 
@@ -169,7 +170,7 @@ describe('match options and lock', () => {
     const locked = core.lock(play(onlineDoc(), [0]), alice);
     expect(status(() => core.newGame(locked, alice))).toBe(409);
     const couch = core.createDoc({ name: 'Couch', mode: 'friend', seats: { X: ALICE, O: ALICE } });
-    const lockedCouch = core.lock(core.move(couch, alice, { game: 0, moveCount: 0, cell: 0 }, 0), alice);
+    const lockedCouch = core.lock(core.move(couch, alice, { game: 0, moveCount: 0, cell: 0 }, ms(0)), alice);
     expect(status(() => core.newGame(lockedCouch, alice))).toBe(409);
     expect(status(() => core.undo(lockedCouch, alice, 1))).toBe(409);
     expect(core.lock(lockedCouch, alice)).toBe(lockedCouch);
@@ -179,7 +180,7 @@ describe('match options and lock', () => {
     const timed = core.lock(onlineDoc({ perMove: 5, perGame: null }), alice);
     const started = play(timed, [0, 1]);
     expect(view(started, alice).locked).toBe(true);
-    const settled = core.settle(started, 60_000);
+    const settled = core.settle(started, ms(60_000));
     if (settled === undefined) throw new Error('no timeout');
     expect(view(settled, alice).locked).toBe(false);
     expect(core.newGame(settled, alice).games).toHaveLength(2);
@@ -206,25 +207,25 @@ describe('clock', () => {
   it('records a timeout once the player to move runs out', () => {
     const doc = play(onlineDoc({ perMove: 10, perGame: null }), [0, 1, 2], { at: (i) => [0, 60_000, 69_000][i] ?? 0 });
     // O has 10 s from X's move at 69 s. At 0 ms left the time is over.
-    expect(core.settle(doc, 78_999)).toBeUndefined();
-    const settled = core.settle(doc, 79_000);
+    expect(core.settle(doc, ms(78_999))).toBeUndefined();
+    const settled = core.settle(doc, ms(79_000));
     expect(settled?.games[0]?.timedOut).toBe(true);
-    expect(status(() => core.move(settled as SessionDoc, bob, { game: 0, moveCount: 3, cell: 3 }, 79_002))).toBe(409);
+    expect(status(() => core.move(settled as SessionDoc, bob, { game: 0, moveCount: 3, cell: 3 }, ms(79_002)))).toBe(409);
   });
 });
 
 describe('chat', () => {
   it('lets the two players write, from their own seat, and keeps the newest messages', () => {
-    let doc = core.chat(onlineDoc(), alice, '  good luck ', 5);
-    doc = core.chat(doc, bob, 'you too', 6);
+    let doc = core.chat(onlineDoc(), alice, '  good luck ', ms(5));
+    doc = core.chat(doc, bob, 'you too', ms(6));
     expect(doc.chat).toEqual([
       { id: 1, from: 'X', text: 'good luck', at: 5 },
       { id: 2, from: 'O', text: 'you too', at: 6 },
     ]);
-    expect(status(() => core.chat(doc, carol, 'hi', 7))).toBe(403);
-    expect(status(() => core.chat(doc, alice, '   ', 7))).toBe(400);
-    expect(status(() => core.chat(doc, alice, 'x'.repeat(201), 7))).toBe(400);
-    for (let i = 0; i < 60; i++) doc = core.chat(doc, alice, `m${i}`, i);
+    expect(status(() => core.chat(doc, carol, 'hi', ms(7)))).toBe(403);
+    expect(status(() => core.chat(doc, alice, '   ', ms(7)))).toBe(400);
+    expect(status(() => core.chat(doc, alice, 'x'.repeat(201), ms(7)))).toBe(400);
+    for (let i = 0; i < 60; i++) doc = core.chat(doc, alice, `m${i}`, ms(i));
     expect(doc.chat).toHaveLength(50);
     expect(doc.chat.at(-1)).toMatchObject({ id: 62, text: 'm59' });
   });
@@ -236,14 +237,14 @@ describe('seat controls', () => {
 
   it('applies a change of the own seat or of an empty seat at once', () => {
     const doc = onlineDoc();
-    const left = core.seat(doc, bob, { action: 'leave' }, watchers, 0);
+    const left = core.seat(doc, bob, { action: 'leave' }, watchers, ms(0));
     expect(left.seats).toEqual({ X: ALICE, O: null });
-    const seated = core.seat(left, alice, { action: 'seat', watcher: 'c0ffee0000000001' }, watchers, 0);
+    const seated = core.seat(left, alice, { action: 'seat', watcher: 'c0ffee0000000001' }, watchers, ms(0));
     expect(seated.seats).toEqual({ X: ALICE, O: CAROL });
-    const given = core.seat(doc, alice, { action: 'give', watcher: 'c0ffee0000000001' }, watchers, 0);
+    const given = core.seat(doc, alice, { action: 'give', watcher: 'c0ffee0000000001' }, watchers, ms(0));
     expect(given.seats).toEqual({ X: CAROL, O: BOB });
     // With the other seat empty, a swap affects nobody: the player moves to the other side.
-    expect(core.seat(left, alice, { action: 'swap' }, watchers, 0).seats).toEqual({ X: null, O: ALICE });
+    expect(core.seat(left, alice, { action: 'swap' }, watchers, ms(0)).seats).toEqual({ X: null, O: ALICE });
   });
 
   it('asks the other player before a swap, an unseat or a replace, and applies it on accept', () => {
@@ -253,10 +254,10 @@ describe('seat controls', () => {
       [{ action: 'unseat' }, { X: ALICE, O: null }],
       [{ action: 'replace', watcher: 'c0ffee0000000001' }, { X: ALICE, O: CAROL }],
     ] as const) {
-      const asked = core.seat(doc, alice, request, watchers, 1_000);
+      const asked = core.seat(doc, alice, request, watchers, ms(1_000));
       expect(asked.seats).toEqual(doc.seats);
       expect(view(asked, bob).seatRequest).toMatchObject({ kind: request.action, from: 'X', expiresAt: 1_000 + core.SEAT_REQUEST_MS });
-      const accepted = core.answerSeat(asked, bob, true, watchers, 2_000);
+      const accepted = core.answerSeat(asked, bob, true, watchers, ms(2_000));
       expect(accepted.seats).toEqual(seats);
       expect(accepted.seatRequest).toBeNull();
       // A swap in the middle of a game keeps the moves and their times: each clock stays with its seat.
@@ -265,76 +266,76 @@ describe('seat controls', () => {
   });
 
   it('lets the other player decline and the asker cancel, but only the other player accept', () => {
-    const asked = core.seat(onlineDoc(), alice, { action: 'swap' }, watchers, 0);
-    expect(status(() => core.answerSeat(asked, alice, true, watchers, 1))).toBe(409);
-    expect(core.answerSeat(asked, alice, false, watchers, 1).seatRequest).toBeNull();
-    const declined = core.answerSeat(asked, bob, false, watchers, 1);
+    const asked = core.seat(onlineDoc(), alice, { action: 'swap' }, watchers, ms(0));
+    expect(status(() => core.answerSeat(asked, alice, true, watchers, ms(1)))).toBe(409);
+    expect(core.answerSeat(asked, alice, false, watchers, ms(1)).seatRequest).toBeNull();
+    const declined = core.answerSeat(asked, bob, false, watchers, ms(1));
     expect(declined.seatRequest).toBeNull();
     expect(declined.seats).toEqual(asked.seats);
     // One request at a time: the other player answers first, and a new request from the asker replaces the old one.
-    expect(status(() => core.seat(asked, bob, { action: 'swap' }, watchers, 1))).toBe(409);
-    expect(core.seat(asked, alice, { action: 'unseat' }, watchers, 5).seatRequest).toMatchObject({ kind: 'unseat', at: 5 });
+    expect(status(() => core.seat(asked, bob, { action: 'swap' }, watchers, ms(1)))).toBe(409);
+    expect(core.seat(asked, alice, { action: 'unseat' }, watchers, ms(5)).seatRequest).toMatchObject({ kind: 'unseat', at: 5 });
   });
 
   it('drops a request after it ends, and refuses an answer to it', () => {
-    const asked = core.seat(onlineDoc(), alice, { action: 'swap' }, watchers, 0);
+    const asked = core.seat(onlineDoc(), alice, { action: 'swap' }, watchers, ms(0));
     const end = core.SEAT_REQUEST_MS;
-    expect(core.settle(asked, end - 1)).toBeUndefined();
-    expect(core.settle(asked, end)?.seatRequest).toBeNull();
+    expect(core.settle(asked, ms(end - 1))).toBeUndefined();
+    expect(core.settle(asked, ms(end))?.seatRequest).toBeNull();
     expect(view(asked, bob).seatRequest).not.toBeNull();
-    expect(status(() => core.answerSeat(asked, bob, true, watchers, end))).toBe(409);
+    expect(status(() => core.answerSeat(asked, bob, true, watchers, ms(end)))).toBe(409);
   });
 
   it('checks a replace again on accept: the watcher must still be here without a seat', () => {
-    const asked = core.seat(onlineDoc(), alice, { action: 'replace', watcher: 'c0ffee0000000001' }, watchers, 0);
-    expect(status(() => core.answerSeat(asked, bob, true, [], 1))).toBe(409);
-    expect(core.answerSeat(asked, bob, true, watchers, 1).seats.O).toBe(CAROL);
+    const asked = core.seat(onlineDoc(), alice, { action: 'replace', watcher: 'c0ffee0000000001' }, watchers, ms(0));
+    expect(status(() => core.answerSeat(asked, bob, true, [], ms(1)))).toBe(409);
+    expect(core.answerSeat(asked, bob, true, watchers, ms(1)).seats.O).toBe(CAROL);
   });
 
   it('refuses watchers, unknown watchers, wrong seats and games on one device', () => {
     const doc = onlineDoc();
     for (const request of [{ action: 'swap' }, { action: 'leave' }] as const) {
-      expect(status(() => core.seat(doc, carol, request, watchers, 0))).toBe(403);
+      expect(status(() => core.seat(doc, carol, request, watchers, ms(0)))).toBe(403);
     }
-    expect(status(() => core.answerSeat(core.seat(doc, alice, { action: 'swap' }, watchers, 0), carol, true, watchers, 1))).toBe(403);
-    expect(status(() => core.seat(doc, alice, { action: 'give', watcher: 'ffffffffffffffff' }, watchers, 0))).toBe(404);
-    expect(status(() => core.seat(doc, alice, { action: 'seat', watcher: 'c0ffee0000000001' }, watchers, 0))).toBe(409);
-    const left = core.seat(doc, bob, { action: 'leave' }, watchers, 0);
-    expect(status(() => core.seat(left, alice, { action: 'unseat' }, watchers, 0))).toBe(409);
-    expect(status(() => core.seat(left, alice, { action: 'replace', watcher: 'c0ffee0000000001' }, watchers, 0))).toBe(409);
-    expect(status(() => core.answerSeat(doc, alice, true, watchers, 0))).toBe(409);
+    expect(status(() => core.answerSeat(core.seat(doc, alice, { action: 'swap' }, watchers, ms(0)), carol, true, watchers, ms(1)))).toBe(403);
+    expect(status(() => core.seat(doc, alice, { action: 'give', watcher: 'ffffffffffffffff' }, watchers, ms(0)))).toBe(404);
+    expect(status(() => core.seat(doc, alice, { action: 'seat', watcher: 'c0ffee0000000001' }, watchers, ms(0)))).toBe(409);
+    const left = core.seat(doc, bob, { action: 'leave' }, watchers, ms(0));
+    expect(status(() => core.seat(left, alice, { action: 'unseat' }, watchers, ms(0)))).toBe(409);
+    expect(status(() => core.seat(left, alice, { action: 'replace', watcher: 'c0ffee0000000001' }, watchers, ms(0)))).toBe(409);
+    expect(status(() => core.answerSeat(doc, alice, true, watchers, ms(0)))).toBe(409);
     const couch = core.createDoc({ name: 'Couch', mode: 'friend', seats: { X: ALICE, O: ALICE } });
-    expect(status(() => core.seat(couch, alice, { action: 'swap' }, watchers, 0))).toBe(409);
+    expect(status(() => core.seat(couch, alice, { action: 'swap' }, watchers, ms(0)))).toBe(409);
   });
 
   it('takes back the own last move when the other player accepts, before the other player moves', () => {
     const doc = play(onlineDoc(), [0, 1, 2]);
     // X moved last. O cannot ask, X can.
-    expect(status(() => core.seat(doc, bob, { action: 'undo' }, watchers, 0))).toBe(409);
-    expect(status(() => core.seat(doc, carol, { action: 'undo' }, watchers, 0))).toBe(403);
-    const asked = core.seat(doc, alice, { action: 'undo' }, watchers, 0);
+    expect(status(() => core.seat(doc, bob, { action: 'undo' }, watchers, ms(0)))).toBe(409);
+    expect(status(() => core.seat(doc, carol, { action: 'undo' }, watchers, ms(0)))).toBe(403);
+    const asked = core.seat(doc, alice, { action: 'undo' }, watchers, ms(0));
     expect(asked.games).toEqual(doc.games);
-    expect(core.answerSeat(asked, bob, true, watchers, 1).games[0]?.moves).toEqual([0, 1]);
-    expect(core.answerSeat(asked, bob, false, watchers, 1).games[0]?.moves).toEqual([0, 1, 2]);
+    expect(core.answerSeat(asked, bob, true, watchers, ms(1)).games[0]?.moves).toEqual([0, 1]);
+    expect(core.answerSeat(asked, bob, false, watchers, ms(1)).games[0]?.moves).toEqual([0, 1, 2]);
     // A move of the other player ends the request: the move is not the last one any more.
-    const moved = core.move(asked, bob, { game: 0, moveCount: 3, cell: 3 }, 2);
+    const moved = core.move(asked, bob, { game: 0, moveCount: 3, cell: 3 }, ms(2));
     expect(moved.seatRequest).toBeNull();
-    expect(status(() => core.answerSeat(moved, bob, true, watchers, 3))).toBe(409);
+    expect(status(() => core.answerSeat(moved, bob, true, watchers, ms(3)))).toBe(409);
   });
 
   it('allows no undo in a timed game, a finished game or before a move', () => {
-    expect(status(() => core.seat(play(onlineDoc({ perMove: 30, perGame: null }), [0]), alice, { action: 'undo' }, watchers, 0))).toBe(409);
-    expect(status(() => core.seat(play(onlineDoc(), X_WINS), alice, { action: 'undo' }, watchers, 0))).toBe(409);
-    expect(status(() => core.seat(onlineDoc(), alice, { action: 'undo' }, watchers, 0))).toBe(409);
+    expect(status(() => core.seat(play(onlineDoc({ perMove: 30, perGame: null }), [0]), alice, { action: 'undo' }, watchers, ms(0)))).toBe(409);
+    expect(status(() => core.seat(play(onlineDoc(), X_WINS), alice, { action: 'undo' }, watchers, ms(0)))).toBe(409);
+    expect(status(() => core.seat(onlineDoc(), alice, { action: 'undo' }, watchers, ms(0)))).toBe(409);
   });
 
   it('lists watchers by id and name only, never by token', () => {
-    const asked = core.seat(onlineDoc(), alice, { action: 'replace', watcher: 'c0ffee0000000001' }, watchers, 0);
+    const asked = core.seat(onlineDoc(), alice, { action: 'replace', watcher: 'c0ffee0000000001' }, watchers, ms(0));
     const shown = core.viewOf(asked, {
       code: 'ABCD' as Code,
       version: 1,
       identity: bob,
-      now: 1,
+      now: ms(1),
       audience: { presence: { X: true, O: true }, watchers, name: (token) => (token === CAROL ? 'Carol' : nameOf(token)) },
       players: { X: null, O: null },
     });
@@ -346,23 +347,23 @@ describe('seat controls', () => {
 
   it('ends a sound playoff when the seats change, so a new seat holder does not take over its progress', () => {
     const doc = onlineDoc();
-    const started = core.playoff(doc, alice, { action: 'start', preset: 'easy', seed: 7 }, 0);
+    const started = core.playoff(doc, alice, { action: 'start', preset: 'easy', seed: 7 }, ms(0));
     expect(started.playoff).not.toBeNull();
     for (const [who, request] of [
       [bob, { action: 'leave' }],
       [alice, { action: 'give', watcher: 'c0ffee0000000001' }],
     ] as const) {
-      expect(core.seat(started, who, request, watchers, 0).playoff, request.action).toBeNull();
+      expect(core.seat(started, who, request, watchers, ms(0)).playoff, request.action).toBeNull();
     }
     for (const request of [{ action: 'swap' }, { action: 'unseat' }, { action: 'replace', watcher: 'c0ffee0000000001' }] as const) {
-      const asked = core.seat(started, alice, request, watchers, 0);
+      const asked = core.seat(started, alice, request, watchers, ms(0));
       // A request alone changes no seat, so the playoff goes on until the other player accepts.
       expect(asked.playoff, request.action).toEqual(started.playoff);
-      expect(core.answerSeat(asked, bob, true, watchers, 0).playoff, request.action).toBeNull();
+      expect(core.answerSeat(asked, bob, true, watchers, ms(0)).playoff, request.action).toBeNull();
     }
     // An undo changes no seat, and keeps the playoff.
     const played = play(started, [0, 1]);
-    const undone = core.answerSeat(core.seat(played, bob, { action: 'undo' }, watchers, 0), alice, true, watchers, 0);
+    const undone = core.answerSeat(core.seat(played, bob, { action: 'undo' }, watchers, ms(0)), alice, true, watchers, ms(0));
     expect(undone.playoff).toEqual(started.playoff);
   });
 });

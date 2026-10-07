@@ -58,7 +58,7 @@ export function setupTooltips(): void {
   });
   document.addEventListener('pointerout', (event) => {
     const target = tipTarget(event.target);
-    if (event.pointerType === 'mouse' && target !== null && target === shownFor && !target.contains(event.relatedTarget as Node | null)) hide();
+    if (event.pointerType === 'mouse' && target !== null && target === shownFor && !(event.relatedTarget instanceof Node && target.contains(event.relatedTarget))) hide();
   });
   document.addEventListener('focusin', (event) => {
     const target = tipTarget(event.target);

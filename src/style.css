@@ -947,7 +947,7 @@ body[data-turn='O'] .status[data-state='playing'] {
     drop-shadow(0 -1px 0 var(--line));
 }
 
-/* The view picker, and Reset angle beside it for the tower. */
+/* The view picker. */
 .view-row {
   display: flex;
   align-items: center;
@@ -956,10 +956,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .view-row .segmented {
   flex: 1;
-}
-
-.reset-angle {
-  flex: none;
 }
 
 /* Flat: the four layers as plain grids, in one of four layouts. */

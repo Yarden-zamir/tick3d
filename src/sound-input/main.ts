@@ -12,7 +12,7 @@ import { setupPageHeader } from '../header/header.ts';
 import { applyCamera, boardClass, buildBoard, showMark } from '../board/board.ts';
 import { setupSpinDrag } from '../board/spin-drag.ts';
 import { onSegmented, showSegmented } from '../board/view-controls.ts';
-import { DEFAULTS, oneOf, saveSettings, settings as gameSettings } from '../page/settings.ts';
+import { oneOf, saveSettings, settings as gameSettings } from '../page/settings.ts';
 import { LAYOUTS, VIEWS, normalizeCode } from '../protocol.ts';
 import { readReturn } from '../return-path.ts';
 import { SOUND_SETS, type SoundSetId } from '../sound-sets.ts';
@@ -54,7 +54,6 @@ const railEl = element('#rail', HTMLDivElement);
 const stageEl = element('#stage', HTMLDivElement);
 const boardEl = element('#board', HTMLDivElement);
 const viewControls = element('#view-controls', HTMLDivElement);
-const resetAngleButton = element('#reset-angle', HTMLButtonElement);
 const stickinessInput = element('#stickiness', HTMLInputElement);
 const stickinessValue = element('#stickiness-value', HTMLOutputElement);
 const buildUpInput = element('#build-up', HTMLInputElement);
@@ -119,7 +118,6 @@ function showBoard(): void {
   boardEl.className = `${boardClass(gameSettings.view, gameSettings.layout)} voice-board`;
   applyCamera(board, gameSettings.view, gameSettings.spin);
   showSegmented(viewControls, gameSettings, false);
-  resetAngleButton.disabled = gameSettings.spin === DEFAULTS.spin;
 }
 
 // Scrolls the layer into view when part of it is out of view: out of the window, or out of a board that
@@ -503,11 +501,6 @@ onSegmented(viewControls, (setting, value) => {
   if (setting === 'view') gameSettings.view = oneOf(VIEWS, value, gameSettings.view);
   else if (setting === 'layout') gameSettings.layout = oneOf(LAYOUTS, value, gameSettings.layout);
   else throw new Error(`unknown board setting ${setting}`);
-  saveSettings();
-  showBoard();
-});
-resetAngleButton.addEventListener('click', () => {
-  gameSettings.spin = DEFAULTS.spin;
   saveSettings();
   showBoard();
 });

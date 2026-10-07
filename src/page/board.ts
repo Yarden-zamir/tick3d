@@ -3,10 +3,9 @@
 import { applyCamera as applyBoardCamera, buildBoard } from '../board/board.ts';
 import { setupSpinDrag } from '../board/spin-drag.ts';
 import { toCoords } from '../game.ts';
-import { sounds } from '../sound.ts';
-import { boardEl, resetAngleButton, stageEl } from './dom.ts';
+import { boardEl, stageEl } from './dom.ts';
 import { humanMove } from './sessions.ts';
-import { settings, DEFAULTS, saveSettings } from './settings.ts';
+import { settings, saveSettings } from './settings.ts';
 
 const board = buildBoard(boardEl);
 export const cells = board.cells;
@@ -38,7 +37,6 @@ function highlightColumn(cell: number | undefined): void {
 
 export function applyCamera(): void {
   applyBoardCamera(board, settings.view, settings.spin);
-  resetAngleButton.disabled = settings.spin === DEFAULTS.spin;
 }
 
 export function setupBoard(): void {
@@ -61,13 +59,6 @@ export function setupBoard(): void {
       applyCamera();
       saveSettings();
     },
-  });
-
-  resetAngleButton.addEventListener('click', () => {
-    settings.spin = DEFAULTS.spin;
-    saveSettings();
-    sounds.click();
-    applyCamera();
   });
 
   // The refusal flash ends by itself. Removing the class lets the next refusal play it again.

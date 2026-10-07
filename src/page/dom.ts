@@ -48,7 +48,6 @@ export const voiceStateEl = element('#voice-state', HTMLSpanElement);
 export const voiceRecentre = element('#voice-recentre', HTMLButtonElement);
 export const soundSetList = element('#sound-set-list', HTMLDivElement);
 export const lockButton = element('#lock', HTMLButtonElement);
-export const resetAngleButton = element('#reset-angle', HTMLButtonElement);
 export const clockSummary = element('#clock-summary', HTMLParagraphElement);
 export const clocksEl = element('#clocks', HTMLDivElement);
 export const clockNote = element('#clock-note', HTMLSpanElement);

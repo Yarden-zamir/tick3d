@@ -8,7 +8,7 @@ import { renderQr } from '../nearby/qr.ts';
 import { type NearbyHost, type NearbyGuest, createNearbyHost, createNearbyGuest } from '../nearby/session.ts';
 import { type Hello, HELLO_NAME_MAX_LENGTH, decodeSignal } from '../nearby/signal.ts';
 import { OnlineError, api, token } from '../online.ts';
-import type { Code, GameId, Metrics } from '../protocol.ts';
+import type { GameId, Metrics } from '../protocol.ts';
 import { sounds } from '../sound.ts';
 import {
   nearbyNameInput,
@@ -403,7 +403,7 @@ async function connectGuest(joining: JoiningState, offerCode: string, deliver: (
   });
   nearby = { kind: 'guest', guest, hostHello: answer.peer };
   hideNearbyStep();
-  let view = await guest.load('' as Code);
+  let view = await guest.loadHosted();
   if (view.you === null && (!view.seats.X || !view.seats.O)) view = await guest.join(view.code);
   // The player left while the game loaded. endNearby closed the connection already.
   if (nearby.kind !== 'guest' || nearby.guest !== guest) return;

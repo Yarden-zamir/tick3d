@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { toEpochMs } from './epoch.ts';
 import { CELL_COUNT, type Game, newGame, play, replay } from './game.ts';
 import { SIXTEENTH, type SongNote, scaleOf, songOf } from './song.ts';
 
 // X takes 0, 1, 2, 3 (a row) and O takes 16, 17, 18.
-const WON = replay([0, 16, 1, 17, 2, 18, 3], { times: [0, 1000, 3000, 4000, 9000, 10_000, 60_000] });
+const WON = replay([0, 16, 1, 17, 2, 18, 3], { times: [0, 1000, 3000, 4000, 9000, 10_000, 60_000].map(toEpochMs) });
 // Other games: a long game, a draw, a timeout, and an O start.
 const LONG = replay([5, 21, 42, 7, 9, 33, 60, 12, 27, 44, 50, 3]);
 const DRAW: Game = { ...replay([5, 21, 42, 7]), status: { kind: 'draw' } };
