@@ -18,7 +18,21 @@ import { nearbyKind, endNearby, redrawNearby } from './nearby.ts';
 import { seatChangeText } from './players.ts';
 import { render } from './render.ts';
 import { type Mode, settings, saveSettings } from './settings.ts';
-import { page, current, nowMs, setCurrent, shared, type Session, type SessionBackend, settingsLocked } from './state.ts';
+import {
+  page,
+  clearScreen,
+  current,
+  nowMs,
+  setCurrent,
+  setReview,
+  setThinking,
+  shared,
+  showSession,
+  updateSession,
+  type Session,
+  type SessionBackend,
+  settingsLocked,
+} from './state.ts';
 
 // The error sound of a refused move lasts about 0.27 s. A taken cell plays its own sound after it.
 const TAKEN_SOUND_DELAY_MS = 320;
@@ -87,7 +101,7 @@ export function applyView(view: SessionView): void {
   page.games = view.games.map(toGame);
   page.serverOffset = view.now - Date.now();
   const previous = page.session;
-  page.session = { ...view, backend: page.session.backend, mode: page.session.mode, unsubscribe: page.session.unsubscribe };
+  updateSession({ ...view, backend: page.session.backend, mode: page.session.mode, unsubscribe: page.session.unsubscribe });
   const after = current();
   // Changes by the other player get a message. On one device, the player made them.
   if (shared()) {
@@ -128,7 +142,7 @@ export function applyView(view: SessionView): void {
   if (page.session.mode === 'nearby' && (previous.you !== page.session.you || JSON.stringify(previous.names) !== JSON.stringify(page.session.names))) {
     redrawNearby();
   }
-  if (page.review && page.review.game >= page.games.length) page.review = undefined;
+  if (page.review && page.review.game >= page.games.length) setReview(undefined);
   followSeat(page.session);
   if (page.session.mode === 'online') {
     void page.deviceDb?.put('remote', { code: page.session.code, view, savedAt: Date.now() });
@@ -142,20 +156,19 @@ export function openSession(view: SessionView, backend: SessionBackend, mode: Mo
   page.session?.unsubscribe();
   page.round++; // drops a computer move scheduled for the previous session
   page.computerThinkMs = [];
-  page.thinking = false;
   if (settings.mode !== mode) {
     settings.mode = mode;
     saveSettings();
   }
-  page.review = undefined;
   burstEl.replaceChildren();
-  page.viewing = undefined;
-  page.session = { ...view, backend, mode, unsubscribe: () => undefined };
+  // A new screen: no review, and no computer search of the previous session.
+  const session: Session = { ...view, backend, mode, unsubscribe: () => undefined };
+  showSession(session);
   page.games = view.games.map(toGame);
   page.serverOffset = view.now - Date.now();
-  followSeat(page.session);
+  followSeat(session);
   const code = view.code;
-  page.session.unsubscribe = backend.subscribe(code, () => void refresh(code));
+  session.unsubscribe = backend.subscribe(code, () => void refresh(code));
   setUrlCode(mode === 'online' ? code : undefined);
   setUrlGame(undefined);
   if (mode === 'online') void page.deviceDb?.put('remote', { code, view, savedAt: Date.now() });
@@ -166,8 +179,8 @@ export function openSession(view: SessionView, backend: SessionBackend, mode: Mo
 export function leaveSession(): void {
   page.coordDigits = [];
   page.session?.unsubscribe();
-  page.session = undefined;
-  page.viewing = undefined;
+  // Also ends the review and the computer search of the session or the game from a link.
+  clearScreen();
   page.games = [newGame('X', settings.clock)];
   setUrlCode(undefined);
   setUrlGame(undefined);
@@ -306,10 +319,10 @@ export function startNewGame(): void {
   sounds.click();
   page.round++; // drops a computer move for the game that ends here
   page.computerThinkMs = [];
-  page.thinking = false;
+  setThinking(false);
   const { code, backend } = page.session;
   void withBusy(async () => {
-    page.review = undefined;
+    setReview(undefined);
     burstEl.replaceChildren();
     const before = page.session?.you;
     applyView(await backend.newGame(code));

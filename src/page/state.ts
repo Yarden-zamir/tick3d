@@ -13,19 +13,71 @@ import { type Mode, settings } from './settings.ts';
 // The open session: its latest view, the backend that holds it, and its mode.
 export type Session = SessionView & { backend: SessionBackend; mode: Mode; unsubscribe: () => void };
 
+// A past position on the board: the game index and the number of moves shown.
+export type Review = { game: number; move: number };
+
+// What the board shows: nothing yet, an open session, or a finished game from its link (/?game=<id>,
+// read-only). A switch replaces the whole screen, so the review and the computer search of the old
+// screen end with it. Only the functions below change it.
+type Screen =
+  | { kind: 'empty' }
+  // `thinking`: the computer searches its move.
+  | { kind: 'session'; session: Session; review: Review | undefined; thinking: boolean }
+  | { kind: 'viewing'; game: PublicGame; review: Review | undefined };
+
+let screen: Screen = { kind: 'empty' };
+
+export function showSession(session: Session): void {
+  screen = { kind: 'session', session, review: undefined, thinking: false };
+}
+
+// A newer view of the open session. The review and the computer search go on.
+export function updateSession(session: Session): void {
+  if (screen.kind !== 'session' || screen.session.code !== session.code) throw new Error(`session ${session.code} is not open`);
+  screen = { ...screen, session };
+}
+
+export function showGame(game: PublicGame, review: Review): void {
+  screen = { kind: 'viewing', game, review };
+}
+
+export function clearScreen(): void {
+  screen = { kind: 'empty' };
+}
+
+// An empty screen has no review: clearing it there changes nothing.
+export function setReview(review: Review | undefined): void {
+  if (screen.kind === 'empty') {
+    if (review === undefined) return;
+    throw new Error('a review without a game on the board');
+  }
+  screen = { ...screen, review };
+}
+
+// Only a session has a computer that thinks: clearing it elsewhere changes nothing.
+export function setThinking(thinking: boolean): void {
+  if (screen.kind !== 'session') {
+    if (!thinking) return;
+    throw new Error('the computer thinks without a session');
+  }
+  screen = { ...screen, thinking };
+}
+
 // The state that more than one module changes. A module cannot assign to a variable that it
-// imports, so all modules change these fields through the one `page` object.
+// imports, so all modules change these fields through the one `page` object. The screen fields
+// are read-only views of `screen`: the functions above change them.
 type PageState = {
   // The games of the open session, oldest first. The last game is the live one.
   games: Game[];
-  session: Session | undefined;
-  review: { game: number; move: number } | undefined;
+  readonly session: Session | undefined;
+  readonly review: Review | undefined;
   // Storage on this device, and the backend for computer, friend and hosted Nearby games.
   deviceDb: DeviceDb | undefined;
   local: LocalBackend | undefined;
   // Login state from the server. Without a network or on a LAN host, login is not available.
   account: Me;
-  thinking: boolean;
+  readonly thinking: boolean;
+  // An action waits for its backend. Also before a session is open, such as the first online game.
   busy: boolean;
   // Milliseconds from the search request to its answer, for each computer move of the current game.
   // Index 0 is the computer's first move. A new game and a session switch empty the list, and an undo
@@ -43,7 +95,7 @@ type PageState = {
   // a Nearby game, so a host never serves guests in the background.
   navigation: number;
   // A finished game opened from its link (/?game=<id>), read-only. No session is open meanwhile.
-  viewing: PublicGame | undefined;
+  readonly viewing: PublicGame | undefined;
 };
 
 // The custom name from the last /api/me answer, so the page shows it offline too.
@@ -72,19 +124,27 @@ export const ownName = (): string => page.account.user?.login ?? page.account.na
 
 export const page: PageState = {
   games: [newGame('X', settings.clock)],
-  session: undefined,
-  review: undefined,
+  get session() {
+    return screen.kind === 'session' ? screen.session : undefined;
+  },
+  get review() {
+    return screen.kind === 'empty' ? undefined : screen.review;
+  },
   deviceDb: undefined,
   local: undefined,
   account: { loginAvailable: false, user: null, name: storedName() },
-  thinking: false,
+  get thinking() {
+    return screen.kind === 'session' && screen.thinking;
+  },
   busy: false,
   computerThinkMs: [],
   round: 0,
   serverOffset: 0,
   coordDigits: [],
   navigation: 0,
-  viewing: undefined,
+  get viewing() {
+    return screen.kind === 'viewing' ? screen.game : undefined;
+  },
 };
 
 export function current(): Game {

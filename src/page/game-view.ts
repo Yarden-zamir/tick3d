@@ -16,7 +16,7 @@ import { hideLabel } from './results.ts';
 import { beginSwitch, leaveSession, openLocalSession, setUrlGame } from './sessions.ts';
 import { settings } from './settings.ts';
 import { songControl } from './song-control.ts';
-import { page } from './state.ts';
+import { page, showGame } from './state.ts';
 
 // The device's own copy, so a game that is not uploaded yet opens too, also offline.
 async function deviceCopy(id: GameId): Promise<PublicGame | undefined> {
@@ -60,11 +60,10 @@ export async function openGameView(id: GameId): Promise<boolean> {
   }
   if (switchNumber !== page.navigation) return false;
   leaveSession();
-  page.viewing = shown;
   const game = toGame(shown.game);
-  page.games = [game];
   // The replay controls start at the final position.
-  page.review = { game: 0, move: game.moves.length };
+  showGame(shown, { game: 0, move: game.moves.length });
+  page.games = [game];
   setUrlGame(id);
   render();
   return true;
@@ -73,7 +72,6 @@ export async function openGameView(id: GameId): Promise<boolean> {
 // Back to play: the screen's own mode, as on a first visit.
 export async function closeGameView(): Promise<void> {
   leaveSession();
-  page.review = undefined;
   render();
   if (settings.mode === 'online') return;
   if (settings.mode === 'nearby') return openNearby();

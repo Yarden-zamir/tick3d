@@ -17,7 +17,7 @@ import { reject, showToast, showProblem } from './feedback.ts';
 import { playerName, render } from './render.ts';
 import { refresh, withBusy, applyView } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
-import { current, nowMs, page, nextClock, canChangeMatch, settingsLocked, shared, isLive } from './state.ts';
+import { current, nowMs, page, nextClock, canChangeMatch, settingsLocked, shared, isLive, updateSession } from './state.ts';
 
 let lastTickSecond: number | undefined;
 let lastFlagRefresh = 0;
@@ -147,7 +147,7 @@ function applyClock(clock: TimeControl): void {
   // A game keeps the limit it started with, so a change during a game starts with the next one.
   if (!shared() && isLive() && current().moves.length > 0) showToast('The new time limit starts with the next game.');
   // Show the change at once, as with moves. The answer replaces it, or a refresh undoes it on an error.
-  page.session = { ...page.session, clock };
+  updateSession({ ...page.session, clock });
   render();
   void withBusy(async () => {
     try {

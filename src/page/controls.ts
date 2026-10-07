@@ -11,12 +11,12 @@ import { render } from './render.ts';
 import { leaveSession, createSession, openLocalSession, withBusy, applyView, startNewGame, seatLockText } from './sessions.ts';
 import { LAYOUTS, MATCH_OPTIONS, VIEWS } from '../protocol.ts';
 import { settings, oneOf, MODES, PLAYERS, saveSettings } from './settings.ts';
-import { page, settingsLocked, isLive, shared } from './state.ts';
+import { page, settingsLocked, isLive, setReview, shared } from './state.ts';
 
 export function startReview(index: number): void {
   const game = page.games[index];
   if (game === undefined) throw new RangeError(`no game ${index}`);
-  page.review = { game: index, move: game.moves.length };
+  setReview({ game: index, move: game.moves.length });
   sounds.click();
   render();
 }
@@ -25,9 +25,9 @@ function stepReview(action: string | undefined): void {
   if (page.review === undefined) return;
   const total = page.games[page.review.game]?.moves.length ?? 0;
   const moves: Record<string, number> = { first: 0, prev: page.review.move - 1, next: page.review.move + 1, last: total };
-  if (action === 'exit') page.review = undefined;
+  if (action === 'exit') setReview(undefined);
   else if (action !== undefined && action in moves) {
-    page.review = { ...page.review, move: Math.min(total, Math.max(0, moves[action] ?? page.review.move)) };
+    setReview({ ...page.review, move: Math.min(total, Math.max(0, moves[action] ?? page.review.move)) });
   } else throw new Error(`unknown review action ${action}`);
   sounds.click();
   render();
@@ -60,7 +60,6 @@ function changeSetting(setting: string, value: string | undefined): void {
   if (setting === 'view' || setting === 'layout') return render();
   if (previousMode === 'nearby' && nearbyKind() !== 'idle') endNearby();
   leaveSession();
-  page.review = undefined;
   render();
   if (settings.mode === 'online') {
     if (previousMode !== 'online') void createSession();
