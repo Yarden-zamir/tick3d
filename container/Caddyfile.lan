@@ -13,7 +13,7 @@
 		root * /srv
 		encode zstd gzip
 		header /assets/* Cache-Control "public, max-age=31536000, immutable"
-		# The hidden stats page.
+		# The stats page.
 		rewrite /stats /stats.html
 		# The ear training page.
 		rewrite /sound-training /sound-training.html

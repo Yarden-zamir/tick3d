@@ -44,12 +44,11 @@ http:// {
 		@pages path / *.html
 		header @pages Cache-Control "no-cache"
 
-		# The hidden stats page. Search engines must not list it.
+		# The stats page. It is public: the game links to it, and search engines may list it.
 		# Caddy sets headers before the rewrite, so the matcher names both paths.
 		@stats path /stats /stats.html
 		rewrite /stats /stats.html
 		header @stats Cache-Control "no-cache"
-		header @stats X-Robots-Tag "noindex, nofollow"
 
 		# The ear training page. It is public: the game links to it, and search engines may list it.
 		@training path /sound-training /sound-training.html

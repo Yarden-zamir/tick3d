@@ -18,6 +18,7 @@ import {
   CONSENT_ACTIONS,
   CUSTOM_NAME_MAX_LENGTH,
   CUSTOM_NAME_MIN_LENGTH,
+  FORM_WINDOW,
   NAME_MAX_LENGTH,
   PREVIEW_DESCRIPTION_LENGTH,
   HISTORY_PAGE_SIZE,
@@ -26,6 +27,8 @@ import {
   RESULTS_PER_UPLOAD,
   SEAT_ACTIONS,
   SESSION_MODES,
+  STATS_RANGES,
+  STATS_SCOPES,
   THEMES,
   VIEWS,
   WATCHER_ID_LENGTH,
@@ -57,6 +60,8 @@ export const PRACTICE_RUNS_PER_10_MINUTES = 60;
 export const PREVIEWS_CACHE_MS = 180_000;
 // A preview server keeps production's list for this long. It costs no GitHub call, only a request to production.
 export const PREVIEWS_RELAY_CACHE_MS = 15_000;
+// The 400 answer of GET /api/stats for a query that parseStatsFilter refuses.
+export const STATS_FILTER_ERROR = `Unknown stats filter. scope: ${STATS_SCOPES.join(' or ')}. range: ${STATS_RANGES.join(', ')}. mode: ${SESSION_MODES.join(', ')}. level: ${DIFFICULTIES.join(', ')}, only with the computer mode or no mode. Each key at most once.`;
 
 // ---- Shapes (JSON Schema 2020-12, as OpenAPI 3.1 uses) ----
 
@@ -122,6 +127,7 @@ export type SchemaName =
   | 'MetricsResponse'
   | 'ClientEvent'
   | 'Count'
+  | 'StatsFilter'
   | 'Stats'
   | 'NearbyAnnounce'
   | 'NearbyAnnounced'
@@ -443,18 +449,22 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     version: { type: 'string', minLength: 1, maxLength: 64, description: 'The name of the page script file.' },
   }),
   Count: object('A count by key.', { key: { type: 'string' }, count: count() }),
-  Stats: object('The aggregates of the stats page: counts and player names only. The server computes them at most once a minute. src/protocol.ts (Stats) has every field.', {
+  StatsFilter: object('The filters of the stats. null means every mode or every level.', {
+    scope: strings(STATS_SCOPES, 'everyone: all games. mine: the games of the X-Player id and its linked devices.'),
+    range: strings(STATS_RANGES, 'The games of the last 7 or 30 days, or all.'),
+    mode: { type: ['string', 'null'], enum: [...SESSION_MODES, null] },
+    level: { type: ['string', 'null'], enum: [...DIFFICULTIES, null], description: 'A computer level. It matches computer games only.' },
+  }),
+  Stats: object('The aggregates of the public stats page: counts only, and for scope mine the names of your opponents. The server computes an everyone answer at most once a minute. src/protocol.ts (Stats) has every field.', {
     generatedAt: { type: 'number' },
     totals: { type: 'object', description: 'games, moves, players, accounts, sessions, gamesLast7Days.' },
     perDay: list('The last 60 days, oldest first, UTC.'),
     hours: list('Games per weekday (0 is Monday) and hour, UTC.'),
     byMode: list('Games per mode.', ref('Count')),
     levels: list('Results against each computer level.'),
-    survival: list('The longest games that the computer won, per level. `player` is a GitHub login or a generated name.'),
     lengthByMode: list('Game length per mode.'),
     moveTimes: list('Time between two moves, in buckets.'),
     thinkTimes: list('Median time per move.'),
-    slowest: list('The slowest players. `player` is a GitHub login or a generated name.'),
     firstPlayer: list('Wins of X and O per mode.'),
     openings: list('First moves, per cell.', count()),
     cells: list('All moves, per cell.', count()),
@@ -473,7 +483,17 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     undo: object('Undo use.', { gamesWithUndo: count(), undos: count() }),
     offlineGames: count(),
     nearbyMixes: list('Nearby device mixes.', ref('Count')),
-    errors: list('Page faults.'),
+    filter: ref('StatsFilter'),
+    form: list(`The win rate over time, oldest first: at each game, the share of wins in the ${FORM_WINDOW} games up to it. mine: your games. everyone: the games against the computer, from the player's side.`, object('One game.', { at: { type: 'number' }, rate: { type: 'number', minimum: 0, maximum: 1 } })),
+    lengths: list('Games per number of moves. Index n holds the games with n moves.', count()),
+    openingWinsX: list('Games that X won, per first move.', count()),
+    personal: nullable(object('Your results, for scope mine only.', {
+      survival: list('Your survival records: per level, the most moves of a game that the default computer won.'),
+      results: list('Won, drawn and lost per mode and computer level. Friend games have no side, so they are not here.'),
+      bestStreak: count('The longest run of won games.'),
+      currentStreak: { type: ['object', 'null'], description: 'The run of equal results that ends with your newest game: outcome (won, drawn or lost) and length.' },
+      opponents: list('The 5 players that you played most. `player` is a GitHub login or a name.'),
+    })),
     practice: object('The sound practice room.', {
       runs: list('Runs, people and the average round time per mode and preset.'),
       best: list('The best 5 people per mode and preset.', ref('PracticeLeader')),
@@ -637,11 +657,9 @@ const STATS_EXAMPLE = {
   hours: [],
   byMode: [zeroCount()],
   levels: [],
-  survival: [],
   lengthByMode: [],
   moveTimes: [{ bucket: 0, human: 0, computer: 0 }],
   thinkTimes: [],
-  slowest: [],
   firstPlayer: [],
   openings: Array<number>(CELL_COUNT).fill(0),
   cells: Array<number>(CELL_COUNT).fill(0),
@@ -660,7 +678,11 @@ const STATS_EXAMPLE = {
   undo: { gamesWithUndo: 0, undos: 0 },
   offlineGames: 0,
   nearbyMixes: [],
-  errors: [],
+  filter: { scope: 'everyone', range: 'all', mode: null, level: null },
+  form: [],
+  lengths: Array<number>(CELL_COUNT + 1).fill(0),
+  openingWinsX: Array<number>(CELL_COUNT).fill(0),
+  personal: null,
   practice: { runs: [{ mode: 'targets', preset: 'normal', runs: 1, players: 1, avgRoundMs: 2450 }], best: [] },
 };
 
@@ -1125,10 +1147,21 @@ export const ROUTES = {
   'GET /api/stats': {
     operationId: 'stats',
     tag: 'Account',
-    summary: 'The aggregates of the hidden stats page at /stats.',
-    player: 'none',
-    response: { status: 200, description: 'Counts only. No token, result id or game id.', schema: 'Stats', example: STATS_EXAMPLE },
-    errors: [],
+    summary: 'The aggregates of the public stats page at /stats.',
+    description: 'The query takes the same filters as the address of the page. Leave a key out for its default. Scope mine needs the X-Player header.',
+    player: 'optional',
+    query: {
+      scope: { description: 'everyone (the default) or mine.', required: false, schema: strings(STATS_SCOPES), example: 'mine' },
+      range: { description: '7d, 30d or all (the default).', required: false, schema: strings(STATS_RANGES), example: '30d' },
+      mode: { description: 'One mode. Leave it out for every mode.', required: false, schema: strings(SESSION_MODES), example: 'computer' },
+      level: { description: 'One computer level, only with mode computer or without a mode.', required: false, schema: strings(DIFFICULTIES), example: 'hard' },
+    },
+    response: { status: 200, description: 'Counts only. Scope mine adds the names of your opponents. No token, result id, game id or page fault.', schema: 'Stats', example: STATS_EXAMPLE },
+    errors: [
+      { status: 400, when: 'A key is unknown or repeated, a value is unknown, or a level comes with a mode other than computer.' },
+      { ...BAD_PLAYER, when: `Scope mine only. ${BAD_PLAYER.when}` },
+    ],
+    examplePlayer: AGENT_A,
   },
   'GET /api/previews': {
     operationId: 'previews',

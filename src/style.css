@@ -536,6 +536,15 @@ input:disabled {
   justify-self: end;
 }
 
+/* A link to another page, then Close at the end. */
+.info-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
 @keyframes banner-in {
   from {
     translate: -50% -150%;
@@ -2487,7 +2496,12 @@ body[data-turn='O'] .status[data-state='playing'] {
 .my-games-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+/* Stats and Close sit together at the end of the head. */
+.my-games-head h2 {
+  flex: 1;
 }
 
 .my-games h2,

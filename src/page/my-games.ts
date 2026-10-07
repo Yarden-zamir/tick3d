@@ -14,10 +14,13 @@ import {
   type Tally,
   CUSTOM_NAME_MAX_LENGTH,
   CUSTOM_NAME_MIN_LENGTH,
+  ALL_STATS,
   outcomeOf,
   parseCustomName,
+  statsQuery,
   toGame,
 } from '../protocol.ts';
+import { STATS_ICON } from '../icons.ts';
 import { accountLink } from '../header/header.ts';
 import {
   myGamesDialog,
@@ -34,6 +37,7 @@ import {
   myGamesNote,
   myGamesOnlineBox,
   myGamesClose,
+  myGamesStatsLink,
   myGamesSession,
   myGamesSessionBox,
 } from './dom.ts';
@@ -429,6 +433,9 @@ export function setupMyGames(): void {
     void openMyGames().catch(showError);
   });
   myGamesClose.addEventListener('click', () => myGamesDialog.close());
+  // The stats page, with your own games.
+  myGamesStatsLink.href = `/stats${statsQuery({ ...ALL_STATS, scope: 'mine' })}`;
+  myGamesStatsLink.insertAdjacentHTML('afterbegin', STATS_ICON);
   myGamesMore.addEventListener('click', () => void loadHistory(myGamesRequest, true).catch(showError));
   myGamesClear.addEventListener('click', () => {
     clearConfirm.showModal();

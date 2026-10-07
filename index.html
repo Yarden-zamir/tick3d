@@ -416,6 +416,8 @@
     <dialog class="end-card my-games" id="my-games" aria-label="My games">
       <div class="my-games-head">
         <h2>My games</h2>
+        <!-- src/page/my-games.ts adds the icon and the address of your stats. -->
+        <a class="btn btn-small my-games-stats-link" id="my-games-stats-link" href="/stats" data-tip="Charts of your games">Stats</a>
         <button type="button" class="btn btn-small btn-icon" id="my-games-close" aria-label="Close"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
       <div class="account" id="account-box"></div>
@@ -505,7 +507,10 @@
         <li>Players: any player manages the seats. A change that affects the other player, and an undo, wait until that player accepts.</li>
         <li>Hover or long-press an icon to see what it does.</li>
       </ul>
-      <button type="button" class="btn btn-small info-close" popovertarget="info-panel" popovertargetaction="hide">Close</button>
+      <div class="info-actions">
+        <a class="btn btn-small" id="info-stats-link" href="/stats"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>Stats of all games</a>
+        <button type="button" class="btn btn-small info-close" popovertarget="info-panel" popovertargetaction="hide">Close</button>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
