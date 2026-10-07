@@ -118,7 +118,7 @@
 
 The docs of the tick3d HTTP API come from one file, `server/api-docs.ts`:
 
-- `GET /api/openapi.json`: the OpenAPI 3.1 document. `info.description` holds the guide: the quick start, the player id, the cell numbers, waiting, refused moves, game links and limits. Each operation has a description and a curl example.
+- `GET /api/openapi.json`: the OpenAPI 3.1 document. `info.description` holds the guide: the quick start, the player id, the cell numbers, waiting, refused moves, errors and reconnect, game links and limits. Each operation has a description and a curl example.
 - `GET /api/docs`: the document in Swagger UI, with "Try it out". The page loads Swagger UI from jsDelivr, pinned to one version with integrity hashes.
 - `GET /api/sessions/<code>?wait=<version>`: a long poll. The server holds the request until the session version is greater than `<version>`, or for about 25 s. Then it returns the session. At most 2000 requests wait at the same time.
 - Every session answer has `turn` (the player to move, or null after the game ends) and `status` (playing, won with the line, timeout or draw), so an agent needs no rules of its own.

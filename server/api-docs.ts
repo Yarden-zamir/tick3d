@@ -28,7 +28,7 @@ import {
   VIEWS,
   WATCHER_ID_LENGTH,
 } from '../src/protocol.ts';
-import { SEAT_REQUEST_MS } from '../src/session/core.ts';
+import { EMPTY_SESSION_TTL_MS, SEAT_REQUEST_MS } from '../src/session/core.ts';
 
 // Long polls wait at most this long. Proxies keep an idle request open for longer.
 export const WAIT_MS = 25_000;
@@ -1316,6 +1316,36 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
     ],
   },
   {
+    title: 'Errors and reconnect',
+    blocks: [
+      { p: 'A server error or a lost connection does not end the game. The game waits for your move. Do not stop.' },
+      {
+        list: [
+          'After a network error, a timeout or a 5xx answer, wait and send the request again. Wait 2 s first. Double the wait after each failure, up to 30 s.',
+          'Do not give up while the session exists. Only a 404 for the session means that it is gone.',
+          `Keep the same player id. It still holds your seat. The other player cannot take your seat while you are away: that change needs your accept, and the request ends after ${SEAT_REQUEST_MS / 1000} s.`,
+          'A clock keeps running while you are away. In a timed game, a long break can lose the game on time.',
+          'After the server answers again, read the session with `GET /api/sessions/<code>`. Continue from the live game, the last item of `games` (`games[-1]`).',
+          '`GET /api/sessions/<code>?wait=<version>` only reads. Repeat it as often as you need.',
+        ],
+      },
+      { p: 'A move is safe to send again. The server plays it only once: a second copy has an old `moveCount`, so it gets 409 "The board changed."' },
+      { p: 'After a 409 on a repeated move, read the session. Look at `games[game].moves[moveCount]`, with the values of your request. When it equals your cell, your first move counted. Else decide again.' },
+      { p: 'Other changes are not safe to send again without a check. A repeated chat message shows twice. A repeated seat change can apply twice. A repeated `POST /api/sessions` makes a second session. First read the session, or `GET /api/me/games` for your sessions.' },
+      { p: 'What to do for each answer status:' },
+      {
+        list: [
+          '5xx, a timeout or no answer: send the request again, with the wait above.',
+          '429: you sent too many calls. When the answer has a `Retry-After` header, wait that many seconds. Else wait 60 s before each new try.',
+          '409: the request does not fit the game now. Do not send it again. Read the session and decide again.',
+          '400 or 413: the request is wrong. Read the error message and fix the request. Do not send it again unchanged.',
+          '403: your player id holds no seat. Check that you send the same id. Else stop and tell your user.',
+          '404 for a session: the code is wrong, or the session is gone. Stop and tell your user.',
+        ],
+      },
+    ],
+  },
+  {
     title: 'After a game, and chat',
     blocks: [
       { p: 'A finished game has its own read-only link: `{origin}/?game=<CODE>-<n>`, where n is the game number in the session, counted from 1 (`games.length` for the live game). It shows the final board and a replay. After a game, this is the best link to give your user. `GET /api/games/<CODE>-<n>` returns the same game as JSON.' },
@@ -1352,7 +1382,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
           `One address can create ${CREATES_PER_HOUR} sessions per hour. More gets 429. Play a session again with a new game instead of a new session.`,
           'Wait with `?wait=<version>`. Do not poll more than once per second.',
           'An error answer is JSON: `{"error":"<message>"}`. Read the message: it says what to do.',
-          'Sessions never expire. A player can come back later, and the game waits for the move.',
+          `A session with a move never expires. A player can come back later, and the game waits for the move. A session where no game has a move goes after ${EMPTY_SESSION_TTL_MS / 3_600_000} hours without a change. A long poll is not a change.`,
         ],
       },
     ],
