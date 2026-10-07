@@ -16,6 +16,7 @@ import {
   CODE_ALPHABET,
   CODE_LENGTH,
   CONSENT_ACTIONS,
+  DEVICE_GAME_ID_LENGTH,
   CUSTOM_NAME_MAX_LENGTH,
   CUSTOM_NAME_MIN_LENGTH,
   FORM_WINDOW,
@@ -118,6 +119,7 @@ export type SchemaName =
   | 'ResultsResponse'
   | 'Ok'
   | 'GameId'
+  | 'DeviceGameId'
   | 'PublicGame'
   | 'HistoryEntry'
   | 'HistoryPage'
@@ -368,7 +370,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     you: nullable(ref('Player')),
     difficulty: { type: ['string', 'null'], enum: [...DIFFICULTIES, null] },
     finishedAt: { type: 'number' },
-    publicId: { ...nullable(ref('GameId')), description: 'An id of 8 characters that the device made, for the game link. Optional.' },
+    publicId: { ...nullable(ref('DeviceGameId')), description: 'The id that the device made, for the game link. Optional.' },
     options: matchOptions('The hide settings at the end of the game. Optional.', true),
     tuned: { type: 'boolean', description: 'A computer game with changed advanced settings. Optional.' },
     metrics: { ...nullable(ref('Metrics')), description: 'What the device saw during the game. Optional.' },
@@ -384,15 +386,20 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     stored: count('How many results were new.'),
     renamed: {
       type: 'object',
-      additionalProperties: ref('GameId'),
+      additionalProperties: ref('DeviceGameId'),
       description: 'By result id: the public id that the server keeps for a result, when it differs from the one that the device sent.',
     },
   }),
   Ok: object('Done.', { ok: { const: true } }),
   GameId: {
     type: 'string',
-    pattern: `^([${CODE_ALPHABET}]{8}|[${CODE_ALPHABET}]{${CODE_LENGTH}}-[1-9][0-9]*)$`,
-    description: 'The id of a finished game. An online game: <CODE>-<n>, where n is the game number in the session, from 1. Other games: 8 characters. The link is /?game=<id>. Lower case also works.',
+    pattern: `^([${CODE_ALPHABET}]{${DEVICE_GAME_ID_LENGTH}}|[${CODE_ALPHABET}]{${CODE_LENGTH}}-[1-9][0-9]*)$`,
+    description: `The id of a finished game. An online game: <CODE>-<n>, where n is the game number in the session, from 1. Other games: ${DEVICE_GAME_ID_LENGTH} characters. The link is /?game=<id>. Lower case also works.`,
+  },
+  DeviceGameId: {
+    type: 'string',
+    pattern: `^[${CODE_ALPHABET}]{${DEVICE_GAME_ID_LENGTH}}$`,
+    description: 'The id of a finished game that a device made: upper case only, no dash.',
   },
   PublicGame: object('A finished game as anybody with its link sees it.', {
     id: ref('GameId'),

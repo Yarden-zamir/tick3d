@@ -1,5 +1,7 @@
 import { cell, createOnline, expect, expectToast, marks, playComputerUntilEnd, status, test, toasts } from './fixtures.ts';
 import type { Page } from '@playwright/test';
+import { DB_NAME } from '../src/device-db.ts';
+import { CELL_COUNT } from '../src/game.ts';
 
 async function waitForServiceWorker(page: Page): Promise<void> {
   await expect.poll(() => page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.active != null), { timeout: 20_000 }).toBe(true);
@@ -8,9 +10,9 @@ async function waitForServiceWorker(page: Page): Promise<void> {
 // The `sent` flag of each finished game result in the device database.
 const resultsSent = (page: Page) =>
   page.evaluate(
-    () =>
+    (name) =>
       new Promise<boolean[]>((resolve, reject) => {
-        const request = indexedDB.open('tick3d');
+        const request = indexedDB.open(name);
         request.onerror = () => reject(request.error ?? new Error('indexedDB.open failed'));
         request.onsuccess = () => {
           const all = request.result.transaction('results').objectStore('results').getAll();
@@ -18,6 +20,7 @@ const resultsSent = (page: Page) =>
           all.onsuccess = () => resolve((all.result as { sent: boolean }[]).map((result) => result.sent));
         };
       }),
+    DB_NAME,
   );
 
 test('a computer game plays and finishes offline, and its result uploads after a reconnect', async ({ open }) => {
@@ -31,7 +34,7 @@ test('a computer game plays and finishes offline, and its result uploads after a
   await page.reload();
   await expect(marks(page)).toHaveCount(2);
 
-  await playComputerUntilEnd(page, Array.from({ length: 64 }, (_, i) => i));
+  await playComputerUntilEnd(page, Array.from({ length: CELL_COUNT }, (_, i) => i));
   await expect.poll(() => resultsSent(page)).toEqual([false]);
   await expect(page.locator('#end-card')).toHaveAttribute('open');
   await page.locator('#end-card-close').click();

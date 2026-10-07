@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SoundSetId } from '../sound-sets.ts';
+import { STORAGE_KEYS } from '../storage-keys.ts';
 
 // The settings load once, when the module loads, so each case loads fresh modules.
 async function menuWith(soundSet: string): Promise<{ list: HTMLElement; used: SoundSetId[] }> {
-  localStorage.setItem('tick3d.settings', JSON.stringify({ soundSet }));
+  localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ soundSet }));
   const { setupSoundSets } = await import('./sound-set.ts');
   const list = document.createElement('div');
   const used: SoundSetId[] = [];
@@ -31,6 +32,6 @@ describe('the sound set menu', () => {
     list.querySelector<HTMLButtonElement>('[data-sound-set="choir"]')?.click();
     expect(used).toEqual(['cells', 'choir']);
     expect(pressed(list)).toEqual(['choir']);
-    expect(JSON.parse(localStorage.getItem('tick3d.settings') ?? 'null')).toMatchObject({ soundSet: 'choir' });
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.settings) ?? 'null')).toMatchObject({ soundSet: 'choir' });
   });
 });

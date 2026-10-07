@@ -6,6 +6,7 @@ import { isTunedFor } from '../tuning.ts';
 import { token, api, OnlineError } from '../online.ts';
 import {
   type Code,
+  type DeviceGameId,
   type GameId,
   type PlayerToken,
   type ResultUpload,
@@ -21,6 +22,7 @@ import { gameMetrics } from './metrics.ts';
 import { nearbyKind, nearbyMetrics } from './nearby.ts';
 import { settings } from './settings.ts';
 import { type Session, page } from './state.ts';
+import { STORAGE_KEYS } from '../storage-keys.ts';
 
 let flushing = false;
 
@@ -29,7 +31,7 @@ const resultIdOf = (code: Code, index: number) => `${token}-${code.toLowerCase()
 
 // Keeps a finished computer, friend or Nearby game for upload, and returns the id of its link.
 // Online games are on the server already, and a Nearby watcher played no part: both get undefined.
-export async function recordResult(open: Session, game: Game, index: number): Promise<GameId | undefined> {
+export async function recordResult(open: Session, game: Game, index: number): Promise<DeviceGameId | undefined> {
   if (page.deviceDb === undefined || open.mode === 'online') return undefined;
   const you = open.mode === 'friend' ? null : open.you;
   if (open.mode !== 'friend' && you === null) return undefined;
@@ -129,14 +131,13 @@ export async function deleteSentResults(): Promise<void> {
   for (const result of await db.all('results')) if (result.sent) await db.delete('results', result.id);
 }
 
-const RECORDS_KEY = 'tick3d.records';
 // Records that a game broke in this visit, by session code and game index, for its end card.
 export const recordNews = new Map<string, RecordNews>();
 
 // The device keeps its records, so they work offline. syncRecords adds the account's records from the server.
 function loadRecords(): Records {
   try {
-    return parseRecords(JSON.parse(localStorage.getItem(RECORDS_KEY) ?? 'null'));
+    return parseRecords(JSON.parse(localStorage.getItem(STORAGE_KEYS.records) ?? 'null'));
   } catch {
     return {};
   }
@@ -144,7 +145,7 @@ function loadRecords(): Records {
 
 function saveRecords(records: Records): void {
   try {
-    localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
+    localStorage.setItem(STORAGE_KEYS.records, JSON.stringify(records));
   } catch {
     // Storage is blocked (private mode). Records then last for this visit only.
   }
@@ -153,7 +154,7 @@ function saveRecords(records: Records): void {
 // After a logout the records belong to the account, and this browser starts again from none.
 export function forgetRecords(): void {
   try {
-    localStorage.removeItem(RECORDS_KEY);
+    localStorage.removeItem(STORAGE_KEYS.records);
   } catch {
     // Storage is blocked (private mode), so it holds no records.
   }

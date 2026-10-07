@@ -28,12 +28,12 @@ import { parsePracticeBoard, parsePracticeRun } from '../src/practice/practice.t
 import { PATH_PARAMS, ROUTES, ROUTE_NAMES, type Route, SCHEMAS, type SchemaName, matchRoute, splitRoute } from './api-docs.ts';
 import { curlOf, openApi, swaggerHtml } from './api-docs-render.ts';
 import { openStore } from './store.ts';
+import { isRecord } from '../src/guards.ts';
 
 const ORIGIN = 'https://tick3d.example.com';
 const fail = (id: string): never => {
   throw new Error(`not a game id: ${id}`);
 };
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
 // The real parsers of the page and the server, by shape. A parser returns undefined or throws on a bad value.
 // Shapes without a parser (Health, ResultsResponse, Records, Stats, ...) are read inline by their only caller,

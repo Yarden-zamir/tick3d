@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, randomInt } from 'node:crypto';
-import { type DuckDBValue, DuckDBInstance, listValue } from '@duckdb/node-api';
+import { DuckDBInstance, listValue } from '@duckdb/node-api';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { NO_LIMIT, type TimeControl } from '../src/clock.ts';
 import { type EpochMs, MAX_EPOCH_MS, epochNow, toEpochMs } from '../src/epoch.ts';
@@ -11,6 +11,7 @@ import {
   CODE_LENGTH,
   type ClientEvent,
   type Code,
+  type DeviceGameId,
   type GameId,
   type GameRecord,
   HISTORY_PAGE_SIZE,
@@ -37,7 +38,9 @@ import {
   isGameRecord,
   parseMatchOptions,
   newGameId,
+  isOnlineGameId,
   onlineGameId,
+  onlineGameParts,
   outcomeOf,
   parseHistoryPage,
   parsePublicGame,
@@ -52,9 +55,11 @@ import { CURRENT_FORMAT, type SessionDoc, parseDoc } from '../src/session/format
 import type { PlayoffRequest } from '../src/practice/playoff.ts';
 import type { PracticeBoard, PracticeMode, PracticeRun, PresetId } from '../src/practice/practice.ts';
 import { practiceBoard, practiceStats } from './practice.ts';
+import { type Rows, bigId, bool, code as codeColumn, deviceGameId, epoch, gameId, int, json, nullable, oneOf, readRow, text } from './sql.ts';
 import { computeStats, SEAT_O, SEAT_X } from './stats.ts';
 
 const { SessionError } = core;
+const SEATS = ['X', 'O'] as const satisfies readonly Player[];
 
 // Each statement is idempotent and runs on every start, in order. To change a table, append a
 // statement such as `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ... DEFAULT ...`. Never edit one.
@@ -205,8 +210,8 @@ function endingOf(record: GameRecord): Ending {
 // The stored document of a result row: an upload from a device, or an online game that the server recorded.
 type StoredGame = Pick<ResultUpload, 'game' | 'you' | 'difficulty' | 'options' | 'tuned'> & { mode: SessionMode };
 
-function readStored(json: unknown): StoredGame {
-  const doc: unknown = JSON.parse(String(json));
+// `doc` is the parsed JSON of the row.
+function readStored(doc: unknown): StoredGame {
   if (typeof doc === 'object' && doc !== null && 'mode' in doc && doc.mode === 'online') {
     const { game } = doc as Record<string, unknown>;
     // A game stored before hideCoordinates reads it as false.
@@ -227,15 +232,10 @@ const seatTokens = (token: string, you: Player | null, guest: string | null): Re
   O: you === 'X' ? guest : token,
 });
 
-// A seat token column of a result row: a token, or null for a seat without a known player.
-function tokenOf(value: unknown): string | null {
-  if (value === null || typeof value === 'string') return value;
-  throw new Error('a stored seat token is not text');
-}
-
-function accountOf(login: unknown, avatar: unknown): PlayerInfo | null {
+// The account of a seat from a LEFT JOIN of users: no login means no account.
+function accountOf(login: string | null, avatar: string | null): PlayerInfo | null {
   if (login === null) return null;
-  if (typeof login !== 'string' || typeof avatar !== 'string') throw new Error('a stored account has no login or avatar');
+  if (avatar === null) throw new Error('a stored account has no avatar');
   return { login, avatar };
 }
 
@@ -256,6 +256,16 @@ const SEAT_ACCOUNTS = `
   LEFT JOIN player_tokens tx ON tx.token = ${SEAT_X} LEFT JOIN users ux ON ux.github_id = tx.github_id
   LEFT JOIN player_tokens t_o ON t_o.token = ${SEAT_O} LEFT JOIN users uo ON uo.github_id = t_o.github_id`;
 const SEAT_ACCOUNT_COLUMNS = 'ux.login AS x_login, ux.avatar AS x_avatar, uo.login AS o_login, uo.avatar AS o_avatar';
+// The shape of SEAT_ACCOUNT_COLUMNS, and of the seat tokens (SEAT_X AS token_x, SEAT_O AS token_o).
+// A seat token is null for a seat without a known player.
+const SEAT_SHAPE = {
+  x_login: nullable(text),
+  x_avatar: nullable(text),
+  o_login: nullable(text),
+  o_avatar: nullable(text),
+  token_x: nullable(text),
+  token_o: nullable(text),
+};
 
 type StoreOptions = {
   now?: () => EpochMs;
@@ -295,15 +305,12 @@ export async function openStore(
     return run;
   }
 
-  async function rows(sql: string, values: Record<string, DuckDBValue>): Promise<Record<string, unknown>[]> {
-    return (await db.runAndReadAll(sql, values)).getRowObjectsJS();
-  }
+  const rows: Rows = async (sql, values, shape) => (await db.runAndReadAll(sql, values)).getRowObjectsJS().map((row) => readRow(row, shape));
 
   async function loadRaw(code: Code): Promise<Row> {
-    const [row] = await rows('FROM sessions SELECT doc::JSON AS doc, version WHERE code = $code', { code });
+    const [row] = await rows('FROM sessions SELECT doc::JSON AS doc, version WHERE code = $code', { code }, { doc: json, version: int });
     if (row === undefined) throw new SessionError(404, `No game with code ${code}.`);
-    if (typeof row.doc !== 'string' || typeof row.version !== 'number') throw new Error(`unexpected row shape for ${code}`);
-    const stored: unknown = JSON.parse(row.doc);
+    const stored = row.doc;
     const format = typeof stored === 'object' && stored !== null && 'format' in stored ? stored.format : undefined;
     return { code, doc: parseDoc(stored), version: row.version, stale: format !== CURRENT_FORMAT };
   }
@@ -340,6 +347,7 @@ export async function openStore(
         line,
         metrics: result.metrics === null ? null : JSON.stringify(result.metrics),
       },
+      { id: text },
     );
     return inserted.length > 0;
   }
@@ -401,8 +409,8 @@ export async function openStore(
 
   // The token that a new seat of this device holds: the account token when the device is logged in.
   async function seatTokenOf(token: PlayerToken): Promise<string> {
-    const [linked] = await rows('FROM player_tokens SELECT github_id WHERE token = $token', { token });
-    return linked === undefined ? token : ensureAccountRow(linked.github_id as number | bigint);
+    const [linked] = await rows('FROM player_tokens SELECT github_id WHERE token = $token', { token }, { github_id: bigId });
+    return linked === undefined ? token : ensureAccountRow(linked.github_id);
   }
 
   // The token plus the tokens of the same GitHub account (the account token among them), so a
@@ -413,10 +421,11 @@ export async function openStore(
       `FROM player_tokens SELECT token, github_id
        WHERE github_id = (FROM player_tokens SELECT github_id WHERE token = $token)`,
       { token },
+      { token: text, github_id: bigId },
     );
     // The account token counts also before its own row exists (an account that linked before account seats).
-    const account = linked[0] === undefined ? [] : [accountToken(linked[0].github_id as number | bigint)];
-    return new Set([token, ...account, ...linked.map((row) => String(row.token))]);
+    const account = linked[0] === undefined ? [] : [accountToken(linked[0].github_id)];
+    return new Set([token, ...account, ...linked.map((row) => row.token)]);
   }
 
   async function playersOf(doc: SessionDoc): Promise<Record<Player, PlayerInfo | null>> {
@@ -426,10 +435,11 @@ export async function openStore(
       `FROM player_tokens JOIN users USING (github_id) SELECT token, login, avatar
        WHERE list_contains($tokens, token)`,
       { tokens: listValue(seatTokens) },
+      { token: text, login: text, avatar: text },
     );
     const info = (token: string | null): PlayerInfo | null => {
       const match = found.find((row) => row.token === token);
-      return match === undefined ? null : { login: String(match.login), avatar: String(match.avatar) };
+      return match === undefined ? null : { login: match.login, avatar: match.avatar };
     };
     return { X: info(doc.seats.X), O: info(doc.seats.O) };
   }
@@ -438,8 +448,11 @@ export async function openStore(
   // A GitHub login goes before both, through `players` or `player` in the view.
   async function namesOf(tokens: readonly (string | null)[]): Promise<core.NameOf> {
     const known = [...new Set(tokens.filter((token): token is string => token !== null && token !== core.COMPUTER_TOKEN))];
-    const found = known.length === 0 ? [] : await rows('FROM player_names SELECT token, name WHERE list_contains($tokens, token)', { tokens: listValue(known) });
-    const custom = new Map(found.map((row) => [String(row.token), String(row.name)]));
+    const found =
+      known.length === 0
+        ? []
+        : await rows('FROM player_names SELECT token, name WHERE list_contains($tokens, token)', { tokens: listValue(known) }, { token: text, name: text });
+    const custom = new Map(found.map((row) => [row.token, row.name]));
     return (token) => custom.get(token) ?? nameOf(token);
   }
 
@@ -454,21 +467,22 @@ export async function openStore(
             `FROM player_tokens a JOIN player_tokens b USING (github_id) JOIN users u USING (github_id)
              SELECT a.token AS token, b.token AS linked, u.github_id, u.login, u.avatar WHERE list_contains($tokens, a.token)`,
             { tokens: listValue(tokens) },
+            { token: text, linked: text, github_id: bigId, login: text, avatar: text },
           );
     const presence = { X: false, O: false };
     const watchers: core.OpenWatcher[] = [];
     const logins = new Set<string>();
     for (const token of tokens) {
       const own = linked.filter((row) => row.token === token);
-      const seats = core.seatsOf(doc, new Set([token, ...own.map((row) => String(row.linked))]));
+      const seats = core.seatsOf(doc, new Set([token, ...own.map((row) => row.linked)]));
       for (const seat of seats) presence[seat] = true;
       if (seats.length > 0) continue;
-      const player = accountOf(own[0]?.login ?? null, own[0]?.avatar ?? null);
+      const account = own[0];
+      const player = account === undefined ? null : { login: account.login, avatar: account.avatar };
       if (player !== null && logins.has(player.login)) continue;
       if (player !== null) logins.add(player.login);
       // A logged-in watcher takes a seat for the account, like a join. The id stays from the device token.
-      const githubId = own[0]?.github_id as number | bigint | undefined;
-      watchers.push({ id: watcherId(code, token), token: githubId === undefined ? token : accountToken(githubId), player });
+      watchers.push({ id: watcherId(code, token), token: account === undefined ? token : accountToken(account.github_id), player });
     }
     const name = await namesOf([doc.seats.X, doc.seats.O, doc.seatRequest?.watcher ?? null, ...watchers.map((watcher) => watcher.token)]);
     return { presence, watchers, name };
@@ -505,16 +519,15 @@ export async function openStore(
   // The finished game of an online id ("<CODE>-<n>") in its session, or a 404.
   async function finishedOnlineGame(id: GameId): Promise<{ row: Row; game: GameRecord; index: number }> {
     const notFound = new SessionError(404, 'No game with this link.');
-    const [code, number] = id.split('-');
-    if (code === undefined || number === undefined) throw notFound;
+    if (!isOnlineGameId(id)) throw notFound;
+    const { code, index } = onlineGameParts(id);
     let row: Row;
     try {
-      row = await loadRaw(code as Code);
+      row = await loadRaw(code);
     } catch (error) {
       if (error instanceof SessionError) throw notFound;
       throw error;
     }
-    const index = Number(number) - 1;
     const game = row.doc.games[index];
     if (game === undefined || !isFinished(game)) throw notFound;
     return { row, game, index };
@@ -602,6 +615,7 @@ export async function openStore(
             score: run.score,
             now: now(),
           },
+          { id: text },
         );
         return { stored: inserted.length > 0 };
       }),
@@ -617,15 +631,15 @@ export async function openStore(
     // The custom name of a player without a GitHub login, or null. `name` passed parseCustomName.
     customName: (token: PlayerToken): Promise<string | null> =>
       serialized(async () => {
-        const [row] = await rows('FROM player_names SELECT name WHERE token = $token', { token });
-        return row === undefined ? null : String(row.name);
+        const [row] = await rows('FROM player_names SELECT name WHERE token = $token', { token }, { name: text });
+        return row?.name ?? null;
       }),
     // Refuses a name that equals a known GitHub login, so nobody can pose as a logged-in player.
     // Limit: a GitHub account that logs in later with the same login does not rename the player.
     // Revisit this if two players with one name confuse people in practice.
     setName: (token: PlayerToken, name: string): Promise<void> =>
       serialized(async () => {
-        const [clash] = await rows('FROM users SELECT login WHERE lower(login) = lower($name)', { name });
+        const [clash] = await rows('FROM users SELECT login WHERE lower(login) = lower($name)', { name }, { login: text });
         if (clash !== undefined) throw new SessionError(409, 'That name is a GitHub login. Choose another name.');
         await db.run(
           `INSERT INTO player_names (token, name) VALUES ($token, $name)
@@ -666,15 +680,16 @@ export async function openStore(
     // logout takes more than about 100 ms.
     unlinkToken: (token: PlayerToken): Promise<void> =>
       serialized(async () => {
-        const [linked] = await rows('FROM player_tokens SELECT github_id WHERE token = $token', { token });
+        const [linked] = await rows('FROM player_tokens SELECT github_id WHERE token = $token', { token }, { github_id: bigId });
         if (linked === undefined) return;
-        const account = await ensureAccountRow(linked.github_id as number | bigint);
+        const account = await ensureAccountRow(linked.github_id);
         const held = await rows(
           'FROM sessions SELECT code WHERE doc.seats.X::VARCHAR = $token OR doc.seats.O::VARCHAR = $token',
           { token },
+          { code: codeColumn },
         );
         for (const { code } of held) {
-          const row = await loadRaw(code as Code);
+          const row = await loadRaw(code);
           const seats = { X: row.doc.seats.X === token ? account : row.doc.seats.X, O: row.doc.seats.O === token ? account : row.doc.seats.O };
           await save(row, { ...row.doc, seats });
         }
@@ -688,7 +703,7 @@ export async function openStore(
     // device can send again after a lost answer. Returns how many results were new, and the
     // public id of each result that has another public id on the server than the device sent:
     // a result without one, or one whose id another game holds already.
-    addResults: (token: PlayerToken, uploads: readonly unknown[]): Promise<{ stored: number; renamed: Record<string, GameId> }> =>
+    addResults: (token: PlayerToken, uploads: readonly unknown[]): Promise<{ stored: number; renamed: Record<string, DeviceGameId> }> =>
       serialized(async () => {
         const results = uploads.map((upload) => parseResultUpload(upload, now()));
         if (!results.every((result): result is ResultUpload => result !== undefined)) {
@@ -696,12 +711,13 @@ export async function openStore(
         }
         if (results.some((result) => result.guest === token)) throw new SessionError(400, 'The guest of a Nearby game needs its own player token.');
         let stored = 0;
-        const renamed: Record<string, GameId> = {};
+        const renamed: Record<string, DeviceGameId> = {};
         for (const result of results) {
-          const [existing] = await rows('FROM results SELECT public_id WHERE id = $id', { id: result.id });
+          // An uploaded result id never holds ':', so this row is an upload and not an online game (see recordOnline).
+          const [existing] = await rows('FROM results SELECT public_id WHERE id = $id', { id: result.id }, { public_id: nullable(deviceGameId) });
           // A row from before game links has no public id. The device then keeps the id it has.
-          if (existing !== undefined && existing.public_id === null) continue;
-          let publicId = existing === undefined ? (result.publicId ?? newGameId()) : (String(existing.public_id) as GameId);
+          if (existing?.public_id === null) continue;
+          let publicId = existing?.public_id ?? result.publicId ?? newGameId();
           if (existing === undefined) {
             // The metrics go to their own column, and the guest's token to its seat column, not into the stored game.
             const { metrics, guest, ...upload } = result;
@@ -730,6 +746,7 @@ export async function openStore(
              ${SEAT_X} AS token_x, ${SEAT_O} AS token_o
            WHERE public_id = $id`,
           { id },
+          { doc: json, finished: epoch, ...SEAT_SHAPE },
         );
         if (row === undefined) return onlineGameFromSession(id);
         const stored = readStored(row.doc);
@@ -743,8 +760,8 @@ export async function openStore(
           tuned: stored.tuned,
           computer: stored.mode === 'computer' && stored.you !== null ? other(stored.you) : null,
           players: { X: accountOf(row.x_login, row.x_avatar), O: accountOf(row.o_login, row.o_avatar) },
-          names: await seatNames(tokenOf(row.token_x), tokenOf(row.token_o)),
-          finishedAt: Number(row.finished),
+          names: await seatNames(row.token_x, row.token_o),
+          finishedAt: row.finished,
         });
       }),
 
@@ -768,24 +785,36 @@ export async function openStore(
            ORDER BY results.finished_at DESC, results.id
            LIMIT $limit OFFSET $offset`,
           { tokens, limit: HISTORY_PAGE_SIZE + 1, offset },
+          {
+            public_id: nullable(gameId),
+            mode: oneOf(SESSION_MODES),
+            difficulty: nullable(oneOf(DIFFICULTIES)),
+            winner: nullable(oneOf(SEATS)),
+            ending: nullable(text),
+            old_doc: nullable(json),
+            moves: int,
+            finished: epoch,
+            mine_x: bool,
+            mine_o: bool,
+            ...SEAT_SHAPE,
+          },
         );
-        const name = await namesOf(found.flatMap((row) => [tokenOf(row.token_x), tokenOf(row.token_o)]));
+        const name = await namesOf(found.flatMap((row) => [row.token_x, row.token_o]));
         const games = found.slice(0, HISTORY_PAGE_SIZE).map((row): HistoryEntry => {
           // A friend game holds this player on both seats.
-          const you: Player | null = row.mine_x === true && row.mine_o === true ? null : row.mine_x === true ? 'X' : 'O';
+          const you: Player | null = row.mine_x && row.mine_o ? null : row.mine_x ? 'X' : 'O';
           // A row from before game links has no ending columns: replay its game.
-          const winner =
-            row.ending === null ? endingOf(readStored(row.old_doc).game).winner : row.winner === 'X' || row.winner === 'O' ? row.winner : null;
+          const winner = row.ending === null ? endingOf(readStored(row.old_doc).game).winner : row.winner;
           return {
             // A row from before game links has no public id, so it has no link.
-            id: row.public_id as GameId | null,
-            mode: row.mode as SessionMode,
-            difficulty: row.difficulty as HistoryEntry['difficulty'],
+            id: row.public_id,
+            mode: row.mode,
+            difficulty: row.difficulty,
             result: outcomeOf(winner, you),
-            moves: Number(row.moves),
+            moves: row.moves,
             opponent: you === 'X' ? accountOf(row.o_login, row.o_avatar) : you === 'O' ? accountOf(row.x_login, row.x_avatar) : null,
-            opponentName: you === 'X' ? core.seatName(tokenOf(row.token_o), name) : you === 'O' ? core.seatName(tokenOf(row.token_x), name) : null,
-            finishedAt: toEpochMs(Number(row.finished)),
+            opponentName: you === 'X' ? core.seatName(row.token_o, name) : you === 'O' ? core.seatName(row.token_x, name) : null,
+            finishedAt: row.finished,
           };
         });
         // The same check as on the page, so a wrong cast above fails here and not in a browser.
@@ -803,6 +832,7 @@ export async function openStore(
           `FROM results SELECT doc::JSON AS doc
            WHERE doc.mode::VARCHAR = 'computer' AND (list_contains($tokens, ${SEAT_X}) OR list_contains($tokens, ${SEAT_O}))`,
           { tokens },
+          { doc: json },
         );
         let records: Records = {};
         for (const row of found) {
@@ -826,6 +856,7 @@ export async function openStore(
           const changed = await rows(
             `UPDATE results SET ${column} = true WHERE list_contains($tokens, ${seat}) AND ${column} IS NOT TRUE RETURNING id`,
             { tokens },
+            { id: text },
           );
           hidden += changed.length;
         }
@@ -836,7 +867,7 @@ export async function openStore(
     // counts, so a page that sends again changes nothing. Returns false for a repeat.
     addSeatMetrics: (id: GameId, token: PlayerToken, metrics: Metrics): Promise<boolean> =>
       serialized(async () => {
-        if (!id.includes('-')) throw new SessionError(400, 'Only an online game takes metrics here. Other games send them with the result.');
+        if (!isOnlineGameId(id)) throw new SessionError(400, 'Only an online game takes metrics here. Other games send them with the result.');
         const { row, index } = await finishedOnlineGame(id);
         const seatNow = core.seatsOf(row.doc, await identityOf(token))[0];
         if (seatNow === undefined) throw new SessionError(403, 'Only the two players can send metrics for this game.');
@@ -846,6 +877,7 @@ export async function openStore(
           `INSERT INTO seat_metrics (public_id, seat, metrics) VALUES ($id, $seat, $metrics::JSON::VARIANT)
            ON CONFLICT DO NOTHING RETURNING seat`,
           { id, seat, metrics: JSON.stringify(metrics) },
+          { seat: text },
         );
         return inserted.length > 0;
       }),
@@ -889,10 +921,11 @@ export async function openStore(
            WHERE list_contains($tokens, doc.seats.X::VARCHAR) OR list_contains($tokens, doc.seats.O::VARCHAR)
            ORDER BY updated_at DESC`,
           { tokens },
+          { code: codeColumn, doc: json, updated: epoch },
         );
         const sessions: SessionSummary[] = [];
         for (const row of sessionRows) {
-          const doc = parseDoc(JSON.parse(String(row.doc)));
+          const doc = parseDoc(row.doc);
           const you = core.seatsOf(doc, identity)[0];
           if (you === undefined) continue;
           for (const [index, record] of doc.games.entries()) {
@@ -906,14 +939,14 @@ export async function openStore(
           }
           const live = core.currentGame(doc);
           sessions.push({
-            code: row.code as Code,
+            code: row.code,
             name: doc.name,
             games: doc.games.filter((record) => record.moves.length > 0).length,
             you,
             opponent: (await playersOf(doc))[other(you)],
             opponentName: core.seatName(doc.seats[other(you)], await namesOf([doc.seats[other(you)]])),
             yourTurn: live.status.kind === 'playing' && live.turn === you && doc.seats[other(you)] !== null,
-            updatedAt: toEpochMs(Number(row.updated)),
+            updatedAt: row.updated,
           });
         }
 
@@ -921,9 +954,10 @@ export async function openStore(
         const resultRows = await rows(
           "FROM results SELECT doc::JSON AS doc WHERE list_contains($tokens, token) AND doc.mode::VARCHAR <> 'online'",
           { tokens },
+          { doc: json },
         );
         for (const row of resultRows) {
-          const result = parseResultUpload(JSON.parse(String(row.doc)), now());
+          const result = parseResultUpload(row.doc, now());
           if (result === undefined) throw new Error('a stored result does not parse');
           const winner = winnerOf(toGame(result.game).status);
           // A friend game has no "you": both seats played on one device, so it only counts as played.
@@ -936,9 +970,10 @@ export async function openStore(
         const [user] = await rows(
           'FROM player_tokens JOIN users USING (github_id) SELECT login, avatar WHERE token = $token',
           { token },
+          { login: text, avatar: text },
         );
         return {
-          user: user === undefined ? null : { login: String(user.login), avatar: String(user.avatar) },
+          user: user ?? null,
           total,
           byMode,
           byDifficulty,
@@ -951,14 +986,15 @@ export async function openStore(
     pruneEmpty: (ageMs: number) =>
       serialized(async () => {
         const cutoff = toEpochMs(now() - ageMs);
-        const old = await rows('FROM sessions SELECT code, doc::JSON AS doc WHERE updated_at < make_timestamptz($cutoff * 1000)', {
-          cutoff,
-        });
+        const old = await rows(
+          'FROM sessions SELECT code, doc::JSON AS doc WHERE updated_at < make_timestamptz($cutoff * 1000)',
+          { cutoff },
+          { code: codeColumn, doc: json },
+        );
         const deleted: Code[] = [];
         for (const row of old) {
-          if (typeof row.code !== 'string' || typeof row.doc !== 'string') throw new Error('unexpected session row shape');
-          const code = row.code as Code;
-          const doc = parseDoc(JSON.parse(row.doc));
+          const { code } = row;
+          const doc = parseDoc(row.doc);
           const live = (await audience(code, doc)).presence;
           if (live.X || live.O || !core.isEmptySession(doc)) continue;
           await db.run('DELETE FROM sessions WHERE code = $code', { code });

@@ -1,4 +1,4 @@
-import { cell, expect, expectMyMove, expectToast, ownName, status, test } from './fixtures.ts';
+import { cell, expect, expectMyMove, expectToast, hasDeviceGameLink, ownName, status, test } from './fixtures.ts';
 import type { Page } from '@playwright/test';
 
 const nearby = { settings: { mode: 'nearby' } };
@@ -50,7 +50,7 @@ test('a hosted game shows in the list of another device, which joins it with one
   }
   await expect(status(guest)).toHaveText(`${name} wins!`);
   // Both devices show the host's link: its result names both players.
-  await expect(host).toHaveURL(/[?&]game=[A-Z2-9]{8}/);
+  await expect(host).toHaveURL(hasDeviceGameLink);
   const id = new URL(host.url()).searchParams.get('game');
   await expect(guest).toHaveURL(new RegExp(`[?&]game=${id ?? 'none'}`));
 

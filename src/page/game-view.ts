@@ -5,7 +5,7 @@ import { MAX_EPOCH_MS } from '../epoch.ts';
 import { type Player, other, winnerOf } from '../game.ts';
 import { nameOf } from '../names.ts';
 import { api, OnlineError, token } from '../online.ts';
-import { type GameId, type PublicGame, parseResultUpload, toGame } from '../protocol.ts';
+import { type GameId, type PublicGame, onlineGameParts, parseResultUpload, toGame } from '../protocol.ts';
 import { cardFilename } from '../card.ts';
 import { lightSungCell } from './board.ts';
 import { gameViewEl, gameViewTitle, gameViewPlayers, gameViewDetails, gameViewPlay, gameViewSong, reviewExit } from './dom.ts';
@@ -16,7 +16,7 @@ import { hideLabel } from './results.ts';
 import { beginSwitch, leaveSession, openLocalSession, setUrlGame } from './sessions.ts';
 import { settings } from './settings.ts';
 import { songControl } from './song-control.ts';
-import { page } from './state.ts';
+import { page, showGame } from './state.ts';
 
 // The device's own copy, so a game that is not uploaded yet opens too, also offline.
 async function deviceCopy(id: GameId): Promise<PublicGame | undefined> {
@@ -24,14 +24,14 @@ async function deviceCopy(id: GameId): Promise<PublicGame | undefined> {
     if (upload.publicId !== id) continue;
     // The same check as on the server, so a result from an older version gets its defaults.
     const result = parseResultUpload(upload, MAX_EPOCH_MS);
-    if (result === undefined) throw new Error(`the stored result of game ${id} does not parse`);
+    if (result === undefined || result.publicId === null) throw new Error(`the stored result of game ${id} does not parse`);
     // The same seats as on the server: this device's player holds `you`, or both seats in a friend game.
     const mine = (seat: Player) => result.you === null || result.you === seat;
     const seatInfo = (seat: Player) => (mine(seat) ? page.account.user : null);
     // A Nearby host also knows the guest on the other seat.
     const seatName = (seat: Player) => (mine(seat) ? (page.account.name ?? nameOf(token)) : result.guest === null ? null : nameOf(result.guest));
     return {
-      id,
+      id: result.publicId,
       mode: result.mode,
       game: result.game,
       options: result.options,
@@ -49,7 +49,7 @@ async function deviceCopy(id: GameId): Promise<PublicGame | undefined> {
 // Opens the game of a link. Returns false when it opens nothing: the problem shows already, or
 // the player chose another game meanwhile.
 export async function openGameView(id: GameId): Promise<boolean> {
-  const switchNumber = beginSwitch();
+  const switching = beginSwitch();
   let shown: PublicGame;
   try {
     shown = (await deviceCopy(id)) ?? (await api.game(id));
@@ -58,13 +58,12 @@ export async function openGameView(id: GameId): Promise<boolean> {
     showProblem(error.status === undefined ? 'This game is not on this device. Open its link with a network.' : error.message);
     return false;
   }
-  if (switchNumber !== page.navigation) return false;
+  if (switching.isStale()) return false;
   leaveSession();
-  page.viewing = shown;
   const game = toGame(shown.game);
-  page.games = [game];
   // The replay controls start at the final position.
-  page.review = { game: 0, move: game.moves.length };
+  showGame(shown, { game: 0, move: game.moves.length });
+  page.games = [game];
   setUrlGame(id);
   render();
   return true;
@@ -73,7 +72,6 @@ export async function openGameView(id: GameId): Promise<boolean> {
 // Back to play: the screen's own mode, as on a first visit.
 export async function closeGameView(): Promise<void> {
   leaveSession();
-  page.review = undefined;
   render();
   if (settings.mode === 'online') return;
   if (settings.mode === 'nearby') return openNearby();
@@ -93,8 +91,10 @@ function modeLabel(shown: PublicGame): string {
       const level = shown.difficulty === null ? '' : ` · ${shown.difficulty[0]?.toUpperCase()}${shown.difficulty.slice(1)}`;
       return `vs Computer${level}${shown.tuned ? ' (tuned)' : ''}`;
     }
-    case 'online':
-      return `Online · game ${shown.id.split('-')[1] ?? ''} of session ${shown.id.split('-')[0] ?? ''}`;
+    case 'online': {
+      const { code, index } = onlineGameParts(shown.id);
+      return `Online · game ${index + 1} of session ${code}`;
+    }
     case 'nearby':
       return 'Nearby';
     case 'friend':

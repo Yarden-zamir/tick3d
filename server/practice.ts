@@ -2,7 +2,8 @@
 // the stats page. Only player names leave this file, never a token.
 import { listValue } from '@duckdb/node-api';
 import { PRACTICE_MODES, PRESET_IDS, type PracticeBoard, type PracticeLeader, type PracticeMode, type PracticeStats, type PresetId } from '../src/practice/practice.ts';
-import { PERSON, type Rows, num, oneOf, personName } from './stats.ts';
+import { type RowOf, type Rows, int, nullable, num, oneOf } from './sql.ts';
+import { PERSON, PERSON_COLUMNS, personName } from './stats.ts';
 
 // One row per run, with the person (the GitHub account, else the token), its custom name, and a sort
 // key: a target run by its total time, an echo run by its points (more first), then its time. The best
@@ -17,15 +18,17 @@ const RUNS = `WITH runs AS (
   FROM runs GROUP BY mode, preset, person
 )`;
 
-function leader(row: Record<string, unknown>): PracticeLeader {
-  return {
-    mode: oneOf(PRACTICE_MODES, row.mode),
-    preset: oneOf(PRESET_IDS, row.preset),
-    rank: num(row.rank),
-    player: personName(row),
-    totalMs: num(row.total_ms),
-    score: num(row.score),
-  };
+const LEADER = {
+  mode: oneOf(PRACTICE_MODES),
+  preset: oneOf(PRESET_IDS),
+  rank: int,
+  ...PERSON_COLUMNS,
+  total_ms: int,
+  score: int,
+};
+
+function leader(row: RowOf<typeof LEADER>): PracticeLeader {
+  return { mode: row.mode, preset: row.preset, rank: row.rank, player: personName(row), totalMs: row.total_ms, score: row.score };
 }
 
 // The best `limit` people of each mode and preset.
@@ -37,6 +40,7 @@ async function leaders(rows: Rows, limit: number, only?: { mode: PracticeMode; p
      FROM best ${only === undefined ? '' : 'WHERE mode = $mode AND preset = $preset'}
      QUALIFY rank <= $limit ORDER BY mode, preset, rank`,
     only === undefined ? { limit } : { limit, ...only },
+    LEADER,
   );
   return found.map(leader);
 }
@@ -50,8 +54,9 @@ export async function practiceBoard(rows: Rows, mode: PracticeMode, preset: Pres
      WHERE mode = $mode AND preset = $preset AND list_contains($tokens, token)
      ORDER BY CASE WHEN mode = 'echo' THEN -score ELSE 0 END, total_ms LIMIT 1`,
     { mode, preset, tokens: listValue([...tokens]) },
+    { total_ms: int, score: int },
   );
-  return { mode, preset, top, you: own === undefined ? null : { totalMs: num(own.total_ms), score: num(own.score) } };
+  return { mode, preset, top, you: own === undefined ? null : { totalMs: own.total_ms, score: own.score } };
 }
 
 export async function practiceStats(rows: Rows): Promise<PracticeStats> {
@@ -60,15 +65,10 @@ export async function practiceStats(rows: Rows): Promise<PracticeStats> {
        (SELECT avg(t) FROM (SELECT unnest(r.round_ms) AS t FROM runs r WHERE r.mode = runs.mode AND r.preset = runs.preset)) AS avg_round_ms
      FROM runs GROUP BY mode, preset ORDER BY mode, preset`,
     {},
+    { mode: oneOf(PRACTICE_MODES), preset: oneOf(PRESET_IDS), runs: int, players: int, avg_round_ms: nullable(num) },
   );
   return {
-    runs: runs.map((row) => ({
-      mode: oneOf(PRACTICE_MODES, row.mode),
-      preset: oneOf(PRESET_IDS, row.preset),
-      runs: num(row.runs),
-      players: num(row.players),
-      avgRoundMs: row.avg_round_ms === null ? null : num(row.avg_round_ms),
-    })),
+    runs: runs.map((row) => ({ mode: row.mode, preset: row.preset, runs: row.runs, players: row.players, avgRoundMs: row.avg_round_ms })),
     best: await leaders(rows, 5),
   };
 }

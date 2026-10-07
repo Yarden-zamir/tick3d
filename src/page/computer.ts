@@ -9,7 +9,7 @@ import { requestUndo } from './players.ts';
 import { render } from './render.ts';
 import { applyView, withBusy } from './sessions.ts';
 import { settings } from './settings.ts';
-import { page, isLive, current, settingsLocked, shared } from './state.ts';
+import { page, isLive, current, currentRound, newRound, setThinking, settingsLocked, shared } from './state.ts';
 
 const COMPUTER_DELAY_MS = 450;
 
@@ -29,18 +29,17 @@ export function scheduleComputer(): void {
   if (!isComputerTurn() || page.session === undefined || page.session.you === null || page.thinking) return;
   const backend = page.local;
   if (backend === undefined) throw new Error('a computer game without the device backend');
-  page.thinking = true;
+  setThinking(true);
   render();
   const { code } = page.session;
   const computer = other(page.session.you);
-  const scheduledRound = page.round;
-  // A new game, an undo or a session switch increments the round and clears `thinking` itself.
+  // A new screen, a new game or an undo starts a new round and clears `thinking` itself.
   // A stale step then only stops, so it does not clear `thinking` for the next computer turn.
-  const stale = () => scheduledRound !== page.round || page.session?.code !== code;
+  const stale = currentRound().isStale;
   setTimeout(() => {
     if (stale()) return;
     if (!isComputerTurn()) {
-      page.thinking = false;
+      setThinking(false);
       return render();
     }
     const game = current();
@@ -57,12 +56,12 @@ export function scheduleComputer(): void {
         // A game that this page opened after a reload has no times for the earlier moves. The list then
         // stays shorter than the move count, and the index still matches the computer's move order.
         if (page.computerThinkMs.length === movesBy(game, computer)) page.computerThinkMs = [...page.computerThinkMs, thinkMs];
-        page.thinking = false;
+        setThinking(false);
         applyView(view);
       } catch (error) {
         if (!stale()) showError(error);
       } finally {
-        if (!stale()) page.thinking = false;
+        if (!stale()) setThinking(false);
         render();
       }
     })();
@@ -81,7 +80,7 @@ export function undoMove(): void {
   // Against the computer, go back to the last position where it was the human's turn.
   const you = page.session.you;
   const count = page.session.mode === 'computer' && current().turn === you && current().moves.length >= 2 ? 2 : 1;
-  page.round++;
+  newRound();
   const { code } = page.session;
   sounds.click();
   void withBusy(async () => {

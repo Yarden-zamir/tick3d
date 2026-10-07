@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { GameId } from '../protocol.ts';
+import type { DeviceGameId } from '../protocol.ts';
 import { channelPair } from './testing.ts';
 import { RpcError, parseGuestMessage, parseHostMessage, rpcClient, rpcServer } from './rpc.ts';
 
@@ -83,7 +83,7 @@ describe('rpcClient and rpcServer', () => {
     const server = rpcServer(hostSide, async () => ({}));
     const link = vi.fn();
     rpcClient(guestSide).onLink(link);
-    server.link(2, 'K7P2QX9M' as GameId);
+    server.link(2, 'K7P2QX9M' as DeviceGameId);
     await settle();
     expect(link).toHaveBeenCalledWith(2, 'K7P2QX9M');
   });

@@ -4,6 +4,8 @@
 // An opponent without a login shows with a custom or a generated name.
 import { type DuckDBValue, listValue } from '@duckdb/node-api';
 import { DIFFICULTIES } from '../src/ai.ts';
+import type { EpochMs } from '../src/epoch.ts';
+import { isUnknownArray } from '../src/guards.ts';
 import { CELL_COUNT } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
 import {
@@ -12,14 +14,15 @@ import {
   MOVE_TIME_BUCKETS,
   type PersonalStats,
   RANGE_DAYS,
+  type Refusal,
   REFUSALS,
   SESSION_MODES,
   type SideOutcome,
   type Stats,
   type StatsFilter,
 } from '../src/protocol.ts';
+import { type RowOf, type Rows, type Shape, bool, epoch, int, nullable, num, oneOf, text } from './sql.ts';
 
-export type Rows = (sql: string, values: Record<string, DuckDBValue>) => Promise<Record<string, unknown>[]>;
 
 // The token of each seat of a result row. A row from before game links has no player columns:
 // its uploader (`token`) holds the seat `doc.you`, or both seats in a friend game.
@@ -92,45 +95,29 @@ const METRICS = `${GAMES}, m AS (
 // One identity per person: the GitHub account, else the browser token. Used only to group rows.
 export const PERSON = `coalesce('github:' || pt.github_id, token)`;
 
-export function num(value: unknown): number {
-  const result = typeof value === 'bigint' ? Number(value) : value;
-  if (typeof result !== 'number' || !Number.isFinite(result)) throw new Error(`a stats value is not a number: ${String(value)}`);
-  return result;
-}
+// The columns that personName reads.
+export const PERSON_COLUMNS = { login: nullable(text), custom: nullable(text), person: text };
 
-const numOrNull = (value: unknown) => (value === null ? null : num(value));
-const text = (value: unknown) => {
-  if (typeof value !== 'string') throw new Error(`a stats value is not text: ${String(value)}`);
-  return value;
-};
-const textOrNull = (value: unknown) => (value === null ? null : text(value));
 // The GitHub login of a person (PERSON), else their custom name, else the generated name of their token.
 // The token itself stays here. A query that uses it selects `login`, `custom` and `person`.
-export const personName = (row: Record<string, unknown>) => textOrNull(row.login) ?? textOrNull(row.custom) ?? nameOf(text(row.person));
-const counts = (found: Record<string, unknown>[]): Count[] =>
-  found.map((row) => ({ key: row.key === null ? 'unknown' : text(row.key), count: num(row.count) }));
+export const personName = (row: RowOf<typeof PERSON_COLUMNS>) => row.login ?? row.custom ?? nameOf(row.person);
 
-export function oneOf<T extends string>(options: readonly T[], value: unknown): T {
-  const found = options.find((option) => option === value);
-  if (found === undefined) throw new Error(`unexpected stats value ${String(value)}`);
-  return found;
-}
+// The rows of a count by key. A null key counts as 'unknown'.
+const COUNT = { key: nullable(text), count: int };
+const counts = (found: readonly RowOf<typeof COUNT>[]): Count[] => found.map((row) => ({ key: row.key ?? 'unknown', count: row.count }));
 
-// A count for each of the 64 cells, from the column `column` of rows with a `cell`.
-function perCell(found: Record<string, unknown>[], column = 'count'): number[] {
+// A count for each of the 64 cells, from [cell, count] pairs.
+function perCell(found: readonly (readonly [cell: number, count: number])[]): number[] {
   const cells = Array<number>(CELL_COUNT).fill(0);
-  for (const row of found) {
-    const cell = num(row.cell);
-    if (!Number.isInteger(cell) || cell < 0 || cell >= CELL_COUNT) throw new Error(`a stored move is not a cell: ${cell}`);
-    cells[cell] = num(row[column]);
+  for (const [cell, count] of found) {
+    if (cell < 0 || cell >= CELL_COUNT) throw new Error(`a stored move is not a cell: ${cell}`);
+    cells[cell] = count;
   }
   return cells;
 }
 
-const sideOutcome = (value: unknown) => oneOf(['won', 'drawn', 'lost'] as const, value);
-
 // At each game, the share of wins in the FORM_WINDOW games up to it. `games` is oldest first.
-function formOf(games: readonly { at: number; outcome: SideOutcome }[]): Stats['form'] {
+function formOf(games: readonly { at: EpochMs; outcome: SideOutcome }[]): Stats['form'] {
   let wins = 0;
   return games.map((game, i) => {
     if (game.outcome === 'won') wins++;
@@ -153,7 +140,7 @@ function streaksOf(outcomes: readonly SideOutcome[]): Pick<PersonalStats, 'bestS
 }
 
 // The bound values of the GAMES filters. `tokens` are the tokens of one player for Mine, else null.
-function filterValues(filter: StatsFilter, tokens: readonly string[] | null, now: number): Record<string, DuckDBValue> {
+function filterValues(filter: StatsFilter, tokens: readonly string[] | null, now: EpochMs): Record<string, DuckDBValue> {
   const days = RANGE_DAYS[filter.range];
   return {
     since: days === null ? null : now - days * 86_400_000,
@@ -173,18 +160,21 @@ const SIDED_GAMES = 5000;
 // `tokens`: the tokens of one player for the Mine scope, else null.
 // The caller runs one call at a time on the connection (the store queue), so one temporary table is enough.
 // The practice part comes from server/practice.ts.
-export async function computeStats(rows: Rows, now: number, filter: StatsFilter, tokens: readonly string[] | null): Promise<Omit<Stats, 'practice'>> {
+export async function computeStats(rows: Rows, now: EpochMs, filter: StatsFilter, tokens: readonly string[] | null): Promise<Omit<Stats, 'practice'>> {
   if ((filter.scope === 'mine') !== (tokens !== null)) throw new Error('the Mine scope needs the tokens of the player, and only Mine takes them');
-  await rows(`CREATE OR REPLACE TEMP TABLE ${GAMES_TABLE} AS ${FILTERED_GAMES}`, filterValues(filter, tokens, now));
+  await rows(`CREATE OR REPLACE TEMP TABLE ${GAMES_TABLE} AS ${FILTERED_GAMES}`, filterValues(filter, tokens, now), {});
   try {
     return await statsOfGames(rows, filter, tokens !== null, now);
   } finally {
-    await rows(`DROP TABLE IF EXISTS ${GAMES_TABLE}`, {});
+    await rows(`DROP TABLE IF EXISTS ${GAMES_TABLE}`, {}, {});
   }
 }
 
-async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now: number): Promise<Omit<Stats, 'practice'>> {
-  const q = (sql: string) => rows(sql, {});
+// A query without bound values.
+type Query = <S extends Shape>(sql: string, shape: S) => Promise<RowOf<S>[]>;
+
+async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now: EpochMs): Promise<Omit<Stats, 'practice'>> {
+  const q: Query = (sql, shape) => rows(sql, {}, shape);
 
   const [totals] = await q(`${GAMES}, seats AS (SELECT unnest([player_x, player_o]) AS token FROM g)
     SELECT
@@ -193,7 +183,9 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now:
       (SELECT count(DISTINCT ${PERSON}) FROM seats LEFT JOIN player_tokens pt USING (token) WHERE token IS NOT NULL)::INTEGER AS players,
       (SELECT count(*) FROM users)::INTEGER AS accounts,
       (SELECT count(*) FROM sessions)::INTEGER AS sessions,
-      (SELECT count(*) FROM g WHERE finished_at >= now() - INTERVAL 7 DAY)::INTEGER AS last7`);
+      (SELECT count(*) FROM g WHERE finished_at >= now() - INTERVAL 7 DAY)::INTEGER AS last7`,
+    { games: int, moves: int, players: int, accounts: int, sessions: int, last7: int },
+  );
   if (totals === undefined) throw new Error('the totals query returned no row');
 
   // 60 days for all time.
@@ -204,12 +196,17 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now:
     people AS (SELECT day, count(DISTINCT ${PERSON}) AS players FROM seats LEFT JOIN player_tokens pt USING (token) WHERE token IS NOT NULL GROUP BY day),
     played AS (SELECT finished_at::DATE AS day, count(*) AS games FROM g GROUP BY day)
     SELECT strftime(day, '%Y-%m-%d') AS day, coalesce(played.games, 0)::INTEGER AS games, coalesce(people.players, 0)::INTEGER AS players
-    FROM days LEFT JOIN played USING (day) LEFT JOIN people USING (day) ORDER BY day`, { days });
+    FROM days LEFT JOIN played USING (day) LEFT JOIN people USING (day) ORDER BY day`,
+    { days },
+    { day: text, games: int, players: int },
+  );
 
   const hours = await q(`${GAMES} SELECT (isodow(finished_at) - 1)::INTEGER AS day, hour(finished_at)::INTEGER AS hour,
-    count(*)::INTEGER AS games FROM g GROUP BY ALL`);
+    count(*)::INTEGER AS games FROM g GROUP BY ALL`,
+    { day: int, hour: int, games: int },
+  );
 
-  const byMode = await q(`${GAMES} SELECT mode AS key, count(*)::INTEGER AS count FROM g GROUP BY mode ORDER BY count DESC`);
+  const byMode = await q(`${GAMES} SELECT mode AS key, count(*)::INTEGER AS count FROM g GROUP BY mode ORDER BY count DESC`, COUNT);
 
   const levels = await q(`${GAMES} SELECT level, count(*)::INTEGER AS games,
       count(*) FILTER (winner = you)::INTEGER AS won,
@@ -217,38 +214,55 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now:
       count(*) FILTER (winner = computer)::INTEGER AS lost,
       avg(len(moves)) AS avg_moves, median(len(moves)) AS median_moves,
       count(*) FILTER (tuned)::INTEGER AS tuned
-    FROM g WHERE mode = 'computer' GROUP BY level`);
+    FROM g WHERE mode = 'computer' GROUP BY level`,
+    { level: oneOf(DIFFICULTIES), games: int, won: int, drawn: int, lost: int, avg_moves: num, median_moves: num, tuned: int },
+  );
 
   const lengthByMode = await q(`${GAMES} SELECT mode, count(*)::INTEGER AS games, avg(len(moves)) AS avg,
-    median(len(moves)) AS median, quantile_cont(len(moves), 0.9) AS p90 FROM g GROUP BY mode ORDER BY games DESC`);
+    median(len(moves)) AS median, quantile_cont(len(moves), 0.9) AS p90 FROM g GROUP BY mode ORDER BY games DESC`,
+    { mode: oneOf(SESSION_MODES), games: int, avg: num, median: num, p90: num },
+  );
 
   const moveTimes = await q(`${STEPS} SELECT
       CASE WHEN ms < 1000 THEN 0 WHEN ms < 2000 THEN 1 WHEN ms < 5000 THEN 2 WHEN ms < 10000 THEN 3
            WHEN ms < 30000 THEN 4 WHEN ms < 60000 THEN 5 WHEN ms < 300000 THEN 6 ELSE 7 END AS bucket,
       count(*) FILTER (who = 'human')::INTEGER AS human,
       count(*) FILTER (who = 'computer')::INTEGER AS computer
-    FROM steps GROUP BY bucket ORDER BY bucket`);
+    FROM steps GROUP BY bucket ORDER BY bucket`,
+    { bucket: int, human: int, computer: int },
+  );
 
   const thinkTimes = await q(`${STEPS},
     timed AS (SELECT coalesce(level, mode) AS key, median(ms) FILTER (who = 'human') AS human_ms,
       median(ms) FILTER (who = 'computer') AS computer_ms FROM steps GROUP BY key),
     search AS (SELECT level AS key, median(t) AS search_ms
       FROM (SELECT level, unnest(metrics.thinkMs::DOUBLE[]) AS t FROM g WHERE mode = 'computer') GROUP BY level)
-    SELECT key, human_ms, computer_ms, search_ms FROM timed LEFT JOIN search USING (key) ORDER BY key`);
+    SELECT key, human_ms, computer_ms, search_ms FROM timed LEFT JOIN search USING (key) ORDER BY key`,
+    { key: text, human_ms: nullable(num), computer_ms: nullable(num), search_ms: nullable(num) },
+  );
 
   const firstPlayer = await q(`${GAMES} SELECT mode, count(*) FILTER (winner = 'X')::INTEGER AS x,
     count(*) FILTER (winner = 'O')::INTEGER AS o, count(*) FILTER (winner IS NULL)::INTEGER AS draws
-    FROM g GROUP BY mode ORDER BY mode`);
+    FROM g GROUP BY mode ORDER BY mode`,
+    { mode: oneOf(SESSION_MODES), x: int, o: int, draws: int },
+  );
 
   const openings = await q(`${GAMES} SELECT moves[1] AS cell, count(*)::INTEGER AS count, count(*) FILTER (winner = 'X')::INTEGER AS x_wins
-    FROM g WHERE len(moves) > 0 GROUP BY cell`);
-  const lengths = await q(`${GAMES} SELECT len(moves)::INTEGER AS moves, count(*)::INTEGER AS count FROM g GROUP BY ALL`);
+    FROM g WHERE len(moves) > 0 GROUP BY cell`,
+    { cell: int, count: int, x_wins: int },
+  );
+  const lengths = await q(`${GAMES} SELECT len(moves)::INTEGER AS moves, count(*)::INTEGER AS count FROM g GROUP BY ALL`, { moves: int, count: int });
   const sided = await q(`${GAMES} SELECT epoch_ms(finished_at) AS at,
       CASE WHEN winner IS NULL THEN 'drawn' WHEN winner = side THEN 'won' ELSE 'lost' END AS outcome
-    FROM g WHERE side IS NOT NULL ORDER BY finished_at DESC LIMIT ${SIDED_GAMES}`);
-  const sidedGames = sided.map((row) => ({ at: num(row.at), outcome: sideOutcome(row.outcome) })).toReversed();
-  const cells = await q(`${GAMES} SELECT cell, count(*)::INTEGER AS count FROM (SELECT unnest(moves) AS cell FROM g) GROUP BY cell`);
-  const endings = await q(`${GAMES} SELECT coalesce(line, ending) AS key, count(*)::INTEGER AS count FROM g GROUP BY key ORDER BY count DESC`);
+    FROM g WHERE side IS NOT NULL ORDER BY finished_at DESC LIMIT ${SIDED_GAMES}`,
+    { at: epoch, outcome: oneOf(['won', 'drawn', 'lost'] as const) },
+  );
+  const sidedGames = sided.toReversed();
+  const cells = await q(`${GAMES} SELECT cell, count(*)::INTEGER AS count FROM (SELECT unnest(moves) AS cell FROM g) GROUP BY cell`, {
+    cell: int,
+    count: int,
+  });
+  const endings = await q(`${GAMES} SELECT coalesce(line, ending) AS key, count(*)::INTEGER AS count FROM g GROUP BY key ORDER BY count DESC`, COUNT);
 
   const hide = await q(`${GAMES} SELECT
       CASE WHEN hide_board AND hide_history THEN 'both' WHEN hide_board THEN 'board' WHEN hide_history THEN 'history' ELSE 'none' END AS setting,
@@ -256,100 +270,100 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now:
       count(*)::INTEGER AS games,
       count(*) FILTER (mode = 'computer')::INTEGER AS computer_games,
       count(*) FILTER (mode = 'computer' AND winner = you)::INTEGER AS human_wins
-    FROM g GROUP BY setting, coordinates ORDER BY games DESC`);
+    FROM g GROUP BY setting, coordinates ORDER BY games DESC`,
+    { setting: oneOf(['none', 'board', 'history', 'both'] as const), coordinates: bool, games: int, computer_games: int, human_wins: int },
+  );
 
   const timeLimits = await q(`${GAMES} SELECT per_game, per_move, count(*)::INTEGER AS games FROM g
-    GROUP BY per_game, per_move ORDER BY games DESC LIMIT 8`);
+    GROUP BY per_game, per_move ORDER BY games DESC LIMIT 8`,
+    { per_game: nullable(int), per_move: nullable(int), games: int },
+  );
 
   const tuned = await q(`${GAMES} SELECT tuned, count(*)::INTEGER AS games, count(*) FILTER (winner = you)::INTEGER AS human_wins
-    FROM g WHERE mode = 'computer' GROUP BY tuned ORDER BY tuned`);
+    FROM g WHERE mode = 'computer' GROUP BY tuned ORDER BY tuned`,
+    { tuned: bool, games: int, human_wins: int },
+  );
 
   // The field names are fixed here, never input, so they can go into the SQL text.
   const metricCounts = (field: string) =>
-    q(`${METRICS} SELECT metrics.${field}::VARCHAR AS key, count(*)::INTEGER AS count FROM m GROUP BY key ORDER BY count DESC LIMIT 12`);
+    q(`${METRICS} SELECT metrics.${field}::VARCHAR AS key, count(*)::INTEGER AS count FROM m GROUP BY key ORDER BY count DESC LIMIT 12`, COUNT);
 
-  const refusalColumns = REFUSALS.map((reason, i) => `coalesce(sum(metrics.refused."${reason}"::INTEGER), 0)::INTEGER AS r${i}`).join(', ');
+  // One list column with a count per reason, in the order of REFUSALS.
+  const refusalCounts = REFUSALS.map((reason) => `coalesce(sum(metrics.refused."${reason}"::INTEGER), 0)::INTEGER`).join(', ');
   const [usage] = await q(`${METRICS} SELECT count(*)::INTEGER AS games,
       coalesce(sum(metrics.input.board::INTEGER), 0)::INTEGER AS board,
       coalesce(sum(metrics.input.keypad::INTEGER), 0)::INTEGER AS keypad,
       coalesce(sum(metrics.undos::INTEGER), 0)::INTEGER AS undos,
       count(*) FILTER (metrics.undos::INTEGER > 0)::INTEGER AS games_with_undo,
       count(*) FILTER (metrics.offline::BOOLEAN)::INTEGER AS offline,
-      ${refusalColumns}
-    FROM m`);
+      [${refusalCounts}] AS refused
+    FROM m`,
+    { games: int, board: int, keypad: int, undos: int, games_with_undo: int, offline: int, refused: refusalList },
+  );
   if (usage === undefined) throw new Error('the usage query returned no row');
 
   const nearbyMixes = await q(`${GAMES} SELECT
       array_to_string(list_sort([metrics.device::VARCHAR, coalesce(metrics.nearby.other::VARCHAR, 'unknown')]), ' + ') AS key,
       count(*)::INTEGER AS count
-    FROM g WHERE mode = 'nearby' AND metrics.nearby.role::VARCHAR = 'host' GROUP BY key ORDER BY count DESC`);
+    FROM g WHERE mode = 'nearby' AND metrics.nearby.role::VARCHAR = 'host' GROUP BY key ORDER BY count DESC`,
+    COUNT,
+  );
 
   const personal = !mine ? null : await personalStats(q, sidedGames.map((game) => game.outcome));
 
   return {
     generatedAt: now,
     totals: {
-      games: num(totals.games),
-      moves: num(totals.moves),
-      players: num(totals.players),
-      accounts: num(totals.accounts),
-      sessions: num(totals.sessions),
-      gamesLast7Days: num(totals.last7),
+      games: totals.games,
+      moves: totals.moves,
+      players: totals.players,
+      accounts: totals.accounts,
+      sessions: totals.sessions,
+      gamesLast7Days: totals.last7,
     },
-    perDay: perDay.map((row) => ({ day: text(row.day), games: num(row.games), players: num(row.players) })),
-    hours: hours.map((row) => ({ day: num(row.day), hour: num(row.hour), games: num(row.games) })),
+    perDay,
+    hours,
     byMode: counts(byMode),
     levels: levels.map((row) => ({
-      level: oneOf(DIFFICULTIES, row.level),
-      games: num(row.games),
-      won: num(row.won),
-      drawn: num(row.drawn),
-      lost: num(row.lost),
-      avgMoves: num(row.avg_moves),
-      medianMoves: num(row.median_moves),
-      tuned: num(row.tuned),
+      level: row.level,
+      games: row.games,
+      won: row.won,
+      drawn: row.drawn,
+      lost: row.lost,
+      avgMoves: row.avg_moves,
+      medianMoves: row.median_moves,
+      tuned: row.tuned,
     })),
-    lengthByMode: lengthByMode.map((row) => ({
-      mode: oneOf(SESSION_MODES, row.mode),
-      games: num(row.games),
-      avg: num(row.avg),
-      median: num(row.median),
-      p90: num(row.p90),
-    })),
+    lengthByMode,
     moveTimes: MOVE_TIME_BUCKETS.map((_, bucket) => {
-      const row = moveTimes.find((found) => num(found.bucket) === bucket);
-      return { bucket, human: row === undefined ? 0 : num(row.human), computer: row === undefined ? 0 : num(row.computer) };
+      const row = moveTimes.find((found) => found.bucket === bucket);
+      return { bucket, human: row?.human ?? 0, computer: row?.computer ?? 0 };
     }),
-    thinkTimes: thinkTimes.map((row) => ({
-      key: text(row.key),
-      humanMs: numOrNull(row.human_ms),
-      computerMs: numOrNull(row.computer_ms),
-      searchMs: numOrNull(row.search_ms),
-    })),
-    firstPlayer: firstPlayer.map((row) => ({ mode: oneOf(SESSION_MODES, row.mode), x: num(row.x), o: num(row.o), draws: num(row.draws) })),
-    openings: perCell(openings),
-    openingWinsX: perCell(openings, 'x_wins'),
-    cells: perCell(cells),
+    thinkTimes: thinkTimes.map((row) => ({ key: row.key, humanMs: row.human_ms, computerMs: row.computer_ms, searchMs: row.search_ms })),
+    firstPlayer,
+    openings: perCell(openings.map((row) => [row.cell, row.count])),
+    openingWinsX: perCell(openings.map((row) => [row.cell, row.x_wins])),
+    cells: perCell(cells.map((row) => [row.cell, row.count])),
     endings: counts(endings),
     hide: hide.map((row) => ({
-      setting: oneOf(['none', 'board', 'history', 'both'] as const, row.setting),
-      coordinates: row.coordinates === true,
-      games: num(row.games),
-      computerGames: num(row.computer_games),
-      humanWins: num(row.human_wins),
+      setting: row.setting,
+      coordinates: row.coordinates,
+      games: row.games,
+      computerGames: row.computer_games,
+      humanWins: row.human_wins,
     })),
-    timeLimits: timeLimits.map((row) => ({ perGame: numOrNull(row.per_game), perMove: numOrNull(row.per_move), games: num(row.games) })),
-    tuned: tuned.map((row) => ({ tuned: row.tuned === true, games: num(row.games), humanWins: num(row.human_wins) })),
-    metricsGames: num(usage.games),
+    timeLimits: timeLimits.map((row) => ({ perGame: row.per_game, perMove: row.per_move, games: row.games })),
+    tuned: tuned.map((row) => ({ tuned: row.tuned, games: row.games, humanWins: row.human_wins })),
+    metricsGames: usage.games,
     devices: counts(await metricCounts('device')),
     views: counts(await metricCounts('view')),
     layouts: counts(await metricCounts('layout')),
     themes: counts(await metricCounts('theme')),
     versions: counts(await metricCounts('version')),
-    input: { board: num(usage.board), keypad: num(usage.keypad) },
-    refusals: REFUSALS.map((reason, i) => ({ key: reason, count: num(usage[`r${i}`]) })).filter((entry) => entry.count > 0),
-    undo: { gamesWithUndo: num(usage.games_with_undo), undos: num(usage.undos) },
-    offlineGames: num(usage.offline),
+    input: { board: usage.board, keypad: usage.keypad },
+    refusals: usage.refused.filter((entry) => entry.count > 0),
+    undo: { gamesWithUndo: usage.games_with_undo, undos: usage.undos },
+    offlineGames: usage.offline,
     nearbyMixes: counts(nearbyMixes),
     filter,
     form: formOf(sidedGames),
@@ -358,23 +372,30 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now:
   };
 }
 
-function lengthCounts(found: Record<string, unknown>[]): number[] {
+function lengthCounts(found: readonly { moves: number; count: number }[]): number[] {
   const counts = Array<number>(CELL_COUNT + 1).fill(0);
-  for (const row of found) {
-    const moves = num(row.moves);
-    if (!Number.isInteger(moves) || moves < 0 || moves > CELL_COUNT) throw new Error(`a stored game has ${moves} moves`);
-    counts[moves] = num(row.count);
+  for (const { moves, count } of found) {
+    if (moves < 0 || moves > CELL_COUNT) throw new Error(`a stored game has ${moves} moves`);
+    counts[moves] = count;
   }
   return counts;
 }
 
+// The `refused` column of the usage query: one count per reason, in the order of REFUSALS.
+function refusalList(value: unknown): { key: Refusal; count: number }[] {
+  if (!isUnknownArray(value) || value.length !== REFUSALS.length) throw new Error(`not ${REFUSALS.length} refusal counts`);
+  return REFUSALS.map((key, i) => ({ key, count: int(value[i]) }));
+}
+
 // The results of one player (the Mine scope), from the side that they played. `outcomes` is oldest first.
-async function personalStats(q: (sql: string) => Promise<Record<string, unknown>[]>, outcomes: SideOutcome[]): Promise<PersonalStats> {
+async function personalStats(q: Query, outcomes: SideOutcome[]): Promise<PersonalStats> {
   const results = await q(`${GAMES} SELECT mode, level,
       count(*) FILTER (winner = side)::INTEGER AS won,
       count(*) FILTER (winner IS NULL)::INTEGER AS drawn,
       count(*) FILTER (winner <> side)::INTEGER AS lost
-    FROM g WHERE side IS NOT NULL GROUP BY mode, level ORDER BY mode, level`);
+    FROM g WHERE side IS NOT NULL GROUP BY mode, level ORDER BY mode, level`,
+    { mode: oneOf(SESSION_MODES), level: nullable(oneOf(DIFFICULTIES)), won: int, drawn: int, lost: int },
+  );
   // The other seat of a game against a person. A Nearby guest on another device has no token, so it is not here.
   const opponents = await q(`${GAMES},
     other AS (SELECT CASE side WHEN 'X' THEN player_o ELSE player_x END AS token, winner, side
@@ -385,20 +406,18 @@ async function personalStats(q: (sql: string) => Promise<Record<string, unknown>
       FROM other LEFT JOIN player_tokens pt USING (token) LEFT JOIN users u ON u.github_id = pt.github_id
         LEFT JOIN player_names pn USING (token)
       WHERE token IS NOT NULL GROUP BY person)
-    SELECT * FROM people ORDER BY games DESC, login NULLS LAST, person LIMIT 5`);
+    SELECT * FROM people ORDER BY games DESC, login NULLS LAST, person LIMIT 5`,
+    { ...PERSON_COLUMNS, games: int, won: int, drawn: int, lost: int },
+  );
   // Your survival records: per level, the most moves of a game that the default computer won.
   const survival = await q(`${GAMES} SELECT level, max(len(moves))::INTEGER AS moves
-    FROM g WHERE mode = 'computer' AND side IS NOT NULL AND winner = computer AND NOT tuned GROUP BY level ORDER BY level`);
+    FROM g WHERE mode = 'computer' AND side IS NOT NULL AND winner = computer AND NOT tuned GROUP BY level ORDER BY level`,
+    { level: oneOf(DIFFICULTIES), moves: int },
+  );
   return {
-    survival: survival.map((row) => ({ level: oneOf(DIFFICULTIES, row.level), moves: num(row.moves) })),
-    results: results.map((row) => ({
-      mode: oneOf(SESSION_MODES, row.mode),
-      level: row.level === null ? null : oneOf(DIFFICULTIES, row.level),
-      won: num(row.won),
-      drawn: num(row.drawn),
-      lost: num(row.lost),
-    })),
+    survival,
+    results,
     ...streaksOf(outcomes),
-    opponents: opponents.map((row) => ({ player: personName(row), games: num(row.games), won: num(row.won), drawn: num(row.drawn), lost: num(row.lost) })),
+    opponents: opponents.map((row) => ({ player: personName(row), games: row.games, won: row.won, drawn: row.drawn, lost: row.lost })),
   };
 }

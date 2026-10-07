@@ -18,7 +18,7 @@ import { nearbyKind, endNearby } from './nearby.ts';
 import { render } from './render.ts';
 import { leaveSession, openLocalSession, applyView } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
-import { page, isLive, current } from './state.ts';
+import { page, isLive, current, newRound, setThinking } from './state.ts';
 
 // What a player loses when they go home now, or undefined when there is nothing to lose.
 function homeWarning(): string | undefined {
@@ -36,7 +36,6 @@ async function goHome(): Promise<void> {
   if (nearbyKind() !== 'idle') endNearby();
   leaveSession();
   history.replaceState(null, '', location.pathname);
-  page.review = undefined;
   settings.mode = 'computer';
   saveSettings();
   render();
@@ -44,9 +43,9 @@ async function goHome(): Promise<void> {
   const opened = page.session;
   if (opened === undefined || current().moves.length === 0) return;
   // The newest computer session holds a game with moves: a new game gives the empty board.
-  page.round++;
+  newRound();
   page.computerThinkMs = [];
-  page.thinking = false;
+  setThinking(false);
   burstEl.replaceChildren();
   applyView(await opened.backend.newGame(opened.code));
   scheduleComputer();

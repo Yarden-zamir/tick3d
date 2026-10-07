@@ -1,11 +1,14 @@
 import type { Page } from '@playwright/test';
-import { cell, createOnline, expect, expectToast, joinAsO, marks, playComputerUntilEnd, status, test } from './fixtures.ts';
+import { CELL_COUNT } from '../src/game.ts';
+import { PAGES } from '../src/pages.ts';
+import { parseDeviceGameId } from '../src/protocol.ts';
+import { cell, createOnline, expect, expectToast, joinAsO, marks, playComputerUntilEnd, playerToken, status, test } from './fixtures.ts';
 
 // X wins along 0, 16, 32, 48. O plays 1, 2, 3.
 const X_WINS = [0, 1, 16, 2, 32, 3, 48];
 // Scattered moves that build no line of their own, so the computer wins (as in end-card.spec.ts).
 const SCATTERED = [0, 63, 3, 60, 12, 51, 15, 48, 5, 58, 10, 53, 17, 46, 30, 33, 7, 56, 24, 39, 40, 23, 9, 54, 2, 61, 13, 50, 32, 31];
-const ORDER = [...SCATTERED, ...Array.from({ length: 64 }, (_, i) => i).filter((i) => !SCATTERED.includes(i))];
+const ORDER = [...SCATTERED, ...Array.from({ length: CELL_COUNT }, (_, i) => i).filter((i) => !SCATTERED.includes(i))];
 const RECORD_KEY = 'hard|game:none|move:none|board:false|history:false';
 
 // The game id in the address, once the finished game has its link.
@@ -27,11 +30,14 @@ async function expectReadOnly(page: Page, title: string | RegExp): Promise<void>
 }
 
 // Calls the API as the page's browser, with its player token.
-const callApi = (page: Page, path: string) =>
-  page.evaluate(async (path) => {
-    const response = await fetch(path, { headers: { 'x-player': localStorage.getItem('tick3d.player') ?? '' } });
-    return (await response.json()) as unknown;
-  }, path);
+const callApi = async (page: Page, path: string) =>
+  page.evaluate(
+    async ({ path, token }) => {
+      const response = await fetch(path, { headers: { 'x-player': token } });
+      return (await response.json()) as unknown;
+    },
+    { path, token: await playerToken(page) },
+  );
 
 test('a computer loss gets a link, a server record and a History entry', async ({ open }) => {
   const { page } = await open({ settings: { mode: 'computer', difficulty: 'hard', human: 'X' } });
@@ -39,7 +45,7 @@ test('a computer loss gets a link, a server record and a History entry', async (
   await expect(status(page)).toHaveText('Computer wins!');
   const moves = await marks(page).count();
   const id = await gameLink(page);
-  expect(id).toMatch(/^[A-Z2-9]{8}$/);
+  expect(parseDeviceGameId(id)).toBe(id);
   await page.locator('#end-card-close').click();
 
   await expect.poll(() => callApi(page, '/api/me/records')).toEqual({ records: { [RECORD_KEY]: moves } });
@@ -129,7 +135,7 @@ test('the stats page shows the numbers, and search engines may list it', async (
   const page = await context.newPage();
   const errors: Error[] = [];
   page.on('pageerror', (error) => errors.push(error));
-  const response = await page.goto('/stats');
+  const response = await page.goto(PAGES.stats.path);
   // The page is public.
   expect(response?.headers()['x-robots-tag']).toBeUndefined();
   await expect(page.locator('meta[name="robots"]')).toHaveCount(0);
