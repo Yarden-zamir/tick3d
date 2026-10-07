@@ -2343,9 +2343,17 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.6rem;
 }
 
+/* Two classes, so the round avatar wins over `.end-card img` (My games is an end-card dialog). */
 .account .avatar {
+  flex-shrink: 0;
   width: 2rem;
   height: 2rem;
+  border-radius: 50%;
+}
+
+/* "You play as …" sits next to the picture, and wraps under it only on a narrow screen. */
+.account > span {
+  flex: 1 1 14rem;
 }
 
 .my-games-note {
@@ -2401,6 +2409,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   flex-shrink: 0;
   width: 1.75rem;
   height: 1.75rem;
+  border-radius: 50%;
 }
 
 .my-games-list small {

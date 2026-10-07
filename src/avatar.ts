@@ -20,6 +20,10 @@ const PALETTES: readonly Palette[] = [
   { background: '#3d1525', base: '#6e4d5a', top: '#ff9f45', side: '#b85a12', lit: '#c792ff', litSide: '#8f69b8' },
   { background: '#1d2a44', base: '#526075', top: '#ffe14d', side: '#b59a10', lit: '#ff7ad9', litSide: '#b8589c' },
   { background: '#2a2a2a', base: '#5c5c5c', top: '#ff7ad9', side: '#b33b92', lit: '#00b3ff', litSide: '#0081b8' },
+  { background: '#0f3b3b', base: '#4a6f6f', top: '#4dfff0', side: '#16a89c', lit: '#ff5277', litSide: '#b83b56' },
+  { background: '#402040', base: '#73577a', top: '#ffe14d', side: '#b59a10', lit: '#00b3ff', litSide: '#0081b8' },
+  { background: '#1a2b1a', base: '#4f604f', top: '#ff9f45', side: '#b85a12', lit: '#7cff8a', litSide: '#59b863' },
+  { background: '#2d1f3d', base: '#5e5070', top: '#ff8a8a', side: '#b34f4f', lit: '#4dfff0', litSide: '#16a89c' },
 ];
 
 // mulberry32: a small seeded random number generator, so one seed always gives one picture.
