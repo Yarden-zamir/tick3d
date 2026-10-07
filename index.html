@@ -75,7 +75,7 @@
             <span id="game-view-players"></span>
             <small id="game-view-details"></small>
           </div>
-          <button type="button" class="btn song" id="game-view-song" aria-label="Play the game as a song" data-tip="Play the game as a song. Hold to share it as a sound file."></button>
+          <button type="button" class="btn song" id="game-view-song" aria-label="Play the game as a song" data-tip="Play as a song. Hold to share."></button>
           <button type="button" class="btn btn-primary" id="game-view-play">Play</button>
         </div>
         <div class="clocks" id="clocks" hidden>
@@ -113,9 +113,9 @@
           <!-- Play by voice aims here: the slots show the cell of the pitch. src/page/voice.ts shows this part while the voice is on. -->
           <div class="voice-panel" id="voice-panel" hidden>
             <div class="rail" id="voice-rail" role="img" aria-label="Pitch rail: your range from low at the left to high at the right, with the four rows"></div>
-            <p class="voice-status" role="status"><span class="voice-state" id="voice-state"></span> · <a id="voice-room" href="/sound-input">Calibrate and practice</a></p>
+            <p class="voice-status" role="status"><span class="voice-state" id="voice-state"></span><a id="voice-room" href="/sound-input">Calibrate and practice</a></p>
             <!-- Tilt fine-tuning: src/page/voice.ts shows this button once the device sends a tilt reading. -->
-            <button type="button" class="btn btn-small" id="voice-recentre" hidden data-tip="Hold the device as you like it, then tap: the tilt nudge starts from this angle">Recentre tilt</button>
+            <button type="button" class="btn btn-small" id="voice-recentre" hidden data-tip="Take this angle as level">Recentre tilt</button>
           </div>
           <div class="keypad">
             <button type="button" class="btn" data-digit="1">1</button>
@@ -153,7 +153,7 @@
             <button type="button" id="sound-set" popovertarget="sound-sets" aria-label="Sound set" data-tip="Sound set: the sound of each move"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
           </div>
           <!-- Play by voice: a held note places your move. src/page/voice.ts sets the icon and shows the button where this screen has a seat. -->
-          <button type="button" class="btn btn-icon" id="voice" aria-label="Play by voice" aria-pressed="false" data-tip="Play by voice: hold a note on a free cell to place your move" hidden></button>
+          <button type="button" class="btn btn-icon" id="voice" aria-label="Play by voice" aria-pressed="false" data-tip="Play by voice: hold a note to place" hidden></button>
         </div>
         <!-- The Players box of online and Nearby games: seats, watchers and seat controls (src/page/players.ts). -->
         <section class="players" id="players" aria-labelledby="players-title" data-show-mode="online nearby" data-needs-session>
@@ -403,7 +403,7 @@
           <span>Include my voice</span>
         </label>
         <!-- A click plays the game as a song. A long press or the context menu shares it as a WAV file. src/page/end-card.ts sets the icon. -->
-        <button type="button" class="btn btn-small song" id="end-card-song" aria-label="Play the game as a song" data-tip="Play the game as a song. Hold to share it as a sound file."></button>
+        <button type="button" class="btn btn-small song" id="end-card-song" aria-label="Play the game as a song" data-tip="Play as a song. Hold to share."></button>
       </div>
       <div class="end-card-actions">
         <button type="button" class="btn btn-primary" id="end-card-new-game">New game</button>
@@ -496,7 +496,7 @@
         <li>Drag around the tower to turn it.</li>
         <li>Keypad: tap the layer, row and column, then Place.</li>
         <li>Every cell has its own sound. The arrow next to the speaker opens the sound sets and their maps.</li>
-        <li>Play by voice: tap the microphone, then hold a note to place. The color of your mark fills the cell while you hold. On a phone, a small tilt nudges your place a few cells up or down: Recentre tilt takes the angle now. Calibrate in the Voice room.</li>
+        <li>Play by voice: tap the mic, then hold a note on a cell to place. On a phone, a small tilt nudges the cell. Calibrate in the Voice room.</li>
         <li>The Song button plays a finished game as music. Hold it to share.</li>
         <li>Time limits work like a chess clock. A player who runs out loses.</li>
         <li>Lock stops setting changes until the game ends.</li>

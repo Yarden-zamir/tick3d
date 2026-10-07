@@ -1284,7 +1284,12 @@ body[data-turn='O'] .status[data-state='playing'] {
   margin-inline: auto;
 }
 
+/* The state at the start, the link at the end. */
 .voice-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 0.6rem;
   margin: 0;
   font-size: 0.85rem;
   font-weight: 700;
