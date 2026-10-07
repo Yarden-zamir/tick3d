@@ -17,11 +17,23 @@ describe('pitch tracker', () => {
   it('keeps the light through a short gap, and puts it out after a longer one', () => {
     const tracker = createTracker();
     tracker.feed(600, 0, MAP, off, 0);
-    const kinds = Array.from({ length: 6 }, (_, i) => tracker.feed(null, 16 * (i + 1), MAP, off, 0).kind);
-    expect(kinds).toEqual(['gap', 'gap', 'gap', 'gap', 'gap', 'silent']);
+    // The light goes out 0.1 s after the first frame without a pitch.
+    const kinds = Array.from({ length: 8 }, (_, i) => tracker.feed(null, 16 * (i + 1), MAP, off, 0).kind);
+    expect(kinds).toEqual(['gap', 'gap', 'gap', 'gap', 'gap', 'gap', 'gap', 'silent']);
     // After the light went out, the next pitch starts fresh: no median from before.
     const next = tracker.feed(1200, 200, MAP, off, 0);
     expect(next.kind === 'pitch' && next.frequency).toBe(1200);
+  });
+
+  it('counts the gap in time, so a slow page with few frames still puts the light out', () => {
+    const tracker = createTracker();
+    tracker.feed(600, 0, MAP, off, 0);
+    // A busy page: one frame each 250 ms. The second frame of silence is past the gap.
+    expect(tracker.feed(null, 250, MAP, off, 0).kind).toBe('gap');
+    expect(tracker.feed(null, 500, MAP, off, 0).kind).toBe('silent');
+    // A pitch ends the gap, so the next silence counts from its own start.
+    tracker.feed(600, 750, MAP, off, 0);
+    expect(tracker.feed(null, 760, MAP, off, 0).kind).toBe('gap');
   });
 
   it('moves the place by the tilt nudge before the sticky cells, and keeps it inside the range', () => {

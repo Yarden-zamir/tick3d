@@ -6,8 +6,9 @@ import { type Held, type Stickiness, holdStep, marginAt } from './sticky.ts';
 
 // The median of the last frames moves the light, so one odd frame (a click, an octave jump) does not.
 const SMOOTH_FRAMES = 5;
-// After this many frames without a clear pitch (about 0.1 s), the light goes out.
-const MISS_FRAMES = 6;
+// After this long without a clear pitch, the light goes out. It counts time and not frames: a slow page
+// (a busy phone) has few frames, and a count of frames then held the light through a whole silence.
+const MISS_MS = 100;
 
 // `pitch`: a clear pitch, placed in the range. `gap`: no pitch in this frame, keep what shows. `silent`: no pitch
 // for a while, put the light out.
@@ -19,23 +20,24 @@ export type Tracker = { feed(frequency: number | null, now: number, map: PitchMa
 
 export function createTracker(): Tracker {
   let recent: number[] = [];
-  let misses = 0;
+  // The frame time of the first frame without a pitch, or null while the pitch goes on.
+  let missSince: number | null = null;
   let held: Held | null = null;
   const reset = () => {
     recent = [];
-    misses = 0;
+    missSince = null;
     held = null;
   };
   return {
     reset,
     feed(frequency, now, map, stickiness, nudge) {
       if (frequency === null) {
-        misses++;
-        if (misses < MISS_FRAMES) return { kind: 'gap' };
+        missSince ??= now;
+        if (now - missSince < MISS_MS) return { kind: 'gap' };
         reset();
         return { kind: 'silent' };
       }
-      misses = 0;
+      missSince = null;
       recent = [...recent, frequency].slice(-SMOOTH_FRAMES);
       const smooth = median(recent);
       if (!Number.isFinite(nudge)) throw new RangeError(`not a nudge: ${nudge}`);

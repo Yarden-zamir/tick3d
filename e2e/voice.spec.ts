@@ -1,29 +1,5 @@
-import type { Page } from '@playwright/test';
 import { DEFAULT_RANGE, frequencyAt, stepOfCell } from '../src/voice/mapping.ts';
-import { cell, expect, expectToast, marks, status, test, toasts } from './fixtures.ts';
-
-// Runs in the page before the app: the microphone is an oscillator. window.e2eTone(frequency) sets its
-// pitch, and window.e2eTone(null) makes it silent.
-function oscillatorMic(): void {
-  navigator.mediaDevices.getUserMedia = async () => {
-    const context = new AudioContext();
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    gain.gain.value = 0;
-    const output = context.createMediaStreamDestination();
-    oscillator.connect(gain).connect(output);
-    oscillator.start();
-    (window as unknown as { e2eTone: (frequency: number | null) => void }).e2eTone = (frequency) => {
-      gain.gain.setValueAtTime(frequency === null ? 0 : 0.5, context.currentTime);
-      if (frequency !== null) oscillator.frequency.setValueAtTime(frequency, context.currentTime);
-    };
-    await context.resume();
-    return output.stream;
-  };
-}
-
-const setTone = (page: Page, frequency: number | null) =>
-  page.evaluate((value) => (window as unknown as { e2eTone: (frequency: number | null) => void }).e2eTone(value), frequency);
+import { cell, expect, expectToast, marks, oscillatorMic, setTone, status, test, toasts } from './fixtures.ts';
 
 // The middle of the pitch band of a cell in the default range of /sound-input.
 const toneOf = (index: number) => frequencyAt(stepOfCell(index) + 0.5, { range: DEFAULT_RANGE, spread: 'log' });
