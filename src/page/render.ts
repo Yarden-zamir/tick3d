@@ -311,14 +311,10 @@ export function render(): void {
 // swap after each game. On: the seats stay. A friend game has one device on both seats: no lock there.
 function renderSeatLocks(frozen: boolean): void {
   const fixed = page.session?.fixedSeats ?? false;
-  const computer = page.session?.mode === 'computer';
   for (const button of seatLockButtons) {
     button.innerHTML = fixed ? LOCK_CLOSED_ICON : LOCK_OPEN_ICON;
     button.setAttribute('aria-pressed', String(fixed));
     button.disabled = frozen || page.busy || !canChangeMatch();
-    const scope = shared() ? ' The setting is for both players.' : '';
-    button.dataset.tip = fixed
-      ? `Seats locked: ${computer ? 'you keep your seat' : 'X and O stay the same'} in every game. Unlock to swap X and O after each game.${scope}`
-      : `X and O swap after each game, so the first move alternates. Lock to keep the seats.${scope}`;
+    button.dataset.tip = fixed ? 'Keep seats' : 'Swap seats each game';
   }
 }

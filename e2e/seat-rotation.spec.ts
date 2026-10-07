@@ -25,7 +25,7 @@ test('two players swap X and O for each new game, and the seat lock keeps the se
   const code = await createOnline(alice);
   const { page: bob } = await joinAsO(open, `/?code=${code}`);
   await expect(seatLock(alice)).toHaveAttribute('aria-pressed', 'false');
-  await expect(seatLock(alice)).toHaveAttribute('data-tip', /X and O swap after each game/);
+  await expect(seatLock(alice)).toHaveAttribute('data-tip', 'Swap seats each game');
 
   // Game 1: Alice is X and wins. Bob starts game 2: he was O, so he is X now and moves first.
   await xWins(alice, bob);
@@ -45,7 +45,7 @@ test('two players swap X and O for each new game, and the seat lock keeps the se
   // Game 2: Bob is X and wins. Alice locks the seats, so game 3 keeps them: Bob stays X.
   await xWins(bob, alice);
   await seatLock(alice).click();
-  await expectToast(bob, 'Seats locked');
+  await expectToast(bob, 'Seats kept');
   await expect(seatLock(bob)).toHaveAttribute('aria-pressed', 'true');
   await alice.locator('#new-game').click();
   await expect(alice.locator('#my-games-session li')).toHaveCount(3);

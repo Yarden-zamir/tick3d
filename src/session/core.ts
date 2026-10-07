@@ -22,7 +22,7 @@ import {
   toGame,
   toRecord,
 } from '../protocol.ts';
-import { CURRENT_FORMAT, type SessionDoc } from './format.ts';
+import { CURRENT_FORMAT, type SessionDoc, defaultFixedSeats } from './format.ts';
 
 export class SessionError extends Error {
   status: 400 | 403 | 404 | 409;
@@ -100,7 +100,7 @@ export function createDoc({ name, mode, clock = NO_LIMIT, seats, computer }: New
     clock,
     chat: [],
     seatRequest: null,
-    fixedSeats: false,
+    fixedSeats: defaultFixedSeats(mode),
     flipped: [false],
   };
 }

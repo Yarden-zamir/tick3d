@@ -44,10 +44,12 @@ describe('parseDoc', () => {
     expect(() => parseDoc({ ...(formatOne as object), seatRequest: { ...request, watcher: null } })).toThrow(FormatError);
   });
 
-  it('reads a document from before seat rotation as rotating, with every earlier game as seated now', () => {
+  it('reads a document from before seat rotation with the default of its mode, and every earlier game as seated now', () => {
     const doc = parseDoc({ name: 'Old', games: [{ moves: [5] }, { moves: [] }], seats: {} });
     expect(doc).toMatchObject({ fixedSeats: false, flipped: [false, false] });
     expect(() => parseDoc({ name: 'Old', games: [{ moves: [] }], flipped: [true, false] })).toThrow(FormatError);
+    const computer = { difficulty: 'easy', seat: 'O' };
+    expect(parseDoc({ name: 'Old', mode: 'computer', computer, games: [{ moves: [] }], seats: {} }).fixedSeats).toBe(true);
   });
 
   it('runs the upgrade steps in order up to the current format', () => {

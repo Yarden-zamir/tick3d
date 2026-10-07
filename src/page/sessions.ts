@@ -200,7 +200,7 @@ export function defaultSessionName(mode: Mode = 'online'): string {
 }
 
 export const seatLockText = (fixedSeats: boolean): string =>
-  fixedSeats ? 'Seats locked: X and O stay the same in the next games.' : 'X and O now swap after each game.';
+  fixedSeats ? 'Seats kept.' : 'Seats swap each game.';
 
 // In a computer game the seats rotate between games, so "You play" follows the seat of the live game.
 // Limit: a click on the other seat still opens the newest session of that match-up, as before rotation.
@@ -302,6 +302,6 @@ export function startNewGame(): void {
     applyView(await backend.newGame(code));
     // With another device, applyView says it already (seatChangeText).
     const you = page.session?.you;
-    if (!shared() && you != null && you !== before) showToast(`X and O swapped: you play ${you} in this game.`);
+    if (!shared() && you != null && you !== before) showToast(`You play ${you} this game.`);
   }).then(scheduleComputer);
 }

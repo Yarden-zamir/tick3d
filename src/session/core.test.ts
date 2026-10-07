@@ -393,13 +393,17 @@ describe('seat rotation', () => {
     expect(next.games[1]?.clock).toEqual({ perMove: 5, perGame: null });
   });
 
-  it('does not swap for an empty game nor in a friend game, and moves the computer with its seat', () => {
+  it('does not swap for an empty game nor in a friend game, and keeps the computer seats until the player unlocks them', () => {
     expect(core.newGame(onlineDoc(), alice).seats).toEqual({ X: ALICE, O: BOB });
     const couch = core.createDoc({ name: 'Couch', mode: 'friend', seats: { X: ALICE, O: ALICE } });
     expect(core.newGame(core.move(couch, alice, { game: 0, moveCount: 0, cell: 5 }, 0), alice).flipped).toEqual([false, false]);
     const versus = core.createDoc({ name: 'Versus', mode: 'computer', seats: { X: ALICE, O: core.COMPUTER_TOKEN }, computer: { difficulty: 'easy', seat: 'O' } });
-    // On one device a player can give up a game: the next game rotates too.
-    const next = core.newGame(core.move(versus, alice, { game: 0, moveCount: 0, cell: 5 }, 0), alice);
+    const played = core.move(versus, alice, { game: 0, moveCount: 0, cell: 5 }, 0);
+    // Against the computer the player starts every game by default.
+    expect(versus.fixedSeats).toBe(true);
+    expect(core.newGame(played, alice).seats).toEqual(versus.seats);
+    // Unlocked, the computer moves with its seat. On one device a player can give up a game: the next game rotates too.
+    const next = core.newGame(core.update(played, alice, { fixedSeats: false }), alice);
     expect(next.seats).toEqual({ X: core.COMPUTER_TOKEN, O: ALICE });
     expect(next.computer).toEqual({ difficulty: 'easy', seat: 'X' });
     expect(view(next, alice).you).toBe('O');
