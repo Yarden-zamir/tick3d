@@ -1,6 +1,7 @@
 // The Players box of a game with another device: the seats, the watchers, and the seat controls.
 // The session rules (seat and answerSeat in src/session/core.ts) decide; this module only asks.
 // A change of the other player's seat waits for that player: they get a prompt to accept or decline.
+import { avatarFor, type Person } from '../avatar.ts';
 import { type Player, other } from '../game.ts';
 import type { ConsentAction, SeatAction, SeatRequestView, SessionView } from '../protocol.ts';
 import { EYE_ICON } from '../icons.ts';
@@ -20,10 +21,15 @@ import { showToast } from './feedback.ts';
 import { applyView, refresh, withBusy } from './sessions.ts';
 import { nowMs, page, shared } from './state.ts';
 
-// The name of the player on a seat as everybody sees it, without "You".
+// The player on a seat as everybody sees them, without "You". The name also seeds the generated picture.
+export function seatPerson(view: SessionView, seat: Player): Person {
+  const player = view.players[seat];
+  return { player, name: player?.login ?? view.names[seat] ?? `Player ${seat}` };
+}
+
+// The name of the player on a seat, or null for an empty seat.
 function seatHolder(view: SessionView, seat: Player): string | null {
-  if (!view.seats[seat]) return null;
-  return view.players[seat]?.login ?? view.names[seat] ?? `Player ${seat}`;
+  return view.seats[seat] ? seatPerson(view, seat).name : null;
 }
 
 // The watcher that a replace request seats.
@@ -106,7 +112,9 @@ function answer(accept: boolean): void {
   });
 }
 
-function row(mark: Player | 'watcher', name: string, note: string, actions: HTMLButtonElement[]): HTMLLIElement {
+const PLAYERS_AVATAR_PIXELS = 22;
+
+function row(mark: Player | 'watcher', person: Person | null, name: string, note: string, actions: HTMLButtonElement[]): HTMLLIElement {
   const item = document.createElement('li');
   const markEl = document.createElement('span');
   markEl.className = `players-mark ${mark.toLowerCase()}`;
@@ -115,7 +123,8 @@ function row(mark: Player | 'watcher', name: string, note: string, actions: HTML
   markEl.setAttribute('aria-hidden', 'true');
   const nameEl = document.createElement('b');
   nameEl.className = 'players-name';
-  nameEl.textContent = name;
+  if (person !== null) nameEl.append(avatarFor(person, PLAYERS_AVATAR_PIXELS));
+  nameEl.append(name);
   const noteEl = document.createElement('small');
   noteEl.className = 'players-note';
   noteEl.textContent = note;
@@ -205,10 +214,11 @@ export function renderPlayers(): void {
       actions.push(button({ key: `take:${seat}`, label: `Play ${seat}`, tip: `You take the empty ${seat} seat.`, run: () => void takeSeat() }));
     }
     const note = holder === null ? 'Waiting for a player' : `${you === seat ? 'You · ' : ''}${view.presence[seat] ? 'here' : 'away'}`;
-    return row(seat, holder ?? 'Empty seat', note, actions);
+    return row(seat, holder === null ? null : seatPerson(view, seat), holder ?? 'Empty seat', note, actions);
   });
   const watcherRows = view.watchers.map((watcher) => {
     const name = watcher.player?.login ?? watcher.name;
+    const person: Person = { player: watcher.player, name };
     const actions: HTMLButtonElement[] = [];
     if (you !== null) {
       const otherSeat = other(you);
@@ -234,7 +244,7 @@ export function renderPlayers(): void {
         }),
       );
     }
-    return row('watcher', name, watcher.id === view.youWatcher ? 'You · Watching' : 'Watching', actions);
+    return row('watcher', person, name, watcher.id === view.youWatcher ? 'You · Watching' : 'Watching', actions);
   });
   playersList.replaceChildren(...seatRows, ...watcherRows);
   renderRequest(view);
