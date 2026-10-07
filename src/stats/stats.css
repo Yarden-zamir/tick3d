@@ -252,3 +252,14 @@
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
 }
+
+/* Room for the cards while the first numbers load. */
+.stats-placeholder {
+  min-height: 10rem;
+  opacity: 0.45;
+}
+
+.stats-grid[aria-busy='true'] > .stats-card:not(.stats-placeholder) {
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}

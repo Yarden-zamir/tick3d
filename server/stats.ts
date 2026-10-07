@@ -31,11 +31,12 @@ export const SEAT_O = `coalesce(results.player_o, CASE WHEN results.public_id IS
 // $tokens (the tokens of one player for Mine, or null for Everyone). A null parameter filters nothing.
 // `side` is the seat of the player whose results count: yours for Mine (null in a friend game, where
 // you hold both seats), and the player's seat in a computer game for Everyone.
+// computeStats copies these rows once into the temporary table stats_games, because each read of
+// the VARIANT document is slow. Every query then reads the copy through GAMES.
 // A row from before game links has no winner, ending or line columns. The game ended with its last
 // move (a win) or on time, so the last mover won. Only a full cube can also be a draw: such an old
 // game counts as a draw, and its winning line has no kind.
-const GAMES = `WITH g AS (
-  FROM results SELECT
+const FILTERED_GAMES = `FROM results SELECT
     finished_at,
     doc.mode::VARCHAR AS mode,
     doc.difficulty::VARCHAR AS level,
@@ -64,8 +65,9 @@ const GAMES = `WITH g AS (
     AND ($since::BIGINT IS NULL OR finished_at >= make_timestamptz($since::BIGINT * 1000))
     AND ($mode::VARCHAR IS NULL OR doc.mode::VARCHAR = $mode::VARCHAR)
     AND ($level::VARCHAR IS NULL OR doc.difficulty::VARCHAR = $level::VARCHAR)
-    AND ($tokens::VARCHAR[] IS NULL OR list_contains($tokens::VARCHAR[], ${SEAT_X}) OR list_contains($tokens::VARCHAR[], ${SEAT_O}))
-)`;
+    AND ($tokens::VARCHAR[] IS NULL OR list_contains($tokens::VARCHAR[], ${SEAT_X}) OR list_contains($tokens::VARCHAR[], ${SEAT_O}))`;
+const GAMES_TABLE = 'stats_games';
+const GAMES = `WITH g AS (FROM ${GAMES_TABLE})`;
 
 // The time between two moves, by the player who moved. X makes the odd moves (1-based).
 // The first move of a game has no time before it, so it is not here.
@@ -164,14 +166,23 @@ function filterValues(filter: StatsFilter, tokens: readonly string[] | null, now
 // Limit: the streaks count inside these games only. Revisit this when one player has more games than this.
 const SIDED_GAMES = 5000;
 
-// Limit: about 25 queries over every stored game, while other requests wait in the store queue.
-// The store keeps an Everyone answer for a minute. Revisit this when a call takes more than about 200 ms:
-// then keep daily totals in their own table.
+// One read of the stored documents into stats_games, then about 25 small queries over that copy,
+// while other requests wait in the store queue. The store keeps an Everyone answer for a minute.
+// Limit: revisit this when a call takes more than about 1 s: then keep the game columns in results itself.
 // `tokens`: the tokens of one player for the Mine scope, else null.
+// The caller runs one call at a time on the connection (the store queue), so one temporary table is enough.
 export async function computeStats(rows: Rows, now: number, filter: StatsFilter, tokens: readonly string[] | null): Promise<Stats> {
   if ((filter.scope === 'mine') !== (tokens !== null)) throw new Error('the Mine scope needs the tokens of the player, and only Mine takes them');
-  const values = filterValues(filter, tokens, now);
-  const q = (sql: string) => rows(sql, values);
+  await rows(`CREATE OR REPLACE TEMP TABLE ${GAMES_TABLE} AS ${FILTERED_GAMES}`, filterValues(filter, tokens, now));
+  try {
+    return await statsOfGames(rows, filter, tokens !== null, now);
+  } finally {
+    await rows(`DROP TABLE IF EXISTS ${GAMES_TABLE}`, {});
+  }
+}
+
+async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now: number): Promise<Stats> {
+  const q = (sql: string) => rows(sql, {});
 
   const [totals] = await q(`${GAMES}, seats AS (SELECT unnest([player_x, player_o]) AS token FROM g)
     SELECT
@@ -188,11 +199,10 @@ export async function computeStats(rows: Rows, now: number, filter: StatsFilter,
   const perDay = await rows(`${GAMES},
     days AS (SELECT generate_series::DATE AS day FROM generate_series(current_date - to_days($days::INTEGER - 1), current_date::TIMESTAMP, INTERVAL 1 DAY)),
     seats AS (SELECT finished_at::DATE AS day, unnest([player_x, player_o]) AS token FROM g),
-    people AS (SELECT day, ${PERSON} AS person FROM seats LEFT JOIN player_tokens pt USING (token) WHERE token IS NOT NULL)
-    SELECT strftime(day, '%Y-%m-%d') AS day,
-      (SELECT count(*) FROM g WHERE g.finished_at::DATE = days.day)::INTEGER AS games,
-      (SELECT count(DISTINCT person) FROM people WHERE people.day = days.day)::INTEGER AS players
-    FROM days ORDER BY day`, { ...values, days });
+    people AS (SELECT day, count(DISTINCT ${PERSON}) AS players FROM seats LEFT JOIN player_tokens pt USING (token) WHERE token IS NOT NULL GROUP BY day),
+    played AS (SELECT finished_at::DATE AS day, count(*) AS games FROM g GROUP BY day)
+    SELECT strftime(day, '%Y-%m-%d') AS day, coalesce(played.games, 0)::INTEGER AS games, coalesce(people.players, 0)::INTEGER AS players
+    FROM days LEFT JOIN played USING (day) LEFT JOIN people USING (day) ORDER BY day`, { days });
 
   const hours = await q(`${GAMES} SELECT (isodow(finished_at) - 1)::INTEGER AS day, hour(finished_at)::INTEGER AS hour,
     count(*)::INTEGER AS games FROM g GROUP BY ALL`);
@@ -272,7 +282,7 @@ export async function computeStats(rows: Rows, now: number, filter: StatsFilter,
       count(*)::INTEGER AS count
     FROM g WHERE mode = 'nearby' AND metrics.nearby.role::VARCHAR = 'host' GROUP BY key ORDER BY count DESC`);
 
-  const personal = tokens === null ? null : await personalStats(q, sidedGames.map((game) => game.outcome));
+  const personal = !mine ? null : await personalStats(q, sidedGames.map((game) => game.outcome));
 
   return {
     generatedAt: now,

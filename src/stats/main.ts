@@ -574,6 +574,11 @@ async function show(filter: StatsFilter, problem = ''): Promise<void> {
   renderFilters(filter);
   note.textContent = `${problem}Loading…`;
   grid.setAttribute('aria-busy', 'true');
+  // The first view reserves room for the cards, so the page does not jump when they come.
+  // A later view keeps the old cards, dimmed, until the new ones replace them.
+  if (grid.childElementCount === 0) {
+    grid.append(...[true, true, false, false, false, false].map((wide) => el('section', wide ? 'stats-card wide stats-placeholder' : 'stats-card stats-placeholder')));
+  }
   try {
     const stats = parseStats(await api.stats(filter));
     if (id !== request) return;
