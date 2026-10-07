@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { toEpochMs } from '../epoch.ts';
 import type { Preview } from '../protocol.ts';
 import { type PreviewNode, previewTree } from './preview-tree.ts';
 
@@ -8,7 +9,7 @@ const preview = (number: number, parent: number | null = null): Preview => ({
   description: '',
   url: `https://github.com/octo/game/pull/${number}`,
   previewUrl: `https://pr.${number}.game.example.com`,
-  updatedAt: 0,
+  updatedAt: toEpochMs(0),
   draft: false,
   contributors: [],
   parent,
