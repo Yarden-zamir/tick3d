@@ -159,14 +159,14 @@ test('a high sound below the low sound asks for a retry, and Cancel closes the c
 
 test('the back button leaves a calibration on the tab of the player, with no change and no extra history entry', async ({ page }) => {
   await oscillatorMic(page);
-  await page.goto('/sound-input?mode=echo');
+  await page.goto('/sound-input?tab=echo');
   await page.locator('#calibrate').click();
   const calibration = page.locator('#calibration');
   await expect(calibration).toBeVisible();
   await expect(page.locator('#tabs')).toBeHidden();
   await page.goBack();
   await expect(calibration).toBeHidden();
-  await expect(page).toHaveURL(/\/sound-input\?mode=echo$/);
+  await expect(page).toHaveURL(/\/sound-input\?tab=echo$/);
   await expect(page.locator('#tabs button[data-tab="echo"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#range-mode')).toHaveText(/^Default range/);
 });
@@ -178,6 +178,21 @@ test('from a link with a return, Cancel leaves the calibration back to that page
   await expect(page.locator('#calibration')).toBeVisible();
   await page.locator('#calibration-cancel').click();
   await expect(page).toHaveURL(/\/\?from=voice$/);
+});
+
+test('the address keeps the tab: a reload stays on it, and Back leaves the room', async ({ page }) => {
+  await page.goto('/sound-input?tab=echo');
+  await page.reload();
+  await expect(page.locator('#tabs button[data-tab="echo"]')).toHaveAttribute('aria-pressed', 'true');
+
+  await page.goto('/stats');
+  await page.goto('/sound-input?tab=nope');
+  await expect(page.locator('#tabs button[data-tab="free"]')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#tabs button[data-tab="targets"]').click();
+  await expect(page).toHaveURL(/\/sound-input\?tab=targets$/);
+  // A tab change replaces the history entry, so Back goes to the page before the room.
+  await page.goBack();
+  await expect(page).toHaveURL(/\/stats$/);
 });
 
 test('the stickiness settings stay after a reload', async ({ page }) => {
@@ -205,7 +220,7 @@ async function singTargets(page: Page, rounds: number): Promise<void> {
 test('a target run times each target, keeps the best, and puts the run on the leaderboard and the stats page', async ({ page }) => {
   const errors = trackErrors(page);
   await oscillatorMic(page);
-  await page.goto('/sound-input?mode=targets');
+  await page.goto('/sound-input?tab=targets');
   await expect(page.locator('#practice')).toBeVisible();
   await page.locator('#levels [data-value="easy"]').click();
   await page.locator('#start').click();
@@ -222,7 +237,7 @@ test('a target run times each target, keeps the best, and puts the run on the le
 
 test('an echo round plays a cell, takes the held cell as the answer, and shows the points', async ({ page }) => {
   await oscillatorMic(page);
-  await page.goto('/sound-input?mode=echo');
+  await page.goto('/sound-input?tab=echo');
   await page.locator('#start').click();
   await setTone(page, 600);
   await expect(page.locator('#round')).toHaveText('Round 1 of 8', { timeout: 10_000 });

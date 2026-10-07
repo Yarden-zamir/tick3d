@@ -331,10 +331,13 @@ input::placeholder {
   width: 2.1rem;
 }
 
-/* The tooltip of an element with data-tip (src/tooltip.ts). */
+/* The tooltip of an element with data-tip (src/tooltip.ts): a manual popover in the top layer.
+   The inset, margin and overflow undo the centred box of a popover. */
 .tip {
   position: fixed;
-  z-index: 30;
+  inset: auto;
+  margin: 0;
+  overflow: visible;
   max-width: min(20rem, calc(100vw - 1rem));
   padding: 0.35rem 0.6rem;
   border: 2px solid var(--line);

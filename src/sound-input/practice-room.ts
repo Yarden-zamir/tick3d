@@ -32,8 +32,8 @@ import { cellOfStep, stepOfCell } from '../voice/mapping.ts';
 import { type Rail, showRailTarget } from '../voice/rail.ts';
 import { DEFAULT_STICKINESS, type Stickiness } from '../voice/sticky.ts';
 import type { HoldFill, VoiceCells } from '../voice/visuals.ts';
+import type { Tab } from './tab.ts';
 
-export type Tab = 'free' | PracticeMode | 'playoff';
 
 type Context = {
   voice: Voice;
