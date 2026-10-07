@@ -44,7 +44,6 @@ const status = (run: () => unknown) => {
 
 describe('networkOf', () => {
   it('matches an IPv4 address exactly', () => {
-    expect(networkOf(HOME)).toBe(networkOf(HOME));
     expect(networkOf('203.0.113.8')).not.toBe(networkOf(HOME));
     // An IPv4 client on an IPv6 socket is the same client.
     expect(networkOf(`::ffff:${HOME}`)).toBe(networkOf(HOME));
