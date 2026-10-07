@@ -77,7 +77,7 @@ test('a blocked microphone shows what to do, and turns the voice off', async ({ 
   await page.reload();
   const voice = page.getByRole('button', { name: 'Play by voice' });
   await voice.click();
-  await expectToast(page, 'The microphone is blocked');
+  await expectToast(page, 'The mic is blocked');
   await expect(voice).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#voice-panel')).toBeHidden();
 });

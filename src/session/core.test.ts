@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { toEpochMs as ms } from '../epoch.ts';
 import type { TimeControl } from '../clock.ts';
 import { nameOf } from '../names.ts';
-import type { Code } from '../protocol.ts';
+import { type Code, seatIn } from '../protocol.ts';
 import * as core from './core.ts';
 import type { SessionDoc } from './format.ts';
 
@@ -366,7 +366,7 @@ describe('seat controls', () => {
     expect(JSON.stringify(shown)).not.toContain(CAROL);
   });
 
-  it('ends a sound playoff when the seats change, so a new seat holder does not take over its progress', () => {
+  it('ends a sound playoff when a seat changes hands, so a new seat holder does not take over its progress', () => {
     const doc = onlineDoc();
     const started = core.playoff(doc, alice, { action: 'start', preset: 'easy', seed: 7 }, ms(0));
     expect(started.playoff).not.toBeNull();
@@ -376,15 +376,125 @@ describe('seat controls', () => {
     ] as const) {
       expect(core.seat(started, who, request, watchers, ms(0)).playoff, request.action).toBeNull();
     }
-    for (const request of [{ action: 'swap' }, { action: 'unseat' }, { action: 'replace', watcher: 'c0ffee0000000001' }] as const) {
+    for (const request of [{ action: 'unseat' }, { action: 'replace', watcher: 'c0ffee0000000001' }] as const) {
       const asked = core.seat(started, alice, request, watchers, ms(0));
       // A request alone changes no seat, so the playoff goes on until the other player accepts.
       expect(asked.playoff, request.action).toEqual(started.playoff);
       expect(core.answerSeat(asked, bob, true, watchers, ms(0)).playoff, request.action).toBeNull();
     }
+    // A swap keeps the same two players, so the playoff goes on with them.
+    const swapped = core.answerSeat(core.seat(started, alice, { action: 'swap' }, watchers, ms(0)), bob, true, watchers, ms(0));
+    const before = started.playoff;
+    if (before === null) throw new Error('the playoff did not start');
+    expect(swapped.playoff).toEqual({ ...before, by: 'O', seats: { X: before.seats.O, O: before.seats.X } });
     // An undo changes no seat, and keeps the playoff.
     const played = play(started, [0, 1]);
     const undone = core.answerSeat(core.seat(played, bob, { action: 'undo' }, watchers, ms(0)), alice, true, watchers, ms(0));
     expect(undone.playoff).toEqual(started.playoff);
+  });
+});
+
+describe('seat rotation', () => {
+  const watchers: core.OpenWatcher[] = [{ id: 'c0ffee0000000001', token: CAROL, player: null }];
+  // Plays the cells in the live game. The player on the seat to move makes each move.
+  const playSeats = (doc: SessionDoc, cells: number[]): SessionDoc =>
+    cells.reduce((current, cell) => {
+      const game = core.currentGame(current);
+      const holder = current.seats[game.turn];
+      if (holder === null) throw new Error(`seat ${game.turn} is empty`);
+      return core.move(current, new Set([holder]), { game: current.games.length - 1, moveCount: game.moves.length, cell }, ms(0));
+    }, doc);
+  // Alice (X) wins game 1.
+  const afterGame = () => play(onlineDoc(), X_WINS);
+
+  it('keeps a sound playoff with its players through the swap of a new game', () => {
+    const started = core.playoff(afterGame(), alice, { action: 'start', preset: 'easy', seed: 7 }, ms(0));
+    const joined = core.playoff(started, bob, { action: 'join', id: 1 }, ms(0));
+    const before = joined.playoff;
+    if (before === null) throw new Error('the playoff did not start');
+    const second = core.newGame(joined, bob);
+    expect(second.seats).toEqual({ X: BOB, O: ALICE });
+    // Alice started the playoff as X, and holds O now: her progress and her start move with her.
+    expect(second.playoff).toEqual({ ...before, by: 'O', seats: { X: before.seats.O, O: before.seats.X } });
+  });
+
+  it('swaps X and O for each new game by default, so the player who was O moves first', () => {
+    const second = core.newGame(afterGame(), bob);
+    expect(second.seats).toEqual({ X: BOB, O: ALICE });
+    expect(view(second, alice)).toMatchObject({ you: 'O', fixedSeats: false, flipped: [true, false], turn: 'X' });
+    expect(view(second, bob).you).toBe('X');
+    expect(status(() => core.move(second, alice, { game: 1, moveCount: 0, cell: 0 }, ms(0)))).toBe(409);
+    // Game 1 keeps its player: Alice holds O now, and she played X in game 1.
+    expect(seatIn(second.flipped, 0, 'O')).toBe('X');
+    const third = core.newGame(playSeats(second, X_WINS), alice);
+    expect(third.seats).toEqual({ X: ALICE, O: BOB });
+    expect(third.flipped).toEqual([false, true, false]);
+  });
+
+  it('keeps the seats when a player locks them, and only a player can change the lock', () => {
+    const fixed = core.update(afterGame(), bob, { fixedSeats: true });
+    expect(view(fixed, carol).fixedSeats).toBe(true);
+    const next = core.newGame(fixed, alice);
+    expect(next.seats).toEqual({ X: ALICE, O: BOB });
+    expect(next.flipped).toEqual([false, false]);
+    expect(status(() => core.update(fixed, carol, { fixedSeats: false }))).toBe(403);
+    expect(core.update(fixed, alice, { fixedSeats: false }).fixedSeats).toBe(false);
+  });
+
+  it('holds the seat lock during a settings lock, and rotates a timed session after a timeout', () => {
+    const locked = core.lock(play(onlineDoc(), [0]), bob);
+    expect(status(() => core.update(locked, alice, { fixedSeats: true }))).toBe(409);
+    const timed = core.lock(onlineDoc({ perMove: 5, perGame: null }), alice);
+    const settled = core.settle(play(timed, [0, 1]), ms(60_000));
+    if (settled === undefined) throw new Error('no timeout');
+    // The lock ended with the game. The next game rotates and keeps the time limit.
+    const next = core.newGame(settled, bob);
+    expect(next.seats).toEqual({ X: BOB, O: ALICE });
+    expect(next.games[1]?.clock).toEqual({ perMove: 5, perGame: null });
+  });
+
+  it('does not swap for an empty game nor in a friend game, and keeps the computer seats until the player unlocks them', () => {
+    expect(core.newGame(onlineDoc(), alice).seats).toEqual({ X: ALICE, O: BOB });
+    const couch = core.createDoc({ name: 'Couch', mode: 'friend', seats: { X: ALICE, O: ALICE } });
+    expect(core.newGame(core.move(couch, alice, { game: 0, moveCount: 0, cell: 5 }, ms(0)), alice).flipped).toEqual([false, false]);
+    const versus = core.createDoc({ name: 'Versus', mode: 'computer', seats: { X: ALICE, O: core.COMPUTER_TOKEN }, computer: { difficulty: 'easy', seat: 'O' } });
+    const played = core.move(versus, alice, { game: 0, moveCount: 0, cell: 5 }, ms(0));
+    // Against the computer the player starts every game by default.
+    expect(versus.fixedSeats).toBe(true);
+    expect(core.newGame(played, alice).seats).toEqual(versus.seats);
+    // Unlocked, the computer moves with its seat. On one device a player can give up a game: the next game rotates too.
+    const next = core.newGame(core.update(played, alice, { fixedSeats: false }), alice);
+    expect(next.seats).toEqual({ X: core.COMPUTER_TOKEN, O: ALICE });
+    expect(next.computer).toEqual({ difficulty: 'easy', seat: 'X' });
+    expect(view(next, alice).you).toBe('O');
+  });
+
+  it('follows a swap during a game, and a give after it, into the next game', () => {
+    // Alice and Bob swap during game 1. Bob holds X when X wins, so the win is his.
+    const asked = core.seat(play(onlineDoc(), [0, 1, 2]), alice, { action: 'swap' }, watchers, ms(0));
+    const swapped = playSeats(core.answerSeat(asked, bob, true, watchers, ms(1)), [3, 16, 4, 32, 5, 48]);
+    expect(core.currentGame(swapped).status).toMatchObject({ kind: 'won', winner: 'X' });
+    const next = core.newGame(swapped, alice);
+    expect(next.seats).toEqual({ X: ALICE, O: BOB });
+    expect(seatIn(next.flipped, 0, 'X')).toBe('O');
+    // Alice gives her seat to Carol after game 1. Carol rotates with the seat, and Alice keeps watching.
+    const given = core.seat(afterGame(), alice, { action: 'give', watcher: 'c0ffee0000000001' }, watchers, ms(0));
+    const afterGive = core.newGame(given, bob);
+    expect(afterGive.seats).toEqual({ X: BOB, O: CAROL });
+    expect(view(afterGive, alice).you).toBeNull();
+  });
+
+  it('keeps a pending seat request with its player', () => {
+    const asked = core.seat(afterGame(), alice, { action: 'swap' }, watchers, ms(0));
+    const next = core.newGame(asked, bob);
+    // Alice asked as X. She is O now, so the request is from O, and Bob still answers it.
+    expect(view(next, bob).seatRequest).toMatchObject({ kind: 'swap', from: 'O' });
+    expect(core.answerSeat(next, bob, true, watchers, ms(1)).seats).toEqual({ X: ALICE, O: BOB });
+  });
+
+  it('keeps each chat message with its writer across a swap', () => {
+    const next = core.newGame(core.chat(afterGame(), alice, 'Again?', ms(0)), bob);
+    expect(next.chat.map((message) => message.from)).toEqual(['O']);
+    expect(view(next, alice).you).toBe('O');
   });
 });

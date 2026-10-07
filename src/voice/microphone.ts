@@ -20,20 +20,20 @@ const MAX_FRAME_MS = 100;
 const hasMicrophone = (): boolean => 'mediaDevices' in navigator && typeof navigator.mediaDevices.getUserMedia === 'function';
 
 export function micError(error: unknown): string {
-  if (!hasMicrophone()) return 'This browser gives the page no microphone. Open the page over https in a current browser.';
+  if (!hasMicrophone()) return 'This browser gives the page no mic. Open the page over https in a current browser.';
   const name = error instanceof DOMException ? error.name : '';
   switch (name) {
     case 'NotAllowedError':
     case 'SecurityError':
-      return 'The microphone is blocked. Allow it for this site in the browser settings, then try again.';
+      return 'The mic is blocked. Allow it for this site in the browser settings, then try again.';
     case 'NotFoundError':
     case 'OverconstrainedError':
-      return 'No microphone found. Connect one, then try again.';
+      return 'No mic found. Connect one, then try again.';
     case 'NotReadableError':
     case 'AbortError':
-      return 'The microphone does not start. Another app can hold it. Close that app, then try again.';
+      return 'The mic does not start. Another app can hold it. Close that app, then try again.';
     default:
-      return `The microphone does not start: ${error instanceof Error ? error.message : 'unknown error'}.`;
+      return `The mic does not start: ${error instanceof Error ? error.message : 'unknown error'}.`;
   }
 }
 

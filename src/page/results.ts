@@ -1,6 +1,6 @@
 // Results of games away from the server, game ids, and the survival records against the computer.
 import { epochNow } from '../epoch.ts';
-import { type Game, type Player, other } from '../game.ts';
+import type { Game } from '../game.ts';
 import { type RecordNews, type Records, parseRecords, addLoss, mergeRecords } from '../records.ts';
 import { isTunedFor } from '../tuning.ts';
 import { token, api, OnlineError } from '../online.ts';
@@ -52,7 +52,7 @@ export async function recordResult(open: Session, game: Game, index: number): Pr
     options: open.options,
     tuned,
     metrics: { ...metrics, nearby: open.mode === 'nearby' ? await nearbyMetrics() : null },
-    guest: hosting && you !== null ? await guestOf(open.code, you) : null,
+    guest: hosting && you !== null ? await guestOf(open.code) : null,
   };
   await page.deviceDb.put('results', { id, upload, sent: false });
   await flushResults();
@@ -61,10 +61,12 @@ export async function recordResult(open: Session, game: Game, index: number): Pr
 
 // The token of the guest on the other seat of a Nearby game that this device hosts. The host holds
 // the session document, so it knows the token. Null while the other seat is empty.
-async function guestOf(code: Code, you: Player): Promise<PlayerToken | null> {
+// It reads the seat that the host does not hold, so a new game that rotated the seats meanwhile changes nothing.
+async function guestOf(code: Code): Promise<PlayerToken | null> {
   const summary = await page.local?.summary(code);
   if (summary === undefined || summary.doc.mode !== 'nearby') throw new Error(`the hosted Nearby session ${code} is not on this device`);
-  const seat = summary.doc.seats[other(you)] ?? null;
+  const { X, O } = summary.doc.seats;
+  const seat = X === token ? O : O === token ? X : null;
   if (seat === null) return null;
   const guest = asPlayerToken(seat);
   if (guest === undefined || guest === token) throw new Error(`the guest seat of ${code} holds no guest token`);

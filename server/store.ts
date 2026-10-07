@@ -42,6 +42,7 @@ import {
   parseHistoryPage,
   parsePublicGame,
   parseResultUpload,
+  seatIn,
   statsQuery,
   toGame,
 } from '../src/protocol.ts';
@@ -502,7 +503,7 @@ export async function openStore(
   }
 
   // The finished game of an online id ("<CODE>-<n>") in its session, or a 404.
-  async function finishedOnlineGame(id: GameId): Promise<{ row: Row; game: GameRecord }> {
+  async function finishedOnlineGame(id: GameId): Promise<{ row: Row; game: GameRecord; index: number }> {
     const notFound = new SessionError(404, 'No game with this link.');
     const [code, number] = id.split('-');
     if (code === undefined || number === undefined) throw notFound;
@@ -513,15 +514,19 @@ export async function openStore(
       if (error instanceof SessionError) throw notFound;
       throw error;
     }
-    const game = row.doc.games[Number(number) - 1];
+    const index = Number(number) - 1;
+    const game = row.doc.games[index];
     if (game === undefined || !isFinished(game)) throw notFound;
-    return { row, game };
+    return { row, game, index };
   }
 
   // An online game that ended before the server recorded games in `results` reads from its session.
   // The hide options are those of the session now: the session does not keep them per game.
   async function onlineGameFromSession(id: GameId): Promise<PublicGame> {
-    const { row, game } = await finishedOnlineGame(id);
+    const { row, game, index } = await finishedOnlineGame(id);
+    // The players of that game, by the seat that each one held in it.
+    const holder = (seat: Player) => seatIn(row.doc.flipped, index, seat);
+    const players = await playersOf(row.doc);
     return parsePublicGame({
       id,
       mode: 'online',
@@ -530,8 +535,8 @@ export async function openStore(
       difficulty: null,
       tuned: false,
       computer: null,
-      players: await playersOf(row.doc),
-      names: await seatNames(row.doc.seats.X, row.doc.seats.O),
+      players: { X: players[holder('X')], O: players[holder('O')] },
+      names: await seatNames(row.doc.seats[holder('X')], row.doc.seats[holder('O')]),
       finishedAt: game.times.at(-1) ?? now(),
     });
   }
@@ -832,9 +837,11 @@ export async function openStore(
     addSeatMetrics: (id: GameId, token: PlayerToken, metrics: Metrics): Promise<boolean> =>
       serialized(async () => {
         if (!id.includes('-')) throw new SessionError(400, 'Only an online game takes metrics here. Other games send them with the result.');
-        const { row } = await finishedOnlineGame(id);
-        const seat = core.seatsOf(row.doc, await identityOf(token))[0];
-        if (seat === undefined) throw new SessionError(403, 'Only the two players can send metrics for this game.');
+        const { row, index } = await finishedOnlineGame(id);
+        const seatNow = core.seatsOf(row.doc, await identityOf(token))[0];
+        if (seatNow === undefined) throw new SessionError(403, 'Only the two players can send metrics for this game.');
+        // The seats rotate between games: the report counts for the seat that this player held in that game.
+        const seat = seatIn(row.doc.flipped, index, seatNow);
         const inserted = await rows(
           `INSERT INTO seat_metrics (public_id, seat, metrics) VALUES ($id, $seat, $metrics::JSON::VARIANT)
            ON CONFLICT DO NOTHING RETURNING seat`,
@@ -888,11 +895,12 @@ export async function openStore(
           const doc = parseDoc(JSON.parse(String(row.doc)));
           const you = core.seatsOf(doc, identity)[0];
           if (you === undefined) continue;
-          for (const record of doc.games) {
+          for (const [index, record] of doc.games.entries()) {
             const game = toGame(record);
             if (game.status.kind === 'playing') continue;
             const winner = winnerOf(game.status);
-            const outcome = winner === null ? 'drawn' : winner === you ? 'won' : 'lost';
+            // The seats rotate between games, so the seat of this player in that game can differ from now.
+            const outcome = winner === null ? 'drawn' : winner === seatIn(doc.flipped, index, you) ? 'won' : 'lost';
             count(total, outcome);
             count(byMode.online, outcome);
           }

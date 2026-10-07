@@ -90,8 +90,9 @@ test('two players play a full game, and a watcher replays it', async ({ open, ba
   await cell(carol, 10).click();
   await expectToast(carol, 'You are watching');
 
+  // The new game swapped the seats, so Bob is X and moves first, also after a reload.
   await bob.reload();
-  await expect(status(bob)).toContainText(`${aliceName}'s move`);
+  await expect(status(bob)).toHaveText('Your move (X)');
 });
 
 test('hide options and the lock belong to the session', async ({ open }) => {

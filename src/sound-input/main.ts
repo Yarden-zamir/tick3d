@@ -19,7 +19,7 @@ import { SOUND_SETS, type SoundSetId } from '../sound-sets.ts';
 import { setSoundSet, sounds } from '../sound.ts';
 import { isSmallRange, median, rangeFrom, type Retry, typedRange } from '../voice/calibration.ts';
 import { type VoiceFrame, createVoice } from '../voice/engine.ts';
-import { SPREADS, STEPS, cellOfStep, frequencyAt, noteName } from '../voice/mapping.ts';
+import { SPREADS, STEPS, type Spread, cellOfStep, frequencyAt, noteName } from '../voice/mapping.ts';
 import { buildRail, showRailPitch, showRailRange } from '../voice/rail.ts';
 import { MAX_TILT_STEPS } from '../voice/tilt.ts';
 import { type HoldFill, createVoiceCells } from '../voice/visuals.ts';
@@ -65,7 +65,14 @@ const rangeLowNote = element('#range-low-note', HTMLOutputElement);
 const rangeHighNote = element('#range-high-note', HTMLOutputElement);
 const setLowButton = element('#set-low', HTMLButtonElement);
 const setHighButton = element('#set-high', HTMLButtonElement);
-const spreadSelect = element('#spread', HTMLSelectElement);
+const spreadGroup = element('#spread', HTMLDivElement);
+const spreadNote = element('#spread-note', HTMLParagraphElement);
+const SPREAD_NOTES: Record<Spread, string> = {
+  log: 'The same musical interval for each cell.',
+  linear: 'The same width in Hz for each cell: wide low cells, narrow high cells.',
+  middle: 'More room for the cells in the middle of the range.',
+  notes: 'Each layer sits on C, D, E or G, and each row spans one octave.',
+};
 const rangeNote = element('#range-note', HTMLParagraphElement);
 const clearButton = element('#clear', HTMLButtonElement);
 const tiltEditor = element('#tilt-editor', HTMLFieldSetElement);
@@ -139,7 +146,7 @@ const show = (message: string): void => {
 async function startMic(): Promise<boolean> {
   if (voice.isListening()) return true;
   micButton.disabled = true;
-  show('Waiting for the microphone…');
+  show('Waiting for the mic…');
   const problem = await voice.start();
   micButton.disabled = false;
   if (problem !== null) {
@@ -161,7 +168,7 @@ function stopMic(message: string): void {
   showRailPitch(rail, null, null, 0, null);
   light(null);
   showLevel(0);
-  micButton.textContent = 'Turn on the microphone';
+  micButton.textContent = 'Turn on the mic';
   micButton.setAttribute('aria-pressed', 'false');
   readoutEl.dataset.state = 'off';
   show(message);
@@ -203,7 +210,8 @@ function showRange(): void {
   rangeHigh.value = String(Math.round(high));
   rangeLowNote.textContent = noteName(low);
   rangeHighNote.textContent = noteName(high);
-  spreadSelect.value = settings.spread;
+  for (const button of spreadGroup.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.value === settings.spread));
+  spreadNote.textContent = SPREAD_NOTES[settings.spread];
   modeEl.textContent = `${settings.range === null ? 'Default range' : 'Your range'}: ${Math.round(low)}–${Math.round(high)} Hz`;
   resetButton.hidden = settings.range === null;
   hintEl.hidden = settings.range === null || !isSmallRange(settings.range);
@@ -228,7 +236,7 @@ function applyRange(low: number, high: number): void {
 // Use my note: the pitch that the player holds now (heard in the last half second).
 function sungPitch(): number | undefined {
   if (lastPitch === undefined || performance.now() - lastPitch.at > 500) {
-    rangeNote.textContent = voice.isListening() ? 'Hold the note, then tap Use my note.' : 'Turn on the microphone, hold the note, then tap Use my note.';
+    rangeNote.textContent = voice.isListening() ? 'Hold the note, then tap Use my note.' : 'Turn on the mic, hold the note, then tap Use my note.';
     return undefined;
   }
   return lastPitch.frequency;
@@ -462,13 +470,16 @@ setHighButton.addEventListener('click', () => {
   const frequency = sungPitch();
   if (frequency !== undefined) applyRange(voice.range().low, frequency);
 });
-spreadSelect.addEventListener('change', () => {
-  const spread = SPREADS.find((known) => known === spreadSelect.value);
-  if (spread === undefined) throw new Error(`unknown spread ${spreadSelect.value}`);
-  voice.saveSettings({ ...voice.settings(), spread });
-  showRange();
-  schedulePreview();
-});
+for (const button of spreadGroup.querySelectorAll('button')) {
+  button.addEventListener('click', () => {
+    const spread = SPREADS.find((known) => known === button.dataset.value);
+    if (spread === undefined) throw new Error(`unknown spread ${button.dataset.value}`);
+    if (spread === voice.settings().spread) return;
+    voice.saveSettings({ ...voice.settings(), spread });
+    showRange();
+    schedulePreview();
+  });
+}
 stickinessInput.addEventListener('input', () => {
   const settings = voice.settings();
   voice.saveSettings({ ...settings, stickiness: { ...settings.stickiness, share: Number(stickinessInput.value) / 100 } });
@@ -525,7 +536,7 @@ board.cells.forEach((button, cell) =>
 
 // A hidden page keeps no microphone open.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && voice.isListening()) stopMic('The microphone stops when the page is out of view. Turn it on again to go on.');
+  if (document.hidden && voice.isListening()) stopMic('The mic stops when the page is out of view. Turn it on again to go on.');
 });
 addEventListener('pagehide', () => voice.stop());
 

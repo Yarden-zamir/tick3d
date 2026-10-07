@@ -62,7 +62,7 @@ test('a steady note lights its cell, a held note places an X, and Stop puts the 
   await expect(page.locator(`#board .cell[data-cell="${G5_CELL}"]`)).toHaveClass(/\bx\b/);
 
   await mic.click();
-  await expect(mic).toHaveText('Turn on the microphone');
+  await expect(mic).toHaveText('Turn on the mic');
   await expect(lit).toHaveCount(0);
   await page.locator('#clear').click();
   await expect(page.locator('#board .cell.x')).toHaveCount(0);
@@ -78,7 +78,7 @@ test('a blocked microphone shows what to do, and the page stays usable', async (
   const mic = page.locator('#mic');
   await mic.click();
   await expect(page.locator('#message')).toContainText('blocked');
-  await expect(mic).toHaveText('Turn on the microphone');
+  await expect(mic).toHaveText('Turn on the mic');
   await expect(mic).toBeEnabled();
   await expect(page.locator('#board .cell.lit')).toHaveCount(0);
   expect(errors).toEqual([]);
@@ -207,7 +207,7 @@ test('a target run times each target, keeps the best, and puts the run on the le
   await oscillatorMic(page);
   await page.goto('/sound-input?mode=targets');
   await expect(page.locator('#practice')).toBeVisible();
-  await page.locator('input[name="preset"][value="easy"]').check();
+  await page.locator('#levels [data-value="easy"]').click();
   await page.locator('#start').click();
   await setTone(page, 150);
   await singTargets(page, 10);
@@ -271,7 +271,7 @@ test('a typed range and a spread apply, the board previews the frequency of each
   await expect(page.locator('#range-note')).toContainText('half an octave');
   await expect(page.locator('#range-high')).toHaveValue('800');
 
-  await page.locator('#spread').selectOption('linear');
+  await page.locator('#spread [data-value="linear"]').click();
   const board = page.locator('#board');
   await expect(board).toHaveClass(/previewing/, { timeout: 3000 });
   await expect(page.locator('#board .cell[data-preview]')).toHaveCount(64);
@@ -281,5 +281,5 @@ test('a typed range and a spread apply, the board previews the frequency of each
 
   await page.reload();
   await expect(page.locator('#range-mode')).toHaveText('Your range: 200–800 Hz');
-  await expect(page.locator('#spread')).toHaveValue('linear');
+  await expect(page.locator('#spread [data-value="linear"]')).toHaveAttribute('aria-pressed', 'true');
 });

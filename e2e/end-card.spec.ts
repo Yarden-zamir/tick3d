@@ -16,7 +16,7 @@ async function loseToComputer(page: Page): Promise<void> {
 
 const storedRecords = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('tick3d.records') ?? '{}') as Record<string, number>);
 
-test('a loss that beats the record shows it, stores it, and New game on the card starts over', async ({ open }) => {
+test('a loss that beats the record shows it, stores it, and New game on the card starts over with the same seats', async ({ open }) => {
   const { page } = await open({ settings: hardComputer, records: { [RECORD_KEY]: 1 } });
   await loseToComputer(page);
   const moves = await marks(page).count();
@@ -26,6 +26,8 @@ test('a loss that beats the record shows it, stores it, and New game on the card
 
   await page.locator('#end-card-new-game').click();
   await expect(page.locator('#end-card')).not.toHaveAttribute('open');
+  // Against the computer the seats are kept by default: the player is X again and starts.
+  await expect(page.locator('div.field [data-seat-lock]')).toHaveAttribute('aria-pressed', 'true');
   await expect(marks(page)).toHaveCount(0);
   await expect(status(page)).toContainText('Your move');
 });

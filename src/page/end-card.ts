@@ -32,7 +32,7 @@ import { type GameId, onlineGameId } from '../protocol.ts';
 import { nearbyKind, shareGameLink } from './nearby.ts';
 import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnlineMetrics, hostLinkOf, setHostLink } from './results.ts';
 import { setUrlGame, startNewGame } from './sessions.ts';
-import { playerName } from './render.ts';
+import { playerName, seatNow } from './render.ts';
 import { settings } from './settings.ts';
 import { songControl } from './song-control.ts';
 import { lightSungCell } from './board.ts';
@@ -116,20 +116,22 @@ function celebrate(): void {
 }
 
 function cardInput(game: Game, index: number, gameId: GameId | undefined): CardInput {
-  const winner = winnerOf(game.status);
+  // The seats can rotate between games: `winner` is the seat now of the player who won game `index`.
+  const result = winnerOf(game.status);
+  const winner = result === null ? null : seatNow(index, result);
   const mine = me();
   // The same names as the rest of the page (playerName), so the card matches the score and the chat.
   const title = winner === null ? 'Draw' : winner === mine ? 'You win!' : `${playerName(winner)} wins!`;
   const subtitle =
     game.status.kind === 'won'
       ? `Four in a row in ${game.moves.length} moves`
-      : game.status.kind === 'timeout'
-        ? `${playerName(other(game.status.winner))} ran out of time after ${game.moves.length} moves`
+      : game.status.kind === 'timeout' && winner !== null
+        ? `${playerName(other(winner))} ran out of time after ${game.moves.length} moves`
         : 'The cube is full. Nobody got four in a row.';
   const level = `${settings.difficulty.charAt(0).toUpperCase()}${settings.difficulty.slice(1)}${isTunedFor(computerTuning(), settings.difficulty) ? ' (tuned)' : ''}`;
   const matchup =
     page.session?.mode === 'computer'
-      ? `vs Computer · ${level} · You played ${page.session.you ?? settings.human}`
+      ? `vs Computer · ${level} · You played ${seatNow(index, page.session.you ?? settings.human)}`
       : page.session?.mode === 'online'
         ? `Online · ${page.session.name}`
         : page.session?.mode === 'nearby'

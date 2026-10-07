@@ -170,14 +170,14 @@ export function createVoice(): Voice {
           },
           () => {
             stop();
-            for (const listener of stopListeners) listener('The microphone stopped. Turn it on again to go on.');
+            for (const listener of stopListeners) listener('The mic stopped. Turn it on again to go on.');
           },
         );
         mic.record(!paused);
         // The page went out of view while the browser asked.
         if (document.hidden) {
           stop();
-          return 'The microphone stops when the page is out of view. Turn it on again to go on.';
+          return 'The mic stops when the page is out of view. Turn it on again to go on.';
         }
         return null;
       } catch (error) {

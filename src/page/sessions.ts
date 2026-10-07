@@ -17,7 +17,7 @@ import { nearbyKind, endNearby, redrawNearby } from './nearby.ts';
 import { seatChangeText } from './players.ts';
 import { render } from './render.ts';
 import { type Mode, settings, saveSettings } from './settings.ts';
-import { page, current, nowMs, setCurrent, shared, type SessionBackend, settingsLocked } from './state.ts';
+import { page, current, nowMs, setCurrent, shared, type Session, type SessionBackend, settingsLocked } from './state.ts';
 
 // The error sound of a refused move lasts about 0.27 s. A taken cell plays its own sound after it.
 const TAKEN_SOUND_DELAY_MS = 320;
@@ -94,6 +94,7 @@ export function applyView(view: SessionView): void {
       showToast(`Time limit${startsLater ? ' for the next game' : ''}: ${describeClock(page.session.clock)}.`);
     }
     if (page.session.locked && !previous.locked) showToast('Settings are locked for both players until this game ends.');
+    if (page.session.fixedSeats !== previous.fixedSeats) showToast(seatLockText(page.session.fixedSeats));
     const seatChange = seatChangeText(previous, page.session);
     if (seatChange !== undefined) showToast(seatChange);
     for (const [option, label] of [['hideBoard', 'Hide board'], ['hideHistory', 'Hide history'], ['hideCoordinates', 'Hide coordinates']] as const) {
@@ -126,6 +127,7 @@ export function applyView(view: SessionView): void {
     redrawNearby();
   }
   if (page.review && page.review.game >= page.games.length) page.review = undefined;
+  followSeat(page.session);
   if (page.session.mode === 'online') {
     void page.deviceDb?.put('remote', { code: page.session.code, view, savedAt: Date.now() });
     checkPlayoffInvite(view);
@@ -149,6 +151,7 @@ export function openSession(view: SessionView, backend: SessionBackend, mode: Mo
   page.session = { ...view, backend, mode, unsubscribe: () => undefined };
   page.games = view.games.map(toGame);
   page.serverOffset = view.now - Date.now();
+  followSeat(page.session);
   const code = view.code;
   page.session.unsubscribe = backend.subscribe(code, () => void refresh(code));
   setUrlCode(mode === 'online' ? code : undefined);
@@ -198,6 +201,18 @@ export function defaultSessionName(mode: Mode = 'online'): string {
   const day = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const kind = mode === 'computer' ? `${settings.difficulty} computer` : mode === 'friend' ? 'friend' : mode === 'nearby' ? 'nearby game' : 'game';
   return mode === 'online' ? `Game of ${day}` : `${kind[0]?.toUpperCase()}${kind.slice(1)} · ${day}`;
+}
+
+export const seatLockText = (fixedSeats: boolean): string =>
+  fixedSeats ? 'Seats kept.' : 'Seats swap each game.';
+
+// In a computer game the seats rotate between games, so "You play" follows the seat of the live game.
+// Limit: a click on the other seat still opens the newest session of that match-up, as before rotation.
+// Revisit this if players expect that click to change the seat in the open session.
+function followSeat(open: Session): void {
+  if (open.mode !== 'computer' || open.you === null || settings.human === open.you) return;
+  settings.human = open.you;
+  saveSettings();
 }
 
 // The seat of the player in a computer game: the one the computer does not hold.
@@ -287,6 +302,10 @@ export function startNewGame(): void {
   void withBusy(async () => {
     page.review = undefined;
     burstEl.replaceChildren();
+    const before = page.session?.you;
     applyView(await backend.newGame(code));
+    // With another device, applyView says it already (seatChangeText).
+    const you = page.session?.you;
+    if (!shared() && you != null && you !== before) showToast(`You play ${you} this game.`);
   }).then(scheduleComputer);
 }

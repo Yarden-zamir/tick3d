@@ -96,7 +96,7 @@ function loadBests(): Bests {
 
 export function createPracticeRoom({ voice, board, rail, cells, startMic, show }: Context) {
   const panel = element('#practice', HTMLDivElement);
-  const levels = element('#levels', HTMLFieldSetElement);
+  const levels = element('#levels', HTMLDivElement);
   const setupNote = element('#setup-note', HTMLParagraphElement);
   const playoffEl = element('#playoff', HTMLDivElement);
   const playoffText = element('#playoff-text', HTMLParagraphElement);
@@ -129,9 +129,9 @@ export function createPracticeRoom({ voice, board, rail, cells, startMic, show }
   let hits: Promise<unknown> = Promise.resolve();
 
   const chosenPreset = (): PresetId => {
-    const value = levels.querySelector<HTMLInputElement>('input:checked')?.value;
+    const value = levels.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')?.dataset.value;
     const found = PRESET_IDS.find((preset) => preset === value);
-    if (found === undefined) throw new Error('sound-input.html has no checked level');
+    if (found === undefined) throw new Error('sound-input.html has no chosen level');
     return found;
   };
   const modeOfTab = (): PracticeMode => (tab === 'echo' ? 'echo' : 'targets');
@@ -417,7 +417,10 @@ export function createPracticeRoom({ voice, board, rail, cells, startMic, show }
     }
     leaveButton.hidden = !active;
     // A run keeps its level. A playoff takes the level of its starter.
-    levels.disabled = running || joined || invited;
+    for (const button of levels.querySelectorAll('button')) button.disabled = running || joined || invited;
+    replayButton.hidden = tab !== 'echo';
+    // Without a seat in an online game, the Playoff tab shows only how to start one (practice.css).
+    panel.toggleAttribute('data-no-playoff', tab === 'playoff' && !running && (session === undefined || you === null));
     statusEl.dataset.state = running ? 'running' : 'idle';
   }
 
@@ -447,7 +450,7 @@ export function createPracticeRoom({ voice, board, rail, cells, startMic, show }
       const gap = Math.abs(mine.times.reduce((a, b) => a + b, 0) - theirs.times.reduce((a, b) => a + b, 0));
       return winner === null ? 'A tie!' : winner === you ? `You win by ${seconds(gap)}!` : `${themName} wins by ${seconds(gap)}.`;
     }
-    if (!mine.joined) return `${themName} invited you to a sound playoff. Tap Join the playoff to turn on the microphone and join.`;
+    if (!mine.joined) return `${themName} invited you to a sound playoff. Tap Join the playoff to turn on the mic and join.`;
     if (!theirs.joined) return `Waiting for ${themName} to join…`;
     return `${PRESETS[playoff.preset].name} playoff against ${themName}: ${ROUNDS.targets} targets.`;
   }
@@ -532,7 +535,12 @@ export function createPracticeRoom({ voice, board, rail, cells, startMic, show }
     stopRun('You left the playoff.');
     leavePlayoff();
   });
-  for (const input of levels.querySelectorAll('input')) input.addEventListener('change', showSetup);
+  for (const button of levels.querySelectorAll('button')) {
+    button.addEventListener('click', () => {
+      for (const other of levels.querySelectorAll('button')) other.setAttribute('aria-pressed', String(other === button));
+      showSetup();
+    });
+  }
 
   return {
     running: () => run !== undefined,

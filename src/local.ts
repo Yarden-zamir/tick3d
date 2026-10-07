@@ -104,13 +104,14 @@ export function createLocalBackend(
   // The device holds its own seats; in a computer game it also moves for the computer.
   const identity = (withComputer = false): core.Identity => new Set(withComputer ? [token, core.COMPUTER_TOKEN] : [token]);
 
-  function view(row: DeviceSession, doc: SessionDoc, withComputer = false): SessionView {
+  // The view is always the human's: `you` is the seat of this device's player, also after a computer move.
+  function view(row: DeviceSession, doc: SessionDoc): SessionView {
     const info = account();
     const seatInfo = (seat: Player) => (doc.seats[seat] === token ? info : null);
     return core.viewOf(doc, {
       code: row.code,
       version: row.version,
-      identity: identity(withComputer),
+      identity: identity(),
       now: epochNow(),
       audience: audienceOf(row.code, doc),
       players: { X: seatInfo('X'), O: seatInfo('O') },
@@ -134,9 +135,9 @@ export function createLocalBackend(
     });
   }
 
-  async function change(code: Code, rule: (doc: SessionDoc) => SessionDoc, withComputer = false): Promise<SessionView> {
+  async function change(code: Code, rule: (doc: SessionDoc) => SessionDoc): Promise<SessionView> {
     const { row, doc } = await apply(code, rule);
-    return view(row, doc, withComputer);
+    return view(row, doc);
   }
 
   return {
@@ -162,7 +163,7 @@ export function createLocalBackend(
     move: (code: Code, request: MoveRequest) => change(code, (doc) => core.move(doc, identity(), request, epochNow())),
     // The page plays the computer's moves through this, with the computer's token added.
     computerMove: (code: Code, request: MoveRequest) =>
-      change(code, (doc) => core.move(doc, identity(true), request, epochNow()), true),
+      change(code, (doc) => core.move(doc, identity(true), request, epochNow())),
     newGame: (code: Code) => change(code, (doc) => core.newGame(doc, identity())),
     update: (code: Code, changes: SessionUpdate) => change(code, (doc) => core.update(doc, identity(), changes)),
     lock: (code: Code) => change(code, (doc) => core.lock(doc, identity())),
