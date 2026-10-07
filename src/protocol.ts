@@ -1,6 +1,7 @@
 // Contract between the page and the online API. Both sides import this file.
 import { DIFFICULTIES, type Difficulty } from './ai.ts';
 import { NO_LIMIT, type TimeControl, parseClock } from './clock.ts';
+import { type EpochMs, isEpochMs } from './epoch.ts';
 import { CELL_COUNT, type Game, type Player, type Status, replay, timeOut } from './game.ts';
 import type { DeviceKind } from './nearby/device.ts';
 import { type Tuning, isTuning, parseTuning } from './tuning.ts';
@@ -33,7 +34,7 @@ export function parseMatchOptions(value: unknown): MatchOptions | undefined {
   return { hideBoard: value.hideBoard, hideHistory: value.hideHistory, hideCoordinates };
 }
 
-export type ChatMessage = { id: number; from: Player; text: string; at: number };
+export type ChatMessage = { id: number; from: Player; text: string; at: EpochMs };
 // A GitHub account linked to a seat. Shown next to the seat, never required to play.
 export type PlayerInfo = { login: string; avatar: string };
 // The generated name of each seat's player (src/names.ts). The server computes it from the seat's
@@ -42,7 +43,7 @@ type SeatNames = Record<Player, string | null>;
 export const SESSION_MODES = ['online', 'computer', 'friend', 'nearby'] as const;
 export type SessionMode = (typeof SESSION_MODES)[number];
 // One game as stored: moves, the time of each move, its time limit, and whether the player to move ran out of time.
-export type GameRecord = { moves: number[]; times: number[]; clock: TimeControl; timedOut: boolean };
+export type GameRecord = { moves: number[]; times: EpochMs[]; clock: TimeControl; timedOut: boolean };
 
 export type SessionView = {
   code: Code;
@@ -56,7 +57,7 @@ export type SessionView = {
   // The time limit for the next game. Each game keeps the limit it started with.
   clock: TimeControl;
   // Server time when the view was made. Pages use it to correct their own clock.
-  now: number;
+  now: EpochMs;
   version: number;
   // Oldest first. Only the two players can write, everybody with the code can read.
   chat: ChatMessage[];
@@ -100,7 +101,7 @@ export type SeatRequestView = {
   // The watcher that takes the other seat, for replace. Null for the other actions.
   watcher: { name: string; player: PlayerInfo | null } | null;
   // The request ends at this time (server time) when nobody answers.
-  expiresAt: number;
+  expiresAt: EpochMs;
 };
 
 const isWatcherId = (value: unknown): value is string =>
@@ -132,7 +133,7 @@ function parseSeatRequestView(value: unknown): SeatRequestView | undefined {
   if (!isRecord(value)) return undefined;
   const kind = oneOf(CONSENT_ACTIONS, value.kind);
   const { from, expiresAt } = value;
-  if (kind === undefined || (from !== 'X' && from !== 'O') || typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) return undefined;
+  if (kind === undefined || (from !== 'X' && from !== 'O') || !isEpochMs(expiresAt)) return undefined;
   let watcher: SeatRequestView['watcher'] = null;
   if (value.watcher !== null) {
     if (!isRecord(value.watcher) || !isDisplayName(value.watcher.name)) return undefined;
@@ -227,8 +228,7 @@ export function isChatMessage(value: unknown): value is ChatMessage {
     Number.isInteger(id) &&
     (from === 'X' || from === 'O') &&
     normalizeChat(text) === text &&
-    typeof at === 'number' &&
-    Number.isFinite(at)
+    isEpochMs(at)
   );
 }
 
@@ -243,7 +243,7 @@ export function isGameRecord(value: unknown): value is GameRecord {
     isMoveList(moves) &&
     Array.isArray(times) &&
     times.length === moves.length &&
-    times.every((time) => typeof time === 'number' && Number.isFinite(time)) &&
+    times.every(isEpochMs) &&
     typeof timedOut === 'boolean' &&
     parseClock(clock) !== undefined
   );
@@ -306,7 +306,7 @@ export function parseSessionView(value: unknown): SessionView {
   if (matchOptions === undefined) return fail('options');
   if (typeof locked !== 'boolean') return fail('locked');
   if (clock === undefined) return fail('clock');
-  if (typeof now !== 'number' || !Number.isFinite(now)) return fail('now');
+  if (!isEpochMs(now)) return fail('now');
   if (typeof version !== 'number' || !Number.isInteger(version)) return fail('version');
   if (!Array.isArray(chat) || chat.length > CHAT_KEEP || !chat.every(isChatMessage)) return fail('chat');
   if (!isRecord(presence) || typeof presence.X !== 'boolean' || typeof presence.O !== 'boolean') return fail('presence');
@@ -536,7 +536,7 @@ export type ResultUpload = {
   // The seat of this device's player. Null for a friend game, where one device plays both seats.
   you: Player | null;
   difficulty: Difficulty | null;
-  finishedAt: number;
+  finishedAt: EpochMs;
   // Null from a device version before game links. The server then makes an id.
   publicId: GameId | null;
   // The hide settings at the end of the game.
@@ -562,7 +562,7 @@ const RESULT_KEYS = ['id', 'mode', 'game', 'you', 'difficulty', 'finishedAt', 'p
 // `now` is the time of the reader. The database can store finishedAt only inside a bounded range.
 // A device version before game links sends no publicId, options, tuned or metrics, and a version
 // before generated names sends no guest. Those get their defaults, so its waiting results still upload.
-export function parseResultUpload(value: unknown, now: number): ResultUpload | undefined {
+export function parseResultUpload(value: unknown, now: EpochMs): ResultUpload | undefined {
   if (!isRecord(value) || !hasOnlyKeys(value, RESULT_KEYS)) return undefined;
   const { id, mode, game, you, difficulty, finishedAt } = value;
   if (typeof id !== 'string' || id.length < 16 || id.length > 64 || ![...id].every((c) => RESULT_ID_CHARS.includes(c))) {
@@ -582,7 +582,7 @@ export function parseResultUpload(value: unknown, now: number): ResultUpload | u
   if (mode === 'friend' ? you !== null : you === null) return undefined;
   const level = difficulty === null ? null : DIFFICULTIES.find((d) => d === difficulty);
   if (level === undefined || (mode === 'computer') !== (level !== null)) return undefined;
-  if (typeof finishedAt !== 'number' || !(finishedAt > 0 && finishedAt <= now + FUTURE_SLACK_MS)) return undefined;
+  if (!isEpochMs(finishedAt) || finishedAt === 0 || finishedAt > now + FUTURE_SLACK_MS) return undefined;
   const publicId = value.publicId === undefined || value.publicId === null ? null : parseGameId(value.publicId);
   if (publicId === undefined || (publicId !== null && (!isDeviceGameId(publicId) || publicId !== value.publicId))) return undefined;
   const options = parseMatchOptions(value.options ?? { hideBoard: false, hideHistory: false });
@@ -624,7 +624,7 @@ export type PublicGame = {
   // The GitHub account behind each seat, when its player logged in.
   players: Record<Player, PlayerInfo | null>;
   names: SeatNames;
-  finishedAt: number;
+  finishedAt: EpochMs;
 };
 
 // Throws on any unexpected shape. The server checks its own answer with this too.
@@ -654,7 +654,7 @@ export function parsePublicGame(value: unknown): PublicGame {
   if (playerX === undefined || playerO === undefined) return fail('players');
   const names = parseSeatNames(value.names);
   if (names === undefined) return fail('names');
-  if (typeof finishedAt !== 'number' || !Number.isFinite(finishedAt)) return fail('finishedAt');
+  if (!isEpochMs(finishedAt)) return fail('finishedAt');
   return {
     id,
     mode,
@@ -684,7 +684,7 @@ export type HistoryEntry = {
   opponent: PlayerInfo | null;
   // The generated name of the other player, when the server knows their seat.
   opponentName: string | null;
-  finishedAt: number;
+  finishedAt: EpochMs;
 };
 export type HistoryPage = { games: HistoryEntry[]; more: boolean };
 export const HISTORY_PAGE_SIZE = 50;
@@ -707,7 +707,7 @@ export function parseHistoryPage(value: unknown): HistoryPage {
     if (id === undefined || mode === undefined || difficulty === undefined || result === undefined || opponent === undefined) {
       return fail('entry');
     }
-    if (!isCount(moves) || typeof finishedAt !== 'number' || !Number.isFinite(finishedAt) || !isSeatName(opponentName)) return fail('entry');
+    if (!isCount(moves) || !isEpochMs(finishedAt) || !isSeatName(opponentName)) return fail('entry');
     return { id, mode, difficulty, result, moves, opponent, opponentName, finishedAt };
   });
   return { games, more: value.more };
@@ -742,7 +742,7 @@ export type SessionSummary = {
   // The generated name of the other player. Null while their seat is empty.
   opponentName: string | null;
   yourTurn: boolean;
-  updatedAt: number;
+  updatedAt: EpochMs;
 };
 export type MyGames = {
   user: PlayerInfo | null;
@@ -820,7 +820,7 @@ export type Preview = {
   // The pull request on GitHub.
   url: string;
   previewUrl: string;
-  updatedAt: number;
+  updatedAt: EpochMs;
   draft: boolean;
   // The author of the pull request and the commit authors, most commits first.
   contributors: Contributor[];
@@ -844,7 +844,7 @@ function parsePreview(value: unknown): Preview | undefined {
   // The page puts both addresses in links, so each must go to the expected kind of site.
   if (typeof url !== 'string' || !url.startsWith('https://github.com/')) return undefined;
   if (typeof previewUrl !== 'string' || !previewUrl.startsWith(`https://pr.${number}.`)) return undefined;
-  if (typeof updatedAt !== 'number' || !Number.isFinite(updatedAt) || typeof draft !== 'boolean' || !Array.isArray(contributors)) return undefined;
+  if (!isEpochMs(updatedAt) || typeof draft !== 'boolean' || !Array.isArray(contributors)) return undefined;
   const people = contributors.map(parseContributor);
   if (!people.every((person) => person !== undefined)) return undefined;
   return { number, title, description, url, previewUrl, updatedAt, draft, contributors: people };
