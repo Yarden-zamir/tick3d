@@ -177,8 +177,9 @@ test('icon buttons show their tooltip on hover', async ({ open }) => {
   await page.locator('#lock').hover();
   await expect(page.getByRole('tooltip')).toContainText('Lock: no setting changes');
   // The hover scrolls the button into view, and a scroll hides the tooltip. The scroll event can come
-  // after the hover, so the hover repeats until the tooltip stays.
+  // after the hover, so the pointer leaves and hovers again until the tooltip stays.
   await expect(async () => {
+    await page.mouse.move(1, 1);
     await page.getByRole('button', { name: 'Sound set', exact: true }).hover();
     await expect(page.getByRole('tooltip')).toContainText('Sound set', { timeout: 1000 });
   }).toPass();

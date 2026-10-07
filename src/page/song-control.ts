@@ -35,7 +35,8 @@ export function songControl(button: HTMLButtonElement, source: () => SongSource 
   let press: { timer: ReturnType<typeof setTimeout>; file: Promise<File> | undefined } | undefined;
   let playing: { playback: SongPlayback; frame: number; source: SongSource } | undefined;
   // The end of the last long press. The click right after it must not also play the song. The browser can
-  // skip that click (the label of the button changes during the press), so a time limit ends the drop.
+  // skip that click (the label of the button changes during the press), so the next press, or a time
+  // limit for a keyboard click, ends the drop.
   let longPressEnd = -Infinity;
 
   const show = (state: State) => {
@@ -94,6 +95,7 @@ export function songControl(button: HTMLButtonElement, source: () => SongSource 
 
   show('idle');
   button.addEventListener('pointerdown', (event) => {
+    longPressEnd = -Infinity;
     if (!event.isPrimary || event.button !== 0 || button.dataset.state !== 'idle') return;
     const shown = source();
     if (shown === undefined) return;
