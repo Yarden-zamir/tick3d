@@ -1,4 +1,4 @@
-import { cell, expect, expectMyMove, expectToast, marks, ownName, readQr, test, toasts } from './fixtures.ts';
+import { cell, expect, expectMyMove, expectToast, marks, hasDeviceGameLink, ownName, playerToken, readQr, storedSettings, test, toasts } from './fixtures.ts';
 import type { Page } from '@playwright/test';
 
 const nearby = { settings: { mode: 'nearby' } };
@@ -60,18 +60,19 @@ test('host and guest connect with text codes, play a game and chat, and both see
   await expect(guest.locator('#status')).toHaveText(`${hostName} wins!`);
   await expect(guest.locator('#lock')).not.toContainText('Locked');
   await expect(guest.getByRole('button', { name: 'Flat' })).toBeEnabled();
-  await expect(host).toHaveURL(/[?&]game=[A-Z2-9]{8}/);
+  await expect(host).toHaveURL(hasDeviceGameLink);
   const id = new URL(host.url()).searchParams.get('game');
 
   // The host's result names both seats: the link shows both players, and the guest's history has the
   // game with the host as the opponent.
   const { page: viewer } = await open({ path: `/?game=${id ?? ''}` });
   await expect(viewer.locator('#game-view')).toContainText(`${hostName} (X) vs ${guestName} (O)`);
+  const guestToken = await playerToken(guest);
   const guestHistory = () =>
-    guest.evaluate(async () => {
-      const response = await fetch('/api/me/history', { headers: { 'x-player': localStorage.getItem('tick3d.player') ?? '' } });
+    guest.evaluate(async (token) => {
+      const response = await fetch('/api/me/history', { headers: { 'x-player': token } });
       return JSON.stringify(await response.json());
-    });
+    }, guestToken);
   await expect.poll(guestHistory).toContain(`"opponentName":"${hostName}"`);
   // The guest's own copy of the game stays out of the history: the game shows once.
   expect(JSON.parse(await guestHistory())).toMatchObject({ games: [{ mode: 'nearby', result: 'lost' }] });
@@ -123,5 +124,5 @@ test('a guest that cancels never joins, and a double tap on Host hosts once', as
   const guestToasts = await toasts(guest);
   expect(guestToasts).not.toContainEqual(expect.stringContaining('Joined'));
   expect(guestToasts, 'a deliberate cancel needs no message').not.toContainEqual(expect.stringContaining('cancelled'));
-  await expect.poll(() => guest.evaluate(() => (JSON.parse(localStorage.getItem('tick3d.settings') ?? '{}') as { mode?: string }).mode)).toBe('computer');
+  await expect.poll(async () => (await storedSettings(guest)).mode).toBe('computer');
 });

@@ -9,6 +9,7 @@ import { type Me, token } from '../online.ts';
 import { parseCustomName } from '../protocol.ts';
 import type { SessionView, MatchOptions, Code, MoveRequest, SeatAction, SessionUpdate, PublicGame } from '../protocol.ts';
 import { type Mode, settings } from './settings.ts';
+import { STORAGE_KEYS } from '../storage-keys.ts';
 
 // The open session: its latest view, the backend that holds it, and its mode.
 export type Session = SessionView & { backend: SessionBackend; mode: Mode; unsubscribe: () => void };
@@ -99,11 +100,10 @@ type PageState = {
 };
 
 // The custom name from the last /api/me answer, so the page shows it offline too.
-const NAME_KEY = 'tick3d.name';
 
 function storedName(): string | null {
   try {
-    return parseCustomName(localStorage.getItem(NAME_KEY)) ?? null;
+    return parseCustomName(localStorage.getItem(STORAGE_KEYS.name)) ?? null;
   } catch {
     return null; // Storage is blocked. The name comes with the next /api/me answer.
   }
@@ -112,8 +112,8 @@ function storedName(): string | null {
 export function saveAccount(account: Me): void {
   page.account = account;
   try {
-    if (account.name === null) localStorage.removeItem(NAME_KEY);
-    else localStorage.setItem(NAME_KEY, account.name);
+    if (account.name === null) localStorage.removeItem(STORAGE_KEYS.name);
+    else localStorage.setItem(STORAGE_KEYS.name, account.name);
   } catch {
     // Storage is blocked. The page keeps the name for this visit.
   }

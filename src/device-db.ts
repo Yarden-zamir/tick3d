@@ -15,7 +15,7 @@ type CachedView = { code: Code; view: SessionView; savedAt: number };
 type Stores = { sessions: DeviceSession; results: DeviceResult; remote: CachedView };
 type StoreName = keyof Stores;
 
-const DB_NAME = 'tick3d';
+export const DB_NAME = 'tick3d';
 // Version 1 creates the stores. To add a store or an index, raise the version and add a step
 // in onupgradeneeded. Never change a step that a released version already ran.
 const DB_VERSION = 1;

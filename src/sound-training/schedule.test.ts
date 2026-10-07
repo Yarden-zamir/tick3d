@@ -7,6 +7,7 @@ import {
   DIMENSIONS,
   ITEMS,
   LEARN_VIEWS,
+  RECENT_SIZE,
   answerFull,
   answerItem,
   areaOf,
@@ -151,10 +152,10 @@ describe('what the player hears', () => {
     expect(after.items['layer-1']?.box).toBe(1);
   });
 
-  it('keeps only the last 20 answers of a dimension', () => {
-    let progress = allInQuiz({ layer: answers(20, 0), row: [], column: [] });
+  it('keeps only the last RECENT_SIZE answers of a dimension', () => {
+    let progress = allInQuiz({ layer: answers(RECENT_SIZE, 0), row: [], column: [] });
     progress = answerItem(progress, 'layer-0', false);
-    expect(progress.recent.layer).toHaveLength(20);
+    expect(progress.recent.layer).toHaveLength(RECENT_SIZE);
     expect(progress.recent.layer.at(-1)).toBe(false);
   });
 });

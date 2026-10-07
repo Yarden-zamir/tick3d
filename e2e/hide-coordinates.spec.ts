@@ -1,3 +1,5 @@
+import { SIZE } from '../src/game.ts';
+import { PAGES } from '../src/pages.ts';
 import { cell, expect, marks, test } from './fixtures.ts';
 
 test('hide coordinates keeps the last move off the keypad and points to the ear training', async ({ open }) => {
@@ -5,7 +7,7 @@ test('hide coordinates keeps the last move off the keypad and points to the ear 
   const toggle = page.getByRole('button', { name: 'Hide coordinates', exact: true });
   const trainLink = page.locator('#train-link');
   const slots = page.locator('#coords-slots b');
-  await expect(trainLink).toHaveAttribute('href', '/sound-training');
+  await expect(trainLink).toHaveAttribute('href', PAGES.training.path);
   await expect(trainLink).not.toHaveClass(/highlight/);
 
   await toggle.click();
@@ -24,5 +26,5 @@ test('hide coordinates keeps the last move off the keypad and points to the ear 
 
   await toggle.click();
   await expect(trainLink).not.toHaveClass(/highlight/);
-  await expect(slots.first()).toHaveText(/^[1-4]$/);
+  await expect(slots.first()).toHaveText(new RegExp(`^[1-${SIZE}]$`));
 });

@@ -1,11 +1,10 @@
-import { cell, expect, marks, test } from './fixtures.ts';
+import { cell, expect, marks, storedSettings, test } from './fixtures.ts';
 import type { Locator, Page } from '@playwright/test';
 
 const friend = { settings: { mode: 'friend', view: 'tower' } };
 
 // The spin that the page stored after the last drag, or undefined before the first one.
-const storedSpin = (page: Page): Promise<unknown> =>
-  page.evaluate(() => (JSON.parse(localStorage.getItem('tick3d.settings') ?? '{}') as { spin?: unknown }).spin);
+const storedSpin = async (page: Page): Promise<unknown> => (await storedSettings(page)).spin;
 
 async function box(locator: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
   const found = await locator.boundingBox();

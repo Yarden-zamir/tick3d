@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parsePreviews } from '../src/protocol.ts';
+import { PREVIEW_DESCRIPTION_LENGTH, parsePreviews } from '../src/protocol.ts';
 import { PREVIEWS_CACHE_MS, PREVIEWS_RELAY_CACHE_MS } from './api-docs.ts';
 import { MAX_COMMITS, MAX_CONTRIBUTORS, MAX_PULLS, commitPeople, createPreviews, mergeContributors, parsePull, previewsConfigFromEnv, summaryOf } from './previews.ts';
 
@@ -136,7 +136,7 @@ describe('the description', () => {
 
   it('cuts a long text at a word, within the limit', () => {
     const text = summaryOf('word '.repeat(200));
-    expect(text.length).toBeLessThanOrEqual(280);
+    expect(text.length).toBeLessThanOrEqual(PREVIEW_DESCRIPTION_LENGTH);
     expect(text.endsWith('word…')).toBe(true);
   });
 });

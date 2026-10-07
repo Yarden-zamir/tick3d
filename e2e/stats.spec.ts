@@ -1,18 +1,18 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures.ts';
+import { expect, playerToken, test } from './fixtures.ts';
 
 // X wins along 0, 16, 32, 48. O plays 1, 2, 3.
 const X_WINS = [0, 1, 16, 2, 32, 3, 48];
 
 // Uploads finished games as the page's browser, with its player token: one computer game and one friend game.
 async function uploadGames(page: Page): Promise<void> {
-  const stored = await page.evaluate(async (moves) => {
+  const stored = await page.evaluate(async ({ moves, token }) => {
     const now = Date.now();
     const game = { moves, times: moves.map((_, i) => now - 60_000 + i * 1_000), clock: { perMove: null, perGame: null }, timedOut: false };
     const id = (kind: string) => `e2e-stats-${kind}-${crypto.randomUUID()}`;
     const response = await fetch('/api/results', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-player': localStorage.getItem('tick3d.player') ?? '' },
+      headers: { 'content-type': 'application/json', 'x-player': token },
       body: JSON.stringify({
         results: [
           { id: id('computer'), mode: 'computer', game, you: 'X', difficulty: 'easy', finishedAt: now },
@@ -21,7 +21,7 @@ async function uploadGames(page: Page): Promise<void> {
       }),
     });
     return ((await response.json()) as { stored: number }).stored;
-  }, X_WINS);
+  }, { moves: X_WINS, token: await playerToken(page) });
   expect(stored).toBe(2);
 }
 

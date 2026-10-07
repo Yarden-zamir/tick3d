@@ -9,7 +9,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.setConfig({ testTimeout: 20_000 });
 import { replay } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
-import { type Code, type DeviceGameId, type GameId, type Metrics, type PlayerToken, type ResultUpload, type StatsFilter, ALL_STATS, parseDeviceGameId, parseGameId, toRecord } from '../src/protocol.ts';
+import { type Code, type DeviceGameId, type GameId, type Metrics, type PlayerToken, type ResultUpload, type StatsFilter, ALL_STATS, HISTORY_PAGE_SIZE, parseDeviceGameId, parseGameId, toRecord } from '../src/protocol.ts';
+import { PLAYOFF_COUNTDOWN_MS } from '../src/practice/playoff.ts';
 import type { PracticeRun } from '../src/practice/practice.ts';
 import { SessionError } from '../src/session/core.ts';
 import { type Store, openStore } from './store.ts';
@@ -492,14 +493,14 @@ describe('match history', () => {
 
   it('pages through the history', async () => {
     store = await openStore(':memory:');
-    const uploads = Array.from({ length: 51 }, (_, i) =>
+    const uploads = Array.from({ length: HISTORY_PAGE_SIZE + 1 }, (_, i) =>
       result(`77777777-0000-4000-8000-${String(i).padStart(12, '0')}`, { finishedAt: ms(10_000 + i) }),
     );
     await store.addResults(alice, uploads);
     const first = await store.history(alice, 0);
-    expect(first.games).toHaveLength(50);
+    expect(first.games).toHaveLength(HISTORY_PAGE_SIZE);
     expect(first.more).toBe(true);
-    const second = await store.history(alice, 50);
+    const second = await store.history(alice, HISTORY_PAGE_SIZE);
     expect(second).toMatchObject({ more: false, games: [{ finishedAt: 10_000 }] });
   });
 });
@@ -812,7 +813,7 @@ describe('sound practice', () => {
     expect(started.playoff).toMatchObject({ id: 1, by: 'X', startAt: null });
     const joined = await store.playoff(code, bob, { action: 'join', id: 1 });
     const startAt = joined.playoff?.startAt ?? 0;
-    expect(startAt).toBe(clock + 3000);
+    expect(startAt).toBe(clock + PLAYOFF_COUNTDOWN_MS);
     clock = startAt + 10;
     for (let index = 0; index < 10; index++) {
       await store.playoff(code, alice, { action: 'hit', id: 1, index, ms: 1000 });

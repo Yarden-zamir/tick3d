@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSdp, decodeSignal, encodeSignal, readSdp } from './signal.ts';
+import { HELLO_NAME_MAX_LENGTH, buildSdp, decodeSignal, encodeSignal, readSdp } from './signal.ts';
 
 // A Chrome data channel offer with mDNS host candidates, as a page on a local network makes it.
 const CHROME_OFFER = [
@@ -74,7 +74,7 @@ describe('encodeSignal and decodeSignal', () => {
 
   it('refuses an invalid name or description when encoding', async () => {
     await expect(encodeSignal({ type: 'offer', sdp: CHROME_OFFER }, { device: 'phone', name: '  ' })).rejects.toThrow();
-    await expect(encodeSignal({ type: 'offer', sdp: CHROME_OFFER }, { device: 'phone', name: 'x'.repeat(25) })).rejects.toThrow();
+    await expect(encodeSignal({ type: 'offer', sdp: CHROME_OFFER }, { device: 'phone', name: 'x'.repeat(HELLO_NAME_MAX_LENGTH + 1) })).rejects.toThrow();
     await expect(encodeSignal({ type: 'pranswer', sdp: CHROME_OFFER }, { device: 'phone', name: 'A' })).rejects.toThrow();
   });
 
