@@ -28,7 +28,7 @@ import {
   VIEWS,
   WATCHER_ID_LENGTH,
 } from '../src/protocol.ts';
-import { SEAT_REQUEST_MS } from '../src/session/core.ts';
+import { ERROR_CODES, SEAT_REQUEST_MS } from '../src/session/core.ts';
 
 // Long polls wait at most this long. Proxies keep an idle request open for longer.
 export const WAIT_MS = 25_000;
@@ -297,7 +297,14 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       description: `${CUSTOM_NAME_MIN_LENGTH} to ${CUSTOM_NAME_MAX_LENGTH} letters, digits, spaces, "-" and "_". The server trims spaces and joins inner spaces into one.`,
     },
   }),
-  Error: object('A refused request.', { error: { type: 'string', description: 'A message for a person.' } }),
+  Error: object(
+    'A refused request.',
+    {
+      error: { type: 'string', description: 'A message for a person.' },
+      code: strings(ERROR_CODES, 'For a program: a refusal that needs a specific reaction. Only some refusals have one.'),
+    },
+    ['code'],
+  ),
   Health: object('The server is up.', {
     ok: { const: true },
     lan: nullable(object('A server that a player runs on a local network.', { name: { type: 'string' } })),
@@ -636,6 +643,8 @@ export type Route = {
   errors: readonly { status: number; when: string }[];
   // The X-Player value in the example, when the route reads one.
   examplePlayer?: string;
+  // The route accepts an Idempotency-Key header (server/idempotency.ts): a repeat gets the first answer.
+  idempotencyKey?: true;
 };
 
 // Path parameters, by the name in braces in a route path.
@@ -663,6 +672,12 @@ const NO_GAME = { status: 404, when: 'No game has this code.' };
 const NOT_A_PLAYER = { status: 403, when: 'You hold no seat in this game. Watchers only read.' };
 const BAD_BODY = { status: 400, when: 'The body is not valid JSON, or a field is wrong.' };
 const TOO_BIG = { status: 413, when: 'The body is larger than 4 kB.' };
+// The errors of the Idempotency-Key header, for every route that accepts it.
+const KEY_ERRORS = [
+  { status: 400, when: 'The Idempotency-Key header is not valid.' },
+  { status: 409, when: 'The first request with this Idempotency-Key still runs.' },
+  { status: 422, when: 'This Idempotency-Key came with another request before.' },
+];
 
 export const ROUTES = {
   'POST /api/sessions': {
@@ -671,9 +686,10 @@ export const ROUTES = {
     summary: 'Create a game.',
     description: `You take seat X, and X moves first. The first other player who joins takes seat O. Share the link /?code=<code>. One address can create ${CREATES_PER_HOUR} sessions per hour.`,
     player: 'required',
+    idempotencyKey: true,
     body: { schema: 'NewSession', example: { name: 'Agent match' } },
     response: { status: 201, description: 'The new session.', schema: 'SessionView', example: view({}) },
-    errors: [BAD_PLAYER, BAD_BODY, TOO_BIG, { status: 429, when: `This address created ${CREATES_PER_HOUR} sessions in the last hour.` }],
+    errors: [BAD_PLAYER, BAD_BODY, TOO_BIG, { status: 429, when: `This address created ${CREATES_PER_HOUR} sessions in the last hour.` }, ...KEY_ERRORS],
     examplePlayer: AGENT_A,
   },
   'GET /api/sessions/{code}': {
@@ -712,16 +728,18 @@ export const ROUTES = {
     summary: 'Take a free seat.',
     description: 'You get seat O when the creator holds X. When you hold a seat already, you keep it. Your X-Player id holds the seat from now on.',
     player: 'required',
+    idempotencyKey: true,
     response: { status: 200, description: 'The session. "you" shows your seat.', schema: 'SessionView', example: view({ seats: { X: true, O: true }, you: 'O', version: 2 }) },
-    errors: [BAD_PLAYER, BAD_CODE, NO_GAME, { status: 409, when: 'Both seats are taken. You can still read the game.' }],
+    errors: [BAD_PLAYER, BAD_CODE, NO_GAME, { status: 409, when: 'Both seats are taken. You can still read the game.' }, ...KEY_ERRORS],
     examplePlayer: AGENT_B,
   },
   'POST /api/sessions/{code}/moves': {
     operationId: 'makeMove',
     tag: 'Play',
     summary: 'Make a move in the live game.',
-    description: 'Send the index of the live game and the number of moves that you saw. When they do not match the session, another move came first: read the session again.',
+    description: 'Send the index of the live game and the number of moves that you saw. When they do not match the session, another move came first: read the session again. When your own move is already at that place, the 409 has the code "already-played": an earlier copy of this request counted.',
     player: 'required',
+    idempotencyKey: true,
     body: { schema: 'MoveRequest', example: { game: 0, moveCount: 0, cell: 21 } },
     response: {
       status: 200,
@@ -736,6 +754,8 @@ export const ROUTES = {
       NOT_A_PLAYER,
       NO_GAME,
       { status: 409, when: 'It is not your turn, the cell is taken, the board changed, the game is over, or time is up.' },
+      { status: 409, when: 'Code "already-played": this move is in the game already.' },
+      ...KEY_ERRORS,
     ],
     examplePlayer: AGENT_A,
   },
@@ -745,13 +765,14 @@ export const ROUTES = {
     summary: 'Start the next game.',
     description: 'Either player can start the next game after the live game ends. X moves first again.',
     player: 'required',
+    idempotencyKey: true,
     response: {
       status: 200,
       description: 'The session with a new, empty live game.',
       schema: 'SessionView',
       example: view({ games: [game(X_WINS), game([])], seats: { X: true, O: true }, version: 10 }),
     },
-    errors: [BAD_PLAYER, BAD_CODE, NOT_A_PLAYER, NO_GAME, { status: 409, when: 'The live game is not over, or the settings are locked until it ends.' }],
+    errors: [BAD_PLAYER, BAD_CODE, NOT_A_PLAYER, NO_GAME, { status: 409, when: 'The live game is not over, or the settings are locked until it ends.' }, ...KEY_ERRORS],
     examplePlayer: AGENT_A,
   },
   'POST /api/sessions/{code}/chat': {
@@ -760,6 +781,7 @@ export const ROUTES = {
     summary: 'Send a chat message.',
     description: `Only the two players can write. The session keeps the newest ${CHAT_KEEP} messages.`,
     player: 'required',
+    idempotencyKey: true,
     body: { schema: 'ChatRequest', example: { text: 'Good luck!' } },
     response: {
       status: 200,
@@ -767,7 +789,7 @@ export const ROUTES = {
       schema: 'SessionView',
       example: view({ seats: { X: true, O: true }, version: 3, chat: [{ id: 1, from: 'X', text: 'Good luck!', at: T0 + 5000 }] }),
     },
-    errors: [BAD_PLAYER, BAD_CODE, { status: 400, when: `The text is empty or longer than ${CHAT_MAX_LENGTH} characters.` }, NOT_A_PLAYER, NO_GAME],
+    errors: [BAD_PLAYER, BAD_CODE, { status: 400, when: `The text is empty or longer than ${CHAT_MAX_LENGTH} characters.` }, NOT_A_PLAYER, NO_GAME, ...KEY_ERRORS],
     examplePlayer: AGENT_A,
   },
   'PATCH /api/sessions/{code}': {
@@ -776,9 +798,10 @@ export const ROUTES = {
     summary: 'Rename a session, or change its options or time limit.',
     description: 'A new time limit starts with the next game. During a lock, only the name can change.',
     player: 'required',
+    idempotencyKey: true,
     body: { schema: 'SessionUpdate', example: { name: 'Rematch' } },
     response: { status: 200, description: 'The changed session.', schema: 'SessionView', example: view({ name: 'Rematch', seats: { X: true, O: true }, version: 3 }) },
-    errors: [BAD_PLAYER, BAD_CODE, BAD_BODY, NOT_A_PLAYER, NO_GAME, { status: 409, when: 'The settings are locked until the live game ends.' }],
+    errors: [BAD_PLAYER, BAD_CODE, BAD_BODY, NOT_A_PLAYER, NO_GAME, { status: 409, when: 'The settings are locked until the live game ends.' }, ...KEY_ERRORS],
     examplePlayer: AGENT_A,
   },
   'POST /api/sessions/{code}/lock': {
@@ -786,8 +809,9 @@ export const ROUTES = {
     tag: 'Play',
     summary: 'Lock the settings until the live game ends.',
     player: 'required',
+    idempotencyKey: true,
     response: { status: 200, description: 'The locked session.', schema: 'SessionView', example: view({ seats: { X: true, O: true }, locked: true, version: 3 }) },
-    errors: [BAD_PLAYER, BAD_CODE, NOT_A_PLAYER, NO_GAME, { status: 409, when: 'The live game is over, or a seat is still empty.' }],
+    errors: [BAD_PLAYER, BAD_CODE, NOT_A_PLAYER, NO_GAME, { status: 409, when: 'The live game is over, or a seat is still empty.' }, ...KEY_ERRORS],
     examplePlayer: AGENT_A,
   },
   'POST /api/sessions/{code}/seats': {
@@ -796,6 +820,7 @@ export const ROUTES = {
     summary: 'Change the seats (swap, leave, give, seat, unseat, replace), or ask to take back your last move (undo).',
     description: `Only a player can change the seats. A change of your own seat, or of an empty seat, applies at once. A change of the seat of the other player (swap, unseat, replace) and an undo wait in \`seatRequest\` until the other player accepts with POST /api/sessions/{code}/seats/answer. It ends after ${SEAT_REQUEST_MS / 1000} s. A new request replaces your older one. A swap is allowed during a game: each clock stays with its seat. Watchers come from \`watchers\` in the session.`,
     player: 'required',
+    idempotencyKey: true,
     body: { schema: 'SeatAction', example: { action: 'swap' } },
     response: {
       status: 200,
@@ -810,6 +835,7 @@ export const ROUTES = {
       NOT_A_PLAYER,
       { status: 404, when: 'No game has this code, or the watcher left.' },
       { status: 409, when: 'The seat is not free or not taken as the action needs, the other player asked first, the game is not online, or an undo does not apply (not your last move, a timed or finished game, a lock).' },
+      ...KEY_ERRORS,
     ],
     examplePlayer: AGENT_A,
   },
@@ -819,6 +845,7 @@ export const ROUTES = {
     summary: 'Accept or decline the open seat request.',
     description: 'The other player accepts or declines. The player who asked can only cancel, with accept false. Accept checks the request again and then applies it.',
     player: 'required',
+    idempotencyKey: true,
     body: { schema: 'SeatAnswer', example: { accept: true } },
     response: {
       status: 200,
@@ -833,6 +860,7 @@ export const ROUTES = {
       NOT_A_PLAYER,
       NO_GAME,
       { status: 409, when: 'No request is open, only the other player can accept, or the request no longer applies.' },
+      ...KEY_ERRORS,
     ],
     examplePlayer: AGENT_B,
   },

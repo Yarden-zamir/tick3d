@@ -249,6 +249,10 @@ The full reference, with every shape, error and a curl example, is the OpenAPI 3
 | `GET /api/nearby/hosts` | The open Nearby games on the network of the caller, without its own. |
 | `POST /api/nearby/hosts` | A host puts its Nearby game in the list, and gets its id at once. With the id, the server holds the request until a guest answers, or for about 25 s. Needs the X-Player header. |
 | `POST /api/nearby/hosts/:id/answer` | A guest sends its answer to the offer of a host. Needs the X-Player header. |
+
+- The session routes that change a game accept an optional `Idempotency-Key` header. A repeat with the same key gets the first answer, and changes nothing. The same key with another body gets 422. The server keeps the keys in memory for 1 hour, so a restart forgets them.
+- A move that is in the game already gets 409 with `"code": "already-played"`, so a client without keys can tell that its move counted.
+- Every 429 has a `Retry-After` header with the seconds until the limit lets the client in again.
 | `POST /api/events` | A fault report from a page. At most 1 kB, 30 per 10 minutes per address. |
 | `GET /api/stats` | The aggregates of the stats page. The server computes them at most once a minute. |
 | `GET /api/previews` | The production site and the open pull requests with a live preview, for the kitshn button. Production reads GitHub at most once per 3 minutes, without a token. A preview reads the list from production. |
@@ -288,7 +292,7 @@ docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr.17.
 - The image tag must match the `@playwright/test` version in `package.json`. Update both together.
 - `npm ci` in the Playwright image installs packages for glibc. Run `npm ci` again before you use `node:26-alpine`.
 - Each test opens fresh browser contexts, and the tests run in parallel. The HTML report goes to `e2e/playwright-report/`. A failed test keeps a trace in `e2e/test-results/`.
-- One run creates 10 online sessions. The server allows 60 new sessions per hour from one address.
+- One run creates 11 online sessions. The server allows 60 new sessions per hour from one address.
 - The `e2e` workflow runs the suite after a successful pull request preview deploy. When a test fails, the workflow uploads the HTML report.
 - Knip finds the tests through its `entry` setting in `package.json`. Its Playwright plugin is off, because the plugin loads the config, and the config stops without `E2E_BASE_URL`.
 - The laptop host (`compose.lan.yml`) has no automatic test. It needs a local Docker host and a second device on the network.
