@@ -1,6 +1,7 @@
 // The ear training schedule: which card comes next, and what the player hears well.
 // It uses Leitner boxes with intervals counted in cards, so it works in one session and across sessions.
 // The page keeps no clock: a card that the player finishes is one step of time.
+import { isCount, isRecord } from '../guards.ts';
 import type { Random } from '../ai.ts';
 import { CELL_COUNT, SIZE, toCell, toCoords, type Coords } from '../game.ts';
 
@@ -13,7 +14,7 @@ export type ItemId = `${Dimension}-${Value}`;
 export const ITEMS: readonly ItemId[] = DIMENSIONS.flatMap((dimension) => VALUES.map((value): ItemId => `${dimension}-${value}`));
 
 // `learn` counts the learn cards that the item still shows with its answer. At 0 the item is in the quiz.
-type Item = { learn: number; box: number; due: number };
+type Item = { learn: number; box: Box; due: number };
 export type Progress = {
   version: 1;
   // The number of finished cards.
@@ -32,6 +33,11 @@ export const LEARN_VIEWS = 2;
 // The cards to wait before an item in this box comes back. A wrong answer sends the item to box 0.
 const INTERVALS = [2, 4, 10, 25, 60] as const;
 export const BOX_COUNT = INTERVALS.length;
+// A Leitner box: an index of INTERVALS.
+type Box = 0 | 1 | 2 | 3 | 4;
+const BOXES = [0, 1, 2, 3, 4] as const satisfies readonly Box[] & { length: typeof BOX_COUNT };
+// A right answer moves the item one box up. The last box keeps it.
+const NEXT_BOX = [1, 2, 3, 4, 4] as const satisfies Record<Box, Box>;
 const RECENT_SIZE = 20;
 // New items join only while fewer than this many items are still in learn or in box 0.
 const MAX_UNSTEADY = 3;
@@ -45,12 +51,16 @@ export function freshProgress(): Progress {
 export function splitItem(item: ItemId): { dimension: Dimension; value: Value } {
   const [dimension, value] = item.split('-');
   const found = DIMENSIONS.find((name) => name === dimension);
-  const number = Number(value);
-  if (found === undefined || !VALUES.includes(number as Value)) throw new RangeError(`not an item: ${item}`);
-  return { dimension: found, value: number as Value };
+  const number = VALUES.find((known) => known === Number(value));
+  if (found === undefined || number === undefined) throw new RangeError(`not an item: ${item}`);
+  return { dimension: found, value: number };
 }
 
-const itemOf = (dimension: Dimension, value: number): ItemId => `${dimension}-${value as Value}`;
+function itemOf(dimension: Dimension, value: number): ItemId {
+  const known = VALUES.find((option) => option === value);
+  if (known === undefined) throw new RangeError(`not a ${dimension} value: ${value}`);
+  return `${dimension}-${known}`;
+}
 
 // The share of right answers in the recent answers of a dimension, or undefined without answers.
 export function accuracy(progress: Progress, dimension: Dimension): number | undefined {
@@ -169,8 +179,8 @@ export function answerItem(progress: Progress, item: ItemId, right: boolean): Pr
   const state = progress.items[item];
   if (state === undefined || state.learn > 0) throw new Error(`${item} is not in the quiz`);
   const done = finish(progress, item);
-  const box = right ? Math.min(state.box + 1, BOX_COUNT - 1) : 0;
-  const due = right ? done.turn + INTERVALS[box as 0 | 1 | 2 | 3 | 4] : done.turn;
+  const box: Box = right ? NEXT_BOX[state.box] : 0;
+  const due = right ? done.turn + INTERVALS[box] : done.turn;
   const recent = remember(done.recent, splitItem(item).dimension, right);
   return { ...done, recent, items: { ...done.items, [item]: { ...state, box, due } } };
 }
@@ -193,20 +203,19 @@ export function answerFull(progress: Progress, cell: number, guess: Coords): Pro
 
 // ---- Storage ----
 
-const isCount = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0;
-
 function parseItem(value: unknown): Item | undefined {
-  if (typeof value !== 'object' || value === null) return undefined;
-  const { learn, box, due } = value as Record<string, unknown>;
-  if (!isCount(learn) || learn > LEARN_VIEWS || !isCount(box) || box >= BOX_COUNT || !isCount(due)) return undefined;
+  if (!isRecord(value)) return undefined;
+  const { learn, due } = value;
+  const box = BOXES.find((known) => known === value.box);
+  if (!isCount(learn) || learn > LEARN_VIEWS || box === undefined || !isCount(due)) return undefined;
   return { learn, box, due };
 }
 
 // Stored progress comes from an older version or a hand edit. Any value that is not valid gives a fresh start.
 export function parseProgress(value: unknown): Progress {
-  if (typeof value !== 'object' || value === null) return freshProgress();
-  const { version, turn, items, recent, last } = value as Record<string, unknown>;
-  if (version !== 1 || !isCount(turn) || typeof items !== 'object' || items === null || typeof recent !== 'object' || recent === null) {
+  if (!isRecord(value)) return freshProgress();
+  const { version, turn, items, recent, last } = value;
+  if (version !== 1 || !isCount(turn) || !isRecord(items) || !isRecord(recent)) {
     return freshProgress();
   }
   const parsedItems: Progress['items'] = {};
@@ -216,10 +225,9 @@ export function parseProgress(value: unknown): Progress {
     if (item === undefined || parsed === undefined) return freshProgress();
     parsedItems[item] = parsed;
   }
-  const answers = recent as Record<string, unknown>;
   const parsedRecent = freshProgress().recent;
   for (const dimension of DIMENSIONS) {
-    const list = answers[dimension];
+    const list = recent[dimension];
     if (!Array.isArray(list) || list.length > RECENT_SIZE || !list.every((entry) => typeof entry === 'boolean')) return freshProgress();
     parsedRecent[dimension] = list;
   }

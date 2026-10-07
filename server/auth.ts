@@ -5,6 +5,7 @@
 // The account cookie is set for COOKIE_DOMAIN and its subdomains, so pull request previews see it.
 // Every environment that shares AUTH_SECRET can check the cookie. Without the GitHub settings,
 // login is off and the page hides it: a local or LAN host runs without any secret.
+import { isRecord } from '../src/guards.ts';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { type PlayerInfo, parsePlayerInfo } from '../src/protocol.ts';
@@ -66,9 +67,8 @@ function verify(config: AuthConfig, value: string | undefined, now: number): Rec
   } catch {
     return undefined;
   }
-  if (typeof payload !== 'object' || payload === null) return undefined;
-  const fields = payload as Record<string, unknown>;
-  return typeof fields.exp === 'number' && fields.exp > now ? fields : undefined;
+  if (!isRecord(payload)) return undefined;
+  return typeof payload.exp === 'number' && payload.exp > now ? payload : undefined;
 }
 
 function readCookie(req: IncomingMessage, name: string): string | undefined {
@@ -154,7 +154,7 @@ export function createAuth(config: AuthConfig, fetchImpl: typeof fetch = fetch, 
         headers: { authorization: `Bearer ${accessToken}`, accept: 'application/vnd.github+json', 'user-agent': 'tick3d' },
       });
       const body: unknown = await userResponse.json();
-      const fields = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+      const fields = isRecord(body) ? body : {};
       const info = parsePlayerInfo({ login: fields.login, avatar: fields.avatar_url });
       if (typeof fields.id !== 'number' || info === undefined) throw new Error('GitHub sent an unexpected profile');
       const user: GitHubUser = { id: fields.id, login: info.login, avatar: info.avatar };
