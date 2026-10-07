@@ -47,13 +47,15 @@ test('the kitshn button lists the open previews and marks this one', async ({ op
       await expect(note).not.toBeEmpty();
       test.info().annotations.push({ type: 'skip', description: `The previews list has an error, so the check of #${number} is skipped: ${await note.textContent()}` });
     } else {
-      await expect(here).toContainText('You are here');
+      // `:scope >` keeps each check on this card, without the cards of stacked pull requests nested inside it.
+      await expect(here.locator(':scope > .preview-head')).toContainText('You are here');
       // A title, then the number.
-      await expect(here.locator('.preview-head b')).toHaveText(new RegExp(`\\S.* #${number}$`));
-      await expect(here.getByRole('link', { name: 'Pull request' })).toHaveAttribute('href', new RegExp(`^https://github\\.com/.+/pull/${number}$`));
-      await expect(here.getByRole('link', { name: 'Open preview' })).toHaveAttribute('href', new URL(baseURL).origin);
+      await expect(here.locator(':scope > .preview-head b')).toHaveText(new RegExp(`\\S.* #${number}$`));
+      const foot = here.locator(':scope > .preview-foot');
+      await expect(foot.getByRole('link', { name: 'Pull request' })).toHaveAttribute('href', new RegExp(`^https://github\\.com/.+/pull/${number}$`));
+      await expect(foot.getByRole('link', { name: 'Open preview' })).toHaveAttribute('href', new URL(baseURL).origin);
       // At least the author of the pull request, with a link to the profile.
-      await expect(here.locator('.preview-people a').first()).toHaveAttribute('href', /^https:\/\/github\.com\/[\w-]+$/);
+      await expect(here.locator(':scope > .preview-people a').first()).toHaveAttribute('href', /^https:\/\/github\.com\/[\w-]+$/);
     }
   }
 

@@ -2721,6 +2721,26 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--on-color);
 }
 
+/* Stacked pull requests: a nested list inside the card of the parent, with a line on the left. */
+.previews-list .preview-children {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.2rem 0 0;
+  padding: 0 0 0 0.6rem;
+  border-left: 3px solid var(--line);
+  list-style: none;
+}
+
+/* The nested card stands out from the parent card behind it. */
+.previews-list .preview-children .preview {
+  background: var(--surface);
+}
+
+.badge-quiet {
+  background: var(--surface);
+  color: var(--ink);
+}
+
 /* Narrow phones: the time takes its own row, so both links stay together on the next row. */
 @media (max-width: 30rem) {
   .preview-foot small {
