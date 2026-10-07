@@ -11,6 +11,7 @@ import {
   CODE_LENGTH,
   type ClientEvent,
   type Code,
+  type DeviceGameId,
   type GameId,
   type GameRecord,
   HISTORY_PAGE_SIZE,
@@ -54,7 +55,7 @@ import { CURRENT_FORMAT, type SessionDoc, parseDoc } from '../src/session/format
 import type { PlayoffRequest } from '../src/practice/playoff.ts';
 import type { PracticeBoard, PracticeMode, PracticeRun, PresetId } from '../src/practice/practice.ts';
 import { practiceBoard, practiceStats } from './practice.ts';
-import { type Rows, bigId, bool, code as codeColumn, epoch, gameId, int, json, nullable, oneOf, readRow, text } from './sql.ts';
+import { type Rows, bigId, bool, code as codeColumn, deviceGameId, epoch, gameId, int, json, nullable, oneOf, readRow, text } from './sql.ts';
 import { computeStats, SEAT_O, SEAT_X } from './stats.ts';
 
 const { SessionError } = core;
@@ -702,7 +703,7 @@ export async function openStore(
     // device can send again after a lost answer. Returns how many results were new, and the
     // public id of each result that has another public id on the server than the device sent:
     // a result without one, or one whose id another game holds already.
-    addResults: (token: PlayerToken, uploads: readonly unknown[]): Promise<{ stored: number; renamed: Record<string, GameId> }> =>
+    addResults: (token: PlayerToken, uploads: readonly unknown[]): Promise<{ stored: number; renamed: Record<string, DeviceGameId> }> =>
       serialized(async () => {
         const results = uploads.map((upload) => parseResultUpload(upload, now()));
         if (!results.every((result): result is ResultUpload => result !== undefined)) {
@@ -710,9 +711,10 @@ export async function openStore(
         }
         if (results.some((result) => result.guest === token)) throw new SessionError(400, 'The guest of a Nearby game needs its own player token.');
         let stored = 0;
-        const renamed: Record<string, GameId> = {};
+        const renamed: Record<string, DeviceGameId> = {};
         for (const result of results) {
-          const [existing] = await rows('FROM results SELECT public_id WHERE id = $id', { id: result.id }, { public_id: nullable(gameId) });
+          // An uploaded result id never holds ':', so this row is an upload and not an online game (see recordOnline).
+          const [existing] = await rows('FROM results SELECT public_id WHERE id = $id', { id: result.id }, { public_id: nullable(deviceGameId) });
           // A row from before game links has no public id. The device then keeps the id it has.
           if (existing?.public_id === null) continue;
           let publicId = existing?.public_id ?? result.publicId ?? newGameId();

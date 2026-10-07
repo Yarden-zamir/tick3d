@@ -420,7 +420,7 @@ export function parsePlayerInfo(value: unknown): PlayerInfo | undefined {
 export type DeviceGameId = string & { readonly __brand: 'DeviceGameId' };
 export type OnlineGameId = `${string}-${number}` & { readonly __brand: 'OnlineGameId' };
 export type GameId = DeviceGameId | OnlineGameId;
-const DEVICE_GAME_ID_LENGTH = 8;
+export const DEVICE_GAME_ID_LENGTH = 8;
 // Game numbers above this are not real: a session of a million games has never happened.
 const MAX_GAME_NUMBER = 1_000_000;
 
