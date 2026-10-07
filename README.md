@@ -93,6 +93,8 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 
 "In a game" means after a create or a join (Online), or after Host or Join (Nearby).
 
+The actions row has fixed slots (`.slot-row` in `src/style.css`), so a control that shows or hides never moves another control. `e2e/row-layout.spec.ts` checks this.
+
 ## Accounts and My games
 
 - Login with GitHub is optional. Without a login, every browser plays with a random token and a generated name, such as "braveOtter".
