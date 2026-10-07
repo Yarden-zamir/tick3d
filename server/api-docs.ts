@@ -28,7 +28,7 @@ import {
   VIEWS,
   WATCHER_ID_LENGTH,
 } from '../src/protocol.ts';
-import { ERROR_CODES, SEAT_REQUEST_MS } from '../src/session/core.ts';
+import { EMPTY_SESSION_TTL_MS, ERROR_CODES, SEAT_REQUEST_MS } from '../src/session/core.ts';
 
 // Long polls wait at most this long. Proxies keep an idle request open for longer.
 export const WAIT_MS = 25_000;
@@ -1369,6 +1369,21 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
     ],
   },
   {
+    title: 'Errors and reconnect',
+    blocks: [
+      {
+        list: [
+          'Send an `Idempotency-Key` header with each change: a new random key per request, and the same key on a retry.',
+          'After a 5xx or a network error, retry. Wait 2 s first, and double the wait up to 30 s.',
+          'Keep the same player id. It still holds your seat.',
+          'After the server answers again, read the session and continue from the live game.',
+          'A 409 with the code `already-played` means that your move counted.',
+          'After a 429, wait the seconds in `Retry-After`.',
+        ],
+      },
+    ],
+  },
+  {
     title: 'After a game, and chat',
     blocks: [
       { p: 'A finished game has its own read-only link: `{origin}/?game=<CODE>-<n>`, where n is the game number in the session, counted from 1 (`games.length` for the live game). It shows the final board and a replay. After a game, this is the best link to give your user. `GET /api/games/<CODE>-<n>` returns the same game as JSON.' },
@@ -1405,7 +1420,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
           `One address can create ${CREATES_PER_HOUR} sessions per hour. More gets 429. Play a session again with a new game instead of a new session.`,
           'Wait with `?wait=<version>`. Do not poll more than once per second.',
           'An error answer is JSON: `{"error":"<message>"}`. Read the message: it says what to do.',
-          'Sessions never expire. A player can come back later, and the game waits for the move.',
+          `A session with a move never expires. A player can come back later, and the game waits for the move. A session where no game has a move goes after ${EMPTY_SESSION_TTL_MS / 3_600_000} hours without a change. A long poll is not a change.`,
         ],
       },
     ],
