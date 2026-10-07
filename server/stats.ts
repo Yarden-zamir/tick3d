@@ -1,10 +1,21 @@
 // The aggregates of the stats page (/stats), in DuckDB SQL. Only counts and player names leave
 // this file: never a token, a result id or a game id. A player without a login shows with a custom or a generated name.
-import type { DuckDBValue } from '@duckdb/node-api';
+import { type DuckDBValue, listValue } from '@duckdb/node-api';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { CELL_COUNT } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
-import { type Count, MOVE_TIME_BUCKETS, REFUSALS, SESSION_MODES, type Stats } from '../src/protocol.ts';
+import {
+  type Count,
+  FORM_WINDOW,
+  MOVE_TIME_BUCKETS,
+  type PersonalStats,
+  RANGE_DAYS,
+  REFUSALS,
+  SESSION_MODES,
+  type SideOutcome,
+  type Stats,
+  type StatsFilter,
+} from '../src/protocol.ts';
 
 type Rows = (sql: string, values: Record<string, DuckDBValue>) => Promise<Record<string, unknown>[]>;
 
@@ -13,8 +24,12 @@ type Rows = (sql: string, values: Record<string, DuckDBValue>) => Promise<Record
 export const SEAT_X = `coalesce(results.player_x, CASE WHEN results.public_id IS NULL AND results.doc.you::VARCHAR IS DISTINCT FROM 'O' THEN results.token END)`;
 export const SEAT_O = `coalesce(results.player_o, CASE WHEN results.public_id IS NULL AND results.doc.you::VARCHAR IS DISTINCT FROM 'X' THEN results.token END)`;
 
-// One row per finished game, with the fields of its document as columns.
+// One row per finished game that passes the filters, with the fields of its document as columns.
 // Both devices of a Nearby game send a result, so only the host's row counts.
+// The filters are bound parameters (filterValues): $since (epoch ms or null), $mode, $level, and
+// $tokens (the tokens of one player for Mine, or null for Everyone). A null parameter filters nothing.
+// `side` is the seat of the player whose results count: yours for Mine (null in a friend game, where
+// you hold both seats), and the player's seat in a computer game for Everyone.
 // A row from before game links has no winner, ending or line columns. The game ended with its last
 // move (a win) or on time, so the last mover won. Only a full cube can also be a draw: such an old
 // game counts as a draw, and its winning line has no kind.
@@ -37,8 +52,18 @@ const GAMES = `WITH g AS (
       THEN (CASE WHEN len(doc.game.moves::INTEGER[]) % 2 = 1 THEN 'X' ELSE 'O' END) END) AS winner,
     coalesce(ending, CASE WHEN coalesce(doc.game.timedOut::BOOLEAN, false) THEN 'timeout'
       WHEN len(doc.game.moves::INTEGER[]) < 64 THEN 'won' ELSE 'draw' END) AS ending,
-    line, ${SEAT_X} AS player_x, ${SEAT_O} AS player_o, metrics
+    line, ${SEAT_X} AS player_x, ${SEAT_O} AS player_o, metrics, public_id,
+    $tokens::VARCHAR[] IS NOT NULL AS scoped,
+    coalesce(list_contains($tokens::VARCHAR[], ${SEAT_X}), false) AS mine_x,
+    coalesce(list_contains($tokens::VARCHAR[], ${SEAT_O}), false) AS mine_o,
+    coalesce(list_contains($tokens::VARCHAR[], results.token), false) AS mine_upload,
+    CASE WHEN scoped THEN (CASE WHEN mine_x AND mine_o THEN NULL WHEN mine_x THEN 'X' WHEN mine_o THEN 'O' END)
+      WHEN mode = 'computer' THEN you END AS side
   WHERE metrics.nearby.role::VARCHAR IS DISTINCT FROM 'guest'
+    AND ($since::BIGINT IS NULL OR finished_at >= make_timestamptz($since::BIGINT * 1000))
+    AND ($mode::VARCHAR IS NULL OR doc.mode::VARCHAR = $mode::VARCHAR)
+    AND ($level::VARCHAR IS NULL OR doc.difficulty::VARCHAR = $level::VARCHAR)
+    AND ($tokens::VARCHAR[] IS NULL OR list_contains($tokens::VARCHAR[], ${SEAT_X}) OR list_contains($tokens::VARCHAR[], ${SEAT_O}))
 )`;
 
 // The time between two moves, by the player who moved. X makes the odd moves (1-based).
@@ -53,7 +78,13 @@ const STEPS = `${GAMES}, steps AS (
 )`;
 
 // The metrics of every game that has them: device results, and each player of an online game.
-const METRICS = `${GAMES}, m AS (SELECT metrics FROM g WHERE metrics IS NOT NULL UNION ALL SELECT metrics FROM seat_metrics)`;
+// Mine keeps the reports of your own devices only. Every seat_metrics row has its game in results.
+const METRICS = `${GAMES}, m AS (
+  SELECT metrics FROM g WHERE metrics IS NOT NULL AND (NOT scoped OR mine_upload)
+  UNION ALL
+  SELECT sm.metrics FROM seat_metrics sm JOIN g USING (public_id)
+  WHERE NOT g.scoped OR (sm.seat = 'X' AND g.mine_x) OR (sm.seat = 'O' AND g.mine_o)
+)`;
 
 // One identity per person: the GitHub account, else the browser token. Used only to group rows.
 const PERSON = `coalesce('github:' || pt.github_id, token)`;
@@ -82,22 +113,65 @@ function oneOf<T extends string>(options: readonly T[], value: unknown): T {
   return found;
 }
 
-// A count for each of the 64 cells.
-function perCell(found: Record<string, unknown>[]): number[] {
+// A count for each of the 64 cells, from the column `column` of rows with a `cell`.
+function perCell(found: Record<string, unknown>[], column = 'count'): number[] {
   const cells = Array<number>(CELL_COUNT).fill(0);
   for (const row of found) {
     const cell = num(row.cell);
     if (!Number.isInteger(cell) || cell < 0 || cell >= CELL_COUNT) throw new Error(`a stored move is not a cell: ${cell}`);
-    cells[cell] = num(row.count);
+    cells[cell] = num(row[column]);
   }
   return cells;
 }
 
-// Limit: about 20 queries over every stored game, while other requests wait in the store queue.
-// The store keeps the answer for a minute. Revisit this when a call takes more than about 200 ms:
+const sideOutcome = (value: unknown) => oneOf(['won', 'drawn', 'lost'] as const, value);
+
+// At each game, the share of wins in the FORM_WINDOW games up to it. `games` is oldest first.
+function formOf(games: readonly { at: number; outcome: SideOutcome }[]): Stats['form'] {
+  let wins = 0;
+  return games.map((game, i) => {
+    if (game.outcome === 'won') wins++;
+    const dropped = games[i - FORM_WINDOW];
+    if (dropped?.outcome === 'won') wins--;
+    return { at: game.at, rate: wins / Math.min(i + 1, FORM_WINDOW) };
+  });
+}
+
+// The longest run of wins, and the run of equal results that ends with the newest game. Oldest first.
+function streaksOf(outcomes: readonly SideOutcome[]): Pick<PersonalStats, 'bestStreak' | 'currentStreak'> {
+  let best = 0;
+  let run = 0;
+  outcomes.forEach((outcome, i) => {
+    run = i > 0 && outcomes[i - 1] === outcome ? run + 1 : 1;
+    if (outcome === 'won') best = Math.max(best, run);
+  });
+  const last = outcomes.at(-1);
+  return { bestStreak: best, currentStreak: last === undefined ? null : { outcome: last, length: run } };
+}
+
+// The bound values of the GAMES filters. `tokens` are the tokens of one player for Mine, else null.
+function filterValues(filter: StatsFilter, tokens: readonly string[] | null, now: number): Record<string, DuckDBValue> {
+  const days = RANGE_DAYS[filter.range];
+  return {
+    since: days === null ? null : now - days * 86_400_000,
+    mode: filter.mode,
+    level: filter.level,
+    tokens: tokens === null ? null : listValue([...tokens]),
+  };
+}
+
+// The newest games with a side that the form and the streaks read.
+// Limit: the streaks count inside these games only. Revisit this when one player has more games than this.
+const SIDED_GAMES = 5000;
+
+// Limit: about 25 queries over every stored game, while other requests wait in the store queue.
+// The store keeps an Everyone answer for a minute. Revisit this when a call takes more than about 200 ms:
 // then keep daily totals in their own table.
-export async function computeStats(rows: Rows, now: number): Promise<Stats> {
-  const q = (sql: string) => rows(sql, {});
+// `tokens`: the tokens of one player for the Mine scope, else null.
+export async function computeStats(rows: Rows, now: number, filter: StatsFilter, tokens: readonly string[] | null): Promise<Stats> {
+  if ((filter.scope === 'mine') !== (tokens !== null)) throw new Error('the Mine scope needs the tokens of the player, and only Mine takes them');
+  const values = filterValues(filter, tokens, now);
+  const q = (sql: string) => rows(sql, values);
 
   const [totals] = await q(`${GAMES}, seats AS (SELECT unnest([player_x, player_o]) AS token FROM g)
     SELECT
@@ -109,14 +183,16 @@ export async function computeStats(rows: Rows, now: number): Promise<Stats> {
       (SELECT count(*) FROM g WHERE finished_at >= now() - INTERVAL 7 DAY)::INTEGER AS last7`);
   if (totals === undefined) throw new Error('the totals query returned no row');
 
-  const perDay = await q(`${GAMES},
-    days AS (SELECT generate_series::DATE AS day FROM generate_series(current_date - INTERVAL 59 DAY, current_date::TIMESTAMP, INTERVAL 1 DAY)),
+  // 60 days for all time.
+  const days = RANGE_DAYS[filter.range] ?? 60;
+  const perDay = await rows(`${GAMES},
+    days AS (SELECT generate_series::DATE AS day FROM generate_series(current_date - to_days($days::INTEGER - 1), current_date::TIMESTAMP, INTERVAL 1 DAY)),
     seats AS (SELECT finished_at::DATE AS day, unnest([player_x, player_o]) AS token FROM g),
     people AS (SELECT day, ${PERSON} AS person FROM seats LEFT JOIN player_tokens pt USING (token) WHERE token IS NOT NULL)
     SELECT strftime(day, '%Y-%m-%d') AS day,
       (SELECT count(*) FROM g WHERE g.finished_at::DATE = days.day)::INTEGER AS games,
       (SELECT count(DISTINCT person) FROM people WHERE people.day = days.day)::INTEGER AS players
-    FROM days ORDER BY day`);
+    FROM days ORDER BY day`, { ...values, days });
 
   const hours = await q(`${GAMES} SELECT (isodow(finished_at) - 1)::INTEGER AS day, hour(finished_at)::INTEGER AS hour,
     count(*)::INTEGER AS games FROM g GROUP BY ALL`);
@@ -169,7 +245,13 @@ export async function computeStats(rows: Rows, now: number): Promise<Stats> {
     count(*) FILTER (winner = 'O')::INTEGER AS o, count(*) FILTER (winner IS NULL)::INTEGER AS draws
     FROM g GROUP BY mode ORDER BY mode`);
 
-  const openings = await q(`${GAMES} SELECT moves[1] AS cell, count(*)::INTEGER AS count FROM g WHERE len(moves) > 0 GROUP BY cell`);
+  const openings = await q(`${GAMES} SELECT moves[1] AS cell, count(*)::INTEGER AS count, count(*) FILTER (winner = 'X')::INTEGER AS x_wins
+    FROM g WHERE len(moves) > 0 GROUP BY cell`);
+  const lengths = await q(`${GAMES} SELECT len(moves)::INTEGER AS moves, count(*)::INTEGER AS count FROM g GROUP BY ALL`);
+  const sided = await q(`${GAMES} SELECT epoch_ms(finished_at) AS at,
+      CASE WHEN winner IS NULL THEN 'drawn' WHEN winner = side THEN 'won' ELSE 'lost' END AS outcome
+    FROM g WHERE side IS NOT NULL ORDER BY finished_at DESC LIMIT ${SIDED_GAMES}`);
+  const sidedGames = sided.map((row) => ({ at: num(row.at), outcome: sideOutcome(row.outcome) })).toReversed();
   const cells = await q(`${GAMES} SELECT cell, count(*)::INTEGER AS count FROM (SELECT unnest(moves) AS cell FROM g) GROUP BY cell`);
   const endings = await q(`${GAMES} SELECT coalesce(line, ending) AS key, count(*)::INTEGER AS count FROM g GROUP BY key ORDER BY count DESC`);
 
@@ -207,8 +289,18 @@ export async function computeStats(rows: Rows, now: number): Promise<Stats> {
       count(*)::INTEGER AS count
     FROM g WHERE mode = 'nearby' AND metrics.nearby.role::VARCHAR = 'host' GROUP BY key ORDER BY count DESC`);
 
-  const errors = await q(`FROM events SELECT kind, message, count(*)::INTEGER AS count, epoch_ms(max(created_at)) AS last_at
-    GROUP BY kind, message ORDER BY count DESC LIMIT 20`);
+  // Faults have no player and no mode, so only the time range applies to them.
+  const errors =
+    filter.scope === 'everyone' && filter.mode === null && filter.level === null
+      ? await rows(
+          `FROM events SELECT kind, message, count(*)::INTEGER AS count, epoch_ms(max(created_at)) AS last_at
+           WHERE $since::BIGINT IS NULL OR created_at >= make_timestamptz($since::BIGINT * 1000)
+           GROUP BY kind, message ORDER BY count DESC LIMIT 20`,
+          { since: values.since ?? null },
+        )
+      : [];
+
+  const personal = tokens === null ? null : await personalStats(q, sidedGames.map((game) => game.outcome));
 
   return {
     generatedAt: now,
@@ -259,6 +351,7 @@ export async function computeStats(rows: Rows, now: number): Promise<Stats> {
     slowest: slowest.map((row) => ({ player: personName(row), medianMs: num(row.median_ms), moves: num(row.moves) })),
     firstPlayer: firstPlayer.map((row) => ({ mode: oneOf(SESSION_MODES, row.mode), x: num(row.x), o: num(row.o), draws: num(row.draws) })),
     openings: perCell(openings),
+    openingWinsX: perCell(openings, 'x_wins'),
     cells: perCell(cells),
     endings: counts(endings),
     hide: hide.map((row) => ({
@@ -282,5 +375,50 @@ export async function computeStats(rows: Rows, now: number): Promise<Stats> {
     offlineGames: num(usage.offline),
     nearbyMixes: counts(nearbyMixes),
     errors: errors.map((row) => ({ kind: text(row.kind), message: text(row.message), count: num(row.count), lastAt: num(row.last_at) })),
+    filter,
+    form: formOf(sidedGames),
+    lengths: lengthCounts(lengths),
+    personal,
+  };
+}
+
+function lengthCounts(found: Record<string, unknown>[]): number[] {
+  const counts = Array<number>(CELL_COUNT + 1).fill(0);
+  for (const row of found) {
+    const moves = num(row.moves);
+    if (!Number.isInteger(moves) || moves < 0 || moves > CELL_COUNT) throw new Error(`a stored game has ${moves} moves`);
+    counts[moves] = num(row.count);
+  }
+  return counts;
+}
+
+// The results of one player (the Mine scope), from the side that they played. `outcomes` is oldest first.
+async function personalStats(q: (sql: string) => Promise<Record<string, unknown>[]>, outcomes: SideOutcome[]): Promise<PersonalStats> {
+  const results = await q(`${GAMES} SELECT mode, level,
+      count(*) FILTER (winner = side)::INTEGER AS won,
+      count(*) FILTER (winner IS NULL)::INTEGER AS drawn,
+      count(*) FILTER (winner <> side)::INTEGER AS lost
+    FROM g WHERE side IS NOT NULL GROUP BY mode, level ORDER BY mode, level`);
+  // The other seat of a game against a person. A Nearby guest on another device has no token, so it is not here.
+  const opponents = await q(`${GAMES},
+    other AS (SELECT CASE side WHEN 'X' THEN player_o ELSE player_x END AS token, winner, side
+      FROM g WHERE side IS NOT NULL AND mode <> 'computer'),
+    people AS (SELECT ${PERSON} AS person, any_value(u.login) AS login, any_value(pn.name) AS custom, count(*)::INTEGER AS games,
+        count(*) FILTER (winner = side)::INTEGER AS won, count(*) FILTER (winner IS NULL)::INTEGER AS drawn,
+        count(*) FILTER (winner <> side)::INTEGER AS lost
+      FROM other LEFT JOIN player_tokens pt USING (token) LEFT JOIN users u ON u.github_id = pt.github_id
+        LEFT JOIN player_names pn USING (token)
+      WHERE token IS NOT NULL GROUP BY person)
+    SELECT * FROM people ORDER BY games DESC, login NULLS LAST, person LIMIT 5`);
+  return {
+    results: results.map((row) => ({
+      mode: oneOf(SESSION_MODES, row.mode),
+      level: row.level === null ? null : oneOf(DIFFICULTIES, row.level),
+      won: num(row.won),
+      drawn: num(row.drawn),
+      lost: num(row.lost),
+    })),
+    ...streaksOf(outcomes),
+    opponents: opponents.map((row) => ({ player: personName(row), games: num(row.games), won: num(row.won), drawn: num(row.drawn), lost: num(row.lost) })),
   };
 }

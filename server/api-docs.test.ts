@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { parseAnnounce, parseAnnounced, parseAnswerRequest, parseLobbyHosts } from '../src/nearby/lobby.ts';
 import { parseMe, parseMyGames } from '../src/online.ts';
 import {
+  ALL_STATS,
   type PlayerToken,
   parseGameId,
   normalizeChat,
@@ -157,6 +158,9 @@ describe('the SessionView schema', () => {
       expect(schemaErrors('HistoryPage', await store.history(alice, 0))).toBe('');
       expect(schemaErrors('Records', { records: await store.records(alice) })).toBe('');
       expect(schemaErrors('Stats', await store.stats())).toBe('');
+      const mine = await store.stats({ ...ALL_STATS, scope: 'mine' }, alice);
+      expect(mine.personal).not.toBeNull();
+      expect(schemaErrors('Stats', mine)).toBe('');
     } finally {
       store.close();
     }

@@ -798,8 +798,80 @@ export type Stats = {
   undo: { gamesWithUndo: number; undos: number };
   offlineGames: number;
   nearbyMixes: Count[];
+  // Page faults have no player and no mode, so this list is empty for Mine and for a mode or level filter.
   errors: { kind: string; message: string; count: number; lastAt: number }[];
+  // The filters that made these numbers.
+  filter: StatsFilter;
+  // The win rate over time, oldest first: at each game, the share of wins in the FORM_WINDOW games up to it.
+  // Mine: your games with a side. Everyone: the games against the computer, from the player's side.
+  form: { at: number; rate: number }[];
+  // Games per number of moves: index n holds the games with n moves (0 to CELL_COUNT).
+  lengths: number[];
+  // CELL_COUNT counts: the games that X won, by the first move. Next to `openings`.
+  openingWinsX: number[];
+  // Only for Mine. null for Everyone.
+  personal: PersonalStats | null;
 };
+
+// A game result from the side of one player. A friend game has no side.
+export type SideOutcome = Exclude<Outcome, 'played'>;
+export type PersonalStats = {
+  // Per mode, and per level in computer games. Friend games have no side, so they are not here.
+  results: { mode: SessionMode; level: Difficulty | null; won: number; drawn: number; lost: number }[];
+  // The longest run of won games, and the run of equal results that ends with the newest game.
+  bestStreak: number;
+  currentStreak: { outcome: SideOutcome; length: number } | null;
+  // The players you played most, with your results against them. `player` is a name, never a token.
+  opponents: { player: string; games: number; won: number; drawn: number; lost: number }[];
+};
+
+export const FORM_WINDOW = 20;
+
+// ---- Stats filters ----
+
+// The filters of the stats page. The page keeps them in its address, and GET /api/stats takes the
+// same query. A missing key means its default: everyone, all time, every mode and level.
+export const STATS_SCOPES = ['everyone', 'mine'] as const;
+export const STATS_RANGES = ['7d', '30d', 'all'] as const;
+export type StatsRange = (typeof STATS_RANGES)[number];
+export type StatsFilter = {
+  scope: (typeof STATS_SCOPES)[number];
+  range: StatsRange;
+  // null: every mode or every level. A level matches computer games only.
+  mode: SessionMode | null;
+  level: Difficulty | null;
+};
+export const ALL_STATS: StatsFilter = { scope: 'everyone', range: 'all', mode: null, level: null };
+export const RANGE_DAYS: Record<StatsRange, number | null> = { '7d': 7, '30d': 30, all: null };
+const STATS_KEYS = ['scope', 'range', 'mode', 'level'] as const;
+
+// Refuses an unknown key, a repeated key, an unknown or empty value, and a level with a mode other than computer.
+export function parseStatsFilter(params: URLSearchParams): StatsFilter | undefined {
+  const keys = [...params.keys()];
+  if (new Set(keys).size !== keys.length || !keys.every((key) => STATS_KEYS.some((known) => known === key))) return undefined;
+  const pick = <T extends string>(key: (typeof STATS_KEYS)[number], options: readonly T[]): T | null | undefined => {
+    const value = params.get(key);
+    return value === null ? null : oneOf(options, value);
+  };
+  const scope = pick('scope', STATS_SCOPES);
+  const range = pick('range', STATS_RANGES);
+  const mode = pick('mode', SESSION_MODES);
+  const level = pick('level', DIFFICULTIES);
+  if (scope === undefined || range === undefined || mode === undefined || level === undefined) return undefined;
+  if (level !== null && mode !== null && mode !== 'computer') return undefined;
+  return { scope: scope ?? ALL_STATS.scope, range: range ?? ALL_STATS.range, mode, level };
+}
+
+// The query of a filter, with "?" first, or '' for the defaults. A default value stays out, so one view has one address.
+export function statsQuery(filter: StatsFilter): string {
+  const params = new URLSearchParams();
+  if (filter.scope !== ALL_STATS.scope) params.set('scope', filter.scope);
+  if (filter.range !== ALL_STATS.range) params.set('range', filter.range);
+  if (filter.mode !== null) params.set('mode', filter.mode);
+  if (filter.level !== null) params.set('level', filter.level);
+  const text = params.toString();
+  return text === '' ? '' : `?${text}`;
+}
 
 export const MOVE_TIME_BUCKETS = ['< 1 s', '1–2 s', '2–5 s', '5–10 s', '10–30 s', '30–60 s', '1–5 min', '5 min +'] as const;
 

@@ -53,6 +53,7 @@
           </a>
         </div>
       </header>
+      <nav class="stats-filters" id="stats-filters" aria-label="Filters"></nav>
       <p class="stats-note" id="stats-note">Loading…</p>
       <div class="stats-grid" id="stats-grid"></div>
     </main>
@@ -66,16 +67,15 @@
     </dialog>
     <div class="info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
       <h2 id="info-title">About these stats</h2>
-      <p>This page counts the games of every player of tick3d. It shows totals and player names only, never a game or a code.</p>
+      <p>Totals and player names only, never a game or a code.</p>
       <ul>
-        <li>A game counts when it ends. The server keeps online games itself. A device sends its other games when it has a network.</li>
-        <li>A Nearby game counts once, from the host device.</li>
-        <li>Players without a GitHub login show with their generated name.</li>
-        <li>Times and days are in UTC.</li>
-        <li>The device, view, theme and input numbers come from the metric reports that games send with their result.</li>
-        <li>The server makes the numbers at most once a minute. Reload the page for new numbers.</li>
+        <li>Everyone: the games of all players. Mine: your games on every device that you logged in with, or on this browser.</li>
+        <li>The filters go into the address. Share the address to share the view.</li>
+        <li>A game counts when it ends. A Nearby game counts once.</li>
+        <li>Win rate: wins in your last 20 games. Friend games do not count.</li>
+        <li>Times and days are in UTC. Everyone numbers refresh once a minute.</li>
+        <li>Hover a bar or a cell for its exact number.</li>
       </ul>
-      <p>Hover a bar or a cell for its exact number.</p>
       <button type="button" class="btn btn-small info-close" popovertarget="info-panel" popovertargetaction="hide">Close</button>
     </div>
     <script type="module" src="/src/stats/main.ts"></script>

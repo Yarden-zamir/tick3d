@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.setConfig({ testTimeout: 20_000 });
 import { replay } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
-import { type Code, type GameId, type Metrics, type PlayerToken, type ResultUpload, parseGameId, toRecord } from '../src/protocol.ts';
+import { type Code, type GameId, type Metrics, type PlayerToken, type ResultUpload, type StatsFilter, parseGameId, toRecord } from '../src/protocol.ts';
 import { SessionError } from '../src/session/core.ts';
 import { type Store, openStore } from './store.ts';
 
@@ -653,6 +653,98 @@ describe('stats', () => {
     expect((await store.stats()).totals.games).toBe(first.totals.games);
     time += 60_000;
     expect((await store.stats()).totals.games).toBe(first.totals.games + 1);
+  });
+});
+
+describe('stats filters', () => {
+  const NOW = Date.UTC(2026, 9, 1, 12);
+  const DAY = 86_400_000;
+  const all = { scope: 'everyone', range: 'all', mode: null, level: null } as const;
+
+  // Alice: an online win against Bob now, a computer win (hard) a day ago, a computer loss (easy)
+  // 10 days ago, and a friend game a day ago. Bob: a computer loss (hard) 40 days ago.
+  // Every game is X_WINS, 7 moves that X wins.
+  async function seeded(): Promise<void> {
+    store = await openStore(':memory:', { now: () => NOW });
+    const { code } = await store.create(alice, 'Friday match');
+    await store.join(code, bob);
+    await playMoves(code, X_WINS);
+    await store.addResults(alice, [
+      result('ffffffff-1111-4000-8000-000000000001', { finishedAt: NOW - DAY, metrics: METRICS }),
+      result('ffffffff-1111-4000-8000-000000000002', { you: 'O', difficulty: 'easy', finishedAt: NOW - 10 * DAY }),
+      result('ffffffff-1111-4000-8000-000000000003', { mode: 'friend', you: null, difficulty: null, finishedAt: NOW - DAY }),
+    ]);
+    await store.addResults(bob, [result('ffffffff-1111-4000-8000-000000000004', { you: 'O', finishedAt: NOW - 40 * DAY })]);
+    await store.addEvent({ kind: 'error', message: 'TypeError: x is undefined (index.js:1)', version: 'index-abc123' });
+  }
+
+  const games = async (filter: Partial<StatsFilter>) => (await store.stats({ ...all, ...filter })).totals.games;
+
+  it('filters every game by time', async () => {
+    await seeded();
+    const everything = await store.stats(all);
+    expect(everything.totals.games).toBe(5);
+    expect(everything.errors).toEqual([expect.objectContaining({ count: 1 })]);
+    expect(await games({ range: '30d' })).toBe(4);
+    expect(await games({ range: '7d' })).toBe(3);
+  });
+
+  it('filters every game by mode and level', async () => {
+    await seeded();
+    const computer = await store.stats({ ...all, mode: 'computer' });
+    expect(computer.totals.games).toBe(3);
+    expect(computer.byMode).toEqual([{ key: 'computer', count: 3 }]);
+    expect(computer.lengths[X_WINS.length]).toBe(3);
+    expect(computer.openings[0]).toBe(3);
+    expect(computer.openingWinsX[0]).toBe(3);
+    // A fault has no mode, so a mode filter shows none.
+    expect(computer.errors).toEqual([]);
+    expect(await games({ mode: 'computer', level: 'hard' })).toBe(2);
+    expect(await games({ level: 'easy' })).toBe(1);
+  });
+
+  it('shows the win rate against the computer over time, from the player side', async () => {
+    await seeded();
+    // Oldest first: Bob lost, Alice lost on easy, Alice won on hard.
+    expect((await store.stats(all)).form.map((point) => point.rate)).toEqual([0, 0, 1 / 3]);
+    expect((await store.stats(all)).personal).toBeNull();
+  });
+
+  it('counts only the games of the player for Mine, on all linked devices, with streaks and opponents', async () => {
+    await seeded();
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    const mine = await store.stats({ ...all, scope: 'mine' }, alicePhone);
+    expect(mine.totals.games).toBe(4);
+    expect(mine.filter.scope).toBe('mine');
+    // Oldest first: lost on easy, won on hard, won online. The friend game has no side.
+    expect(mine.form.map((point) => point.rate)).toEqual([0, 1 / 2, 2 / 3]);
+    expect(mine.personal).toEqual({
+      results: expect.arrayContaining([
+        { mode: 'computer', level: 'easy', won: 0, drawn: 0, lost: 1 },
+        { mode: 'computer', level: 'hard', won: 1, drawn: 0, lost: 0 },
+        { mode: 'online', level: null, won: 1, drawn: 0, lost: 0 },
+      ]),
+      bestStreak: 2,
+      currentStreak: { outcome: 'won', length: 2 },
+      opponents: [{ player: nameOf(bob), games: 1, won: 1, drawn: 0, lost: 0 }],
+    });
+    expect(mine.personal?.results).toHaveLength(3);
+    // Only the reports of Alice's own devices.
+    expect(mine.metricsGames).toBe(1);
+    expect(mine.errors).toEqual([]);
+
+    const bobs = await store.stats({ ...all, scope: 'mine', range: '30d' }, bob);
+    // Bob's computer loss is 40 days old.
+    expect(bobs.totals.games).toBe(1);
+    expect(bobs.personal).toMatchObject({ bestStreak: 0, currentStreak: { outcome: 'lost', length: 1 }, opponents: [{ player: 'alice', games: 1, lost: 1 }] });
+    const text = JSON.stringify([mine, bobs]);
+    for (const token of [alice, alicePhone, bob]) expect(text).not.toContain(token);
+  });
+
+  it('refuses Mine without a player', async () => {
+    store = await openStore(':memory:');
+    expect(await status(() => store.stats({ ...all, scope: 'mine' }))).toBe(400);
   });
 });
 

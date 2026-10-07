@@ -79,6 +79,7 @@ export const updateBar = element('#update-bar', HTMLDivElement);
 export const updateReload = element('#update-reload', HTMLButtonElement);
 export const myGamesDialog = element('#my-games', HTMLDialogElement);
 export const myGamesClose = element('#my-games-close', HTMLButtonElement);
+export const myGamesStatsLink = element('#my-games-stats-link', HTMLAnchorElement);
 export const homeConfirm = element('#home-confirm', HTMLDialogElement);
 export const homeConfirmText = element('#home-confirm-text', HTMLParagraphElement);
 export const homeConfirmLeave = element('#home-confirm-leave', HTMLButtonElement);

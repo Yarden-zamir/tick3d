@@ -15,6 +15,7 @@ import {
   parseSeatAction,
   parseSeatAnswer,
   parseSessionUpdate,
+  parseStatsFilter,
 } from '../src/protocol.ts';
 import { asHostId, parseAnnounce, parseAnswerRequest } from '../src/nearby/lobby.ts';
 import { type Hello, decodeSignal } from '../src/nearby/signal.ts';
@@ -25,6 +26,7 @@ import {
   NEARBY_CALLS_PER_10_MINUTES,
   NEARBY_GRACE_MS,
   NEARBY_HOSTS_PER_NETWORK,
+  STATS_FILTER_ERROR,
   WAIT_MS,
   matchRoute,
 } from './api-docs.ts';
@@ -327,8 +329,12 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return send(res, 200, { ok: true });
     }
     // Aggregates only (see server/stats.ts), so the hidden stats page needs no login.
-    case 'GET /api/stats':
-      return send(res, 200, await store.stats());
+    // Mine needs the X-Player header: the stats of that player on all linked devices.
+    case 'GET /api/stats': {
+      const filter = parseStatsFilter(url.searchParams);
+      if (filter === undefined) throw new HttpError(400, STATS_FILTER_ERROR);
+      return send(res, 200, await store.stats(filter, filter.scope === 'mine' ? requirePlayer(req) : null));
+    }
     // Cached in server/previews.ts, so a flood of requests costs no extra GitHub calls and needs no limiter.
     case 'GET /api/previews':
       return send(res, 200, previews === undefined ? { main: null, previews: [], error: 'This server has no previews.' } : await previews.list());

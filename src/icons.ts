@@ -17,3 +17,6 @@ export const PLAY_ICON = icon('<path d="M8 5.5v13l10.5-6.5Z" fill="currentColor"
 
 // An eye: a watcher in the Players box.
 export const EYE_ICON = icon('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>');
+
+// A bar chart: the Stats button of My games.
+export const STATS_ICON = icon('<path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/>');

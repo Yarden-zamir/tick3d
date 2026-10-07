@@ -18,6 +18,7 @@ import {
   type SeatAction,
   type SessionUpdate,
   type SessionView,
+  type StatsFilter,
   asPlayerToken,
   parseCustomName,
   parseGameId,
@@ -26,6 +27,7 @@ import {
   parsePreviews,
   parsePublicGame,
   parseSessionView,
+  statsQuery,
 } from './protocol.ts';
 
 const TOKEN_KEY = 'tick3d.player';
@@ -175,6 +177,8 @@ export const api = {
   gameMetrics: (id: GameId, metrics: Metrics) => call('POST', `/games/${id}/metrics`, metrics),
   // A fault report for the stats page. The caller ignores a failure: a report must never cause another fault.
   event: (event: ClientEvent) => call('POST', '/events', event),
+  // The aggregates of the stats page. The page checks the shape (src/stats/main.ts).
+  stats: (filter: StatsFilter): Promise<unknown> => call('GET', `/stats${statsQuery(filter)}`),
 
   // The Nearby lobby (server/lobby.ts). The server holds an announcement until a guest answers, or for about 25 s.
   announceNearby: async (offer: string, id: HostId | undefined, signal: AbortSignal): Promise<Announced> =>

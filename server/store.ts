@@ -29,7 +29,9 @@ import {
   type SessionUpdate,
   type SessionView,
   type Stats,
+  type StatsFilter,
   type Tally,
+  ALL_STATS,
   WATCHER_ID_LENGTH,
   isGameRecord,
   parseMatchOptions,
@@ -39,6 +41,7 @@ import {
   parseHistoryPage,
   parsePublicGame,
   parseResultUpload,
+  statsQuery,
   toGame,
 } from '../src/protocol.ts';
 import { type Records, addLoss } from '../src/records.ts';
@@ -521,7 +524,8 @@ export async function openStore(
     return { X: core.seatName(x, name), O: core.seatName(o, name) };
   }
 
-  let statsCache: Stats | undefined;
+  // Everyone answers by filter query (statsQuery). The filters have a few dozen combinations, so the map stays small.
+  const statsCache = new Map<string, Stats>();
 
   return {
     // The creator takes seat X, so the creator moves first in the first game.
@@ -800,11 +804,21 @@ export async function openStore(
         await db.run('INSERT INTO events (kind, message, version) VALUES ($kind, $message, $version)', event);
       }),
 
-    // The aggregates of the stats page, at most STATS_CACHE_MS old.
-    stats: (): Promise<Stats> =>
+    // The aggregates of the stats page. An Everyone answer is at most STATS_CACHE_MS old. A Mine answer
+    // (`token` is the player) has no cache, so a game shows at once.
+    // Limit: each Mine call runs all queries. Revisit this when a Mine call takes more than about 200 ms.
+    stats: (filter: StatsFilter = ALL_STATS, token: PlayerToken | null = null): Promise<Stats> =>
       serialized(async () => {
-        if (statsCache === undefined || now() - statsCache.generatedAt >= STATS_CACHE_MS) statsCache = await computeStats(rows, now());
-        return statsCache;
+        if (filter.scope === 'mine') {
+          if (token === null) throw new SessionError(400, 'Your stats need the X-Player header.');
+          return computeStats(rows, now(), filter, [...(await identityOf(token))]);
+        }
+        const key = statsQuery(filter);
+        const cached = statsCache.get(key);
+        if (cached !== undefined && now() - cached.generatedAt < STATS_CACHE_MS) return cached;
+        const fresh = await computeStats(rows, now(), filter, null);
+        statsCache.set(key, fresh);
+        return fresh;
       }),
 
     // Every session and result of this player, on all their linked devices.
