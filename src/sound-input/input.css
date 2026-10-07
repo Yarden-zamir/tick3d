@@ -259,3 +259,7 @@
 .voice-board.previewing .cell[data-preview]::after {
   opacity: 1;
 }
+
+body:not([data-tab='free']) .free-only {
+  display: none;
+}
