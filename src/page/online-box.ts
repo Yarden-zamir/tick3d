@@ -1,7 +1,9 @@
 // The online box: share, QR code, join by code, session name, and the LAN host note.
 import { DEVICE_ICONS } from '../nearby/device.ts';
+import { EYE_ICON } from '../icons.ts';
 import { renderQr } from '../nearby/qr.ts';
 import { normalizeCode, type Code, normalizeName } from '../protocol.ts';
+import { type LinkIntent, sessionLink } from '../session-link.ts';
 import { sounds } from '../sound.ts';
 import {
   lanHost,
@@ -10,6 +12,7 @@ import {
   newCodeButton,
   shareButton,
   shareQrButton,
+  shareWatchButton,
   onlineQr,
   onlineQrCaption,
   onlineQrImage,
@@ -40,10 +43,10 @@ export async function checkLanHost(): Promise<void> {
   }
 }
 
-async function shareLink(): Promise<void> {
+async function shareLink(intent: LinkIntent): Promise<void> {
   if (page.session?.mode !== 'online') return;
-  const url = location.href;
-  const text = `Play 3D tic-tac-toe with me on tick3d. Code ${page.session.code}.`;
+  const url = sessionLink(location.origin, page.session.code, intent);
+  const text = intent === 'watch' ? 'Watch my 3D tic-tac-toe game on tick3d.' : `Play 3D tic-tac-toe with me on tick3d. Code ${page.session.code}.`;
   if (typeof navigator.share === 'function') {
     try {
       await navigator.share({ title: 'tick3d', text, url });
@@ -54,7 +57,7 @@ async function shareLink(): Promise<void> {
   }
   try {
     await navigator.clipboard.writeText(url);
-    showToast('Link copied.');
+    showToast(intent === 'watch' ? 'Watch link copied.' : 'Link copied.');
   } catch {
     showToast(`Send this link: ${url}`);
   }
@@ -68,7 +71,7 @@ export function renderOnlineQr(code: Code | undefined): void {
   if (!open || code === onlineQrShown) return;
   onlineQrShown = code;
   onlineQrCaption.textContent = `Scan with a phone camera to join ${code}.`;
-  const link = `${location.origin}/?code=${code}`;
+  const link = sessionLink(location.origin, code, 'play');
   void renderQr(link).then((svg) => {
     if (onlineQrShown === code) onlineQrImage.replaceChildren(svg);
   });
@@ -86,7 +89,7 @@ export function setupOnlineBox(): void {
     // Keep the typed code while another action runs, so the player can try again.
     if (page.busy) return showToast(BUSY_TEXT);
     joinCodeInput.value = '';
-    void joinSession(code);
+    void joinSession(code, 'play');
   });
 
   newCodeButton.addEventListener('click', () => {
@@ -95,7 +98,9 @@ export function setupOnlineBox(): void {
     void createSession();
   });
 
-  shareButton.addEventListener('click', () => void shareLink());
+  shareButton.addEventListener('click', () => void shareLink('play'));
+  shareWatchButton.insertAdjacentHTML('afterbegin', EYE_ICON);
+  shareWatchButton.addEventListener('click', () => void shareLink('watch'));
   shareQrButton.addEventListener('click', () => {
     sounds.click();
     const open = shareQrButton.getAttribute('aria-expanded') !== 'true';

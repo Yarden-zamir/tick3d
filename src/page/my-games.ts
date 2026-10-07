@@ -260,7 +260,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
         listItem(
           summary.name,
           `${opponentText(summary)} · ${gameCount(summary.games)} · ${ago(summary.updatedAt)}`,
-          [{ label: 'Continue', run: () => (settingsLocked() ? reject(undefined, 'locked') : void joinSession(summary.code)) }],
+          [{ label: 'Continue', run: () => (settingsLocked() ? reject(undefined, 'locked') : void joinSession(summary.code, 'play')) }],
           summary.yourTurn ? 'Your turn' : undefined,
           opponentOf(summary),
         ),

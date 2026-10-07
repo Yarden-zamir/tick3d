@@ -4,6 +4,7 @@ import { checkPlayoffInvite } from './playoff-invite.ts';
 import { play, newGame, type Player, other } from '../game.ts';
 import { OnlineError, api } from '../online.ts';
 import { type Code, type GameId, type SessionView, parseSessionView, toGame } from '../protocol.ts';
+import { type LinkIntent, withWatch } from '../session-link.ts';
 import type { SessionDoc } from '../session/format.ts';
 import { sounds } from '../sound.ts';
 import { notifyChat } from './chat.ts';
@@ -61,8 +62,9 @@ async function playMove(cell: number, via: 'board' | 'keypad'): Promise<void> {
   scheduleComputer();
 }
 
-export function setUrlCode(code: Code | undefined): void {
-  const url = new URL(location.href);
+// The address holds `watch=1` only while a watch link shows its session. A new code drops it.
+export function setUrlCode(code: Code | undefined, watch = false): void {
+  const url = withWatch(new URL(location.href), watch);
   if (code === undefined) url.searchParams.delete('code');
   else url.searchParams.set('code', code);
   history.replaceState(null, '', url);
@@ -265,7 +267,8 @@ export const createSession = () =>
     if (switchNumber === page.navigation) openSession(view, api, 'online');
   });
 
-export const joinSession = (code: Code) =>
+// A 'watch' intent opens the session without a seat. The Players box can take a free seat later.
+export const joinSession = (code: Code, intent: LinkIntent) =>
   withBusy(async () => {
     const switchNumber = beginSwitch();
     let view: SessionView;
@@ -278,15 +281,21 @@ export const joinSession = (code: Code) =>
       if (!(error instanceof OnlineError) || error.status !== undefined || cached === undefined) throw error;
       if (switchNumber !== page.navigation) return;
       // The parse also fills fields that a view cached by an older version lacks.
-      openSession(parseSessionView(cached.view), api, 'online');
+      const cachedView = parseSessionView(cached.view);
+      openSession(cachedView, api, 'online');
+      if (intent === 'watch' && cachedView.you === null) setUrlCode(code, true);
       showToast('You are offline. This is the game as you last saw it.');
       return;
     }
-    if (view.you === null && (!view.seats.X || !view.seats.O)) view = await api.join(code);
+    const seatFree = !view.seats.X || !view.seats.O;
+    if (intent === 'play' && view.you === null && seatFree) view = await api.join(code);
     if (switchNumber !== page.navigation) return;
     openSession(view, api, 'online');
+    // A reload of a watch link must not take the seat either.
+    if (intent === 'watch' && view.you === null) setUrlCode(code, true);
     sounds.click();
-    showToast(view.you === null ? 'Both seats are taken. You are watching.' : `Joined ${view.name} as ${view.you}.`);
+    if (view.you !== null) return showToast(`Joined ${view.name} as ${view.you}.`);
+    showToast(seatFree ? 'You are watching. A seat is free: take it in Players.' : 'Both seats are taken. You are watching.');
   });
 
 export function startNewGame(): void {

@@ -1466,6 +1466,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
     blocks: [
       { p: 'A game link looks like `{origin}/?code=AB3K`. The `code` value is the session code. Codes have 4 characters and no `0`, `O`, `1` or `I`. Lower case also works.' },
       { p: 'Take a seat: `POST /api/sessions/AB3K/join` with your `X-Player` header. The answer shows your seat in `you`. When both seats are taken, you get 409, and you can only watch.' },
+      { p: 'A link with `&watch=1` asks to watch. `GET /api/sessions/AB3K` reads the session and never takes a seat.' },
     ],
   },
   {
