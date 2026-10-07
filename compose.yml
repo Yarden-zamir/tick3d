@@ -42,6 +42,8 @@ services:
       # The kitshn button lists the open pull requests of this repository that have a live preview at pr.<n>.<domain>.
       PREVIEWS_REPO: Yarden-zamir/tick3d
       PREVIEWS_DOMAIN: tick3d.yarden-zamir.com
+      # prod or pr-<n>. Only prod calls GitHub; every other environment reads the list from production.
+      KITSHN_ENVIRONMENT: ${KITSHN_ENVIRONMENT}
     volumes:
       - sessions:/data
     healthcheck:

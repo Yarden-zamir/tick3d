@@ -250,7 +250,7 @@ The full reference, with every shape, error and a curl example, is the OpenAPI 3
 | `POST /api/nearby/hosts/:id/answer` | A guest sends its answer to the offer of a host. Needs the X-Player header. |
 | `POST /api/events` | A fault report from a page. At most 1 kB, 30 per 10 minutes per address. |
 | `GET /api/stats` | The aggregates of the stats page. The server computes them at most once a minute. |
-| `GET /api/previews` | The production site and the open pull requests with a live preview, for the kitshn button. The server reads GitHub at most once per 2 minutes, without a token. |
+| `GET /api/previews` | The production site and the open pull requests with a live preview, for the kitshn button. Production reads GitHub at most once per 3 minutes, without a token. A preview reads the list from production. |
 
 ## Stats page and what is logged
 
