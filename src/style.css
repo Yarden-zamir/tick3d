@@ -739,11 +739,12 @@ input:disabled {
   transition: background 0.2s;
 }
 
+/* In the header row the status keeps one width, whatever its text, so a new status never moves the
+   wordmark or the header buttons (see .slot-row). It shrinks only when the window is narrow. */
 @media (min-width: 64rem) {
   .status {
     order: 0;
-    flex: 0 1 auto;
-    max-width: 28rem;
+    flex: 0 1 28rem;
   }
 }
 
@@ -1169,32 +1170,67 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
-/* New game takes the free width. Undo, the result card and the sound control keep their own width. */
-.actions {
-  display: flex;
+/* A row of fixed slots. A control that shows, hides or changes with the game state must not move another control.
+   - Each control has its own grid area. Two controls that take turns share one area, so the slot fits the wider one.
+   - A hidden control keeps its box: it is invisible and takes no click or focus, but its slot stays.
+   - A label never wraps, so a control never grows taller.
+   e2e/row-layout.spec.ts checks this geometry. */
+.slot-row {
+  display: grid;
+  align-items: stretch;
   gap: 0.6rem;
 }
 
-.actions > .btn {
-  flex: none;
+.slot-row > * {
+  white-space: nowrap;
 }
 
-.actions > .btn-primary {
-  flex: 1;
+/* Every child of a slot row is a flex box (.btn and the sound control), so display: flex brings the box back.
+   The global [hidden] rule uses !important, so this more specific rule needs it too. */
+.slot-row > [hidden] {
+  display: flex !important;
+  visibility: hidden;
+}
+
+/* New game has the first line. Under it, three equal slots: Undo or the result card (they take turns in one slot),
+   the sound control and the microphone of play by voice. One line for all four does not fit a 360 px phone or the desktop panel.
+   minmax(max-content, ...): a row that is too narrow overflows, and e2e/row-layout.spec.ts sees it. */
+.actions {
+  grid-template-areas:
+    'new new new'
+    'swap sound voice';
+  grid-template-columns: repeat(3, minmax(max-content, 1fr));
+}
+
+#new-game {
+  grid-area: new;
+}
+
+/* An icon button fills its slot, like the sound control next to it. */
+.actions > .btn-icon {
+  width: auto;
+}
+
+#undo,
+#show-card {
+  grid-area: swap;
 }
 
 /* One box with two parts: the speaker turns the sound on and off, the narrow caret opens the sound sets. */
-/* margin-left: auto keeps the control at the right end when it is alone in the row (Nearby before a game). */
 .sound-control {
-  flex: none;
+  grid-area: sound;
   display: flex;
   min-height: 2.6rem;
-  margin-left: auto;
   border: var(--border) solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: 3px 3px 0 var(--shadow);
   overflow: hidden;
+}
+
+/* The speaker takes the width of the slot, the caret keeps its narrow width. */
+.sound-control #sound {
+  flex: 1;
 }
 
 .sound-control button {
@@ -1218,6 +1254,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 /* Play by voice. On, the button takes the toggle color. A dot in its corner shows the state: green and
    pulsing while the microphone listens, muted while it pauses. */
 #voice {
+  grid-area: voice;
   position: relative;
 }
 
@@ -1262,6 +1299,20 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 700;
 }
 
+/* The texts of all voice states share one grid cell. Only the text of the current state shows (src/page/voice.ts). */
+.voice-state {
+  display: inline-grid;
+}
+
+.voice-state > span {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+
+.voice-state > [data-shown] {
+  visibility: visible;
+}
+
 .voice-status a {
   color: inherit;
   font-weight: 600;
@@ -1269,6 +1320,17 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .voice-panel #voice-recentre {
   justify-self: center;
+}
+
+/* Recentre tilt shows only after the first tilt reading, a moment after the voice starts.
+   On a touch screen it keeps its box while hidden, so it does not push the keypad down when it shows.
+   Limit: a touch screen without a tilt sensor keeps an empty line, and a desktop with a sensor moves once.
+   Revisit if players report the empty line. */
+@media (pointer: coarse) {
+  .voice-panel #voice-recentre[hidden] {
+    display: inline-flex !important;
+    visibility: hidden;
+  }
 }
 
 /* Play by voice: the hold fills the Place button with the color of the mark, as it fills the lit cell

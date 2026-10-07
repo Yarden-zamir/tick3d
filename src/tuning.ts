@@ -1,4 +1,4 @@
-import { keysOf } from './guards.ts';
+import { isRecord, keysOf } from './guards.ts';
 import type { Difficulty } from './ai.ts';
 
 // Every number that shapes the computer player. The defaults are the tested levels, and the
@@ -73,6 +73,27 @@ export function feelAt(style: StyleTuning, moves: number): Feel {
   return { block: mix('block'), fork: mix('fork'), forkBlock: mix('forkBlock'), temperature: mix('temperature') };
 }
 
+// Where one number of the settings lives in a Tuning object.
+type TuningPath =
+  | readonly [StyledLevel, 'fresh' | 'tired', keyof Feel]
+  | readonly [StyledLevel, 'tireFrom' | 'tireTo' | 'defense' | 'candidates']
+  | readonly ['hard', keyof HardTuning]
+  | readonly ['strongCellBonus'];
+
+// The value at `path`, or undefined when a step on the way is not an object. For stored settings from outside.
+const readPath = (value: unknown, path: TuningPath): unknown =>
+  path.reduce<unknown>((at, key) => (isRecord(at) ? at[key] : undefined), value);
+
+// The path is the one source for reads, so the read of a checked Tuning and of a stored object cannot disagree.
+const reader = (path: TuningPath) => ({
+  path,
+  get(tuning: Tuning): number {
+    const value = readPath(tuning, path);
+    if (typeof value !== 'number') throw new Error(`no tuning number at ${path.join('.')}`);
+    return value;
+  },
+});
+
 // One number of the advanced settings, with its allowed range.
 export type TuningField = {
   group: string;
@@ -80,6 +101,7 @@ export type TuningField = {
   min: number;
   max: number;
   step: number;
+  path: TuningPath;
   get(tuning: Tuning): number;
   set(tuning: Tuning, value: number): Tuning;
 };
@@ -103,7 +125,7 @@ function styleFields(level: StyledLevel): TuningField[] {
         min,
         max,
         step,
-        get: (tuning) => tuning[level][state][key],
+        ...reader([level, state, key]),
         set: (tuning, value) => setStyle(tuning, { [state]: { ...tuning[level][state], [key]: value } }),
       };
     }),
@@ -114,7 +136,7 @@ function styleFields(level: StyledLevel): TuningField[] {
     min,
     max,
     step,
-    get: (tuning) => tuning[level][key],
+    ...reader([level, key]),
     set: (tuning, value) => setStyle(tuning, { [key]: value }),
   });
   return [
@@ -132,7 +154,7 @@ const hardField = (key: keyof HardTuning, label: string, min: number, max: numbe
   min,
   max,
   step,
-  get: (tuning) => tuning.hard[key],
+  ...reader(['hard', key]),
   set: (tuning, value) => ({ ...tuning, hard: { ...tuning.hard, [key]: value } }),
 });
 
@@ -154,7 +176,7 @@ export const TUNING_FIELDS: readonly TuningField[] = [
     min: 0,
     max: 20,
     step: 1,
-    get: (tuning) => tuning.strongCellBonus,
+    ...reader(['strongCellBonus']),
     set: (tuning, value) => ({ ...tuning, strongCellBonus: value }),
   },
 ];
@@ -168,16 +190,9 @@ export function fieldValue(field: TuningField, value: unknown): number | undefin
 
 // Stored settings come from an older visit or a hand edit, so check every number and keep the default for a bad one.
 export function parseTuning(value: unknown): Tuning {
-  if (typeof value !== 'object' || value === null) return DEFAULT_TUNING;
   let tuning = DEFAULT_TUNING;
   for (const field of TUNING_FIELDS) {
-    let stored: unknown;
-    try {
-      stored = field.get(value as Tuning);
-    } catch {
-      continue; // a missing group in the stored object
-    }
-    const checked = fieldValue(field, stored);
+    const checked = fieldValue(field, readPath(value, field.path));
     if (checked !== undefined) tuning = field.set(tuning, checked);
   }
   return tuning;
@@ -198,14 +213,8 @@ export function isTunedFor(tuning: Tuning, level: Difficulty): boolean {
 // True when every field holds a number inside its range. Unlike parseTuning, this never falls back
 // to a default, so an upload with a broken value is refused instead of quietly fixed.
 export function isTuning(value: unknown): boolean {
-  if (typeof value !== 'object' || value === null) return false;
   return TUNING_FIELDS.every((field) => {
-    let stored: unknown;
-    try {
-      stored = field.get(value as Tuning);
-    } catch {
-      return false;
-    }
+    const stored = readPath(value, field.path);
     return typeof stored === 'number' && fieldValue(field, stored) === stored;
   });
 }

@@ -122,7 +122,7 @@ function showHold(cell: number | null, hold: HoldFill | null): void {
 function showState(state: VoiceState): void {
   if (voiceButton.dataset.state === state) return;
   voiceButton.dataset.state = state;
-  voiceStateEl.textContent = STATE_TEXT[state];
+  for (const span of voiceStateEl.children) span.toggleAttribute('data-shown', span.getAttribute('data-state') === state);
 }
 
 function onFrame(frame: VoiceFrame): void {
@@ -212,6 +212,16 @@ export function syncVoice(): void {
 }
 
 export function setupVoice(): void {
+  // One span for each state, all in one grid cell (see .voice-state): the status line keeps the width of
+  // the longest text, so a new state never moves the link next to it.
+  voiceStateEl.replaceChildren(
+    ...Object.entries(STATE_TEXT).map(([state, text]) => {
+      const span = document.createElement('span');
+      span.dataset.state = state;
+      span.textContent = text;
+      return span;
+    }),
+  );
   const engine = createVoice();
   voice = engine;
   rail = buildRail(voiceRailEl);

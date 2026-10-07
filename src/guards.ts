@@ -4,6 +4,9 @@
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+// A whole number from 0 up that stays exact: a count, an index or an id.
+export const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
 // Array.isArray narrows to any[]. This keeps the items unknown, so each one needs its own check.
 export const isUnknownArray = (value: unknown): value is readonly unknown[] => Array.isArray(value);
 
