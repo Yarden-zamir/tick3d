@@ -1144,10 +1144,12 @@ body[data-turn='O'] .status[data-state='playing'] {
   visibility: hidden;
 }
 
-/* New game takes the free width, but never less than its label. Undo and the result card take turns in one slot. */
+/* New game takes the free width, but never less than its label. Undo and the result card take turns in one slot.
+   max-content, not auto: a row that is too narrow overflows, and e2e/row-layout.spec.ts sees it.
+   An auto column shrinks the sound control instead and clips its icons without a sign. */
 .actions {
   grid-template-areas: 'new swap sound';
-  grid-template-columns: minmax(max-content, 1fr) auto auto;
+  grid-template-columns: minmax(max-content, 1fr) max-content max-content;
 }
 
 #new-game {

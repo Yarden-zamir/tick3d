@@ -10,7 +10,8 @@ const friend = { settings: { mode: 'friend' } };
 const X_WINS = [0, 1, 21, 2, 42, 3, 63];
 // The rows that hold controls or text that change with the game state: the actions row, the score and the header.
 const ROWS = ['.actions', '.score', '.brand'] as const;
-const VIEWPORTS = { phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 900 } } as const;
+// A small Android phone, a common phone and a desktop.
+const VIEWPORTS = { 'small phone': { width: 360, height: 800 }, phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 900 } } as const;
 
 interface Edges {
   left: number;
