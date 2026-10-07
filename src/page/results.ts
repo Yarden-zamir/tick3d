@@ -6,6 +6,7 @@ import { isTunedFor } from '../tuning.ts';
 import { token, api, OnlineError } from '../online.ts';
 import {
   type Code,
+  type DeviceGameId,
   type GameId,
   type PlayerToken,
   type ResultUpload,
@@ -29,7 +30,7 @@ const resultIdOf = (code: Code, index: number) => `${token}-${code.toLowerCase()
 
 // Keeps a finished computer, friend or Nearby game for upload, and returns the id of its link.
 // Online games are on the server already, and a Nearby watcher played no part: both get undefined.
-export async function recordResult(open: Session, game: Game, index: number): Promise<GameId | undefined> {
+export async function recordResult(open: Session, game: Game, index: number): Promise<DeviceGameId | undefined> {
   if (page.deviceDb === undefined || open.mode === 'online') return undefined;
   const you = open.mode === 'friend' ? null : open.you;
   if (open.mode !== 'friend' && you === null) return undefined;

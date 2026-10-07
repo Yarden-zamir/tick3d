@@ -5,6 +5,7 @@
 // friendly playoff. Revisit this if playoffs ever count for a public ranking.
 import type { Player } from '../game.ts';
 import { MAX_ROUND_MS, PRESET_IDS, type PresetId, ROUNDS } from './practice.ts';
+import { isRecord } from '../guards.ts';
 
 // The countdown after both players joined, so both pages start together.
 export const PLAYOFF_COUNTDOWN_MS = 3000;
@@ -41,7 +42,6 @@ export class PlayoffError extends Error {
   }
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isWhole = (value: unknown, max: number): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= max;
 const ENDS: readonly PlayoffEnd[] = ['done', 'declined', 'left'];
 

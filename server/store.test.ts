@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.setConfig({ testTimeout: 20_000 });
 import { replay } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
-import { type Code, type GameId, type Metrics, type PlayerToken, type ResultUpload, type StatsFilter, ALL_STATS, parseGameId, toRecord } from '../src/protocol.ts';
+import { type Code, type DeviceGameId, type GameId, type Metrics, type PlayerToken, type ResultUpload, type StatsFilter, ALL_STATS, parseDeviceGameId, parseGameId, toRecord } from '../src/protocol.ts';
 import type { PracticeRun } from '../src/practice/practice.ts';
 import { SessionError } from '../src/session/core.ts';
 import { type Store, openStore } from './store.ts';
@@ -249,7 +249,7 @@ describe('accounts', () => {
     const BOB_GITHUB = { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' };
     await store.linkToken(bob, BOB_GITHUB);
     const nearby = { mode: 'nearby', difficulty: null, game: finishedGame(X_WINS) } as const;
-    const id = gameId('NEARBY45');
+    const id = deviceGameId('NEARBY45');
     // The host (Alice, X) names the guest device (Bob, O). Both devices send a result.
     await store.addResults(alice, [
       result('eeeeeeee-1111-4000-8000-000000000001', { ...nearby, you: 'X', publicId: id, guest: bob, metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } }),
@@ -345,11 +345,16 @@ const gameId = (text: string): GameId => {
   if (id === undefined) throw new Error(`bad test id ${text}`);
   return id;
 };
+const deviceGameId = (text: string): DeviceGameId => {
+  const id = parseDeviceGameId(text);
+  if (id === undefined) throw new Error(`bad test id ${text}`);
+  return id;
+};
 
 describe('game links', () => {
   it('opens an uploaded game by its public id, with no token or result id in the answer', async () => {
     store = await openStore(':memory:');
-    const id = gameId('ABCDEFGH');
+    const id = deviceGameId('ABCDEFGH');
     const upload = result('44444444-0000-4000-8000-000000000001', { publicId: id, metrics: METRICS });
     expect(await store.addResults(alice, [upload])).toEqual({ stored: 1, renamed: {} });
     await store.linkToken(alice, ALICE_GITHUB);
@@ -370,7 +375,7 @@ describe('game links', () => {
 
   it('reads a result stored before hide coordinates as not hidden', async () => {
     store = await openStore(':memory:');
-    const id = gameId('BCDFGHJK');
+    const id = deviceGameId('BCDFGHJK');
     // An older device sent options without hideCoordinates, and the row keeps them as they came.
     const old = { ...result('44444444-0000-4000-8000-000000000002', { publicId: id }), options: { hideBoard: true, hideHistory: false } };
     await store.addResults(alice, [old]);
@@ -379,7 +384,7 @@ describe('game links', () => {
 
   it('gives a result without an id, or with an id that another game holds, a new unique id', async () => {
     store = await openStore(':memory:');
-    const taken = gameId('TAKEN234');
+    const taken = deviceGameId('TAKEN234');
     await store.addResults(alice, [result('55555555-0000-4000-8000-000000000001', { publicId: taken })]);
     const { renamed } = await store.addResults(bob, [
       result('55555555-0000-4000-8000-000000000002', { publicId: taken }),
@@ -462,7 +467,7 @@ describe('match history', () => {
   it('gives the guest of a Nearby game the result of the host, with the host as opponent, and returns no token', async () => {
     store = await openStore(':memory:');
     const nearby = { mode: 'nearby', difficulty: null, game: finishedGame(X_WINS) } as const;
-    const id = gameId('NEARBY23');
+    const id = deviceGameId('NEARBY23');
     // Both devices send a result. The host (Alice, X) names the guest (Bob, O).
     await store.addResults(alice, [
       result('dddddddd-1111-4000-8000-000000000001', { ...nearby, you: 'X', publicId: id, guest: bob, metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } }),

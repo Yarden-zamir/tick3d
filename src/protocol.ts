@@ -7,6 +7,7 @@ import type { DeviceKind } from './nearby/device.ts';
 import { type Tuning, isTuning, parseTuning } from './tuning.ts';
 import { type Playoff, parsePlayoff } from './practice/playoff.ts';
 import type { PracticeStats } from './practice/practice.ts';
+import { isRecord, isUnknownArray } from './guards.ts';
 
 // Letters and digits without the look-alikes 0/O and 1/I, so a code read aloud is not ambiguous.
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -230,7 +231,6 @@ export function asPlayerToken(input: unknown): PlayerToken | undefined {
   return [...input].every((char) => TOKEN_CHARS.includes(char)) ? (input as PlayerToken) : undefined;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 const isCell = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < CELL_COUNT;
 
@@ -416,32 +416,49 @@ export function parsePlayerInfo(value: unknown): PlayerInfo | undefined {
 // An online game: "<CODE>-<n>", where n is its 1-based number in the session.
 // Any other game: DEVICE_GAME_ID_LENGTH random characters that the device makes at the end of the game.
 // The id of a stored result holds a player token, so only this id may leave the server.
-export type GameId = string & { readonly __brand: 'GameId' };
+// The check functions below mint both kinds, so a GameId always has one of the two forms.
+export type DeviceGameId = string & { readonly __brand: 'DeviceGameId' };
+export type OnlineGameId = `${string}-${number}` & { readonly __brand: 'OnlineGameId' };
+export type GameId = DeviceGameId | OnlineGameId;
 const DEVICE_GAME_ID_LENGTH = 8;
 // Game numbers above this are not real: a session of a million games has never happened.
 const MAX_GAME_NUMBER = 1_000_000;
 
-export function newGameId(): GameId {
+export function newGameId(): DeviceGameId {
   // 256 is a multiple of the 32 characters, so every character is equally likely.
   const bytes = crypto.getRandomValues(new Uint8Array(DEVICE_GAME_ID_LENGTH));
-  return Array.from(bytes, (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length]).join('') as GameId;
+  return Array.from(bytes, (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length]).join('') as DeviceGameId;
 }
 
-export const onlineGameId = (code: Code, index: number): GameId => `${code}-${index + 1}` as GameId;
+export const onlineGameId = (code: Code, index: number): OnlineGameId => `${code}-${index + 1}` as OnlineGameId;
 
 // A device id has no dash; an online id always has one.
-const isDeviceGameId = (id: GameId) => !id.includes('-');
+export const isOnlineGameId = (id: GameId): id is OnlineGameId => id.includes('-');
+
+// The session code and the 0-based game index of an online id.
+export function onlineGameParts(id: OnlineGameId): { code: Code; index: number } {
+  const [code, number] = id.split('-');
+  const parsed = normalizeCode(code ?? '');
+  if (parsed === undefined || parsed !== code) throw new Error(`not an online game id: ${id}`);
+  return { code: parsed, index: Number(number) - 1 };
+}
+
+// Only the exact form that newGameId makes: no trimming, no case change.
+export function parseDeviceGameId(input: unknown): DeviceGameId | undefined {
+  const id = parseGameId(input);
+  return id !== undefined && id === input && !isOnlineGameId(id) ? id : undefined;
+}
 
 // Accepts either form in any case, and returns it in upper case.
 export function parseGameId(input: unknown): GameId | undefined {
   if (typeof input !== 'string') return undefined;
   const id = input.trim().toUpperCase();
-  if (id.length === DEVICE_GAME_ID_LENGTH && [...id].every((char) => CODE_ALPHABET.includes(char))) return id as GameId;
+  if (id.length === DEVICE_GAME_ID_LENGTH && [...id].every((char) => CODE_ALPHABET.includes(char))) return id as DeviceGameId;
   const [code, number, ...rest] = id.split('-');
   if (code === undefined || number === undefined || rest.length > 0 || normalizeCode(code) !== code) return undefined;
   const n = Number(number);
   // String(n) === number refuses leading zeros, signs and exponents.
-  return Number.isInteger(n) && n >= 1 && n <= MAX_GAME_NUMBER && String(n) === number ? (id as GameId) : undefined;
+  return Number.isInteger(n) && n >= 1 && n <= MAX_GAME_NUMBER && String(n) === number ? (id as OnlineGameId) : undefined;
 }
 
 // ---- Game metrics ----
@@ -522,12 +539,16 @@ export function parseMetrics(value: unknown): Metrics | undefined {
   const theme = oneOf(THEMES, value.theme);
   if (device === undefined || view === undefined || layout === undefined || theme === undefined) return undefined;
   if (!isRecord(input) || !hasOnlyKeys(input, ['board', 'keypad']) || !isCount(input.board) || !isCount(input.keypad)) return undefined;
-  if (!isRecord(refused) || !Object.entries(refused).every(([key, count]) => oneOf(REFUSALS, key) !== undefined && isCount(count))) {
-    return undefined;
+  if (!isRecord(refused)) return undefined;
+  const refusals: Metrics['refused'] = {};
+  for (const [key, count] of Object.entries(refused)) {
+    const reason = oneOf(REFUSALS, key);
+    if (reason === undefined || !isCount(count)) return undefined;
+    refusals[reason] = count;
   }
   if (!isCount(undos) || typeof offline !== 'boolean' || !isVersion(version)) return undefined;
-  const validThink = (time: unknown) => typeof time === 'number' && Number.isFinite(time) && time >= 0 && time <= MAX_THINK_MS;
-  if (!Array.isArray(thinkMs) || thinkMs.length > CELL_COUNT || !thinkMs.every(validThink)) return undefined;
+  const validThink = (time: unknown): time is number => typeof time === 'number' && Number.isFinite(time) && time >= 0 && time <= MAX_THINK_MS;
+  if (!isUnknownArray(thinkMs) || thinkMs.length > CELL_COUNT || !thinkMs.every(validThink)) return undefined;
   if (tuning !== null && !isTuning(tuning)) return undefined;
   let nearbyInfo: Metrics['nearby'] = null;
   if (nearby !== null) {
@@ -543,9 +564,9 @@ export function parseMetrics(value: unknown): Metrics | undefined {
     layout,
     theme,
     input: { board: input.board, keypad: input.keypad },
-    refused,
+    refused: refusals,
     undos,
-    thinkMs: thinkMs as number[],
+    thinkMs: [...thinkMs],
     offline,
     version,
     tuning: tuning === null ? null : parseTuning(tuning),
@@ -567,7 +588,7 @@ export type ResultUpload = {
   difficulty: Difficulty | null;
   finishedAt: EpochMs;
   // Null from a device version before game links. The server then makes an id.
-  publicId: GameId | null;
+  publicId: DeviceGameId | null;
   // The hide settings at the end of the game.
   options: MatchOptions;
   // True for a computer game against changed advanced settings.
@@ -612,8 +633,8 @@ export function parseResultUpload(value: unknown, now: EpochMs): ResultUpload | 
   const level = difficulty === null ? null : DIFFICULTIES.find((d) => d === difficulty);
   if (level === undefined || (mode === 'computer') !== (level !== null)) return undefined;
   if (!isEpochMs(finishedAt) || finishedAt === 0 || finishedAt > now + FUTURE_SLACK_MS) return undefined;
-  const publicId = value.publicId === undefined || value.publicId === null ? null : parseGameId(value.publicId);
-  if (publicId === undefined || (publicId !== null && (!isDeviceGameId(publicId) || publicId !== value.publicId))) return undefined;
+  const publicId = value.publicId === undefined || value.publicId === null ? null : parseDeviceGameId(value.publicId);
+  if (publicId === undefined) return undefined;
   const options = parseMatchOptions(value.options ?? { hideBoard: false, hideHistory: false });
   if (options === undefined) return undefined;
   const tuned = value.tuned ?? false;
@@ -641,9 +662,13 @@ export function parseResultUpload(value: unknown, now: EpochMs): ResultUpload | 
 // ---- One game, read-only ----
 
 // A finished game as anybody with its link sees it. It has no tokens and no result id.
-export type PublicGame = {
-  id: GameId;
-  mode: SessionMode;
+// An online game has an online id ("<CODE>-<n>"), every other game a device id.
+export type PublicGame = (
+  | { id: OnlineGameId; mode: 'online' }
+  | { id: DeviceGameId; mode: Exclude<SessionMode, 'online'> }
+) &
+  PublicGameFields;
+type PublicGameFields = {
   game: GameRecord;
   options: MatchOptions;
   difficulty: Difficulty | null;
@@ -684,9 +709,7 @@ export function parsePublicGame(value: unknown): PublicGame {
   const names = parseSeatNames(value.names);
   if (names === undefined) return fail('names');
   if (!isEpochMs(finishedAt)) return fail('finishedAt');
-  return {
-    id,
-    mode,
+  const fields: PublicGameFields = {
     game: { moves: game.moves, times: game.times, clock: game.clock, timedOut: game.timedOut },
     options: matchOptions,
     difficulty,
@@ -696,6 +719,8 @@ export function parsePublicGame(value: unknown): PublicGame {
     names,
     finishedAt,
   };
+  if (mode === 'online') return isOnlineGameId(id) ? { id, mode, ...fields } : fail('id');
+  return isOnlineGameId(id) ? fail('id') : { id, mode, ...fields };
 }
 
 // ---- Match history ----
