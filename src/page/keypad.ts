@@ -1,6 +1,6 @@
 // The keypad that places a move by layer, row and column.
 import { toCell, other, toCoords, SIZE } from '../game.ts';
-import { sounds } from '../sound.ts';
+import { keypadPreviews, sounds } from '../sound.ts';
 import { cells } from './board.ts';
 import { coordsSlots, coordsSlotsEl, coordsTitle, coordsHear, digitButtons, coordsBack, coordsPlace, coordsForm } from './dom.ts';
 import { showProblem } from './feedback.ts';
@@ -41,7 +41,8 @@ export function renderCoords(): void {
   cells.forEach((button, cell) => button.classList.toggle('aim', cell === target));
   const full = page.coordDigits.length === 3;
   // The speaker plays the typed cell, or else the last move, so a game works by ear.
-  coordsHear.hidden = !full && !showLast;
+  // A set without keypad previews (Classic) keeps the typed cell quiet until Place.
+  coordsHear.hidden = !(full && keypadPreviews()) && !showLast;
   digitButtons.forEach((button) => (button.disabled = full));
   coordsBack.disabled = page.coordDigits.length === 0;
   coordsPlace.disabled = !full;
@@ -56,7 +57,8 @@ export function setupKeypad(): void {
       page.coordDigits = [...page.coordDigits, digit];
       const target = coordTarget();
       // The third number names a cell: its own sound tells the player which cell Place takes.
-      if (target === undefined) sounds.click();
+      // Classic plays only the click, so the cell sounds first on Place.
+      if (target === undefined || !keypadPreviews()) sounds.click();
       else sounds.preview(target);
       renderCoords();
     });
@@ -66,8 +68,9 @@ export function setupKeypad(): void {
     const target = coordTarget();
     const game = current();
     const last = game.moves.at(-1);
-    if (target !== undefined) sounds.preview(target);
-    else if (last !== undefined) sounds.place(other(game.turn), last);
+    if (target !== undefined) {
+      if (keypadPreviews()) sounds.preview(target);
+    } else if (last !== undefined) sounds.place(other(game.turn), last);
   });
 
   coordsBack.addEventListener('click', () => {

@@ -137,3 +137,9 @@ describe('the voice clips in a song', () => {
     expect(song.notes.every((note) => clipOf(note, new Map()) === undefined)).toBe(true);
   });
 });
+
+describe('keypad previews', () => {
+  it('stay off for Classic only, so a typed cell sounds first on Place', () => {
+    expect(SOUND_SET_IDS.filter((id) => SOUND_SETS[id].keypadPreview === false)).toEqual(['classic']);
+  });
+});
