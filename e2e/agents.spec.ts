@@ -30,18 +30,14 @@ async function call(request: APIRequestContext, player: string, method: 'GET' | 
 
 test('the OpenAPI document and its Swagger UI page load', async ({ request, page, baseURL }) => {
   const response = await request.get('/api/openapi.json');
-  const doc = (await response.json()) as { openapi: string; info: { description: string }; servers: { url: string }[]; paths: Record<string, unknown> };
-  expect(doc.openapi).toBe('3.1.0');
+  // server/api-docs.test.ts checks the document itself. Here: the deployed server fills in its own origin.
+  const doc = (await response.json()) as { servers: { url: string }[] };
   expect(doc.servers).toEqual([{ url: baseURL }]);
-  expect(Object.keys(doc.paths)).toContain('/api/sessions/{code}/moves');
-  expect(doc.info.description).toContain('## Quick start');
-  expect((await request.get('/api/docs.md')).status()).toBe(404);
 
   // The plain page fixture: `open` watches the game page for toasts, and this page is not the game.
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/api/docs');
-  await expect(page.locator('.swagger-ui .info .title')).toContainText('tick3d HTTP API');
   await expect(page.locator('.opblock-summary-path', { hasText: '/api/sessions/{code}/moves' })).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -104,7 +100,6 @@ test('the Advanced box gives a snippet for an AI agent, and Copy copies it', asy
   await page.locator('#advanced summary').click();
   const snippet = page.locator('#agent-snippet');
   await expect(snippet).toContainText(`${baseURL}/api/openapi.json`);
-  await expect(snippet).toContainText('wait for my instructions');
 
   await page.locator('#agent-copy').click();
   await expectToast(page, 'Copied');

@@ -2,13 +2,15 @@
 //
 // The data comes from the public GitHub REST API without a token. GitHub allows 60 such calls per hour
 // per address, and production and every preview share the address of the VPS. So:
-// - the whole answer is cached for PREVIEWS_CACHE_MS, and one refresh serves every request that waits for it;
+// - only production calls GitHub. A preview server reads production's GET /api/previews and keeps it for
+//   PREVIEWS_RELAY_CACHE_MS. That costs no GitHub call, so the number of previews does not matter;
+// - on production, the whole answer is cached for PREVIEWS_CACHE_MS, and one refresh serves every request that waits for it;
 // - the commits of a pull request are read again only when its head commit changes;
 // - when GitHub says that few calls are left, the server makes no call until the limit resets;
 // - on any GitHub failure, the server keeps the last good list and adds a note.
 // "Live" means that https://pr.<n>.<domain>/api/health answers { ok: true } now. That costs no GitHub call.
-import { PREVIEWS_CACHE_MS } from './api-docs.ts';
-import { type Contributor, type PlayerInfo, type Preview, type Previews, PREVIEW_DESCRIPTION_LENGTH, parsePlayerInfo } from '../src/protocol.ts';
+import { PREVIEWS_CACHE_MS, PREVIEWS_RELAY_CACHE_MS } from './api-docs.ts';
+import { type Contributor, type PlayerInfo, type Preview, type Previews, PREVIEW_DESCRIPTION_LENGTH, parsePlayerInfo, parsePreviews } from '../src/protocol.ts';
 
 // GitHub returns at most this many pull requests in one page, the most recently updated first.
 export const MAX_PULLS = 30;
@@ -19,26 +21,35 @@ export const MAX_CONTRIBUTORS = 20;
 const RATE_RESERVE = 5;
 const HEALTH_TIMEOUT_MS = 3_000;
 const GITHUB_TIMEOUT_MS = 10_000;
+// Production reads GitHub and checks the previews, so its answer can take a few seconds.
+const PRODUCTION_TIMEOUT_MS = 20_000;
 
 export type PreviewsConfig = {
   // owner/name of the GitHub repository, for example Yarden-zamir/tick3d.
   repo: string;
   // The previews live at https://pr.<n>.<domain>.
   domain: string;
+  // Where the list comes from: GitHub on production, production's GET /api/previews on any other environment.
+  source: 'github' | 'production';
 };
+
+// The KitSHn environment of production. A pull request preview is pr-<n>, and a manual deploy has its own name.
+const PRODUCTION_ENVIRONMENT = 'prod';
 
 const REPO_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.';
 
 export function previewsConfigFromEnv(env: NodeJS.ProcessEnv): PreviewsConfig | undefined {
-  const { PREVIEWS_REPO, PREVIEWS_DOMAIN } = env;
+  const { PREVIEWS_REPO, PREVIEWS_DOMAIN, KITSHN_ENVIRONMENT } = env;
   // A local or LAN host has no previews, so it sets neither value.
   if (!PREVIEWS_REPO && !PREVIEWS_DOMAIN) return undefined;
   if (!PREVIEWS_REPO || !PREVIEWS_DOMAIN) throw new Error('The previews list needs both PREVIEWS_REPO and PREVIEWS_DOMAIN');
+  // Without it, every preview would call GitHub and use up the shared limit, so a missing value stops the server.
+  if (!KITSHN_ENVIRONMENT) throw new Error('The previews list needs KITSHN_ENVIRONMENT to tell production from a preview');
   const parts = PREVIEWS_REPO.split('/');
   if (parts.length !== 2 || !parts.every((part) => part.length > 0 && [...part].every((char) => REPO_CHARS.includes(char)))) {
     throw new Error('PREVIEWS_REPO must be owner/name');
   }
-  return { repo: PREVIEWS_REPO, domain: PREVIEWS_DOMAIN };
+  return { repo: PREVIEWS_REPO, domain: PREVIEWS_DOMAIN, source: KITSHN_ENVIRONMENT === PRODUCTION_ENVIRONMENT ? 'github' : 'production' };
 }
 
 // ---- Reading the GitHub answers ----
@@ -283,7 +294,7 @@ export function createPreviews(config: PreviewsConfig, fetchImpl: typeof fetch =
 
   const main = `https://${config.domain}`;
 
-  async function load(): Promise<Previews> {
+  async function loadFromGitHub(): Promise<Previews> {
     try {
       last = await refresh();
       return { main, previews: last, error: null };
@@ -294,17 +305,38 @@ export function createPreviews(config: PreviewsConfig, fetchImpl: typeof fetch =
     }
   }
 
+  // A preview server: production's list as it is, so the page sees the same list and the same note everywhere.
+  async function loadFromProduction(): Promise<Previews> {
+    try {
+      const response = await fetchImpl(`${main}/api/previews`, { signal: AbortSignal.timeout(PRODUCTION_TIMEOUT_MS) });
+      if (!response.ok) throw new Error(`production answered ${response.status}`);
+      // Every error in this block comes from the network or from production's answer, never from a bug here.
+      const answer = parsePreviews(await response.json());
+      last = answer.previews;
+      return { ...answer, main };
+    } catch (error) {
+      console.error('previews: production did not answer:', error instanceof Error ? error.message : String(error));
+      return {
+        main,
+        previews: last ?? [],
+        error: last === undefined ? 'The production site did not answer. Try again later.' : 'The production site did not answer. The list can be old.',
+      };
+    }
+  }
+
+  const load = config.source === 'github' ? loadFromGitHub : loadFromProduction;
+  const cacheMs = config.source === 'github' ? PREVIEWS_CACHE_MS : PREVIEWS_RELAY_CACHE_MS;
   let current: Previews = { main, previews: [], error: null };
 
   return {
-    // The list, at most PREVIEWS_CACHE_MS old. Requests during a refresh wait for that one refresh.
+    // The list, at most cacheMs old. Requests during a refresh wait for that one refresh.
     async list(): Promise<Previews> {
       if (now() < freshUntil) return current;
       refreshing ??= load()
         .then((result) => (current = result))
         .finally(() => {
-          // A failure also waits one cache period, so a GitHub outage does not cost a call per request.
-          freshUntil = now() + PREVIEWS_CACHE_MS;
+          // A failure also waits one cache period, so an outage does not cost a call per request.
+          freshUntil = now() + cacheMs;
           refreshing = undefined;
         });
       return refreshing;
