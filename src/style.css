@@ -1814,12 +1814,48 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
-/* A bubble in the color of its sender's mark. Your own bubbles sit on the right. */
-.chat-message {
-  display: grid;
-  max-width: 85%;
+/* Messages in a row from one sender: one picture at the bottom, the name, then the bubbles.
+   Your own groups sit on the right, with the picture on the right. */
+.chat-group {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4rem;
+  max-width: 90%;
   align-self: flex-start;
-  padding: 0.3rem 0.6rem 0.35rem;
+}
+
+.chat-group.mine {
+  flex-direction: row-reverse;
+  align-self: flex-end;
+}
+
+.chat-group > .avatar {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.chat-group-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.chat-group.mine .chat-group-body {
+  align-items: flex-end;
+}
+
+.chat-group-body b {
+  padding-inline: 0.2rem;
+  font-size: 0.75rem;
+}
+
+/* A bubble in the color of its sender's mark. */
+.chat-message {
+  max-width: 100%;
+  padding: 0.25rem 0.6rem 0.3rem;
   border: 2px solid var(--line);
   border-radius: 8px 8px 8px 2px;
   box-shadow: 2px 2px 0 var(--shadow);
@@ -1827,21 +1863,16 @@ body[data-turn='O'] .status[data-state='playing'] {
   overflow-wrap: anywhere;
 }
 
-.chat-message.mine {
-  align-self: flex-end;
+.chat-group.mine .chat-message {
   border-radius: 8px 8px 2px 8px;
 }
 
-.chat-message.from-x {
+.from-x .chat-message {
   background: var(--x);
 }
 
-.chat-message.from-o {
+.from-o .chat-message {
   background: var(--o);
-}
-
-.chat-message b {
-  font-size: 0.75rem;
 }
 
 .chat-form {
@@ -2477,9 +2508,17 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.6rem;
 }
 
+/* Two classes, so the round avatar wins over `.end-card img` (My games is an end-card dialog). */
 .account .avatar {
+  flex-shrink: 0;
   width: 2rem;
   height: 2rem;
+  border-radius: 50%;
+}
+
+/* "You play as …" sits next to the picture, and wraps under it only on a narrow screen. */
+.account > span {
+  flex: 1 1 14rem;
 }
 
 .my-games-note {
@@ -2529,6 +2568,13 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: grid;
   flex: 1;
   min-width: 0;
+}
+
+.my-games-list .avatar {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
 }
 
 .my-games-list small {
@@ -3023,7 +3069,16 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--on-color);
 }
 
+.players-name .avatar {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
 .players-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   min-width: 0;
   overflow-wrap: anywhere;
   font-weight: 800;
