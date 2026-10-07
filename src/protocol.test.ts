@@ -22,6 +22,9 @@ import {
   parseSeatAction,
   parseSeatAnswer,
   toRecord,
+  ALL_STATS,
+  parseStatsFilter,
+  statsQuery,
 } from './protocol.ts';
 
 describe('asPlayerToken', () => {
@@ -405,6 +408,28 @@ describe('parseCustomName', () => {
 
   it.each(['a', 'a'.repeat(25), '<b>bold</b>', 'name!', '___', '  ', 42, null])('refuses %j', (input) => {
     expect(parseCustomName(input)).toBeUndefined();
+  });
+});
+
+describe('parseStatsFilter', () => {
+  const parse = (query: string) => parseStatsFilter(new URLSearchParams(query));
+
+  it('reads each filter and gives the default for a missing key', () => {
+    expect(parse('')).toEqual(ALL_STATS);
+    expect(parse('scope=mine&range=7d&mode=computer&level=hard')).toEqual({ scope: 'mine', range: '7d', mode: 'computer', level: 'hard' });
+    expect(parse('level=easy')).toEqual({ ...ALL_STATS, level: 'easy' });
+  });
+
+  it.each(['scope=all', 'range=1y', 'mode=', 'mode=Computer', 'level=expert', 'page=2', 'range=7d&range=30d', 'mode=online&level=hard'])(
+    'refuses %s',
+    (query) => expect(parse(query)).toBeUndefined(),
+  );
+
+  it('writes one address per view, without the defaults, that reads back the same', () => {
+    expect(statsQuery(ALL_STATS)).toBe('');
+    expect(statsQuery({ ...ALL_STATS, scope: 'mine' })).toBe('?scope=mine');
+    const filter = { scope: 'mine', range: '30d', mode: 'computer', level: 'medium' } as const;
+    expect(parse(statsQuery(filter))).toEqual(filter);
   });
 });
 

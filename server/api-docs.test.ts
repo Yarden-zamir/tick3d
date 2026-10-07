@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { parseAnnounce, parseAnnounced, parseAnswerRequest, parseLobbyHosts } from '../src/nearby/lobby.ts';
 import { parseMe, parseMyGames } from '../src/online.ts';
 import {
+  ALL_STATS,
   type PlayerToken,
   parseGameId,
   normalizeChat,
@@ -163,6 +164,16 @@ describe('the SessionView schema', () => {
       store.close();
     }
     // DuckDB writes for each move. A busy CI machine needs more than the default 5 s.
+  }, 20_000);
+  it('matches the Mine stats, which add your own results', async () => {
+    const store = await openStore(':memory:');
+    try {
+      const mine = await store.stats({ ...ALL_STATS, scope: 'mine' }, 'agent-aaaaaaaaaaaaaaaa' as PlayerToken);
+      expect(mine.personal).not.toBeNull();
+      expect(schemaErrors('Stats', mine)).toBe('');
+    } finally {
+      store.close();
+    }
   }, 20_000);
 });
 

@@ -109,7 +109,7 @@ The actions row has fixed slots (`.slot-row` in `src/style.css`), so a control t
 - Login with GitHub is optional. Without a login, every browser plays with a random token and a generated name, such as "braveOtter".
 - A login lets a player continue a game on every device of the account.
 - A player without a login can choose a name in My games.
-- My games shows the account, the stats, the games of the open session, the match history and the online sessions.
+- My games shows the account, the stats, the games of the open session, the match history and the online sessions. Stats in its head opens your own stats.
 
 <img src="docs/screenshots/my-games.png" alt="My games: stats and sessions" width="480">
 
@@ -153,8 +153,10 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 
 ## Stats page and what is logged
 
-- `/stats` shows aggregate counts of all games. Nothing links to it, and search engines do not list it.
-- The stats show counts and player names only. They never show a token, a result id or a game id.
+- `/stats` is public: the game Info panel and My games link to it, and search engines may list it.
+- Filters: Everyone or Mine, the time (7 days, 30 days or all), the mode and the level. The address holds them, for example `/stats?scope=mine&range=30d`. `GET /api/stats` takes the same query and answers 400 for an unknown value.
+- Everyone shows counts only: no player names and no page faults. Mine (your games on every linked device) adds your win rate over time, streaks, results, survival records and favourite opponents.
+- The stats never show a token, a result id or a game id.
 - A finished game sends, besides the game: the device kind, the view, the layout, the theme, input and undo counts, refusals, computer thinking times, the offline flag and the app version.
 - A fault report holds the error message, the file and line, and the app version. It holds no token and no address.
 
