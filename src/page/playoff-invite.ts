@@ -23,7 +23,11 @@ export function checkPlayoffInvite(view: SessionView): void {
   const { playoff, you } = view;
   const invited = playoff !== null && you !== null && playoff.ended === null && playoff.by !== you && !playoff.seats[you].joined;
   if (!invited) {
-    if (dialog.open && asked?.code === view.code) dialog.close();
+    if (dialog.open && asked?.code === view.code) {
+      dialog.close();
+      // A change of the seats ends the playoff (src/session/core.ts): the server sets it to null.
+      if (playoff === null) showToast('The playoff ended because the seats changed.', 'info');
+    }
     return;
   }
   if (asked?.code === view.code && asked.id === playoff.id) return;

@@ -50,6 +50,7 @@ const HEAR_MS = 1200;
 const REVEAL_MS = 1600;
 const NO_STICKINESS: Stickiness = { share: 0, buildUpMs: DEFAULT_STICKINESS.buildUpMs };
 const BESTS_KEY = 'tick3d.voice-practice';
+const SEATS_CHANGED = 'The playoff ended because the seats changed.';
 
 // countdown: before the first round. hear: an echo round plays its cell. round: the clock runs.
 // reveal: an echo round shows its answer.
@@ -460,9 +461,18 @@ export function createPracticeRoom({ voice, board, rail, startMic, show }: Conte
   // A new view of the online game: show the playoff, and start its run when both joined.
   function showSession(view: SessionView): void {
     if (session === undefined || view.code !== session.code || view.version < session.view.version) return;
+    const before = session.view.playoff;
     session = { code: session.code, view, offset: view.now - Date.now() };
     const { you, playoff } = view;
-    if (you === null) return;
+    // A change of the seats ends the playoff (src/session/core.ts): the server sets it to null.
+    if (before !== null && before.ended === null && playoff === null) {
+      if (run?.playoffId === before.id) stopRun(SEATS_CHANGED);
+      else show(SEATS_CHANGED);
+    }
+    if (you === null) {
+      playoffText.textContent = 'You do not hold a seat in this game now, so a playoff is not possible. Try Targets or Echo.';
+      return updateButtons();
+    }
     const them = you === 'X' ? 'O' : 'X';
     const themName = seatName(view, them);
     raceThemName.textContent = themName;

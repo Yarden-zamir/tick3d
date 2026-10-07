@@ -343,4 +343,26 @@ describe('seat controls', () => {
     expect(shown.seatRequest?.watcher).toEqual({ name: 'Carol', player: null });
     expect(JSON.stringify(shown)).not.toContain(CAROL);
   });
+
+  it('ends a sound playoff when the seats change, so a new seat holder does not take over its progress', () => {
+    const doc = onlineDoc();
+    const started = core.playoff(doc, alice, { action: 'start', preset: 'easy', seed: 7 }, 0);
+    expect(started.playoff).not.toBeNull();
+    for (const [who, request] of [
+      [bob, { action: 'leave' }],
+      [alice, { action: 'give', watcher: 'c0ffee0000000001' }],
+    ] as const) {
+      expect(core.seat(started, who, request, watchers, 0).playoff, request.action).toBeNull();
+    }
+    for (const request of [{ action: 'swap' }, { action: 'unseat' }, { action: 'replace', watcher: 'c0ffee0000000001' }] as const) {
+      const asked = core.seat(started, alice, request, watchers, 0);
+      // A request alone changes no seat, so the playoff goes on until the other player accepts.
+      expect(asked.playoff, request.action).toEqual(started.playoff);
+      expect(core.answerSeat(asked, bob, true, watchers, 0).playoff, request.action).toBeNull();
+    }
+    // An undo changes no seat, and keeps the playoff.
+    const played = play(started, [0, 1]);
+    const undone = core.answerSeat(core.seat(played, bob, { action: 'undo' }, watchers, 0), alice, true, watchers, 0);
+    expect(undone.playoff).toEqual(started.playoff);
+  });
 });

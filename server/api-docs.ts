@@ -250,7 +250,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     seatRequest: { ...nullable(ref('SeatRequest')), description: 'A seat change that waits for the other player, or null.' },
     turn: { ...nullable(ref('Player')), description: 'The player to move in the live game. null when the live game is over.' },
     status: ref('Status'),
-    playoff: { ...nullable(ref('Playoff')), description: 'The sound playoff of the session, or null. An older server sends no such field.' },
+    playoff: { ...nullable(ref('Playoff')), description: 'The sound playoff of the session, or null. A change of the seats sets it to null. An older server sends no such field.' },
   }, ['playoff']),
   NewSession: object(
     'A new session. You take seat X.',

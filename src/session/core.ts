@@ -259,6 +259,11 @@ function undoProblem(doc: SessionDoc, from: Player): string | undefined {
 }
 
 // Every applied change closes an open request, because the request was about the state before it.
+// A change of the seats also ends a sound playoff: the playoff is stored by seat, so a new holder of a
+// seat must not take over the progress of the player before. Both pages see the playoff go to null.
+// Limit: the next playoff starts again at id 1, so a late request for the ended playoff can reach it.
+// That needs a request in flight across a seat change, and a playoff is friendly. Revisit this if a
+// stale hit ever shows in a new playoff: then keep a playoff counter in the session document.
 function applySeatChange(doc: SessionDoc, { kind, from, watcher }: SeatChange): SessionDoc {
   if (kind === 'undo') {
     const problem = undoProblem(doc, from);
@@ -287,7 +292,7 @@ function applySeatChange(doc: SessionDoc, { kind, from, watcher }: SeatChange): 
       seats[to] = null;
       break;
   }
-  return { ...doc, seats, seatRequest: null };
+  return { ...doc, seats, seatRequest: null, playoff: null };
 }
 
 // A seated player changes the seats, or takes back the own last move (undo). A change of the other
