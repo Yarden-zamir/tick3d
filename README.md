@@ -9,6 +9,7 @@
 ## Rules
 
 - Two players take turns. X moves first.
+- In a session, the players swap X and O for each new game, so the first move alternates. The player who was O in one game is X in the next.
 - Four marks in a straight line win. There are 76 lines: 48 along an axis, 24 diagonals inside a plane, and 4 through the cube.
 - A full cube with no line is a draw.
 
@@ -24,6 +25,7 @@
 - Move validation: an occupied cell, a move after the game ends, a move out of turn, or a move by a spectator is refused with a sound and a message. A tap on an occupied cell then also plays the sound of the mark on it. Every mode runs the same session rules (`src/session/core.ts`): the server for online games, the device for computer and friend games, the host's device for Nearby games.
 - Hide the board, or hide all marks except the last move. Play by coordinates: tap the layer, row and column on the 1 to 4 keypad, for example `2 3 4`. The target cell is outlined before you place. Until you tap a number, the keypad shows the coordinates of the last move, yours or the other player's, so you can follow the game with the board hidden. Hidden marks show again when the game ends.
 - Lock settings: the small Lock button sits in the Hide row of the panel. After a lock, no setting (the view included) changes until the game ends: the opponent, level, side, view, layout, time limit, hide options and the advanced computer settings. New game, Undo, the join box and the switch to another session in My games also wait. Home still leaves the game, after the usual question. The session keeps the lock, so a reload does not end it. With another device, either player can lock, and the lock holds for both players. A lock waits until both seats have a player, because a game without a second player cannot end. Watchers cannot lock, and a lock does not hold the settings of a watcher. The theme, the sound, the sound set and the angle of the tower stay free. Leave and End of a Nearby game also stay open.
+- Seat rotation: after each played game, X and O swap for the next game. This applies to computer, online and Nearby games. A friend game holds both seats on one screen, so it has nothing to swap. A small lock keeps the seats: in a computer game it sits next to "You play", and in an online or Nearby game in the Players box. The lock belongs to the session, so with another device it holds for both players. Either player can change it without a request to the other player, and the other player gets a message. Watchers cannot change it, and a settings lock holds it until the game ends. The score, the session games and the end card count each game for the player who played it, also after a swap. A chat message and an open seat request stay with their player too.
 - Session history: My games lists the games of the open session, with the result of each. Replay closes the dialog and steps through a game on the board, move by move. Card opens the result card of a finished game. A session holds any number of games.
 - Time limits, like a chess clock: a limit per player for the whole game (30 s to 120 min), a limit per move (3 s to 10 min), or both. Each limit has a switch, a number box and quick picks. A player who runs out of either limit loses. The first move of each player is untimed, so the clock starts after both players moved once. A clock ticks in the last 10 seconds. A timed game has no undo.
 - A game keeps the time limit it started with. A change during a game starts with the next game, and the panel shows both limits until then.
@@ -94,7 +96,7 @@
 - Undo works the same way: a player asks to take back the own last move, and the other player accepts or declines. A move of the other player ends the request. A timed game, a finished game and a lock allow no undo, as on one device.
 - A watcher is never asked. A watcher has no seat controls and no Undo, only "Play X" or "Play O" while a seat is free.
 - Each seat button has a tooltip that says what changes. The keyboard focus stays on a seat button when the box updates.
-- Computer and friend games have no Players box: a friend game uses one screen, and in a computer game "You play" picks X or O.
+- Computer and friend games have no Players box: a friend game uses one screen, and in a computer game "You play" shows your seat in the live game. A click on the other seat opens the newest computer session where you hold that seat, or starts one.
 - A browser keeps its seat through a random token in `localStorage`.
 - A link with a code that opens no game (no game with that code, or no network for a new game) shows the error, drops the code from the address, and starts the page as usual.
 - A code loads the full session, finished games included. Either player can name the session and start the next game after a game ends.
@@ -159,6 +161,7 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | --- | --- | --- | --- | --- | --- |
 | Opponent, view, layout, theme, sound | yes | yes | yes | yes | yes |
 | Difficulty, You play, Advanced | yes | no | no | no | no |
+| Seat lock (keep X and O between games) | next to You play | no | in the Players box | in the Players box | no |
 | Game code, Link, QR code, session name | no | no | yes | no | no |
 | Host, Join with a code, Games near you, device list | no | no | no | yes | no |
 | Join a friend (code and New code) | no | no | yes | no | no |
@@ -235,7 +238,7 @@ The full reference, with every shape, error and a curl example, is the OpenAPI 3
 
 | Route | What it does |
 | --- | --- |
-| `POST /api/sessions`, `GET /api/sessions/:code` and the other session routes | Online play. `GET /api/sessions/:code?wait=<version>` waits for a change. |
+| `POST /api/sessions`, `GET /api/sessions/:code` and the other session routes | Online play. `GET /api/sessions/:code?wait=<version>` waits for a change. `POST /api/sessions/:code/games` starts the next game and swaps X and O, unless `fixedSeats` is true (`PATCH /api/sessions/:code`). Read `you` again after each new game. |
 | `POST /api/results` | Finished games from a device. The answer holds the new public id of each result that the server renamed. |
 | `GET /api/games/:id` | One finished game, read-only. No token and no result id. |
 | `GET /api/me/games` | My games: tallies and online sessions. |

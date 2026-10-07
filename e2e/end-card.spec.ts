@@ -1,4 +1,4 @@
-import { expect, marks, playComputerUntilEnd, status, test, toasts } from './fixtures.ts';
+import { expect, expectToast, marks, playComputerUntilEnd, status, test, toasts } from './fixtures.ts';
 import type { Page } from '@playwright/test';
 
 const hardComputer = { mode: 'computer', difficulty: 'hard', human: 'X' };
@@ -16,7 +16,7 @@ async function loseToComputer(page: Page): Promise<void> {
 
 const storedRecords = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('tick3d.records') ?? '{}') as Record<string, number>);
 
-test('a loss that beats the record shows it, stores it, and New game on the card starts over', async ({ open }) => {
+test('a loss that beats the record shows it, stores it, and New game on the card starts over with the seats swapped', async ({ open }) => {
   const { page } = await open({ settings: hardComputer, records: { [RECORD_KEY]: 1 } });
   await loseToComputer(page);
   const moves = await marks(page).count();
@@ -26,8 +26,11 @@ test('a loss that beats the record shows it, stores it, and New game on the card
 
   await page.locator('#end-card-new-game').click();
   await expect(page.locator('#end-card')).not.toHaveAttribute('open');
-  await expect(marks(page)).toHaveCount(0);
-  await expect(status(page)).toContainText('Your move');
+  // X and O swap for each new game: the player is O now, so the computer moves first.
+  await expectToast(page, 'you play O in this game');
+  await expect(page.locator('[data-setting="human"] [data-value="O"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(status(page)).toHaveText('Your move (O)');
+  await expect(marks(page)).toHaveCount(1);
 });
 
 test('the first loss of a setup sets its record without a message', async ({ open }) => {
