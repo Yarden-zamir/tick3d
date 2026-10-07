@@ -22,8 +22,6 @@ on:
         default: draft
   push:
     tags: ['android-v*']
-    # TEMPORARY: proves the unsigned build on this branch. Remove before merge.
-    branches: [feat/play-store]
 
 permissions:
   contents: read
