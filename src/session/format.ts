@@ -12,6 +12,7 @@ import { DIFFICULTIES, type Difficulty } from '../ai.ts';
 import { NO_LIMIT, type TimeControl, parseClock } from '../clock.ts';
 import { type EpochMs, isEpochMs, toEpochMs } from '../epoch.ts';
 import type { Player } from '../game.ts';
+import { type Playoff, parsePlayoff } from '../practice/playoff.ts';
 import {
   CHAT_KEEP,
   CONSENT_ACTIONS,
@@ -46,6 +47,8 @@ export type SessionDoc = {
   clock: TimeControl;
   // Oldest first, the newest CHAT_KEEP messages only.
   chat: ChatMessage[];
+  // The sound playoff of the session (src/practice/playoff.ts), or null. Older documents have none.
+  playoff: Playoff | null;
   // A seat change that waits for the other player (see seat in core.ts), or null.
   seatRequest: StoredSeatRequest | null;
   // False: the players swap X and O for each new game (newGame in core.ts). True: the seats stay.
@@ -125,6 +128,8 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
   if (mode === undefined) throw new FormatError(`unknown session mode ${String(doc.mode)}`);
   const chat = doc.chat === undefined ? [] : doc.chat;
   if (!Array.isArray(chat) || !chat.every(isChatMessage)) throw new FormatError('the chat is invalid');
+  const playoff = doc.playoff === undefined || doc.playoff === null ? null : parsePlayoff(doc.playoff);
+  if (playoff === undefined) throw new FormatError('the playoff is invalid');
   // A document from before seat controls has no seat request.
   const seatRequest = doc.seatRequest === undefined || doc.seatRequest === null ? null : readSeatRequest(doc.seatRequest);
   // A document from before seat rotation gets the default of its mode. Its earlier games sat as the seats are now.
@@ -144,6 +149,7 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
     lockedGame,
     clock,
     chat: chat.slice(-CHAT_KEEP),
+    playoff,
     seatRequest,
     fixedSeats: doc.fixedSeats === undefined ? defaultFixedSeats(mode) : doc.fixedSeats === true,
     flipped,

@@ -1,0 +1,181 @@
+/* The practice modes of the Voice room (practice-room.ts): the tabs, the level, the heat, the playoff race,
+   the target marks and the results. It uses the theme tokens of style.css. */
+
+.voice-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.voice-tabs .btn[aria-pressed='true'] {
+  background: var(--primary);
+  color: var(--on-color);
+}
+
+.practice-panel {
+  display: grid;
+  gap: 0.6rem;
+}
+
+/* Start takes the whole row when Hear it again is hidden (outside Echo). */
+.practice-start {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.practice-start #start {
+  flex: 2;
+}
+
+.practice-start #replay {
+  flex: 1;
+}
+
+/* Without a seat in an online game, the Playoff tab shows only its text (practice-room.ts). */
+.practice-panel[data-no-playoff] > :not(.practice-playoff),
+.practice-panel[data-no-playoff] .practice-race {
+  display: none;
+}
+
+.practice-playoff {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-weight: 700;
+}
+
+.practice-playoff p {
+  margin: 0;
+}
+
+.practice-race {
+  display: grid;
+  grid-template-columns: minmax(4rem, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+}
+
+.practice-race .train-bar i,
+.practice-heat .train-bar i {
+  width: calc(var(--level, 0) * 100%);
+  transition: width 0.15s;
+}
+
+#race-them i {
+  background: var(--x);
+}
+
+.practice-playoff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+}
+
+.practice-status {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.5rem 0.8rem;
+  border: 2px dashed var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-weight: 700;
+}
+
+.practice-status p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.practice-status b {
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.practice-heat {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.practice-heat .train-bar {
+  height: 0.6rem;
+}
+
+.practice-heat .train-bar i {
+  background: var(--muted);
+}
+
+/* The heat colors: cold stays plain, hot takes the win color. */
+.practice-heat[data-heat='Warm'] .train-bar i {
+  background: var(--toggle-on);
+}
+
+.practice-heat[data-heat='Hot'] .train-bar i,
+.practice-heat[data-heat='On it'] .train-bar i {
+  background: var(--win);
+}
+
+/* The target: the X color with a dashed ring, so it reads apart from the light of the pitch. */
+.voice-board .cell.target {
+  outline: 3px dashed var(--x);
+  outline-offset: 2px;
+  background: color-mix(in srgb, var(--x) 30%, var(--surface));
+}
+
+.voice-board .cell.target.lit {
+  background: var(--win);
+}
+
+/* An echo answer on another cell than the target. */
+.voice-board .cell.answer:not(.target) {
+  background: var(--danger);
+}
+
+.practice-facts {
+  margin: 0;
+  font-weight: 800;
+}
+
+.practice-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.practice-table th,
+.practice-table td {
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.practice-table tr.fastest td {
+  background: color-mix(in srgb, var(--win) 35%, transparent);
+  font-weight: 800;
+}
+
+.practice-best {
+  margin: 0;
+  font-weight: 600;
+}
+
+.practice-board {
+  margin: 0;
+  padding-left: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A calibration is one step on its own (main.ts): the tabs and the practice wait under it, and Cancel or the
+   back button of the browser goes back to them. */
+body[data-calibrating] :is(.voice-tabs, .practice-panel) {
+  display: none;
+}

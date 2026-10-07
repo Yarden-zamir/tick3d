@@ -40,6 +40,8 @@ export type Settings = {
   theme: Theme;
   // The sound set of the moves. Like the theme and the mute, it belongs to the screen: the lock does not hold it.
   soundSet: SoundSetId;
+  // Play by voice (src/page/voice.ts). Like the mute, it belongs to the screen.
+  voice: boolean;
 };
 export type Toggle = (typeof MATCH_OPTIONS)[number];
 
@@ -54,6 +56,7 @@ export const DEFAULTS: Settings = {
   spin: 45,
   theme: 'light',
   soundSet: 'pitched',
+  voice: false,
 };
 const STORAGE_KEY = 'tick3d.settings';
 
@@ -86,6 +89,7 @@ function loadSettings(): Settings {
     spin: wrapSpin(finite(stored.spin, DEFAULTS.spin)),
     theme: oneOf(THEMES, stored.theme, DEFAULTS.theme),
     soundSet: oneOf(SOUND_SET_IDS, stored.soundSet, DEFAULTS.soundSet),
+    voice: bool(stored.voice, DEFAULTS.voice),
   };
 }
 

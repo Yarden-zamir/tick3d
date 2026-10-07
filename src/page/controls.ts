@@ -1,5 +1,6 @@
 // The settings controls, review, new game, undo, lock and sound.
 import { DIFFICULTIES } from '../ai.ts';
+import { onSegmented } from '../board/view-controls.ts';
 import { sounds, setMuted } from '../sound.ts';
 import { undoMove } from './computer.ts';
 import { reviewEl, newGameButton, undoButton, lockButton, seatLockButtons, soundButton } from './dom.ts';
@@ -74,16 +75,7 @@ export function setupControls(): void {
   // The Info popover opens without a script (src/header/header.ts). The game adds its click sound.
   infoButton.addEventListener('click', () => sounds.click());
 
-  document.querySelectorAll<HTMLElement>('.segmented').forEach((group) => {
-    const setting = group.dataset.setting;
-    if (setting === undefined) throw new Error('segmented control without data-setting');
-    group.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
-      button.addEventListener('click', () => {
-        if (button.getAttribute('aria-pressed') === 'true') return;
-        changeSetting(setting, button.dataset.value);
-      });
-    });
-  });
+  onSegmented(document, changeSetting);
 
   document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) => {
     const toggle = button.dataset.toggle;

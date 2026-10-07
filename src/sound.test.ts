@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CELL_COUNT, toCell } from './game.ts';
+import { songOf } from './song.ts';
+import { type VoiceClip, type VoiceClips, clipOf } from './sound.ts';
+import { CELL_COUNT, replay, toCell } from './game.ts';
 import { SOUND_SET_GROUPS, SOUND_SET_IDS, SOUND_SETS, type Voice, harmonyNotes, midiHz } from './sound-sets.ts';
 
 const cells = Array.from({ length: CELL_COUNT }, (_, cell) => cell);
@@ -117,6 +119,22 @@ describe('the Harmony set', () => {
     const pitches = (player: 'X' | 'O') => new Set(SOUND_SETS.harmony.voices(cell, player).map((voice) => ('frequency' in voice ? voice.frequency : 0)));
     const chord = harmonyNotes(cell).map(midiHz);
     for (const player of ['X', 'O'] as const) for (const f of chord) expect(pitches(player)).toContain(f);
+  });
+});
+
+describe('the voice clips in a song', () => {
+  const clip: VoiceClip = { samples: new Float32Array(4410), sampleRate: 44_100, frequency: 440 };
+  // X takes 0, 1, 2, 3 (a row) and O takes 16, 17, 18. The voice placed move 2 only.
+  const song = songOf(replay([0, 16, 1, 17, 2, 18, 3]));
+
+  it('plays the clip on the move that the voice placed, and the synthesized note on every other note', () => {
+    const clips: VoiceClips = new Map([[2, clip]]);
+    const withClip = song.notes.filter((note) => clipOf(note, clips) !== undefined);
+    expect(withClip).toEqual([expect.objectContaining({ kind: 'melody', move: 2, cell: 1 })]);
+  });
+
+  it('plays only synthesized notes without clips', () => {
+    expect(song.notes.every((note) => clipOf(note, new Map()) === undefined)).toBe(true);
   });
 });
 

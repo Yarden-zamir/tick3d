@@ -6,13 +6,16 @@ import { type Player, other, winnerOf } from '../game.ts';
 import { nameOf } from '../names.ts';
 import { api, OnlineError, token } from '../online.ts';
 import { type GameId, type PublicGame, parseResultUpload, toGame } from '../protocol.ts';
-import { gameViewEl, gameViewTitle, gameViewPlayers, gameViewDetails, gameViewPlay, reviewExit } from './dom.ts';
+import { cardFilename } from '../card.ts';
+import { lightSungCell } from './board.ts';
+import { gameViewEl, gameViewTitle, gameViewPlayers, gameViewDetails, gameViewPlay, gameViewSong, reviewExit } from './dom.ts';
 import { showError, showProblem } from './feedback.ts';
 import { openNearby } from './nearby.ts';
 import { render } from './render.ts';
 import { hideLabel } from './results.ts';
 import { beginSwitch, leaveSession, openLocalSession, setUrlGame } from './sessions.ts';
 import { settings } from './settings.ts';
+import { songControl } from './song-control.ts';
 import { page } from './state.ts';
 
 // The device's own copy, so a game that is not uploaded yet opens too, also offline.
@@ -99,12 +102,15 @@ function modeLabel(shown: PublicGame): string {
   }
 }
 
+
+let song: ReturnType<typeof songControl> | undefined;
+
 export function renderGameView(): void {
   const shown = page.viewing;
   gameViewEl.hidden = shown === undefined;
   // The game has no live position to go back to.
   reviewExit.hidden = shown !== undefined;
-  if (shown === undefined) return;
+  if (shown === undefined) return song?.stop();
   const game = toGame(shown.game);
   const winner = winnerOf(game.status);
   gameViewTitle.textContent = winner === null ? 'Draw' : `${viewerName(shown, winner)} won${game.status.kind === 'timeout' ? ' on time' : ''}`;
@@ -116,5 +122,10 @@ export function renderGameView(): void {
 }
 
 export function setupGameView(): void {
+  song = songControl(gameViewSong, () => {
+    const shown = page.viewing;
+    if (shown === undefined) return undefined;
+    return { game: toGame(shown.game), filename: cardFilename('wav'), text: `${gameViewTitle.textContent ?? 'A game'} on tick3d, as a song.`, light: lightSungCell, clips: new Map(), shareVoice: false };
+  });
   gameViewPlay.addEventListener('click', () => void closeGameView().catch(showError));
 }

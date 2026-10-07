@@ -10,6 +10,7 @@ vi.setConfig({ testTimeout: 20_000 });
 import { replay } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
 import { type Code, type GameId, type Metrics, type PlayerToken, type ResultUpload, parseGameId, toRecord } from '../src/protocol.ts';
+import type { PracticeRun } from '../src/practice/practice.ts';
 import { SessionError } from '../src/session/core.ts';
 import { type Store, openStore } from './store.ts';
 
@@ -657,6 +658,74 @@ describe('stats', () => {
     expect((await store.stats()).totals.games).toBe(first.totals.games);
     time += 60_000;
     expect((await store.stats()).totals.games).toBe(first.totals.games + 1);
+  });
+});
+
+describe('sound practice', () => {
+  const run = (id: string, totalMs: number, mode: 'targets' | 'echo' = 'targets', score = 10): PracticeRun => {
+    const rounds = mode === 'targets' ? 10 : 8;
+    const roundMs = Array.from({ length: rounds }, (_, i) => Math.floor(totalMs / rounds) + (i === 0 ? totalMs % rounds : 0));
+    return { id, mode, preset: 'normal', roundMs, score };
+  };
+
+  it('stores a run once, ranks each person by their best run, and names them', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    expect(await store.addPracticeRun(alice, run('run-alice-1', 30_000))).toEqual({ stored: true });
+    expect(await store.addPracticeRun(alice, run('run-alice-1', 30_000))).toEqual({ stored: false });
+    await store.addPracticeRun(alicePhone, run('run-alice-2', 20_000));
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addPracticeRun(bob, run('run-bob-1', 25_000));
+    const board = await store.practiceBoard('targets', 'normal', bob);
+    expect(board.top.map(({ player, totalMs }) => [player, totalMs])).toEqual([
+      ['alice', 20_000],
+      [nameOf(bob), 25_000],
+    ]);
+    expect(board.you).toEqual({ totalMs: 25_000, score: 10 });
+    expect((await store.practiceBoard('targets', 'normal', alice)).you?.totalMs).toBe(20_000);
+    expect((await store.practiceBoard('targets', 'normal', undefined)).you).toBeNull();
+    expect((await store.practiceBoard('targets', 'easy', undefined)).top).toEqual([]);
+    const { practice } = await store.stats();
+    expect(practice.runs).toEqual([{ mode: 'targets', preset: 'normal', runs: 3, players: 2, avgRoundMs: 2500 }]);
+    expect(practice.best.map((entry) => entry.player)).toEqual(['alice', nameOf(bob)]);
+  });
+
+  it('shows a custom name on the practice board and in the practice stats', async () => {
+    store = await openStore(':memory:');
+    await store.setName(bob, 'Bea');
+    await store.addPracticeRun(bob, run('run-bob-named', 25_000));
+    expect((await store.practiceBoard('targets', 'normal', undefined)).top.map((entry) => entry.player)).toEqual(['Bea']);
+    expect((await store.stats()).practice.best.map((entry) => entry.player)).toEqual(['Bea']);
+  });
+
+  it('ranks echo runs by points first, then time', async () => {
+    store = await openStore(':memory:');
+    await store.addPracticeRun(alice, run('run-echo-a', 40_000, 'echo', 700));
+    await store.addPracticeRun(bob, run('run-echo-b', 20_000, 'echo', 600));
+    const board = await store.practiceBoard('echo', 'normal', undefined);
+    expect(board.top.map(({ score }) => score)).toEqual([700, 600]);
+  });
+
+  it('runs a playoff in a session: both join, both hit every target, and the session keeps it', async () => {
+    let clock = 1_000;
+    store = await openStore(':memory:', { now: () => ms(clock) });
+    const { code } = await store.create(alice, 'Playoff');
+    expect(await status(() => store.playoff(code, alice, { action: 'start', preset: 'easy', seed: 5 }))).toBe(409);
+    await store.join(code, bob);
+    expect(await status(() => store.playoff(code, carol, { action: 'start', preset: 'easy', seed: 5 }))).toBe(403);
+    const started = await store.playoff(code, alice, { action: 'start', preset: 'easy', seed: 5 });
+    expect(started.playoff).toMatchObject({ id: 1, by: 'X', startAt: null });
+    const joined = await store.playoff(code, bob, { action: 'join', id: 1 });
+    const startAt = joined.playoff?.startAt ?? 0;
+    expect(startAt).toBe(clock + 3000);
+    clock = startAt + 10;
+    for (let index = 0; index < 10; index++) {
+      await store.playoff(code, alice, { action: 'hit', id: 1, index, ms: 1000 });
+      await store.playoff(code, bob, { action: 'hit', id: 1, index, ms: 1200 });
+    }
+    const done = await store.get(code, carol);
+    expect(done.playoff?.ended).toBe('done');
+    expect(done.playoff?.seats.X.times).toHaveLength(10);
   });
 });
 

@@ -23,6 +23,9 @@
 - Lock: no setting changes until the game ends.
 - Seat lock: keeps X and O between games. It sits next to "You play" (computer) and in the Players box (online, Nearby). Either player can change it.
 - Sound sets where each cell has its own sound, and an ear trainer at `/sound-training`.
+- Play by voice: tap the mic, then hold a note on a free cell for 1 second to place your move. On a phone, a small tilt nudges the cell.
+- The Voice room at `/sound-input`: calibrate the mic to your voice, then practice with Free play, Targets, Echo, or a Playoff against the other player of an online game. The page finds the pitch on the device and sends no sound.
+- Your game as a song: the Song button on the end card and on a game link. A long press shares the song as a WAV file, with your voice on the moves that your voice placed.
 - An end card with the result, to share or save as an image.
 - Survival records: the longest game against each computer level and setup.
 - Twelve themes.
@@ -95,6 +98,7 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Undo (during a game) | yes | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
 | Result card (after a game) | yes | yes | in a game | in a game | no |
 | Chat | no | no | yes | yes | no |
+| Play by voice | yes | yes | with a seat | with a seat | no |
 
 "In a game" means after a create or a join (Online), or after Host or Join (Nearby).
 
@@ -118,7 +122,9 @@ The actions row has fixed slots (`.slot-row` in `src/style.css`), so a control t
 - `src/protocol.ts`: the contract between the page and the API.
 - `src/online.ts`: the API client. `src/local.ts` and `src/device-db.ts`: the device backend on IndexedDB.
 - `src/nearby/`: WebRTC, QR codes and the host and guest sessions.
-- `src/sound.ts`, `src/sound-sets.ts`: the sounds and the sound sets.
+- `src/sound.ts`, `src/sound-sets.ts`: the sounds and the sound sets. `src/song.ts`: a finished game as a song.
+- `src/voice/`: the voice engine (pitch, range, sticky cells, tilt, clips) for the game and the Voice room. `src/page/voice.ts`: play by voice in the game.
+- `sound-input.html`, `src/sound-input/`: the Voice room. `src/practice/`: the practice and playoff rules, shared with `server/practice.ts`.
 - `src/main.ts`, `src/page/`, `index.html`, `src/style.css`: the game page, one module per feature in `src/page/`.
 - `src/header/`: the header of every page. `src/markup.test.ts` checks that every page has the same header.
 - `stats.html`, `src/stats/`: the stats page. `sound-training.html`, `src/sound-training/`: the ear trainer.

@@ -26,6 +26,7 @@ import {
   NEARBY_CALLS_PER_10_MINUTES,
   NEARBY_GRACE_MS,
   NEARBY_HOSTS_PER_NETWORK,
+  PRACTICE_RUNS_PER_10_MINUTES,
   ROUTES,
   type Route,
   WAIT_MS,
@@ -36,6 +37,8 @@ import { type Auth, authConfigFromEnv, clientOf, createAuth, createLimiter } fro
 import { IDEMPOTENCY_TTL_MS, type StoredAnswer, createIdempotency, parseIdempotencyKey } from './idempotency.ts';
 import { LobbyError, createLobby, networkOf } from './lobby.ts';
 import { type PreviewList, createPreviews, previewsConfigFromEnv } from './previews.ts';
+import { parsePlayoffRequest } from '../src/practice/playoff.ts';
+import { parseBoardQuery, parsePracticeRun } from '../src/practice/practice.ts';
 import { openStore } from './store.ts';
 import { createWaiters } from './waiters.ts';
 
@@ -61,6 +64,9 @@ const allowEvent = createLimiter(EVENTS_PER_10_MINUTES, 600_000, 10_000);
 // Nearby lobby calls (announce and answer) per network. A host sends one announce per WAIT_MS and
 // one per guest, so the limit leaves room for several hosts on one home network. Same limits as allowCreate.
 const allowNearby = createLimiter(NEARBY_CALLS_PER_10_MINUTES, 600_000, 10_000);
+// Practice runs per address: a run takes about half a minute, so 60 per 10 minutes leaves room for a
+// classroom on one address. Same limits as allowCreate.
+const allowPracticeRun = createLimiter(PRACTICE_RUNS_PER_10_MINUTES, 600_000, 10_000);
 // Each entry holds at most one open request, so `total` also caps the open announce requests.
 const lobby = createLobby({ perNetwork: NEARBY_HOSTS_PER_NETWORK, total: 1000, waitMs: WAIT_MS, graceMs: NEARBY_GRACE_MS });
 
@@ -399,6 +405,21 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       await store.addEvent(event);
       return send(res, 200, { ok: true });
     }
+    case 'POST /api/practice/runs': {
+      if (!allowPracticeRun(clientOf(req), Date.now())) throw new HttpError(429, 'Too many practice runs from this address. Try again later.');
+      const token = requirePlayer(req);
+      const run = parsePracticeRun(await readJson(req));
+      if (run === undefined) throw new HttpError(400, 'The run is not one that the practice room can make.');
+      return send(res, 200, await store.addPracticeRun(token, run));
+    }
+    case 'GET /api/practice/best': {
+      const query = parseBoardQuery(url.searchParams.get('mode'), url.searchParams.get('preset'));
+      if (query === undefined) throw new HttpError(400, 'A leaderboard needs a mode (targets or echo) and a preset (easy, normal or hard).');
+      const header = req.headers['x-player'];
+      const token = asPlayerToken(header);
+      if (header !== undefined && token === undefined) throw new HttpError(400, 'Invalid X-Player header.');
+      return send(res, 200, await store.practiceBoard(query.mode, query.preset, token));
+    }
     // Aggregates only (see server/stats.ts), so the hidden stats page needs no login.
     case 'GET /api/stats':
       return send(res, 200, await store.stats());
@@ -455,6 +476,12 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const body = await readJson(req);
       const text = typeof body === 'object' && body !== null && 'text' in body ? body.text : undefined;
       return send(res, 200, await store.chat(code(), requirePlayer(req), text));
+    }
+
+    case 'POST /api/sessions/{code}/playoff': {
+      const request = parsePlayoffRequest(await readJson(req));
+      if (request === undefined) throw new HttpError(400, 'A playoff request is start (preset, seed), join (id), leave (id) or hit (id, index, ms).');
+      return send(res, 200, await store.playoff(code(), requirePlayer(req), request));
     }
 
     case 'GET /api/nearby/hosts':
