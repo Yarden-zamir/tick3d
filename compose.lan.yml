@@ -2,8 +2,18 @@
 # Others on the same Wi-Fi then open http://<this computer's address>:8080 and play the Online mode.
 # There is no HTTPS here, so a browser gives the page no offline cache and no camera. The game itself works.
 # Login is off: GitHub returns only to the public address.
+# Log limits for tick3d only: Docker keeps at most 3 files of 10 MB per container, and drops the oldest.
+# KitSHn recreates the containers on every deploy, so a change here applies at the next deploy.
+# The host's Docker and journald settings stay as they are for the other sites. /privacy states this limit.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
 services:
   site:
+    logging: *logging
     build:
       context: .
       target: site
@@ -17,6 +27,7 @@ services:
     restart: unless-stopped
 
   api:
+    logging: *logging
     build:
       context: .
       target: api

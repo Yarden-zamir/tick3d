@@ -1,0 +1,156 @@
+name: android
+
+# Builds the Android app (a Trusted Web Activity of the production site) from android/twa-manifest.json
+# with Bubblewrap. It runs by hand or on a tag such as android-v1.2.0, never on a pull request.
+# The Gradle project is generated here on every run, so the repository keeps only twa-manifest.json.
+#
+# The secrets have no KITSHN_ prefix: KitSHn forwards every KITSHN_ secret to the server, and the
+# signing key must never go there. They are plain repository secrets.
+# Without the upload key the job builds an unsigned bundle. Without the service account it uploads nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: Play track for the upload (only with signing and PLAY_SERVICE_ACCOUNT_JSON)
+        type: choice
+        options: [none, internal, alpha]
+        default: none
+      status:
+        description: Release status. An app that was never published takes draft only.
+        type: choice
+        options: [draft, completed]
+        default: draft
+  push:
+    tags: ['android-v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BUILD_DIR: ${{ github.workspace }}/build/android
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      # Bubblewrap 1.25 generates a project for Android Gradle Plugin 8.9, which runs on JDK 17.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # The template targets API 36 (Android 16). Bubblewrap 1.25 signs with build-tools 36.1.0.
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.1.0'
+
+      - name: Install Bubblewrap
+        run: |
+          npm install --global --no-audit --no-fund @bubblewrap/cli@1.25.0
+          mkdir -p ~/.bubblewrap
+          # Bubblewrap accepts an SDK only with a bin/ or tools/ folder at its root, the layout of its own
+          # download. The runner keeps sdkmanager in cmdline-tools/<version>/bin, so a link adds bin/.
+          if [[ ! -e "$ANDROID_HOME/bin" ]]; then
+            sdkbin=$(find "$ANDROID_HOME/cmdline-tools" -maxdepth 3 -name sdkmanager -path '*/bin/*' -printf '%h\n' | head -n 1)
+            [[ -n "$sdkbin" ]] || { echo "::error::No sdkmanager under $ANDROID_HOME/cmdline-tools"; exit 1; }
+            sudo ln -s "$sdkbin" "$ANDROID_HOME/bin"
+          fi
+          jq -n --arg jdk "$JAVA_HOME" --arg sdk "$ANDROID_HOME" '{jdkPath: $jdk, androidSdkPath: $sdk}' > ~/.bubblewrap/config.json
+
+      # The version code must grow with every upload: the run number of this workflow does.
+      # A tag android-v1.2.0 names the version 1.2.0. A run by hand gets 0.<run number>.
+      - name: Version
+        id: version
+        run: |
+          code=${{ github.run_number }}
+          if [[ "$GITHUB_REF" == refs/tags/android-v* ]]; then name="${GITHUB_REF#refs/tags/android-v}"; else name="0.$code"; fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "package=$(jq --exit-status --raw-output .packageId android/twa-manifest.json)" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "Version $name (code $code)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Signing
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [[ -n "$KEYSTORE_B64" && -n "$KEY_ALIAS" && -n "$STORE_PASSWORD" && -n "$KEY_PASSWORD" ]]; then
+            echo "sign=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sign=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No upload key (ANDROID_UPLOAD_* secrets). The bundle is unsigned, and Play does not take it."
+          fi
+          if [[ -n "$SERVICE_ACCOUNT" ]]; then echo "play=true" >> "$GITHUB_OUTPUT"; else echo "play=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Generate the Android project
+        env:
+          KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+        run: |
+          mkdir -p "$BUILD_DIR"
+          jq --argjson code '${{ steps.version.outputs.code }}' --arg name '${{ steps.version.outputs.name }}' --arg alias "${KEY_ALIAS:-upload}" \
+            '.appVersionCode = $code | .appVersionName = $name | .signingKey = {path: "./upload.keystore", alias: $alias}' \
+            android/twa-manifest.json > "$BUILD_DIR/twa-manifest.json"
+          cd "$BUILD_DIR"
+          bubblewrap update --skipVersionUpgrade --manifest=./twa-manifest.json
+
+      - name: Build
+        working-directory: ${{ env.BUILD_DIR }}
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          if [[ '${{ steps.signing.outputs.sign }}' == true ]]; then
+            base64 --decode <<< "$KEYSTORE_B64" > upload.keystore
+            bubblewrap build
+            rm upload.keystore
+            mv app-release-bundle.aab tick3d.aab
+            mv app-release-signed.apk tick3d.apk
+          else
+            bubblewrap build --skipSigning
+            mv app/build/outputs/bundle/release/app-release.aab tick3d-unsigned.aab
+            mv app-release-unsigned-aligned.apk tick3d-unsigned.apk
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tick3d-android-${{ steps.version.outputs.name }}
+          path: |
+            ${{ env.BUILD_DIR }}/tick3d*.aab
+            ${{ env.BUILD_DIR }}/tick3d*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # Play takes API uploads only after the first bundle went up by hand in Play Console.
+      # So only a run by hand with a track uploads. A tag only builds.
+      # Revisit this after the first manual upload: a tag can then upload to the internal track.
+      - name: Upload to Google Play
+        if: >-
+          steps.signing.outputs.sign == 'true' && steps.signing.outputs.play == 'true' &&
+          github.event_name == 'workflow_dispatch' && inputs.track != 'none'
+        uses: r0adkll/upload-google-play@v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ steps.version.outputs.package }}
+          releaseFiles: ${{ env.BUILD_DIR }}/tick3d.aab
+          track: ${{ inputs.track }}
+          status: ${{ inputs.status }}
+
+      - name: No Play upload
+        if: steps.signing.outputs.sign != 'true' || steps.signing.outputs.play != 'true'
+        run: |
+          echo "::notice::No Play upload. It needs the upload key (ANDROID_UPLOAD_*) and PLAY_SERVICE_ACCOUNT_JSON."

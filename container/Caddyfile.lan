@@ -13,6 +13,8 @@
 		root * /srv
 		encode zstd gzip
 		header /assets/* Cache-Control "public, max-age=31536000, immutable"
+		# Digital Asset Links of the Android app (src/assetlinks.ts), as in container/Caddyfile.
+		header /.well-known/assetlinks.json Content-Type application/json
 		# A page address without .html, such as /stats, serves the page file of the same name (src/pages.ts).
 		@page file {path}.html
 		rewrite @page {path}.html

@@ -11,6 +11,7 @@ const INFO = {
   stats: 'About these stats',
   training: 'How the ear training works',
   input: 'How the Voice room works',
+  privacy: 'About this page',
 } as const satisfies Record<PageName, string>;
 
 const USER = { login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4' };
