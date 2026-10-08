@@ -106,7 +106,7 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Score, New game, the session games in My games | yes | yes | in a game | in a game | yes (no session games) |
 | Undo (during a game) | yes | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
 | Result card (after a game) | yes | yes | in a game | in a game | no |
-| Chat | no (a wide screen shows it closed) | no (closed) | yes | yes | no (closed) |
+| Chat | no (a wide screen keeps its space) | no | yes | yes | no |
 | Report and block (hold or right-click a person) | no | no | yes | Block only | no |
 | Play by voice | yes | yes | with a seat | with a seat | no |
 
@@ -117,7 +117,7 @@ The actions row has fixed slots (`.slot-row` in `src/style.css`), so a control t
 A mode change moves neither the board nor the Opponent picker:
 
 - Everything above the picker keeps its box in every mode. Before a game, the score and New game keep their place but do not show. The Players box sits under the mode boxes.
-- A wide screen (72rem and wider) keeps the chat column in every mode. Outside a game with another device, the chat there is closed and says so.
+- A wide screen (72rem and wider) keeps the chat column in every mode. Outside a game with another device, that column stays empty.
 - On a phone the chat opens above the panel. If the player works in the panel, the page scrolls by the height of the chat, so the panel stays still (`src/page/panel-anchor.ts`).
 
 ## Accounts and My games
