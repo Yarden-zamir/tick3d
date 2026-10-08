@@ -1,5 +1,4 @@
 // The home link, which goes back to an empty board against the computer.
-import { sounds } from '../sound.ts';
 import { scheduleComputer } from './computer.ts';
 import {
   cardDialog,
@@ -56,7 +55,6 @@ export function setupHome(): void {
     // A modified click opens a new tab, as for any link.
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    sounds.click();
     const warning = homeWarning();
     if (warning === undefined) return void goHome().catch(showError);
     homeConfirmText.textContent = warning;

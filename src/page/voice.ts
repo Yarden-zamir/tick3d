@@ -3,7 +3,7 @@
 // so a calibration in the Voice room (/sound-input) applies here too. voice-gate.ts decides when it listens.
 import { toCoords } from '../game.ts';
 import { MIC_ICON } from '../icons.ts';
-import { type VoiceClip, type VoiceClips, liveSoundUntil, sounds } from '../sound.ts';
+import { type VoiceClip, type VoiceClips, liveSoundUntil } from '../sound.ts';
 import { type Voice, type VoiceFrame, createVoice } from '../voice/engine.ts';
 import { type Rail, buildRail, showRailPitch, showRailRange } from '../voice/rail.ts';
 import { type HoldFill, type VoiceCells, createVoiceCells } from '../voice/visuals.ts';
@@ -235,14 +235,12 @@ export function setupVoice(): void {
   voiceButton.addEventListener('click', () => {
     settings.voice = !settings.voice;
     saveSettings();
-    sounds.click();
     // The microphone opens during the tap, so the browser starts its audio.
     render();
   });
   // A tap: on iOS it also asks for the tilt sensor.
   voiceRecentre.addEventListener('click', () => {
     engine.recentre();
-    sounds.click();
   });
   document.addEventListener('visibilitychange', syncVoice);
   addEventListener('pagehide', () => engine.stop());

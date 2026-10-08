@@ -137,7 +137,6 @@ function applyClock(clock: TimeControl): void {
     return reject(undefined, 'locked');
   }
   if (sameClock(clock, nextClock())) return render();
-  sounds.click();
   settings.clock = clock;
   saveSettings();
   if (page.session === undefined) return render();
