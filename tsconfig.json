@@ -30,6 +30,7 @@
     "server",
     "e2e",
     "android/store/screenshots",
+    "video/creative",
     "vite.config.ts"
   ]
 }

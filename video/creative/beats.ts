@@ -1,0 +1,187 @@
+// The shape of beats.json: the machine timeline of the 15 s spot (issue #119).
+// All times are whole sixteenth notes from the start of the spot, on the 136 BPM grid of src/song.ts.
+// Seconds = sixteenths * SIXTEENTH (src/song.ts). One bar is 16 sixteenths. The spot is 8 bars (128 sixteenths),
+// then the final chord rings to 15.0 s.
+import { DIFFICULTIES, type Difficulty } from '../../src/ai.ts';
+import { CELL_COUNT, type Line, type Player } from '../../src/game.ts';
+import { isCount, isRecord, isUnknownArray } from '../../src/guards.ts';
+import type { SoundSetId } from '../../src/sound-sets.ts';
+
+// The ids of [data-theme] in src/style.css. 'light' is also the theme without data-theme.
+const THEMES = ['light', 'dark', 'candy', 'mint', 'midnight', 'snow', 'retro', 'synthwave', 'bloodmoon', 'coffee', 'batman', 'mono'] as const;
+type ThemeId = (typeof THEMES)[number];
+
+const CAMERAS = ['slam', 'dive', 'orbit', 'push', 'ride', 'pull-back', 'settle'] as const;
+// The only sound sets of the spot (maintainer rule on #119).
+const SPOT_SOUND_SETS = ['classic', 'cells', 'chiptune'] as const satisfies readonly SoundSetId[];
+type Camera = (typeof CAMERAS)[number];
+
+export const SIXTEENTHS_PER_BAR = 16;
+export const BAR_COUNT = 8;
+export const SPOT_SIXTEENTHS = SIXTEENTHS_PER_BAR * BAR_COUNT;
+
+// Things that happen at one sixteenth. Each kind has one picture rule and one sound rule (script.md).
+type BeatEvent =
+  // A layer of the tower hits: it drops into place, or pulses if it is in place. Sound: the Classic voice of X on that layer.
+  | { kind: 'layer-slam'; at: number; layer: number }
+  // The empty cells that win for the player now. They blink in --win.
+  | { kind: 'threats'; at: number; cells: readonly number[] }
+  // All 76 lines of LINES flash as thin beams, then fade out at `until`.
+  | { kind: 'ghost-lines'; at: number; until: number }
+  // The winning line becomes a light beam. It lights one cell per sixteenth from `at`, in the order of `line`.
+  // Sound: the 4 ending melody notes of songOf, one per cell.
+  | { kind: 'beam'; at: number; line: Line }
+  | { kind: 'confetti'; at: number }
+  // The song melody of all moves again, one note per sixteenth from `at`. Each piece pulses with its note.
+  | { kind: 'replay'; at: number }
+  // The final chord of songOf. It rings to the end of the spot.
+  | { kind: 'final-chord'; at: number };
+
+type Bar = {
+  bar: number;
+  start: number;
+  scene: string;
+  // A theme or a sound set that differs from the previous bar changes on the downbeat. The theme sweeps across the frame.
+  theme: ThemeId;
+  soundSet: (typeof SPOT_SOUND_SETS)[number];
+  camera: Camera;
+  events: readonly BeatEvent[];
+};
+
+// A move on the timeline. Sound: the melody note of songOf for this move index, in the sound set of its bar.
+type TimedMove = { move: number; player: Player; cell: number; at: number };
+
+// One on-screen line. Each word group slams in at its own sixteenth. The line leaves at `until`.
+type TextLine = { words: readonly { text: string; at: number }[]; until: number };
+
+export type Beats = {
+  bpm: 136;
+  fps: 30;
+  durationSeconds: 15;
+  // The game of src/ai.ts self-play: seededRandom(seed) from src/practice/practice.ts feeds chooseMove for both players.
+  game: { seed: number; first: Player; levels: Readonly<Record<Player, Difficulty>>; winner: Player; line: Line };
+  // The key of the song. songOf picks a key from a hash of the moves; the spot forces C major pentatonic.
+  songKey: { root: 0; mode: 'major pentatonic' };
+  // songOf(game) plays from this sixteenth: a bass note under the moves plays at songOffset + at, if that is before bassUntil.
+  songOffset: number;
+  bassUntil: number;
+  moves: readonly TimedMove[];
+  bars: readonly Bar[];
+  text: readonly TextLine[];
+};
+
+// ---- Runtime check of the JSON. It throws on the first value that does not fit the type. ----
+
+function fail(path: string, expected: string): never {
+  throw new TypeError(`beats.json ${path}: expected ${expected}`);
+}
+
+function record(value: unknown, path: string): Record<string, unknown> {
+  return isRecord(value) ? value : fail(path, 'an object');
+}
+
+function list(value: unknown, path: string): readonly unknown[] {
+  return isUnknownArray(value) ? value : fail(path, 'an array');
+}
+
+function count(value: unknown, path: string, max = Number.MAX_SAFE_INTEGER): number {
+  return isCount(value) && value <= max ? value : fail(path, `a whole number in 0..${max}`);
+}
+
+function text(value: unknown, path: string): string {
+  return typeof value === 'string' && value.length > 0 ? value : fail(path, 'a non-empty string');
+}
+
+function oneOf<T extends string>(options: readonly T[], value: unknown, path: string): T {
+  return options.find((option) => option === value) ?? fail(path, options.join(' | '));
+}
+
+function exactly<T extends number>(expected: T, value: unknown, path: string): T {
+  return value === expected ? expected : fail(path, String(expected));
+}
+
+const time = (value: unknown, path: string) => count(value, path, SPOT_SIXTEENTHS);
+const cell = (value: unknown, path: string) => count(value, path, CELL_COUNT - 1);
+const player = (value: unknown, path: string) => oneOf(['X', 'O'] as const, value, path);
+
+function line(value: unknown, path: string): Line {
+  const cells = list(value, path).map((item, i) => cell(item, `${path}[${i}]`));
+  const [a, b, c, d] = cells;
+  if (cells.length !== 4 || a === undefined || b === undefined || c === undefined || d === undefined) fail(path, '4 cells');
+  return [a, b, c, d];
+}
+
+function beatEvent(value: unknown, path: string): BeatEvent {
+  const e = record(value, path);
+  const at = time(e['at'], `${path}.at`);
+  const kind = oneOf(['layer-slam', 'threats', 'ghost-lines', 'beam', 'confetti', 'replay', 'final-chord'] as const, e['kind'], `${path}.kind`);
+  switch (kind) {
+    case 'layer-slam':
+      return { kind, at, layer: count(e['layer'], `${path}.layer`, 3) };
+    case 'threats':
+      return { kind, at, cells: list(e['cells'], `${path}.cells`).map((c, i) => cell(c, `${path}.cells[${i}]`)) };
+    case 'ghost-lines':
+      return { kind, at, until: time(e['until'], `${path}.until`) };
+    case 'beam':
+      return { kind, at, line: line(e['line'], `${path}.line`) };
+    case 'confetti':
+    case 'replay':
+    case 'final-chord':
+      return { kind, at };
+  }
+}
+
+function bar(value: unknown, path: string): Bar {
+  const b = record(value, path);
+  return {
+    bar: count(b['bar'], `${path}.bar`, BAR_COUNT),
+    start: time(b['start'], `${path}.start`),
+    scene: text(b['scene'], `${path}.scene`),
+    theme: oneOf(THEMES, b['theme'], `${path}.theme`),
+    soundSet: oneOf(SPOT_SOUND_SETS, b['soundSet'], `${path}.soundSet`),
+    camera: oneOf(CAMERAS, b['camera'], `${path}.camera`),
+    events: list(b['events'], `${path}.events`).map((e, i) => beatEvent(e, `${path}.events[${i}]`)),
+  };
+}
+
+export function parseBeats(value: unknown): Beats {
+  const root = record(value, '');
+  const game = record(root['game'], 'game');
+  const levels = record(game['levels'], 'game.levels');
+  return {
+    bpm: exactly(136, root['bpm'], 'bpm'),
+    fps: exactly(30, root['fps'], 'fps'),
+    durationSeconds: exactly(15, root['durationSeconds'], 'durationSeconds'),
+    game: {
+      seed: count(game['seed'], 'game.seed', 2 ** 32 - 1),
+      first: player(game['first'], 'game.first'),
+      levels: { X: oneOf(DIFFICULTIES, levels['X'], 'game.levels.X'), O: oneOf(DIFFICULTIES, levels['O'], 'game.levels.O') },
+      winner: player(game['winner'], 'game.winner'),
+      line: line(game['line'], 'game.line'),
+    },
+    songKey: {
+      root: exactly(0, record(root['songKey'], 'songKey')['root'], 'songKey.root'),
+      mode: oneOf(['major pentatonic'] as const, record(root['songKey'], 'songKey')['mode'], 'songKey.mode'),
+    },
+    songOffset: time(root['songOffset'], 'songOffset'),
+    bassUntil: time(root['bassUntil'], 'bassUntil'),
+    moves: list(root['moves'], 'moves').map((m, i) => {
+      const move = record(m, `moves[${i}]`);
+      return {
+        move: count(move['move'], `moves[${i}].move`),
+        player: player(move['player'], `moves[${i}].player`),
+        cell: cell(move['cell'], `moves[${i}].cell`),
+        at: time(move['at'], `moves[${i}].at`),
+      };
+    }),
+    bars: list(root['bars'], 'bars').map((b, i) => bar(b, `bars[${i}]`)),
+    text: list(root['text'], 'text').map((t, i) => {
+      const entry = record(t, `text[${i}]`);
+      const words = list(entry['words'], `text[${i}].words`).map((w, j) => {
+        const word = record(w, `text[${i}].words[${j}]`);
+        return { text: text(word['text'], `text[${i}].words[${j}].text`), at: time(word['at'], `text[${i}].words[${j}].at`) };
+      });
+      return { words, until: time(entry['until'], `text[${i}].until`) };
+    }),
+  };
+}
