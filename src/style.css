@@ -2595,7 +2595,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 /* Wide screens: the chat has its own column at the left in every mode, so nothing moves to the right
    when a game with another device opens it. It stays in view while the page scrolls.
-   A closed chat stays in its column, quiet: a dashed border, no shadow and a note in the log. */
+   A closed chat keeps its column but shows nothing. */
 @media (min-width: 72rem) {
   .app {
     grid-template-columns: 19rem minmax(0, 1fr) 21rem;
@@ -2615,14 +2615,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 
   .chat.closed {
     display: flex;
-    border-style: dashed;
-    box-shadow: none;
-    color: var(--muted);
-  }
-
-  .chat.closed .chat-log {
-    border-style: dashed;
-    background: transparent;
+    visibility: hidden;
   }
 
   .chat-log {

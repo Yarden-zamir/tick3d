@@ -48,10 +48,7 @@ export function renderChat(): void {
     chatInput.placeholder = 'Message';
     if (chatShown === CLOSED) return;
     chatShown = CLOSED;
-    const note = document.createElement('li');
-    note.className = 'chat-empty';
-    note.textContent = 'Chat opens in Online and Nearby games.';
-    chatLog.replaceChildren(note);
+    chatLog.replaceChildren();
     return;
   }
   const canWrite = page.session.you !== null;
