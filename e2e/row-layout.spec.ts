@@ -257,7 +257,9 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
 
 // Online waits for the server. Until the answer, the controls of a game draw in their final place, grey and
 // disabled (data-pending, src/page/render.ts). The answer fills them in, and nothing moves.
-const PENDING = ['#clocks', '.score', '.actions', '#online-session', '#players'] as const;
+// The board offset in modeLayout covers the clocks above it. On a phone the page scrolls when the chat opens,
+// so the clocks are not measured in the viewport.
+const PENDING = ['.score', '.actions', '#online-session', '#players'] as const;
 
 for (const [name, viewport] of Object.entries(VIEWPORTS)) {
   test(`${name}: online draws its controls grey before the server answers, and they do not move after`, async ({ open }) => {
