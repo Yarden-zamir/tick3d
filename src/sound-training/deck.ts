@@ -34,6 +34,8 @@ export function buildDeck(root: HTMLElement, dotsEl: HTMLElement): Deck {
         button.type = 'button';
         button.className = 'cell';
         button.dataset.cell = String(cell);
+        // A cell plays the sound of its move, or none: never the click of src/click-sound.ts.
+        button.dataset.ownSound = '';
         button.setAttribute('aria-label', `Layer ${layer + 1}, row ${row + 1}, column ${column + 1}`);
         button.setAttribute('aria-pressed', 'false');
         // One cell takes the Tab key; the arrow keys move inside the deck.

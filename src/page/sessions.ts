@@ -336,7 +336,6 @@ export const joinSession = (code: Code, intent: LinkIntent) =>
     openSession(view, api, 'online');
     // A reload of a watch link must not take the seat either.
     if (intent === 'watch' && view.you === null) setUrlCode(code, true);
-    sounds.click();
     if (view.you !== null) return showToast(`Joined ${view.name} as ${view.you}.`);
     showToast(seatFree ? 'You are watching. A seat is free: take it in Players.' : 'Both seats are taken. You are watching.');
   });
@@ -346,7 +345,6 @@ export function startNewGame(): void {
   if (page.viewing !== undefined) return void closeGameView().catch(showError);
   if (settingsLocked()) return reject(undefined, 'locked');
   if (page.session === undefined) return reject(undefined, 'no-session');
-  sounds.click();
   newRound(); // drops a computer move for the game that ends here
   page.computerThinkMs = [];
   setThinking(false);

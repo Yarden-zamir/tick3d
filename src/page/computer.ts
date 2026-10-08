@@ -2,7 +2,6 @@
 import { hasLimit } from '../clock.ts';
 import { type Game, type Player, other } from '../game.ts';
 import { createSearch } from '../move-search.ts';
-import { sounds } from '../sound.ts';
 import { computerTuning } from './advanced.ts';
 import { showError, reject } from './feedback.ts';
 import { requestUndo } from './players.ts';
@@ -82,7 +81,6 @@ export function undoMove(): void {
   const count = page.session.mode === 'computer' && current().turn === you && current().moves.length >= 2 ? 2 : 1;
   newRound();
   const { code } = page.session;
-  sounds.click();
   void withBusy(async () => {
     applyView(await backend.undo(code, count));
     // Keep the think times of the computer moves that are still on the board.

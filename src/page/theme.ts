@@ -1,5 +1,4 @@
 // The theme menu.
-import { sounds } from '../sound.ts';
 import { themeMenu, themePicker, themeSwatch, themeName, themeColorMeta } from './dom.ts';
 import { THEMES } from '../protocol.ts';
 import { THEME_NAMES, settings, saveSettings } from './settings.ts';
@@ -15,7 +14,6 @@ const themeButtons = THEMES.map((theme) => {
     if (theme === settings.theme) return;
     settings.theme = theme;
     saveSettings();
-    sounds.click();
     applyTheme();
   });
   return button;
