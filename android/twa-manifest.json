@@ -42,8 +42,8 @@
   "minSdkVersion": 24,
   "fingerprints": [
     {
-      "name": "PLACEHOLDER: replace the value with the SHA-256 of the Play app signing key (Play Console > App integrity)",
-      "value": "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00"
+      "name": "Play app signing key: signs the builds that Google Play installs",
+      "value": "D7:61:88:49:A9:66:47:54:AD:32:55:48:B1:40:4D:9C:8F:A1:22:21:98:8B:B1:DD:1A:B3:E7:D5:78:9B:11:87"
     },
     {
       "name": "Upload key: signs the CI builds, so a build installed outside Play also opens without the browser bar",
