@@ -41,6 +41,10 @@
     {
       "name": "PLACEHOLDER: replace the value with the SHA-256 of the Play app signing key (Play Console > App integrity)",
       "value": "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00"
+    },
+    {
+      "name": "Upload key: signs the CI builds, so a build installed outside Play also opens without the browser bar",
+      "value": "BD:FD:C2:7E:46:40:60:1B:89:63:FB:A9:73:9E:1C:98:F6:03:A9:E6:1E:FC:63:91:60:27:A8:47:46:A7:F9:FD"
     }
   ],
   "additionalTrustedOrigins": [],
