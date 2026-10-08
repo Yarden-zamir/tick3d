@@ -1669,6 +1669,25 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.55rem;
 }
 
+/* The review bar and the keypad share one grid cell. In a review, the keypad keeps its box but does not show,
+   so the cell keeps the height of the keypad and the page under it does not move up.
+   The global [hidden] rule uses !important, so this more specific rule needs it too. */
+.stage-controls {
+  display: grid;
+  justify-items: center;
+  max-width: 100%;
+}
+
+.stage-controls > * {
+  grid-area: 1 / 1;
+  align-self: start;
+}
+
+.stage-controls:has(> .review:not([hidden])) > .coords[hidden] {
+  display: flex !important;
+  visibility: hidden;
+}
+
 .coords-head {
   display: flex;
   align-items: center;
@@ -1687,6 +1706,12 @@ body[data-turn='O'] .status[data-state='playing'] {
    and the hover and press moves; this rule only makes it square and keeps the icon centered. */
 .coords-hear {
   flex: none;
+}
+
+/* The speaker shows only with a last move or a full typed cell. Its box stays, so the title does not move when it shows. */
+.coords-hear[hidden] {
+  display: inline-flex !important;
+  visibility: hidden;
 }
 
 /* Three read-only slots: layer, row, column. The next one to fill is highlighted. */
@@ -2191,6 +2216,18 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--muted);
+}
+
+/* The note leaves after the second move. Its line stays, so the board under the clocks does not move up.
+   Limit: the empty line stays for the rest of the game. Revisit if the clocks get a second line of their own. */
+.clock-note[hidden] {
+  display: block !important;
+  visibility: hidden;
+}
+
+/* The clocks of the live game do not belong to a review. They keep their box, so the board stays (src/page/clocks.ts). */
+.clocks[data-reviewing] {
+  visibility: hidden;
 }
 
 @keyframes clock-blink {
