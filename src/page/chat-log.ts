@@ -44,7 +44,7 @@ export function chatGroups(messages: readonly ChatMessage[], senderOf: (message:
       body.append(text);
     }
     // A click on the picture opens it large. A long press on another player's picture opens the menu too.
-    const avatar = avatarFor(sender.person, AVATAR_PIXELS);
+    const avatar = avatarFor(sender.person, AVATAR_PIXELS, sender.id);
     if (!sender.mine && sender.id !== null) markPerson(avatar, { person: sender.id, name: sender.person.name, message: null });
     item.append(avatar, body);
     return item;

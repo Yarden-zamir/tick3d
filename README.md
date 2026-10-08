@@ -165,7 +165,9 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 
 - `/stats` is public: the game Info panel and My games link to it, and search engines may list it.
 - Filters: Everyone or Mine, the time (7 days, 30 days or all), the mode and the level. The address holds them, for example `/stats?scope=mine&range=30d`. `GET /api/stats` takes the same query and answers 400 for an unknown value.
-- Everyone shows counts only: no player names and no page faults. Mine (your games on every linked device) adds your win rate over time, streaks, results, survival records and favourite opponents.
+- A person filter (`/stats?person=<person id>`) shows the games of one person, with their name and picture. A click on a person's picture in the game opens it large, with a Stats link to this view.
+- "Hide my stats" in My games closes your person view to everyone but you: `GET /api/stats` then answers 403. Mine still works, and Everyone still counts your games without your name. The setting follows a GitHub login.
+- Everyone shows counts only: no player names and no page faults. Mine (your games on every linked device) adds your win rate over time, streaks, results, survival records and favourite opponents. A person view adds the same, without the opponents.
 - The stats never show a token, a result id or a game id.
 - A finished game sends, besides the game: the device kind, the view, the layout, the theme, input and undo counts, refusals, computer thinking times, the offline flag and the app version.
 - A fault report holds the error message, the file and line, and the app version. It holds no token and no address.

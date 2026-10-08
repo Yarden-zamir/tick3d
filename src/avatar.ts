@@ -7,7 +7,7 @@
 // player token. Limit: a rename gives a new picture, and two players with one name share a picture.
 // Revisit when the view sends a public player id.
 import { hash } from './names.ts';
-import type { PlayerInfo } from './protocol.ts';
+import type { PersonId, PlayerInfo } from './protocol.ts';
 
 // Each palette has its own dark background, so the picture reads the same in every theme.
 type Palette = { background: string; top: string; side: string; lit: string; litSide: string };
@@ -107,8 +107,10 @@ export function avatarSvg(seed: string): string {
 // A person as every screen shows them: the GitHub account, else null, and the shown name without "You".
 export type Person = { player: PlayerInfo | null; name: string };
 
-// The pictures that open the viewer (src/page/avatar-viewer.ts), with their person.
-const viewable = new WeakMap<HTMLImageElement, Person>();
+// A picture in the viewer (src/page/avatar-viewer.ts). `id` is the public person id, for the Stats
+// link of the viewer, or null when the screen has no id for the person.
+export type Viewable = { person: Person; id: PersonId | null };
+const viewable = new WeakMap<HTMLImageElement, Viewable>();
 
 // The size of the picture in the viewer.
 export const VIEW_PIXELS = 240;
@@ -126,17 +128,17 @@ export function avatarImage({ player, name }: Person, pixels: number): HTMLImage
 }
 
 // The picture of one person as a button: a click, a tap, Enter or Space opens it large in the viewer.
-export function avatarFor(person: Person, pixels: number): HTMLImageElement {
+export function avatarFor(person: Person, pixels: number, id: PersonId | null): HTMLImageElement {
   const image = avatarImage(person, pixels);
   // An image with an empty alt text cannot take a role, so the button image has the name.
   image.alt = person.name;
   image.setAttribute('role', 'button');
   image.setAttribute('aria-label', `View ${person.name}'s picture`);
   image.tabIndex = 0;
-  viewable.set(image, person);
+  viewable.set(image, { person, id });
   return image;
 }
 
 // The person of a picture that opens the viewer, or undefined.
-export const viewablePerson = (target: EventTarget | null): Person | undefined =>
+export const viewablePerson = (target: EventTarget | null): Viewable | undefined =>
   target instanceof HTMLImageElement ? viewable.get(target) : undefined;

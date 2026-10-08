@@ -127,7 +127,7 @@ function row(mark: Player | 'watcher', person: Person | null, name: string, note
   markEl.setAttribute('aria-hidden', 'true');
   const nameEl = document.createElement('b');
   nameEl.className = 'players-name';
-  if (person !== null) nameEl.append(avatarFor(person, PLAYERS_AVATAR_PIXELS));
+  if (person !== null) nameEl.append(avatarFor(person, PLAYERS_AVATAR_PIXELS, id));
   nameEl.append(name);
   if (id !== null) markPerson(nameEl, { person: id, name, message: null });
   const noteEl = document.createElement('small');

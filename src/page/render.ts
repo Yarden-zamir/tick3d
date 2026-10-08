@@ -258,7 +258,7 @@ export function render(): void {
       // where the seat is a person and not "Computer" or a friend on this device.
       const session = page.session;
       if (key !== 'draw' && session !== undefined && (session.players[key] !== null || (shared() && session.seats[key]))) {
-        name.append(avatarFor(seatPerson(session, key), TALLY_AVATAR_PIXELS));
+        name.append(avatarFor(seatPerson(session, key), TALLY_AVATAR_PIXELS, session.people[key]));
       }
       // Another player's name opens the report and block menu (src/page/safety.ts).
       const person = key === 'draw' || session === undefined || !shared() || key === session.you ? null : session.people[key];

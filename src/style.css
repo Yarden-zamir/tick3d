@@ -2391,6 +2391,15 @@ body[data-turn='O'] .status[data-state='playing'] {
   text-align: center;
 }
 
+.avatar-viewer-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.avatar-viewer-actions .btn {
+  flex: 1;
+}
+
 .avatar-viewer-picture {
   display: flex;
   justify-content: center;
