@@ -98,8 +98,9 @@ test('on a touch screen, the voice panel keeps the space of Recentre tilt only w
     const recentre = page.locator('#voice-recentre');
     // No tilt reading in the test browser: the button stays hidden in both cases.
     await expect(recentre).toBeHidden();
-    const display = await recentre.evaluate((element) => getComputedStyle(element).display);
-    expect(display, `tilt ${JSON.stringify(tilt)}`).toBe(tilt === null ? 'none' : 'inline-flex');
+    // A kept space is any box but none: the panel layout can turn inline-flex into flex.
+    const keepsSpace = await recentre.evaluate((element) => getComputedStyle(element).display !== 'none');
+    expect(keepsSpace, `tilt ${JSON.stringify(tilt)}`).toBe(tilt !== null);
     await context.close();
   }
 });
