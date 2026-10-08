@@ -1,7 +1,7 @@
 // The timeline of the spot: beats.json, checked, and the game that it shows, rebuilt from the game code.
 // Everything here is a function of the frame number, so every render gives the same video.
 import beatsJson from '../creative/beats.json' with { type: 'json' };
-import { BAR_COUNT, SIXTEENTHS_PER_BAR, parseBeats, type Beats } from '../creative/beats.ts';
+import { BAR_COUNT, SIXTEENTHS_PER_BAR, parseBeats, withVariant, type Beats } from '../creative/beats.ts';
 import { chooseMove } from '../../src/ai.ts';
 import { type Board, type Game, newGame, play, replay } from '../../src/game.ts';
 import { seededRandom } from '../../src/practice/practice.ts';
@@ -11,7 +11,20 @@ import { toEpochMs } from '../../src/epoch.ts';
 // The move times of the game. The spot never reads them, and a fixed time keeps Date.now() out.
 const NO_TIME = toEpochMs(0);
 
-export const BEATS: Beats = parseBeats(beatsJson);
+import arcade from '../creative/variants/arcade.json' with { type: 'json' };
+import mellow from '../creative/variants/mellow.json' with { type: 'json' };
+
+// The variants of the spot: VIDEO_VARIANT picks an overlay of video/creative/variants/. Unset, or 'classic', is
+// the approved cut. scripts/render.ts passes the variable into the render browser.
+export const VARIANTS = { classic: undefined, arcade, mellow } as const;
+export type VariantName = keyof typeof VARIANTS;
+const isVariantName = (name: string): name is VariantName => Object.hasOwn(VARIANTS, name);
+const requested = globalThis.process?.env?.['VIDEO_VARIANT'] ?? 'classic';
+if (!isVariantName(requested)) throw new Error(`VIDEO_VARIANT=${requested} is not one of ${Object.keys(VARIANTS).join(', ')}`);
+export const VARIANT: VariantName = requested;
+const overlay = VARIANTS[VARIANT];
+
+export const BEATS: Beats = parseBeats(overlay === undefined ? beatsJson : withVariant(beatsJson, overlay));
 export const FPS = BEATS.fps;
 export const DURATION_FRAMES = BEATS.durationSeconds * FPS;
 // The length of one sixteenth note in frames: about 3.3.

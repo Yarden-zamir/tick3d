@@ -214,6 +214,7 @@ docker run --rm -v "$PWD":/app -w /app/video node:26 sh -c 'npm ci && npm run ch
 
 - `npm run video` writes `video/out/tick3d-15s-landscape.mp4` (1920×1080), `video/out/tick3d-15s-portrait.mp4` (1080×1920), one still per bar in `video/out/stills/` and the soundtrack in `video/out/soundtrack.wav`.
 - The render needs the system libraries of Chrome Headless Shell, so use `node:26`, not the Alpine image.
+- `VIDEO_VARIANT=<name> npm run video` renders a variant of the spot into `video/out/variants/<name>/`. A variant is a small overlay on `beats.json` in `video/creative/variants/<name>.json` that changes the themes, the sound sets and the camera of bars, never the game.
 - The `video` workflow renders the same files on a manual run, on a push to `main` that touches `video/`, and on a pull request that touches it. It uploads them as the `tick3d-video` artifact. A tag `video-v*` also attaches them to a GitHub Release.
 
 ## Deploy

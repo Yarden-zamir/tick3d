@@ -6,11 +6,12 @@ import { SIXTEENTH } from '../../src/song.ts';
 import { scheduleNotes } from '../../src/sound.ts';
 import { encodeWav } from '../../src/wav.ts';
 import { spotSounds } from '../src/soundtrack.ts';
-import { BEATS } from '../src/timeline.ts';
+import { BEATS, VARIANT } from '../src/timeline.ts';
 
 const RATE = 44_100;
 const FADE_SECONDS = 0.05;
-const out = new URL('../out/', import.meta.url);
+// The base cut writes to out/, a variant to out/variants/<name>/ (scripts/render.ts does the same).
+const out = new URL(VARIANT === 'classic' ? '../out/' : `../out/variants/${VARIANT}/`, import.meta.url);
 const pub = new URL('../public/', import.meta.url);
 
 const sounds = spotSounds();
@@ -39,4 +40,4 @@ writeFileSync(new URL('soundtrack.wav', pub), wav);
 // The beat markers: the sixteenth and the time of every note onset.
 const onsets = [...new Set(sounds.map((sound) => sound.at))].sort((a, b) => a - b);
 writeFileSync(new URL('beats.txt', out), onsets.map((at) => `${at}\t${(at * SIXTEENTH).toFixed(4)}`).join('\n') + '\n');
-process.stdout.write(`soundtrack: ${sounds.length} sounds, ${onsets.length} onsets, ${(length / RATE).toFixed(3)} s\n`);
+process.stdout.write(`soundtrack (${VARIANT}): ${sounds.length} sounds, ${onsets.length} onsets, ${(length / RATE).toFixed(3)} s\n`);

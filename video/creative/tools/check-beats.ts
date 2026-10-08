@@ -1,17 +1,22 @@
 // Checks video/creative/beats.json against the game code. Run from the repo root:
 //   docker run --rm -v "$PWD":/repo -w /repo node:26-alpine node video/creative/tools/check-beats.ts
 // It exits with an error on the first broken rule.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { chooseMove } from '../../../src/ai.ts';
 import { LINES, linesThrough, newGame, play, replay } from '../../../src/game.ts';
 import { seededRandom } from '../../../src/practice/practice.ts';
-import { BAR_COUNT, SIXTEENTHS_PER_BAR, SPOT_SIXTEENTHS, parseBeats } from '../beats.ts';
+import { BAR_COUNT, SIXTEENTHS_PER_BAR, SPOT_SIXTEENTHS, parseBeats, withVariant } from '../beats.ts';
 
 function check(ok: boolean, rule: string): void {
   if (!ok) throw new Error(`beats.json breaks a rule: ${rule}`);
 }
 
-const beats = parseBeats(JSON.parse(readFileSync(new URL('../beats.json', import.meta.url), 'utf8')));
+const beatsJson: unknown = JSON.parse(readFileSync(new URL('../beats.json', import.meta.url), 'utf8'));
+const beats = parseBeats(beatsJson);
+// Every variant overlay (../variants/*.json) changes only the look and the sound of bars, and the merged timeline parses.
+const variantsDir = new URL('../variants/', import.meta.url);
+const variantFiles = readdirSync(variantsDir).filter((file) => file.endsWith('.json')).sort();
+for (const file of variantFiles) parseBeats(withVariant(beatsJson, JSON.parse(readFileSync(new URL(file, variantsDir), 'utf8'))));
 const css = readFileSync(new URL('../../../src/style.css', import.meta.url), 'utf8');
 
 // The game is the self-play of src/ai.ts with the seed, move for move.
@@ -91,4 +96,4 @@ check(beats.moves.at(-1)?.at === barStart(5), 'the winning move lands on the bar
 check(beats.text.at(-1)?.words[0]?.at === barStart(7), 'the end card lands on the bar 7 downbeat');
 check(beats.bassUntil <= SPOT_SIXTEENTHS, 'bassUntil is inside the spot');
 
-process.stdout.write(`beats.json ok: ${beats.moves.length} legal moves, ${beats.game.winner} wins on line ${beats.game.line.join('-')}\n`);
+process.stdout.write(`beats.json ok: ${beats.moves.length} legal moves, ${beats.game.winner} wins on line ${beats.game.line.join('-')}, ${variantFiles.length} variants\n`);

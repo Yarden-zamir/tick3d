@@ -1,0 +1,14 @@
+{
+  "name": "arcade",
+  "differs": "A low fly-in hook, Chiptune square leads on every move, and the neon themes: synthwave, batman and bloodmoon.",
+  "bars": {
+    "1": { "theme": "retro", "camera": "swoop" },
+    "2": { "theme": "retro", "soundSet": "chiptune" },
+    "3": { "theme": "synthwave", "soundSet": "chiptune" },
+    "4": { "theme": "batman", "soundSet": "chiptune" },
+    "5": { "theme": "batman", "soundSet": "chiptune" },
+    "6": { "theme": "bloodmoon", "soundSet": "chiptune" },
+    "7": { "theme": "synthwave", "soundSet": "chiptune" },
+    "8": { "theme": "synthwave" }
+  }
+}

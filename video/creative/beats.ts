@@ -11,7 +11,7 @@ import type { SoundSetId } from '../../src/sound-sets.ts';
 const THEMES = ['light', 'dark', 'candy', 'mint', 'midnight', 'snow', 'retro', 'synthwave', 'bloodmoon', 'coffee', 'batman', 'mono'] as const;
 type ThemeId = (typeof THEMES)[number];
 
-const CAMERAS = ['slam', 'dive', 'orbit', 'push', 'ride', 'pull-back', 'settle'] as const;
+const CAMERAS = ['slam', 'swoop', 'dive', 'orbit', 'push', 'ride', 'pull-back', 'settle'] as const;
 // The only sound sets of the spot (maintainer rule on #119).
 const SPOT_SOUND_SETS = ['classic', 'cells', 'chiptune'] as const satisfies readonly SoundSetId[];
 type Camera = (typeof CAMERAS)[number];
@@ -73,6 +73,31 @@ export type Beats = {
   bars: readonly Bar[];
   text: readonly TextLine[];
 };
+
+// A variant of the spot: a small overlay on beats.json in video/creative/variants/<name>.json. It changes only the
+// theme, the sound set and the camera of bars, never the game, the events or the text. VIDEO_VARIANT selects one.
+export type Variant = { name: string; differs: string; bars: Readonly<Record<string, Partial<Pick<Bar, 'theme' | 'soundSet' | 'camera'>>>> };
+
+const VARIANT_KEYS: readonly string[] = ['theme', 'soundSet', 'camera'];
+
+// The JSON of beats.json with the overlay of a variant merged in, for parseBeats.
+export function withVariant(beats: unknown, variant: unknown): unknown {
+  const root = record(beats, '');
+  const v = record(variant, 'variant');
+  const name = text(v['name'], 'variant.name');
+  text(v['differs'], `variant ${name}.differs`);
+  const bars = record(v['bars'], `variant ${name}.bars`);
+  const merged = list(root['bars'], 'bars').map((entry, i) => {
+    const bar = record(entry, `bars[${i}]`);
+    const overlay = bars[String(i + 1)];
+    if (overlay === undefined) return bar;
+    const o = record(overlay, `variant ${name}.bars.${i + 1}`);
+    for (const key of Object.keys(o)) if (!VARIANT_KEYS.includes(key)) fail(`variant ${name}.bars.${i + 1}.${key}`, VARIANT_KEYS.join(' | '));
+    return { ...bar, ...o };
+  });
+  for (const key of Object.keys(bars)) if (!(Number(key) >= 1 && Number(key) <= merged.length)) fail(`variant ${name}.bars.${key}`, `a bar 1..${merged.length}`);
+  return { ...root, bars: merged };
+}
 
 // ---- Runtime check of the JSON. It throws on the first value that does not fit the type. ----
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { LINES, replay } from '../../src/game.ts';
-import { BEATS, DURATION_FRAMES, GAME, barAt, boardAt, frameOf, since } from './timeline.ts';
+import beatsJson from '../creative/beats.json' with { type: 'json' };
+import { parseBeats, withVariant } from '../creative/beats.ts';
+import { BEATS, DURATION_FRAMES, GAME, VARIANTS, barAt, boardAt, frameOf, since } from './timeline.ts';
 
 describe('the timeline', () => {
   it('lasts 15.0 s at 30 fps', () => {
@@ -24,6 +26,18 @@ describe('the timeline', () => {
     for (const bar of BEATS.bars) expect(barAt(frameOf(bar.start))).toBe(bar);
     for (const bar of BEATS.bars.slice(1)) expect(barAt(frameOf(bar.start) - 1).bar).toBe(bar.bar - 1);
     expect(barAt(DURATION_FRAMES - 1).bar).toBe(8);
+  });
+
+  it('merges every variant into a timeline with the same game, events and text', () => {
+    const base = parseBeats(beatsJson);
+    for (const [name, overlay] of Object.entries(VARIANTS)) {
+      if (overlay === undefined) continue;
+      const beats = parseBeats(withVariant(beatsJson, overlay));
+      expect(beats.moves, name).toEqual(base.moves);
+      expect(beats.text, name).toEqual(base.text);
+      expect(beats.bars.map((bar) => bar.events), name).toEqual(base.bars.map((bar) => bar.events));
+      expect(beats.bars.some((bar, i) => bar.theme !== base.bars[i]?.theme || bar.soundSet !== base.bars[i]?.soundSet || bar.camera !== base.bars[i]?.camera), name).toBe(true);
+    }
   });
 
   it('starts the motion of an event on the frame of the event', () => {
