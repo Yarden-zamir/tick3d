@@ -42,11 +42,14 @@ test('the ear training shows answers first, then hides them, and keeps its progr
   await expect(answer).toBeVisible();
   await expect(answer).toContainText('layer');
   await expect(deckCells(page, '.right')).toHaveCount(AREA);
+  const answerHeight = (await answer.boundingBox())?.height;
 
   // A few learn cards later, the first quiz card hides the answer.
   for (let i = 0; i < 10 && (await kind.textContent()) !== 'Quiz'; i++) await next.click();
   await expect(kind).toHaveText('Quiz');
   await expect(answer).toBeHidden();
+  // The hidden answer keeps its box, so the deck under it does not move up.
+  expect((await answer.boundingBox())?.height).toBeCloseTo(answerHeight ?? Number.NaN, 0);
   await expect(deckCells(page, '.right')).toHaveCount(0);
   await expect(page.locator('#check')).toBeDisabled();
 
