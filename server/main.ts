@@ -27,6 +27,7 @@ import { type Hello, decodeSignal } from '../src/nearby/signal.ts';
 import { EMPTY_SESSION_TTL_MS, SessionError } from '../src/session/core.ts';
 import {
   CREATES_PER_HOUR,
+  DATA_DELETES_PER_HOUR,
   EVENTS_PER_10_MINUTES,
   NEARBY_CALLS_PER_10_MINUTES,
   NEARBY_GRACE_MS,
@@ -78,6 +79,9 @@ const allowPracticeRun = createLimiter(PRACTICE_RUNS_PER_10_MINUTES, 600_000, 10
 // Reports of chat messages and people per address: a real report is rare, so this keeps a flood out
 // of the maintainers' list. Same limits as allowCreate.
 const allowReport = createLimiter(REPORTS_PER_10_MINUTES, 600_000, 10_000, 'Too many reports from this address. Try again later.');
+// Delete my data per address: a player needs it once, so 10 per hour leaves room for a family on one
+// address and keeps a flood of deletes from holding the store queue. Same limits as allowCreate.
+const allowDataDelete = createLimiter(DATA_DELETES_PER_HOUR, 3_600_000, 10_000, 'Too many data deletions from this address. Try again later.');
 // Each entry holds at most one open request, so `total` also caps the open announce requests.
 const lobby = createLobby({ perNetwork: NEARBY_HOSTS_PER_NETWORK, total: 1000, waitMs: WAIT_MS, graceMs: NEARBY_GRACE_MS });
 
@@ -384,6 +388,16 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       if (match.route === 'GET /api/me/records') return send(res, 200, { records: await store.records(token) });
       return send(res, 200, await me(token, user));
     }
+    // A cross-site form cannot send the X-Player header, so another site cannot delete a player's data.
+    case 'DELETE /api/me': {
+      allowDataDelete(clientOf(req), Date.now());
+      const token = requirePlayer(req);
+      // A login cookie links this browser first, so the account goes with it.
+      const user = auth?.user(req);
+      if (user !== undefined) await store.linkToken(token, user);
+      const deleted = await store.deleteData(token);
+      return send(res, 200, deleted, auth === undefined ? {} : { 'set-cookie': auth.logoutCookie() });
+    }
     // A cross-site form cannot send the X-Player header, so another site cannot rename a player.
     case 'PUT /api/me/name': {
       const token = requirePlayer(req);
@@ -438,6 +452,18 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const login = requireMaintainer(req);
       for (const token of await store.clearNameOf(requirePerson(match.params.person), login)) notifyPlayer(token as PlayerToken);
       return send(res, 200, { ok: true });
+    }
+
+    // An email request for Delete my data: the same deletion, by a maintainer.
+    case 'DELETE /api/players/{person}': {
+      requireMaintainer(req);
+      return send(res, 200, await store.deleteDataOf({ person: requirePerson(match.params.person) }));
+    }
+    case 'DELETE /api/accounts/{login}': {
+      requireMaintainer(req);
+      const login = match.params.login ?? '';
+      if (!/^[A-Za-z0-9-]{1,39}$/.test(login)) throw new HttpError(400, 'A GitHub login has 1 to 39 letters, digits or "-".');
+      return send(res, 200, await store.deleteDataOf({ login }));
     }
 
     case 'POST /api/results': {

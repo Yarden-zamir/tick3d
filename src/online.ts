@@ -190,6 +190,8 @@ export const api = {
   },
   // Hides every finished game of this player from their history on the server.
   clearHistory: () => call('DELETE', '/me/history'),
+  // Deletes the data of this player on the server, and of the account when this browser is logged in. It logs out.
+  deleteData: () => call('DELETE', '/me'),
   // The metrics of this device for a finished online game that it played.
   gameMetrics: (id: OnlineGameId, metrics: Metrics) => call('POST', `/games/${id}/metrics`, metrics),
   // A fault report for the stats page. The caller ignores a failure: a report must never cause another fault.

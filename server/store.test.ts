@@ -9,11 +9,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.setConfig({ testTimeout: 20_000 });
 import { replay } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
-import { type Code, type DeviceGameId, type GameId, type Metrics, type PlayerToken, type ResultUpload, type StatsFilter, ALL_STATS, HISTORY_PAGE_SIZE, parseDeviceGameId, parseGameId, personId, toRecord } from '../src/protocol.ts';
+import { type Code, type DeviceGameId, type GameId, type Metrics, type PlayerToken, type ResultUpload, type StatsFilter, ACCOUNT_TOKEN_PREFIX, ALL_STATS, HISTORY_PAGE_SIZE, parseDeviceGameId, parseGameId, personId, toRecord } from '../src/protocol.ts';
 import { PLAYOFF_COUNTDOWN_MS } from '../src/practice/playoff.ts';
 import type { PracticeRun } from '../src/practice/practice.ts';
 import { SessionError } from '../src/session/core.ts';
-import { REMOVED_MESSAGE, type Store, openStore } from './store.ts';
+import { DELETED_MESSAGE, REMOVED_MESSAGE, type Store, openStore } from './store.ts';
 
 const alice = 'aaaaaaaa-0000-4000-8000-000000000001' as PlayerToken;
 const bob = 'bbbbbbbb-0000-4000-8000-000000000002' as PlayerToken;
@@ -1056,3 +1056,144 @@ describe('report and block', () => {
     ]);
   });
 });
+
+describe('delete my data', () => {
+  const ALICE_ACCOUNT = `${ACCOUNT_TOKEN_PREFIX}${String(ALICE_GITHUB.id).padStart(16, '0')}`;
+  const aliceTokens = [alice, alicePhone, ALICE_ACCOUNT];
+  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log'];
+
+  // Per group of needles: the rows of each table whose text holds one of them. The store closes for the check and opens again.
+  async function rowsHolding(path: string, groups: readonly (readonly string[])[]): Promise<Record<string, number>[]> {
+    store.close();
+    const instance = await DuckDBInstance.create(path);
+    const db = await instance.connect();
+    const found: Record<string, number>[] = [];
+    for (const needles of groups) {
+      const group: Record<string, number> = {};
+      for (const table of TABLES) {
+        const holds = needles.map((_, index) => `contains(t::VARCHAR, $n${index})`).join(' OR ');
+        const reader = await db.runAndReadAll(`FROM ${table} t SELECT count(*)::INTEGER AS n WHERE ${holds}`, Object.fromEntries(needles.map((needle, index) => [`n${index}`, needle])));
+        const n = Number(reader.getRowObjectsJS()[0]?.n);
+        if (n > 0) group[table] = n;
+      }
+      found.push(group);
+    }
+    db.closeSync();
+    instance.closeSync();
+    store = await openStore(path);
+    return found;
+  }
+
+  it('deletes or anonymises every row of a logged-in player on every device, keeps the data of others, and finds nothing a second time', async () => {
+    const path = `${await mkdtemp('/tmp/tick3d-store-')}/delete.duckdb`;
+    store = await openStore(path);
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    // An online game with Bob, with chat, metrics and reports.
+    const { code } = await store.create(alice, 'Shared match');
+    await store.join(code, bob);
+    await store.chat(code, alice, 'good luck');
+    await store.chat(code, bob, 'thanks');
+    await playMoves(code, X_WINS);
+    const online = gameId(`${code}-1`);
+    await store.addSeatMetrics(online, alicePhone, METRICS);
+    await store.addSeatMetrics(online, bob, METRICS);
+    await store.report(alice, { code, target: { message: 2 }, reason: 'spam', note: 'test' });
+    await store.report(bob, { code, target: { person: await personId(ALICE_ACCOUNT) }, reason: 'name', note: null });
+    // A session of Alice alone without a move, and one of Carol that Alice watches.
+    const lonely = (await store.create(alicePhone, 'Nobody came')).code;
+    const carols = (await store.create(carol, 'Carol alone')).code;
+    // Uploads: Alice's computer game, and Bob's Nearby game with Alice's phone as the guest.
+    await store.addResults(alice, [result('eeeeeeee-1111-4000-8000-000000000001')]);
+    const nearby = deviceGameId('NEARBY99');
+    await store.addResults(bob, [result('eeeeeeee-1111-4000-8000-000000000002', { mode: 'nearby', difficulty: null, you: 'X', publicId: nearby, guest: alicePhone })]);
+    await store.setName(alicePhone, 'Phone Alice');
+    await store.setName(bob, 'Bob B');
+    await store.block(alice, await personId(bob), 'Bob B');
+    await store.block(bob, await personId(ALICE_ACCOUNT), 'alice');
+    const run: PracticeRun = { id: 'run-1', mode: 'targets', preset: 'normal', roundMs: Array.from({ length: 10 }, () => 2_000), score: 10 };
+    await store.addPracticeRun(alice, run);
+    await store.addPracticeRun(bob, run);
+    const aliceIds = await Promise.all(aliceTokens.map((token) => personId(token)));
+
+    const deleted = await store.deleteData(alicePhone);
+    expect(deleted).toEqual({
+      sessions: { deleted: 1, anonymised: 1 },
+      chat_messages: { deleted: 0, anonymised: 1 },
+      results: { deleted: 1, anonymised: 2 },
+      seat_metrics: { deleted: 1, anonymised: 0 },
+      player_names: { deleted: 1, anonymised: 0 },
+      blocks: { deleted: 1, anonymised: 0 },
+      practice_runs: { deleted: 1, anonymised: 0 },
+      reports: { deleted: 0, anonymised: 1 },
+      player_tokens: { deleted: 3, anonymised: 0 },
+      users: { deleted: 1, anonymised: 0 },
+    });
+
+    // No token of Alice is left anywhere. Her person id stays only where others reported or blocked her.
+    expect(await rowsHolding(path, [aliceTokens, aliceIds, ['alice', 'good luck']])).toEqual([{}, { blocks: 1, reports: 1 }, { blocks: 1 }]);
+
+    // Bob keeps his games, his half of the session, his name, block, run, metrics and report.
+    const view = await store.get(code, bob);
+    expect(view.you).toBe('O');
+    expect(view.players.X).toBeNull();
+    expect(view.chat).toMatchObject([{ text: DELETED_MESSAGE }, { text: 'thanks', by: await personId(bob) }]);
+    expect(view.chat[0]?.by).toBeUndefined();
+    expect((await store.history(bob, 0)).games.map((game) => game.id)).toEqual(expect.arrayContaining([online, nearby]));
+    expect((await store.game(online)).names.X).toBeNull();
+    expect(await store.customName(bob)).toBe('Bob B');
+    expect(await store.blocks(bob)).toHaveLength(1);
+    expect((await store.practiceBoard('targets', 'normal', bob)).top).toHaveLength(1);
+    expect((await store.stats()).metricsGames).toBe(1);
+    expect((await store.reports()).reports).toMatchObject([{ reporter: await personId(bob), person: aliceIds[2] }, { reporter: null, reporterLogin: null }]);
+    expect(await status(() => store.get(lonely, bob))).toBe(404);
+    expect((await store.get(carols, carol)).you).toBe('X');
+
+    // Every device of Alice starts empty, and logged out.
+    for (const token of [alice, alicePhone]) {
+      const mine = await store.myGames(token);
+      expect(mine).toMatchObject({ user: null, sessions: [], total: { played: 0 } });
+      expect((await store.history(token, 0)).games).toEqual([]);
+    }
+    const nothing = Object.fromEntries(Object.keys(deleted).map((table) => [table, { deleted: 0, anonymised: 0 }]));
+    expect(await store.deleteData(alicePhone)).toEqual(nothing);
+    expect(await store.deleteData(alice)).toEqual(nothing);
+  });
+
+  it('deletes the data of a device token without an account, and leaves other devices alone', async () => {
+    store = await openStore(':memory:');
+    const { code } = await store.create(alice, 'Waiting');
+    await store.join(code, bob);
+    await store.addResults(alice, [result('eeeeeeee-2222-4000-8000-000000000001')]);
+    await store.addResults(carol, [result('eeeeeeee-2222-4000-8000-000000000002')]);
+    await store.setName(alice, 'Ali');
+    expect(await store.deleteData(alice)).toMatchObject({
+      sessions: { deleted: 0, anonymised: 1 },
+      results: { deleted: 1, anonymised: 0 },
+      player_names: { deleted: 1, anonymised: 0 },
+      player_tokens: { deleted: 0, anonymised: 0 },
+      users: { deleted: 0, anonymised: 0 },
+    });
+    // Bob holds the session alone now, and a third player can take the free seat.
+    expect((await store.get(code, bob)).you).toBe('O');
+    expect((await store.join(code, carol)).you).toBe('X');
+    expect((await store.myGames(carol)).total.played).toBe(1);
+    expect(await store.customName(alice)).toBeNull();
+  });
+
+  it('runs the same deletion for a maintainer, by person id or by GitHub login, and refuses an unknown one', async () => {
+    store = await openStore(':memory:');
+    await store.setName(bob, 'Bob B');
+    await store.addResults(bob, [result('eeeeeeee-3333-4000-8000-000000000001')]);
+    expect(await store.deleteDataOf({ person: await personId(bob) })).toMatchObject({ results: { deleted: 1 }, player_names: { deleted: 1 } });
+    expect(await store.customName(bob)).toBeNull();
+    expect(await status(async () => store.deleteDataOf({ person: await personId(bob) }))).toBe(404);
+
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.addResults(alice, [result('eeeeeeee-3333-4000-8000-000000000002')]);
+    expect(await store.deleteDataOf({ login: 'ALICE' })).toMatchObject({ results: { deleted: 1 }, player_tokens: { deleted: 2 }, users: { deleted: 1 } });
+    expect((await store.myGames(alice)).user).toBeNull();
+    expect(await status(() => store.deleteDataOf({ login: 'alice' }))).toBe(404);
+  });
+});
+

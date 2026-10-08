@@ -21,6 +21,7 @@ import {
   toGame,
 } from '../protocol.ts';
 import { STATS_ICON } from '../icons.ts';
+import { deviceDataKeys } from '../storage-keys.ts';
 import { accountLink } from '../header/header.ts';
 import {
   myGamesDialog,
@@ -32,6 +33,14 @@ import {
   clearConfirm,
   clearConfirmYes,
   clearConfirmNo,
+  deleteConfirm,
+  deleteConfirmForm,
+  deleteConfirmNo,
+  deleteConfirmScope,
+  deleteConfirmSettings,
+  deleteConfirmStatus,
+  deleteConfirmYes,
+  myGamesDelete,
   myGamesStats,
   myGamesOnline,
   myGamesNote,
@@ -321,6 +330,51 @@ async function logOut(): Promise<void> {
   await refreshAccount();
 }
 
+// Delete my data. The server deletes the data of this player, and of the account when this browser
+// is logged in, and logs out. Then this device deletes its copies: saved sessions, results, cached
+// online games and the stored data (deviceDataKeys). The player token stays, so the people who
+// blocked or reported this player still recognise them. Closing the dialog then reloads the page,
+// so no game in memory writes its data back.
+let dataDeleted = false;
+
+function openDeleteConfirm(): void {
+  const user = page.account.user;
+  deleteConfirmScope.textContent =
+    user === null ? 'This deletes the data of this device, on the server and here:' : `This deletes the data of the GitHub account ${user.login} on every device, and of this device:`;
+  deleteConfirmSettings.checked = false;
+  deleteConfirmStatus.hidden = true;
+  deleteConfirm.showModal();
+  deleteConfirmNo.focus();
+}
+
+async function deleteMyData(): Promise<void> {
+  deleteConfirmYes.disabled = true;
+  try {
+    await api.deleteData();
+  } catch (error) {
+    if (!(error instanceof OnlineError)) throw error;
+    // The dialog covers the toasts, so it says what happened.
+    deleteConfirmStatus.textContent = `Nothing was deleted: ${error.message}`;
+    deleteConfirmStatus.hidden = false;
+    return;
+  } finally {
+    deleteConfirmYes.disabled = false;
+  }
+  const db = page.deviceDb;
+  if (db !== undefined) for (const store of ['sessions', 'results', 'remote'] as const) await db.clear(store);
+  try {
+    for (const key of deviceDataKeys(Object.keys(localStorage), deleteConfirmSettings.checked)) localStorage.removeItem(key);
+  } catch {
+    // Storage is blocked (private mode), so it holds no data.
+  }
+  dataDeleted = true;
+  deleteConfirmForm.hidden = true;
+  deleteConfirmYes.hidden = true;
+  deleteConfirmNo.textContent = 'Close';
+  deleteConfirmStatus.textContent = 'Your data is deleted. The page starts fresh when you close this.';
+  deleteConfirmStatus.hidden = false;
+}
+
 // The games of the open session, oldest first, with Replay and the result card. render() calls this,
 // so the list stays current while the dialog is open. A game from a link has no session here.
 export function renderSessionGames(): void {
@@ -449,6 +503,15 @@ export function setupMyGames(): void {
   clearConfirmYes.addEventListener('click', () => void clearHistory().catch(showError));
   clearConfirm.addEventListener('click', (event) => {
     if (event.target === clearConfirm) clearConfirm.close();
+  });
+  myGamesDelete.addEventListener('click', openDeleteConfirm);
+  deleteConfirmNo.addEventListener('click', () => deleteConfirm.close());
+  deleteConfirmYes.addEventListener('click', () => void deleteMyData().catch(showError));
+  deleteConfirm.addEventListener('click', (event) => {
+    if (event.target === deleteConfirm) deleteConfirm.close();
+  });
+  deleteConfirm.addEventListener('close', () => {
+    if (dataDeleted) location.assign('/');
   });
   myGamesDialog.addEventListener('click', (event) => {
     if (event.target === myGamesDialog) myGamesDialog.close();

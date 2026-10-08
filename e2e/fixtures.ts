@@ -91,6 +91,16 @@ export const hasDeviceGameLink = (url: URL): boolean => parseDeviceGameId(url.se
 // The player token of the page's browser, for API calls as that player.
 export const playerToken = (page: Page): Promise<string> => page.evaluate((key) => localStorage.getItem(key) ?? '', STORAGE_KEYS.player);
 
+// Calls the API as the page's browser, with its player token.
+export const callApi = async (page: Page, path: string) =>
+  page.evaluate(
+    async ({ path, token }) => {
+      const response = await fetch(path, { headers: { 'x-player': token } });
+      return (await response.json()) as unknown;
+    },
+    { path, token: await playerToken(page) },
+  );
+
 // The settings that the page stored, or an empty object before the first save.
 export const storedSettings = (page: Page): Promise<Record<string, unknown>> =>
   page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>, STORAGE_KEYS.settings);

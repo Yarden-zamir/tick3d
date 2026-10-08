@@ -55,6 +55,13 @@ export const NEARBY_GRACE_MS = 10_000;
 export const PRACTICE_RUNS_PER_10_MINUTES = 60;
 // Reports of chat messages and people per 10 minutes from one address. server/main.ts enforces it.
 export const REPORTS_PER_10_MINUTES = 20;
+// Delete my data calls per hour from one address. server/main.ts enforces it.
+export const DATA_DELETES_PER_HOUR = 10;
+// The tables that Delete my data (deleteData in server/store.ts) changes, with the rows it deleted and
+// the rows it kept without the player. chat_messages counts the messages inside the session documents.
+// The other tables hold no player data: events, and moderation_log (kept for moderation).
+export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'practice_runs', 'reports', 'player_tokens', 'users'] as const;
+export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number; anonymised: number }>;
 // The previews list on production is at most this old. server/previews.ts enforces it.
 // Only production calls GitHub, without a token: 60 calls per hour, 5 of them kept in reserve, so 55.
 // The calls per hour at about 10 open pull requests:
@@ -154,7 +161,8 @@ export type SchemaName =
   | 'Blocks'
   | 'ReportRequest'
   | 'ReportStored'
-  | 'Reports';
+  | 'Reports'
+  | 'DeletedData';
 
 export const ref = (name: SchemaName): Schema => ({ $ref: `#/components/schemas/${name}` });
 const nullable = (schema: Schema): Schema => ({ oneOf: [schema, { type: 'null' }] });
@@ -446,6 +454,15 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     more: { type: 'boolean', description: 'True when an older page exists. Ask again with a larger offset.' },
   }),
   Hidden: object('The cleared history.', { hidden: count('How many games left your history.') }),
+  DeletedData: object(
+    'What the server changed, per table.',
+    Object.fromEntries(
+      DATA_TABLES.map((table) => [
+        table,
+        object(table === 'chat_messages' ? 'Your chat messages in the sessions. Each one keeps its place without its text.' : `The rows of ${table}.`, { deleted: count('Rows deleted.'), anonymised: count('Rows kept without your id, because another player needs them.') }),
+      ]),
+    ),
+  ),
   Records: object('Your survival records against the computer.', {
     records: {
       type: 'object',
@@ -648,7 +665,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
         name: nullable({ type: 'string' }),
         reason: strings(REPORT_REASONS),
         note: nullable({ type: 'string' }),
-        reporter: { ...person, description: 'The person id of the reporter.' },
+        reporter: nullable({ ...person, description: 'The person id of the reporter. Null when the reporter deleted their data.' }),
         reporterLogin: nullable({ type: 'string' }),
         at: { type: 'number' },
       }),
@@ -830,6 +847,11 @@ export const PATH_PARAMS: Record<string, { description: string; schema: Schema; 
     description: 'The id of a finished game: <CODE>-<n> for an online game (n counts from 1), or 8 characters for another game.',
     schema: { type: 'string' },
     example: `${EXAMPLE_CODE}-1`,
+  },
+  login: {
+    description: 'A GitHub login. Upper and lower case match.',
+    schema: { type: 'string', pattern: '^[A-Za-z0-9-]{1,39}$' },
+    example: 'octocat',
   },
   person: {
     description: 'A public person id, from `people`, `watchers` or a chat message of a session.',
@@ -1295,6 +1317,21 @@ export const ROUTES = {
     errors: [BAD_PLAYER],
     examplePlayer: AGENT_A,
   },
+  'DELETE /api/me': {
+    operationId: 'deleteMyData',
+    tag: 'Account',
+    summary: 'Delete your data on the server, at once. This logs you out.',
+    description: `With a GitHub login on the page, this deletes the data of the account on every device, else the data of your player id. It deletes your uploaded games, custom name, blocks, practice runs, game metrics and the account. A game with another player stays for that player, without your id. Your seats in online sessions become free, and a session without a player and without a move goes. Your chat messages keep their place, with the text "Deleted by its author." in place of yours. A report that you filed stays without your id, and reports about you stay for the maintainers. A second call deletes nothing. One address can call this ${DATA_DELETES_PER_HOUR} times per hour.`,
+    player: 'required',
+    response: {
+      status: 200,
+      description: 'Deleted. The counts per table.',
+      schema: 'DeletedData',
+      example: Object.fromEntries(DATA_TABLES.map((table) => [table, { deleted: table === 'results' ? 2 : 0, anonymised: table === 'results' || table === 'sessions' ? 1 : 0 }])),
+    },
+    errors: [BAD_PLAYER, { status: 429, when: `This address deleted data ${DATA_DELETES_PER_HOUR} times in the last hour.` }],
+    examplePlayer: AGENT_A,
+  },
   'PUT /api/me/name': {
     operationId: 'setName',
     tag: 'Account',
@@ -1541,6 +1578,26 @@ export const ROUTES = {
     player: 'required',
     response: { status: 200, description: 'Cleared.', schema: 'Ok', example: { ok: true } },
     errors: [BAD_PLAYER, { status: 400, when: 'The person id is not valid.' }, MAINTAINER_401, MAINTAINER_403, { status: 404, when: 'The person has no custom name, or this server has no GitHub login.' }],
+    examplePlayer: AGENT_A,
+  },
+  'DELETE /api/players/{person}': {
+    operationId: 'deletePlayerData',
+    tag: 'Safety',
+    summary: 'Delete the data of a person, for an email request. Maintainers only.',
+    description: 'Runs the same deletion as DELETE /api/me for the player, so an email request takes one call. A person id of a logged-in player deletes the whole account.',
+    player: 'required',
+    response: { status: 200, description: 'Deleted. The counts per table.', schema: 'DeletedData', example: Object.fromEntries(DATA_TABLES.map((table) => [table, { deleted: 0, anonymised: 0 }])) },
+    errors: [BAD_PLAYER, { status: 400, when: 'The person id is not valid.' }, MAINTAINER_401, MAINTAINER_403, { status: 404, when: 'Nobody has that person id, or this server has no GitHub login.' }],
+    examplePlayer: AGENT_A,
+  },
+  'DELETE /api/accounts/{login}': {
+    operationId: 'deleteAccountData',
+    tag: 'Safety',
+    summary: 'Delete the data of a GitHub account on every device, for an email request. Maintainers only.',
+    description: 'Runs the same deletion as DELETE /api/me for a logged-in player, so an email request takes one call.',
+    player: 'required',
+    response: { status: 200, description: 'Deleted. The counts per table.', schema: 'DeletedData', example: Object.fromEntries(DATA_TABLES.map((table) => [table, { deleted: 0, anonymised: 0 }])) },
+    errors: [BAD_PLAYER, { status: 400, when: 'The login is not a GitHub login.' }, MAINTAINER_401, MAINTAINER_403, { status: 404, when: 'No account has that login, or this server has no GitHub login.' }],
     examplePlayer: AGENT_A,
   },
   'POST /api/nearby/hosts/{host}/answer': {

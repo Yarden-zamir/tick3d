@@ -15,7 +15,7 @@ Privacy policy: https://tick3d.yarden-zamir.com/privacy
 
 - Does the app collect or share user data? Yes, it collects. It shares nothing.
 - Is all data encrypted in transit? Yes (HTTPS).
-- Can users ask to delete their data? Yes: https://tick3d.yarden-zamir.com/privacy#delete
+- Can users ask to delete their data? Yes. Delete my data in My games deletes it at once (`DELETE /api/me`). The web link for the delete request is https://tick3d.yarden-zamir.com/privacy#delete: it explains the button, and email is the fallback.
 
 | Data type (Play name) | What it is | Required or optional | Purposes |
 | --- | --- | --- | --- |

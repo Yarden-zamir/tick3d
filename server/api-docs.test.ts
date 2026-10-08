@@ -186,7 +186,7 @@ describe('the SessionView schema', () => {
 describe('matchRoute', () => {
   it.each(ROUTE_NAMES)('finds %s', (name) => {
     const { method, path } = splitRoute(name);
-    const values = { code: 'ab3k', id: 'ab3k-2', host: 'q8Zr2Lx0Vb7Nc4Mw', person: '3f9a0c27d84be615', message: '3' };
+    const values = { code: 'ab3k', id: 'ab3k-2', host: 'q8Zr2Lx0Vb7Nc4Mw', person: '3f9a0c27d84be615', message: '3', login: 'octocat' };
     const used = Object.entries(values).filter(([key]) => path.includes(`{${key}}`));
     const concrete = used.reduce((result, [key, value]) => result.replaceAll(`{${key}}`, value), path);
     const params = Object.fromEntries(used);

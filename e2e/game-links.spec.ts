@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { CELL_COUNT } from '../src/game.ts';
 import { PAGES } from '../src/pages.ts';
 import { parseDeviceGameId } from '../src/protocol.ts';
-import { cell, createOnline, expect, expectToast, joinAsO, marks, playComputerUntilEnd, playerToken, status, test } from './fixtures.ts';
+import { callApi, cell, createOnline, expect, expectToast, joinAsO, marks, playComputerUntilEnd, status, test } from './fixtures.ts';
 
 // X wins along 0, 16, 32, 48. O plays 1, 2, 3.
 const X_WINS = [0, 1, 16, 2, 32, 3, 48];
@@ -28,16 +28,6 @@ async function expectReadOnly(page: Page, title: string | RegExp): Promise<void>
   await cell(page, 20).click();
   await expectToast(page, 'finished game from a link');
 }
-
-// Calls the API as the page's browser, with its player token.
-const callApi = async (page: Page, path: string) =>
-  page.evaluate(
-    async ({ path, token }) => {
-      const response = await fetch(path, { headers: { 'x-player': token } });
-      return (await response.json()) as unknown;
-    },
-    { path, token: await playerToken(page) },
-  );
 
 test('a computer loss gets a link, a server record and a History entry', async ({ open }) => {
   const { page } = await open({ settings: { mode: 'computer', difficulty: 'hard', human: 'X' } });

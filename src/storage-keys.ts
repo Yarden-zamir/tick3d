@@ -14,3 +14,15 @@ export const STORAGE_KEYS = {
   // The chat messages that this device reported, as "<code>:<id>". They stay hidden here.
   reported: 'tick3d.reported',
 } as const;
+
+// The keys that hold settings, not game data. 'tick3d.voice' is the key of src/voice/settings.ts
+// (see the limit above). storage-keys.test.ts checks that this list holds it.
+const SETTINGS_KEYS: readonly string[] = [STORAGE_KEYS.settings, STORAGE_KEYS.tuning, 'tick3d.voice'];
+
+// The keys that Delete my data removes from this device: every key of the site except the player
+// token, and except the settings when `resetSettings` is false. A key of the site starts with "tick3d.".
+export function deviceDataKeys(keys: readonly string[], resetSettings: boolean): string[] {
+  return keys.filter(
+    (key) => key.startsWith('tick3d.') && key !== STORAGE_KEYS.player && (resetSettings || !SETTINGS_KEYS.includes(key)),
+  );
+}
