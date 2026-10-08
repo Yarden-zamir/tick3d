@@ -72,6 +72,29 @@ test('a computer game plays and finishes offline, and its result uploads after a
   await expect(page.locator('.login-link')).toHaveCount(1);
 });
 
+// Runs in the page before the app: a Worker whose script never loads, like WebKit offline, where the
+// service worker does not serve the worker script.
+function workerScriptFails(): void {
+  window.Worker = class extends EventTarget {
+    constructor() {
+      super();
+      setTimeout(() => this.dispatchEvent(new Event('error')));
+    }
+    postMessage(): void {}
+    terminate(): void {}
+  } as unknown as typeof Worker;
+}
+
+test('offline, the computer plays on the main thread when its worker script does not load', async ({ open }) => {
+  const { page, context } = await open({ settings: { mode: 'computer', difficulty: 'hard', human: 'X' } });
+  await waitForServiceWorker(page);
+  await context.addInitScript(workerScriptFails);
+  await context.setOffline(true);
+  await page.reload();
+  await playComputerUntilEnd(page, Array.from({ length: CELL_COUNT }, (_, i) => i));
+  expect(await toasts(page)).not.toContainEqual(expect.stringContaining('move search'));
+});
+
 test('an online game seen before opens read-only offline', async ({ open }) => {
   const { page, context } = await open({ settings: { mode: 'computer' } });
   const code = await createOnline(page);
