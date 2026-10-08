@@ -102,17 +102,23 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Join a friend (code and New code) | no | no | yes | no | no |
 | Players (seats, watchers and seat controls) | no | no | in a game | in a game | no |
 | Time limit | yes | yes | yes | yes | no |
-| Hide board, history and coordinates, Lock | yes | yes | in a game | in a game | no |
+| Hide board, history and coordinates, Lock | yes | yes | yes (off until a game starts) | yes (off until a game starts) | no |
 | Score, New game, the session games in My games | yes | yes | in a game | in a game | yes (no session games) |
 | Undo (during a game) | yes | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
 | Result card (after a game) | yes | yes | in a game | in a game | no |
-| Chat | no | no | yes | yes | no |
+| Chat | no (a wide screen shows it closed) | no (closed) | yes | yes | no (closed) |
 | Report and block (hold or right-click a person) | no | no | yes | Block only | no |
 | Play by voice | yes | yes | with a seat | with a seat | no |
 
 "In a game" means after a create or a join (Online), or after Host or Join (Nearby).
 
 The actions row has fixed slots (`.slot-row` in `src/style.css`), so a control that shows or hides never moves another control. `e2e/row-layout.spec.ts` checks this.
+
+A mode change moves neither the board nor the Opponent picker:
+
+- Everything above the picker keeps its box in every mode. Before a game, the score and New game keep their place but do not show. The Players box sits under the mode boxes.
+- A wide screen (72rem and wider) keeps the chat column in every mode. Outside a game with another device, the chat there is closed and says so.
+- On a phone the chat opens above the panel. If the player works in the panel, the page scrolls by the height of the chat, so the panel stays still (`src/page/panel-anchor.ts`).
 
 ## Accounts and My games
 

@@ -182,3 +182,73 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     await expect.poll(offset, { message: 'the board moved up when the clocks left' }).toBe(before);
   });
 }
+
+// The mode switch: the controls of each mode show and hide, and Online and Nearby open the chat.
+// The board and the panel above the Opponent picker must not move. On a phone the chat opens above the panel,
+// and the page scrolls by its height (src/page/panel-anchor.ts), so the picker stays under the finger.
+// The phone part starts with the picker in the middle of the screen: there Chrome anchors on the board, like Safari, which has no anchoring.
+const PANEL_TOP = ['.score', '.actions', '.mode-picker'] as const;
+
+interface Box {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+// The boxes in the viewport, rounded to a pixel. The board is measured from the top of the stage, because on a phone
+// the status in the header can wrap to a second line, and the page scrolls when the chat opens.
+async function modeLayout(page: Page): Promise<Record<string, Box>> {
+  return page.evaluate((selectors) => {
+    const boxOf = (selector: string): Box => {
+      const element = document.querySelector(selector);
+      if (element === null) throw new Error(`no ${selector}`);
+      const { left, top, width, height } = element.getBoundingClientRect();
+      return { left: Math.round(left), top: Math.round(top), width: Math.round(width), height: Math.round(height) };
+    };
+    const layout = Object.fromEntries(selectors.map((selector) => [selector, boxOf(selector)]));
+    const board = boxOf('#board');
+    const stage = boxOf('#stage');
+    return { ...layout, board: { ...board, top: board.top - stage.top } };
+  }, PANEL_TOP);
+}
+
+const MODE_STEPS = [
+  { mode: 'Friend', ready: (page: Page) => expect(page.locator('#undo')).toBeVisible() },
+  // Online creates a game, which opens the chat.
+  { mode: 'Online', ready: (page: Page) => expect(page.locator('#chat')).not.toHaveClass(/closed/) },
+  { mode: 'Nearby', ready: (page: Page) => expect(page.locator('#nearby-host')).toBeVisible() },
+  { mode: 'Computer', ready: (page: Page) => expect(page.locator('#undo')).toBeVisible() },
+] as const;
+
+for (const [name, viewport] of Object.entries(VIEWPORTS)) {
+  test(`${name}: a mode switch and the chat move neither the board nor the panel`, async ({ open }) => {
+    const { page } = await open({ settings: { mode: 'computer' } });
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    await expect(page.locator('#undo')).toBeVisible();
+    const picker = page.locator('.mode-picker');
+    await picker.evaluate((element) => element.scrollIntoView({ block: 'center' }));
+    await page.mouse.move(0, 0);
+    const baseline = await modeLayout(page);
+    // Only a wide screen (72rem and wider) has the chat column. A phone hides the closed chat.
+    const chatColumn = name === 'desktop' ? await page.locator('#chat').boundingBox() : null;
+    if (name === 'desktop') expect(chatColumn, 'the closed chat column').not.toBeNull();
+
+    for (const { mode, ready } of MODE_STEPS) {
+      await picker.getByRole('button', { name: mode, exact: true }).click();
+      await ready(page);
+      await page.mouse.move(0, 0);
+      await expect.poll(() => modeLayout(page), { message: `the board or the panel moved: ${mode}` }).toEqual(baseline);
+      // A wide screen keeps the chat column in every mode, closed or open.
+      if (chatColumn !== null) expect(await page.locator('#chat').boundingBox(), `the chat column: ${mode}`).toEqual(chatColumn);
+    }
+
+    // Host opens a Nearby game, and with it the chat.
+    await picker.getByRole('button', { name: 'Nearby', exact: true }).click();
+    await page.locator('#nearby-host').click();
+    await expect(page.locator('#chat')).not.toHaveClass(/closed/);
+    await page.mouse.move(0, 0);
+    await expect.poll(() => modeLayout(page), { message: 'the board or the panel moved: Nearby host' }).toEqual(baseline);
+  });
+}
