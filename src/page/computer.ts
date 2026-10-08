@@ -14,7 +14,7 @@ const COMPUTER_DELAY_MS = 450;
 
 // Every level searches in a Web Worker, so input and animations keep running while the computer thinks.
 // Vite builds src/ai-worker.ts as its own chunk, and the service worker precaches it for offline play.
-// A browser that cannot start a module worker throws here, and the search then runs on the main thread.
+// A browser that cannot start a module worker, or cannot load its script offline, searches on the main thread.
 const search = createSearch(() => new Worker(new URL('../ai-worker.ts', import.meta.url), { type: 'module' }));
 
 const isComputerTurn = () =>
