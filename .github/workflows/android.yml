@@ -108,6 +108,11 @@ jobs:
             android/twa-manifest.json > "$BUILD_DIR/twa-manifest.json"
           cd "$BUILD_DIR"
           bubblewrap update --skipVersionUpgrade --manifest=./twa-manifest.json
+          # The Bubblewrap 1.25 template still names JCenter, which only redirects to Maven Central, and a
+          # failed redirect broke a build. Maven Central directly removes that step.
+          # Revisit this when a Bubblewrap update drops jcenter() from its template.
+          grep -q 'jcenter()' build.gradle
+          sed -i 's/jcenter()/mavenCentral()/' build.gradle
 
       - name: Build
         working-directory: ${{ env.BUILD_DIR }}
