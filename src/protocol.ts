@@ -600,7 +600,7 @@ const VERSION_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234
 const isCount = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= MAX_COUNT;
 const hasOnlyKeys = (value: Record<string, unknown>, keys: readonly string[]) => Object.keys(value).every((key) => keys.includes(key));
-const isVersion = (value: unknown): value is string =>
+export const isVersion = (value: unknown): value is string =>
   typeof value === 'string' && value.length >= 1 && value.length <= 64 && [...value].every((char) => VERSION_CHARS.includes(char));
 
 // A version text that isVersion accepts: unknown characters dropped, at most 64 characters.
@@ -894,6 +894,8 @@ export type MyGames = {
 // The aggregates of the public stats page (/stats). Counts only: never a token, a result id, a game id
 // or a page fault. Only `personal` (Mine) names players: your opponents. A person filter names that person.
 export type Count = { key: string; count: number };
+export type ReleaseCount = { version: string; name: string | null; at: EpochMs | null; count: number };
+export const RELEASE_ROWS = 12;
 export type Stats = {
   generatedAt: EpochMs;
   totals: { games: number; moves: number; players: number; accounts: number; sessions: number; gamesLast7Days: number };
@@ -926,7 +928,9 @@ export type Stats = {
   views: Count[];
   layouts: Count[];
   themes: Count[];
-  versions: Count[];
+  // Metric reports per page bundle, newest release first, at most RELEASE_ROWS. A version without a row in
+  // the releases table (src/release.ts) has a null name and time, and comes after the named ones.
+  releases: ReleaseCount[];
   input: { board: number; keypad: number };
   refusals: Count[];
   undo: { gamesWithUndo: number; undos: number };

@@ -15,6 +15,7 @@ import {
   MOVE_TIME_BUCKETS,
   type PersonalStats,
   RANGE_DAYS,
+  RELEASE_ROWS,
   type Refusal,
   REFUSALS,
   SESSION_MODES,
@@ -362,7 +363,12 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, no
     views: counts(await metricCounts('view')),
     layouts: counts(await metricCounts('layout')),
     themes: counts(await metricCounts('theme')),
-    versions: counts(await metricCounts('version')),
+    releases: (await q(`${METRICS} SELECT coalesce(m.metrics.version::VARCHAR, 'unknown') AS version, any_value(r.name) AS name,
+        epoch_ms(any_value(r.released_at)) AS released, count(*)::INTEGER AS count
+      FROM m LEFT JOIN releases r ON r.version = m.metrics.version::VARCHAR
+      GROUP BY 1 ORDER BY released DESC NULLS LAST, count DESC, version LIMIT ${RELEASE_ROWS}`,
+      { version: text, name: nullable(text), released: nullable(epoch), count: int },
+    )).map(({ version, name, released, count }) => ({ version, name, at: released, count })),
     input: { board: usage.board, keypad: usage.keypad },
     refusals: usage.refused.filter((entry) => entry.count > 0),
     undo: { gamesWithUndo: usage.games_with_undo, undos: usage.undos },

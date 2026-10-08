@@ -3,12 +3,40 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import twaManifest from './android/twa-manifest.json' with { type: 'json' };
 import { ASSET_LINKS_PATH, assetLinks } from './src/assetlinks.ts';
+import { execFileSync } from 'node:child_process';
 import { PAGES } from './src/pages.ts';
+import { RELEASE_FILE, releaseName, versionOfScript } from './src/release.ts';
+
+// The commit of this build. In the Docker build, .git is a read-only mount owned by another user, so
+// safe.directory lets git read it. Fields are split by NUL: parents, subject, commit time (s), body.
+function headCommit() {
+  const out = execFileSync('git', ['-c', 'safe.directory=*', 'log', '-1', '--format=%P%x00%s%x00%ct%x00%b', 'HEAD'], { encoding: 'utf8' });
+  const [parents = '', subject = '', seconds = '', body = ''] = out.split('\0');
+  const at = Number(seconds) * 1000;
+  if (!Number.isSafeInteger(at) || at <= 0) throw new Error(`git log gave no commit time: ${out}`);
+  return { parents: parents.trim().split(' ').filter(Boolean).length, subject, body, at };
+}
 
 // The service worker keeps the app shell on the device, so the game opens and plays offline.
 // The page registers it itself (src/pwa.ts) and shows its own "New version" notice.
 export default defineConfig({
   plugins: [
+    // release.json (src/release.ts): the version of the page script that sends game metrics, and the release name.
+    // The Dockerfile mounts .git and passes KITSHN_ENVIRONMENT (compose.yml). The API image copies the file.
+    {
+      name: 'tick3d-release',
+      apply: 'build',
+      generateBundle(_, bundle) {
+        const chunks = Object.values(bundle).filter(
+          (item) => item.type === 'chunk' && Object.keys(item.modules).some((id) => id.endsWith('/src/page/metrics.ts')),
+        );
+        const [chunk] = chunks;
+        if (chunk === undefined || chunks.length > 1) throw new Error(`release: expected one chunk with src/page/metrics.ts, found ${chunks.length}`);
+        const commit = headCommit();
+        const release = { version: versionOfScript(chunk.fileName), name: releaseName(commit, process.env.KITSHN_ENVIRONMENT), at: commit.at };
+        this.emitFile({ type: 'asset', fileName: RELEASE_FILE, source: `${JSON.stringify(release, null, 2)}\n` });
+      },
+    },
     // The Digital Asset Links file of the Android app (src/assetlinks.ts). The Caddyfiles serve it as JSON.
     {
       name: 'tick3d-assetlinks',

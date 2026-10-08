@@ -12,9 +12,11 @@ import { accountLink, setupPageHeader } from '../header/header.ts';
 import { myGamesHref } from '../header/my-games-link.ts';
 import { avatarImage } from '../avatar.ts';
 import { OnlineError, api } from '../online.ts';
+import { releaseLabel } from '../release.ts';
 import {
   ALL_STATS,
   type Count,
+  type ReleaseCount,
   FORM_WINDOW,
   MOVE_TIME_BUCKETS,
   SESSION_MODES,
@@ -111,6 +113,28 @@ function bars(box: HTMLElement, counts: Count[], color = 'var(--o)', label: (key
     bar.setAttribute('preserveAspectRatio', 'none');
     bar.append(rect(0, 0, Math.max(1, (entry.count / max) * 100), 10, color, `${label(entry.key)}: ${number(entry.count)} (${percent(entry.count, total)})`));
     list.append(el('span', 'stats-bar-label', label(entry.key)), bar, el('span', 'stats-bar-value', `${number(entry.count)} · ${percent(entry.count, total)}`));
+  }
+  box.append(list);
+}
+
+// Releases have long names (pull request titles), so each one takes its own line above its bar.
+function releaseBars(box: HTMLElement, releases: ReleaseCount[]): void {
+  const total = releases.reduce((sum, entry) => sum + entry.count, 0);
+  if (total === 0) return empty(box);
+  const max = Math.max(...releases.map((entry) => entry.count));
+  const list = el('ol', 'stats-releases');
+  for (const entry of releases) {
+    const label = releaseLabel(entry);
+    const bar = svg(100, 10, `${label}: ${entry.count}`);
+    bar.setAttribute('preserveAspectRatio', 'none');
+    bar.append(rect(0, 0, Math.max(1, (entry.count / max) * 100), 10, 'var(--muted)', `${label}: ${number(entry.count)} (${percent(entry.count, total)})`));
+    const name = el('span', 'stats-bar-label', label);
+    name.title = entry.version;
+    const item = el('li');
+    // An unknown release shows its version in the label already.
+    item.append(name, ...(entry.name === null ? [] : [el('span', 'stats-release-version', entry.version)]));
+    item.append(bar, el('span', 'stats-bar-value', `${number(entry.count)} · ${percent(entry.count, total)}`));
+    list.append(item);
   }
   box.append(list);
 }
@@ -514,7 +538,7 @@ function draw(stats: Stats): void {
   bars(looks, stats.views);
   bars(looks, stats.layouts, 'var(--toggle-on)');
   bars(card('Themes'), stats.themes, 'var(--primary)');
-  bars(card('App versions'), stats.versions, 'var(--muted)', (key) => key);
+  releaseBars(card('Releases', false, 'Metric reports per release, newest first. The small line under a name is its page bundle.'), stats.releases);
 
   const input = card('Input and undo');
   bars(input, [

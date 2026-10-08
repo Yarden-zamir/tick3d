@@ -66,6 +66,7 @@ import { CURRENT_FORMAT, type SessionDoc, parseDoc } from '../src/session/format
 import type { PlayoffRequest } from '../src/practice/playoff.ts';
 import type { PracticeBoard, PracticeMode, PracticeRun, PresetId } from '../src/practice/practice.ts';
 import { DELETED_NAME } from '../src/deletions.ts';
+import type { Release } from '../src/release.ts';
 import { DATA_TABLES, type DeletedData } from './api-docs.ts';
 import { practiceBoard, practiceStats } from './practice.ts';
 import { type Rows, bigId, bool, code as codeColumn, deviceGameId, epoch, gameId, int, json, nullable, oneOf, readRow, text } from './sql.ts';
@@ -164,6 +165,14 @@ const SCHEMA = [
      score INTEGER NOT NULL CHECK (score >= 0),
      finished_at TIMESTAMPTZ NOT NULL DEFAULT now(),
      PRIMARY KEY (token, id)
+   )`,
+  // The page bundles that deploys built (src/release.ts). The API adds its own build at start, so the
+  // stats page names the version that game metrics carry. No player data. A version keeps its first name:
+  // a later deploy that leaves the page bundle unchanged (a server or docs change) builds the same version.
+  `CREATE TABLE IF NOT EXISTS releases (
+     version VARCHAR PRIMARY KEY,
+     name VARCHAR NOT NULL,
+     released_at TIMESTAMPTZ NOT NULL
    )`,
   // The names that players without a GitHub login chose (parseCustomName in src/protocol.ts).
   // A player without a row shows with the generated name of the token (src/names.ts).
@@ -1344,6 +1353,18 @@ export async function openStore(
            ON CONFLICT DO NOTHING RETURNING seat`,
           { id, seat, metrics: JSON.stringify(metrics) },
           { seat: text },
+        );
+        return inserted.length > 0;
+      }),
+
+    // True when the version is new. A known version keeps its name (see the releases table).
+    addRelease: ({ version, name, at }: Release): Promise<boolean> =>
+      serialized(async () => {
+        const inserted = await rows(
+          `INSERT INTO releases (version, name, released_at) VALUES ($version, $name, make_timestamptz($at * 1000))
+           ON CONFLICT DO NOTHING RETURNING version`,
+          { version, name, at },
+          { version: text },
         );
         return inserted.length > 0;
       }),

@@ -10,9 +10,13 @@ COPY public public
 COPY android/twa-manifest.json android/
 COPY src src
 COPY server server
+# The release name comes from the commit (vite.config.ts, src/release.ts). compose.yml passes the
+# checkout's .git as the `git` context and the environment, which adds "(pr-<n>)" to a preview name.
+RUN apk add --no-cache git
+ARG KITSHN_ENVIRONMENT
 # Only the page build. The type check, the linters and the tests run in the check job of the workflow
 # (.github/workflows/kitshn.yml), which must pass before a deploy starts.
-RUN npx vite build
+RUN --mount=type=bind,from=git,target=/app/.git npx vite build
 
 # The API runs its TypeScript directly: Node 26 strips the types. DuckDB is its only runtime package.
 FROM node:26-alpine AS api
@@ -24,6 +28,8 @@ RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 # Page-only modules come along but Node never loads them. Tests do not belong in a runtime image.
 COPY --from=build /app/src src/
 COPY --from=build /app/server server/
+# The release of this build: the API stores it at start (server/main.ts).
+COPY --from=build /app/dist/release.json release.json
 RUN find src server -name '*.test.ts' -delete
 # A new named volume copies this owner, so the node user can write the database.
 RUN mkdir /data && chown node:node /data
