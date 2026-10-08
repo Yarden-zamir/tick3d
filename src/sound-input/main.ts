@@ -256,7 +256,7 @@ function showTilt(): void {
   tiltSteps.max = String(MAX_TILT_STEPS);
   tiltSteps.value = String(steps);
   tiltSteps.disabled = !on;
-  tiltRecentre.disabled = !on;
+  tiltRecentre.hidden = !on;
   tiltStepsValue.textContent = `up to ${steps} ${steps === 1 ? 'cell' : 'cells'}`;
 }
 
@@ -542,6 +542,10 @@ addEventListener('pagehide', () => voice.stop());
 
 showBoard();
 showStickiness();
+// Limit: a touch screen is the guess for a tilt sensor, because iOS sends no reading before the player
+// allows it, and it asks only when tilt turns on. A desktop with a sensor shows the editor after its first
+// reading. Revisit if players with a touch screen and no sensor report a switch that does nothing.
+tiltEditor.hidden = !matchMedia('(pointer: coarse)').matches;
 showTilt();
 showRange();
 // ?mode= opens a tab. ?code= is an online game: the playoff tab, for a playoff with the other player.
