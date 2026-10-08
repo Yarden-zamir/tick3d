@@ -39,7 +39,7 @@
   "isChromeOSOnly": false,
   "isMetaQuest": false,
   "fullScopeUrl": "https://tick3d.yarden-zamir.com/",
-  "minSdkVersion": 21,
+  "minSdkVersion": 24,
   "fingerprints": [
     {
       "name": "PLACEHOLDER: replace the value with the SHA-256 of the Play app signing key (Play Console > App integrity)",
