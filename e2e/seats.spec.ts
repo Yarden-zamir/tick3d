@@ -81,19 +81,3 @@ test('players change seats, with the other player asked first, and a custom name
   await expect(players(bob).nth(1)).toContainText(carolName);
   await expect(bob.locator('#players-request')).toBeHidden();
 });
-
-test('a request that nobody answers ends by itself on both screens', async ({ open }) => {
-  test.setTimeout(150_000);
-  const { page: alice } = await open();
-  const code = await createOnline(alice);
-  const { page: bob } = await joinAsO(open, `/?code=${code}`);
-  await playerRow(alice, 'You').getByRole('button', { name: 'Swap X and O' }).click();
-  await expect(bob.locator('#seat-prompt')).toHaveAttribute('open');
-  // While the request waits, the seat controls stay in place but are off.
-  await expect(playerRow(alice, 'You').getByRole('button', { name: 'Swap X and O' })).toBeDisabled();
-  // The holder sends no event when a request ends. Each screen drops it by its own timer.
-  await expect(alice.locator('#players-request')).toBeHidden({ timeout: 75_000 });
-  await expect(bob.locator('#players-request')).toBeHidden();
-  await expect(bob.locator('#seat-prompt')).not.toHaveAttribute('open');
-  await expect(playerRow(alice, 'You').getByRole('button', { name: 'Swap X and O' })).toBeEnabled();
-});

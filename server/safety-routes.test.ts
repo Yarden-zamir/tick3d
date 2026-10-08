@@ -64,11 +64,22 @@ beforeAll(async () => {
   });
   for (let attempt = 0; attempt < 100; attempt++) {
     const up = await fetch(`${BASE}/health`).then((response) => response.ok, () => false);
-    if (up) return;
+    if (up) return warmUp();
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error('the server did not start');
 }, 20_000);
+
+// The first write of each kind on a new server is slow (about 2 s in all on an idle machine), and much
+// slower on a busy one. A session with a join and a chat here moves that cost out of the 5 s of the first test.
+// It uses its own players and client address, so the tests see none of it.
+async function warmUp(): Promise<void> {
+  const client = '203.0.113.250';
+  const created = await call('POST', '/sessions', { player: 'cccccccc-0000-4000-8000-00000000000c', body: { name: 'Warm-up' }, client });
+  const code = (created.body as { code: string }).code;
+  await call('POST', `/sessions/${code}/join`, { player: 'dddddddd-0000-4000-8000-00000000000d', client });
+  await call('POST', `/sessions/${code}/chat`, { player: 'dddddddd-0000-4000-8000-00000000000d', body: { text: 'hello' }, client });
+}
 
 afterAll(() => {
   server.kill();

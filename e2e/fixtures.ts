@@ -95,8 +95,11 @@ export const playerToken = (page: Page): Promise<string> => page.evaluate((key) 
 export const storedSettings = (page: Page): Promise<Record<string, unknown>> =>
   page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>, STORAGE_KEYS.settings);
 
+// The status can say "Your move" while the answer to the last move of this page is still on its way.
+// The board takes no move until then, and shows that with the class `thinking`.
 export async function expectMyMove(page: Page): Promise<void> {
   await expect(status(page)).toContainText('Your move');
+  await expect(page.locator('#board')).not.toHaveClass(/\bthinking\b/);
 }
 
 // Creates an online session from the page and returns its code. Each call counts against the
