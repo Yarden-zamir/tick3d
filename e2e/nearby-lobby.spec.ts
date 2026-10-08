@@ -65,7 +65,12 @@ test('Nearby and the computer mode have no join box, and each mode keeps its own
   const { page } = await open(nearby);
   await expect(page.locator('#nearby-host')).toBeVisible();
   await expect(status(page)).toHaveText('Host a game, or join one.');
-  for (const id of ['#join', '#undo', '#advanced', '#lock', '#new-game', '#score']) await expect(page.locator(id), id).toBeHidden();
+  for (const id of ['#join', '#undo', '#advanced', '#new-game', '#score']) await expect(page.locator(id), id).toBeHidden();
+  // The hide options apply to a Nearby game, so they show before it, but stay off until it starts.
+  for (const control of [page.locator('#lock'), page.locator('[data-toggle="hideBoard"]')]) {
+    await expect(control).toBeVisible();
+    await expect(control).toBeDisabled();
+  }
   await expect(page.locator('[data-setting="difficulty"]')).toBeHidden();
 
   await page.getByRole('button', { name: 'Computer', exact: true }).click();

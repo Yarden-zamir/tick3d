@@ -132,7 +132,8 @@
         <div class="burst" id="burst" aria-hidden="true"></div>
       </section>
 
-      <section class="chat" id="chat" aria-labelledby="chat-title" hidden>
+      <!-- Closed outside a game with another device: hidden on a phone, a quiet column on a wide screen (src/page/chat.ts). -->
+      <section class="chat closed" id="chat" aria-labelledby="chat-title">
         <span class="chat-title" id="chat-title" data-tip="Hold or right-click a message to report or block">Chat</span>
         <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
         <form class="chat-form" id="chat-form" autocomplete="off">
@@ -142,7 +143,8 @@
       </section>
 
       <aside class="panel">
-        <!-- The score and the game actions come first. On a phone the panel is under the board, so a new game is one short scroll away. -->
+        <!-- The score and the game actions come first. On a phone the panel is under the board, so a new game is one short scroll away.
+             Everything above the Opponent picker keeps its box in every mode, so the picker never moves (src/style.css .score[hidden]). -->
         <div class="score" id="score" data-needs-session></div>
 
         <!-- Fixed slots (see .slot-row in src/style.css): New game, then Undo during a game or the result card after it in one slot, then the sound control. -->
@@ -158,19 +160,6 @@
           <!-- Play by voice: a held note places your move. src/page/voice.ts sets the icon and shows the button where this screen has a seat. -->
           <button type="button" class="btn btn-icon" id="voice" aria-label="Play by voice" aria-pressed="false" data-tip="Play by voice: hold a note to place" hidden></button>
         </div>
-        <!-- The Players box of online and Nearby games: seats, watchers and seat controls (src/page/players.ts). -->
-        <section class="players" id="players" aria-labelledby="players-title" data-show-mode="online nearby" data-needs-session>
-          <!-- The seat lock: X and O swap after each game unless it is on (src/page/controls.ts). -->
-          <div class="field-head">
-            <span class="label" id="players-title" data-tip="Hold or right-click a player to report or block">Players</span>
-            <button type="button" class="btn btn-small btn-icon lock" data-seat-lock aria-label="Keep the seats" aria-pressed="false"></button>
-          </div>
-          <ul class="players-list" id="players-list"></ul>
-          <div class="players-request" id="players-request" aria-live="polite" hidden>
-            <p id="players-request-text"></p>
-            <div class="players-request-actions" id="players-request-actions"></div>
-          </div>
-        </section>
         <!-- The sound set menu. A popover closes on a tap outside it or on Escape. src/page/sound-set.ts fills the list. -->
         <div popover id="sound-sets" class="sound-sets" role="dialog" aria-labelledby="sound-sets-title">
           <div class="sound-sets-head">
@@ -300,6 +289,20 @@
           </div>
         </form>
 
+        <!-- The Players box of online and Nearby games: seats, watchers and seat controls (src/page/players.ts).
+             It sits under the Opponent picker and the mode boxes, so it never moves the picker when it shows. -->
+        <section class="players" id="players" aria-labelledby="players-title" data-show-mode="online nearby" data-needs-session>
+          <!-- The seat lock: X and O swap after each game unless it is on (src/page/controls.ts). -->
+          <div class="field-head">
+            <span class="label" id="players-title" data-tip="Hold or right-click a player to report or block">Players</span>
+            <button type="button" class="btn btn-small btn-icon lock" data-seat-lock aria-label="Keep the seats" aria-pressed="false"></button>
+          </div>
+          <ul class="players-list" id="players-list"></ul>
+          <div class="players-request" id="players-request" aria-live="polite" hidden>
+            <p id="players-request-text"></p>
+            <div class="players-request-actions" id="players-request-actions"></div>
+          </div>
+        </section>
         <div class="field">
           <span class="label">View</span>
           <div class="view-row">
@@ -358,7 +361,8 @@
           <p class="clock-summary" id="clock-summary"></p>
         </div>
 
-        <div class="field" data-show-mode="computer friend online nearby" data-needs-session>
+        <!-- Before a game with another device starts, the hide options show but stay off (src/page/render.ts). -->
+        <div class="field" data-show-mode="computer friend online nearby">
           <!-- The lock sits with the match settings that it locks. -->
           <div class="field-head">
             <span class="label">Hide</span>

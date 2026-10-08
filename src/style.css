@@ -366,10 +366,16 @@ input:disabled {
 
 /* ---- Page layout ---- */
 
+/* The game page keeps the settings panel still itself (src/page/panel-anchor.ts), like Safari, which has no
+   scroll anchoring. The browser anchoring of Chrome would scroll a second time for the same change. */
+:root:has(> body > .app) {
+  overflow-anchor: none;
+}
+
 .app {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 21rem;
-  /* Chat, shown in online sessions only, sits under the board. */
+  /* The chat, open in a game with another device, sits under the board. A wide screen gives it a column (below). */
   grid-template-areas:
     'brand brand'
     'stage panel'
@@ -1147,6 +1153,14 @@ body[data-turn='O'] .status[data-state='playing'] {
   min-height: calc(0.9rem + var(--border) * 2 + 1.7rem * 1.1 + 1.2rem);
 }
 
+/* Online and Nearby before a game: no score yet, but the score keeps its box, so the actions and the
+   Opponent picker under it never move when the mode changes. e2e/row-layout.spec.ts checks this.
+   The global [hidden] rule uses !important, so this more specific rule needs it too. */
+.score[hidden] {
+  display: grid !important;
+  visibility: hidden;
+}
+
 .tally {
   padding: 0.45rem 0.25rem;
   border: var(--border) solid var(--line);
@@ -1860,6 +1874,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .chat-empty {
   margin: auto;
+  text-align: center;
   color: var(--muted);
   font-weight: 600;
 }
@@ -2569,10 +2584,16 @@ body[data-turn='O'] .status[data-state='playing'] {
   to { scale: 1; }
 }
 
-/* Wide screens with an online session: the chat gets its own column at the left, where the
-   page had empty space, and stays in view while the page scrolls. */
+/* The chat is closed outside a game with another device (src/page/chat.ts). A narrow screen hides it. */
+.chat.closed {
+  display: none;
+}
+
+/* Wide screens: the chat has its own column at the left in every mode, so nothing moves to the right
+   when a game with another device opens it. It stays in view while the page scrolls.
+   A closed chat stays in its column, quiet: a dashed border, no shadow and a note in the log. */
 @media (min-width: 72rem) {
-  .app:has(> .chat:not([hidden])) {
+  .app {
     grid-template-columns: 19rem minmax(0, 1fr) 21rem;
     grid-template-areas:
       'brand brand brand'
@@ -2581,14 +2602,26 @@ body[data-turn='O'] .status[data-state='playing'] {
     max-width: 90rem;
   }
 
-  .app:has(> .chat:not([hidden])) .chat {
+  .chat {
     position: sticky;
     top: 1rem;
     justify-self: stretch;
     width: auto;
   }
 
-  .app:has(> .chat:not([hidden])) .chat-log {
+  .chat.closed {
+    display: flex;
+    border-style: dashed;
+    box-shadow: none;
+    color: var(--muted);
+  }
+
+  .chat.closed .chat-log {
+    border-style: dashed;
+    background: transparent;
+  }
+
+  .chat-log {
     height: min(30rem, calc(100dvh - 10rem));
   }
 }
@@ -2779,6 +2812,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   width: 1.1rem;
   height: 1.1rem;
   margin-right: 0.25rem;
+  /* The picture is taller than the text. The negative margins keep the line, so a tally with a picture
+     (Online and Nearby) has the height of a tally without one. */
+  margin-block: -0.2rem;
+  vertical-align: middle;
 }
 
 .update-bar {

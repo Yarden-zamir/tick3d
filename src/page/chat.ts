@@ -35,10 +35,23 @@ function senderOf(session: SessionView, message: ChatMessage): Sender {
   return { label: mine ? 'You' : person.name, person, id, mine };
 }
 
+// The log key of the closed chat: a game on this device, or no game yet.
+const CLOSED = 'closed';
+
 export function renderChat(): void {
-  chatEl.hidden = !shared();
-  if (page.session === undefined || !shared()) {
-    chatShown = '';
+  // A wide screen keeps the closed chat in its column, so nothing moves when it opens (src/style.css .chat.closed).
+  const open = page.session !== undefined && shared();
+  chatEl.classList.toggle('closed', !open);
+  if (page.session === undefined || !open) {
+    chatInput.disabled = true;
+    chatSend.disabled = true;
+    chatInput.placeholder = 'Message';
+    if (chatShown === CLOSED) return;
+    chatShown = CLOSED;
+    const note = document.createElement('li');
+    note.className = 'chat-empty';
+    note.textContent = 'Chat opens in Online and Nearby games.';
+    chatLog.replaceChildren(note);
     return;
   }
   const canWrite = page.session.you !== null;
@@ -66,7 +79,7 @@ export function renderChat(): void {
 
 // True when the whole chat box is on screen, so the player sees new messages arrive.
 function chatInView(): boolean {
-  if (chatEl.hidden || document.hidden) return false;
+  if (chatEl.classList.contains('closed') || document.hidden) return false;
   const box = chatEl.getBoundingClientRect();
   return box.top >= 0 && box.bottom <= innerHeight;
 }

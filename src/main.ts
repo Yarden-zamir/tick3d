@@ -10,6 +10,7 @@ import { setMuted, setSoundSet } from './sound.ts';
 import { setupAdvanced } from './page/advanced.ts';
 import { applyCamera, setupBoard } from './page/board.ts';
 import { setupChat } from './page/chat.ts';
+import { setupPanelAnchor } from './page/panel-anchor.ts';
 import { setupClocks, tickClock } from './page/clocks.ts';
 import { setupControls } from './page/controls.ts';
 import { soundSetList, updateBar, updateReload } from './page/dom.ts';
@@ -70,6 +71,7 @@ setupSoundSets(soundSetList, (id) => {
 });
 setupKeypad();
 setupChat();
+setupPanelAnchor();
 setupOnlineBox();
 setupPlayers();
 setupSafety();
