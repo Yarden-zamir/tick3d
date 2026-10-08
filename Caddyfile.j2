@@ -1,7 +1,5 @@
-{% if environment == "prod" -%}
-tick3d.yarden-zamir.com
-{%- else -%}
-pr.{{ environment.removeprefix("pr-") }}.tick3d.yarden-zamir.com
-{%- endif %} {
+{# host() keeps tick3d.yarden-zamir.com for prod and gives pr-<number>.tick3d.yarden-zamir.com
+   to each preview. KitSHn then serves all previews from one wildcard certificate. #}
+{{ host("tick3d.yarden-zamir.com") }} {
     reverse_proxy unix//{{ paths.default_socket }}
 }

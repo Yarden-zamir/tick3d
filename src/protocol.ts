@@ -1076,7 +1076,7 @@ function parsePreview(value: unknown): Preview | undefined {
   if (typeof title !== 'string' || typeof description !== 'string' || description.length > PREVIEW_DESCRIPTION_LENGTH) return undefined;
   // The page puts both addresses in links, so each must go to the expected kind of site.
   if (typeof url !== 'string' || !url.startsWith('https://github.com/')) return undefined;
-  if (typeof previewUrl !== 'string' || !previewUrl.startsWith(`https://pr.${number}.`)) return undefined;
+  if (typeof previewUrl !== 'string' || !previewUrl.startsWith(`https://pr-${number}.`)) return undefined;
   if (!isEpochMs(updatedAt) || typeof draft !== 'boolean' || !Array.isArray(contributors)) return undefined;
   const people = contributors.map(parseContributor);
   if (!people.every((person) => person !== undefined)) return undefined;

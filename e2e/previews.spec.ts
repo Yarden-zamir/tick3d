@@ -1,10 +1,12 @@
 import { PREVIEWS_CACHE_MS, PREVIEWS_RELAY_CACHE_MS } from '../server/api-docs.ts';
 import { expect, test } from './fixtures.ts';
 
-// The pull request number of the site under test, when it is a preview (pr.<n>.<domain>).
+// The pull request number of the site under test, when it is a preview (pr-<n>.<domain>).
 function previewNumberOf(baseURL: string): number | undefined {
-  const [prefix, number] = new URL(baseURL).hostname.split('.');
-  return prefix === 'pr' && number !== undefined && Number.isInteger(Number(number)) ? Number(number) : undefined;
+  const label = new URL(baseURL).hostname.split('.')[0] ?? '';
+  const digits = label.slice('pr-'.length);
+  if (!label.startsWith('pr-') || digits === '' || ![...digits].every((char) => char >= '0' && char <= '9')) return undefined;
+  return Number(digits);
 }
 
 // Production reads GitHub once per PREVIEWS_CACHE_MS, and a preview keeps that list for PREVIEWS_RELAY_CACHE_MS.
