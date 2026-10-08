@@ -31,6 +31,17 @@ describe('songOf', () => {
     }
   });
 
+  it('plays in a given key instead of the key of the moves', () => {
+    const key = { root: 0, mode: 'major pentatonic' } as const;
+    for (const game of GAMES) {
+      const song = songOf(game, key);
+      expect(song.key).toEqual(key);
+      for (const note of melody(song.notes)) expect(scaleOf(key)).toContain(note.midi % 12);
+      // The key changes the pitches, not the rhythm.
+      expect(song.notes.map((n) => n.at)).toEqual(songOf(game).notes.map((n) => n.at));
+    }
+  });
+
   it('gives the same game the same song', () => {
     expect(songOf(replay(LONG.moves))).toEqual(songOf(LONG));
   });

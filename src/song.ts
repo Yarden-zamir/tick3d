@@ -95,9 +95,9 @@ function chord(key: Key, steps: readonly number[], at: number, length: number): 
   ];
 }
 
-export function songOf(game: Game): Song {
+// `key` replaces the key that the moves pick. The video spot (video/) forces C major pentatonic.
+export function songOf(game: Game, key: Key = keyOf(game)): Song {
   if (game.moves.length === 0) throw new RangeError('a game without moves has no song');
-  const key = keyOf(game);
   const loop = key.mode === 'major pentatonic' ? MAJOR_LOOP : MINOR_LOOP;
   const chordAt = (sixteenth: number) => loop[Math.floor(sixteenth / BAR) % loop.length] ?? loop[0];
   const step = game.moves.length > LONG_GAME ? 1 : 2;

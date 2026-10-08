@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { songOf } from './song.ts';
-import { type VoiceClip, type VoiceClips, clipOf } from './sound.ts';
+import { type VoiceClip, type VoiceClips, clipOf, scheduleNotes } from './sound.ts';
 import { CELL_COUNT, replay, toCell } from './game.ts';
 import { SOUND_SET_GROUPS, SOUND_SET_IDS, SOUND_SETS, type Voice, harmonyNotes, midiHz } from './sound-sets.ts';
 
@@ -141,5 +141,52 @@ describe('the voice clips in a song', () => {
 describe('keypad previews', () => {
   it('stay off for Classic only, so a typed cell sounds first on Place', () => {
     expect(SOUND_SET_IDS.filter((id) => SOUND_SETS[id].keypadPreview === false)).toEqual(['classic']);
+  });
+});
+
+describe('scheduleNotes', () => {
+  // A fake audio context that records each source: its start time, its first pitch, and the nodes that its
+  // chain connects to. play() builds one chain per voice, so the chain belongs to the last source.
+  function fakeContext() {
+    const sources: { start: number; frequency: number | undefined; targets: unknown[] }[] = [];
+    const param = () => ({ setValueAtTime: () => undefined, exponentialRampToValueAtTime: () => undefined });
+    const node = (extra: object = {}): object => ({
+      ...extra,
+      connect(to: unknown) {
+        sources.at(-1)?.targets.push(to);
+        return to;
+      },
+    });
+    const ctx = {
+      currentTime: 0,
+      destination: {},
+      createGain: () => node({ gain: param() }),
+      createDynamicsCompressor: () => node({ threshold: param(), ratio: param(), attack: param(), release: param() }),
+      createStereoPanner: () => node({ pan: param() }),
+      createBiquadFilter: () => node({ frequency: param(), Q: param() }),
+      createOscillator: () => {
+        const source = { start: Number.NaN, frequency: undefined as number | undefined, targets: [] as unknown[] };
+        sources.push(source);
+        return node({
+          frequency: { ...param(), setValueAtTime: (value: number) => (source.frequency ??= value) },
+          start: (at: number) => (source.start = at),
+          stop: () => undefined,
+        });
+      },
+    };
+    return { ctx: ctx as unknown as BaseAudioContext, sources };
+  }
+
+  it('starts the voices of each note at its own time, tuned to the note, into the song mix', () => {
+    const { ctx, sources } = fakeContext();
+    const note = { kind: 'melody', at: 0, midi: 64, player: 'X', cell: 0, level: 0.8 } as const;
+    const mix = scheduleNotes([{ note, set: SOUND_SETS.cells, at: 1.5 }], ctx);
+    expect(sources.length).toBeGreaterThan(0);
+    for (const source of sources) {
+      expect(source.start).toBe(1.5);
+      expect(source.targets).toContain(mix);
+    }
+    // Cell 0 of Cells is a marimba: the note and its fourth harmonic.
+    expect(sources[0]?.frequency).toBeCloseTo(midiHz(64), 6);
   });
 });

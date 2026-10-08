@@ -224,6 +224,14 @@ function playClip(ctx: BaseAudioContext, clip: VoiceClip, midi: number, start: n
 export const clipOf = (note: SongNote, clips: VoiceClips): VoiceClip | undefined =>
   note.kind === 'melody' && note.move !== undefined ? clips.get(note.move) : undefined;
 
+// Notes of a song, each with its own set and its own start in seconds after the current time of `ctx`, in the
+// song mix. The video spot (video/) times each note itself. Returns the mix.
+export function scheduleNotes(notes: readonly { note: SongNote; set: SoundSet; at: number }[], ctx: BaseAudioContext): AudioNode {
+  const mix = songMix(ctx);
+  for (const { note, set, at } of notes) play(noteVoices(note, set), 1, at, ctx, mix);
+  return mix;
+}
+
 function scheduleSong(song: Song, set: SoundSet, ctx: BaseAudioContext, delay: number, clips: VoiceClips): AudioNode {
   const mix = songMix(ctx);
   for (const note of song.notes) {
