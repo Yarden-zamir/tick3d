@@ -198,7 +198,7 @@ interface Box {
 
 // The boxes in the viewport, rounded to a pixel. The board is measured from the top of the stage, because on a phone
 // the status in the header can wrap to a second line, and the page scrolls when the chat opens.
-async function modeLayout(page: Page): Promise<Record<string, Box>> {
+async function modeLayout(page: Page, selectors: readonly string[] = PANEL_TOP): Promise<Record<string, Box>> {
   return page.evaluate((selectors) => {
     const boxOf = (selector: string): Box => {
       const element = document.querySelector(selector);
@@ -210,7 +210,7 @@ async function modeLayout(page: Page): Promise<Record<string, Box>> {
     const board = boxOf('#board');
     const stage = boxOf('#stage');
     return { ...layout, board: { ...board, top: board.top - stage.top } };
-  }, PANEL_TOP);
+  }, selectors);
 }
 
 const MODE_STEPS = [
@@ -252,5 +252,43 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     await expect(page.locator('#chat')).not.toHaveClass(/closed/);
     await page.mouse.move(0, 0);
     await expect.poll(() => modeLayout(page), { message: 'the board or the panel moved: Nearby host' }).toEqual(baseline);
+  });
+}
+
+// Online waits for the server. Until the answer, the controls of a game draw in their final place, grey and
+// disabled (data-pending, src/page/render.ts). The answer fills them in, and nothing moves.
+const PENDING = ['#clocks', '.score', '.actions', '#online-session', '#players'] as const;
+
+for (const [name, viewport] of Object.entries(VIEWPORTS)) {
+  test(`${name}: online draws its controls grey before the server answers, and they do not move after`, async ({ open }) => {
+    const { page } = await open({ settings: { mode: 'computer' } });
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    await expect(page.locator('#undo')).toBeVisible();
+    // A time limit shows the clocks above the board.
+    await page.locator('[data-limit="perGame"] [data-limit-on]').check();
+    await expect(page.locator('#clocks')).toBeVisible();
+    let answer = () => {};
+    const held = new Promise<void>((resolve) => (answer = resolve));
+    await page.route('**/api/sessions', async (route) => {
+      if (route.request().method() === 'POST') await held;
+      await route.continue();
+    });
+    const picker = page.locator('.mode-picker');
+    await picker.evaluate((element) => element.scrollIntoView({ block: 'center' }));
+    await picker.getByRole('button', { name: 'Online', exact: true }).click();
+
+    for (const selector of PENDING) await expect(page.locator(selector), selector).toHaveAttribute('data-pending', '');
+    for (const selector of PENDING) await expect(page.locator(selector), selector).toBeVisible();
+    for (const id of ['#new-game', '#undo', '#share', '#share-qr', '#players [data-seat-lock]']) await expect(page.locator(id), id).toBeDisabled();
+    await expect(page.locator('#players-list li')).toHaveCount(2);
+    await page.mouse.move(0, 0);
+    const before = await modeLayout(page, PENDING);
+
+    answer();
+    await expect(page.locator('#online-code')).not.toHaveText('····');
+    await expect(page.locator('[data-pending]')).toHaveCount(0);
+    await page.mouse.move(0, 0);
+    await expect.poll(() => modeLayout(page, PENDING), { message: 'a control moved when the server answered' }).toEqual(before);
   });
 }
