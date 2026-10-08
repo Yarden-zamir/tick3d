@@ -15,7 +15,7 @@ import { sounds } from '../sound.ts';
 import { clocksEl, clockNote, element, clockSummary } from './dom.ts';
 import { reject, showToast, showProblem } from './feedback.ts';
 import { playerName, render } from './render.ts';
-import { refresh, withBusy, applyView } from './sessions.ts';
+import { refresh, sendShownChange, withBusy } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
 import { current, nowMs, page, nextClock, canChangeMatch, settingsLocked, shared, isLive, updateSession } from './state.ts';
 
@@ -149,14 +149,7 @@ function applyClock(clock: TimeControl): void {
   // Show the change at once, as with moves. The answer replaces it, or a refresh undoes it on an error.
   updateSession({ ...page.session, clock });
   render();
-  void withBusy(async () => {
-    try {
-      applyView(await backend.update(code, { clock }));
-    } catch (error) {
-      await refresh(code);
-      throw error;
-    }
-  });
+  void withBusy(() => sendShownChange(code, () => backend.update(code, { clock })));
 }
 
 function setLimit(kind: LimitKind, seconds: number | null): void {

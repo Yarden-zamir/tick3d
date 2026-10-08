@@ -69,14 +69,7 @@ async function playMove(cell: number, via: 'board' | 'keypad'): Promise<void> {
   // Show the move at once. The answer replaces it, or a refresh undoes it on an error.
   setCurrent(result.game);
   announce(result.game);
-  await withBusy(async () => {
-    try {
-      applyView(await backend.move(code, request));
-    } catch (error) {
-      await refresh(code);
-      throw error;
-    }
-  });
+  await withBusy(() => sendShownChange(code, () => backend.move(code, request)));
   scheduleComputer();
 }
 
@@ -191,13 +184,44 @@ export function leaveSession(): void {
   setUrlGame(undefined);
 }
 
+// A move and a time limit show on the screen before their answer comes (playMove, applyClock).
+// Until then, a refresh answer can be older than the shown change, and it would undo the change on
+// the screen for a moment. So such a refresh answer is dropped, and the page loads again after the answer.
+let shownChanges = 0;
+let refreshOwed = false;
+
 export async function refresh(code: Code): Promise<void> {
   const open = page.session;
   if (open === undefined || open.code !== code) return;
   try {
-    applyView(await open.backend.load(code));
+    const view = await open.backend.load(code);
+    if (shownChanges > 0) {
+      refreshOwed = true;
+      return;
+    }
+    applyView(view);
   } catch (error) {
     showError(error);
+  }
+}
+
+// Sends a change that the screen shows already. An error loads the session again, which undoes the change.
+export async function sendShownChange(code: Code, send: () => Promise<SessionView>): Promise<void> {
+  shownChanges += 1;
+  let view: SessionView;
+  try {
+    view = await send();
+  } catch (error) {
+    shownChanges -= 1;
+    refreshOwed = false;
+    await refresh(code);
+    throw error;
+  }
+  shownChanges -= 1;
+  applyView(view);
+  if (shownChanges === 0 && refreshOwed) {
+    refreshOwed = false;
+    void refresh(code);
   }
 }
 

@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { CELL_COUNT } from '../src/game.ts';
 import { PAGES } from '../src/pages.ts';
 import { parseDeviceGameId } from '../src/protocol.ts';
-import { cell, createOnline, expect, expectToast, joinAsO, marks, playComputerUntilEnd, playerToken, status, test } from './fixtures.ts';
+import { cell, createOnline, expect, expectMyMove, expectToast, joinAsO, marks, playComputerUntilEnd, playerToken, status, test } from './fixtures.ts';
 
 // X wins along 0, 16, 32, 48. O plays 1, 2, 3.
 const X_WINS = [0, 1, 16, 2, 32, 3, 48];
@@ -90,7 +90,7 @@ test('an online game gets the link <CODE>-<n>, which anybody can open, and a cle
   const { page: bob } = await joinAsO(open, `/?code=${code}`);
   for (const [i, index] of X_WINS.entries()) {
     const player = i % 2 === 0 ? alice : bob;
-    await expect(status(player)).toContainText('Your move');
+    await expectMyMove(player);
     await cell(player, index).click();
   }
   await expect(status(alice)).toHaveText('You win!');
