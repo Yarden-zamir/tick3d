@@ -1,5 +1,6 @@
-import { cell, createOnline, expect, expectMyMove, expectToast, joinAsO, marks, ownName, readQr, status, test } from './fixtures.ts';
+import { cell, createOnline, expect, expectMyMove, expectToast, joinAsO, marks, ownName, playerToken, readQr, status, test } from './fixtures.ts';
 import type { Page } from '@playwright/test';
+import { SIZE } from '../src/game.ts';
 
 // Each test here creates one online session. The server allows 60 new sessions per hour for one
 // client address, so keep the count low: this file creates 4.
@@ -57,7 +58,7 @@ test('two players play a full game, and a watcher replays it', async ({ open, ba
   await playTurns(xWins(alice, bob).slice(1));
   await expect(status(alice)).toHaveText('You win!');
   await expect(status(bob)).toHaveText(`${aliceName} wins!`);
-  await expect(bob.locator('.cell.win')).toHaveCount(4);
+  await expect(bob.locator('.cell.win')).toHaveCount(SIZE);
   for (const page of [alice, bob]) {
     await expect(page.locator('#end-card')).toHaveAttribute('open');
     await expect(page.locator('#end-card-code')).toBeChecked();
@@ -138,14 +139,17 @@ test('hide options and the lock belong to the session', async ({ open }) => {
   // A watcher sees the lock, but keeps its own settings, so the lock never traps a watcher.
   await expect(carol.locator('#lock')).toContainText('Locked');
   await expect(carol.getByRole('button', { name: 'Flat' })).toBeEnabled();
-  const refused = await alice.evaluate(async (sessionCode) => {
-    const response = await fetch(`/api/sessions/${sessionCode}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json', 'x-player': localStorage.getItem('tick3d.player') ?? '' },
-      body: JSON.stringify({ hideHistory: false }),
-    });
-    return response.status;
-  }, code);
+  const refused = await alice.evaluate(
+    async ({ sessionCode, token }) => {
+      const response = await fetch(`/api/sessions/${sessionCode}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'x-player': token },
+        body: JSON.stringify({ hideHistory: false }),
+      });
+      return response.status;
+    },
+    { sessionCode: code, token: await playerToken(alice) },
+  );
   expect(refused, 'the server refuses an option change during a lock').toBe(409);
 
   await playTurns(xWins(alice, bob));
@@ -206,14 +210,17 @@ test('the session clock reaches both players, and the server decides a timeout',
   await expect(status(alice)).toContainText('ran out of time. You win!');
   await expect(status(bob)).toHaveText('You ran out of time.');
 
-  const late = await bob.evaluate(async (sessionCode) => {
-    const response = await fetch(`/api/sessions/${sessionCode}/moves`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-player': localStorage.getItem('tick3d.player') ?? '' },
-      body: JSON.stringify({ game: 0, moveCount: 3, cell: 9 }),
-    });
-    return response.status;
-  }, code);
+  const late = await bob.evaluate(
+    async ({ sessionCode, token }) => {
+      const response = await fetch(`/api/sessions/${sessionCode}/moves`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-player': token },
+        body: JSON.stringify({ game: 0, moveCount: 3, cell: 9 }),
+      });
+      return response.status;
+    },
+    { sessionCode: code, token: await playerToken(bob) },
+  );
   expect(late, 'the server refuses a move after the timeout').toBe(409);
 
   for (const page of [alice, bob]) {

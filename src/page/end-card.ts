@@ -74,9 +74,10 @@ export function finish(game: Game): void {
 // Saves the result of a game that just ended and puts the link of the game in the address.
 async function linkGame(open: Session, game: Game, index: number): Promise<void> {
   sendOnlineMetrics(open, index);
-  const own = open.mode === 'online' ? onlineGameId(open.code, index) : await recordResult(open, game, index);
+  const device = open.mode === 'online' ? undefined : await recordResult(open, game, index);
   // A Nearby host gives its link to the guests. A guest uses the host's link when it came already.
-  if (own !== undefined && open.mode === 'nearby' && nearbyKind() === 'hosting') shareGameLink(index, own);
+  if (device !== undefined && open.mode === 'nearby' && nearbyKind() === 'hosting') shareGameLink(index, device);
+  const own = open.mode === 'online' ? onlineGameId(open.code, index) : device;
   const id = (open.mode === 'nearby' ? hostLinkOf(open.code, index) : undefined) ?? own;
   // The player can move on while the result saves. Only the same finished game gets the link.
   if (id !== undefined && showsFinished(open, index)) setUrlGame(id);

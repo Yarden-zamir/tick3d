@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import {
   type Code,
+  type PersonId,
   type PlayerToken,
   RESULTS_PER_UPLOAD,
   asPlayerToken,
@@ -11,8 +12,11 @@ import {
   parseCustomName,
   parseGameId,
   parseMetrics,
+  parseBlockRequest,
   parseMoveRequest,
   parseNewSession,
+  parsePersonId,
+  parseReportRequest,
   parseSeatAction,
   parseSeatAnswer,
   parseSessionUpdate,
@@ -29,13 +33,14 @@ import {
   NEARBY_HOSTS_PER_NETWORK,
   STATS_FILTER_ERROR,
   PRACTICE_RUNS_PER_10_MINUTES,
+  REPORTS_PER_10_MINUTES,
   ROUTES,
   type Route,
   WAIT_MS,
   matchRoute,
 } from './api-docs.ts';
 import { openApi, swaggerHtml } from './api-docs-render.ts';
-import { type Auth, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
+import { type Auth, TooManyRequests, authConfigFromEnv, clientOf, createAuth, createLimiter, isMaintainer } from './auth.ts';
 import { IDEMPOTENCY_TTL_MS, type StoredAnswer, createIdempotency, parseIdempotencyKey } from './idempotency.ts';
 import { LobbyError, createLobby, networkOf } from './lobby.ts';
 import { type PreviewList, createPreviews, previewsConfigFromEnv } from './previews.ts';
@@ -44,7 +49,8 @@ import { parseBoardQuery, parsePracticeRun } from '../src/practice/practice.ts';
 import { openStore } from './store.ts';
 import { createWaiters } from './waiters.ts';
 
-const PORT = 8080;
+// PORT lets a test run its own server next to another one.
+const PORT = Number(process.env.PORT ?? 8080);
 const MAX_BODY_BYTES = 4096;
 // A result upload carries up to RESULTS_PER_UPLOAD finished games of about 1 kB each.
 const MAX_RESULTS_BODY_BYTES = 256 * 1024;
@@ -59,16 +65,19 @@ const waiters = createWaiters(MAX_WAITERS);
 // Limit: the counts live in this process only and reset on a restart. An IPv6 client can change
 // its address. Revisit this with more than one API process, a real attack, or real players that
 // share one address and hit the limit (a school, for example).
-const allowCreate = createLimiter(CREATES_PER_HOUR, 3_600_000, 10_000);
+const allowCreate = createLimiter(CREATES_PER_HOUR, 3_600_000, 10_000, 'Too many new games from this address. Try again later.');
 // Fault reports from pages: 30 per 10 minutes per address is plenty for a page that works, and
 // keeps a broken or hostile page from filling the events table. Same limits as allowCreate.
-const allowEvent = createLimiter(EVENTS_PER_10_MINUTES, 600_000, 10_000);
+const allowEvent = createLimiter(EVENTS_PER_10_MINUTES, 600_000, 10_000, 'Too many reports from this address. Try again later.');
 // Nearby lobby calls (announce and answer) per network. A host sends one announce per WAIT_MS and
 // one per guest, so the limit leaves room for several hosts on one home network. Same limits as allowCreate.
-const allowNearby = createLimiter(NEARBY_CALLS_PER_10_MINUTES, 600_000, 10_000);
+const allowNearby = createLimiter(NEARBY_CALLS_PER_10_MINUTES, 600_000, 10_000, 'Too many Nearby calls from this network. Try again later.');
 // Practice runs per address: a run takes about half a minute, so 60 per 10 minutes leaves room for a
 // classroom on one address. Same limits as allowCreate.
-const allowPracticeRun = createLimiter(PRACTICE_RUNS_PER_10_MINUTES, 600_000, 10_000);
+const allowPracticeRun = createLimiter(PRACTICE_RUNS_PER_10_MINUTES, 600_000, 10_000, 'Too many practice runs from this address. Try again later.');
+// Reports of chat messages and people per address: a real report is rare, so this keeps a flood out
+// of the maintainers' list. Same limits as allowCreate.
+const allowReport = createLimiter(REPORTS_PER_10_MINUTES, 600_000, 10_000, 'Too many reports from this address. Try again later.');
 // Each entry holds at most one open request, so `total` also caps the open announce requests.
 const lobby = createLobby({ perNetwork: NEARBY_HOSTS_PER_NETWORK, total: 1000, waitMs: WAIT_MS, graceMs: NEARBY_GRACE_MS });
 
@@ -87,10 +96,6 @@ class HttpError extends Error {
     this.headers = headers;
   }
 }
-
-// A 429 that says in Retry-After how many whole seconds the client waits.
-const tooMany = (message: string, retryAfterMs: number) =>
-  new HttpError(429, message, { 'retry-after': String(Math.max(1, Math.ceil(retryAfterMs / 1000))) });
 
 const dbPath = process.env.DB_PATH;
 if (!dbPath) throw new Error('DB_PATH is required');
@@ -236,8 +241,7 @@ function requireNetwork(req: IncomingMessage): string {
 }
 
 function requireNearbyCall(network: string): void {
-  const limit = allowNearby(network, Date.now());
-  if (!limit.ok) throw tooMany('Too many Nearby calls from this network. Try again later.', limit.retryAfterMs);
+  allowNearby(network, Date.now());
 }
 
 // Decodes a signal code fully, so the lobby never holds a code that a device cannot read.
@@ -286,6 +290,23 @@ async function openStream(req: IncomingMessage, res: ServerResponse, code: Code,
   res.write('retry: 3000\n\n');
   // A player or a watcher arriving changes what the others see ("away" turns into "here", a new watcher).
   if (token !== undefined) notify(code);
+}
+
+function requirePerson(value: string | undefined): PersonId {
+  const person = parsePersonId(value);
+  if (person === undefined) throw new HttpError(400, 'A person id has 16 characters from 0-9 and a-f.');
+  return person;
+}
+
+// A maintainer, by the GitHub login of the account cookie. The X-Player header is also required,
+// so another site cannot send a moderation request with the cookie of a maintainer.
+function requireMaintainer(req: IncomingMessage): string {
+  requirePlayer(req);
+  if (auth === undefined) throw new HttpError(404, 'Login is not available on this server.');
+  const user = auth.user(req);
+  if (user === undefined) throw new HttpError(401, 'Log in with GitHub first.');
+  if (!isMaintainer(user.login)) throw new HttpError(403, 'Only the maintainers can do this.');
+  return user.login;
 }
 
 // The answer of GET /api/me: the login state and the custom name.
@@ -380,6 +401,45 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return send(res, 200, await me(token, auth?.user(req)));
     }
 
+    case 'GET /api/me/blocks':
+      return send(res, 200, { blocked: await store.blocks(requirePlayer(req)) });
+    // A cross-site form cannot send the X-Player header, so another site cannot block for a player.
+    case 'PUT /api/me/blocks/{person}': {
+      const token = requirePlayer(req);
+      const person = requirePerson(match.params.person);
+      const body = parseBlockRequest(await readJson(req));
+      if (body === undefined) throw new HttpError(400, 'A block needs the name that you saw: 1 to 40 characters.');
+      await store.block(token, person, body.name);
+      return send(res, 200, { blocked: await store.blocks(token) });
+    }
+    case 'DELETE /api/me/blocks/{person}': {
+      const token = requirePlayer(req);
+      await store.unblock(token, requirePerson(match.params.person));
+      return send(res, 200, { blocked: await store.blocks(token) });
+    }
+    case 'POST /api/reports': {
+      allowReport(clientOf(req), Date.now());
+      const token = requirePlayer(req);
+      const report = parseReportRequest(await readJson(req));
+      if (report === undefined) throw new HttpError(400, 'A report needs a code, one message id or person id, a reason, and a note of at most 200 characters.');
+      return send(res, 201, await store.report(token, report));
+    }
+    case 'GET /api/reports':
+      requireMaintainer(req);
+      return send(res, 200, await store.reports());
+    case 'DELETE /api/sessions/{code}/chat/{message}': {
+      const login = requireMaintainer(req);
+      const message = Number(match.params.message);
+      if (!Number.isSafeInteger(message) || message < 1) throw new HttpError(400, 'A message id is a whole number from 1.');
+      await store.hideMessage(code(), message, login);
+      return send(res, 200, { ok: true });
+    }
+    case 'DELETE /api/players/{person}/name': {
+      const login = requireMaintainer(req);
+      for (const token of await store.clearNameOf(requirePerson(match.params.person), login)) notifyPlayer(token as PlayerToken);
+      return send(res, 200, { ok: true });
+    }
+
     case 'POST /api/results': {
       const body = await readJson(req, MAX_RESULTS_BODY_BYTES);
       const results = typeof body === 'object' && body !== null && 'results' in body ? body.results : undefined;
@@ -400,15 +460,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return send(res, 200, { stored: await store.addSeatMetrics(id, requirePlayer(req), metrics) });
     }
     case 'POST /api/events': {
-      const limit = allowEvent(clientOf(req), Date.now());
-      if (!limit.ok) throw tooMany('Too many reports from this address. Try again later.', limit.retryAfterMs);
+      allowEvent(clientOf(req), Date.now());
       const event = parseClientEvent(await readJson(req, MAX_EVENT_BODY_BYTES));
       if (event === undefined) throw new HttpError(400, 'An event needs a kind, a message of 1 to 300 characters and a version.');
       await store.addEvent(event);
       return send(res, 200, { ok: true });
     }
     case 'POST /api/practice/runs': {
-      if (!allowPracticeRun(clientOf(req), Date.now())) throw new HttpError(429, 'Too many practice runs from this address. Try again later.');
+      allowPracticeRun(clientOf(req), Date.now());
       const token = requirePlayer(req);
       const run = parsePracticeRun(await readJson(req));
       if (run === undefined) throw new HttpError(400, 'The run is not one that the practice room can make.');
@@ -434,8 +493,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return send(res, 200, previews === undefined ? { main: null, previews: [], error: 'This server has no previews.' } : await previews.list());
 
     case 'POST /api/sessions': {
-      const limit = allowCreate(clientOf(req), Date.now());
-      if (!limit.ok) throw tooMany('Too many new games from this address. Try again later.', limit.retryAfterMs);
+      allowCreate(clientOf(req), Date.now());
       const body = parseNewSession(await readJson(req));
       if (body === undefined) throw new HttpError(400, 'A new game needs a name of 1 to 40 characters, and a valid clock or none.');
       return send(res, 201, await store.create(requirePlayer(req), body.name, body.clock));
@@ -535,6 +593,7 @@ const server = createServer((req, res) => {
   route(req, res).catch((error: unknown) => {
     if (error instanceof SessionError) return send(res, error.status, { error: error.message, ...(error.code === undefined ? {} : { code: error.code }) });
     if (error instanceof HttpError) return send(res, error.status, { error: error.message }, error.headers);
+    if (error instanceof TooManyRequests) return send(res, error.status, { error: error.message }, error.headers);
     if (error instanceof LobbyError) return send(res, error.status, { error: error.message }, error.headers);
     console.error(error);
     if (!res.headersSent) send(res, 500, { error: 'Server error.' });

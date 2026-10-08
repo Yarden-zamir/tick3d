@@ -13,12 +13,9 @@
 		root * /srv
 		encode zstd gzip
 		header /assets/* Cache-Control "public, max-age=31536000, immutable"
-		# The stats page.
-		rewrite /stats /stats.html
-		# The ear training page.
-		rewrite /sound-training /sound-training.html
-		# The Voice room.
-		rewrite /sound-input /sound-input.html
+		# A page address without .html, such as /stats, serves the page file of the same name (src/pages.ts).
+		@page file {path}.html
+		rewrite @page {path}.html
 		file_server
 	}
 }

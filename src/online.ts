@@ -6,14 +6,18 @@ import { type Records, parseRecords } from './records.ts';
 import {
   type ClientEvent,
   type Code,
+  type DeviceGameId,
   type GameId,
+  type OnlineGameId,
   type HistoryPage,
   type Metrics,
   type MoveRequest,
   type MyGames,
+  type PersonId,
   type PlayerInfo,
   type PlayerToken,
   type Previews,
+  type ReportReason,
   type PublicGame,
   RESULTS_PER_UPLOAD,
   type ResultUpload,
@@ -22,8 +26,9 @@ import {
   type SessionView,
   type StatsFilter,
   asPlayerToken,
+  parseBlocks,
   parseCustomName,
-  parseGameId,
+  parseDeviceGameId,
   parseHistoryPage,
   parsePlayerInfo,
   parsePreviews,
@@ -31,8 +36,8 @@ import {
   parseSessionView,
   statsQuery,
 } from './protocol.ts';
+import { STORAGE_KEYS } from './storage-keys.ts';
 
-const TOKEN_KEY = 'tick3d.player';
 
 // crypto.randomUUID exists only on HTTPS and localhost. A phone on the local network loads the dev
 // server over plain HTTP, so fall back to random hex from getRandomValues, which works everywhere.
@@ -50,10 +55,10 @@ function newToken(): PlayerToken {
 // One token per browser. It survives reloads, so a player keeps the seat after a refresh.
 function playerToken(): PlayerToken {
   try {
-    const stored = asPlayerToken(localStorage.getItem(TOKEN_KEY));
+    const stored = asPlayerToken(localStorage.getItem(STORAGE_KEYS.player));
     if (stored !== undefined) return stored;
     const created = newToken();
-    localStorage.setItem(TOKEN_KEY, created);
+    localStorage.setItem(STORAGE_KEYS.player, created);
     return created;
   } catch {
     // Storage is blocked. The seat then lasts for this page load only.
@@ -150,6 +155,10 @@ export const api = {
   setName: async (name: string) => parseMe(await call('PUT', '/me/name', { name })),
   clearName: async () => parseMe(await call('DELETE', '/me/name')),
   myGames: async () => parseMyGames(await call('GET', '/me/games')),
+  blocks: async () => parseBlocks(await call('GET', '/me/blocks')),
+  block: async (person: PersonId, name: string) => parseBlocks(await call('PUT', `/me/blocks/${person}`, { name })),
+  unblock: async (person: PersonId) => parseBlocks(await call('DELETE', `/me/blocks/${person}`)),
+  report: (report: { code: Code; reason: ReportReason; note: string } & ({ message: number } | { person: PersonId })) => call('POST', '/reports', report),
   previews: async (): Promise<Previews> => parsePreviews(await call('GET', '/previews')),
   logout: () => call('POST', '/auth/logout'),
   // Login is a full page visit to GitHub and back to `returnTo`, by default this page.
@@ -157,14 +166,14 @@ export const api = {
 
   // Sends finished games in batches. Returns the public id of each result (by result id) that
   // the server keeps under another public id than the device sent.
-  async uploadResults(results: readonly ResultUpload[]): Promise<Map<string, GameId>> {
-    const renamed = new Map<string, GameId>();
+  async uploadResults(results: readonly ResultUpload[]): Promise<Map<string, DeviceGameId>> {
+    const renamed = new Map<string, DeviceGameId>();
     for (let start = 0; start < results.length; start += RESULTS_PER_UPLOAD) {
       const answer = await call('POST', '/results', { results: results.slice(start, start + RESULTS_PER_UPLOAD) });
       const ids = typeof answer === 'object' && answer !== null && 'renamed' in answer ? answer.renamed : undefined;
       if (typeof ids !== 'object' || ids === null) throw new Error('invalid answer from /api/results');
       for (const [resultId, value] of Object.entries(ids)) {
-        const id = parseGameId(value);
+        const id = parseDeviceGameId(value);
         if (id === undefined) throw new Error('invalid game id from /api/results');
         renamed.set(resultId, id);
       }
@@ -182,7 +191,7 @@ export const api = {
   // Hides every finished game of this player from their history on the server.
   clearHistory: () => call('DELETE', '/me/history'),
   // The metrics of this device for a finished online game that it played.
-  gameMetrics: (id: GameId, metrics: Metrics) => call('POST', `/games/${id}/metrics`, metrics),
+  gameMetrics: (id: OnlineGameId, metrics: Metrics) => call('POST', `/games/${id}/metrics`, metrics),
   // A fault report for the stats page. The caller ignores a failure: a report must never cause another fault.
   event: (event: ClientEvent) => call('POST', '/events', event),
   // The aggregates of the stats page. The page checks the shape (src/stats/main.ts).

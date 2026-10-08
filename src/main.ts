@@ -25,6 +25,7 @@ import { readMyGamesRequest, withoutMyGamesRequest } from './header/my-games-lin
 import { openNearbyLink, openNearby, setupNearby } from './page/nearby.ts';
 import { checkLanHost, setupOnlineBox } from './page/online-box.ts';
 import { setupPlayers } from './page/players.ts';
+import { setupSafety } from './page/safety.ts';
 import { render } from './page/render.ts';
 import { flushResults } from './page/results.ts';
 import { refresh, setUrlCode, setUrlGame, joinSession, openLocalSession } from './page/sessions.ts';
@@ -70,6 +71,7 @@ setupKeypad();
 setupChat();
 setupOnlineBox();
 setupPlayers();
+setupSafety();
 setupHome();
 setupGameView();
 setupReports();

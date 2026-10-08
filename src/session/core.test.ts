@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { toEpochMs as ms } from '../epoch.ts';
 import type { TimeControl } from '../clock.ts';
 import { nameOf } from '../names.ts';
-import { type Code, seatIn } from '../protocol.ts';
+import { CHAT_KEEP, CHAT_MAX_LENGTH, type Code, personId, seatIn } from '../protocol.ts';
 import * as core from './core.ts';
 import type { SessionDoc } from './format.ts';
 
@@ -43,7 +43,7 @@ const view = (doc: SessionDoc, identity: core.Identity) =>
     version: 1,
     identity,
     now: ms(0),
-    audience: { presence: { X: true, O: false }, watchers: [], name: nameOf },
+    audience: { presence: { X: true, O: false }, watchers: [], name: nameOf, person: () => null },
     players: { X: null, O: null },
   });
 
@@ -237,18 +237,20 @@ describe('clock', () => {
 
 describe('chat', () => {
   it('lets the two players write, from their own seat, and keeps the newest messages', () => {
-    let doc = core.chat(onlineDoc(), alice, '  good luck ', ms(5));
-    doc = core.chat(doc, bob, 'you too', ms(6));
+    let doc = core.chat(onlineDoc(), alice, '  good luck ', ms(5), null);
+    doc = core.chat(doc, bob, 'you too', ms(6), null);
     expect(doc.chat).toEqual([
       { id: 1, from: 'X', text: 'good luck', at: 5 },
       { id: 2, from: 'O', text: 'you too', at: 6 },
     ]);
-    expect(status(() => core.chat(doc, carol, 'hi', ms(7)))).toBe(403);
-    expect(status(() => core.chat(doc, alice, '   ', ms(7)))).toBe(400);
-    expect(status(() => core.chat(doc, alice, 'x'.repeat(201), ms(7)))).toBe(400);
-    for (let i = 0; i < 60; i++) doc = core.chat(doc, alice, `m${i}`, ms(i));
-    expect(doc.chat).toHaveLength(50);
-    expect(doc.chat.at(-1)).toMatchObject({ id: 62, text: 'm59' });
+    expect(status(() => core.chat(doc, carol, 'hi', ms(7), null))).toBe(403);
+    expect(status(() => core.chat(doc, alice, '   ', ms(7), null))).toBe(400);
+    expect(status(() => core.chat(doc, alice, 'x'.repeat(CHAT_MAX_LENGTH + 1), ms(7), null))).toBe(400);
+    const sent = CHAT_KEEP + 10;
+    for (let i = 0; i < sent; i++) doc = core.chat(doc, alice, `m${i}`, ms(i), null);
+    expect(doc.chat).toHaveLength(CHAT_KEEP);
+    // Two messages came before the loop, so the ids go on from 3.
+    expect(doc.chat.at(-1)).toMatchObject({ id: sent + 2, text: `m${sent - 1}` });
   });
 });
 
@@ -357,10 +359,10 @@ describe('seat controls', () => {
       version: 1,
       identity: bob,
       now: ms(1),
-      audience: { presence: { X: true, O: true }, watchers, name: (token) => (token === CAROL ? 'Carol' : nameOf(token)) },
+      audience: { presence: { X: true, O: true }, watchers, name: (token) => (token === CAROL ? 'Carol' : nameOf(token)), person: () => null },
       players: { X: null, O: null },
     });
-    expect(shown.watchers).toEqual([{ id: 'c0ffee0000000001', name: 'Carol', player: null }]);
+    expect(shown.watchers).toEqual([{ id: 'c0ffee0000000001', name: 'Carol', player: null, person: null }]);
     expect(shown.youWatcher).toBeNull();
     expect(shown.seatRequest?.watcher).toEqual({ name: 'Carol', player: null });
     expect(JSON.stringify(shown)).not.toContain(CAROL);
@@ -492,9 +494,16 @@ describe('seat rotation', () => {
     expect(core.answerSeat(next, bob, true, watchers, ms(1)).seats).toEqual({ X: ALICE, O: BOB });
   });
 
-  it('keeps each chat message with its writer across a swap', () => {
-    const next = core.newGame(core.chat(afterGame(), alice, 'Again?', ms(0)), bob);
-    expect(next.chat.map((message) => message.from)).toEqual(['O']);
-    expect(view(next, alice).you).toBe('O');
+  it('keeps each chat message with its writer across a rotation, a swap and a give', async () => {
+    const author = await personId(ALICE);
+    const sent = core.chat(afterGame(), alice, 'Again?', ms(0), author);
+    const rotated = core.newGame(sent, bob);
+    expect(view(rotated, alice).you).toBe('O');
+    const swapped = core.answerSeat(core.seat(rotated, alice, { action: 'swap' }, watchers, ms(1)), bob, true, watchers, ms(2));
+    const given = core.seat(swapped, alice, { action: 'give', watcher: 'c0ffee0000000001' }, watchers, ms(3));
+    for (const doc of [rotated, swapped, given]) {
+      expect(doc.chat).toEqual(sent.chat);
+      expect(doc.chat[0]?.by).toBe(author);
+    }
   });
 });

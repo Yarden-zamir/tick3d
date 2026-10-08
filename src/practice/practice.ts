@@ -2,6 +2,7 @@
 // the seeded targets, the heat (how near the pitch is), the scores, and the check of a finished run.
 // The steps and cells come from src/voice/mapping.ts: 64 steps of the range, one for each cell.
 import { CELL_COUNT, toCoords } from '../game.ts';
+import { isRecord } from '../guards.ts';
 
 export const PRACTICE_MODES = ['targets', 'echo'] as const;
 export type PracticeMode = (typeof PRACTICE_MODES)[number];
@@ -95,7 +96,6 @@ export function summarize(times: readonly number[]): Summary {
 // answer. `score` is the echo points, or the number of targets in a target run.
 export type PracticeRun = { id: string; mode: PracticeMode; preset: PresetId; roundMs: number[]; score: number };
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const oneOf = <T extends string>(options: readonly T[], value: unknown): T | undefined => options.find((option) => option === value);
 
 // Checks a run from a page. Returns undefined for anything that a real run of the page cannot be.

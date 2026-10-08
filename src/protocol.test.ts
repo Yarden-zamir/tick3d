@@ -9,6 +9,9 @@ import {
   parsePreviews,
   parseResultUpload,
   parseClientEvent,
+  isOnlineGameId,
+  onlineGameParts,
+  parseDeviceGameId,
   parseGameId,
   parseHistoryPage,
   parseMetrics,
@@ -58,11 +61,12 @@ describe('parseSessionView', () => {
     flipped: [false],
     now: 30,
     version: 2,
-    chat: [{ id: 7, from: 'O', text: 'good luck', at: 1_700_000_000_000 }],
+    chat: [{ id: 7, from: 'O', text: 'good luck', at: 1_700_000_000_000, by: '00112233445566ff' }, { id: 8, from: 'X', text: 'thanks', at: 1_700_000_000_001 }],
     presence: { X: true, O: false },
     players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' }, O: null },
     names: { X: 'braveOtter', O: null },
-    watchers: [{ id: '0123456789abcdef', name: 'Carol', player: null }],
+    people: { X: '0123456789abcdef', O: null },
+    watchers: [{ id: '0123456789abcdef', name: 'Carol', player: null, person: 'fedcba9876543210' }],
     youWatcher: '0123456789abcdef',
     seatRequest: { kind: 'replace', from: 'X', watcher: { name: 'Carol', player: null }, expiresAt: 90 },
     turn: 'X',
@@ -83,6 +87,15 @@ describe('parseSessionView', () => {
     const { playoff: _playoff, ...older } = valid;
     expect(parseSessionView(older).playoff).toBeNull();
     expect(() => parseSessionView({ ...valid, playoff: { id: 1 } })).toThrow();
+  });
+
+  it('gives no person ids when an older sender has none, and refuses a broken one', () => {
+    const { people: _people, ...older } = valid;
+    const parsed = parseSessionView({ ...older, watchers: [{ id: '0123456789abcdef', name: 'Carol', player: null }] });
+    expect(parsed.people).toEqual({ X: null, O: null });
+    expect(parsed.watchers[0]?.person).toBeNull();
+    expect(() => parseSessionView({ ...valid, people: { X: 'not-a-person-id!', O: null } })).toThrow();
+    expect(() => parseSessionView({ ...valid, chat: [{ id: 1, from: 'X', text: 'hi', at: 1, by: 'TOKEN' }] })).toThrow();
   });
 
   it('gives no names when a sender has no names field', () => {
@@ -223,6 +236,21 @@ describe('game ids', () => {
   it.each(['ABCDEFG', 'ABCDEFGHJ', 'ABCDEFG0', 'AB3K-0', 'AB3K-01', 'AB3K-1e3', 'AB3K-1-2', 'AB0K-1', 'AB3K-', 42])('rejects %j', (input) => {
     expect(parseGameId(input)).toBeUndefined();
   });
+
+  it('tells the two kinds apart, and splits an online id into its session and game index', () => {
+    const online = onlineGameId('AB3K' as Code, 11);
+    expect(isOnlineGameId(online)).toBe(true);
+    expect(onlineGameParts(online)).toEqual({ code: 'AB3K', index: 11 });
+    expect(isOnlineGameId(newGameId())).toBe(false);
+  });
+
+  it.each(['ABCDEFGH'])('takes %s as a device id', (input) => {
+    expect(parseDeviceGameId(input)).toBe(input);
+  });
+
+  it.each(['AB3K-1', 'abcdefgh', ' ABCDEFGH', 42])('does not take %j as a device id', (input) => {
+    expect(parseDeviceGameId(input)).toBeUndefined();
+  });
 });
 
 describe('parseMetrics', () => {
@@ -249,6 +277,8 @@ describe('parseMetrics', () => {
     ['an unknown key', { ...valid, extra: 1 }],
     ['a missing key', { ...valid, undos: undefined }],
     ['an unknown refusal', { ...valid, refused: { boom: 1 } }],
+    ['a list for the refusals', { ...valid, refused: [1, 2] }],
+    ['a think time that is not a number', { ...valid, thinkMs: ['12'] }],
     ['a negative count', { ...valid, input: { board: -1, keypad: 0 } }],
     ['an extra input key', { ...valid, input: { board: 1, keypad: 0, voice: 1 } }],
     ['too many think times', { ...valid, thinkMs: Array(65).fill(1) }],
@@ -336,6 +366,8 @@ describe('parsePublicGame', () => {
     ['an unfinished game', { ...valid, game: toRecord(replay([0, 1])) }],
     ['a computer game without the computer seat', { ...valid, computer: null }],
     ['a lower-case id', { ...valid, id: 'abcdefgh' }],
+    ['an online id for a computer game', { ...valid, id: 'AB3K-1' }],
+    ['a device id for an online game', { ...valid, mode: 'online', difficulty: null, computer: null }],
     ['no names', { ...valid, names: undefined }],
     ['an empty name', { ...valid, names: { X: '', O: null } }],
   ])('throws on %s', (_, value) => {

@@ -1,4 +1,5 @@
 import { cell, expect, expectToast, marks, status, test } from './fixtures.ts';
+import { STORAGE_KEYS } from '../src/storage-keys.ts';
 import type { Page } from '@playwright/test';
 
 const friend = { settings: { mode: 'friend' } };
@@ -145,9 +146,9 @@ test('time limits: range check, presets, and a change during a game starts with 
 test('the lock shows its tooltip on hover and on a long press, and a short tap still locks', async ({ browser, baseURL }) => {
   if (baseURL === undefined) throw new Error('the config sets no baseURL');
   const context = await browser.newContext({ baseURL, hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
-  await context.addInitScript(() => {
-    if (localStorage.getItem('tick3d.settings') === null) localStorage.setItem('tick3d.settings', JSON.stringify({ mode: 'friend' }));
-  });
+  await context.addInitScript((key) => {
+    if (localStorage.getItem(key) === null) localStorage.setItem(key, JSON.stringify({ mode: 'friend' }));
+  }, STORAGE_KEYS.settings);
   const page = await context.newPage();
   await page.goto('/');
   const lock = page.locator('#lock');

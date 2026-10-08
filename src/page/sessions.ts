@@ -8,6 +8,7 @@ import { type LinkIntent, withWatch } from '../session-link.ts';
 import type { SessionDoc } from '../session/format.ts';
 import { sounds } from '../sound.ts';
 import { notifyChat } from './chat.ts';
+import { ownPerson, visibleChat } from './safety.ts';
 import { scheduleComputer } from './computer.ts';
 import { burstEl } from './dom.ts';
 import { announce, finish } from './end-card.ts';
@@ -18,7 +19,24 @@ import { nearbyKind, endNearby, redrawNearby } from './nearby.ts';
 import { seatChangeText } from './players.ts';
 import { render } from './render.ts';
 import { type Mode, settings, saveSettings } from './settings.ts';
-import { page, current, nowMs, setCurrent, shared, type Session, type SessionBackend, settingsLocked } from './state.ts';
+import {
+  page,
+  clearScreen,
+  current,
+  nowMs,
+  setCurrent,
+  setReview,
+  setThinking,
+  shared,
+  showSession,
+  newRound,
+  newSwitch,
+  type Token,
+  updateSession,
+  type Session,
+  type SessionBackend,
+  settingsLocked,
+} from './state.ts';
 
 // The error sound of a refused move lasts about 0.27 s. A taken cell plays its own sound after it.
 const TAKEN_SOUND_DELAY_MS = 320;
@@ -87,7 +105,7 @@ export function applyView(view: SessionView): void {
   page.games = view.games.map(toGame);
   page.serverOffset = view.now - Date.now();
   const previous = page.session;
-  page.session = { ...view, backend: page.session.backend, mode: page.session.mode, unsubscribe: page.session.unsubscribe };
+  updateSession({ ...view, backend: page.session.backend, mode: page.session.mode, unsubscribe: page.session.unsubscribe });
   const after = current();
   // Changes by the other player get a message. On one device, the player made them.
   if (shared()) {
@@ -118,7 +136,9 @@ export function applyView(view: SessionView): void {
   // A live game is not the finished game that the address links to.
   if (after.status.kind === 'playing' && new URLSearchParams(location.search).has('game')) setUrlGame(undefined);
   const lastSeen = previous.chat.at(-1)?.id ?? -1;
-  const incoming = page.session.chat.filter((message) => message.id > lastSeen && message.from !== page.session?.you);
+  // Messages from a blocked person or reported here give no sound and no notice.
+  const own = ownPerson(page.session);
+  const incoming = visibleChat(page.session).filter((message) => message.id > lastSeen && (message.by === undefined ? message.from !== page.session?.you : message.by !== own));
   const newest = incoming.at(-1);
   if (newest !== undefined && shared()) {
     sounds.message();
@@ -128,7 +148,7 @@ export function applyView(view: SessionView): void {
   if (page.session.mode === 'nearby' && (previous.you !== page.session.you || JSON.stringify(previous.names) !== JSON.stringify(page.session.names))) {
     redrawNearby();
   }
-  if (page.review && page.review.game >= page.games.length) page.review = undefined;
+  if (page.review && page.review.game >= page.games.length) setReview(undefined);
   followSeat(page.session);
   if (page.session.mode === 'online') {
     void page.deviceDb?.put('remote', { code: page.session.code, view, savedAt: Date.now() });
@@ -140,22 +160,20 @@ export function applyView(view: SessionView): void {
 export function openSession(view: SessionView, backend: SessionBackend, mode: Mode): void {
   page.coordDigits = [];
   page.session?.unsubscribe();
-  page.round++; // drops a computer move scheduled for the previous session
   page.computerThinkMs = [];
-  page.thinking = false;
   if (settings.mode !== mode) {
     settings.mode = mode;
     saveSettings();
   }
-  page.review = undefined;
   burstEl.replaceChildren();
-  page.viewing = undefined;
-  page.session = { ...view, backend, mode, unsubscribe: () => undefined };
+  // A new screen: no review, and no computer search of the previous session.
+  const session: Session = { ...view, backend, mode, unsubscribe: () => undefined };
+  showSession(session);
   page.games = view.games.map(toGame);
   page.serverOffset = view.now - Date.now();
-  followSeat(page.session);
+  followSeat(session);
   const code = view.code;
-  page.session.unsubscribe = backend.subscribe(code, () => void refresh(code));
+  session.unsubscribe = backend.subscribe(code, () => void refresh(code));
   setUrlCode(mode === 'online' ? code : undefined);
   setUrlGame(undefined);
   if (mode === 'online') void page.deviceDb?.put('remote', { code, view, savedAt: Date.now() });
@@ -166,8 +184,8 @@ export function openSession(view: SessionView, backend: SessionBackend, mode: Mo
 export function leaveSession(): void {
   page.coordDigits = [];
   page.session?.unsubscribe();
-  page.session = undefined;
-  page.viewing = undefined;
+  // Also ends the review and the computer search of the session or the game from a link.
+  clearScreen();
   page.games = [newGame('X', settings.clock)];
   setUrlCode(undefined);
   setUrlGame(undefined);
@@ -220,14 +238,15 @@ function followSeat(open: Session): void {
 // The seat of the player in a computer game: the one the computer does not hold.
 const humanSeatOf = (doc: SessionDoc): Player | undefined => (doc.computer ? other(doc.computer.seat) : undefined);
 
-export function beginSwitch(): number {
+// A switch also ends a Nearby game, so a host never serves guests in the background.
+export function beginSwitch(): Token {
   if (nearbyKind() !== 'idle') endNearby();
-  return ++page.navigation;
+  return newSwitch();
 }
 
 // Opens the newest session on this device for the chosen match-up, or starts one.
 export async function openLocalSession(mode: 'computer' | 'friend'): Promise<void> {
-  const switchNumber = beginSwitch();
+  const switching = beginSwitch();
   const backend = page.local;
   if (backend === undefined) throw new Error('the device backend is not ready');
   const latest = (await backend.list()).find(
@@ -239,18 +258,18 @@ export async function openLocalSession(mode: 'computer' | 'friend'): Promise<voi
     latest !== undefined
       ? await backend.load(latest.code)
       : await backend.create({ mode, name: defaultSessionName(mode), clock: settings.clock, human: settings.human, difficulty: settings.difficulty });
-  if (switchNumber === page.navigation) openSession(view, backend, mode);
+  if (!switching.isStale()) openSession(view, backend, mode);
 }
 
 // Reopens any session on this device, for example from My games.
 export async function openDeviceSession(code: Code): Promise<void> {
-  const switchNumber = beginSwitch();
+  const switching = beginSwitch();
   const backend = page.local;
   if (backend === undefined) throw new Error('the device backend is not ready');
   const entry = await backend.summary(code);
   if (entry === undefined || entry.mode === 'nearby') return showProblem('That game is not on this device any more.');
   const view = await backend.load(code);
-  if (switchNumber !== page.navigation) return;
+  if (switching.isStale()) return;
   if (entry.doc.computer) {
     settings.difficulty = entry.doc.computer.difficulty;
     settings.human = humanSeatOf(entry.doc) ?? settings.human;
@@ -262,15 +281,15 @@ export async function openDeviceSession(code: Code): Promise<void> {
 export const createSession = () =>
   withBusy(async () => {
     if (!navigator.onLine) throw new OnlineError('You are offline. Online games need a connection.');
-    const switchNumber = beginSwitch();
+    const switching = beginSwitch();
     const view = await api.create(defaultSessionName(), settings.clock);
-    if (switchNumber === page.navigation) openSession(view, api, 'online');
+    if (!switching.isStale()) openSession(view, api, 'online');
   });
 
 // A 'watch' intent opens the session without a seat. The Players box can take a free seat later.
 export const joinSession = (code: Code, intent: LinkIntent) =>
   withBusy(async () => {
-    const switchNumber = beginSwitch();
+    const switching = beginSwitch();
     let view: SessionView;
     try {
       view = await api.load(code);
@@ -279,7 +298,7 @@ export const joinSession = (code: Code, intent: LinkIntent) =>
       // A move then fails with the network error until the network comes back.
       const cached = await page.deviceDb?.get('remote', code);
       if (!(error instanceof OnlineError) || error.status !== undefined || cached === undefined) throw error;
-      if (switchNumber !== page.navigation) return;
+      if (switching.isStale()) return;
       // The parse also fills fields that a view cached by an older version lacks.
       const cachedView = parseSessionView(cached.view);
       openSession(cachedView, api, 'online');
@@ -289,7 +308,7 @@ export const joinSession = (code: Code, intent: LinkIntent) =>
     }
     const seatFree = !view.seats.X || !view.seats.O;
     if (intent === 'play' && view.you === null && seatFree) view = await api.join(code);
-    if (switchNumber !== page.navigation) return;
+    if (switching.isStale()) return;
     openSession(view, api, 'online');
     // A reload of a watch link must not take the seat either.
     if (intent === 'watch' && view.you === null) setUrlCode(code, true);
@@ -304,12 +323,12 @@ export function startNewGame(): void {
   if (settingsLocked()) return reject(undefined, 'locked');
   if (page.session === undefined) return reject(undefined, 'no-session');
   sounds.click();
-  page.round++; // drops a computer move for the game that ends here
+  newRound(); // drops a computer move for the game that ends here
   page.computerThinkMs = [];
-  page.thinking = false;
+  setThinking(false);
   const { code, backend } = page.session;
   void withBusy(async () => {
-    page.review = undefined;
+    setReview(undefined);
     burstEl.replaceChildren();
     const before = page.session?.you;
     applyView(await backend.newGame(code));

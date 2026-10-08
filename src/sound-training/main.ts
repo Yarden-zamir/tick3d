@@ -32,6 +32,7 @@ import {
   splitItem,
   weakest,
 } from './schedule.ts';
+import { STORAGE_KEYS } from '../storage-keys.ts';
 
 setupPageHeader();
 
@@ -76,11 +77,10 @@ let training = trainingOf(settings.soundSet);
 
 // ---- Storage ----
 
-const STORAGE_KEY = 'tick3d.sound-training';
 
 function load(): Progress {
   try {
-    return parseProgress(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null'));
+    return parseProgress(JSON.parse(localStorage.getItem(STORAGE_KEYS.soundTraining) ?? 'null'));
   } catch {
     return freshProgress();
   }
@@ -88,7 +88,7 @@ function load(): Progress {
 
 function save(): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+    localStorage.setItem(STORAGE_KEYS.soundTraining, JSON.stringify(progress));
   } catch {
     // Private mode or a full storage: the training still works for this visit.
   }
@@ -118,12 +118,14 @@ function guessedCell(pick: number): number {
 
 // ---- Sound ----
 
-let timers: number[] = [];
+// Seconds between two cells of a series.
+const CELL_GAP_S = 0.75;
+let stopCells = (): void => undefined;
 
 // Plays the cells one after the other. A new call stops the rest of an earlier one.
 function playCells(cells: readonly number[]): void {
-  for (const timer of timers) clearTimeout(timer);
-  timers = cells.map((cell, index) => window.setTimeout(() => sounds.place('X', cell), index * 750));
+  stopCells();
+  stopCells = sounds.placeSeries('X', cells, CELL_GAP_S);
 }
 
 // ---- Card ----

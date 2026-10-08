@@ -16,11 +16,15 @@ import {
   CODE_ALPHABET,
   CODE_LENGTH,
   CONSENT_ACTIONS,
+  DEVICE_GAME_ID_LENGTH,
   CUSTOM_NAME_MAX_LENGTH,
   CUSTOM_NAME_MIN_LENGTH,
   FORM_WINDOW,
   NAME_MAX_LENGTH,
+  PERSON_ID_LENGTH,
   PREVIEW_DESCRIPTION_LENGTH,
+  REPORT_NOTE_MAX_LENGTH,
+  REPORT_REASONS,
   HISTORY_PAGE_SIZE,
   LAYOUTS,
   REFUSALS,
@@ -49,6 +53,8 @@ export const NEARBY_HOSTS_PER_NETWORK = 10;
 export const NEARBY_GRACE_MS = 10_000;
 // Practice runs per 10 minutes from one address. server/main.ts enforces it.
 export const PRACTICE_RUNS_PER_10_MINUTES = 60;
+// Reports of chat messages and people per 10 minutes from one address. server/main.ts enforces it.
+export const REPORTS_PER_10_MINUTES = 20;
 // The previews list on production is at most this old. server/previews.ts enforces it.
 // Only production calls GitHub, without a token: 60 calls per hour, 5 of them kept in reserve, so 55.
 // The calls per hour at about 10 open pull requests:
@@ -118,6 +124,7 @@ export type SchemaName =
   | 'ResultsResponse'
   | 'Ok'
   | 'GameId'
+  | 'DeviceGameId'
   | 'PublicGame'
   | 'HistoryEntry'
   | 'HistoryPage'
@@ -142,7 +149,12 @@ export type SchemaName =
   | 'PracticeRun'
   | 'PracticeStored'
   | 'PracticeLeader'
-  | 'PracticeBoard';
+  | 'PracticeBoard'
+  | 'BlockRequest'
+  | 'Blocks'
+  | 'ReportRequest'
+  | 'ReportStored'
+  | 'Reports';
 
 export const ref = (name: SchemaName): Schema => ({ $ref: `#/components/schemas/${name}` });
 const nullable = (schema: Schema): Schema => ({ oneOf: [schema, { type: 'null' }] });
@@ -175,6 +187,11 @@ const seatName: Schema = { type: 'string', minLength: 1, maxLength: NAME_MAX_LEN
 const chatText: Schema = { type: 'string', minLength: 1, maxLength: CHAT_MAX_LENGTH, description: `1 to ${CHAT_MAX_LENGTH} characters. The server trims spaces.` };
 const watcherId: Schema = { type: 'string', pattern: `^[0-9a-f]{${WATCHER_ID_LENGTH}}$`, description: 'The id of a watcher in this session. It is not a player id.' };
 const displayName: Schema = { type: 'string', minLength: 1, maxLength: NAME_MAX_LENGTH, description: 'A custom name that the player chose, else a generated name.' };
+const person: Schema = {
+  type: 'string',
+  pattern: `^[0-9a-f]{${PERSON_ID_LENGTH}}$`,
+  description: 'A public person id. The same player has the same id in every session, also on every device of a GitHub account. It is not a player id and reveals none.',
+};
 const signalCode: Schema = { type: 'string', minLength: 1, maxLength: MAX_CODE_LENGTH };
 const hostId: Schema = { type: 'string', pattern: '^[A-Za-z0-9_-]{16}$', description: 'The id of a Nearby host in the list.' };
 const strings = (values: readonly string[], description?: string): Schema => ({ type: 'string', enum: values, ...(description === undefined ? {} : { description }) });
@@ -216,10 +233,11 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
   },
   ChatMessage: object('A chat message.', {
     id: { type: 'integer', description: 'Grows by 1 with each message.' },
-    from: { ...ref('Player'), description: 'The seat that the sender holds now. When the players swap X and O, every message swaps with them.' },
+    from: { ...ref('Player'), description: 'The seat of the sender when they sent the message.' },
     text: chatText,
     at: { type: 'number', description: 'Server time in epoch milliseconds.' },
-  }),
+    by: { ...person, description: 'The person id of the sender. An older message has none: then the holder of `from` stands for the sender.' },
+  }, ['by']),
   PlayerInfo: object('The GitHub account of a seat, when its player logged in on the page.', {
     login: { type: 'string', minLength: 1, maxLength: 39 },
     avatar: { type: 'string', pattern: '^https://avatars\\.githubusercontent\\.com/' },
@@ -232,6 +250,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     id: watcherId,
     name: displayName,
     player: { ...nullable(ref('PlayerInfo')), description: 'The GitHub account of the watcher, or null.' },
+    person: { ...nullable(person), description: 'The person id of the watcher. null from a Nearby host that does not know it yet.' },
   }),
   SeatRequest: object(`A seat change that waits for the other player. It ends after ${SEAT_REQUEST_MS / 1000} s without an answer.`, {
     kind: strings(CONSENT_ACTIONS, 'swap: X and O trade seats. unseat: the other player watches. replace: a watcher takes the seat of the other player. undo: the last move goes back.'),
@@ -266,6 +285,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     }),
     players: object('The GitHub account behind each seat, or null.', { X: nullable(ref('PlayerInfo')), O: nullable(ref('PlayerInfo')) }),
     names: ref('SeatNames'),
+    people: object('The person id of the player on each seat. null for an empty seat and for the computer.', { X: nullable(person), O: nullable(person) }),
     watchers: { type: 'array', items: ref('Watcher'), description: 'The browsers that have the game open without a seat, in the order that they came.' },
     youWatcher: { ...nullable(watcherId), description: 'Your id in `watchers` when you watch, else null.' },
     seatRequest: { ...nullable(ref('SeatRequest')), description: 'A seat change that waits for the other player, or null.' },
@@ -368,7 +388,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     you: nullable(ref('Player')),
     difficulty: { type: ['string', 'null'], enum: [...DIFFICULTIES, null] },
     finishedAt: { type: 'number' },
-    publicId: { ...nullable(ref('GameId')), description: 'An id of 8 characters that the device made, for the game link. Optional.' },
+    publicId: { ...nullable(ref('DeviceGameId')), description: 'The id that the device made, for the game link. Optional.' },
     options: matchOptions('The hide settings at the end of the game. Optional.', true),
     tuned: { type: 'boolean', description: 'A computer game with changed advanced settings. Optional.' },
     metrics: { ...nullable(ref('Metrics')), description: 'What the device saw during the game. Optional.' },
@@ -384,15 +404,20 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     stored: count('How many results were new.'),
     renamed: {
       type: 'object',
-      additionalProperties: ref('GameId'),
+      additionalProperties: ref('DeviceGameId'),
       description: 'By result id: the public id that the server keeps for a result, when it differs from the one that the device sent.',
     },
   }),
   Ok: object('Done.', { ok: { const: true } }),
   GameId: {
     type: 'string',
-    pattern: `^([${CODE_ALPHABET}]{8}|[${CODE_ALPHABET}]{${CODE_LENGTH}}-[1-9][0-9]*)$`,
-    description: 'The id of a finished game. An online game: <CODE>-<n>, where n is the game number in the session, from 1. Other games: 8 characters. The link is /?game=<id>. Lower case also works.',
+    pattern: `^([${CODE_ALPHABET}]{${DEVICE_GAME_ID_LENGTH}}|[${CODE_ALPHABET}]{${CODE_LENGTH}}-[1-9][0-9]*)$`,
+    description: `The id of a finished game. An online game: <CODE>-<n>, where n is the game number in the session, from 1. Other games: ${DEVICE_GAME_ID_LENGTH} characters. The link is /?game=<id>. Lower case also works.`,
+  },
+  DeviceGameId: {
+    type: 'string',
+    pattern: `^[${CODE_ALPHABET}]{${DEVICE_GAME_ID_LENGTH}}$`,
+    description: 'The id of a finished game that a device made: upper case only, no dash.',
   },
   PublicGame: object('A finished game as anybody with its link sees it.', {
     id: ref('GameId'),
@@ -592,6 +617,54 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       description: 'A stacked pull request: the number of the listed pull request whose head branch is the base branch of this one. null when it is top level. An older server sends no such field.',
     },
   }, ['parent']),
+  BlockRequest: object('A block.', { name: { ...displayName, description: 'The name that you saw, for your list of blocked people.' } }),
+  Blocks: object('The people that you blocked, newest first. Their messages and names stay hidden on your devices.', {
+    blocked: list(
+      'The blocked people.',
+      object('A blocked person.', { person, name: displayName, at: { type: 'number', description: 'The time of the block, in epoch milliseconds.' } }),
+    ),
+  }),
+  ReportRequest: object(
+    'A report of one chat message or one person of an online game. Send `message` or `person`, not both.',
+    {
+      code: { type: 'string', pattern: `^[${CODE_ALPHABET}${CODE_ALPHABET.toLowerCase()}]{${CODE_LENGTH}}$`, description: 'The session code.' },
+      message: { type: 'integer', minimum: 1, description: 'The id of a message in the chat of the session.' },
+      person: { ...person, description: 'The person id of a player or watcher in the session now.' },
+      reason: strings(REPORT_REASONS, 'spam, abuse, name (an inappropriate name) or other.'),
+      note: { type: 'string', maxLength: REPORT_NOTE_MAX_LENGTH, description: `Optional. At most ${REPORT_NOTE_MAX_LENGTH} characters.` },
+    },
+    ['message', 'person', 'note'],
+  ),
+  ReportStored: object('The report is stored for the maintainers.', { id: { type: 'integer', minimum: 1 } }),
+  Reports: object('The newest reports and moderation actions. Only the maintainers can read them.', {
+    reports: list(
+      'The newest reports first.',
+      object('A report. The text and the name are copies from the time of the report.', {
+        id: { type: 'integer', minimum: 1 },
+        code: { type: 'string' },
+        message: nullable({ type: 'integer' }),
+        text: nullable({ type: 'string' }),
+        person: nullable(person),
+        name: nullable({ type: 'string' }),
+        reason: strings(REPORT_REASONS),
+        note: nullable({ type: 'string' }),
+        reporter: { ...person, description: 'The person id of the reporter.' },
+        reporterLogin: nullable({ type: 'string' }),
+        at: { type: 'number' },
+      }),
+    ),
+    actions: list(
+      'The newest moderation actions first: who did what, and when.',
+      object('A moderation action.', {
+        login: { type: 'string' },
+        action: strings(['hide-message', 'clear-name']),
+        code: nullable({ type: 'string' }),
+        message: nullable({ type: 'integer' }),
+        person: nullable(person),
+        at: { type: 'number' },
+      }),
+    ),
+  }),
   Previews: object('The production site and the open pull requests with a live preview, most recently updated first.', {
     main: nullable({ type: 'string', pattern: '^https://', description: 'The production site, built from the main branch. null on a server without previews.' }),
     previews: list('The previews.', ref('Preview')),
@@ -612,6 +685,8 @@ const EXAMPLE_OFFER =
 const EXAMPLE_ANSWER =
   'T3B1.BcFdD0JQHAfg7_K7_tucw1EuJbHVvCyrlpkhojJnJdRFn73nSRBNWgXC-SkGt1netg_e-YU-2rPxtV7mBYR9-6nKKNBPx6x189m7rsdDIZ2wttv7UfEHR2ZWsymNsXNAKEFJgl-9Ut-hKovY5UEt-p1nq0o8gYSucUacMc3UFkywNCVIEPw-R_oH';
 const EXAMPLE_HOST = 'q8Zr2Lx0Vb7Nc4Mw';
+const EXAMPLE_PERSON = '3f9a0c27d84be615';
+const OTHER_PERSON = 'b71e4d0a92c3f856';
 
 // A view of the example session. Each route changes only the fields that its call changes.
 // A taken seat has a generated name.
@@ -634,6 +709,7 @@ function view(fields: Record<string, unknown>): Record<string, unknown> {
     presence: { X: false, O: false },
     players: { X: null, O: null },
     names: { X: seats.X ? 'braveOtter' : null, O: seats.O ? 'cleverHeron' : null },
+    people: { X: seats.X ? EXAMPLE_PERSON : null, O: seats.O ? OTHER_PERSON : null },
     watchers: [],
     youWatcher: null,
     seatRequest: null,
@@ -728,7 +804,7 @@ type Response =
 
 export type Route = {
   operationId: string;
-  tag: 'Play' | 'Nearby' | 'Docs' | 'Account';
+  tag: 'Play' | 'Nearby' | 'Docs' | 'Account' | 'Safety';
   summary: string;
   description?: string;
   // The X-Player header: your player id. It is your seat.
@@ -755,6 +831,16 @@ export const PATH_PARAMS: Record<string, { description: string; schema: Schema; 
     schema: { type: 'string' },
     example: `${EXAMPLE_CODE}-1`,
   },
+  person: {
+    description: 'A public person id, from `people`, `watchers` or a chat message of a session.',
+    schema: { type: 'string', pattern: `^[0-9a-f]{${PERSON_ID_LENGTH}}$` },
+    example: EXAMPLE_PERSON,
+  },
+  message: {
+    description: 'The id of a chat message.',
+    schema: { type: 'integer', minimum: 1 },
+    example: '3',
+  },
   host: {
     description: 'The id of a Nearby host, from GET /api/nearby/hosts.',
     schema: { type: 'string', pattern: '^[A-Za-z0-9_-]{16}$' },
@@ -768,6 +854,9 @@ const NO_GAME = { status: 404, when: 'No game has this code.' };
 const NOT_A_PLAYER = { status: 403, when: 'You hold no seat in this game. Watchers only read.' };
 const BAD_BODY = { status: 400, when: 'The body is not valid JSON, or a field is wrong.' };
 const TOO_BIG = { status: 413, when: 'The body is larger than 4 kB.' };
+const MAINTAINER_401 = { status: 401, when: 'The request has no GitHub login.' };
+const MAINTAINER_403 = { status: 403, when: 'The GitHub login is not a maintainer.' };
+const NO_LOGIN = { status: 404, when: 'This server has no GitHub login.' };
 // The errors of the Idempotency-Key header, for every route that accepts it.
 const KEY_ERRORS = [
   { status: 400, when: 'The Idempotency-Key header is not valid.' },
@@ -1360,6 +1449,98 @@ export const ROUTES = {
       { status: 429, when: `Your network has ${NEARBY_HOSTS_PER_NETWORK} games in the list, or sent ${NEARBY_CALLS_PER_10_MINUTES} Nearby calls in the last 10 minutes.` },
       { status: 503, when: 'Too many games are in the list on this server.' },
     ],
+    examplePlayer: AGENT_A,
+  },
+  'GET /api/me/blocks': {
+    operationId: 'myBlocks',
+    tag: 'Safety',
+    summary: 'The people that you blocked. The page uses it.',
+    description: 'A block follows your GitHub account when you log in. The page hides the messages of a blocked person, and shows a generated name and picture in place of theirs.',
+    player: 'required',
+    response: { status: 200, description: 'Your blocks.', schema: 'Blocks', example: { blocked: [{ person: OTHER_PERSON, name: 'cleverHeron', at: T0 }] } },
+    errors: [BAD_PLAYER],
+    examplePlayer: AGENT_A,
+  },
+  'PUT /api/me/blocks/{person}': {
+    operationId: 'block',
+    tag: 'Safety',
+    summary: 'Block a person.',
+    player: 'required',
+    body: { schema: 'BlockRequest', example: { name: 'cleverHeron' } },
+    response: { status: 200, description: 'Your blocks with the new one.', schema: 'Blocks', example: { blocked: [{ person: OTHER_PERSON, name: 'cleverHeron', at: T0 }] } },
+    errors: [
+      BAD_PLAYER,
+      { status: 400, when: 'The person id or the name is not valid, or the person is you.' },
+      { status: 409, when: 'You blocked 500 people already.' },
+      TOO_BIG,
+    ],
+    examplePlayer: AGENT_A,
+  },
+  'DELETE /api/me/blocks/{person}': {
+    operationId: 'unblock',
+    tag: 'Safety',
+    summary: 'Unblock a person.',
+    player: 'required',
+    response: { status: 200, description: 'Your blocks without that person.', schema: 'Blocks', example: { blocked: [] } },
+    errors: [BAD_PLAYER, { status: 400, when: 'The person id is not valid.' }],
+    examplePlayer: AGENT_A,
+  },
+  'POST /api/reports': {
+    operationId: 'report',
+    tag: 'Safety',
+    summary: 'Report a chat message or a person of an online game to the maintainers.',
+    description: `The server keeps a copy of the message or the name. One address can send ${REPORTS_PER_10_MINUTES} reports per 10 minutes.`,
+    player: 'required',
+    body: { schema: 'ReportRequest', example: { code: EXAMPLE_CODE, message: 3, reason: 'abuse', note: 'Insults after the game.' } },
+    response: { status: 201, description: 'Stored.', schema: 'ReportStored', example: { id: 1 } },
+    errors: [
+      BAD_PLAYER,
+      BAD_BODY,
+      NO_GAME,
+      { status: 404, when: 'The message is not in the chat any more, or the person is not in the game now.' },
+      TOO_BIG,
+      { status: 429, when: `This address sent ${REPORTS_PER_10_MINUTES} reports in the last 10 minutes.` },
+    ],
+    examplePlayer: AGENT_B,
+  },
+  'GET /api/reports': {
+    operationId: 'reports',
+    tag: 'Safety',
+    summary: 'The newest reports and moderation actions. Maintainers only.',
+    description: 'Needs the X-Player header and the login cookie of a maintainer (the GitHub logins Yarden-zamir and TomCohenDev).',
+    player: 'required',
+    response: {
+      status: 200,
+      description: 'At most 200 of each, newest first.',
+      schema: 'Reports',
+      example: {
+        reports: [
+          { id: 1, code: EXAMPLE_CODE, message: 3, text: 'You are bad at this', person: OTHER_PERSON, name: 'cleverHeron', reason: 'abuse', note: null, reporter: EXAMPLE_PERSON, reporterLogin: null, at: T0 },
+        ],
+        actions: [{ login: 'Yarden-zamir', action: 'hide-message', code: EXAMPLE_CODE, message: 3, person: null, at: T0 }],
+      },
+    },
+    errors: [BAD_PLAYER, MAINTAINER_401, MAINTAINER_403, NO_LOGIN],
+    examplePlayer: AGENT_A,
+  },
+  'DELETE /api/sessions/{code}/chat/{message}': {
+    operationId: 'hideMessage',
+    tag: 'Safety',
+    summary: 'Hide a chat message for everyone. Maintainers only.',
+    description: 'The text of the message becomes "A moderator removed this message." The reports list keeps the action.',
+    player: 'required',
+    response: { status: 200, description: 'Hidden.', schema: 'Ok', example: { ok: true } },
+    errors: [BAD_PLAYER, BAD_CODE, { status: 400, when: 'The message id is not a whole number from 1.' }, MAINTAINER_401, MAINTAINER_403, { status: 404, when: 'No game has this code, the message is not in its chat, or this server has no GitHub login.' }],
+    examplePlayer: AGENT_A,
+  },
+  'DELETE /api/players/{person}/name': {
+    operationId: 'clearPlayerName',
+    tag: 'Safety',
+    summary: 'Clear the custom name of a person. Maintainers only.',
+    description: 'The person shows with the generated name again. The reports list keeps the action.',
+    player: 'required',
+    response: { status: 200, description: 'Cleared.', schema: 'Ok', example: { ok: true } },
+    errors: [BAD_PLAYER, { status: 400, when: 'The person id is not valid.' }, MAINTAINER_401, MAINTAINER_403, { status: 404, when: 'The person has no custom name, or this server has no GitHub login.' }],
     examplePlayer: AGENT_A,
   },
   'POST /api/nearby/hosts/{host}/answer': {

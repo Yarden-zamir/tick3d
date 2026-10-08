@@ -1,6 +1,8 @@
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
 import jsQR from 'jsqr';
 import { PNG } from 'pngjs';
+import { normalizeCode, parseDeviceGameId } from '../src/protocol.ts';
+import { STORAGE_KEYS } from '../src/storage-keys.ts';
 
 // The app checks each stored field and uses the default for a field that is not valid.
 type Settings = Record<string, string | boolean>;
@@ -20,19 +22,20 @@ interface Opened {
 interface Seed {
   settings: Settings | undefined;
   records: Record<string, number> | undefined;
+  keys: typeof STORAGE_KEYS;
 }
 
 // Runs in the page before the app. A seed goes in only when the key is empty, so a reload keeps the
 // changes that the app made. The toast observer keeps every message, because a later toast
 // replaces the text of an earlier one.
-function seed({ settings, records }: Seed): void {
+function seed({ settings, records, keys }: Seed): void {
   // A new page starts on about:blank, which has no storage.
   if (!location.protocol.startsWith('http')) return;
-  if (settings !== undefined && localStorage.getItem('tick3d.settings') === null) {
-    localStorage.setItem('tick3d.settings', JSON.stringify(settings));
+  if (settings !== undefined && localStorage.getItem(keys.settings) === null) {
+    localStorage.setItem(keys.settings, JSON.stringify(settings));
   }
-  if (records !== undefined && localStorage.getItem('tick3d.records') === null) {
-    localStorage.setItem('tick3d.records', JSON.stringify(records));
+  if (records !== undefined && localStorage.getItem(keys.records) === null) {
+    localStorage.setItem(keys.records, JSON.stringify(records));
   }
   const toasts: string[] = [];
   (window as unknown as { e2eToasts: string[] }).e2eToasts = toasts;
@@ -58,7 +61,7 @@ export const test = base.extend<{ open: (options?: OpenOptions) => Promise<Opene
       const context = await browser.newContext({ baseURL, ...(storageState === undefined ? {} : { storageState }) });
       contexts.push(context);
       context.on('weberror', (error) => errors.push(error.error().message));
-      await context.addInitScript(seed, { settings, records });
+      await context.addInitScript(seed, { settings, records, keys: STORAGE_KEYS });
       const page = await context.newPage();
       await page.goto(path);
       return { page, context };
@@ -82,6 +85,16 @@ export const cell = (page: Page, index: number) => page.locator('.cell').nth(ind
 export const marks = (page: Page) => page.locator('.cell.x, .cell.o');
 export const status = (page: Page) => page.locator('#status');
 
+// An address with the link of a finished game that a device made (`?game=<id>`).
+export const hasDeviceGameLink = (url: URL): boolean => parseDeviceGameId(url.searchParams.get('game')) !== undefined;
+
+// The player token of the page's browser, for API calls as that player.
+export const playerToken = (page: Page): Promise<string> => page.evaluate((key) => localStorage.getItem(key) ?? '', STORAGE_KEYS.player);
+
+// The settings that the page stored, or an empty object before the first save.
+export const storedSettings = (page: Page): Promise<Record<string, unknown>> =>
+  page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>, STORAGE_KEYS.settings);
+
 export async function expectMyMove(page: Page): Promise<void> {
   await expect(status(page)).toContainText('Your move');
 }
@@ -90,7 +103,7 @@ export async function expectMyMove(page: Page): Promise<void> {
 // server limit of 60 new sessions per hour for one client address.
 export async function createOnline(page: Page): Promise<string> {
   await page.getByRole('button', { name: 'Online', exact: true }).click();
-  await expect(page).toHaveURL(/[?&]code=\w{4}/);
+  await expect(page).toHaveURL((url) => normalizeCode(url.searchParams.get('code') ?? '') !== undefined);
   const code = new URL(page.url()).searchParams.get('code');
   if (code === null) throw new Error('the address has no code');
   return code;

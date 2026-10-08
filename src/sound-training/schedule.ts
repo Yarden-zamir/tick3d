@@ -38,7 +38,7 @@ type Box = 0 | 1 | 2 | 3 | 4;
 const BOXES = [0, 1, 2, 3, 4] as const satisfies readonly Box[] & { length: typeof BOX_COUNT };
 // A right answer moves the item one box up. The last box keeps it.
 const NEXT_BOX = [1, 2, 3, 4, 4] as const satisfies Record<Box, Box>;
-const RECENT_SIZE = 20;
+export const RECENT_SIZE = 20;
 // New items join only while fewer than this many items are still in learn or in box 0.
 const MAX_UNSTEADY = 3;
 // At most this share of the cards asks for a full cell, when every dimension is at 100%.

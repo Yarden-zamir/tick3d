@@ -1,14 +1,17 @@
 import type { Page } from '@playwright/test';
+import { keysOf } from '../src/guards.ts';
+import { PAGES, type PageName } from '../src/pages.ts';
 import { expect, test } from './fixtures.ts';
 
 // Every page has the same header (src/header/). Info opens the own text of each page.
 
-const PAGES = [
-  { path: '/', info: 'How to win' },
-  { path: '/stats', info: 'About these stats' },
-  { path: '/sound-training', info: 'How the ear training works' },
-  { path: '/sound-input', info: 'How the Voice room works' },
-];
+// The heading of the Info panel of each page. A new page in src/pages.ts needs an entry here.
+const INFO = {
+  main: 'How to win',
+  stats: 'About these stats',
+  training: 'How the ear training works',
+  input: 'How the Voice room works',
+} as const satisfies Record<PageName, string>;
 
 const USER = { login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4' };
 
@@ -17,7 +20,9 @@ async function fakeLogin(page: Page): Promise<void> {
   await page.route('**/api/me', (route) => route.fulfill({ json: { loginAvailable: true, user: USER } }));
 }
 
-for (const { path, info } of PAGES) {
+for (const name of keysOf(PAGES)) {
+  const { path } = PAGES[name];
+  const info = INFO[name];
   test(`the header of ${path} has the wordmark, the account, Info, kitshn and GitHub`, async ({ page }) => {
     const errors: Error[] = [];
     page.on('pageerror', (error) => errors.push(error));
@@ -46,7 +51,7 @@ for (const { path, info } of PAGES) {
 
 test('the account button of /stats opens My games on the game page, and a login returns to /stats', async ({ page }) => {
   await fakeLogin(page);
-  await page.goto('/stats');
+  await page.goto(PAGES.stats.path);
   // The header shows the login, as on the game page.
   await expect(page.locator('#account-name')).toHaveText(USER.login);
   await expect(page.locator('#account-button')).toHaveAttribute('aria-label', `My games, logged in as ${USER.login}`);
@@ -61,5 +66,5 @@ test('the account button of /stats opens My games on the game page, and a login 
   const login = page.locator('.login-link');
   await expect(login).toHaveCount(1);
   const href = new URL((await login.getAttribute('href')) ?? '', page.url());
-  expect(new URL(href.searchParams.get('return') ?? '').pathname).toBe('/stats');
+  expect(new URL(href.searchParams.get('return') ?? '').pathname).toBe(PAGES.stats.path);
 });

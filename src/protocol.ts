@@ -7,6 +7,7 @@ import type { DeviceKind } from './nearby/device.ts';
 import { type Tuning, isTuning, parseTuning } from './tuning.ts';
 import { type Playoff, parsePlayoff } from './practice/playoff.ts';
 import type { PracticeStats } from './practice/practice.ts';
+import { isRecord, isUnknownArray } from './guards.ts';
 
 // Letters and digits without the look-alikes 0/O and 1/I, so a code read aloud is not ambiguous.
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -36,8 +37,9 @@ export function parseMatchOptions(value: unknown): MatchOptions | undefined {
   return { hideBoard: value.hideBoard, hideHistory: value.hideHistory, hideCoordinates };
 }
 
-// `from` is the seat that the sender holds now. A swap of the seats swaps it in every message.
-export type ChatMessage = { id: number; from: Player; text: string; at: EpochMs };
+// `from` is the seat of the sender when they sent the message. `by` is the person id of the sender
+// (personId). A message from before person ids has no `by`: the page then shows the holder of `from`.
+export type ChatMessage = { id: number; from: Player; text: string; at: EpochMs; by?: PersonId };
 // A GitHub account linked to a seat. Shown next to the seat, never required to play.
 export type PlayerInfo = { login: string; avatar: string };
 // The generated name of each seat's player (src/names.ts). The server computes it from the seat's
@@ -79,6 +81,8 @@ export type SessionView = {
   players: Record<Player, PlayerInfo | null>;
   // The generated name of each seat's player (src/names.ts). Null for an empty seat and for the computer.
   names: SeatNames;
+  // The public person id of each seat's player (personId). Null for an empty seat, the computer, or a holder that sends none.
+  people: Record<Player, PersonId | null>;
   // The devices that have the session open without a seat, as the holder of the session knows them.
   watchers: Watcher[];
   // The watcher id of the caller, when the caller watches. Null for a player and for a caller that the holder does not see.
@@ -108,7 +112,8 @@ export type SeatAnswer = { accept: boolean };
 // A watcher id is an opaque handle that the holder of the session makes. It is never a player token.
 export const WATCHER_ID_LENGTH = 16;
 const WATCHER_ID_CHARS = '0123456789abcdef';
-type Watcher = { id: string; name: string; player: PlayerInfo | null };
+// `person` is the public person id of the watcher (personId), or null from a holder that sends none.
+type Watcher = { id: string; name: string; player: PlayerInfo | null; person: PersonId | null };
 export type SeatRequestView = {
   kind: ConsentAction;
   from: Player;
@@ -140,7 +145,9 @@ export function parseSeatAnswer(value: unknown): SeatAnswer | undefined {
 function parseWatcher(value: unknown): Watcher | undefined {
   if (!isRecord(value) || !isWatcherId(value.id) || !isDisplayName(value.name)) return undefined;
   const player = value.player === null ? null : parsePlayerInfo(value.player);
-  return player === undefined ? undefined : { id: value.id, name: value.name, player };
+  // An older server or Nearby host sends no person id.
+  const person = value.person === undefined || value.person === null ? null : parsePersonId(value.person);
+  return player === undefined || person === undefined ? undefined : { id: value.id, name: value.name, player, person };
 }
 
 function parseSeatRequestView(value: unknown): SeatRequestView | undefined {
@@ -157,6 +164,71 @@ function parseSeatRequestView(value: unknown): SeatRequestView | undefined {
   }
   if ((kind === 'replace') !== (watcher !== null)) return undefined;
   return { kind, from, watcher, expiresAt };
+}
+
+// ---- People: report and block ----
+
+// The public id of a person: the first PERSON_ID_LENGTH hex characters of SHA-256 over a prefix and
+// the token. A token is a random UUID, so the id does not reveal it. An account token
+// ("account-<GitHub id>") reveals only the GitHub id, which is public. The hash has no key, so the
+// server and a Nearby host give one device the same id, and DuckDB's sha256() finds the same id.
+export type PersonId = string & { readonly __brand: 'PersonId' };
+export const PERSON_ID_LENGTH = 16;
+export const PERSON_ID_PREFIX = 'tick3d-person:';
+const HEX_CHARS = '0123456789abcdef';
+
+export async function personId(token: string): Promise<PersonId> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${PERSON_ID_PREFIX}${token}`));
+  const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return hex.slice(0, PERSON_ID_LENGTH) as PersonId;
+}
+
+export function parsePersonId(value: unknown): PersonId | undefined {
+  return typeof value === 'string' && value.length === PERSON_ID_LENGTH && [...value].every((char) => HEX_CHARS.includes(char))
+    ? (value as PersonId)
+    : undefined;
+}
+
+// A person that the caller blocked. `name` is the name that the caller saw at the block, for the unblock list.
+export type BlockedPerson = { person: PersonId; name: string; at: EpochMs };
+
+// The answer of GET /api/me/blocks, newest first.
+export function parseBlocks(value: unknown): BlockedPerson[] {
+  const blocked = isRecord(value) ? value.blocked : undefined;
+  if (!isUnknownArray(blocked)) throw new Error('invalid answer from /api/me/blocks');
+  return blocked.map((entry) => {
+    const person = isRecord(entry) ? parsePersonId(entry.person) : undefined;
+    if (!isRecord(entry) || person === undefined || !isDisplayName(entry.name) || !isEpochMs(entry.at)) throw new Error('invalid blocked person');
+    return { person, name: entry.name, at: entry.at };
+  });
+}
+
+// The body of PUT /api/me/blocks/{person}.
+export function parseBlockRequest(value: unknown): { name: string } | undefined {
+  return isRecord(value) && hasOnlyKeys(value, ['name']) && isDisplayName(value.name) ? { name: value.name } : undefined;
+}
+
+export const REPORT_REASONS = ['spam', 'abuse', 'name', 'other'] as const;
+export type ReportReason = (typeof REPORT_REASONS)[number];
+export const REPORT_NOTE_MAX_LENGTH = 200;
+// A report names one chat message of an online session, or one person in it.
+type ReportTarget = { message: number } | { person: PersonId };
+export type ReportRequest = { code: Code; target: ReportTarget; reason: ReportReason; note: string | null };
+
+const isMessageId = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
+
+// The body of POST /api/reports: { code, message | person, reason, note? }. Exactly one target.
+export function parseReportRequest(value: unknown): ReportRequest | undefined {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['code', 'message', 'person', 'reason', 'note'])) return undefined;
+  const code = typeof value.code === 'string' ? normalizeCode(value.code) : undefined;
+  const reason = oneOf(REPORT_REASONS, value.reason);
+  const note = value.note === undefined || value.note === null ? '' : typeof value.note === 'string' ? value.note.trim() : undefined;
+  if (code === undefined || reason === undefined || note === undefined || note.length > REPORT_NOTE_MAX_LENGTH) return undefined;
+  if ((value.message === undefined) === (value.person === undefined)) return undefined;
+  const base = { code, reason, note: note === '' ? null : note };
+  if (value.message !== undefined) return isMessageId(value.message) ? { ...base, target: { message: value.message } } : undefined;
+  const person = parsePersonId(value.person);
+  return person === undefined ? undefined : { ...base, target: { person } };
 }
 
 // ---- Custom names ----
@@ -230,19 +302,19 @@ export function asPlayerToken(input: unknown): PlayerToken | undefined {
   return [...input].every((char) => TOKEN_CHARS.includes(char)) ? (input as PlayerToken) : undefined;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 const isCell = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < CELL_COUNT;
 
 export function isChatMessage(value: unknown): value is ChatMessage {
   if (!isRecord(value)) return false;
-  const { id, from, text, at } = value;
+  const { id, from, text, at, by } = value;
   return (
     typeof id === 'number' &&
     Number.isInteger(id) &&
     (from === 'X' || from === 'O') &&
     normalizeChat(text) === text &&
-    isEpochMs(at)
+    isEpochMs(at) &&
+    (by === undefined || parsePersonId(by) !== undefined)
   );
 }
 
@@ -311,6 +383,8 @@ export function parseSessionView(value: unknown): SessionView {
   const { games, seats, you, options, locked, now, version, chat, presence, players } = value;
   // An older server, an older Nearby host or a cached view sends no names, watchers or seat request.
   const names = value.names === undefined ? { X: null, O: null } : parseSeatNames(value.names);
+  // An older server, an older Nearby host or a cached view sends no person ids.
+  const people = value.people === undefined ? { X: null, O: null } : parsePeople(value.people);
   const watchers = value.watchers === undefined ? [] : Array.isArray(value.watchers) ? value.watchers.map(parseWatcher) : undefined;
   const youWatcher = value.youWatcher === undefined || value.youWatcher === null ? null : isWatcherId(value.youWatcher) ? value.youWatcher : undefined;
   const seatRequest = value.seatRequest === undefined || value.seatRequest === null ? null : parseSeatRequestView(value.seatRequest);
@@ -336,6 +410,7 @@ export function parseSessionView(value: unknown): SessionView {
   const playerO = players.O === null ? null : parsePlayerInfo(players.O);
   if (playerX === undefined || playerO === undefined) return fail('players');
   if (names === undefined) return fail('names');
+  if (people === undefined) return fail('people');
   // An older server, a Nearby host or a cached view sends no playoff.
   const playoff = value.playoff === undefined || value.playoff === null ? null : parsePlayoff(value.playoff);
   if (playoff === undefined) return fail('playoff');
@@ -370,10 +445,11 @@ export function parseSessionView(value: unknown): SessionView {
     flipped,
     now,
     version,
-    chat: chat.map(({ id, from, text, at }) => ({ id, from, text, at })),
+    chat: chat.map(({ id, from, text, at, by }) => ({ id, from, text, at, ...(by === undefined ? {} : { by }) })),
     presence: { X: presence.X, O: presence.O },
     players: { X: playerX, O: playerO },
     names,
+    people,
     watchers,
     youWatcher,
     seatRequest,
@@ -396,6 +472,13 @@ const GITHUB_LOGIN_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
 const isDisplayName = (value: unknown): value is string => typeof value === 'string' && value.length >= 1 && value.length <= NAME_MAX_LENGTH;
 const isSeatName = (value: unknown): value is string | null => value === null || isDisplayName(value);
 
+function parsePeople(value: unknown): Record<Player, PersonId | null> | undefined {
+  if (!isRecord(value)) return undefined;
+  const x = value.X === null ? null : parsePersonId(value.X);
+  const o = value.O === null ? null : parsePersonId(value.O);
+  return x === undefined || o === undefined ? undefined : { X: x, O: o };
+}
+
 function parseSeatNames(value: unknown): SeatNames | undefined {
   return isRecord(value) && isSeatName(value.X) && isSeatName(value.O) ? { X: value.X, O: value.O } : undefined;
 }
@@ -416,32 +499,49 @@ export function parsePlayerInfo(value: unknown): PlayerInfo | undefined {
 // An online game: "<CODE>-<n>", where n is its 1-based number in the session.
 // Any other game: DEVICE_GAME_ID_LENGTH random characters that the device makes at the end of the game.
 // The id of a stored result holds a player token, so only this id may leave the server.
-export type GameId = string & { readonly __brand: 'GameId' };
-const DEVICE_GAME_ID_LENGTH = 8;
+// The check functions below mint both kinds, so a GameId always has one of the two forms.
+export type DeviceGameId = string & { readonly __brand: 'DeviceGameId' };
+export type OnlineGameId = `${string}-${number}` & { readonly __brand: 'OnlineGameId' };
+export type GameId = DeviceGameId | OnlineGameId;
+export const DEVICE_GAME_ID_LENGTH = 8;
 // Game numbers above this are not real: a session of a million games has never happened.
 const MAX_GAME_NUMBER = 1_000_000;
 
-export function newGameId(): GameId {
+export function newGameId(): DeviceGameId {
   // 256 is a multiple of the 32 characters, so every character is equally likely.
   const bytes = crypto.getRandomValues(new Uint8Array(DEVICE_GAME_ID_LENGTH));
-  return Array.from(bytes, (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length]).join('') as GameId;
+  return Array.from(bytes, (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length]).join('') as DeviceGameId;
 }
 
-export const onlineGameId = (code: Code, index: number): GameId => `${code}-${index + 1}` as GameId;
+export const onlineGameId = (code: Code, index: number): OnlineGameId => `${code}-${index + 1}` as OnlineGameId;
 
 // A device id has no dash; an online id always has one.
-const isDeviceGameId = (id: GameId) => !id.includes('-');
+export const isOnlineGameId = (id: GameId): id is OnlineGameId => id.includes('-');
+
+// The session code and the 0-based game index of an online id.
+export function onlineGameParts(id: OnlineGameId): { code: Code; index: number } {
+  const [code, number] = id.split('-');
+  const parsed = normalizeCode(code ?? '');
+  if (parsed === undefined || parsed !== code) throw new Error(`not an online game id: ${id}`);
+  return { code: parsed, index: Number(number) - 1 };
+}
+
+// Only the exact form that newGameId makes: no trimming, no case change.
+export function parseDeviceGameId(input: unknown): DeviceGameId | undefined {
+  const id = parseGameId(input);
+  return id !== undefined && id === input && !isOnlineGameId(id) ? id : undefined;
+}
 
 // Accepts either form in any case, and returns it in upper case.
 export function parseGameId(input: unknown): GameId | undefined {
   if (typeof input !== 'string') return undefined;
   const id = input.trim().toUpperCase();
-  if (id.length === DEVICE_GAME_ID_LENGTH && [...id].every((char) => CODE_ALPHABET.includes(char))) return id as GameId;
+  if (id.length === DEVICE_GAME_ID_LENGTH && [...id].every((char) => CODE_ALPHABET.includes(char))) return id as DeviceGameId;
   const [code, number, ...rest] = id.split('-');
   if (code === undefined || number === undefined || rest.length > 0 || normalizeCode(code) !== code) return undefined;
   const n = Number(number);
   // String(n) === number refuses leading zeros, signs and exponents.
-  return Number.isInteger(n) && n >= 1 && n <= MAX_GAME_NUMBER && String(n) === number ? (id as GameId) : undefined;
+  return Number.isInteger(n) && n >= 1 && n <= MAX_GAME_NUMBER && String(n) === number ? (id as OnlineGameId) : undefined;
 }
 
 // ---- Game metrics ----
@@ -522,12 +622,16 @@ export function parseMetrics(value: unknown): Metrics | undefined {
   const theme = oneOf(THEMES, value.theme);
   if (device === undefined || view === undefined || layout === undefined || theme === undefined) return undefined;
   if (!isRecord(input) || !hasOnlyKeys(input, ['board', 'keypad']) || !isCount(input.board) || !isCount(input.keypad)) return undefined;
-  if (!isRecord(refused) || !Object.entries(refused).every(([key, count]) => oneOf(REFUSALS, key) !== undefined && isCount(count))) {
-    return undefined;
+  if (!isRecord(refused)) return undefined;
+  const refusals: Metrics['refused'] = {};
+  for (const [key, count] of Object.entries(refused)) {
+    const reason = oneOf(REFUSALS, key);
+    if (reason === undefined || !isCount(count)) return undefined;
+    refusals[reason] = count;
   }
   if (!isCount(undos) || typeof offline !== 'boolean' || !isVersion(version)) return undefined;
-  const validThink = (time: unknown) => typeof time === 'number' && Number.isFinite(time) && time >= 0 && time <= MAX_THINK_MS;
-  if (!Array.isArray(thinkMs) || thinkMs.length > CELL_COUNT || !thinkMs.every(validThink)) return undefined;
+  const validThink = (time: unknown): time is number => typeof time === 'number' && Number.isFinite(time) && time >= 0 && time <= MAX_THINK_MS;
+  if (!isUnknownArray(thinkMs) || thinkMs.length > CELL_COUNT || !thinkMs.every(validThink)) return undefined;
   if (tuning !== null && !isTuning(tuning)) return undefined;
   let nearbyInfo: Metrics['nearby'] = null;
   if (nearby !== null) {
@@ -543,9 +647,9 @@ export function parseMetrics(value: unknown): Metrics | undefined {
     layout,
     theme,
     input: { board: input.board, keypad: input.keypad },
-    refused,
+    refused: refusals,
     undos,
-    thinkMs: thinkMs as number[],
+    thinkMs: [...thinkMs],
     offline,
     version,
     tuning: tuning === null ? null : parseTuning(tuning),
@@ -567,7 +671,7 @@ export type ResultUpload = {
   difficulty: Difficulty | null;
   finishedAt: EpochMs;
   // Null from a device version before game links. The server then makes an id.
-  publicId: GameId | null;
+  publicId: DeviceGameId | null;
   // The hide settings at the end of the game.
   options: MatchOptions;
   // True for a computer game against changed advanced settings.
@@ -612,8 +716,8 @@ export function parseResultUpload(value: unknown, now: EpochMs): ResultUpload | 
   const level = difficulty === null ? null : DIFFICULTIES.find((d) => d === difficulty);
   if (level === undefined || (mode === 'computer') !== (level !== null)) return undefined;
   if (!isEpochMs(finishedAt) || finishedAt === 0 || finishedAt > now + FUTURE_SLACK_MS) return undefined;
-  const publicId = value.publicId === undefined || value.publicId === null ? null : parseGameId(value.publicId);
-  if (publicId === undefined || (publicId !== null && (!isDeviceGameId(publicId) || publicId !== value.publicId))) return undefined;
+  const publicId = value.publicId === undefined || value.publicId === null ? null : parseDeviceGameId(value.publicId);
+  if (publicId === undefined) return undefined;
   const options = parseMatchOptions(value.options ?? { hideBoard: false, hideHistory: false });
   if (options === undefined) return undefined;
   const tuned = value.tuned ?? false;
@@ -641,9 +745,13 @@ export function parseResultUpload(value: unknown, now: EpochMs): ResultUpload | 
 // ---- One game, read-only ----
 
 // A finished game as anybody with its link sees it. It has no tokens and no result id.
-export type PublicGame = {
-  id: GameId;
-  mode: SessionMode;
+// An online game has an online id ("<CODE>-<n>"), every other game a device id.
+export type PublicGame = (
+  | { id: OnlineGameId; mode: 'online' }
+  | { id: DeviceGameId; mode: Exclude<SessionMode, 'online'> }
+) &
+  PublicGameFields;
+type PublicGameFields = {
   game: GameRecord;
   options: MatchOptions;
   difficulty: Difficulty | null;
@@ -684,9 +792,7 @@ export function parsePublicGame(value: unknown): PublicGame {
   const names = parseSeatNames(value.names);
   if (names === undefined) return fail('names');
   if (!isEpochMs(finishedAt)) return fail('finishedAt');
-  return {
-    id,
-    mode,
+  const fields: PublicGameFields = {
     game: { moves: game.moves, times: game.times, clock: game.clock, timedOut: game.timedOut },
     options: matchOptions,
     difficulty,
@@ -696,6 +802,8 @@ export function parsePublicGame(value: unknown): PublicGame {
     names,
     finishedAt,
   };
+  if (mode === 'online') return isOnlineGameId(id) ? { id, mode, ...fields } : fail('id');
+  return isOnlineGameId(id) ? fail('id') : { id, mode, ...fields };
 }
 
 // ---- Match history ----
@@ -787,7 +895,7 @@ export type MyGames = {
 // or a page fault. Only `personal` (Mine) names players: your opponents.
 export type Count = { key: string; count: number };
 export type Stats = {
-  generatedAt: number;
+  generatedAt: EpochMs;
   totals: { games: number; moves: number; players: number; accounts: number; sessions: number; gamesLast7Days: number };
   // The last 60 days, oldest first, in UTC.
   perDay: { day: string; games: number; players: number }[];
@@ -828,7 +936,7 @@ export type Stats = {
   filter: StatsFilter;
   // The win rate over time, oldest first: at each game, the share of wins in the FORM_WINDOW games up to it.
   // Mine: your games with a side. Everyone: the games against the computer, from the player's side.
-  form: { at: number; rate: number }[];
+  form: { at: EpochMs; rate: number }[];
   // Games per number of moves: index n holds the games with n moves (0 to CELL_COUNT).
   lengths: number[];
   // CELL_COUNT counts: the games that X won, by the first move. Next to `openings`.

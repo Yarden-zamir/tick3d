@@ -9,10 +9,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.setConfig({ testTimeout: 20_000 });
 import { replay } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
-import { type Code, type GameId, type Metrics, type PlayerToken, type ResultUpload, type StatsFilter, ALL_STATS, parseGameId, toRecord } from '../src/protocol.ts';
+import { type Code, type DeviceGameId, type GameId, type Metrics, type PlayerToken, type ResultUpload, type StatsFilter, ALL_STATS, HISTORY_PAGE_SIZE, parseDeviceGameId, parseGameId, personId, toRecord } from '../src/protocol.ts';
+import { PLAYOFF_COUNTDOWN_MS } from '../src/practice/playoff.ts';
 import type { PracticeRun } from '../src/practice/practice.ts';
 import { SessionError } from '../src/session/core.ts';
-import { type Store, openStore } from './store.ts';
+import { REMOVED_MESSAGE, type Store, openStore } from './store.ts';
 
 const alice = 'aaaaaaaa-0000-4000-8000-000000000001' as PlayerToken;
 const bob = 'bbbbbbbb-0000-4000-8000-000000000002' as PlayerToken;
@@ -249,7 +250,7 @@ describe('accounts', () => {
     const BOB_GITHUB = { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' };
     await store.linkToken(bob, BOB_GITHUB);
     const nearby = { mode: 'nearby', difficulty: null, game: finishedGame(X_WINS) } as const;
-    const id = gameId('NEARBY45');
+    const id = deviceGameId('NEARBY45');
     // The host (Alice, X) names the guest device (Bob, O). Both devices send a result.
     await store.addResults(alice, [
       result('eeeeeeee-1111-4000-8000-000000000001', { ...nearby, you: 'X', publicId: id, guest: bob, metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } }),
@@ -345,11 +346,16 @@ const gameId = (text: string): GameId => {
   if (id === undefined) throw new Error(`bad test id ${text}`);
   return id;
 };
+const deviceGameId = (text: string): DeviceGameId => {
+  const id = parseDeviceGameId(text);
+  if (id === undefined) throw new Error(`bad test id ${text}`);
+  return id;
+};
 
 describe('game links', () => {
   it('opens an uploaded game by its public id, with no token or result id in the answer', async () => {
     store = await openStore(':memory:');
-    const id = gameId('ABCDEFGH');
+    const id = deviceGameId('ABCDEFGH');
     const upload = result('44444444-0000-4000-8000-000000000001', { publicId: id, metrics: METRICS });
     expect(await store.addResults(alice, [upload])).toEqual({ stored: 1, renamed: {} });
     await store.linkToken(alice, ALICE_GITHUB);
@@ -370,7 +376,7 @@ describe('game links', () => {
 
   it('reads a result stored before hide coordinates as not hidden', async () => {
     store = await openStore(':memory:');
-    const id = gameId('BCDFGHJK');
+    const id = deviceGameId('BCDFGHJK');
     // An older device sent options without hideCoordinates, and the row keeps them as they came.
     const old = { ...result('44444444-0000-4000-8000-000000000002', { publicId: id }), options: { hideBoard: true, hideHistory: false } };
     await store.addResults(alice, [old]);
@@ -379,7 +385,7 @@ describe('game links', () => {
 
   it('gives a result without an id, or with an id that another game holds, a new unique id', async () => {
     store = await openStore(':memory:');
-    const taken = gameId('TAKEN234');
+    const taken = deviceGameId('TAKEN234');
     await store.addResults(alice, [result('55555555-0000-4000-8000-000000000001', { publicId: taken })]);
     const { renamed } = await store.addResults(bob, [
       result('55555555-0000-4000-8000-000000000002', { publicId: taken }),
@@ -462,7 +468,7 @@ describe('match history', () => {
   it('gives the guest of a Nearby game the result of the host, with the host as opponent, and returns no token', async () => {
     store = await openStore(':memory:');
     const nearby = { mode: 'nearby', difficulty: null, game: finishedGame(X_WINS) } as const;
-    const id = gameId('NEARBY23');
+    const id = deviceGameId('NEARBY23');
     // Both devices send a result. The host (Alice, X) names the guest (Bob, O).
     await store.addResults(alice, [
       result('dddddddd-1111-4000-8000-000000000001', { ...nearby, you: 'X', publicId: id, guest: bob, metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } }),
@@ -487,14 +493,14 @@ describe('match history', () => {
 
   it('pages through the history', async () => {
     store = await openStore(':memory:');
-    const uploads = Array.from({ length: 51 }, (_, i) =>
+    const uploads = Array.from({ length: HISTORY_PAGE_SIZE + 1 }, (_, i) =>
       result(`77777777-0000-4000-8000-${String(i).padStart(12, '0')}`, { finishedAt: ms(10_000 + i) }),
     );
     await store.addResults(alice, uploads);
     const first = await store.history(alice, 0);
-    expect(first.games).toHaveLength(50);
+    expect(first.games).toHaveLength(HISTORY_PAGE_SIZE);
     expect(first.more).toBe(true);
-    const second = await store.history(alice, 50);
+    const second = await store.history(alice, HISTORY_PAGE_SIZE);
     expect(second).toMatchObject({ more: false, games: [{ finishedAt: 10_000 }] });
   });
 });
@@ -807,7 +813,7 @@ describe('sound practice', () => {
     expect(started.playoff).toMatchObject({ id: 1, by: 'X', startAt: null });
     const joined = await store.playoff(code, bob, { action: 'join', id: 1 });
     const startAt = joined.playoff?.startAt ?? 0;
-    expect(startAt).toBe(clock + 3000);
+    expect(startAt).toBe(clock + PLAYOFF_COUNTDOWN_MS);
     clock = startAt + 10;
     for (let index = 0; index < 10; index++) {
       await store.playoff(code, alice, { action: 'hit', id: 1, index, ms: 1000 });
@@ -828,7 +834,7 @@ describe('seat controls', () => {
     open = [alice, carol, carol];
     const view = await store.get(code, bob);
     expect(view.presence).toEqual({ X: true, O: false });
-    expect(view.watchers).toEqual([{ id: expect.stringMatching(/^[0-9a-f]{16}$/), name: nameOf(carol), player: null }]);
+    expect(view.watchers).toEqual([{ id: expect.stringMatching(/^[0-9a-f]{16}$/), name: nameOf(carol), player: null, person: await personId(carol) }]);
     expect(JSON.stringify(view)).not.toContain(carol);
     expect(JSON.stringify(view)).not.toContain(alice);
     // The id is the same for every reader, so a player can act on it. Only Carol sees it as her own.
@@ -970,5 +976,83 @@ describe('seat rotation', () => {
     expect((await store.history(alice, 0)).games.map((entry) => entry.result)).toEqual(['lost', 'won']);
     expect((await store.myGames(alice)).byMode.online).toEqual({ played: 2, won: 1, lost: 1, drawn: 0 });
     expect((await store.myGames(bob)).byMode.online).toEqual({ played: 2, won: 1, lost: 1, drawn: 0 });
+  });
+});
+
+describe('report and block', () => {
+  const tokens = [alice, bob, carol, alicePhone];
+  const noTokens = (value: unknown) => {
+    const text = JSON.stringify(value);
+    for (const token of tokens) expect(text).not.toContain(token);
+  };
+
+  it('gives each person a public id that holds no token, the same for every device of an account', async () => {
+    const code = await session();
+    const view = await store.get(code, carol);
+    expect(view.people).toEqual({ X: await personId(alice), O: await personId(bob) });
+    noTokens(view);
+    for (const token of tokens) expect(await personId(token)).not.toContain(token);
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    const linked = await store.get(code, carol);
+    expect(linked.people.X).not.toBe(await personId(alice));
+    // Both devices of the account block as one owner.
+    await store.block(alicePhone, await personId(bob), 'bob');
+    expect((await store.blocks(alice)).map((entry) => entry.person)).toEqual([await personId(bob)]);
+  });
+
+  it('ties each chat message to its author, also after the seats change hands', async () => {
+    const code = await session();
+    await store.chat(code, bob, 'hello');
+    const bobId = await personId(bob);
+    await playMoves(code, X_WINS);
+    // The seats rotate with the new game: Bob plays X now, and the message keeps its author.
+    const rotated = await store.newGame(code, alice);
+    expect(rotated.people.X).toBe(bobId);
+    expect(rotated.chat).toMatchObject([{ text: 'hello', by: bobId }]);
+  });
+
+  it('keeps blocks per player until an unblock, and refuses a block of yourself', async () => {
+    await session();
+    const bobId = await personId(bob);
+    await store.block(alice, bobId, 'braveOtter');
+    await store.block(alice, bobId, 'braveOtter');
+    expect(await store.blocks(alice)).toMatchObject([{ person: bobId, name: 'braveOtter' }]);
+    expect(await store.blocks(bob)).toEqual([]);
+    expect(await status(async () => store.block(alice, await personId(alice), 'me'))).toBe(400);
+    await store.unblock(alice, bobId);
+    expect(await store.blocks(alice)).toEqual([]);
+  });
+
+  it('stores a report with a copy of the message and its author, and lists it without tokens', async () => {
+    const code = await session();
+    const view = await store.chat(code, bob, 'rude words');
+    const id = view.chat[0]?.id ?? 0;
+    expect(await store.report(alice, { code, target: { message: id }, reason: 'abuse', note: 'after the game' })).toEqual({ id: 1 });
+    await store.report(bob, { code, target: { person: await personId(alice) }, reason: 'name', note: null });
+    const { reports } = await store.reports();
+    expect(reports).toMatchObject([
+      { code, message: null, person: await personId(alice), name: nameOf(alice), reason: 'name', reporter: await personId(bob) },
+      { code, message: id, text: 'rude words', person: await personId(bob), reason: 'abuse', note: 'after the game', reporter: await personId(alice) },
+    ]);
+    noTokens(await store.reports());
+    expect(await status(() => store.report(alice, { code, target: { message: 99 }, reason: 'spam', note: null }))).toBe(404);
+    expect(await status(async () => store.report(alice, { code, target: { person: await personId(carol) }, reason: 'spam', note: null }))).toBe(404);
+  });
+
+  it('lets a maintainer hide a message for everyone and clear a custom name, and logs both', async () => {
+    const code = await session();
+    await store.chat(code, bob, 'spam spam');
+    await store.setName(bob, 'Rude Name');
+    await store.hideMessage(code, 1, 'Yarden-zamir');
+    expect((await store.get(code, alice)).chat).toMatchObject([{ id: 1, text: REMOVED_MESSAGE }]);
+    expect(await store.clearNameOf(await personId(bob), 'TomCohenDev')).toEqual([bob]);
+    expect(await store.customName(bob)).toBeNull();
+    expect(await status(async () => store.clearNameOf(await personId(bob), 'TomCohenDev'))).toBe(404);
+    expect(await status(() => store.hideMessage(code, 9, 'Yarden-zamir'))).toBe(404);
+    expect((await store.reports()).actions).toMatchObject([
+      { login: 'TomCohenDev', action: 'clear-name', person: await personId(bob) },
+      { login: 'Yarden-zamir', action: 'hide-message', code, message: 1 },
+    ]);
   });
 });
