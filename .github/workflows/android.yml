@@ -3,8 +3,8 @@ name: android
 # Builds the Android app (a Trusted Web Activity of the production site) from android/twa-manifest.json
 # with Bubblewrap. It runs by hand or on a tag such as android-v1.2.0, never on a pull request.
 # The Gradle project is generated here on every run, so the repository keeps only twa-manifest.json.
-# A tag also uploads to the internal track with release notes (android/release-notes.sh), and makes
-# a GitHub release with the bundle. Promotion to other tracks: play-promote.yml.
+# A tag also uploads to the internal track with release notes (android/release-notes.sh).
+# Every build makes a GitHub release with the bundle. Promotion to other tracks: play-promote.yml.
 #
 # The secrets have no KITSHN_ prefix: KitSHn forwards every KITSHN_ secret to the server, and the
 # signing key must never go there. They are plain repository secrets.
@@ -184,11 +184,40 @@ jobs:
         run: |
           echo "::notice::No Play upload. It needs a tag or a track, the upload key (ANDROID_UPLOAD_*), PLAY_SERVICE_ACCOUNT_JSON, and the app in Play."
 
+      # Every build makes a GitHub release with the bundle. A tag android-v1.2.0 makes a normal release.
+      # A run by hand makes a pre-release on a new tag android-0.<run number>, at the built commit.
+      # The changelog lists the commits since the previous release tag (android/changelog.sh).
+      - name: Release text
+        id: release
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/android-v* ]]; then
+            tag=$GITHUB_REF_NAME; pattern='android-v*'; prerelease=false
+          else
+            tag="android-${{ steps.version.outputs.name }}"; pattern='android-*'; prerelease=true
+          fi
+          if [[ '${{ steps.signing.outputs.sign }}' == true ]]; then signing=signed; else signing=unsigned; fi
+          body="$RUNNER_TEMP/release.md"
+          {
+            echo "Version ${{ steps.version.outputs.name }} (code ${{ steps.version.outputs.code }}), **${signing}**."
+            if [[ "$signing" == unsigned ]]; then echo "Play does not take an unsigned bundle. It installs only for tests."; fi
+            echo
+            android/changelog.sh "$pattern"
+          } > "$body"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "title=tick3d ${{ steps.version.outputs.name }} for Android (${signing})" >> "$GITHUB_OUTPUT"
+          echo "body=$body" >> "$GITHUB_OUTPUT"
+
       - name: GitHub release
-        if: startsWith(github.ref, 'refs/tags/android-v')
         uses: softprops/action-gh-release@v3.0.3
         with:
-          body_path: ${{ runner.temp }}/release-notes.txt
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.release.outputs.title }}
+          body_path: ${{ steps.release.outputs.body }}
+          prerelease: ${{ steps.release.outputs.prerelease }}
+          make_latest: ${{ steps.release.outputs.prerelease == 'false' }}
+          fail_on_unmatched_files: true
           files: |
             ${{ env.BUILD_DIR }}/tick3d*.aab
             ${{ env.BUILD_DIR }}/tick3d*.apk
