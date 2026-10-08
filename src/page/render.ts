@@ -1,5 +1,5 @@
 // Draws the whole page from the settings and the open session.
-import { avatarFor } from '../avatar.ts';
+import { avatarFor, avatarPlaceholder } from '../avatar.ts';
 import { hasLimit } from '../clock.ts';
 import { showSegmented } from '../board/view-controls.ts';
 import { type Player, other, type Game, replay, toCoords, winnerOf } from '../game.ts';
@@ -41,7 +41,7 @@ import { markPerson } from './person-mark.ts';
 import { renderPlayers, seatPerson } from './players.ts';
 import { settings, type Toggle } from './settings.ts';
 import { syncVoice } from './voice.ts';
-import { me, page, shared, current, isLive, isWatching, matchOptions, settingsLocked, canChangeMatch, bothSeated } from './state.ts';
+import { me, page, shared, current, isLive, isWatching, matchOptions, settingsLocked, canChangeMatch, bothSeated, awaitingSession } from './state.ts';
 
 // One name per seat, the same in the score, status, chat, clocks, keypad, history and end card.
 // This screen's own seat is "You". Then come "Computer", the GitHub login and the generated name.
@@ -149,14 +149,10 @@ function undoProblemText(): string | undefined {
 }
 
 // A panel control shows only where it applies (see the table in README "Controls per mode").
-// data-show-mode lists the modes of a control, and such a control is for play, so a game from a link
-// hides it. data-needs-session marks a control of an open game, which online and Nearby mode have
-// only after a create, a join or a host.
+// data-show-mode lists the modes of a control, and such a control is for play, so a game from a link hides it.
 function applies(field: HTMLElement): boolean {
   const modes = field.dataset.showMode;
-  if (modes !== undefined && (page.viewing !== undefined || !modes.split(' ').includes(settings.mode))) return false;
-  const waiting = page.session === undefined && page.viewing === undefined && (settings.mode === 'online' || settings.mode === 'nearby');
-  return !(field.dataset.needsSession !== undefined && waiting);
+  return modes === undefined || (page.viewing === undefined && modes.split(' ').includes(settings.mode));
 }
 
 function shownGame(): Game {
@@ -212,8 +208,15 @@ export function render(): void {
   renderPlayers();
   renderGameView();
 
-  document.querySelectorAll<HTMLElement>('[data-show-mode], [data-needs-session]').forEach((field) => {
+  document.querySelectorAll<HTMLElement>('[data-show-mode]').forEach((field) => {
     field.hidden = !applies(field);
+  });
+  // data-needs-session marks a control of an open game. Before the session comes (the server, the Nearby host,
+  // or the device store), it draws in its final place, grey and disabled, and the session fills it in place.
+  // Its own rules below disable its buttons, because no session gives no action.
+  const pending = awaitingSession();
+  document.querySelectorAll<HTMLElement>('[data-needs-session]').forEach((field) => {
+    field.toggleAttribute('data-pending', pending);
   });
   showSegmented(document, settings, frozen);
   document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) => {
@@ -242,6 +245,7 @@ export function render(): void {
     if (g.status.kind === 'draw') score.draw++;
   }
   const away = awayPlayer();
+  const sharedMode = settings.mode === 'online' || settings.mode === 'nearby';
   scoreEl.replaceChildren(
     ...([
       ['X', playerName('X'), score.X],
@@ -257,6 +261,12 @@ export function render(): void {
       // A GitHub account shows in every mode. A generated picture shows only with another device,
       // where the seat is a person and not "Computer" or a friend on this device.
       const session = page.session;
+      // Online and Nearby before the session: the seats wait for their people.
+      if (key !== 'draw' && pending && sharedMode) {
+        name.append(avatarPlaceholder(), 'Waiting…');
+        tally.append(count, name);
+        return tally;
+      }
       if (key !== 'draw' && session !== undefined && (session.players[key] !== null || (shared() && session.seats[key]))) {
         name.append(avatarFor(seatPerson(session, key), TALLY_AVATAR_PIXELS, session.people[key]));
       }

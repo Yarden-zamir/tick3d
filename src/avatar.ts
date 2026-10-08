@@ -127,6 +127,14 @@ export function avatarImage({ player, name }: Person, pixels: number): HTMLImage
   return image;
 }
 
+// The pictures in the score and in the Players box before the session comes: a grey circle (src/style.css .avatar-pending).
+export function avatarPlaceholder(): HTMLSpanElement {
+  const circle = document.createElement('span');
+  circle.className = 'avatar avatar-pending';
+  circle.setAttribute('aria-hidden', 'true');
+  return circle;
+}
+
 // The picture of one person as a button: a click, a tap, Enter or Space opens it large in the viewer.
 export function avatarFor(person: Person, pixels: number, id: PersonId | null): HTMLImageElement {
   const image = avatarImage(person, pixels);

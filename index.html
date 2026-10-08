@@ -78,7 +78,7 @@
           <button type="button" class="btn song" id="game-view-song" aria-label="Play the game as a song" data-tip="Play as a song. Hold to share."></button>
           <button type="button" class="btn btn-primary" id="game-view-play">Play</button>
         </div>
-        <div class="clocks" id="clocks" hidden>
+        <div class="clocks" id="clocks" hidden data-needs-session>
           <span class="clock x" data-clock="X"></span>
           <span class="clock o" data-clock="O"></span>
           <span class="clock-note" id="clock-note">The clock starts after the first move of each player.</span>
@@ -144,7 +144,8 @@
 
       <aside class="panel">
         <!-- The score and the game actions come first. On a phone the panel is under the board, so a new game is one short scroll away.
-             Everything above the Opponent picker keeps its box in every mode, so the picker never moves (src/style.css .score[hidden]). -->
+             Everything above the Opponent picker keeps its box in every mode, so the picker never moves.
+             data-needs-session: before the session comes, the control draws grey and disabled in its place (src/style.css [data-pending]). -->
         <div class="score" id="score" data-needs-session></div>
 
         <!-- Fixed slots (see .slot-row in src/style.css): New game, then Undo during a game or the result card after it in one slot, then the sound control. -->
@@ -202,7 +203,7 @@
 
         <div class="online" data-show-mode="online">
           <p class="lan-host" id="lan-host" hidden></p>
-          <div class="online-code" id="online-session">
+          <div class="online-code" id="online-session" data-needs-session>
             <div>
               <span class="label">Game code</span>
               <b id="online-code">····</b>

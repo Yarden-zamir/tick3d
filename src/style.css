@@ -364,6 +364,18 @@ input:disabled {
   box-shadow: none;
 }
 
+/* A control of an open game before the session comes (src/page/render.ts): it has its final place and size,
+   grey like a disabled button. Its buttons are disabled too, and the box is dim already, so they do not dim twice.
+   e2e/row-layout.spec.ts checks that nothing moves when the session comes. */
+[data-pending] {
+  opacity: 0.45;
+  filter: grayscale(1);
+}
+
+[data-pending] :disabled {
+  opacity: 1;
+}
+
 /* ---- Page layout ---- */
 
 /* The game page keeps the settings panel still itself (src/page/panel-anchor.ts), like Safari, which has no
@@ -1151,14 +1163,6 @@ body[data-turn='O'] .status[data-state='playing'] {
    Limit: the height follows the .tally rules below by hand. Revisit when a tally changes its lines. */
 .score:empty {
   min-height: calc(0.9rem + var(--border) * 2 + 1.7rem * 1.1 + 1.2rem);
-}
-
-/* Online and Nearby before a game: no score yet, but the score keeps its box, so the actions and the
-   Opponent picker under it never move when the mode changes. e2e/row-layout.spec.ts checks this.
-   The global [hidden] rule uses !important, so this more specific rule needs it too. */
-.score[hidden] {
-  display: grid !important;
-  visibility: hidden;
 }
 
 .tally {
@@ -2806,6 +2810,12 @@ body[data-turn='O'] .status[data-state='playing'] {
 .tally.away {
   opacity: 0.6;
   border-style: dashed;
+}
+
+/* The grey circle in the place of a picture before the session comes (avatarPlaceholder in src/avatar.ts). */
+.avatar-pending {
+  display: inline-block;
+  background: var(--muted);
 }
 
 .tally .avatar {

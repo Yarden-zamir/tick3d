@@ -180,6 +180,9 @@ export const settingsLocked = () => page.session !== undefined && page.session.l
 export const bothSeated = () => page.session !== undefined && page.session.seats.X && page.session.seats.O;
 // A game with another device: online, or Nearby. An undo needs the other player, and chat is open.
 export const shared = () => page.session?.mode === 'online' || page.session?.mode === 'nearby';
+// A screen that waits for its session: Online and Nearby before a create, a join or a host, and every mode
+// while the page starts. The controls of an open game then draw grey and disabled (data-pending in src/page/render.ts).
+export const awaitingSession = () => page.session === undefined && page.viewing === undefined;
 // A screen that watches a game with another device: it holds no seat.
 export const isWatching = () => shared() && page.session?.you === null;
 

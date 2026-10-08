@@ -17,7 +17,7 @@ import { reject, showToast, showProblem } from './feedback.ts';
 import { playerName, render } from './render.ts';
 import { refresh, sendShownChange, withBusy } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
-import { current, nowMs, page, nextClock, canChangeMatch, settingsLocked, shared, isLive, updateSession } from './state.ts';
+import { current, nowMs, page, nextClock, canChangeMatch, settingsLocked, shared, isLive, updateSession, awaitingSession } from './state.ts';
 
 let lastTickSecond: number | undefined;
 let lastFlagRefresh = 0;
@@ -25,7 +25,9 @@ let lastFlagRefresh = 0;
 export function renderClocks(): void {
   const game = current();
   const left = remaining(game, nowMs());
-  clocksEl.hidden = left === null || page.session === undefined;
+  // Before the session comes, the clocks of the next game keep their place, grey (data-pending in src/page/render.ts),
+  // so the board under them does not move. A game from a link has no clocks.
+  clocksEl.hidden = left === null || (page.session === undefined && !awaitingSession());
   // A review keeps the box of the live clocks but does not show them, so the board does not move up (src/style.css).
   clocksEl.toggleAttribute('data-reviewing', page.review !== undefined);
   if (left === null) return;
