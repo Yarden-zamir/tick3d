@@ -4,7 +4,10 @@
   "name": "tick3d",
   "launcherName": "tick3d",
   "display": "standalone",
-  "displayOverride": ["standalone", "minimal-ui"],
+  "displayOverride": [
+    "standalone",
+    "minimal-ui"
+  ],
   "orientation": "default",
   "themeColor": "#ffe14d",
   "themeColorDark": "#ffe14d",

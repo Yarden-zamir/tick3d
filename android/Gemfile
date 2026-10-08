@@ -1,0 +1,5 @@
+# fastlane supply talks to the Play Developer API: uploads, promotion and the store listing.
+# The android workflows run it with `bundle exec fastlane supply`. Dependabot updates the lock file.
+source 'https://rubygems.org'
+
+gem 'fastlane', '2.240.1'

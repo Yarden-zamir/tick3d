@@ -1,0 +1,106 @@
+name: play-signing
+
+# Fetches the SHA-256 of the Play app signing certificate and opens a pull request that puts it in
+# android/twa-manifest.json, in place of the placeholder. The build then serves it in assetlinks.json,
+# so the app opens without the browser bar. Play makes the certificate at the first upload.
+on:
+  schedule:
+    - cron: '41 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  fingerprint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Play API
+        id: play
+        uses: ./.github/actions/play-api
+        with:
+          service-account-json: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+
+      # The newest version code of any track, then the signing certificate of the APKs that Play made from it.
+      - name: Fetch the certificate
+        id: cert
+        if: steps.play.outputs.ready == 'true'
+        env:
+          TOKEN: ${{ steps.play.outputs.token }}
+          PACKAGE: ${{ steps.play.outputs.package }}
+        run: |
+          api="https://androidpublisher.googleapis.com/androidpublisher/v3/applications/$PACKAGE"
+          auth=(--silent --fail-with-body --header "Authorization: Bearer $TOKEN")
+          edit=$(curl "${auth[@]}" --request POST "$api/edits" | jq --exit-status --raw-output .id)
+          code=$(curl "${auth[@]}" "$api/edits/$edit/tracks" | jq --raw-output '[.tracks[]?.releases[]?.versionCodes[]? | tonumber] | max // empty')
+          curl "${auth[@]}" --request DELETE "$api/edits/$edit" > /dev/null
+          if [[ -z "$code" ]]; then echo "::notice::No release in Play yet."; exit 0; fi
+          hashes=$(curl "${auth[@]}" "$api/generatedApks/$code" | jq --raw-output '[.generatedApks[]?.certificateSha256Hash] | unique | .[]')
+          if [[ -z "$hashes" ]]; then echo "::notice::Play made no APKs for version $code yet."; exit 0; fi
+          if [[ $(wc -l <<< "$hashes") -ne 1 ]]; then echo "::error::More than one signing certificate: $hashes"; exit 1; fi
+          # The API reference does not name the encoding: accept hex, or base64 of the 32 bytes.
+          if [[ "$hashes" =~ ^[0-9a-fA-F]{64}$ ]]; then hex=$hashes; else hex=$(base64 --decode <<< "$hashes" | od -An -tx1 -v | tr -d ' \n'); fi
+          [[ "$hex" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "::error::Unknown certificate hash format: $hashes"; exit 1; }
+          fingerprint=$(tr 'a-f' 'A-F' <<< "$hex" | sed -E 's/(..)/\1:/g; s/:$//')
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "App signing certificate: $fingerprint" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Update twa-manifest.json
+        if: steps.cert.outputs.fingerprint != ''
+        env:
+          FINGERPRINT: ${{ steps.cert.outputs.fingerprint }}
+        run: |
+          placeholder=$(printf '00:%.0s' {1..32}); placeholder=${placeholder%:}
+          manifest=android/twa-manifest.json
+          if jq --exit-status --arg value "$FINGERPRINT" 'any(.fingerprints[]; .value == $value)' "$manifest" > /dev/null; then
+            echo "::notice::twa-manifest.json has the app signing fingerprint already."
+            exit 0
+          fi
+          entry=$(jq --null-input --arg value "$FINGERPRINT" '{name: "App signing key (Play App Signing), from play-signing.yml", value: $value}')
+          jq --indent 2 --arg placeholder "$placeholder" --argjson entry "$entry" \
+            '.fingerprints = ([.fingerprints[] | select(.value != $placeholder)] | [$entry] + .)' "$manifest" > "$RUNNER_TEMP/manifest.json"
+          mv "$RUNNER_TEMP/manifest.json" "$manifest"
+
+      # A pull request that GITHUB_TOKEN opens starts no workflows. To run the checks, close and
+      # reopen it, or push to its branch.
+      - uses: peter-evans/create-pull-request@v8.1.1
+        if: steps.cert.outputs.fingerprint != ''
+        with:
+          branch: chore/app-signing-fingerprint
+          commit-message: 'feat(android): serve the Play app signing fingerprint in asset links'
+          title: 'feat(android): serve the Play app signing fingerprint in asset links'
+          body: |
+            The play-signing workflow fetched the SHA-256 of the Play app signing certificate: `${{ steps.cert.outputs.fingerprint }}`.
+            Compare it with Play Console > Test and release > App integrity before the merge.
+            After the deploy, the Android app opens without the browser bar.
+          add-paths: android/twa-manifest.json
+          delete-branch: true
+
+  # Google's Digital Asset Links API checks the live /.well-known/assetlinks.json against each
+  # real fingerprint of twa-manifest.json, the way Android checks it. The placeholder is skipped.
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the live asset links
+        run: |
+          manifest=android/twa-manifest.json
+          site="https://$(jq --exit-status --raw-output .host "$manifest")"
+          package=$(jq --exit-status --raw-output .packageId "$manifest")
+          failed=0
+          for fingerprint in $(jq --raw-output '.fingerprints[].value | select(test("^(00:)+00$") | not)' "$manifest"); do
+            linked=$(curl --silent --fail-with-body --get https://digitalassetlinks.googleapis.com/v1/assetlinks:check \
+              --data-urlencode "source.web.site=$site" \
+              --data-urlencode 'relation=delegate_permission/common.handle_all_urls' \
+              --data-urlencode "target.androidApp.packageName=$package" \
+              --data-urlencode "target.androidApp.certificate.sha256Fingerprint=$fingerprint" | jq --raw-output '.linked // false')
+            echo "$fingerprint linked: $linked" >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$linked" != true ]]; then echo "::error::$site does not link $package with $fingerprint"; failed=1; fi
+          done
+          exit "$failed"

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>tick3d feature graphic</title>
+    <!-- The 1024 × 500 feature graphic of the Play listing. store.spec.ts renders it with the tower shot. -->
+    <style>
+      @font-face { font-family: Brand; src: url(../../../src/fonts/bricolage-grotesque-latin.woff2); font-weight: 200 800; }
+      html, body { margin: 0; width: 1024px; height: 500px; overflow: hidden; }
+      body { font-family: Brand, sans-serif; background: #e4e7ff radial-gradient(#b9bde6 2px, transparent 2px) 0 0 / 22px 22px; display: flex; align-items: center; }
+      .text { padding-left: 70px; width: 520px; }
+      h1 { margin: 0; font-size: 132px; font-weight: 800; letter-spacing: -6px; line-height: 1; }
+      h1 span { display: inline-block; background: #ff5277; border: 6px solid #000; border-radius: 16px; padding: 0 10px; transform: rotate(-4deg); box-shadow: 8px 8px 0 #000; margin-left: 4px; }
+      p { margin: 34px 0 0; font-size: 35px; font-weight: 700; line-height: 1.15; }
+      .shot { position: absolute; right: 30px; top: -40px; width: 420px; height: 580px; overflow: hidden; }
+      .shot img { width: 420px; margin-top: -240px; }
+    </style>
+  </head>
+  <body>
+    <div class="text"><h1>tick<span>3d</span></h1><p>Tic-tac-toe in 3D.<br />Four in a row on a 4×4×4 cube.</p></div>
+    <div class="shot"><img id="tower" alt="" /></div>
+    <script>
+      document.getElementById('tower').src = new URLSearchParams(location.search).get('tower') ?? '';
+    </script>
+  </body>
+</html>

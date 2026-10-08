@@ -1,0 +1,55 @@
+name: play-screenshots
+
+# Renders the store screenshots and the feature graphic again (android/store/screenshots/), and opens
+# a pull request with them. The online scene plays on a local Docker Compose build of main, the other
+# scenes read production without writing. A merge then starts play-listing.yml, which uploads them.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      LOCAL_URL: http://localhost:8080
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Start the local build
+        run: docker compose -f compose.lan.yml up --detach --build --wait
+
+      # The image tag must match the @playwright/test version in package.json, as in e2e.yml.
+      - name: Render
+        run: |
+          shots="$RUNNER_TEMP/shots"
+          mkdir -p "$shots"
+          docker run --rm --network host --ipc=host \
+            --volume "$PWD:/app" --volume "$shots:$shots" --workdir /app \
+            --env SHOTS_DIR="$shots" --env LOCAL_URL \
+            mcr.microsoft.com/playwright:v1.63.0-noble \
+            sh -c 'npm ci --no-audit --no-fund && npx playwright test -c android/store/screenshots/playwright.config.ts'
+          sudo chown -R "$(id -u):$(id -g)" .
+
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Convert
+        run: uv run android/store/screenshots/convert.py "$RUNNER_TEMP/shots"
+
+      # A pull request that GITHUB_TOKEN opens starts no workflows. To run the checks, close and
+      # reopen it, or push to its branch.
+      - uses: peter-evans/create-pull-request@v8.1.1
+        with:
+          branch: chore/store-screenshots
+          commit-message: 'chore(android): render the store screenshots again'
+          title: 'chore(android): render the store screenshots again'
+          body: |
+            The play-screenshots workflow rendered the store screenshots and the feature graphic from production.
+            Look at each image before the merge. The merge uploads them to Play (play-listing.yml).
+          add-paths: |
+            android/store/en-US/images/**
+            public/screenshots/**
+          delete-branch: true

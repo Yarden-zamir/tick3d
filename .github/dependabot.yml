@@ -22,3 +22,15 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # The Android app: the Bubblewrap CLI (android/package.json) and fastlane (android/Gemfile).
+  - package-ecosystem: npm
+    directory: /android
+    schedule:
+      interval: weekly
+  - package-ecosystem: bundler
+    directory: /android
+    schedule:
+      interval: weekly
+    groups:
+      fastlane:
+        patterns: ['*']

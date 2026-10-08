@@ -1,0 +1,10 @@
+{
+  "name": "tick3d-android",
+  "private": true,
+  "type": "module",
+  "description": "The Bubblewrap CLI that builds the Android app. Dependabot updates it.",
+  "license": "MIT",
+  "devDependencies": {
+    "@bubblewrap/cli": "1.25.0"
+  }
+}
