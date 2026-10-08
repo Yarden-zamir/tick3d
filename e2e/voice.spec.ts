@@ -89,7 +89,7 @@ test('on a touch screen, the voice panel keeps the space of Recentre tilt only w
     await context.addInitScript(oscillatorMic);
     await context.addInitScript((stored) => {
       if (localStorage.getItem('tick3d.settings') === null) localStorage.setItem('tick3d.settings', JSON.stringify({ mode: 'friend' }));
-      if (stored !== null && localStorage.getItem('tick3d.voice') === null) localStorage.setItem('tick3d.voice', JSON.stringify({ version: 1, range: null, spread: 'log', stickiness: { share: 0.3, buildUpMs: 1500 }, tilt: stored }));
+      if (stored !== null && localStorage.getItem('tick3d.voice') === null) localStorage.setItem('tick3d.voice', JSON.stringify({ version: 2, range: null, spread: 'log', stickiness: { share: 0.3, buildUpMs: 1500 }, tilt: stored }));
     }, tilt);
     const page = await context.newPage();
     await page.goto('/');

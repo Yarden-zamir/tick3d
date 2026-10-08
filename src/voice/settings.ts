@@ -7,12 +7,16 @@ import { DEFAULT_STICKINESS, MAX_BUILD_UP_MS, MAX_SHARE, type Stickiness } from 
 import { DEFAULT_TILT, MAX_TILT_STEPS, type TiltSettings } from './tilt.ts';
 
 const STORAGE_KEY = 'tick3d.voice';
-const STORAGE_VERSION = 1;
+const STORAGE_VERSION = 2;
+// Version 1 stored tilt as on by default (#38). Tilt is now opt-in, so a version 1 store keeps its range, spread
+// and stickiness, and its tilt resets once to DEFAULT_TILT (user decision on #86).
+// Remove this version 1 case one month after #86 merges: version 1 then reads as nothing stored.
+const RESET_TILT_VERSION = 1;
 
 // `range` is null when the player did not calibrate: the page uses DEFAULT_RANGE then.
 // `spread` says how the 64 cells share the range (SPREADS in mapping.ts). `tilt` is the tilt fine-tuning
-// (tilt.ts). A store from before the tilt has no `tilt` field: it takes DEFAULT_TILT. A stored tilt keeps its
-// on or off, so only a player with no stored choice gets the new default.
+// (tilt.ts). A store from before the tilt has no `tilt` field: it takes DEFAULT_TILT. A version 2 store keeps its
+// tilt on or off.
 export type VoiceSettings = { range: Range | null; spread: Spread; stickiness: Stickiness; tilt: TiltSettings };
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = { range: null, spread: 'log', stickiness: DEFAULT_STICKINESS, tilt: DEFAULT_TILT };
@@ -50,12 +54,12 @@ function parseTilt(value: unknown): TiltSettings {
 export function parseVoiceSettings(value: unknown): VoiceSettings {
   if (typeof value !== 'object' || value === null) return DEFAULT_VOICE_SETTINGS;
   const { version, range, spread, stickiness, tilt } = value as Record<string, unknown>;
-  if (version !== STORAGE_VERSION) return DEFAULT_VOICE_SETTINGS;
+  if (version !== STORAGE_VERSION && version !== RESET_TILT_VERSION) return DEFAULT_VOICE_SETTINGS;
   return {
     range: parseRange(range),
     spread: SPREADS.find((known) => known === spread) ?? DEFAULT_VOICE_SETTINGS.spread,
     stickiness: parseStickiness(stickiness),
-    tilt: parseTilt(tilt),
+    tilt: version === STORAGE_VERSION ? parseTilt(tilt) : DEFAULT_TILT,
   };
 }
 
