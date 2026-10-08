@@ -195,10 +195,7 @@ function renderCard(): void {
       const { name, part } = training.text[splitItem(card.item).dimension];
       titleEl.textContent = `Which ${name.toLowerCase()}? (${part}) Tap any cell in it.`;
     }
-    // The hidden answer keeps its box, so the deck under it does not move between learn and quiz cards.
-    // It holds the words of cell 0, not of this card, so the page never holds the answer of a quiz.
-    // Limit: other names can wrap to one more line on a narrow phone. Revisit if the deck still moves there.
-    answerEl.replaceChildren(...describe(0, undefined));
+    answerEl.replaceChildren();
   }
   answerEl.hidden = card.kind !== 'learn';
   checkButton.hidden = card.kind === 'learn';

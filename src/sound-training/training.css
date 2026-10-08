@@ -93,13 +93,6 @@
   line-height: 1.5;
 }
 
-/* A quiz card hides the answer but keeps its box (src/sound-training/main.ts), so the deck does not move.
-   The global [hidden] rule uses !important, so this more specific rule needs it too. */
-.train-answer[hidden] {
-  display: block !important;
-  visibility: hidden;
-}
-
 .train-answer strong {
   padding: 0 0.25rem;
   border-radius: 4px;

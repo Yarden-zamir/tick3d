@@ -25,7 +25,9 @@ let lastFlagRefresh = 0;
 export function renderClocks(): void {
   const game = current();
   const left = remaining(game, nowMs());
-  clocksEl.hidden = left === null || page.review !== undefined || page.session === undefined;
+  clocksEl.hidden = left === null || page.session === undefined;
+  // A review keeps the box of the live clocks but does not show them, so the board does not move up (src/style.css).
+  clocksEl.toggleAttribute('data-reviewing', page.review !== undefined);
   if (left === null) return;
   const live = game.status.kind === 'playing';
   clocksEl.querySelectorAll<HTMLElement>('[data-clock]').forEach((chip) => {

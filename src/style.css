@@ -2225,6 +2225,11 @@ body[data-turn='O'] .status[data-state='playing'] {
   visibility: hidden;
 }
 
+/* The clocks of the live game do not belong to a review. They keep their box, so the board stays (src/page/clocks.ts). */
+.clocks[data-reviewing] {
+  visibility: hidden;
+}
+
 @keyframes clock-blink {
   50% {
     background: var(--danger);
