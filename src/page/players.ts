@@ -182,12 +182,13 @@ function renderRequest(view: SessionView): void {
 }
 
 // The two seats before the session comes, grey (data-pending in src/page/render.ts). A create and a host seat
-// this screen on X, so X has the disabled seat actions of that row, and the box keeps its height when the session comes.
+// this screen on X and leave O empty. So X has a grey picture and the disabled seat actions of that row, O has
+// no picture, like an empty seat, and the box keeps its height when the session comes.
 // Limit: a join that seats this screen on O moves the actions to the O row. Revisit if a join gets its own placeholder.
 function placeholderRows(): HTMLLIElement[] {
   const noop = () => undefined;
   const actions = [button({ key: 'pending:swap', label: 'Swap X and O', run: noop, disabled: true }), button({ key: 'pending:leave', label: 'Watch instead', run: noop, disabled: true })];
-  return [row('X', 'placeholder', 'Waiting…', 'No game yet', actions, null), row('O', 'placeholder', 'Waiting…', 'No game yet', [], null)];
+  return [row('X', 'placeholder', 'Waiting…', 'No game yet', actions, null), row('O', null, 'Waiting…', 'No game yet', [], null)];
 }
 
 export function renderPlayers(): void {
