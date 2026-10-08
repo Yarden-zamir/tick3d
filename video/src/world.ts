@@ -38,7 +38,7 @@ import { PX, drawHud } from './hud.ts';
 import { CELL, LAYER_GAP, OUTLINE, PIECE_HEIGHT, TILE_HEIGHT, cellBase, cellCenter } from './layout.ts';
 import { oShape, xShape } from './pieces.ts';
 import { type Theme, type ThemeId, type Token, readTheme, readXPolygon } from './themes.ts';
-import { BEATS, barAt, barBefore, eventOf, eventsOf, frameOf, since } from './timeline.ts';
+import { BEATS, S16_FRAMES, barAt, barBefore, eventOf, eventsOf, frameOf, since } from './timeline.ts';
 
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
 // A cell closer than NEAR to the camera is not drawn, and one closer than NEAR_FADE fades, so the ride along
@@ -314,7 +314,7 @@ export function createWorld(width: number, height: number): World {
         wave.mesh.visible = t < 3.5;
         const grow = 2.8 + t * 0.7;
         wave.mesh.scale.set(grow, 1, grow);
-        wave.material.material.opacity = interpolate(t, [1, 3.5], [1, 0], clamp);
+        wave.material.material.opacity = interpolate(t, [3.5 - 2 / S16_FRAMES, 3.5], [1, 0], clamp);
       }
     });
 

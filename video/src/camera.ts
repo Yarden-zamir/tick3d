@@ -81,13 +81,21 @@ export function cameraAt(frame: number, bar: Bar): Shot {
       const target = TOWER_CENTER.clone().add(new Vector3(0, ease(u, 1.3, 0, Easing.out(cubic)) + jolt(frame), 0));
       return shot(orbit(target, HOME_AZIMUTH, ELEVATION, HOME_DISTANCE).add(shake(frame)), target);
     }
+    case 'swoop': {
+      // The arcade hook: the camera flies in low and fast from the far side, under the first layers as they
+      // land, and climbs to the home view by the end of the bar.
+      const w = ease(u, 0, 1, Easing.out(cubic));
+      const target = TOWER_CENTER.clone().add(new Vector3(0, interpolate(w, [0, 1], [2.2, 0]) + jolt(frame), 0));
+      const position = orbit(target, interpolate(w, [0, 1], [HOME_AZIMUTH + 150, HOME_AZIMUTH]), interpolate(w, [0, 1], [-12, ELEVATION]), interpolate(w, [0, 1], [8, HOME_DISTANCE]));
+      return shot(position.add(shake(frame)), target, interpolate(w, [0, 1], [50, HOME_FOV]));
+    }
     case 'dive': {
       // A corkscrew down past the tower: from high above, the camera spirals a third of a turn around the tower
       // while it sinks, with the gaps between the layers open to the lens, so every move shows as it lands. In
       // the last beat it plunges under layer 0, where the orbit of bar 3 picks it up.
       // The gaps between the layers open below about 28° (the tilt of the game), so the camera drops to that
       // elevation by the second beat and keeps sinking.
-      const elevation = interpolate(u, [0, 0.25, 0.85, 1], [30, 22, 10, -40], { ...clamp, easing: Easing.inOut(sine) });
+      const elevation = interpolate(u, [0, 0.25, 0.85, 1], [22, 18, 10, -40], { ...clamp, easing: Easing.inOut(sine) });
       const distance = ease(u, 11, 7, Easing.inOut(quad));
       const azimuth = ease(u, HOME_AZIMUTH - 120, HOME_AZIMUTH, Easing.inOut(sine));
       const target = TOWER_CENTER.clone().add(new Vector3(0, ease(u, 1.2, -0.8, Easing.inOut(sine)), 0));
@@ -111,7 +119,7 @@ export function cameraAt(frame: number, bar: Bar): Shot {
       const corner = cellCenter(WIN_LINE[0]);
       const target = TOWER_CENTER.clone().lerp(corner, ease(u, 0, 0.55));
       const azimuth = ease(u, HOME_AZIMUTH + 180, 225);
-      return { ...shot(orbit(target, azimuth, ease(u, ELEVATION, 20), ease(u, HOME_DISTANCE, 13)), target), lift: -0.3 };
+      return { ...shot(orbit(target, azimuth, ease(u, ELEVATION, 24), ease(u, HOME_DISTANCE, 14.5)), target), lift: -0.3 };
     }
     case 'ride': {
       // The win: from the downbeat the camera stands square to the plane of the winning diagonal, at the tilt of
@@ -125,7 +133,7 @@ export function cameraAt(frame: number, bar: Bar): Shot {
       const profile = shot(square, middle.clone().add(new Vector3(0, jolt(frame) * 0.6, 0)));
       if (k <= 0) return profile;
       const length = lineStart.distanceTo(lineEnd);
-      const front = ease(k, -1.5, length + 2.5, Easing.in(quad));
+      const front = ease(k, -1.5, length + 0.6, Easing.in(quad));
       const roll = ease(k, 0, 25 * DEG, Easing.inOut(quad));
       const beside = lineUp.clone().applyAxisAngle(lineDirection, roll);
       const point = lineStart.clone().addScaledVector(lineDirection, front);
