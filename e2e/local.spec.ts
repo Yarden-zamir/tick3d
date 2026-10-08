@@ -1,4 +1,5 @@
 import { cell, expect, expectToast, marks, status, test } from './fixtures.ts';
+import { DB_NAME } from '../src/device-db.ts';
 import { STORAGE_KEYS } from '../src/storage-keys.ts';
 import type { Page } from '@playwright/test';
 
@@ -186,4 +187,31 @@ test('icon buttons show their tooltip on hover', async ({ open }) => {
   }).toPass();
   await page.mouse.move(1, 1);
   await expect(page.getByRole('tooltip')).toBeHidden();
+});
+
+// Runs in the page: keeps a readwrite transaction on the sessions store open, like a frozen tab in the middle of a write.
+function holdSessions(name: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(name);
+    request.onerror = () => reject(request.error ?? new Error('indexedDB.open failed'));
+    request.onsuccess = () => {
+      const store = request.result.transaction('sessions', 'readwrite').objectStore('sessions');
+      const spin = () => {
+        store.get('none').onsuccess = spin;
+      };
+      spin();
+      resolve();
+    };
+  });
+}
+
+test('a tab that holds the game data does not stop a new tab from starting', async ({ open }) => {
+  const { page, context } = await open(friend);
+  await expect(status(page)).toContainText('to move');
+  await page.evaluate(holdSessions, DB_NAME);
+  const second = await context.newPage();
+  await second.goto('/');
+  await expectToast(second, 'Another tick3d tab or app holds the game data');
+  await cell(second, 0).click();
+  await expect(marks(second)).toHaveCount(1);
 });

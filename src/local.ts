@@ -69,9 +69,9 @@ export function createLocalBackend(
   const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel('tick3d-local');
   const fire = (code: Code) => listeners.get(code)?.forEach((listener) => listener());
   if (channel) channel.onmessage = (event: MessageEvent<unknown>) => {
-    // Only this file posts on the channel, always a valid code.
+    // This file posts a valid code. A tab of another version can post something else, so a bad message is ignored.
     const code = typeof event.data === 'string' ? normalizeCode(event.data) : undefined;
-    if (code === undefined) throw new Error(`unexpected message on the local channel: ${String(event.data)}`);
+    if (code === undefined) return console.warn(`Ignored an unexpected message on the local channel: ${String(event.data)}`);
     fire(code);
   };
 
