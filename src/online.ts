@@ -27,6 +27,8 @@ import {
   type SessionUpdate,
   type SessionView,
   type StatsFilter,
+  type StatsPrivacy,
+  parseStatsPrivacy,
   asPlayerToken,
   parseBlocks,
   parseCustomName,
@@ -135,6 +137,12 @@ export function parseMyGames(value: unknown): MyGames {
   return value as MyGames;
 }
 
+function requireStatsPrivacy(value: unknown): StatsPrivacy {
+  const privacy = parseStatsPrivacy(value);
+  if (privacy === undefined) throw new Error('invalid answer from /api/me/stats-privacy');
+  return privacy;
+}
+
 export const api = {
   create: (name: string, clock: TimeControl) => request('POST', '', { name, clock }),
   load: (code: Code) => request('GET', `/${code}`),
@@ -158,6 +166,8 @@ export const api = {
   clearName: async () => parseMe(await call('DELETE', '/me/name')),
   myGames: async () => parseMyGames(await call('GET', '/me/games')),
   blocks: async () => parseBlocks(await call('GET', '/me/blocks')),
+  statsPrivacy: async () => requireStatsPrivacy(await call('GET', '/me/stats-privacy')),
+  setStatsPrivacy: async (hidden: boolean) => requireStatsPrivacy(await call('PUT', '/me/stats-privacy', { private: hidden })),
   block: async (person: PersonId, name: string) => parseBlocks(await call('PUT', `/me/blocks/${person}`, { name })),
   unblock: async (person: PersonId) => parseBlocks(await call('DELETE', `/me/blocks/${person}`)),
   report: (report: { code: Code; reason: ReportReason; note: string } & ({ message: number } | { person: PersonId })) => call('POST', '/reports', report),

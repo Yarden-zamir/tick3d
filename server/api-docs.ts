@@ -60,7 +60,7 @@ export const DATA_DELETES_PER_HOUR = 10;
 // The tables that Delete my data (deleteData in server/store.ts) changes, with the rows it deleted and
 // the rows it kept without the player. chat_messages counts the messages inside the session documents.
 // The other tables hold no player data: events, and moderation_log (kept for moderation).
-export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'practice_runs', 'reports', 'player_tokens', 'users'] as const;
+export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'practice_runs', 'reports', 'player_tokens', 'users'] as const;
 export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number; anonymised: number }>;
 // The previews list on production is at most this old. server/previews.ts enforces it.
 // Only production calls GitHub, without a token: 60 calls per hour, 5 of them kept in reserve, so 55.
@@ -74,7 +74,7 @@ export const PREVIEWS_CACHE_MS = 180_000;
 // A preview server keeps production's list for this long. It costs no GitHub call, only a request to production.
 export const PREVIEWS_RELAY_CACHE_MS = 15_000;
 // The 400 answer of GET /api/stats for a query that parseStatsFilter refuses.
-export const STATS_FILTER_ERROR = `Unknown stats filter. scope: ${STATS_SCOPES.join(' or ')}. range: ${STATS_RANGES.join(', ')}. mode: ${SESSION_MODES.join(', ')}. level: ${DIFFICULTIES.join(', ')}, only with the computer mode or no mode. Each key at most once.`;
+export const STATS_FILTER_ERROR = `Unknown stats filter. scope: ${STATS_SCOPES.join(' or ')}. range: ${STATS_RANGES.join(', ')}. mode: ${SESSION_MODES.join(', ')}. level: ${DIFFICULTIES.join(', ')}, only with the computer mode or no mode. person: a person id of ${PERSON_ID_LENGTH} hex characters, not with scope mine. Each key at most once.`;
 
 // ---- Shapes (JSON Schema 2020-12, as OpenAPI 3.1 uses) ----
 
@@ -143,6 +143,7 @@ export type SchemaName =
   | 'Count'
   | 'StatsFilter'
   | 'Stats'
+  | 'StatsPrivacy'
   | 'NearbyAnnounce'
   | 'NearbyAnnounced'
   | 'NearbyHost'
@@ -501,6 +502,10 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     range: strings(STATS_RANGES, 'The games of the last 7 or 30 days, or all.'),
     mode: { type: ['string', 'null'], enum: [...SESSION_MODES, null] },
     level: { type: ['string', 'null'], enum: [...DIFFICULTIES, null], description: 'A computer level. It matches computer games only.' },
+    person: { ...nullable(person), description: 'The games of one person, or null for every player.' },
+  }),
+  StatsPrivacy: object('"Hide my stats". It follows your GitHub account when you log in.', {
+    private: { type: 'boolean', description: 'True: a person filter with your person id answers 403 to everyone but you. Everyone totals still count your games, without your name.' },
   }),
   Stats: object('The aggregates of the public stats page: counts only, and for scope mine the names of your opponents. The server computes an everyone answer at most once a minute. src/protocol.ts (Stats) has every field.', {
     generatedAt: { type: 'number' },
@@ -531,15 +536,16 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     offlineGames: count(),
     nearbyMixes: list('Nearby device mixes.', ref('Count')),
     filter: ref('StatsFilter'),
+    person: { ...nullable(object('Whose stats these are.', { name: displayName, player: nullable(ref('PlayerInfo')) })), description: 'The person of a person filter: the name and GitHub account that their games show. null without a person filter.' },
     form: list(`The win rate over time, oldest first: at each game, the share of wins in the ${FORM_WINDOW} games up to it. mine: your games. everyone: the games against the computer, from the player's side.`, object('One game.', { at: { type: 'number' }, rate: { type: 'number', minimum: 0, maximum: 1 } })),
     lengths: list('Games per number of moves. Index n holds the games with n moves.', count()),
     openingWinsX: list('Games that X won, per first move.', count()),
-    personal: nullable(object('Your results, for scope mine only.', {
+    personal: nullable(object('Your results for scope mine, or the results of the person of a person filter. null for everyone.', {
       survival: list('Your survival records: per level, the most moves of a game that the default computer won.'),
       results: list('Won, drawn and lost per mode and computer level. Friend games have no side, so they are not here.'),
       bestStreak: count('The longest run of won games.'),
       currentStreak: { type: ['object', 'null'], description: 'The run of equal results that ends with your newest game: outcome (won, drawn or lost) and length.' },
-      opponents: list('The 5 players that you played most. `player` is a GitHub login or a name.'),
+      opponents: list('The 5 players that you played most. `player` is a GitHub login or a name. Empty for a person filter.'),
     })),
     practice: object('The sound practice room.', {
       runs: list('Runs, people and the average round time per mode and preset.'),
@@ -776,7 +782,8 @@ const STATS_EXAMPLE = {
   undo: { gamesWithUndo: 0, undos: 0 },
   offlineGames: 0,
   nearbyMixes: [],
-  filter: { scope: 'everyone', range: 'all', mode: null, level: null },
+  filter: { scope: 'everyone', range: 'all', mode: null, level: null, person: null },
+  person: null,
   form: [],
   lengths: Array<number>(CELL_COUNT + 1).fill(0),
   openingWinsX: Array<number>(CELL_COUNT).fill(0),
@@ -1264,18 +1271,21 @@ export const ROUTES = {
     operationId: 'stats',
     tag: 'Account',
     summary: 'The aggregates of the public stats page at /stats.',
-    description: 'The query takes the same filters as the address of the page. Leave a key out for its default. Scope mine needs the X-Player header.',
+    description: 'The query takes the same filters as the address of the page. Leave a key out for its default. Scope mine needs the X-Player header. A person filter reads the X-Player header when it is there: a person who hides their stats still sees their own.',
     player: 'optional',
     query: {
       scope: { description: 'everyone (the default) or mine.', required: false, schema: strings(STATS_SCOPES), example: 'mine' },
       range: { description: '7d, 30d or all (the default).', required: false, schema: strings(STATS_RANGES), example: '30d' },
       mode: { description: 'One mode. Leave it out for every mode.', required: false, schema: strings(SESSION_MODES), example: 'computer' },
       level: { description: 'One computer level, only with mode computer or without a mode.', required: false, schema: strings(DIFFICULTIES), example: 'hard' },
+      person: { description: 'The games of one person, by public person id. Not with scope mine.', required: false, schema: person, example: OTHER_PERSON },
     },
     response: { status: 200, description: 'Counts only. Scope mine adds the names of your opponents. No token, result id, game id or page fault.', schema: 'Stats', example: STATS_EXAMPLE },
     errors: [
       { status: 400, when: 'A key is unknown or repeated, a value is unknown, or a level comes with a mode other than computer.' },
-      { ...BAD_PLAYER, when: `Scope mine only. ${BAD_PLAYER.when}` },
+      { ...BAD_PLAYER, when: `Scope mine only, or a person filter with an invalid header. ${BAD_PLAYER.when}` },
+      { status: 403, when: 'A person filter: that person hides their stats ("Hide my stats" in My games).' },
+      { status: 404, when: 'A person filter: no account and no finished game has that person id.' },
     ],
     examplePlayer: AGENT_A,
   },
@@ -1501,6 +1511,25 @@ export const ROUTES = {
       { status: 429, when: `Your network has ${NEARBY_HOSTS_PER_NETWORK} games in the list, or sent ${NEARBY_CALLS_PER_10_MINUTES} Nearby calls in the last 10 minutes.` },
       { status: 503, when: 'Too many games are in the list on this server.' },
     ],
+    examplePlayer: AGENT_A,
+  },
+  'GET /api/me/stats-privacy': {
+    operationId: 'myStatsPrivacy',
+    tag: 'Account',
+    summary: 'Whether you hide your stats from a person filter. My games uses it.',
+    player: 'required',
+    response: { status: 200, description: 'Your setting.', schema: 'StatsPrivacy', example: { private: false } },
+    errors: [BAD_PLAYER],
+    examplePlayer: AGENT_A,
+  },
+  'PUT /api/me/stats-privacy': {
+    operationId: 'setStatsPrivacy',
+    tag: 'Account',
+    summary: 'Hide or show your stats for a person filter.',
+    player: 'required',
+    body: { schema: 'StatsPrivacy', example: { private: true } },
+    response: { status: 200, description: 'Your setting after the change.', schema: 'StatsPrivacy', example: { private: true } },
+    errors: [BAD_PLAYER, { status: 400, when: 'The body is not { "private": true or false }.' }, TOO_BIG],
     examplePlayer: AGENT_A,
   },
   'GET /api/me/blocks': {

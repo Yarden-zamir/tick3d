@@ -1,29 +1,9 @@
-import { cell, createOnline, expect, expectMyMove, expectToast, joinAsO, marks, ownName, playerToken, readQr, status, test } from './fixtures.ts';
+import { cell, createOnline, expect, expectMyMove, expectToast, joinAsO, marks, ownName, playTurns, playerToken, readQr, status, test, xWins } from './fixtures.ts';
 import type { Page } from '@playwright/test';
 import { SIZE } from '../src/game.ts';
 
 // Each test here creates one online session. The server allows 60 new sessions per hour for one
 // client address, so keep the count low: this file creates 4.
-
-async function playTurns(turns: readonly (readonly [Page, number])[]): Promise<void> {
-  for (const [page, index] of turns) {
-    await expectMyMove(page);
-    await cell(page, index).click();
-    await expect(status(page)).not.toContainText('Your move');
-  }
-}
-
-// X wins on 0, 16, 32, 48. O plays 1, 2, 3 in between.
-const xWins = (alice: Page, bob: Page) =>
-  [
-    [alice, 0],
-    [bob, 1],
-    [alice, 16],
-    [bob, 2],
-    [alice, 32],
-    [bob, 3],
-    [alice, 48],
-  ] as const;
 
 test('two players play a full game, and a watcher replays it', async ({ open, baseURL }) => {
   const { page: alice } = await open();

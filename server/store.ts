@@ -39,8 +39,10 @@ import {
   type SessionSummary,
   type SessionUpdate,
   type SessionView,
+  STATS_PRIVATE_MESSAGE,
   type Stats,
   type StatsFilter,
+  type StatsPerson,
   type Tally,
   ALL_STATS,
   WATCHER_ID_LENGTH,
@@ -178,6 +180,12 @@ const SCHEMA = [
      name VARCHAR NOT NULL,
      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
      PRIMARY KEY (owner, person)
+   )`,
+  // "Hide my stats" (StatsPrivacy in src/protocol.ts). `owner` is the token of the player: the account
+  // token when the device is linked, so the setting follows the account. A row means private.
+  `CREATE TABLE IF NOT EXISTS private_stats (
+     owner VARCHAR PRIMARY KEY,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
   // Reports of a chat message or a person. The text and the name are copies from the time of the
   // report, because the chat keeps only the newest messages. `reporter` is a token: never send it.
@@ -565,6 +573,53 @@ export async function openStore(
     return (await canonical([token])).get(token) ?? token;
   }
 
+  // The person behind a public person id: their canonical token, their tokens for the stats, and the
+  // name and GitHub account that their games show. undefined when no account and no finished game has the id.
+  // DuckDB's sha256 finds the token behind the person id, as in clearPersonName.
+  // Limit: the device search hashes every seat token of every result. Revisit this when a person filter
+  // takes more than about 100 ms: then keep the person id of each seat in a column.
+  async function statsPersonOf(person: PersonId): Promise<{ tokens: string[]; shown: StatsPerson } | undefined> {
+    const [account] = await rows(
+      `FROM (SELECT DISTINCT github_id FROM player_tokens) LEFT JOIN users USING (github_id) SELECT github_id, login, avatar
+       WHERE left(sha256($prefix || $account || lpad(github_id::VARCHAR, 16, '0')), ${PERSON_ID_LENGTH}) = $person`,
+      { prefix: PERSON_ID_PREFIX, account: ACCOUNT_TOKEN_PREFIX, person },
+      { github_id: bigId, login: nullable(text), avatar: nullable(text) },
+    );
+    if (account !== undefined) {
+      const owner = accountToken(account.github_id);
+      const linked = await rows('FROM player_tokens SELECT token WHERE github_id = $id', { id: account.github_id }, { token: text });
+      const player = account.login === null || account.avatar === null ? null : { login: account.login, avatar: account.avatar };
+      const name = player?.login ?? (await namesOf([owner]))(owner);
+      return { tokens: [owner, ...linked.map((row) => row.token)], shown: { name, player } };
+    }
+    // A device without an account. A linked token stands for its account, so it is not a device person.
+    const [device] = await rows(
+      `SELECT DISTINCT seat AS token FROM (SELECT unnest([${SEAT_X}, ${SEAT_O}]) AS seat FROM results)
+       WHERE seat IS NOT NULL AND seat <> $computer AND seat NOT IN (FROM player_tokens SELECT token)
+         AND left(sha256($prefix || seat), ${PERSON_ID_LENGTH}) = $person
+       LIMIT 1`,
+      { prefix: PERSON_ID_PREFIX, person, computer: core.COMPUTER_TOKEN },
+      { token: text },
+    );
+    if (device === undefined) return undefined;
+    return { tokens: [device.token], shown: { name: (await namesOf([device.token]))(device.token), player: null } };
+  }
+
+  async function isStatsPrivate(owner: string): Promise<boolean> {
+    return (await rows('FROM private_stats SELECT owner WHERE owner = $owner', { owner }, { owner: text })).length > 0;
+  }
+
+  // The owner behind a person id who hides their stats, or undefined. It needs no game, so a 403 does
+  // not tell whether the person has games.
+  async function privateOwnerOf(person: PersonId): Promise<string | undefined> {
+    const [found] = await rows(
+      `FROM private_stats SELECT owner WHERE left(sha256($prefix || owner), ${PERSON_ID_LENGTH}) = $person`,
+      { prefix: PERSON_ID_PREFIX, person },
+      { owner: text },
+    );
+    return found?.owner;
+  }
+
   async function logModeration(login: string, action: ModerationAction['action'], target: { code?: Code; message?: number; person?: PersonId }): Promise<void> {
     await db.run('INSERT INTO moderation_log (login, action, code, message, person) VALUES ($login, $action, $code, $message, $person)', {
       login,
@@ -699,7 +754,7 @@ export async function openStore(
   //   text. A session that has no player and no move after that goes.
   // - results: a game that the player uploaded goes. An online game with another player stays for
   //   that player, and so does another player's upload: the player's seat becomes null.
-  // - seat_metrics of the player's seats, player_names, the player's own blocks, practice_runs: deleted.
+  // - seat_metrics of the player's seats, player_names, the player's own blocks, private_stats, practice_runs: deleted.
   // - reports: a report about the player stays for moderation. A report that the player filed loses its reporter.
   // - player_tokens and users: the account goes, so no device acts for it any more.
   // Limit: a device of the account that is still logged in links itself again on its next visit,
@@ -781,6 +836,7 @@ export async function openStore(
 
       counts.player_names.deleted = (await changedIds('DELETE FROM player_names WHERE list_contains($ids, token) RETURNING token AS id', { ids })).length;
       counts.blocks.deleted = (await changedIds('DELETE FROM blocks WHERE list_contains($ids, owner) RETURNING person AS id', { ids })).length;
+      counts.private_stats.deleted = (await changedIds('DELETE FROM private_stats WHERE list_contains($ids, owner) RETURNING owner AS id', { ids })).length;
       // A block of this player by another player stays for that player, without the name.
       counts.blocks.anonymised = (
         await changedIds('UPDATE blocks SET name = $name WHERE list_contains($persons, person) AND name <> $name RETURNING owner || person AS id', { persons, name: DELETED_NAME })
@@ -934,6 +990,14 @@ export async function openStore(
     unblock: (token: PlayerToken, person: PersonId): Promise<void> =>
       serialized(async () => {
         await db.run('DELETE FROM blocks WHERE owner = $owner AND person = $person', { owner: await ownerOf(token), person });
+      }),
+
+    // "Hide my stats", on every device of the account.
+    statsPrivate: (token: PlayerToken): Promise<boolean> => serialized(async () => isStatsPrivate(await ownerOf(token))),
+    setStatsPrivate: (token: PlayerToken, hidden: boolean): Promise<void> =>
+      serialized(async () => {
+        const owner = await ownerOf(token);
+        await db.run(hidden ? 'INSERT INTO private_stats (owner) VALUES ($owner) ON CONFLICT DO NOTHING' : 'DELETE FROM private_stats WHERE owner = $owner', { owner });
       }),
 
     // Stores a report of a message or a person of an online session. The session must hold the target now.
@@ -1290,18 +1354,26 @@ export async function openStore(
       }),
 
     // The aggregates of the stats page. An Everyone answer is at most STATS_CACHE_MS old. A Mine answer
-    // (`token` is the player) has no cache, so a game shows at once.
-    // Limit: each Mine call runs all queries. Revisit this when a Mine call takes more than about 200 ms.
+    // (`token` is the player) and a person answer have no cache, so a game shows at once.
+    // A person filter answers 403 when that person hides their stats, except to the person.
+    // Limit: each Mine or person call runs all queries. Revisit this when such a call takes more than about 200 ms.
     stats: (filter: StatsFilter = ALL_STATS, token: PlayerToken | null = null): Promise<Stats> =>
       serialized(async () => {
         if (filter.scope === 'mine') {
           if (token === null) throw new SessionError(400, 'Your stats need the X-Player header.');
-          return { ...(await computeStats(rows, now(), filter, [...(await identityOf(token))])), practice: await practiceStats(rows) };
+          return { ...(await computeStats(rows, now(), filter, [...(await identityOf(token))])), person: null, practice: await practiceStats(rows) };
+        }
+        if (filter.person !== null) {
+          const hidden = await privateOwnerOf(filter.person);
+          if (hidden !== undefined && (token === null || (await ownerOf(token)) !== hidden)) throw new SessionError(403, STATS_PRIVATE_MESSAGE);
+          const found = await statsPersonOf(filter.person);
+          if (found === undefined) throw new SessionError(404, 'This player has no finished games yet.');
+          return { ...(await computeStats(rows, now(), filter, found.tokens)), person: found.shown, practice: await practiceStats(rows) };
         }
         const key = statsQuery(filter);
         const cached = statsCache.get(key);
         if (cached !== undefined && now() - cached.generatedAt < STATS_CACHE_MS) return cached;
-        const fresh = { ...(await computeStats(rows, now(), filter, null)), practice: await practiceStats(rows) };
+        const fresh = { ...(await computeStats(rows, now(), filter, null)), person: null, practice: await practiceStats(rows) };
         statsCache.set(key, fresh);
         return fresh;
       }),

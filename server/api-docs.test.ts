@@ -23,6 +23,7 @@ import {
   parseSeatAction,
   parseSeatAnswer,
   parseBlockRequest,
+  parseStatsPrivacy,
   parseBlocks,
   parseReportRequest,
 } from '../src/protocol.ts';
@@ -74,6 +75,7 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   // server/main.ts reads `name` and checks it with parseCustomName.
   NameRequest: (value) => (isRecord(value) ? parseCustomName(value.name) : undefined),
   BlockRequest: parseBlockRequest,
+  StatsPrivacy: parseStatsPrivacy,
   Blocks: parseBlocks,
   ReportRequest: parseReportRequest,
 };

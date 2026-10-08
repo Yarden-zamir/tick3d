@@ -11,11 +11,12 @@
 // phone in portrait to see the board, so beta is enough. Revisit this when players use landscape or report a
 // nudge that jumps: then take the tilt from the gravity vector of DeviceMotionEvent and screen.orientation.
 
-// Turn tilt on or off, and the largest nudge in steps (cells of the 64-step scale).
+// Turn tilt on or off, and the largest nudge in steps (cells of the 64-step scale), from 1 to MAX_TILT_STEPS.
+// Tilt is off by default: the player turns it on in the Voice room, and that tap asks for the sensor on iOS.
 export type TiltSettings = { on: boolean; steps: number };
 
-export const DEFAULT_TILT: TiltSettings = { on: true, steps: 4 };
-export const MAX_TILT_STEPS = 8;
+export const DEFAULT_TILT: TiltSettings = { on: false, steps: 2 };
+export const MAX_TILT_STEPS = 3;
 // No nudge within this angle from neutral, in degrees, so a steady hand does not move the place.
 export const TILT_DEAD_ZONE = 2;
 // The full nudge at this angle from neutral, in degrees. A larger angle gives no more.
@@ -30,10 +31,10 @@ function angleFrom(neutral: number, beta: number): number {
 }
 
 // The nudge in steps for the tilt `beta` (degrees), with `neutral` as zero: 0 in the dead zone, then a
-// straight line up to ±`steps` at TILT_FULL.
+// straight line up to ±`steps` at TILT_FULL. A larger tilt gives no more than `steps`.
 export function tiltTarget(beta: number, neutral: number, steps: number): number {
   if (!Number.isFinite(beta) || !Number.isFinite(neutral)) throw new RangeError(`not an angle: ${beta}, ${neutral}`);
-  if (!Number.isFinite(steps) || steps < 0) throw new RangeError(`not a step count: ${steps}`);
+  if (!Number.isFinite(steps) || steps < 0 || steps > MAX_TILT_STEPS) throw new RangeError(`not a step count: ${steps}`);
   const delta = angleFrom(neutral, beta);
   const share = Math.min(1, Math.max(0, (Math.abs(delta) - TILT_DEAD_ZONE) / (TILT_FULL - TILT_DEAD_ZONE)));
   // A plain 0 in the dead zone, not -0.

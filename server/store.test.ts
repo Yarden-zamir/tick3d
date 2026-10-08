@@ -666,7 +666,7 @@ describe('stats', () => {
 describe('stats filters', () => {
   const NOW = Date.UTC(2026, 9, 1, 12);
   const DAY = 86_400_000;
-  const all = { scope: 'everyone', range: 'all', mode: null, level: null } as const;
+  const all = ALL_STATS;
 
   // Alice: an online win against Bob now, a computer win (hard) a day ago, a computer loss (easy)
   // 10 days ago, and a friend game a day ago. Bob: a computer loss (hard) 40 days ago.
@@ -750,6 +750,59 @@ describe('stats filters', () => {
     expect(bobs.totals.games).toBe(1);
     expect(bobs.personal).toMatchObject({ bestStreak: 0, currentStreak: { outcome: 'lost', length: 1 }, opponents: [{ player: 'alice', games: 1, lost: 1 }] });
     expect(JSON.stringify(bobs)).not.toContain(bob);
+  });
+
+  it('counts only the games of one person for a person filter, with their name and without opponents', async () => {
+    await seeded();
+    const bobs = await store.stats({ ...all, person: await personId(bob) });
+    // Bob: the online game against Alice and his computer loss.
+    expect(bobs.totals.games).toBe(2);
+    expect(bobs.person).toEqual({ name: nameOf(bob), player: null });
+    expect(bobs.personal).toMatchObject({ results: expect.arrayContaining([{ mode: 'online', level: null, won: 0, drawn: 0, lost: 1 }]), opponents: [] });
+    expect(JSON.stringify(bobs)).not.toContain(bob);
+
+    // A linked device counts for its account: the person id comes from the account token.
+    await store.linkToken(alice, ALICE_GITHUB);
+    const alices = await store.stats({ ...all, person: await personId(`account-${String(ALICE_GITHUB.id).padStart(16, '0')}`) });
+    expect(alices.totals.games).toBe(4);
+    expect(alices.person).toEqual({ name: 'alice', player: { login: 'alice', avatar: ALICE_GITHUB.avatar } });
+    expect(JSON.stringify(alices)).not.toContain(alice);
+  });
+
+  it('answers 404 for a person without games, and for the computer', async () => {
+    await seeded();
+    const carolId = await personId(carol);
+    const computerId = await personId('computer');
+    expect(await status(() => store.stats({ ...all, person: carolId }))).toBe(404);
+    expect(await status(() => store.stats({ ...all, person: computerId }))).toBe(404);
+  });
+
+  it('refuses a person filter to others when the person hides their stats, and keeps Mine and Everyone', async () => {
+    await seeded();
+    const bobId = await personId(bob);
+    expect(await store.statsPrivate(bob)).toBe(false);
+    await store.setStatsPrivate(bob, true);
+    expect(await store.statsPrivate(bob)).toBe(true);
+    expect(await status(() => store.stats({ ...all, person: bobId }))).toBe(403);
+    expect(await status(() => store.stats({ ...all, person: bobId }, alice))).toBe(403);
+    // Bob still sees his own stats, by person id and by Mine.
+    expect((await store.stats({ ...all, person: bobId }, bob)).totals.games).toBe(2);
+    expect((await store.stats({ ...all, scope: 'mine' }, bob)).totals.games).toBe(2);
+    // Everyone still counts his games.
+    expect((await store.stats(all)).totals.games).toBe(5);
+    await store.setStatsPrivate(bob, false);
+    expect((await store.stats({ ...all, person: bobId }, alice)).totals.games).toBe(2);
+  });
+
+  it('keeps "Hide my stats" with the account on every linked device', async () => {
+    await seeded();
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.setStatsPrivate(alicePhone, true);
+    expect(await store.statsPrivate(alice)).toBe(true);
+    const aliceId = await personId(`account-${String(ALICE_GITHUB.id).padStart(16, '0')}`);
+    expect(await status(() => store.stats({ ...all, person: aliceId }, bob))).toBe(403);
+    expect((await store.stats({ ...all, person: aliceId }, alice)).totals.games).toBe(4);
   });
 
   it('refuses Mine without a player', async () => {
@@ -1061,7 +1114,7 @@ describe('report and block', () => {
 describe('delete my data', () => {
   const ALICE_ACCOUNT = `${ACCOUNT_TOKEN_PREFIX}${String(ALICE_GITHUB.id).padStart(16, '0')}`;
   const aliceTokens = [alice, alicePhone, ALICE_ACCOUNT];
-  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
+  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
 
   // Per group of needles: the rows of each table whose text holds one of them. The store closes for the check and opens again.
   async function rowsHolding(path: string, groups: readonly (readonly string[])[]): Promise<Record<string, number>[]> {
@@ -1112,6 +1165,8 @@ describe('delete my data', () => {
     await store.setName(bob, 'Bob B');
     await store.block(alice, await personId(bob), 'Bob B');
     await store.block(bob, await personId(ALICE_ACCOUNT), 'alice');
+    await store.setStatsPrivate(alicePhone, true);
+    await store.setStatsPrivate(bob, true);
     const run: PracticeRun = { id: 'run-1', mode: 'targets', preset: 'normal', roundMs: Array.from({ length: 10 }, () => 2_000), score: 10 };
     await store.addPracticeRun(alice, run);
     await store.addPracticeRun(bob, run);
@@ -1125,6 +1180,7 @@ describe('delete my data', () => {
       seat_metrics: { deleted: 1, anonymised: 0 },
       player_names: { deleted: 1, anonymised: 0 },
       blocks: { deleted: 1, anonymised: 1 },
+      private_stats: { deleted: 1, anonymised: 0 },
       practice_runs: { deleted: 1, anonymised: 0 },
       reports: { deleted: 0, anonymised: 1 },
       player_tokens: { deleted: 3, anonymised: 0 },
@@ -1147,6 +1203,8 @@ describe('delete my data', () => {
     expect((await store.game(online)).names.X).toBeNull();
     expect(await store.customName(bob)).toBe('Bob B');
     expect(await store.blocks(bob)).toHaveLength(1);
+    expect(await store.statsPrivate(bob)).toBe(true);
+    expect(await store.statsPrivate(alice)).toBe(false);
     expect((await store.practiceBoard('targets', 'normal', bob)).top).toHaveLength(1);
     expect((await store.stats()).metricsGames).toBe(1);
     expect((await store.reports()).reports).toMatchObject([{ reporter: await personId(bob), person: aliceIds[2] }, { reporter: null, reporterLogin: null }]);

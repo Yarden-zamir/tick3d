@@ -331,10 +331,13 @@ input::placeholder {
   width: 2.1rem;
 }
 
-/* The tooltip of an element with data-tip (src/tooltip.ts). */
+/* The tooltip of an element with data-tip (src/tooltip.ts): a manual popover in the top layer.
+   The inset, margin and overflow undo the centred box of a popover. */
 .tip {
   position: fixed;
-  z-index: 30;
+  inset: auto;
+  margin: 0;
+  overflow: visible;
   max-width: min(20rem, calc(100vw - 1rem));
   padding: 0.35rem 0.6rem;
   border: 2px solid var(--line);
@@ -1331,12 +1334,13 @@ body[data-turn='O'] .status[data-state='playing'] {
   justify-self: center;
 }
 
-/* Recentre tilt shows only after the first tilt reading, a moment after the voice starts.
-   On a touch screen it keeps its box while hidden, so it does not push the keypad down when it shows.
+/* Recentre tilt shows only with tilt on, after the first tilt reading, a moment after the voice starts.
+   With tilt on, a touch screen keeps its box while hidden, so it does not push the keypad down when it shows.
+   With tilt off (the default), it keeps no box (.tilt-on comes from src/page/voice.ts).
    Limit: a touch screen without a tilt sensor keeps an empty line, and a desktop with a sensor moves once.
    Revisit if players report the empty line. */
 @media (pointer: coarse) {
-  .voice-panel #voice-recentre[hidden] {
+  .voice-panel.tilt-on #voice-recentre[hidden] {
     display: inline-flex !important;
     visibility: hidden;
   }
@@ -1669,6 +1673,25 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.55rem;
 }
 
+/* The review bar and the keypad share one grid cell. In a review, the keypad keeps its box but does not show,
+   so the cell keeps the height of the keypad and the page under it does not move up.
+   The global [hidden] rule uses !important, so this more specific rule needs it too. */
+.stage-controls {
+  display: grid;
+  justify-items: center;
+  max-width: 100%;
+}
+
+.stage-controls > * {
+  grid-area: 1 / 1;
+  align-self: start;
+}
+
+.stage-controls:has(> .review:not([hidden])) > .coords[hidden] {
+  display: flex !important;
+  visibility: hidden;
+}
+
 .coords-head {
   display: flex;
   align-items: center;
@@ -1687,6 +1710,12 @@ body[data-turn='O'] .status[data-state='playing'] {
    and the hover and press moves; this rule only makes it square and keeps the icon centered. */
 .coords-hear {
   flex: none;
+}
+
+/* The speaker shows only with a last move or a full typed cell. Its box stays, so the title does not move when it shows. */
+.coords-hear[hidden] {
+  display: inline-flex !important;
+  visibility: hidden;
 }
 
 /* Three read-only slots: layer, row, column. The next one to fill is highlighted. */
@@ -2193,6 +2222,18 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--muted);
 }
 
+/* The note leaves after the second move. Its line stays, so the board under the clocks does not move up.
+   Limit: the empty line stays for the rest of the game. Revisit if the clocks get a second line of their own. */
+.clock-note[hidden] {
+  display: block !important;
+  visibility: hidden;
+}
+
+/* The clocks of the live game do not belong to a review. They keep their box, so the board stays (src/page/clocks.ts). */
+.clocks[data-reviewing] {
+  visibility: hidden;
+}
+
 @keyframes clock-blink {
   50% {
     background: var(--danger);
@@ -2370,6 +2411,42 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .my-games-data .my-games-note {
   margin: 0 0 0.5rem;
+}
+
+/* A person's picture, large (src/page/avatar-viewer.ts). */
+/* A long press opens the report and block menu, so a touch must not select the picture or open the image menu. */
+.avatar[role='button'] {
+  cursor: pointer;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.avatar-viewer {
+  width: min(92vw, 18rem);
+  text-align: center;
+}
+
+.avatar-viewer-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.avatar-viewer-actions .btn {
+  flex: 1;
+}
+
+.avatar-viewer-picture {
+  display: flex;
+  justify-content: center;
+}
+
+/* Two classes, so the round avatar wins over `.end-card img`. */
+.avatar-viewer .avatar {
+  width: min(240px, 100%);
+  height: auto;
+  aspect-ratio: 1;
+  border-width: var(--border);
+  border-radius: 50%;
 }
 
 /* The report and block menu (src/page/safety.ts). */

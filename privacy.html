@@ -52,76 +52,59 @@
           </a>
         </div>
       </header>
-      <article class="privacy-text">
-        <p class="privacy-date">Last change: 8 October 2026</p>
-        <p>tick3d is a game by Yarden Zamir. This policy covers the website and the Android app. The app shows the same website.</p>
-        <p>tick3d has no ads, no trackers and no analytics services. It does not sell your data or give it to others.</p>
+      <section class="privacy-card" aria-labelledby="privacy-short">
+        <h2 id="privacy-short">In short</h2>
+        <ul>
+          <li>No ads, no trackers.</li>
+          <li>Your mic audio never leaves your device.</li>
+          <li>We store your games and chat to make the game work.</li>
+          <li>Delete everything any time: My games → <a href="#delete">Delete my data</a>.</li>
+          <li>Questions: <a href="mailto:dev@yarden-zamir.com">dev@yarden-zamir.com</a></li>
+        </ul>
+      </section>
 
+      <article class="privacy-text">
         <h2>What the server stores</h2>
         <ul>
-          <li><b>Player token.</b> A random id that the game makes on your first visit. It holds no name, email or device id. Your browser keeps it and sends it with online calls.</li>
-          <li><b>Custom name.</b> The name that you choose, if you choose one.</li>
-          <li><b>Online sessions.</b> The moves, the seats, the session name and the chat. A session keeps its last 50 chat messages.</li>
-          <li><b>Game results and stats.</b> Every finished game, also games against the computer, with a friend and Nearby. A game also stores counts about how it was played: the device kind (phone, tablet or computer), the theme, the view, and how many moves came from the board or the keypad.</li>
-          <li><b>Voice room runs.</b> The mode, the times and the score of a finished practice run. No audio.</li>
-          <li><b>GitHub login</b>, only if you log in: your GitHub id, login name and picture address. A login cookie keeps you logged in for 90 days.</li>
-          <li><b>Reports.</b> When you report a message or a player: the reason, your note, the session code, a copy of the message and the name at that time, and your person id.</li>
-          <li><b>Blocks.</b> The people that you block, with their names, for your player or your GitHub account.</li>
-          <li><b>Moderation log.</b> Each time a maintainer hides a message or clears a name: the maintainer's login, the action and its target.</li>
-          <li><b>Error reports.</b> The error message, the file and line, and the app version, without your token.</li>
+          <li><b>Player token:</b> a random id that your browser makes. No name, email or device id.</li>
+          <li><b>Games:</b> moves, results, chat (the last 50 messages of a session), and how a game was played (device kind, theme, view, board or keypad).</li>
+          <li><b>Custom name</b>, if you set one.</li>
+          <li><b>GitHub login</b>, if you log in: id, login and picture address. The login cookie lasts 90 days.</li>
+          <li><b>Voice room runs:</b> mode, times and score. No audio.</li>
+          <li><b>Reports and blocks</b> that you make, with a copy of the reported message. A log keeps each moderator action.</li>
+          <li><b>Error reports:</b> the error, the file and the app version, without your token.</li>
         </ul>
-        <p>Nearby uses your network address to find devices on the same Wi-Fi. The server keeps it in memory only while your Nearby game is open, and never writes it to disk.</p>
-
-        <h2>What stays on your device</h2>
-        <ul>
-          <li><b>Microphone audio.</b> Voice play reads the microphone on your device only. The audio and the voice clips for a replay stay in memory on the device. The game never uploads or saves them.</li>
-          <li>Your settings, your voice calibration, and the games of this device, in the storage of your browser.</li>
-        </ul>
+        <p>Nearby uses your network address to find devices on your Wi-Fi. It stays in memory and is never saved.</p>
 
         <h2>Who sees what</h2>
         <ul>
-          <li>Anyone with the code or link of an online session sees its players, moves and chat.</li>
-          <li>Anyone with the link to a finished game sees its moves and the player names.</li>
-          <li>The Stats page shows totals of all games, without names.</li>
-          <li>Other players see your person id: a short hash of your token, never the token itself.</li>
-          <li>The maintainers of tick3d read reports. They can hide a reported message or clear a reported name.</li>
-          <li>Your GitHub picture loads from GitHub.</li>
+          <li>Anyone with a session code sees its players, moves and chat. A game link shows the moves and names.</li>
+          <li>Other players see your person id, a short hash of your token, never the token.</li>
+          <li>The maintainers read reports, and can hide a message or clear a name.</li>
+          <li>The Stats page shows totals only.</li>
         </ul>
-        <p>All data goes over HTTPS.</p>
 
         <h2>How long it stays</h2>
         <ul>
-          <li>An online session without a move: deleted after 9 hours.</li>
-          <li>Reports, the log of moderator actions and error reports: deleted after 90 days.</li>
-          <li>Deletion notices (the person id of a player who deleted their data): deleted after 1 year.</li>
+          <li>A session without a move: 9 hours.</li>
+          <li>Reports, the moderation log and error reports: 90 days.</li>
+          <li>Deletion notices (the person id of a player who deleted their data): 1 year.</li>
+          <li>Server logs: no log of requests, at most 30 MB per service. The oldest lines go first.</li>
           <li>Everything else: until you delete it.</li>
         </ul>
 
         <h2 id="delete">Delete your data</h2>
         <ul>
-          <li><b>Delete my data</b> in My games deletes your data at once. With a GitHub login, it deletes the data of the account on every device, else the data of this device. It deletes your games, survival records, custom name, blocks, Voice room runs and game metrics, and the link to your GitHub account. It also logs you out. A game with another player stays for that player, without you, and your chat messages show "Deleted by its author." in place of the text. Reports that other players made about you stay for the moderators for up to 90 days. Reports that you made stay without your id. Your settings on the device stay, unless you choose to reset them too. The device keeps its random player token with no data attached, so that blocks by other players keep working.</li>
-          <li>The button also leaves a deletion notice with your person id for 1 year. When the device of another player goes online, the notice removes your name, picture and chat lines from the copies on that device.</li>
-          <li><b>Clear history</b> in My games hides your games from your history. The games still count in the totals.</li>
-          <li><b>Reset to generated name</b> in My games removes your custom name.</li>
-          <li><b>Unblock</b> in My games removes a block.</li>
-          <li><b>Log out</b> unlinks this browser from your GitHub account.</li>
-          <li>To delete the data on your device, clear the site data of tick3d in your browser, or uninstall the app.</li>
+          <li><b>Delete my data</b> in My games deletes your data at once (on every device of a GitHub account). It logs you out. Games with other players stay for them, without you. Your chat messages read "Deleted by its author."</li>
+          <li>A deletion notice removes your name and chat lines from other players' devices when they next go online.</li>
+          <li>Your device keeps a random id with no data attached, so that blocks by other players keep working. Your settings stay unless you reset them.</li>
+          <li>The button cannot reach: devices not logged in to the same account (press the button on each), devices that stay offline for a year, links and pictures already shared, and reports about you (kept 90 days for safety).</li>
+          <li>In My games: <b>Clear history</b> hides your games, <b>Reset to generated name</b> removes your name, <b>Unblock</b> removes a block.</li>
+          <li>On your device: clear the site data of tick3d, or uninstall the app.</li>
+          <li>If the button cannot reach your data, email <a href="mailto:dev@yarden-zamir.com">dev@yarden-zamir.com</a> with your GitHub login or person id. The data is deleted within 30 days.</li>
         </ul>
-        <p>The button cannot reach these:</p>
-        <ul>
-          <li>Other browsers and devices that are not logged in to the same GitHub account. Press the button on each one.</li>
-          <li>Copies on the devices of other players that do not go online within a year.</li>
-          <li>Game links and end-card pictures that you or others already sent. A link to a game that another player keeps still opens, without your name.</li>
-          <li>Reports that other players made about you, and the log of moderator actions. They stay for safety, for up to 90 days.</li>
-        </ul>
-        <p>tick3d keeps no access log of requests, so no log holds your address or your player token. The server logs only its own errors.</p>
-        <p>Use the button first: it works at once, without a request. If the button cannot reach your data, email <a href="mailto:dev@yarden-zamir.com">dev@yarden-zamir.com</a>. An example: you lost the device and did not log in with GitHub. Give your GitHub login, or the person id that the game shows, and a game link if you have one. A maintainer then runs the same deletion as the button. The data is deleted within 30 days.</p>
 
-        <h2>Children</h2>
-        <p>tick3d is for players of 13 and older.</p>
-
-        <h2>Contact</h2>
-        <p>Questions and requests: <a href="mailto:dev@yarden-zamir.com">dev@yarden-zamir.com</a>.</p>
+        <p class="privacy-foot">tick3d is a game by Yarden Zamir, for players of 13 and older. This policy covers the website and the Android app. All data goes over HTTPS. Last change: 8 October 2026.</p>
       </article>
     </main>
     <dialog class="end-card my-games" id="previews" aria-labelledby="previews-title">

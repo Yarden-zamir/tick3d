@@ -105,8 +105,11 @@ export const callApi = async (page: Page, path: string) =>
 export const storedSettings = (page: Page): Promise<Record<string, unknown>> =>
   page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>, STORAGE_KEYS.settings);
 
+// The status can say "Your move" while the answer to the last move of this page is still on its way.
+// The board takes no move until then, and shows that with the class `thinking`.
 export async function expectMyMove(page: Page): Promise<void> {
   await expect(status(page)).toContainText('Your move');
+  await expect(page.locator('#board')).not.toHaveClass(/\bthinking\b/);
 }
 
 // Creates an online session from the page and returns its code. Each call counts against the
@@ -128,6 +131,27 @@ export async function ownName(page: Page): Promise<string> {
   expect(name).toMatch(/^[a-z]+[A-Z][a-z]+$/);
   return name;
 }
+
+// Online turns: each page waits for its move, plays one cell, and waits until the turn passes.
+export async function playTurns(turns: readonly (readonly [Page, number])[]): Promise<void> {
+  for (const [page, index] of turns) {
+    await expectMyMove(page);
+    await cell(page, index).click();
+    await expect(status(page)).not.toContainText('Your move');
+  }
+}
+
+// X wins on 0, 16, 32, 48. O plays 1, 2, 3 in between.
+export const xWins = (alice: Page, bob: Page) =>
+  [
+    [alice, 0],
+    [bob, 1],
+    [alice, 16],
+    [bob, 2],
+    [alice, 32],
+    [bob, 3],
+    [alice, 48],
+  ] as const;
 
 // Joins with a fresh context and waits until the joiner holds the O seat.
 export async function joinAsO(open: (options?: OpenOptions) => Promise<Opened>, path: string): Promise<Opened> {

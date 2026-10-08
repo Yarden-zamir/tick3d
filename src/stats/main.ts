@@ -10,7 +10,8 @@ import { element } from '../element.ts';
 import { CELL_COUNT, SIZE } from '../game.ts';
 import { accountLink, setupPageHeader } from '../header/header.ts';
 import { myGamesHref } from '../header/my-games-link.ts';
-import { api } from '../online.ts';
+import { avatarImage } from '../avatar.ts';
+import { OnlineError, api } from '../online.ts';
 import {
   ALL_STATS,
   type Count,
@@ -31,6 +32,7 @@ const SVG = 'http://www.w3.org/2000/svg';
 const grid = element('#stats-grid', HTMLDivElement);
 const note = element('#stats-note', HTMLParagraphElement);
 const filters = element('#stats-filters', HTMLElement);
+const personHead = element('#stats-person', HTMLParagraphElement);
 setupPageHeader();
 
 // ---- Small builders ----
@@ -318,10 +320,10 @@ function tiles(stats: Stats): void {
   ]);
 }
 
-// The cards that only the Mine scope has.
-function personalCards(personal: NonNullable<Stats['personal']>): void {
+// The cards that only Mine and a person filter have. A person filter has no opponents (server/stats.ts).
+function personalCards(personal: NonNullable<Stats['personal']>, own: boolean): void {
   stacked(
-    card('Your results', false, 'Won, drawn and lost, per mode and computer level. Friend games have no side, so they do not count.'),
+    card(own ? 'Your results' : 'Results', false, 'Won, drawn and lost, per mode and computer level. Friend games have no side, so they do not count.'),
     personal.results.map((row) => ({ label: row.level === null ? modeName(row.mode) : `${modeName(row.mode)} · ${row.level}`, parts: [row.won, row.drawn, row.lost] })),
     [
       { name: 'Won', color: 'var(--win)' },
@@ -330,10 +332,11 @@ function personalCards(personal: NonNullable<Stats['personal']>): void {
     ],
   );
   table(
-    card('Your survival records', false, 'Per level, your longest game that the computer won. Default computer only.'),
+    card(own ? 'Your survival records' : 'Survival records', false, `Per level, the longest game of ${own ? 'yours' : 'this player'} that the computer won. Default computer only.`),
     ['Level', 'Moves'],
     personal.survival.map((row) => [capital(row.level), row.moves]),
   );
+  if (!own) return;
   table(
     card('Favourite opponents', false, 'The players that you played most, and how it went.'),
     ['Player', 'Games', 'Won', 'Drawn', 'Lost'],
@@ -381,7 +384,9 @@ function draw(stats: Stats): void {
     card(
       'Win rate over time',
       true,
-      mine
+      stats.person !== null
+        ? `The share of wins of ${stats.person.name} in their last ${FORM_WINDOW} games, after each game. Friend games do not count. The dashed lines mark 25%, 50% and 75%.`
+        : mine
         ? `Your share of wins in your last ${FORM_WINDOW} games, after each game. Friend games do not count. The dashed lines mark 25%, 50% and 75%.`
         : `The players' share of wins against the computer in the last ${FORM_WINDOW} games, after each game. The dashed lines mark 25%, 50% and 75%.`,
     ),
@@ -389,7 +394,7 @@ function draw(stats: Stats): void {
     'var(--toggle-on)',
     'Win rate',
   );
-  if (stats.personal !== null) personalCards(stats.personal);
+  if (stats.personal !== null) personalCards(stats.personal, stats.person === null);
 
   const days = stats.perDay.length;
   columns(card('Games per day', true, `The last ${days} days, UTC.`), stats.perDay.map((day) => ({ label: day.day.slice(5), value: day.games })), 'var(--o)', 'games', 'Games per day');
@@ -556,7 +561,13 @@ function renderFilters(filter: StatsFilter): void {
   const go = (change: Partial<StatsFilter>) => navigate({ ...filter, ...change });
   const all = { value: null, name: 'All' } as const;
   const groups = [
-    filterGroup('Whose games', STATS_SCOPES.map((value) => ({ value, name: SCOPE_NAMES[value] })), filter.scope, (scope) => go({ scope })),
+    // A person filter presses neither scope. Either scope leaves the person.
+    filterGroup<StatsFilter['scope'] | null>(
+      'Whose games',
+      STATS_SCOPES.map((value) => ({ value, name: SCOPE_NAMES[value] })),
+      filter.person === null ? filter.scope : null,
+      (scope) => go({ scope: scope ?? ALL_STATS.scope, person: null }),
+    ),
     filterGroup('Time', STATS_RANGES.map((value) => ({ value, name: RANGE_NAMES[value] })), filter.range, (range) => go({ range })),
     // A level matches computer games only, so another mode drops it.
     filterGroup('Mode', [all, ...SESSION_MODES.map((value) => ({ value, name: MODE_NAMES[value] }))], filter.mode, (mode) =>
@@ -583,6 +594,13 @@ function readFilter(): { filter: StatsFilter; problem: string } {
   return { filter: ALL_STATS, problem: 'The address had an unknown filter, so the page shows all games. ' };
 }
 
+// The picture and the name of the person of a person filter. A blocked person shows as they are: the page has no block list.
+function showPerson(person: Stats['person']): void {
+  personHead.hidden = person === null;
+  if (person === null) return personHead.replaceChildren();
+  personHead.replaceChildren(avatarImage(person, 48), `Stats of ${person.name}`);
+}
+
 // A newer view replaces a view that still loads.
 let request = 0;
 
@@ -601,13 +619,22 @@ async function show(filter: StatsFilter, problem = ''): Promise<void> {
     const stats = parseStats(await api.stats(filter));
     if (id !== request) return;
     grid.replaceChildren();
+    showPerson(stats.person);
     draw(stats);
-    const scope = stats.personal === null ? 'all players' : 'your games on every device that you logged in with, or on this browser';
+    const scope =
+      stats.person !== null
+        ? `the games of ${stats.person.name}`
+        : stats.personal === null
+          ? 'all players'
+          : 'your games on every device that you logged in with, or on this browser';
     note.textContent = `${problem}Updated ${new Date(stats.generatedAt).toLocaleString()}. These numbers show ${scope}.`;
   } catch (error) {
     if (id !== request) return;
     grid.replaceChildren();
-    note.textContent = `${problem}The stats did not load. ${error instanceof Error ? error.message : String(error)}`;
+    showPerson(null);
+    // 403 and 404 are answers about the person (private, or no games), not faults.
+    const answered = error instanceof OnlineError && (error.status === 403 || error.status === 404);
+    note.textContent = answered ? `${problem}${error.message}` : `${problem}The stats did not load. ${error instanceof Error ? error.message : String(error)}`;
   } finally {
     if (id === request) grid.removeAttribute('aria-busy');
   }

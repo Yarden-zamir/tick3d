@@ -892,7 +892,7 @@ export type MyGames = {
 // ---- Stats ----
 
 // The aggregates of the public stats page (/stats). Counts only: never a token, a result id, a game id
-// or a page fault. Only `personal` (Mine) names players: your opponents.
+// or a page fault. Only `personal` (Mine) names players: your opponents. A person filter names that person.
 export type Count = { key: string; count: number };
 export type Stats = {
   generatedAt: EpochMs;
@@ -934,6 +934,8 @@ export type Stats = {
   nearbyMixes: Count[];
   // The filters that made these numbers.
   filter: StatsFilter;
+  // Whose stats these are, for the person filter. null without it.
+  person: StatsPerson | null;
   // The win rate over time, oldest first: at each game, the share of wins in the FORM_WINDOW games up to it.
   // Mine: your games with a side. Everyone: the games against the computer, from the player's side.
   form: { at: EpochMs; rate: number }[];
@@ -941,7 +943,7 @@ export type Stats = {
   lengths: number[];
   // CELL_COUNT counts: the games that X won, by the first move. Next to `openings`.
   openingWinsX: number[];
-  // Only for Mine. null for Everyone.
+  // For Mine and the person filter. null for Everyone. The person filter has no opponents.
   personal: PersonalStats | null;
   // The sound practice room: runs and leaderboards (server/practice.ts).
   practice: PracticeStats;
@@ -961,12 +963,24 @@ export type PersonalStats = {
   opponents: { player: string; games: number; won: number; drawn: number; lost: number }[];
 };
 
+// The name and the GitHub account of the person of a person filter: the name that the games show.
+export type StatsPerson = { name: string; player: PlayerInfo | null };
+
+// The "Hide my stats" setting (GET and PUT /api/me/stats-privacy). When it is on, a person filter
+// with your person id answers 403 to everyone but you. Everyone totals still count your games.
+export type StatsPrivacy = { private: boolean };
+export function parseStatsPrivacy(value: unknown): StatsPrivacy | undefined {
+  return isRecord(value) && hasOnlyKeys(value, ['private']) && typeof value.private === 'boolean' ? { private: value.private } : undefined;
+}
+export const STATS_PRIVATE_MESSAGE = 'This player keeps their stats private.';
+
 export const FORM_WINDOW = 20;
 
 // ---- Stats filters ----
 
 // The filters of the stats page. The page keeps them in its address, and GET /api/stats takes the
-// same query. A missing key means its default: everyone, all time, every mode and level.
+// same query. A missing key means its default: everyone, all time, every mode and level, no person.
+// `person` is a public person id: the games of that person. It goes with the everyone scope only.
 export const STATS_SCOPES = ['everyone', 'mine'] as const;
 export const STATS_RANGES = ['7d', '30d', 'all'] as const;
 export type StatsRange = (typeof STATS_RANGES)[number];
@@ -976,12 +990,14 @@ export type StatsFilter = {
   // null: every mode or every level. A level matches computer games only.
   mode: SessionMode | null;
   level: Difficulty | null;
+  person: PersonId | null;
 };
-export const ALL_STATS: StatsFilter = { scope: 'everyone', range: 'all', mode: null, level: null };
+export const ALL_STATS: StatsFilter = { scope: 'everyone', range: 'all', mode: null, level: null, person: null };
 export const RANGE_DAYS: Record<StatsRange, number | null> = { '7d': 7, '30d': 30, all: null };
-const STATS_KEYS = ['scope', 'range', 'mode', 'level'] as const;
+const STATS_KEYS = ['scope', 'range', 'mode', 'level', 'person'] as const;
 
-// Refuses an unknown key, a repeated key, an unknown or empty value, and a level with a mode other than computer.
+// Refuses an unknown key, a repeated key, an unknown or empty value, a level with a mode other than computer,
+// and a person with the mine scope.
 export function parseStatsFilter(params: URLSearchParams): StatsFilter | undefined {
   const keys = [...params.keys()];
   if (new Set(keys).size !== keys.length || !keys.every((key) => STATS_KEYS.some((known) => known === key))) return undefined;
@@ -995,7 +1011,10 @@ export function parseStatsFilter(params: URLSearchParams): StatsFilter | undefin
   const level = pick('level', DIFFICULTIES);
   if (scope === undefined || range === undefined || mode === undefined || level === undefined) return undefined;
   if (level !== null && mode !== null && mode !== 'computer') return undefined;
-  return { scope: scope ?? ALL_STATS.scope, range: range ?? ALL_STATS.range, mode, level };
+  const personText = params.get('person');
+  const person = personText === null ? null : parsePersonId(personText);
+  if (person === undefined || (person !== null && scope === 'mine')) return undefined;
+  return { scope: scope ?? ALL_STATS.scope, range: range ?? ALL_STATS.range, mode, level, person };
 }
 
 // The query of a filter, with "?" first, or '' for the defaults. A default value stays out, so one view has one address.
@@ -1005,6 +1024,7 @@ export function statsQuery(filter: StatsFilter): string {
   if (filter.range !== ALL_STATS.range) params.set('range', filter.range);
   if (filter.mode !== null) params.set('mode', filter.mode);
   if (filter.level !== null) params.set('level', filter.level);
+  if (filter.person !== null) params.set('person', filter.person);
   const text = params.toString();
   return text === '' ? '' : `?${text}`;
 }

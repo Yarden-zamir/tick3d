@@ -24,7 +24,8 @@ import { buildRail, showRailPitch, showRailRange } from '../voice/rail.ts';
 import { MAX_TILT_STEPS } from '../voice/tilt.ts';
 import { type HoldFill, createVoiceCells } from '../voice/visuals.ts';
 import { HOLD_MS } from '../page/voice-gate.ts';
-import { type Tab, createPracticeRoom } from './practice-room.ts';
+import { createPracticeRoom } from './practice-room.ts';
+import { type Tab, isTab, readTab, withTab } from './tab.ts';
 
 setupPageHeader();
 // A tap on a cell, and the echo rounds, play the sound set of the game. Classic does not name cells, so the
@@ -256,7 +257,7 @@ function showTilt(): void {
   tiltSteps.max = String(MAX_TILT_STEPS);
   tiltSteps.value = String(steps);
   tiltSteps.disabled = !on;
-  tiltRecentre.disabled = !on;
+  tiltRecentre.hidden = !on;
   tiltStepsValue.textContent = `up to ${steps} ${steps === 1 ? 'cell' : 'cells'}`;
 }
 
@@ -311,6 +312,9 @@ function setTab(next: Tab): void {
   for (const button of tabButtons) button.setAttribute('aria-pressed', String(button.dataset.tab === tab));
   document.body.dataset.tab = tab;
   practice.setTab(tab);
+  // A replace, not a push: Back leaves the room and does not step through the tabs. No tab changes while
+  // the calibration has its own history entry, so this never replaces that entry.
+  history.replaceState(history.state, '', withTab(location.href, tab));
 }
 
 // ---- Calibration ----
@@ -435,7 +439,7 @@ voice.onStop((message) => stopMic(message));
 for (const button of tabButtons) {
   button.addEventListener('click', () => {
     const next = button.dataset.tab;
-    if (next === 'free' || next === 'targets' || next === 'echo' || next === 'playoff') setTab(next);
+    if (isTab(next)) setTab(next);
   });
 }
 micButton.addEventListener('click', () => {
@@ -542,17 +546,18 @@ addEventListener('pagehide', () => voice.stop());
 
 showBoard();
 showStickiness();
+// Limit: a touch screen is the guess for a tilt sensor, because iOS sends no reading before the player
+// allows it, and it asks only when tilt turns on. A desktop with a sensor shows the editor after its first
+// reading. Revisit if players with a touch screen and no sensor report a switch that does nothing.
+tiltEditor.hidden = !matchMedia('(pointer: coarse)').matches;
 showTilt();
 showRange();
-// ?mode= opens a tab. ?code= is an online game: the playoff tab, for a playoff with the other player.
+// ?tab= opens a tab. ?code= is an online game: the playoff tab, for a playoff with the other player.
 const params = new URLSearchParams(location.search);
 const code = normalizeCode(params.get('code') ?? '');
-const asked = params.get('mode');
 if (code !== undefined) {
   setTab('playoff');
   practice.openSession(code);
-} else if (asked === 'targets' || asked === 'echo') {
-  setTab(asked);
 } else {
-  setTab('free');
+  setTab(readTab(params));
 }

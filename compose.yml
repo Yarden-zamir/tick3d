@@ -1,5 +1,15 @@
+# Log limits for tick3d only: Docker keeps at most 3 files of 10 MB per container, and drops the oldest.
+# KitSHn recreates the containers on every deploy, so a change here applies at the next deploy.
+# The host's Docker and journald settings stay as they are for the other sites. /privacy states this limit.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
 services:
   site:
+    logging: *logging
     build:
       context: .
       target: site
@@ -25,6 +35,7 @@ services:
 
   # Online sessions: a Node API with a DuckDB file on the sessions volume. Caddy in `site` proxies /api/* here.
   api:
+    logging: *logging
     build:
       context: .
       target: api
