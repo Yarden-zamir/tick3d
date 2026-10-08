@@ -112,11 +112,11 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
 }
 
 // A note or a control that shows late keeps its box while hidden (src/style.css), so the page under it stays.
-// The edges of one element, rounded to a pixel.
+// The top on the page (not in the viewport: a click scrolls) and the height of one element, rounded to a pixel.
 async function box(page: Page, selector: string): Promise<{ top: number; height: number }> {
   return page.locator(selector).evaluate((element) => {
     const own = element.getBoundingClientRect();
-    return { top: Math.round(own.top), height: Math.round(own.height) };
+    return { top: Math.round(own.top + scrollY), height: Math.round(own.height) };
   });
 }
 
