@@ -1,4 +1,6 @@
 import type { TimeControl } from './clock.ts';
+import { parseDeletedPeople } from './deletions.ts';
+import type { EpochMs } from './epoch.ts';
 import { type Announced, type HostId, type LobbyHost, parseAnnounced, parseLobbyHosts } from './nearby/lobby.ts';
 import type { PlayoffRequest } from './practice/playoff.ts';
 import { type PracticeBoard, type PracticeMode, type PracticeRun, type PresetId, parsePracticeBoard } from './practice/practice.ts';
@@ -200,6 +202,10 @@ export const api = {
   },
   // Hides every finished game of this player from their history on the server.
   clearHistory: () => call('DELETE', '/me/history'),
+  // Deletes the data of this player on the server, and of the account when this browser is logged in. It logs out.
+  deleteData: () => call('DELETE', '/me'),
+  // The person ids of the players who deleted their data since `since`, and the server time for the next call.
+  deletedPeople: async (since: EpochMs) => parseDeletedPeople(await call('GET', `/deleted?since=${since}`)),
   // The metrics of this device for a finished online game that it played.
   gameMetrics: (id: OnlineGameId, metrics: Metrics) => call('POST', `/games/${id}/metrics`, metrics),
   // A fault report for the stats page. The caller ignores a failure: a report must never cause another fault.

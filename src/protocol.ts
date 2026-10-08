@@ -468,6 +468,7 @@ function sameStatus(value: unknown, status: Status): boolean {
 }
 
 const GITHUB_LOGIN_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
+export const isGitHubLogin = (login: string): boolean => login.length >= 1 && login.length <= 39 && [...login].every((char) => GITHUB_LOGIN_CHARS.includes(char));
 
 const isDisplayName = (value: unknown): value is string => typeof value === 'string' && value.length >= 1 && value.length <= NAME_MAX_LENGTH;
 const isSeatName = (value: unknown): value is string | null => value === null || isDisplayName(value);
@@ -486,8 +487,7 @@ function parseSeatNames(value: unknown): SeatNames | undefined {
 export function parsePlayerInfo(value: unknown): PlayerInfo | undefined {
   if (!isRecord(value)) return undefined;
   const { login, avatar } = value;
-  if (typeof login !== 'string' || login.length < 1 || login.length > 39) return undefined;
-  if (![...login].every((char) => GITHUB_LOGIN_CHARS.includes(char))) return undefined;
+  if (typeof login !== 'string' || !isGitHubLogin(login)) return undefined;
   // Avatars come from GitHub only, so a page never loads an image from an address a player chose.
   if (typeof avatar !== 'string' || !avatar.startsWith('https://avatars.githubusercontent.com/')) return undefined;
   return { login, avatar };
