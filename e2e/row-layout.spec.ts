@@ -231,8 +231,10 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     await picker.evaluate((element) => element.scrollIntoView({ block: 'center' }));
     await page.mouse.move(0, 0);
     const baseline = await modeLayout(page);
-    // Only a wide screen (72rem and wider) has the chat column. A phone hides the closed chat.
-    const chatColumn = name === 'desktop' ? await page.locator('#chat').boundingBox() : null;
+    // Only a wide screen (72rem and wider) has the chat column. A closed chat is invisible there but keeps
+    // its box, and boundingBox() returns null for an invisible element, so the test reads the box directly.
+    const chatBox = () => page.locator('#chat').evaluate((element) => { const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height }; });
+    const chatColumn = name === 'desktop' ? await chatBox() : null;
     if (name === 'desktop') expect(chatColumn, 'the closed chat column').not.toBeNull();
 
     for (const { mode, ready } of MODE_STEPS) {
@@ -241,7 +243,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
       await page.mouse.move(0, 0);
       await expect.poll(() => modeLayout(page), { message: `the board or the panel moved: ${mode}` }).toEqual(baseline);
       // A wide screen keeps the chat column in every mode, closed or open.
-      if (chatColumn !== null) expect(await page.locator('#chat').boundingBox(), `the chat column: ${mode}`).toEqual(chatColumn);
+      if (chatColumn !== null) expect(await chatBox(), `the chat column: ${mode}`).toEqual(chatColumn);
     }
 
     // Host opens a Nearby game, and with it the chat.
