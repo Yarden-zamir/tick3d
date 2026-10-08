@@ -23,6 +23,7 @@
 - Lock: no setting changes until the game ends.
 - Seat lock: keeps X and O between games. It sits next to "You play" (computer) and in the Players box (online, Nearby). Either player can change it.
 - Sound sets where each cell has its own sound, and an ear trainer at `/sound-training`.
+- One sound rule on every page: a press on a button, switch or menu item clicks at once. A control with its own sound (a move, a refusal, a sample, a song) plays only that sound. Disabled controls stay quiet, and the mute holds.
 - Play by voice: tap the mic, then hold a note on a free cell for 1 second to place your move. On a phone, turn on Tilt in the Voice room settings (off by default): a small tilt nudges the cell up to 3 cells.
 - The Voice room at `/sound-input`: calibrate the mic to your voice, then practice with Free play, Targets, Echo, or a Playoff against the other player of an online game. The page finds the pitch on the device and sends no sound.
 - Your game as a song: the Song button on the end card and on a game link. A long press shares the song as a WAV file, with your voice on the moves that your voice placed.
@@ -131,7 +132,7 @@ The actions row has fixed slots (`.slot-row` in `src/style.css`), so a control t
 - `src/protocol.ts`: the contract between the page and the API.
 - `src/online.ts`: the API client. `src/local.ts` and `src/device-db.ts`: the device backend on IndexedDB.
 - `src/nearby/`: WebRTC, QR codes and the host and guest sessions.
-- `src/sound.ts`, `src/sound-sets.ts`: the sounds and the sound sets. `src/song.ts`: a finished game as a song.
+- `src/sound.ts`, `src/sound-sets.ts`: the sounds and the sound sets. `src/click-sound.ts`: the click of every control. `src/song.ts`: a finished game as a song.
 - `src/voice/`: the voice engine (pitch, range, sticky cells, tilt, clips) for the game and the Voice room. `src/page/voice.ts`: play by voice in the game.
 - `sound-input.html`, `src/sound-input/`: the Voice room. `src/practice/`: the practice and playoff rules, shared with `server/practice.ts`.
 - `src/main.ts`, `src/page/`, `index.html`, `src/style.css`: the game page, one module per feature in `src/page/`.

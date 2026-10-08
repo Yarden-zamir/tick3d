@@ -169,7 +169,6 @@ function renderLobby(): void {
       join.textContent = 'Join';
       join.setAttribute('aria-label', `Join ${host.name}`);
       join.addEventListener('click', () => {
-        sounds.click();
         // The host makes a fresh offer after each guest, so take the newest one.
         const latest = lobbyHosts?.find((entry) => entry.id === host.id);
         if (latest === undefined) return showProblem(`${host.name} left the list.`);
@@ -510,14 +509,12 @@ export function setupNearby(): void {
   });
 
   nearbyHostButton.addEventListener('click', () => {
-    sounds.click();
     void hostNearby().catch((error: unknown) => {
       showProblem(error instanceof Error ? error.message : 'Could not start hosting.');
       endNearby();
     });
   });
   nearbyJoinButton.addEventListener('click', () => {
-    sounds.click();
     void joinNearby().catch((error: unknown) => showProblem(error instanceof Error ? error.message : 'Could not join.'));
   });
   nearbyAdd.addEventListener('click', () => void inviteGuest().catch(showError));

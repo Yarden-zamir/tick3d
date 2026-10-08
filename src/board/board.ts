@@ -54,6 +54,8 @@ export function buildBoard(root: HTMLElement): Board {
         button.type = 'button';
         button.className = 'cell';
         button.dataset.cell = String(cell);
+        // A cell plays the sound of its move, or none: never the click of src/click-sound.ts.
+        button.dataset.ownSound = '';
         button.innerHTML = '<span class="piece"></span>';
         board.cells[cell] = button;
         grid.append(button);

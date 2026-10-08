@@ -4,7 +4,6 @@ import { EYE_ICON } from '../icons.ts';
 import { renderQr } from '../nearby/qr.ts';
 import { normalizeCode, type Code, normalizeName } from '../protocol.ts';
 import { type LinkIntent, sessionLink } from '../session-link.ts';
-import { sounds } from '../sound.ts';
 import {
   lanHost,
   joinForm,
@@ -87,7 +86,6 @@ export function renderOnlineQr(code: Code | undefined): void {
 }
 
 function setQrIntent(intent: LinkIntent): void {
-  sounds.click();
   qrIntent = intent;
   renderOnlineQr(page.session?.mode === 'online' ? page.session.code : undefined);
 }
@@ -109,7 +107,6 @@ export function setupOnlineBox(): void {
 
   newCodeButton.addEventListener('click', () => {
     if (settingsLocked()) return reject(undefined, 'locked');
-    sounds.click();
     void createSession();
   });
 
@@ -124,7 +121,6 @@ export function setupOnlineBox(): void {
   qrPlayButton.addEventListener('click', () => setQrIntent('play'));
   qrWatchButton.addEventListener('click', () => setQrIntent('watch'));
   shareQrButton.addEventListener('click', () => {
-    sounds.click();
     const open = shareQrButton.getAttribute('aria-expanded') !== 'true';
     shareQrButton.setAttribute('aria-expanded', String(open));
     renderOnlineQr(page.session?.mode === 'online' ? page.session.code : undefined);

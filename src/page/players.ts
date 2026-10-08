@@ -5,7 +5,6 @@ import { avatarFor, type Person } from '../avatar.ts';
 import { type Player, other } from '../game.ts';
 import type { ConsentAction, PersonId, SeatAction, SeatRequestView, SessionView } from '../protocol.ts';
 import { EYE_ICON } from '../icons.ts';
-import { sounds } from '../sound.ts';
 import {
   playersBox,
   playersList,
@@ -95,7 +94,6 @@ export function requestUndo(): void {
 function act(action: SeatAction, done: string): void {
   const session = page.session;
   if (session === undefined) return;
-  sounds.click();
   void withBusy(async () => {
     applyView(await session.backend.seat(session.code, action));
     showToast(page.session?.seatRequest ? 'Request sent. The other player must accept it.' : done);
@@ -105,7 +103,6 @@ function act(action: SeatAction, done: string): void {
 function answer(accept: boolean): void {
   const session = page.session;
   if (session === undefined) return;
-  sounds.click();
   seatPrompt.close();
   void withBusy(async () => {
     applyView(await session.backend.answerSeat(session.code, accept));
@@ -261,7 +258,6 @@ export function renderPlayers(): void {
 async function takeSeat(): Promise<void> {
   const session = page.session;
   if (session === undefined) return;
-  sounds.click();
   await withBusy(async () => {
     applyView(await session.backend.join(session.code));
     if (page.session?.you) showToast(`You play ${page.session.you} now.`);

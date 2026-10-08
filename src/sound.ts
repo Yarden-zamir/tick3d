@@ -10,11 +10,18 @@ let soundUntil = 0;
 
 export const liveSoundUntil = (): number => soundUntil;
 
+// Counts the live sounds that the page asks for, muted or not. A press uses it to see whether its
+// handler played an own sound (src/click-sound.ts).
+let soundRequests = 0;
+
+export const soundRequestCount = (): number => soundRequests;
+
 export function setMuted(value: boolean): void {
   muted = value;
 }
 
 function audio(): AudioContext | undefined {
+  soundRequests++;
   if (muted || typeof AudioContext === 'undefined') return undefined;
   context ??= new AudioContext();
   // Browsers start the context suspended until a user gesture. A sound without a gesture (a chat

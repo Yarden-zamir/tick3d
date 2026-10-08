@@ -94,6 +94,8 @@ export function songControl(button: HTMLButtonElement, source: () => SongSource 
   }
 
   show('idle');
+  // The song is the sound of this button: a press never also clicks (src/click-sound.ts).
+  button.dataset.ownSound = '';
   button.addEventListener('pointerdown', (event) => {
     longPressEnd = -Infinity;
     if (!event.isPrimary || event.button !== 0 || button.dataset.state !== 'idle') return;

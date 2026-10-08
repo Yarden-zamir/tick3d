@@ -57,9 +57,8 @@ export function setupKeypad(): void {
       page.coordDigits = [...page.coordDigits, digit];
       const target = coordTarget();
       // The third number names a cell: its own sound tells the player which cell Place takes.
-      // Classic plays only the click, so the cell sounds first on Place.
-      if (target === undefined || !keypadPreviews()) sounds.click();
-      else sounds.preview(target);
+      // Classic plays only the click (src/click-sound.ts), so the cell sounds first on Place.
+      if (target !== undefined && keypadPreviews()) sounds.preview(target);
       renderCoords();
     });
   });
@@ -75,7 +74,6 @@ export function setupKeypad(): void {
 
   coordsBack.addEventListener('click', () => {
     page.coordDigits = page.coordDigits.slice(0, -1);
-    sounds.click();
     renderCoords();
   });
 
