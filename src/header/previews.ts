@@ -10,12 +10,14 @@ const previewsClose = element('#previews-close', HTMLButtonElement);
 const previewsNote = element('#previews-note', HTMLParagraphElement);
 const previewsList = element('#previews-list', HTMLUListElement);
 
-// The pull request number of this page, when the page itself is a preview (pr.<n>.<domain>).
+// The pull request number of this page, when the page itself is a preview (pr-<n>.<domain>).
 function previewNumberOf(hostname: string): number | undefined {
-  const [prefix, number] = hostname.split('.');
-  if (prefix !== 'pr' || number === undefined || number === '') return undefined;
-  const value = Number(number);
-  return Number.isInteger(value) && value > 0 ? value : undefined;
+  const label = hostname.split('.')[0] ?? '';
+  if (!label.startsWith('pr-')) return undefined;
+  const digits = label.slice('pr-'.length);
+  if (digits === '' || ![...digits].every((char) => char >= '0' && char <= '9')) return undefined;
+  const value = Number(digits);
+  return Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
 const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [

@@ -475,7 +475,7 @@ describe('parsePreviews', () => {
     title: `Pull ${number}`,
     description: '',
     url: `https://github.com/octo/game/pull/${number}`,
-    previewUrl: `https://pr.${number}.game.example.com`,
+    previewUrl: `https://pr-${number}.game.example.com`,
     updatedAt: 0,
     draft: false,
     contributors: [],

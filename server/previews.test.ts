@@ -40,7 +40,7 @@ function fakeFetch(routes: Record<string, Answer | (() => Answer)>) {
 
 const PULLS_URL = `https://api.github.com/repos/octo/game/pulls?state=open&sort=updated&direction=desc&per_page=${MAX_PULLS}`;
 const commitsUrl = (n: number) => `https://api.github.com/repos/octo/game/pulls/${n}/commits?per_page=${MAX_COMMITS}`;
-const healthUrl = (n: number) => `https://pr.${n}.game.example.com/api/health`;
+const healthUrl = (n: number) => `https://pr-${n}.game.example.com/api/health`;
 const LIVE: Answer = { body: { ok: true, lan: null } };
 
 describe('previews settings', () => {
@@ -168,7 +168,7 @@ describe('the previews list', () => {
         title: 'Pull 5',
         description: 'Body of 5.',
         url: 'https://github.com/octo/game/pull/5',
-        previewUrl: 'https://pr.5.game.example.com',
+        previewUrl: 'https://pr-5.game.example.com',
         updatedAt: Date.parse('2026-10-05T10:00:00Z'),
         draft: true,
         contributors: [
@@ -317,7 +317,7 @@ describe('the previews list on a preview server', () => {
     title: 'Pull 5',
     description: 'Body of 5.',
     url: 'https://github.com/octo/game/pull/5',
-    previewUrl: 'https://pr.5.game.example.com',
+    previewUrl: 'https://pr-5.game.example.com',
     updatedAt: Date.parse('2026-10-05T10:00:00Z'),
     draft: false,
     contributors: [{ login: 'alice', avatar: avatar(1), url: 'https://github.com/alice' }],
@@ -340,7 +340,7 @@ describe('the previews list on a preview server', () => {
   });
 
   it('passes the parent through, and reads a list from an older production without parents as top level', async () => {
-    const child = { ...preview, number: 6, previewUrl: 'https://pr.6.game.example.com', parent: 5 };
+    const child = { ...preview, number: 6, previewUrl: 'https://pr-6.game.example.com', parent: 5 };
     const { previews } = setup({ [PRODUCTION_URL]: { body: { main: 'https://game.example.com', previews: [preview, child], error: null } } });
     expect((await previews.list()).previews.map((p) => p.parent)).toEqual([null, 5]);
     const { parent: _, ...older } = preview;

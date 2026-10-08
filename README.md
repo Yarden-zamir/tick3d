@@ -188,7 +188,7 @@ docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:26-alpine npx vite 
 `npm run e2e` runs the Playwright tests in `e2e/` against a deployed site. Set `E2E_BASE_URL` to the site, for example a pull request preview:
 
 ```sh
-docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr.17.tick3d.yarden-zamir.com mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'npm ci && npm run e2e'
+docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr-17.tick3d.yarden-zamir.com mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'npm ci && npm run e2e'
 ```
 
 - Keep the image tag equal to the `@playwright/test` version in `package.json`.
