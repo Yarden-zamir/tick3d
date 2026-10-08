@@ -1,5 +1,5 @@
 import './style.css';
-import { openDeviceDb, memoryDeviceDb } from './device-db.ts';
+import { type DeviceDb, openDeviceDb, memoryDeviceDb } from './device-db.ts';
 import { createLocalBackend } from './local.ts';
 import { EMPTY_SESSION_TTL_MS } from './session/core.ts';
 import { setupPwa } from './pwa.ts';
@@ -80,17 +80,49 @@ setupHome();
 setupGameView();
 setupReports();
 
-async function start(): Promise<void> {
-  try {
-    page.deviceDb = await openDeviceDb();
-  } catch {
-    // The browser blocks storage (some private modes). Games then last for this visit only.
-    page.deviceDb = memoryDeviceDb();
-    showToast('This browser does not let the game store data, so games last for this visit only.');
-  }
-  page.local = createLocalBackend(page.deviceDb, token, () => page.account.user);
+// Another tab or the installed app can hold the device database: a frozen page in the middle of a write
+// keeps its transaction open. Every transaction of this page then waits, with no end and no error, and
+// the page stays on "Getting the game ready…". After this wait the game starts with storage for this visit.
+const STORAGE_WAIT_MS = 4000;
+
+class StorageWaitError extends Error {}
+
+// Opens the device database and prunes empty sessions. The prune reads the sessions store, so it also
+// proves that no other tab holds that store.
+async function openStorage(): Promise<DeviceDb> {
+  const db = await openDeviceDb();
   // Before any session opens, so a session the start opens is never pruned under it.
-  await page.local.pruneEmpty(EMPTY_SESSION_TTL_MS);
+  await createLocalBackend(db, token, () => page.account.user).pruneEmpty(EMPTY_SESSION_TTL_MS);
+  return db;
+}
+
+// Limit: only the start has this wait. A tab that takes the database later still stalls a move of this tab.
+// Revisit this if players report a stuck game after the start.
+async function startStorage(): Promise<DeviceDb> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const waited = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new StorageWaitError()), STORAGE_WAIT_MS);
+  });
+  try {
+    // A late success after the wait leaves one unused connection open. It closes with the page.
+    return await Promise.race([openStorage(), waited]);
+  } catch (error) {
+    // Games then last for this visit only.
+    showToast(
+      error instanceof StorageWaitError
+        ? 'Another tick3d tab or app holds the game data, so this game lasts for this visit only. Close the other tick3d tabs and the app, then reload.'
+        : // The browser blocks storage (some private modes), or an older tab blocks it.
+          'This browser does not let the game store data, so games last for this visit only.',
+    );
+    return memoryDeviceDb();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function start(): Promise<void> {
+  page.deviceDb = await startStorage();
+  page.local = createLocalBackend(page.deviceDb, token, () => page.account.user);
   const account = refreshAccount();
   void checkLanHost();
   // The account button of another page asks to open My games. The dialog opens after the account
