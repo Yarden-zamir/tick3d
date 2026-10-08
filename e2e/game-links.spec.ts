@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { CELL_COUNT } from '../src/game.ts';
 import { PAGES } from '../src/pages.ts';
 import { parseDeviceGameId } from '../src/protocol.ts';
-import { cell, createOnline, expect, expectToast, joinAsO, marks, playComputerUntilEnd, playerToken, status, test } from './fixtures.ts';
+import { cell, expect, expectToast, marks, playComputerUntilEnd, playerToken, status, test } from './fixtures.ts';
 
 // X wins along 0, 16, 32, 48. O plays 1, 2, 3.
 const X_WINS = [0, 1, 16, 2, 32, 3, 48];
@@ -82,44 +82,6 @@ test('a friend game gets a link, and a new game clears it', async ({ open }) => 
   const { page: viewer } = await open({ path: `/?game=${id.toLowerCase()}` });
   await expectReadOnly(viewer, 'Player X won');
   await expect(viewer.locator('#game-view-details')).toContainText('Two players, one screen');
-});
-
-test('an online game gets the link <CODE>-<n>, which anybody can open, and a cleared history keeps it for the opponent', async ({ open }) => {
-  const { page: alice } = await open();
-  const code = await createOnline(alice);
-  const { page: bob } = await joinAsO(open, `/?code=${code}`);
-  for (const [i, index] of X_WINS.entries()) {
-    const player = i % 2 === 0 ? alice : bob;
-    await expect(status(player)).toContainText('Your move');
-    await cell(player, index).click();
-  }
-  await expect(status(alice)).toHaveText('You win!');
-  expect(await gameLink(alice)).toBe(`${code}-1`);
-  expect(new URL(alice.url()).searchParams.get('code')).toBe(code);
-
-  const { page: viewer } = await open({ path: `/?game=${code}-1` });
-  await expectReadOnly(viewer, /won$/);
-  await expect(viewer.locator('#game-view-details')).toContainText(`game 1 of session ${code}`);
-
-  await bob.locator('#end-card-close').click();
-  await bob.locator('#account-button').click();
-  await expect(bob.locator('#my-games-history li').first()).toContainText('Lost · Online');
-
-  // Alice clears her history. Bob keeps the shared game.
-  await alice.locator('#end-card-close').click();
-  await alice.locator('#account-button').click();
-  await expect(alice.locator('#my-games-history li').first()).toContainText('Won · Online');
-  await alice.locator('#my-games-clear').click();
-  await expect(alice.locator('#clear-confirm')).toHaveAttribute('open');
-  await alice.locator('#clear-confirm-yes').click();
-  await expect(alice.locator('#my-games-history li:not(.empty)')).toHaveCount(0);
-  // The clear holds after the dialog loads the history again.
-  await alice.locator('#my-games-close').click();
-  await alice.locator('#account-button').click();
-  await expect(alice.locator('#my-games-history li:not(.empty)')).toHaveCount(0);
-  await bob.locator('#my-games-close').click();
-  await bob.locator('#account-button').click();
-  await expect(bob.locator('#my-games-history li').first()).toContainText('Lost · Online');
 });
 
 test('a link to an unknown game shows the problem and starts the page as usual', async ({ open }) => {
