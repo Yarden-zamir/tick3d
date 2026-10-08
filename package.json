@@ -45,6 +45,9 @@
       "android/store/screenshots/*.ts",
       "video/creative/tools/*.ts"
     ],
-    "playwright": false
+    "playwright": false,
+    "ignore": [
+      "video/{src,scripts,out}/**"
+    ]
   }
 }
