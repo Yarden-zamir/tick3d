@@ -76,8 +76,7 @@ export type Beats = {
 
 // A variant of the spot: a small overlay on beats.json in video/creative/variants/<name>.json. It changes only the
 // theme, the sound set and the camera of bars, never the game, the events or the text. VIDEO_VARIANT selects one.
-export type Variant = { name: string; differs: string; bars: Readonly<Record<string, Partial<Pick<Bar, 'theme' | 'soundSet' | 'camera'>>>> };
-
+// Shape: { name, differs, bars: { "<bar number>": { theme?, soundSet?, camera? } } }. withVariant checks it.
 const VARIANT_KEYS: readonly string[] = ['theme', 'soundSet', 'camera'];
 
 // The JSON of beats.json with the overlay of a variant merged in, for parseBeats.
