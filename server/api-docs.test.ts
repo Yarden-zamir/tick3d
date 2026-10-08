@@ -26,6 +26,7 @@ import {
   parseBlocks,
   parseReportRequest,
 } from '../src/protocol.ts';
+import { parseDeletedPeople } from '../src/deletions.ts';
 import { parsePlayoffRequest } from '../src/practice/playoff.ts';
 import { parsePracticeBoard, parsePracticeRun } from '../src/practice/practice.ts';
 import { PATH_PARAMS, ROUTES, ROUTE_NAMES, type Route, SCHEMAS, type SchemaName, matchRoute, splitRoute } from './api-docs.ts';
@@ -57,6 +58,7 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   MyGames: parseMyGames,
   PublicGame: parsePublicGame,
   HistoryPage: parseHistoryPage,
+  DeletedPeople: parseDeletedPeople,
   Metrics: parseMetrics,
   ClientEvent: parseClientEvent,
   NearbyAnnounce: parseAnnounce,
@@ -215,6 +217,7 @@ describe('the served docs', () => {
 
   // The validator checks the document against the official OpenAPI 3.1 JSON Schema (spec.openapis.org).
   // The component schemas get their own check against JSON Schema 2020-12.
+  // The validator takes a few seconds, and more while the other test files run, so the 5 s default timed out now and then.
   it('are a valid OpenAPI 3.1 document', async () => {
     const result = await new Validator().validate(doc);
     expect(result.errors).toBeUndefined();
@@ -226,7 +229,7 @@ describe('the served docs', () => {
     for (const [name, schema] of Object.entries(components.schemas)) {
       expect(ajv.validateSchema({ ...(schema as object), $defs: {} }), name).toBe(true);
     }
-  });
+  }, 20_000);
 
   it('describe every route once, with the site as the server', () => {
     const paths = doc.paths as Record<string, Record<string, unknown>>;

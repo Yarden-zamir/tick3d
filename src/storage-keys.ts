@@ -13,6 +13,8 @@ export const STORAGE_KEYS = {
   blocks: 'tick3d.blocks',
   // The chat messages that this device reported, as "<code>:<id>". They stay hidden here.
   reported: 'tick3d.reported',
+  // The server time of the last check of deletion notices (src/page/deletions.ts).
+  deletionsChecked: 'tick3d.deletions-checked',
 } as const;
 
 // The keys that hold settings, not game data. 'tick3d.voice' is the key of src/voice/settings.ts

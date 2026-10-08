@@ -63,6 +63,7 @@ import * as core from '../src/session/core.ts';
 import { CURRENT_FORMAT, type SessionDoc, parseDoc } from '../src/session/format.ts';
 import type { PlayoffRequest } from '../src/practice/playoff.ts';
 import type { PracticeBoard, PracticeMode, PracticeRun, PresetId } from '../src/practice/practice.ts';
+import { DELETED_NAME } from '../src/deletions.ts';
 import { DATA_TABLES, type DeletedData } from './api-docs.ts';
 import { practiceBoard, practiceStats } from './practice.ts';
 import { type Rows, bigId, bool, code as codeColumn, deviceGameId, epoch, gameId, int, json, nullable, oneOf, readRow, text } from './sql.ts';
@@ -80,7 +81,9 @@ const SEATS = ['X', 'O'] as const satisfies readonly Player[];
 // Each statement is idempotent and runs on every start, in order. To change a table, append a
 // statement such as `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ... DEFAULT ...`. Never edit one.
 // A session is a VARIANT document (see src/session/format.ts), so most format changes need no SQL at all.
-// Only pruneEmpty deletes rows: sessions where no game has a move. Games and results have no limit until storage calls for one.
+// pruneEmpty deletes sessions where no game has a move, pruneOld deletes old reports, moderation log,
+// page faults and deletion notices, and deleteFor deletes the data of one player. Games and results
+// have no limit until storage calls for one.
 const SCHEMA = [
   'CREATE SEQUENCE IF NOT EXISTS session_order',
   `CREATE TABLE IF NOT EXISTS sessions (
@@ -204,6 +207,12 @@ const SCHEMA = [
   // Delete my data (deleteData) keeps a report that a player filed, without the link to that player.
   'ALTER TABLE reports ALTER COLUMN reporter DROP NOT NULL',
   'ALTER TABLE reports ALTER COLUMN reporter_person DROP NOT NULL',
+  // Deletion notices: the person id of each player who deleted their data, and the time. Pages read
+  // them (deletedSince) and remove that person from their own copies. pruneOld deletes a notice after a year.
+  `CREATE TABLE IF NOT EXISTS deleted_people (
+     person VARCHAR PRIMARY KEY,
+     deleted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
 ];
 
 // The token that a seat holds when a logged-in player takes it. The account has a player_tokens row
@@ -241,6 +250,12 @@ export type ModerationAction = {
 const REPORTS_SHOWN = 200;
 export const REMOVED_MESSAGE = 'A moderator removed this message.';
 export const DELETED_MESSAGE = 'Deleted by its author.';
+// Reports, the moderation log and page faults go after 90 days (pruneOld). Moderation needs a
+// report for a few weeks at most. Revisit this if a maintainer needs older reports.
+export const REPORTS_KEPT_MS = 90 * 24 * 3_600_000;
+// A deletion notice stays for a year, so a device that comes back within a year still cleans its
+// copies. Limit: a device that stays away longer keeps them. Revisit this if players ask about it.
+export const DELETION_NOTICES_KEPT_MS = 365 * 24 * 3_600_000;
 const BLOCKS_KEPT = 500;
 
 type Row = { code: Code; doc: SessionDoc; version: number; stale: boolean };
@@ -766,6 +781,10 @@ export async function openStore(
 
       counts.player_names.deleted = (await changedIds('DELETE FROM player_names WHERE list_contains($ids, token) RETURNING token AS id', { ids })).length;
       counts.blocks.deleted = (await changedIds('DELETE FROM blocks WHERE list_contains($ids, owner) RETURNING person AS id', { ids })).length;
+      // A block of this player by another player stays for that player, without the name.
+      counts.blocks.anonymised = (
+        await changedIds('UPDATE blocks SET name = $name WHERE list_contains($persons, person) AND name <> $name RETURNING owner || person AS id', { persons, name: DELETED_NAME })
+      ).length;
       counts.practice_runs.deleted = (await changedIds('DELETE FROM practice_runs WHERE list_contains($ids, token) RETURNING id', { ids })).length;
       counts.reports.anonymised = (
         await changedIds(
@@ -778,6 +797,12 @@ export async function openStore(
       counts.player_tokens.deleted = (
         await changedIds('DELETE FROM player_tokens WHERE list_contains($ids, token) OR github_id = $account RETURNING token AS id', { ids, account })
       ).length;
+      // The notice tells the devices of other players to clean their copies (deletedSince).
+      await db.run(
+        `INSERT INTO deleted_people (person, deleted_at) SELECT unnest($persons), make_timestamptz($now * 1000)
+         ON CONFLICT (person) DO UPDATE SET deleted_at = excluded.deleted_at`,
+        { persons, now: now() },
+      );
       if (account !== null) {
         counts.users.deleted = (await changedIds('DELETE FROM users WHERE github_id = $account RETURNING login AS id', { account })).length;
       }
@@ -1378,6 +1403,31 @@ export async function openStore(
           deleted.push(code);
         }
         return deleted;
+      }),
+
+    // The deletion notices since `since` (epoch ms), and the server time of the answer for the next call.
+    deletedSince: (since: EpochMs): Promise<{ people: PersonId[]; until: EpochMs }> =>
+      serialized(async () => {
+        const until = now();
+        const found = await rows(
+          'FROM deleted_people SELECT person WHERE deleted_at >= make_timestamptz($since * 1000) AND deleted_at < make_timestamptz($until * 1000) ORDER BY person',
+          { since, until },
+          { person: personColumn },
+        );
+        return { people: found.map((row) => row.person), until };
+      }),
+
+    // Retention: reports, the moderation log and page faults after REPORTS_KEPT_MS, and deletion
+    // notices after DELETION_NOTICES_KEPT_MS. Returns how many rows went from each table.
+    pruneOld: (): Promise<Record<'reports' | 'moderation_log' | 'events' | 'deleted_people', number>> =>
+      serialized(async () => {
+        const prune = async (sql: string, ageMs: number) => (await rows(sql, { cutoff: toEpochMs(now() - ageMs) }, { n: int })).length;
+        return {
+          reports: await prune('DELETE FROM reports WHERE created_at < make_timestamptz($cutoff * 1000) RETURNING 1 AS n', REPORTS_KEPT_MS),
+          moderation_log: await prune('DELETE FROM moderation_log WHERE created_at < make_timestamptz($cutoff * 1000) RETURNING 1 AS n', REPORTS_KEPT_MS),
+          events: await prune('DELETE FROM events WHERE created_at < make_timestamptz($cutoff * 1000) RETURNING 1 AS n', REPORTS_KEPT_MS),
+          deleted_people: await prune('DELETE FROM deleted_people WHERE deleted_at < make_timestamptz($cutoff * 1000) RETURNING 1 AS n', DELETION_NOTICES_KEPT_MS),
+        };
       }),
 
     close(): void {

@@ -162,7 +162,8 @@ export type SchemaName =
   | 'ReportRequest'
   | 'ReportStored'
   | 'Reports'
-  | 'DeletedData';
+  | 'DeletedData'
+  | 'DeletedPeople';
 
 export const ref = (name: SchemaName): Schema => ({ $ref: `#/components/schemas/${name}` });
 const nullable = (schema: Schema): Schema => ({ oneOf: [schema, { type: 'null' }] });
@@ -454,6 +455,10 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     more: { type: 'boolean', description: 'True when an older page exists. Ask again with a larger offset.' },
   }),
   Hidden: object('The cleared history.', { hidden: count('How many games left your history.') }),
+  DeletedPeople: object('The players who deleted their data in the time asked.', {
+    people: list('Their person ids. Remove these people from your own copies.', person),
+    until: { type: 'integer', minimum: 0, description: 'The server time of this answer, in epoch ms. Send it as `since` next time.' },
+  }),
   DeletedData: object(
     'What the server changed, per table.',
     Object.fromEntries(
@@ -1331,6 +1336,16 @@ export const ROUTES = {
     },
     errors: [BAD_PLAYER, { status: 429, when: `This address deleted data ${DATA_DELETES_PER_HOUR} times in the last hour.` }],
     examplePlayer: AGENT_A,
+  },
+  'GET /api/deleted': {
+    operationId: 'deletedPeople',
+    tag: 'Account',
+    summary: 'The players who deleted their data since a time. The page uses it to clean its own copies.',
+    description: 'A notice stays for a year. A page that keeps copies of games (cached online games, a Nearby host) removes the name, the picture and the chat lines of these people.',
+    player: 'none',
+    query: { since: { description: 'Epoch ms: the `until` of the last answer, or 0 for every notice.', required: true, schema: { type: 'integer', minimum: 0 }, example: '0' } },
+    response: { status: 200, description: 'The notices.', schema: 'DeletedPeople', example: { people: [EXAMPLE_PERSON], until: T0 } },
+    errors: [{ status: 400, when: 'since is not a whole number of 0 or more.' }],
   },
   'PUT /api/me/name': {
     operationId: 'setName',

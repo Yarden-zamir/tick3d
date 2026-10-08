@@ -13,7 +13,8 @@ import { type Code, type DeviceGameId, type GameId, type Metrics, type PlayerTok
 import { PLAYOFF_COUNTDOWN_MS } from '../src/practice/playoff.ts';
 import type { PracticeRun } from '../src/practice/practice.ts';
 import { SessionError } from '../src/session/core.ts';
-import { DELETED_MESSAGE, REMOVED_MESSAGE, type Store, openStore } from './store.ts';
+import { DELETED_NAME } from '../src/deletions.ts';
+import { DELETED_MESSAGE, REMOVED_MESSAGE, REPORTS_KEPT_MS, DELETION_NOTICES_KEPT_MS, type Store, openStore } from './store.ts';
 
 const alice = 'aaaaaaaa-0000-4000-8000-000000000001' as PlayerToken;
 const bob = 'bbbbbbbb-0000-4000-8000-000000000002' as PlayerToken;
@@ -1060,7 +1061,7 @@ describe('report and block', () => {
 describe('delete my data', () => {
   const ALICE_ACCOUNT = `${ACCOUNT_TOKEN_PREFIX}${String(ALICE_GITHUB.id).padStart(16, '0')}`;
   const aliceTokens = [alice, alicePhone, ALICE_ACCOUNT];
-  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log'];
+  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
 
   // Per group of needles: the rows of each table whose text holds one of them. The store closes for the check and opens again.
   async function rowsHolding(path: string, groups: readonly (readonly string[])[]): Promise<Record<string, number>[]> {
@@ -1123,15 +1124,18 @@ describe('delete my data', () => {
       results: { deleted: 1, anonymised: 2 },
       seat_metrics: { deleted: 1, anonymised: 0 },
       player_names: { deleted: 1, anonymised: 0 },
-      blocks: { deleted: 1, anonymised: 0 },
+      blocks: { deleted: 1, anonymised: 1 },
       practice_runs: { deleted: 1, anonymised: 0 },
       reports: { deleted: 0, anonymised: 1 },
       player_tokens: { deleted: 3, anonymised: 0 },
       users: { deleted: 1, anonymised: 0 },
     });
 
-    // No token of Alice is left anywhere. Her person id stays only where others reported or blocked her.
-    expect(await rowsHolding(path, [aliceTokens, aliceIds, ['alice', 'good luck']])).toEqual([{}, { blocks: 1, reports: 1 }, { blocks: 1 }]);
+    // No token of Alice is left anywhere. Her person id stays only where others reported or blocked
+    // her, and in the deletion notices. Bob's block of her keeps no name.
+    expect(await rowsHolding(path, [aliceTokens, aliceIds, ['alice', 'good luck']])).toEqual([{}, { blocks: 1, reports: 1, deleted_people: 3 }, {}]);
+    expect((await store.deletedSince(ms(0))).people.sort((a, b) => a.localeCompare(b))).toEqual([...aliceIds].sort((a, b) => a.localeCompare(b)));
+    expect(await store.blocks(bob)).toMatchObject([{ name: DELETED_NAME }]);
 
     // Bob keeps his games, his half of the session, his name, block, run, metrics and report.
     const view = await store.get(code, bob);
@@ -1194,6 +1198,28 @@ describe('delete my data', () => {
     expect(await store.deleteDataOf({ login: 'ALICE' })).toMatchObject({ results: { deleted: 1 }, player_tokens: { deleted: 2 }, users: { deleted: 1 } });
     expect((await store.myGames(alice)).user).toBeNull();
     expect(await status(() => store.deleteDataOf({ login: 'alice' }))).toBe(404);
+  });
+
+  it('deletes reports, the moderation log and page faults after 90 days, and deletion notices after a year', async () => {
+    let later = 0;
+    store = await openStore(':memory:', { now: () => ms(Date.now() + later) });
+    const code = await (async () => {
+      const { code } = await store.create(alice, 'Old reports');
+      await store.join(code, bob);
+      return code;
+    })();
+    await store.chat(code, bob, 'spam');
+    await store.report(alice, { code, target: { message: 1 }, reason: 'spam', note: null });
+    await store.hideMessage(code, 1, 'Yarden-zamir');
+    await store.addEvent({ kind: 'error', message: 'boom', version: 'v1' });
+    await store.deleteData(carol);
+    expect(await store.pruneOld()).toEqual({ reports: 0, moderation_log: 0, events: 0, deleted_people: 0 });
+    later = REPORTS_KEPT_MS + 60_000;
+    expect(await store.pruneOld()).toEqual({ reports: 1, moderation_log: 1, events: 1, deleted_people: 0 });
+    expect(await store.reports()).toEqual({ reports: [], actions: [] });
+    expect((await store.deletedSince(ms(0))).people).toHaveLength(1);
+    later = DELETION_NOTICES_KEPT_MS + 60_000;
+    expect(await store.pruneOld()).toEqual({ reports: 0, moderation_log: 0, events: 0, deleted_people: 1 });
   });
 });
 

@@ -7,6 +7,7 @@ import {
   type PlayerToken,
   RESULTS_PER_UPLOAD,
   asPlayerToken,
+  isGitHubLogin,
   normalizeCode,
   parseClientEvent,
   parseCustomName,
@@ -25,6 +26,7 @@ import {
 import { asHostId, parseAnnounce, parseAnswerRequest } from '../src/nearby/lobby.ts';
 import { type Hello, decodeSignal } from '../src/nearby/signal.ts';
 import { EMPTY_SESSION_TTL_MS, SessionError } from '../src/session/core.ts';
+import { isEpochMs } from '../src/epoch.ts';
 import {
   CREATES_PER_HOUR,
   DATA_DELETES_PER_HOUR,
@@ -398,6 +400,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const deleted = await store.deleteData(token);
       return send(res, 200, deleted, auth === undefined ? {} : { 'set-cookie': auth.logoutCookie() });
     }
+    case 'GET /api/deleted': {
+      const since = Number(url.searchParams.get('since') ?? '');
+      if (!isEpochMs(since)) throw new HttpError(400, 'since is not a whole number of 0 or more.');
+      return send(res, 200, await store.deletedSince(since));
+    }
     // A cross-site form cannot send the X-Player header, so another site cannot rename a player.
     case 'PUT /api/me/name': {
       const token = requirePlayer(req);
@@ -462,7 +469,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     case 'DELETE /api/accounts/{login}': {
       requireMaintainer(req);
       const login = match.params.login ?? '';
-      if (!/^[A-Za-z0-9-]{1,39}$/.test(login)) throw new HttpError(400, 'A GitHub login has 1 to 39 letters, digits or "-".');
+      if (!isGitHubLogin(login)) throw new HttpError(400, 'A GitHub login has 1 to 39 letters, digits or "-".');
       return send(res, 200, await store.deleteDataOf({ login }));
     }
 
@@ -627,10 +634,13 @@ const server = createServer((req, res) => {
   });
 });
 
-// Sessions that nobody played go after a while, at start and then every hour.
+// Sessions that nobody played go after a while, at start and then every hour. So do old reports,
+// moderation log entries, page faults and deletion notices (pruneOld in server/store.ts).
 async function pruneEmptySessions(): Promise<void> {
   const deleted = await store.pruneEmpty(EMPTY_SESSION_TTL_MS);
   if (deleted.length > 0) console.log(`pruned ${deleted.length} empty sessions`);
+  const old = await store.pruneOld();
+  if (Object.values(old).some((count) => count > 0)) console.log('pruned old rows', old);
 }
 void pruneEmptySessions().catch((error: unknown) => console.error('pruning empty sessions failed', error));
 setInterval(() => void pruneEmptySessions().catch((error: unknown) => console.error('pruning empty sessions failed', error)), 3_600_000).unref();

@@ -22,6 +22,7 @@ import {
 } from '../protocol.ts';
 import { STATS_ICON } from '../icons.ts';
 import { deviceDataKeys } from '../storage-keys.ts';
+import { syncDeletions } from './deletions.ts';
 import { accountLink } from '../header/header.ts';
 import {
   myGamesDialog,
@@ -474,6 +475,7 @@ export async function refreshAccount(): Promise<void> {
   try {
     saveAccount(await api.me());
     void syncRecords();
+    void syncDeletions().catch(showError);
     // The blocks follow a login, so they load after the account.
     void loadBlocks().catch(showError);
   } catch (error) {
