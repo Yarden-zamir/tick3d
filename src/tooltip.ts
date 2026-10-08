@@ -70,7 +70,12 @@ export function setupTooltips(): void {
   document.addEventListener('focusin', (event) => {
     const target = tipTarget(event.target);
     // Only a keyboard focus shows the tip. A tap also focuses the button, and a tap must not show it.
-    if (target !== null && target.matches(':focus-visible')) show(target);
+    if (target === null || !target.matches(':focus-visible')) return;
+    // A popover that opens moves the focus while it shows, and a popover cannot show during that show.
+    // So the tip shows in the next task, if the element still has the keyboard focus.
+    setTimeout(() => {
+      if (document.activeElement === target && target.matches(':focus-visible')) show(target);
+    });
   });
   document.addEventListener('focusout', () => hide());
   // A dialog or a popover that closes takes the tooltip of its element with it. These events do not bubble.
