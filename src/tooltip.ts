@@ -1,6 +1,8 @@
 // A small tooltip for any element with a data-tip text. It shows on hover and on keyboard focus,
 // and on a long press with touch. A long press does not count as a tap, so it never toggles the
 // control. A short tap works as usual. While the tooltip shows, the element names it in aria-describedby.
+// The tooltip is a manual popover, so it shows in the top layer, over an open dialog or popover. It moves
+// into the open dialog or popover of its element: outside a modal dialog it is inert, and a hit test skips it.
 
 const LONG_PRESS_MS = 500;
 // A finger that moves more than this many pixels scrolls the page, so it is not a long press.
@@ -19,10 +21,11 @@ function place(box: HTMLDivElement, target: HTMLElement): void {
   const anchor = target.getBoundingClientRect();
   const size = box.getBoundingClientRect();
   const left = Math.min(Math.max(margin, anchor.left + anchor.width / 2 - size.width / 2), innerWidth - size.width - margin);
-  // Above the element, or below it when there is no room above.
+  // Above the element, or below it when there is no room above. It stays inside the viewport.
   const above = anchor.top - size.height - margin;
+  const top = above >= margin ? above : Math.min(anchor.bottom + margin, innerHeight - size.height - margin);
   box.style.left = `${left}px`;
-  box.style.top = `${above >= margin ? above : anchor.bottom + margin}px`;
+  box.style.top = `${Math.max(margin, top)}px`;
 }
 
 function show(target: HTMLElement): void {
@@ -31,15 +34,19 @@ function show(target: HTMLElement): void {
   clearTimeout(hideTimer);
   if (shownFor !== undefined && shownFor !== target) shownFor.removeAttribute('aria-describedby');
   shownFor = target;
+  // A hide and a new show put the tooltip over the top layer elements that opened after it.
+  if (tip.matches(':popover-open')) tip.hidePopover();
+  const host = target.closest('dialog[open], :popover-open') ?? document.body;
+  if (tip.parentElement !== host) host.append(tip);
   tip.textContent = text;
-  tip.hidden = false;
+  tip.showPopover();
   target.setAttribute('aria-describedby', tip.id);
   place(tip, target);
 }
 
 function hide(): void {
   clearTimeout(hideTimer);
-  if (tip !== undefined) tip.hidden = true;
+  if (tip?.matches(':popover-open') === true) tip.hidePopover();
   shownFor?.removeAttribute('aria-describedby');
   shownFor = undefined;
 }
@@ -49,7 +56,7 @@ export function setupTooltips(): void {
   tip.id = 'tip';
   tip.className = 'tip';
   tip.setAttribute('role', 'tooltip');
-  tip.hidden = true;
+  tip.popover = 'manual';
   document.body.append(tip);
 
   document.addEventListener('pointerover', (event) => {
@@ -63,9 +70,23 @@ export function setupTooltips(): void {
   document.addEventListener('focusin', (event) => {
     const target = tipTarget(event.target);
     // Only a keyboard focus shows the tip. A tap also focuses the button, and a tap must not show it.
-    if (target !== null && target.matches(':focus-visible')) show(target);
+    if (target === null || !target.matches(':focus-visible')) return;
+    // A popover that opens moves the focus while it shows, and a popover cannot show during that show.
+    // So the tip shows in the next task, if the element still has the keyboard focus.
+    setTimeout(() => {
+      if (document.activeElement === target && target.matches(':focus-visible')) show(target);
+    });
   });
   document.addEventListener('focusout', () => hide());
+  // A dialog or a popover that closes takes the tooltip of its element with it. These events do not bubble.
+  document.addEventListener('close', () => hide(), { capture: true });
+  document.addEventListener(
+    'toggle',
+    (event) => {
+      if (event.target !== tip && event instanceof ToggleEvent && event.newState === 'closed') hide();
+    },
+    { capture: true },
+  );
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') hide();
   });

@@ -183,6 +183,20 @@
             <p class="input-note" id="spread-note"></p>
           </div>
         </fieldset>
+        <!-- Tilt fine-tuning: main.ts shows it on a touch screen, or once the device sends a tilt reading. Off by default. -->
+        <fieldset class="voice-range" id="tilt-editor" hidden>
+          <legend>Tilt</legend>
+          <div class="input-actions">
+            <label class="limit-switch"><span>Tilt nudges the cell</span><input type="checkbox" role="switch" id="tilt-on" /></label>
+            <button type="button" class="btn btn-small" id="tilt-recentre" hidden data-tip="Take this angle as level">Recentre</button>
+          </div>
+          <div class="input-slider">
+            <label for="tilt-steps">Tilt strength</label>
+            <input type="range" id="tilt-steps" min="1" max="3" step="1" />
+            <output id="tilt-steps-value" for="tilt-steps"></output>
+          </div>
+          <p class="input-note">Tip the top edge toward you to go up, away to go down. The arrow on the rail shows the nudge.</p>
+        </fieldset>
         <div class="input-slider">
           <label for="stickiness">Stickiness</label>
           <input type="range" id="stickiness" min="0" max="100" step="5" />
@@ -194,20 +208,6 @@
           <output id="build-up-value" for="build-up"></output>
         </div>
         <p class="input-note">A held cell stays lit until your pitch moves this far past its border. The margin grows over the build-up time.</p>
-        <!-- Tilt fine-tuning: main.ts shows it once the device sends a tilt reading. A desktop sends none. -->
-        <fieldset class="voice-range" id="tilt-editor" hidden>
-          <legend>Tilt</legend>
-          <div class="input-actions">
-            <label class="limit-switch"><span>Tilt nudges the cell</span><input type="checkbox" role="switch" id="tilt-on" /></label>
-            <button type="button" class="btn btn-small" id="tilt-recentre" data-tip="Take this angle as level">Recentre</button>
-          </div>
-          <div class="input-slider">
-            <label for="tilt-steps">Tilt strength</label>
-            <input type="range" id="tilt-steps" min="1" max="8" step="1" />
-            <output id="tilt-steps-value" for="tilt-steps"></output>
-          </div>
-          <p class="input-note">Tip the top edge toward you to go up, away to go down. The arrow on the rail shows the nudge.</p>
-        </fieldset>
         <!-- Free play only (input.css). -->
         <div class="input-actions free-only">
           <label class="limit-switch"><span>Hold a note 1 s to place an X</span><input type="checkbox" role="switch" id="hold" checked /></label>
@@ -230,7 +230,7 @@
         <li>The rail is your range: low at the left, high at the right. A higher pitch lights a higher row.</li>
         <li>Calibrate to your voice: hold your lowest note, then your highest. The rows then split your range.</li>
         <li>Stickiness keeps a held cell lit when your pitch wobbles.</li>
-        <li>On a phone, a small tilt nudges the cell up or down.</li>
+        <li>On a phone, turn on Tilt in the settings: a small tilt then nudges the cell up to 3 cells.</li>
         <li>Free play: hold a note 1 s to place an X. Tap a cell to hear it.</li>
         <li>Targets: hold each lit target, against the clock.</li>
         <li>Echo: hear a cell, then sing it back.</li>

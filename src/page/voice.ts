@@ -204,6 +204,8 @@ export function syncVoice(): void {
   voiceButton.hidden = page.viewing !== undefined || page.session === undefined || page.session.you === null;
   voiceButton.setAttribute('aria-pressed', String(settings.voice));
   voicePanel.hidden = !settings.voice || voiceButton.hidden;
+  // With tilt on, a touch screen keeps the space of Recentre tilt (style.css). With tilt off, it keeps none.
+  voicePanel.classList.toggle('tilt-on', voice.settings().tilt.on);
   // In a seated online game, the Voice room opens on its playoff for this game.
   const online = page.session?.mode === 'online' && page.session.you !== null ? page.session.code : undefined;
   // The Voice room links back to this page.
