@@ -127,6 +127,7 @@ export function openApi(origin: string): Record<string, unknown> {
       { name: 'Nearby', description: 'The list of open Nearby games on your network. The page uses it.' },
       { name: 'Docs', description: 'This document, its web page and the health check.' },
       { name: 'Account', description: 'Routes for the page: GitHub login, stats, offline results and the previews list.' },
+      { name: 'Safety', description: 'Report and block people, and the moderation routes of the maintainers.' },
     ],
     paths,
     components: { schemas: SCHEMAS, parameters: { IdempotencyKey: IDEMPOTENCY_KEY } },

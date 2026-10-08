@@ -2338,6 +2338,34 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 700;
 }
 
+/* The report and block menu (src/page/safety.ts). */
+.safety-report {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.safety-report fieldset {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  border: 2px solid currentcolor;
+  padding: 0.5rem 0.75rem;
+}
+
+.safety-report textarea {
+  font: inherit;
+  resize: vertical;
+}
+
+/* A message or a person that opens the menu: on touch, a long press must not select its text. */
+@media (pointer: coarse) {
+  [data-person] {
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+}
+
 /* ---- Feedback ---- */
 
 .toast {

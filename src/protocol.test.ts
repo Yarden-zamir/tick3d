@@ -61,11 +61,12 @@ describe('parseSessionView', () => {
     flipped: [false],
     now: 30,
     version: 2,
-    chat: [{ id: 7, from: 'O', text: 'good luck', at: 1_700_000_000_000 }],
+    chat: [{ id: 7, from: 'O', text: 'good luck', at: 1_700_000_000_000, by: '00112233445566ff' }, { id: 8, from: 'X', text: 'thanks', at: 1_700_000_000_001 }],
     presence: { X: true, O: false },
     players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' }, O: null },
     names: { X: 'braveOtter', O: null },
-    watchers: [{ id: '0123456789abcdef', name: 'Carol', player: null }],
+    people: { X: '0123456789abcdef', O: null },
+    watchers: [{ id: '0123456789abcdef', name: 'Carol', player: null, person: 'fedcba9876543210' }],
     youWatcher: '0123456789abcdef',
     seatRequest: { kind: 'replace', from: 'X', watcher: { name: 'Carol', player: null }, expiresAt: 90 },
     turn: 'X',
@@ -86,6 +87,15 @@ describe('parseSessionView', () => {
     const { playoff: _playoff, ...older } = valid;
     expect(parseSessionView(older).playoff).toBeNull();
     expect(() => parseSessionView({ ...valid, playoff: { id: 1 } })).toThrow();
+  });
+
+  it('gives no person ids when an older sender has none, and refuses a broken one', () => {
+    const { people: _people, ...older } = valid;
+    const parsed = parseSessionView({ ...older, watchers: [{ id: '0123456789abcdef', name: 'Carol', player: null }] });
+    expect(parsed.people).toEqual({ X: null, O: null });
+    expect(parsed.watchers[0]?.person).toBeNull();
+    expect(() => parseSessionView({ ...valid, people: { X: 'not-a-person-id!', O: null } })).toThrow();
+    expect(() => parseSessionView({ ...valid, chat: [{ id: 1, from: 'X', text: 'hi', at: 1, by: 'TOKEN' }] })).toThrow();
   });
 
   it('gives no names when a sender has no names field', () => {

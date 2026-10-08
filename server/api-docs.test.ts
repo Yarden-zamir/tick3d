@@ -22,6 +22,9 @@ import {
   parseCustomName,
   parseSeatAction,
   parseSeatAnswer,
+  parseBlockRequest,
+  parseBlocks,
+  parseReportRequest,
 } from '../src/protocol.ts';
 import { parsePlayoffRequest } from '../src/practice/playoff.ts';
 import { parsePracticeBoard, parsePracticeRun } from '../src/practice/practice.ts';
@@ -68,6 +71,9 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   SeatAnswer: parseSeatAnswer,
   // server/main.ts reads `name` and checks it with parseCustomName.
   NameRequest: (value) => (isRecord(value) ? parseCustomName(value.name) : undefined),
+  BlockRequest: parseBlockRequest,
+  Blocks: parseBlocks,
+  ReportRequest: parseReportRequest,
 };
 
 function parses(name: SchemaName, value: unknown): boolean {
@@ -131,7 +137,7 @@ describe('the SessionView schema', () => {
   it('marks a field required when parseSessionView needs it', () => {
     // An older server, a Nearby host or a cached view sends no turn, status, names, watchers, seat
     // request and seat rotation, so the parser fills them in.
-    const filled = ['turn', 'status', 'names', 'watchers', 'youWatcher', 'seatRequest', 'fixedSeats', 'flipped'];
+    const filled = ['turn', 'status', 'names', 'people', 'watchers', 'youWatcher', 'seatRequest', 'fixedSeats', 'flipped'];
     for (const key of SCHEMAS.SessionView.required ?? []) {
       expect(parses('SessionView', without(example, key)), key).toBe(filled.includes(key));
     }
@@ -180,7 +186,7 @@ describe('the SessionView schema', () => {
 describe('matchRoute', () => {
   it.each(ROUTE_NAMES)('finds %s', (name) => {
     const { method, path } = splitRoute(name);
-    const values = { code: 'ab3k', id: 'ab3k-2', host: 'q8Zr2Lx0Vb7Nc4Mw' };
+    const values = { code: 'ab3k', id: 'ab3k-2', host: 'q8Zr2Lx0Vb7Nc4Mw', person: '3f9a0c27d84be615', message: '3' };
     const used = Object.entries(values).filter(([key]) => path.includes(`{${key}}`));
     const concrete = used.reduce((result, [key, value]) => result.replaceAll(`{${key}}`, value), path);
     const params = Object.fromEntries(used);

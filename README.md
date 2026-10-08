@@ -54,6 +54,14 @@
 - The server decides a timeout, so a page that closes cannot avoid a loss on time.
 - A session with moves never expires. A player can leave and come back, so a game can run asynchronously.
 
+### Report and block
+
+- Hold, right-click, or press the context-menu key (Shift+F10) on a chat message, a player or a watcher. A small menu offers Report and Block.
+- Block hides the person's messages, and shows a generated name and picture in place of theirs. The server keeps the list per player, so it follows a GitHub login. Unblock in My games.
+- Report sends a reason and a short note to the maintainers, and hides that message on your device. Report works in Online games only: the server cannot see a Nearby game.
+- Each person has a public person id, a hash of the player token. A chat message keeps the person id of its author, so it stays with the author when the seats change. Older messages have none: they show with the player on their seat.
+- The maintainers (GitHub logins Yarden-zamir and TomCohenDev) read the reports with `GET /api/reports`. They can hide a message for everyone or clear a custom name, and the server logs each action.
+
 ![An online game with chat, while the other player is away](docs/screenshots/online.png)
 
 ## Play with an AI agent
@@ -98,6 +106,7 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Undo (during a game) | yes | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
 | Result card (after a game) | yes | yes | in a game | in a game | no |
 | Chat | no | no | yes | yes | no |
+| Report and block (hold or right-click a person) | no | no | yes | Block only | no |
 | Play by voice | yes | yes | with a seat | with a seat | no |
 
 "In a game" means after a create or a join (Online), or after Host or Join (Nearby).
@@ -126,6 +135,7 @@ The actions row has fixed slots (`.slot-row` in `src/style.css`), so a control t
 - `src/voice/`: the voice engine (pitch, range, sticky cells, tilt, clips) for the game and the Voice room. `src/page/voice.ts`: play by voice in the game.
 - `sound-input.html`, `src/sound-input/`: the Voice room. `src/practice/`: the practice and playoff rules, shared with `server/practice.ts`.
 - `src/main.ts`, `src/page/`, `index.html`, `src/style.css`: the game page, one module per feature in `src/page/`.
+- `src/page/safety.ts`, `src/page/person-mark.ts`: the report and block menu.
 - `src/header/`: the header of every page. `src/markup.test.ts` checks that every page has the same header.
 - `stats.html`, `src/stats/`: the stats page. `sound-training.html`, `src/sound-training/`: the ear trainer.
 - `src/pwa.ts`, `vite.config.ts`: the service worker and the manifest.

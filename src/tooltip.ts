@@ -87,7 +87,9 @@ export function setupTooltips(): void {
     endPress();
     dropClickOn = undefined;
     const target = tipTarget(event.target);
-    if (event.pointerType === 'mouse' || target === null) return;
+    // A long press on a person opens the report and block menu (src/page/safety.ts), not a tooltip.
+    const onPerson = event.target instanceof Element && event.target.closest('[data-person]') !== null;
+    if (event.pointerType === 'mouse' || target === null || onPerson) return;
     const timer = setTimeout(() => {
       show(target);
       dropClickOn = target;
