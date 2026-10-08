@@ -278,8 +278,10 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     await picker.evaluate((element) => element.scrollIntoView({ block: 'center' }));
     await picker.getByRole('button', { name: 'Online', exact: true }).click();
 
-    for (const selector of PENDING) await expect(page.locator(selector), selector).toHaveAttribute('data-pending', '');
-    for (const selector of PENDING) await expect(page.locator(selector), selector).toBeVisible();
+    for (const selector of ['#clocks', '.score', '#new-game', '#undo', '#online-session', '#players']) {
+      await expect(page.locator(selector), selector).toBeVisible();
+      await expect(page.locator(selector), selector).toHaveAttribute('data-pending', '');
+    }
     for (const id of ['#new-game', '#undo', '#share', '#share-qr', '#players [data-seat-lock]']) await expect(page.locator(id), id).toBeDisabled();
     await expect(page.locator('#players-list li')).toHaveCount(2);
     await page.mouse.move(0, 0);

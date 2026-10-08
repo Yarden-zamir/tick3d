@@ -261,9 +261,10 @@ export function render(): void {
       // A GitHub account shows in every mode. A generated picture shows only with another device,
       // where the seat is a person and not "Computer" or a friend on this device.
       const session = page.session;
-      // Online and Nearby before the session: the seats wait for their people.
+      // Online and Nearby before the session: the seats wait for their people. A short "···", like the game code box,
+      // because a tally is narrow, and a longer word wraps to a second line and makes the score taller.
       if (key !== 'draw' && pending && sharedMode) {
-        name.append(avatarPlaceholder(), 'Waiting…');
+        name.append(avatarPlaceholder(), '···');
         tally.append(count, name);
         return tally;
       }
