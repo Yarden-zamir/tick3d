@@ -107,9 +107,15 @@ export function avatarSvg(seed: string): string {
 // A person as every screen shows them: the GitHub account, else null, and the shown name without "You".
 export type Person = { player: PlayerInfo | null; name: string };
 
+// The pictures that open the viewer (src/page/avatar-viewer.ts), with their person.
+const viewable = new WeakMap<HTMLImageElement, Person>();
+
+// The size of the picture in the viewer.
+export const VIEW_PIXELS = 240;
+
 // The picture of one person. `pixels` is the shown size: GitHub sends twice that, for sharp
 // pictures on high-density screens. The alt text is empty, because the name is always next to the picture.
-export function avatarFor({ player, name }: Person, pixels: number): HTMLImageElement {
+export function avatarImage({ player, name }: Person, pixels: number): HTMLImageElement {
   const image = document.createElement('img');
   image.className = 'avatar';
   image.alt = '';
@@ -118,3 +124,19 @@ export function avatarFor({ player, name }: Person, pixels: number): HTMLImageEl
   image.src = player === null ? `data:image/svg+xml,${encodeURIComponent(avatarSvg(name))}` : `${player.avatar}&s=${pixels * 2}`;
   return image;
 }
+
+// The picture of one person as a button: a click, a tap, Enter or Space opens it large in the viewer.
+export function avatarFor(person: Person, pixels: number): HTMLImageElement {
+  const image = avatarImage(person, pixels);
+  // An image with an empty alt text cannot take a role, so the button image has the name.
+  image.alt = person.name;
+  image.setAttribute('role', 'button');
+  image.setAttribute('aria-label', `View ${person.name}'s picture`);
+  image.tabIndex = 0;
+  viewable.set(image, person);
+  return image;
+}
+
+// The person of a picture that opens the viewer, or undefined.
+export const viewablePerson = (target: EventTarget | null): Person | undefined =>
+  target instanceof HTMLImageElement ? viewable.get(target) : undefined;

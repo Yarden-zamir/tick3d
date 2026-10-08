@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { avatarFor, avatarSvg } from './avatar.ts';
+import { avatarFor, avatarImage, avatarSvg, viewablePerson } from './avatar.ts';
 
 describe('generated player pictures', () => {
   it('gives one seed the same picture every time', () => {
@@ -20,7 +20,15 @@ describe('generated player pictures', () => {
     const image = avatarFor({ player: null, name: 'braveOtter' }, 24);
     expect(image.src.startsWith('data:image/svg+xml,')).toBe(true);
     expect(decodeURIComponent(image.src.slice('data:image/svg+xml,'.length))).toBe(avatarSvg('braveOtter'));
-    expect(image.alt).toBe('');
+  });
+
+  it('makes the picture a button that names the person', () => {
+    const image = avatarFor({ player: null, name: 'braveOtter' }, 24);
+    expect(image.getAttribute('role')).toBe('button');
+    expect(image.tabIndex).toBe(0);
+    expect(image.getAttribute('aria-label')).toBe("View braveOtter's picture");
+    expect(viewablePerson(image)).toEqual({ player: null, name: 'braveOtter' });
+    expect(viewablePerson(avatarImage({ player: null, name: 'braveOtter' }, 24))).toBeUndefined();
   });
 
   it('shows the GitHub avatar of a logged-in player', () => {

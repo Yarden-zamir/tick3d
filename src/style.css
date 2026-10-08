@@ -2337,6 +2337,33 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 700;
 }
 
+/* A person's picture, large (src/page/avatar-viewer.ts). */
+/* A long press opens the report and block menu, so a touch must not select the picture or open the image menu. */
+.avatar[role='button'] {
+  cursor: pointer;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.avatar-viewer {
+  width: min(92vw, 18rem);
+  text-align: center;
+}
+
+.avatar-viewer-picture {
+  display: flex;
+  justify-content: center;
+}
+
+/* Two classes, so the round avatar wins over `.end-card img`. */
+.avatar-viewer .avatar {
+  width: min(240px, 100%);
+  height: auto;
+  aspect-ratio: 1;
+  border-width: var(--border);
+  border-radius: 50%;
+}
+
 /* The report and block menu (src/page/safety.ts). */
 .safety-report {
   display: grid;
