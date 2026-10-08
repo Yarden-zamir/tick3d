@@ -11,6 +11,8 @@ const FONT = '"Bricolage Grotesque"';
 const BORDER = 3 * PX;
 const SHADOW = 4 * PX;
 const SQUARE = 1080;
+// The URL suffix against the wordmark: a little over half, so it reads on a phone in landscape too.
+const SUFFIX = 0.55;
 
 const css = ({ r, g, b, a }: Rgba) => `rgb(${Math.round(r * 255)} ${Math.round(g * 255)} ${Math.round(b * 255)} / ${a})`;
 
@@ -22,7 +24,7 @@ type Look = { y: number; size: number; sticker?: Token };
 // The look of each word group of the first two lines, in the order of beats.json.
 const LINE_LOOKS: readonly (readonly Look[])[] = [
   [{ y: -80, size: 132 }, { y: 100, size: 120, sticker: 'x' }],
-  [{ y: -400, size: 118 }, { y: -250, size: 108, sticker: 'win' }],
+  [{ y: -488, size: 108 }, { y: -368, size: 98, sticker: 'x' }],
 ];
 
 // The drop-in of a word group: 0 before its sixteenth, then a spring with a small overshoot, settled in 1 sixteenth.
@@ -102,7 +104,7 @@ function endCard(ctx: CanvasRenderingContext2D, frame: number, words: readonly W
     ctx.letterSpacing = '-0.05em';
     const nameWidth = ctx.measureText(name).width;
     const stickerWidth = ctx.measureText('3d').width + size * 0.28 + size * 0.08;
-    ctx.font = `800 ${size * 0.46}px ${FONT}`;
+    ctx.font = `800 ${size * SUFFIX}px ${FONT}`;
     ctx.letterSpacing = '-0.02em';
     return { mark: nameWidth + stickerWidth, suffix: ctx.measureText(suffix.text).width + size * 0.1 };
   };
@@ -122,7 +124,7 @@ function endCard(ctx: CanvasRenderingContext2D, frame: number, words: readonly W
     ctx.beginPath();
     ctx.rect(left + w.mark, -size, SQUARE, size * 2);
     ctx.clip();
-    ctx.font = `800 ${size * 0.46}px ${FONT}`;
+    ctx.font = `800 ${size * SUFFIX}px ${FONT}`;
     ctx.letterSpacing = '-0.02em';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';

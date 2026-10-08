@@ -1,8 +1,9 @@
 // The camera rig: one shot for each camera kind of beats.json. A shot is a function of the frame only.
 import { Vector3 } from 'three';
 import { Easing, interpolate } from 'remotion';
-import { BEATS, barAt, eventsOf, since } from './timeline.ts';
-import { LAYER_GAP, TOWER_CENTER, cellCenter } from './layout.ts';
+import { SIXTEENTHS_PER_BAR } from '../creative/beats.ts';
+import { BEATS, barAt, eventsOf, frameOf, since } from './timeline.ts';
+import { TOWER_CENTER, cellCenter } from './layout.ts';
 
 type Bar = ReturnType<typeof barAt>;
 
@@ -32,7 +33,6 @@ const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
 const cubic = (t: number) => Easing.cubic(t);
 const quad = (t: number) => Easing.quad(t);
 const sine = (t: number) => Easing.sin(t);
-const linear = (t: number) => t;
 const ease = (t: number, from: number, to: number, easing = Easing.inOut(cubic)) => interpolate(t, [0, 1], [from, to], { ...clamp, easing });
 
 // A point on a sphere around `target`: azimuth from +z towards +x, elevation above the boards.
@@ -44,15 +44,26 @@ function orbit(target: Vector3, azimuth: number, elevation: number, distance: nu
 
 const shot = (position: Vector3, target: Vector3, fov = HOME_FOV, up = WORLD_UP.clone()): Shot => ({ position, target, up, fov, zoom: 1, lift: 0 });
 
+const hits = () => [...eventsOf('layer-slam').map((event) => event.at), BEATS.moves.at(-1)?.at ?? 0];
+
 // A short jolt of the camera after each layer slam and after the winning move: a damped bounce, down first.
 function jolt(frame: number): number {
-  const hits = [...eventsOf('layer-slam').map((event) => event.at), BEATS.moves.at(-1)?.at ?? 0];
   let offset = 0;
-  for (const at of hits) {
+  for (const at of hits()) {
     const t = since(frame, at);
     if (t >= 0 && t < 4) offset -= 0.22 * Math.exp(-t * 1.4) * Math.cos(t * 3.2);
   }
   return offset;
+}
+
+// A shake of the camera on the frame of a hit and the one after it, so the impact frame reads as a hit.
+function shake(frame: number): Vector3 {
+  for (const at of hits()) {
+    const f = frame - frameOf(at);
+    if (f === 0) return new Vector3(0.35, -0.3, 0);
+    if (f === 1) return new Vector3(-0.18, 0.14, 0);
+  }
+  return new Vector3();
 }
 
 const WIN_LINE = BEATS.game.line;
@@ -66,26 +77,25 @@ export function cameraAt(frame: number, bar: Bar): Shot {
   const u = since(frame, bar.start) / 16;
   switch (bar.camera) {
     case 'slam': {
-      const target = TOWER_CENTER.clone().add(new Vector3(0, jolt(frame), 0));
-      return shot(orbit(target, HOME_AZIMUTH, ELEVATION, HOME_DISTANCE), target);
+      // The gaze starts on layer 3, the first to land, and sinks to the centre as the tower builds.
+      const target = TOWER_CENTER.clone().add(new Vector3(0, ease(u, 1.3, 0, Easing.out(cubic)) + jolt(frame), 0));
+      return shot(orbit(target, HOME_AZIMUTH, ELEVATION, HOME_DISTANCE).add(shake(frame)), target);
     }
     case 'dive': {
-      // Straight down the centre axis, through the seam of cells 5, 6, 9 and 10. From high above, the four boards
-      // stack into a tunnel. The camera reaches layer 3 on beat 3 and threads layers 2, 1 and 0 on beat 4,
-      // while it rolls a quarter turn.
-      const beats = u * 4;
-      const height = interpolate(beats, [0, 2.6, 3.1, 3.55, 4], [3 * LAYER_GAP + 12, 3 * LAYER_GAP + 0.3, 2 * LAYER_GAP, LAYER_GAP, -0.4], {
-        ...clamp,
-        easing: Easing.inOut(sine),
-      });
-      // It starts off the axis, so the stack of boards shows, and swings onto the axis before layer 3.
-      const away = ease(beats / 2.6, 9, 0, Easing.inOut(quad));
-      const roll = u * 90 * DEG;
-      const position = new Vector3(away * 0.7, height, away * 0.7);
-      const onAxis = 1 - away / 9;
-      const target = TOWER_CENTER.clone().lerp(new Vector3(0, height - 8, 0), onAxis);
-      const up = WORLD_UP.clone().lerp(new Vector3(Math.sin(roll), 0, Math.cos(roll)), onAxis).normalize();
-      return shot(position, target, ease(beats / 3, 40, 80, Easing.in(quad)), up);
+      // A corkscrew down past the tower: from high above, the camera spirals a third of a turn around the tower
+      // while it sinks, with the gaps between the layers open to the lens, so every move shows as it lands. In
+      // the last beat it plunges under layer 0, where the orbit of bar 3 picks it up.
+      // The gaps between the layers open below about 28° (the tilt of the game), so the camera drops to that
+      // elevation by the second beat and keeps sinking.
+      const elevation = interpolate(u, [0, 0.25, 0.85, 1], [30, 22, 10, -40], { ...clamp, easing: Easing.inOut(sine) });
+      const distance = ease(u, 11, 7, Easing.inOut(quad));
+      const azimuth = ease(u, HOME_AZIMUTH - 120, HOME_AZIMUTH, Easing.inOut(sine));
+      const target = TOWER_CENTER.clone().add(new Vector3(0, ease(u, 1.2, -0.8, Easing.inOut(sine)), 0));
+      const position = orbit(target, azimuth, elevation, distance);
+      // A roll that peaks mid-bar and settles before the plunge.
+      const roll = Math.sin(u * Math.PI) * 18 * DEG;
+      const up = WORLD_UP.clone().applyAxisAngle(target.clone().sub(position).normalize(), roll);
+      return shot(position, target, ease(u, 34, 60, Easing.in(quad)), up);
     }
     case 'orbit': {
       // Out from under layer 0 and up into a half turn around the tower.
@@ -96,27 +106,31 @@ export function cameraAt(frame: number, bar: Bar): Shot {
       return shot(orbit(TOWER_CENTER, azimuth, elevation, distance), TOWER_CENTER.clone(), fov);
     }
     case 'push': {
-      // In to corner 0, where the double threat starts.
+      // In to corner 0, where the double threat starts. The picture sits a little low, so the text line has
+      // clear page above the tower.
       const corner = cellCenter(WIN_LINE[0]);
       const target = TOWER_CENTER.clone().lerp(corner, ease(u, 0, 0.55));
       const azimuth = ease(u, HOME_AZIMUTH + 180, 225);
-      return shot(orbit(target, azimuth, ease(u, ELEVATION, 20), ease(u, HOME_DISTANCE, 10.5)), target);
+      return { ...shot(orbit(target, azimuth, ease(u, ELEVATION, 20), ease(u, HOME_DISTANCE, 13)), target), lift: -0.3 };
     }
     case 'ride': {
-      // The win: the camera sees the winning line side on, a diagonal across the frame, while the X lands and
-      // the 4 cells light. When the beam fires, the camera swoops in beside it and races its front out
-      // through corner 63, with a slow roll.
+      // The win: from the downbeat the camera stands square to the plane of the winning diagonal, at the tilt of
+      // the game, so the four cells read as one rising line while they light. Once the beam is joined, the
+      // camera drops onto the line, 1 cell beside it, and races its glow out through corner 63 with a roll.
       const beam = eventsOf('beam')[0];
-      const k = beam === undefined ? 0 : since(frame, beam.at) / (bar.start + 16 - beam.at);
+      const rideFrom = beam === undefined ? bar.start : beam.at + beam.line.length;
+      const k = since(frame, rideFrom) / (bar.start + SIXTEENTHS_PER_BAR - rideFrom);
       const middle = lineStart.clone().lerp(lineEnd, 0.5);
-      const profile = shot(middle.clone().addScaledVector(lineSide, ease(u, 13, 11.5, linear)).addScaledVector(lineUp, 3), middle);
+      const square = middle.clone().addScaledVector(lineSide, Math.cos(ELEVATION * DEG) * 16).addScaledVector(WORLD_UP, Math.sin(ELEVATION * DEG) * 16);
+      const profile = shot(square, middle.clone().add(new Vector3(0, jolt(frame) * 0.6, 0)));
+      if (k <= 0) return profile;
       const length = lineStart.distanceTo(lineEnd);
-      const front = ease(k, 0, length + 3, Easing.in(quad));
-      const roll = ease(k, 0, 30 * DEG, Easing.inOut(quad));
-      const up = lineUp.clone().applyAxisAngle(lineDirection, roll);
+      const front = ease(k, -1.5, length + 2.5, Easing.in(quad));
+      const roll = ease(k, 0, 25 * DEG, Easing.inOut(quad));
+      const beside = lineUp.clone().applyAxisAngle(lineDirection, roll);
       const point = lineStart.clone().addScaledVector(lineDirection, front);
-      const ride = shot(point.clone().addScaledVector(lineSide, 2.6).addScaledVector(up, 1.5).addScaledVector(lineDirection, -2.2), point.clone().addScaledVector(lineDirection, 1.2), 55, up);
-      const w = ease(k, 0, 1, Easing.inOut(cubic));
+      const ride = shot(point.clone().addScaledVector(beside, 1).addScaledVector(lineDirection, -1.6), point.clone().addScaledVector(lineDirection, 2.5), 48, beside);
+      const w = ease(k / 0.25, 0, 1, Easing.inOut(cubic));
       return {
         ...ride,
         position: profile.position.clone().lerp(ride.position, w),
@@ -138,7 +152,7 @@ export function cameraAt(frame: number, bar: Bar): Shot {
       const t = since(frame, first.start);
       const shrink = ease(t / 3, 0, 1, Easing.out(Easing.back(1.6)));
       const target = TOWER_CENTER.clone().add(new Vector3(0, jolt(frame) * 0.5, 0));
-      const view = shot(orbit(target, HOME_AZIMUTH + t * 0.6, ELEVATION, HOME_DISTANCE), target);
+      const view = shot(orbit(target, HOME_AZIMUTH + t * 0.6, ELEVATION, HOME_DISTANCE).addScaledVector(shake(frame), 0.5), target);
       return { ...view, zoom: interpolate(shrink, [0, 1], [1, 0.58]), lift: interpolate(shrink, [0, 1], [0, 0.46]) };
     }
   }

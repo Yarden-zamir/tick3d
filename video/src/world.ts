@@ -32,6 +32,7 @@ import { interpolate } from 'remotion';
 import { CELL_COUNT, LINES, SIZE, toCoords } from '../../src/game.ts';
 import { seededRandom } from '../../src/practice/practice.ts';
 import { SIXTEENTH } from '../../src/song.ts';
+import { winVoices } from '../../src/sound.ts';
 import { cameraAt } from './camera.ts';
 import { PX, drawHud } from './hud.ts';
 import { CELL, LAYER_GAP, OUTLINE, PIECE_HEIGHT, TILE_HEIGHT, cellBase, cellCenter } from './layout.ts';
@@ -40,6 +41,10 @@ import { type Theme, type ThemeId, type Token, readTheme, readXPolygon } from '.
 import { BEATS, barAt, barBefore, eventOf, eventsOf, frameOf, since } from './timeline.ts';
 
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
+// A cell closer than NEAR to the camera is not drawn, and one closer than NEAR_FADE fades, so the ride along
+// the beam never clips a slab.
+const NEAR = 1.5;
+const NEAR_FADE = 3.2;
 
 // The pulse of a note: up to 1 at once, back to 0 over 2 sixteenths. 0 before the note.
 function pulse(t: number): number {
@@ -115,9 +120,10 @@ export function createWorld(width: number, height: number): World {
 
   // ---- The tower: four layers of 16 tiles. Each tile has a `--line` outline and a hard `--shadow` below it. ----
   const tileGeometry = new BoxGeometry(CELL, TILE_HEIGHT, CELL);
+  // The hard shadow: a flat plane under the tile, offset to the right and the front. Its face points up, so
+  // it shows as the offset strips from above and is culled from below, where the slab stays its own colour.
+  const tileShadowGeometry = new PlaneGeometry(CELL + OUTLINE, CELL + OUTLINE).rotateX(-Math.PI / 2);
   const tileOutline = new BoxGeometry(CELL + 2 * OUTLINE, TILE_HEIGHT + 2 * OUTLINE, CELL + 2 * OUTLINE);
-  const tileLine = paint('line', { side: BackSide });
-  const tileShadow = paint('shadow');
   const layers = Array.from({ length: SIZE }, (_, layer) => {
     const group = new Group();
     group.position.y = layer * LAYER_GAP;
@@ -128,17 +134,20 @@ export function createWorld(width: number, height: number): World {
     const group = new Group();
     const base = cellBase(cell);
     group.position.set(base.x, 0, base.z);
-    const tile = paint('slab');
-    const shadow = new Mesh(tileGeometry, tileShadow.material);
-    shadow.position.set(0.07, -0.07, 0.07);
-    group.add(new Mesh(tileGeometry, tile.material), new Mesh(tileOutline, tileLine.material), shadow);
+    // Own materials per cell: a cell near the camera fades out, so a ride through the tower never clips a slab.
+    const tile = paint('slab', { transparent: true });
+    const line = paint('line', { side: BackSide, transparent: true });
+    const shade = paint('shadow', { transparent: true });
+    const shadow = new Mesh(tileShadowGeometry, shade.material);
+    shadow.position.set(0.07, -TILE_HEIGHT / 2 - OUTLINE - 0.002, 0.07);
+    group.add(new Mesh(tileGeometry, tile.material), new Mesh(tileOutline, line.material), shadow);
     layers[toCoords(cell).layer]?.add(group);
-    return { group, tile };
+    return { group, tile, materials: [tile.material, line.material, shade.material], near: 1 };
   });
 
-  // The shockwave of a layer slam: a square `--line` frame that grows and fades.
+  // The shockwave of a layer slam: a thick square `--line` frame that grows, holds, then fades.
   const frameShape = new Shape().moveTo(-1, -1).lineTo(1, -1).lineTo(1, 1).lineTo(-1, 1).lineTo(-1, -1);
-  frameShape.holes.push(new Shape().moveTo(-0.96, -0.96).lineTo(-0.96, 0.96).lineTo(0.96, 0.96).lineTo(0.96, -0.96).lineTo(-0.96, -0.96));
+  frameShape.holes.push(new Shape().moveTo(-0.9, -0.9).lineTo(-0.9, 0.9).lineTo(0.9, 0.9).lineTo(0.9, -0.9).lineTo(-0.9, -0.9));
   const frameGeometry = new ShapeGeometry(frameShape).rotateX(-Math.PI / 2);
   const shockwaves = layers.map((layer) => {
     const material = paint('line', { transparent: true, side: DoubleSide, depthWrite: false });
@@ -187,9 +196,11 @@ export function createWorld(width: number, height: number): World {
 
   // ---- The winning beam: a `--win` core with a `--line` outline and two soft halos ----
   const beam = eventOf('beam');
+  const jingle = eventOf('win-jingle');
   const beamFrom = cellCenter(beam.line[0]);
   const beamTo = cellCenter(beam.line[3]);
-  const beamReach = beamTo.clone().sub(beamFrom).normalize().multiplyScalar(1.2);
+  // The beam ends at the centres of the two corner cells, with a short cap past each.
+  const beamReach = beamTo.clone().sub(beamFrom).normalize().multiplyScalar(0.3);
   beamFrom.sub(beamReach);
   beamTo.add(beamReach);
   // The beam is light: it shines through the tiles, so it draws over the tower, the widest halo first.
@@ -258,6 +269,27 @@ export function createWorld(width: number, height: number): World {
 
   // ---- One frame ----
   function update(frame: number): void {
+    // The camera first: the cells near it fade, and the pieces on them fade with them.
+    const shot = cameraAt(frame, barAt(frame));
+    camera.position.copy(shot.position);
+    camera.up.copy(shot.up);
+    camera.lookAt(shot.target);
+    const aspect = width / height;
+    const square = (shot.fov * Math.PI) / 180;
+    camera.fov = aspect >= 1 ? shot.fov : (2 * Math.atan(Math.tan(square / 2) / aspect) * 180) / Math.PI;
+    camera.aspect = aspect;
+    camera.zoom = shot.zoom;
+    camera.setViewOffset(width, height, 0, (shot.lift * Math.min(width, height)) / 2, width, height);
+    camera.updateProjectionMatrix();
+    for (const cell of cells) {
+      cell.near = interpolate(cell.group.getWorldPosition(new Vector3()).distanceTo(camera.position), [NEAR, NEAR_FADE], [0, 1], clamp);
+      cell.group.visible = cell.near > 0;
+      for (const material of cell.materials) {
+        material.opacity = cell.near;
+        material.depthWrite = cell.near > 0.99;
+      }
+    }
+
     // Layers: the first slam drops a layer in from above the frame, a later one pulses it in place.
     layers.forEach((layer, index) => {
       const slams = eventsOf('layer-slam').filter((event) => event.layer === index);
@@ -270,19 +302,19 @@ export function createWorld(width: number, height: number): World {
         const t = since(frame, drop.at);
         if (t < -1.5) layer.visible = false;
         else if (t < 0) y += 18 * (t / 1.5) ** 2;
-        else squash = 0.5 * Math.exp(-1.8 * t) * Math.cos(3.4 * t);
+        else squash = 0.6 * Math.exp(-1.8 * t) * Math.cos(3.4 * t);
       }
       for (const event of pulses) bump = Math.max(bump, pulse(since(frame, event.at)));
       layer.position.y = y;
       layer.scale.set(1 + squash * 0.3 + bump * 0.12, Math.max(0.2, 1 - squash + bump * 0.3), 1 + squash * 0.3 + bump * 0.12);
+      // The ring rings only the drop of bar 1. A later pulse bumps the layer without it.
       const wave = shockwaves[index];
       if (wave !== undefined) {
-        const last = slams.filter((event) => since(frame, event.at) >= 0).at(-1);
-        const t = last === undefined ? Infinity : since(frame, last.at);
-        wave.mesh.visible = t < 4;
-        const grow = 2.4 + t * 0.55;
+        const t = drop === undefined ? Infinity : since(frame, drop.at);
+        wave.mesh.visible = t < 3.5;
+        const grow = 2.8 + t * 0.7;
         wave.mesh.scale.set(grow, 1, grow);
-        wave.material.material.opacity = interpolate(t, [0, 4], [1, 0], clamp);
+        wave.material.material.opacity = interpolate(t, [1, 3.5], [1, 0], clamp);
       }
     });
 
@@ -301,6 +333,12 @@ export function createWorld(width: number, height: number): World {
       const entry = cells[cell];
       if (entry !== undefined && since(frame, beam.at + k) >= 0) entry.tile.token = 'win';
     });
+    // A threat pulse swells the blinking tiles with their preview strike.
+    for (const { group } of cells) group.scale.setScalar(1);
+    for (const event of eventsOf('threat-pulse')) {
+      const swell = 1 + 0.18 * pulse(since(frame, event.at));
+      for (const cell of event.cells) cells[cell]?.group.scale.setScalar(swell);
+    }
 
     // Pieces: a drop over 1 sixteenth onto the note, a pulse on every note of the piece, then the finished board.
     const replay = eventOf('replay');
@@ -315,7 +353,7 @@ export function createWorld(width: number, height: number): World {
       lift.scale.set(grow, grow, grow);
       // `.board.finished`: the pieces off the winning line fade to 35 %. A note lights a piece again.
       const faded = lineIndex >= 0 ? 1 : interpolate(since(frame, beam.at), [0, 4], [1, 0.35], clamp);
-      const opacity = faded + (1 - faded) * strength;
+      const opacity = (faded + (1 - faded) * strength) * (cells[move.cell]?.near ?? 1);
       for (const entry of materials) {
         entry.material.opacity = opacity;
         entry.material.depthWrite = opacity > 0.99;
@@ -331,13 +369,17 @@ export function createWorld(width: number, height: number): World {
     }
     if (ghostLines !== undefined) ghostMaterial.material.opacity = interpolate(since(frame, ghostLines.at), [0, ghostLines.until - ghostLines.at], [0.95, 0.3], clamp);
 
-    // The beam fires after its 4 cells light, and it throbs on every beat.
-    const fire = since(frame, beam.at + beam.line.length);
+    // The beam joins the 4 lit cells on the sixteenth after the last one lights. It throbs on each note of the
+    // win jingle, then on every beat.
+    const fire = since(frame, beam.at + beam.line.length - 1);
+    const jingleHits = winVoices(1).map((voice) => jingle.at + (voice.at ?? 0));
+    const lastHit = jingleHits.at(-1) ?? jingle.at;
+    const hit = frame < frameOf(lastHit) ? Math.max(...jingleHits.map((at) => pulse(since(frame, at)))) : pulse(since(frame, lastHit) % 4);
     for (const part of beamParts) {
       part.visible = fire >= 0;
       if (fire < 0) continue;
       stretch(part, beamFrom, beamTo, interpolate(fire, [0, 1], [0, 1], clamp));
-      const throb = 1 + 0.25 * pulse(fire % 4);
+      const throb = 1 + 0.25 * hit;
       part.scale.x = throb;
       part.scale.z = throb;
     }
@@ -355,22 +397,6 @@ export function createWorld(width: number, height: number): World {
       mesh.instanceMatrix.needsUpdate = true;
     }
 
-    // The camera, and no tile or piece in its lens: a camera that threads the tower hides the cell it passes.
-    const shot = cameraAt(frame, barAt(frame));
-    camera.position.copy(shot.position);
-    camera.up.copy(shot.up);
-    camera.lookAt(shot.target);
-    const aspect = width / height;
-    const square = (shot.fov * Math.PI) / 180;
-    camera.fov = aspect >= 1 ? shot.fov : (2 * Math.atan(Math.tan(square / 2) / aspect) * 180) / Math.PI;
-    camera.aspect = aspect;
-    camera.zoom = shot.zoom;
-    camera.setViewOffset(width, height, 0, (shot.lift * Math.min(width, height)) / 2, width, height);
-    camera.updateProjectionMatrix();
-    for (const { group } of cells) {
-      const d = group.getWorldPosition(new Vector3()).sub(camera.position);
-      group.visible = !(Math.abs(d.x) < 0.75 && Math.abs(d.y) < 0.5 && Math.abs(d.z) < 0.75);
-    }
   }
 
   function draw(gl: WebGLRenderer, frame: number, theme: Theme, target: WebGLRenderTarget | null): void {
