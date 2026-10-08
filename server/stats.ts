@@ -1,5 +1,6 @@
 // The aggregates of the public stats page (/stats), in DuckDB SQL. Everyone gets counts only: no
-// names, no page faults. Mine adds the names of your opponents. The practice part (server/practice.ts)
+// names, no page faults. Mine adds the names of your opponents. A person filter counts the games of one
+// person, without their opponents. The practice part (server/practice.ts)
 // adds the Voice room leaderboard, which GET /api/practice/best shows too. Never a token, a result id or a game id leaves this file.
 // An opponent without a login shows with a custom or a generated name.
 import { type DuckDBValue, listValue } from '@duckdb/node-api';
@@ -32,8 +33,8 @@ export const SEAT_O = `coalesce(results.player_o, CASE WHEN results.public_id IS
 // One row per finished game that passes the filters, with the fields of its document as columns.
 // Both devices of a Nearby game send a result, so only the host's row counts.
 // The filters are bound parameters (filterValues): $since (epoch ms or null), $mode, $level, and
-// $tokens (the tokens of one player for Mine, or null for Everyone). A null parameter filters nothing.
-// `side` is the seat of the player whose results count: yours for Mine (null in a friend game, where
+// $tokens (the tokens of one player for Mine and a person filter, or null for Everyone). A null parameter filters nothing.
+// `side` is the seat of the player whose results count: theirs for Mine and a person filter (null in a friend game, where
 // you hold both seats), and the player's seat in a computer game for Everyone.
 // computeStats copies these rows once into the temporary table stats_games, because each read of
 // the VARIANT document is slow. Every query then reads the copy through GAMES.
@@ -157,14 +158,15 @@ const SIDED_GAMES = 5000;
 // One read of the stored documents into stats_games, then about 25 small queries over that copy,
 // while other requests wait in the store queue. The store keeps an Everyone answer for a minute.
 // Limit: revisit this when a call takes more than about 1 s: then keep the game columns in results itself.
-// `tokens`: the tokens of one player for the Mine scope, else null.
+// `tokens`: the tokens of one player for the Mine scope and a person filter, else null.
 // The caller runs one call at a time on the connection (the store queue), so one temporary table is enough.
 // The practice part comes from server/practice.ts.
-export async function computeStats(rows: Rows, now: EpochMs, filter: StatsFilter, tokens: readonly string[] | null): Promise<Omit<Stats, 'practice'>> {
-  if ((filter.scope === 'mine') !== (tokens !== null)) throw new Error('the Mine scope needs the tokens of the player, and only Mine takes them');
+export async function computeStats(rows: Rows, now: EpochMs, filter: StatsFilter, tokens: readonly string[] | null): Promise<Omit<Stats, 'practice' | 'person'>> {
+  const scoped = filter.scope === 'mine' || filter.person !== null;
+  if (scoped !== (tokens !== null)) throw new Error('Mine and a person filter need the tokens of the player, and only they take them');
   await rows(`CREATE OR REPLACE TEMP TABLE ${GAMES_TABLE} AS ${FILTERED_GAMES}`, filterValues(filter, tokens, now), {});
   try {
-    return await statsOfGames(rows, filter, tokens !== null, now);
+    return await statsOfGames(rows, filter, scoped, now);
   } finally {
     await rows(`DROP TABLE IF EXISTS ${GAMES_TABLE}`, {}, {});
   }
@@ -173,7 +175,7 @@ export async function computeStats(rows: Rows, now: EpochMs, filter: StatsFilter
 // A query without bound values.
 type Query = <S extends Shape>(sql: string, shape: S) => Promise<RowOf<S>[]>;
 
-async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now: EpochMs): Promise<Omit<Stats, 'practice'>> {
+async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, now: EpochMs): Promise<Omit<Stats, 'practice' | 'person'>> {
   const q: Query = (sql, shape) => rows(sql, {}, shape);
 
   const [totals] = await q(`${GAMES}, seats AS (SELECT unnest([player_x, player_o]) AS token FROM g)
@@ -309,7 +311,8 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, mine: boolean, now:
     COUNT,
   );
 
-  const personal = !mine ? null : await personalStats(q, sidedGames.map((game) => game.outcome));
+  // A person filter shows no opponents: those players did not choose to show up on another person's page.
+  const personal = !scoped ? null : await personalStats(q, sidedGames.map((game) => game.outcome), filter.scope === 'mine');
 
   return {
     generatedAt: now,
@@ -387,8 +390,8 @@ function refusalList(value: unknown): { key: Refusal; count: number }[] {
   return REFUSALS.map((key, i) => ({ key, count: int(value[i]) }));
 }
 
-// The results of one player (the Mine scope), from the side that they played. `outcomes` is oldest first.
-async function personalStats(q: Query, outcomes: SideOutcome[]): Promise<PersonalStats> {
+// The results of one player (Mine or a person filter), from the side that they played. `outcomes` is oldest first.
+async function personalStats(q: Query, outcomes: SideOutcome[], withOpponents: boolean): Promise<PersonalStats> {
   const results = await q(`${GAMES} SELECT mode, level,
       count(*) FILTER (winner = side)::INTEGER AS won,
       count(*) FILTER (winner IS NULL)::INTEGER AS drawn,
@@ -397,7 +400,7 @@ async function personalStats(q: Query, outcomes: SideOutcome[]): Promise<Persona
     { mode: oneOf(SESSION_MODES), level: nullable(oneOf(DIFFICULTIES)), won: int, drawn: int, lost: int },
   );
   // The other seat of a game against a person. A Nearby guest on another device has no token, so it is not here.
-  const opponents = await q(`${GAMES},
+  const opponents = !withOpponents ? [] : await q(`${GAMES},
     other AS (SELECT CASE side WHEN 'X' THEN player_o ELSE player_x END AS token, winner, side
       FROM g WHERE side IS NOT NULL AND mode <> 'computer'),
     people AS (SELECT ${PERSON} AS person, any_value(u.login) AS login, any_value(pn.name) AS custom, count(*)::INTEGER AS games,

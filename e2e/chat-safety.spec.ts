@@ -1,7 +1,7 @@
 import type { Locator } from '@playwright/test';
 import { createOnline, expect, expectToast, joinAsO, ownName, test } from './fixtures.ts';
 
-// This file creates 1 online session (the server allows 60 per hour for one client address).
+// This file creates 2 online sessions (the server allows 60 per hour for one client address).
 
 // A long press with a finger: the pointer goes down, stays for longer than the press time, and goes up.
 async function longPress(target: Locator): Promise<void> {
@@ -58,4 +58,33 @@ test('a long press on a message opens the menu, Block hides the person, and a re
   await expectToast(bob, 'The report went to the maintainers');
   await expect(message).toBeHidden();
   await expect(bob.locator('#chat-log')).toContainText('second try');
+});
+
+test('a click on a chat picture opens it large, and a long press opens the menu and not the viewer', async ({ open }) => {
+  const { page: alice } = await open();
+  const aliceName = await ownName(alice);
+  const link = `/?code=${await createOnline(alice)}`;
+  const { page: bob } = await joinAsO(open, link);
+  await alice.locator('#chat-input').fill('look at my tower');
+  await alice.locator('#chat-input').press('Enter');
+  const picture = bob.locator('#chat-log').getByRole('button', { name: `View ${aliceName}'s picture` });
+  await expect(picture).toBeVisible();
+
+  await picture.click();
+  const viewer = bob.locator('#avatar-viewer');
+  await expect(viewer).toBeVisible();
+  await expect(viewer).toContainText(aliceName);
+  const large = await viewer.locator('img.avatar').boundingBox();
+  expect(large?.width).toBeGreaterThanOrEqual(200);
+  await bob.keyboard.press('Escape');
+  await expect(viewer).toBeHidden();
+
+  // A long press opens the report and block menu, and the click that ends it opens no viewer.
+  await longPress(picture);
+  // A touch screen ends the press with a click on the picture.
+  await picture.dispatchEvent('click');
+  const menu = bob.locator('#safety-menu');
+  await expect(menu).toBeVisible();
+  await expect(menu).toContainText(aliceName);
+  await expect(viewer).toBeHidden();
 });

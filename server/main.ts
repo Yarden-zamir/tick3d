@@ -13,6 +13,7 @@ import {
   parseGameId,
   parseMetrics,
   parseBlockRequest,
+  parseStatsPrivacy,
   parseMoveRequest,
   parseNewSession,
   parsePersonId,
@@ -401,6 +402,16 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return send(res, 200, await me(token, auth?.user(req)));
     }
 
+    case 'GET /api/me/stats-privacy':
+      return send(res, 200, { private: await store.statsPrivate(requirePlayer(req)) });
+    case 'PUT /api/me/stats-privacy': {
+      const token = requirePlayer(req);
+      const body = parseStatsPrivacy(await readJson(req));
+      if (body === undefined) throw new HttpError(400, 'The setting needs "private": true or false.');
+      await store.setStatsPrivate(token, body.private);
+      return send(res, 200, { private: await store.statsPrivate(token) });
+    }
+
     case 'GET /api/me/blocks':
       return send(res, 200, { blocked: await store.blocks(requirePlayer(req)) });
     // A cross-site form cannot send the X-Player header, so another site cannot block for a player.
@@ -483,10 +494,16 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     }
     // Aggregates only (see server/stats.ts), so the public stats page needs no login.
     // Mine needs the X-Player header: the stats of that player on all linked devices.
+    // A person filter reads the header when it is there, so a person who hides their stats still sees them.
     case 'GET /api/stats': {
       const filter = parseStatsFilter(url.searchParams);
       if (filter === undefined) throw new HttpError(400, STATS_FILTER_ERROR);
-      return send(res, 200, await store.stats(filter, filter.scope === 'mine' ? requirePlayer(req) : null));
+      if (filter.scope === 'mine') return send(res, 200, await store.stats(filter, requirePlayer(req)));
+      if (filter.person === null) return send(res, 200, await store.stats(filter));
+      const header = req.headers['x-player'];
+      const token = asPlayerToken(header);
+      if (header !== undefined && token === undefined) throw new HttpError(400, 'Invalid X-Player header.');
+      return send(res, 200, await store.stats(filter, token ?? null));
     }
     // Cached in server/previews.ts, so a flood of requests costs no extra GitHub calls and needs no limiter.
     case 'GET /api/previews':

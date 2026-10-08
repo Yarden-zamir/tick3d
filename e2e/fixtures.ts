@@ -122,6 +122,27 @@ export async function ownName(page: Page): Promise<string> {
   return name;
 }
 
+// Online turns: each page waits for its move, plays one cell, and waits until the turn passes.
+export async function playTurns(turns: readonly (readonly [Page, number])[]): Promise<void> {
+  for (const [page, index] of turns) {
+    await expectMyMove(page);
+    await cell(page, index).click();
+    await expect(status(page)).not.toContainText('Your move');
+  }
+}
+
+// X wins on 0, 16, 32, 48. O plays 1, 2, 3 in between.
+export const xWins = (alice: Page, bob: Page) =>
+  [
+    [alice, 0],
+    [bob, 1],
+    [alice, 16],
+    [bob, 2],
+    [alice, 32],
+    [bob, 3],
+    [alice, 48],
+  ] as const;
+
 // Joins with a fresh context and waits until the joiner holds the O seat.
 export async function joinAsO(open: (options?: OpenOptions) => Promise<Opened>, path: string): Promise<Opened> {
   const joined = await open({ path });

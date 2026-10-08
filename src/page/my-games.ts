@@ -38,6 +38,8 @@ import {
   myGamesOnlineBox,
   myGamesClose,
   myGamesStatsLink,
+  myGamesPrivate,
+  myGamesPrivateOption,
   myGamesSession,
   myGamesSessionBox,
 } from './dom.ts';
@@ -73,7 +75,7 @@ const LIST_AVATAR_PIXELS = 28;
 // `person` is the other player of the game, when there is one: their picture leads the item.
 function listItem(title: string, detail: string, actions: readonly Action[], badge?: string, person?: Person): HTMLLIElement {
   const item = document.createElement('li');
-  if (person !== undefined) item.append(avatarFor(person, LIST_AVATAR_PIXELS));
+  if (person !== undefined) item.append(avatarFor(person, LIST_AVATAR_PIXELS, null));
   const text = document.createElement('div');
   const name = document.createElement('b');
   name.textContent = title;
@@ -186,6 +188,30 @@ async function loadHistory(request: number, append: boolean): Promise<void> {
 
 const ACCOUNT_AVATAR_PIXELS = 32;
 
+// "Hide my stats" (StatsPrivacy in src/protocol.ts). Without a network or an answer, the switch stays hidden.
+async function loadStatsPrivacy(request: number): Promise<void> {
+  myGamesPrivateOption.hidden = true;
+  if (!navigator.onLine) return;
+  try {
+    const privacy = await api.statsPrivacy();
+    if (request !== myGamesRequest) return;
+    myGamesPrivate.checked = privacy.private;
+    myGamesPrivateOption.hidden = false;
+  } catch (error) {
+    if (!(error instanceof OnlineError)) throw error;
+  }
+}
+
+async function changeStatsPrivacy(): Promise<void> {
+  const wanted = myGamesPrivate.checked;
+  try {
+    myGamesPrivate.checked = (await api.setStatsPrivacy(wanted)).private;
+  } catch (error) {
+    myGamesPrivate.checked = !wanted;
+    throw error;
+  }
+}
+
 // Opening the dialog again while a list loads starts over, so a late answer never adds a second copy.
 let myGamesRequest = 0;
 
@@ -194,10 +220,11 @@ export async function openMyGames(returnTo?: string): Promise<void> {
   const request = ++myGamesRequest;
   myGamesDialog.showModal();
   renderBlockedList();
+  void loadStatsPrivacy(request).catch(showError);
   // Account
   accountBox.replaceChildren();
   if (page.account.user) {
-    const avatar = avatarFor({ player: page.account.user, name: page.account.user.login }, ACCOUNT_AVATAR_PIXELS);
+    const avatar = avatarFor({ player: page.account.user, name: page.account.user.login }, ACCOUNT_AVATAR_PIXELS, null);
     const name = document.createElement('b');
     name.textContent = page.account.user.login;
     const logout = document.createElement('button');
@@ -212,7 +239,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     const name = document.createElement('b');
     name.textContent = ownName();
     text.append('You play as ', name, '.');
-    accountBox.append(avatarFor({ player: null, name: ownName() }, ACCOUNT_AVATAR_PIXELS), text);
+    accountBox.append(avatarFor({ player: null, name: ownName() }, ACCOUNT_AVATAR_PIXELS, null), text);
     if (navigator.onLine) accountBox.append(renameControls());
     if (page.account.loginAvailable && navigator.onLine) {
       text.append(' Log in with GitHub to use your GitHub name.');
@@ -440,6 +467,7 @@ export function setupMyGames(): void {
   // The stats page, with your own games.
   myGamesStatsLink.href = `/stats${statsQuery({ ...ALL_STATS, scope: 'mine' })}`;
   myGamesStatsLink.insertAdjacentHTML('afterbegin', STATS_ICON);
+  myGamesPrivate.addEventListener('change', () => void changeStatsPrivacy().catch(showError));
   myGamesMore.addEventListener('click', () => void loadHistory(myGamesRequest, true).catch(showError));
   myGamesClear.addEventListener('click', () => {
     clearConfirm.showModal();
