@@ -97,26 +97,28 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Opponent, view, layout, theme, sound | yes | yes | yes | yes | yes |
 | Difficulty, You play, Advanced | yes | no | no | no | no |
 | Seat lock (keep X and O between games) | next to You play | no | in the Players box | in the Players box | no |
-| Game code, Link, QR code, session name | no | no | yes | no | no |
+| Game code, Link, QR code, session name | no | no | yes (grey until a game starts) | no | no |
 | Host, Join with a code, Games near you, device list | no | no | no | yes | no |
 | Join a friend (code and New code) | no | no | yes | no | no |
-| Players (seats, watchers and seat controls) | no | no | in a game | in a game | no |
+| Players (seats, watchers and seat controls) | no | no | yes (grey until a game starts) | yes (grey until a game starts) | no |
 | Time limit | yes | yes | yes | yes | no |
 | Hide board, history and coordinates, Lock | yes | yes | yes (off until a game starts) | yes (off until a game starts) | no |
-| Score, New game, the session games in My games | yes | yes | in a game | in a game | yes (no session games) |
+| Score, New game, the session games in My games | yes | yes | yes (grey until a game starts) | yes (grey until a game starts) | yes (no session games) |
 | Undo (during a game) | yes | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
 | Result card (after a game) | yes | yes | in a game | in a game | no |
 | Chat | no (a wide screen keeps its space) | no | yes | yes | no |
 | Report and block (hold or right-click a person) | no | no | yes | Block only | no |
 | Play by voice | yes | yes | with a seat | with a seat | no |
 
-"In a game" means after a create or a join (Online), or after Host or Join (Nearby).
+"In a game" and "a game starts" mean after a create or a join (Online), or after Host or Join (Nearby).
+
+Before a game starts, a control of a game (`data-needs-session`) draws at once in its final place, grey and disabled (`data-pending` in `src/style.css`). The Players box shows two "Waiting…" seats with grey pictures, and the clocks of a time limit keep their place. When the server or the Nearby host answers, the page fills in the real values, and nothing moves. If the server fails, the error shows and the controls stay grey in their place.
 
 The actions row has fixed slots (`.slot-row` in `src/style.css`), so a control that shows or hides never moves another control. `e2e/row-layout.spec.ts` checks this.
 
 A mode change moves neither the board nor the Opponent picker:
 
-- Everything above the picker keeps its box in every mode. Before a game, the score and New game keep their place but do not show. The Players box sits under the mode boxes.
+- Everything above the picker keeps its box in every mode. Before a game, the score and New game show grey and disabled in their place. The Players box sits under the mode boxes.
 - A wide screen (72rem and wider) keeps the chat column in every mode. Outside a game with another device, that column stays empty.
 - On a phone the chat opens above the panel. If the player works in the panel, the page scrolls by the height of the chat, so the panel stays still (`src/page/panel-anchor.ts`).
 

@@ -1,7 +1,7 @@
 // The Players box of a game with another device: the seats, the watchers, and the seat controls.
 // The session rules (seat and answerSeat in src/session/core.ts) decide; this module only asks.
 // A change of the other player's seat waits for that player: they get a prompt to accept or decline.
-import { avatarFor, type Person } from '../avatar.ts';
+import { avatarFor, avatarPlaceholder, type Person } from '../avatar.ts';
 import { type Player, other } from '../game.ts';
 import type { ConsentAction, PersonId, SeatAction, SeatRequestView, SessionView } from '../protocol.ts';
 import { EYE_ICON } from '../icons.ts';
@@ -114,8 +114,9 @@ function answer(accept: boolean): void {
 
 const PLAYERS_AVATAR_PIXELS = 28;
 
+// `person` is the picture: a person, a grey circle before the session comes ('placeholder'), or none for an empty seat.
 // `id` is the person id of another person on the row, for the report and block menu (src/page/safety.ts).
-function row(mark: Player | 'watcher', person: Person | null, name: string, note: string, actions: HTMLButtonElement[], id: PersonId | null): HTMLLIElement {
+function row(mark: Player | 'watcher', person: Person | 'placeholder' | null, name: string, note: string, actions: HTMLButtonElement[], id: PersonId | null): HTMLLIElement {
   const item = document.createElement('li');
   const markEl = document.createElement('span');
   markEl.className = `players-mark ${mark.toLowerCase()}`;
@@ -124,7 +125,8 @@ function row(mark: Player | 'watcher', person: Person | null, name: string, note
   markEl.setAttribute('aria-hidden', 'true');
   const nameEl = document.createElement('b');
   nameEl.className = 'players-name';
-  if (person !== null) nameEl.append(avatarFor(person, PLAYERS_AVATAR_PIXELS, id));
+  if (person === 'placeholder') nameEl.append(avatarPlaceholder());
+  else if (person !== null) nameEl.append(avatarFor(person, PLAYERS_AVATAR_PIXELS, id));
   nameEl.append(name);
   if (id !== null) markPerson(nameEl, { person: id, name, message: null });
   const noteEl = document.createElement('small');
@@ -179,9 +181,25 @@ function renderRequest(view: SessionView): void {
   }
 }
 
+// The two seats before the session comes, grey (data-pending in src/page/render.ts). A create and a host seat
+// this screen on X and leave O empty. So X has a grey picture and the disabled seat actions of that row, O has
+// no picture, like an empty seat, and the box keeps its height when the session comes.
+// Limit: a join that seats this screen on O moves the actions to the O row. Revisit if a join gets its own placeholder.
+function placeholderRows(): HTMLLIElement[] {
+  const noop = () => undefined;
+  const actions = [button({ key: 'pending:swap', label: 'Swap X and O', run: noop, disabled: true }), button({ key: 'pending:leave', label: 'Watch instead', run: noop, disabled: true })];
+  return [row('X', 'placeholder', 'Waiting…', 'No game yet', actions, null), row('O', null, 'Waiting…', 'No game yet', [], null)];
+}
+
 export function renderPlayers(): void {
   const view = page.session;
-  if (view === undefined || !shared()) {
+  if (view === undefined) {
+    playersList.replaceChildren(...placeholderRows());
+    playersRequest.hidden = true;
+    if (seatPrompt.open) seatPrompt.close();
+    return;
+  }
+  if (!shared()) {
     playersList.replaceChildren();
     playersRequest.hidden = true;
     if (seatPrompt.open) seatPrompt.close();
