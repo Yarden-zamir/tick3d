@@ -113,7 +113,13 @@
           "kind": "threats",
           "at": 48,
           "cells": [4, 21]
-        }
+        },
+        { "kind": "threat-pulse", "at": 50, "cells": [4, 21] },
+        { "kind": "threat-pulse", "at": 52, "cells": [4, 21] },
+        { "kind": "threat-pulse", "at": 54, "cells": [4, 21] },
+        { "kind": "threat-pulse", "at": 58, "cells": [21] },
+        { "kind": "threat-pulse", "at": 60, "cells": [21] },
+        { "kind": "threat-pulse", "at": 62, "cells": [21] }
       ]
     },
     {
@@ -128,7 +134,8 @@
           "kind": "beam",
           "at": 68,
           "line": [0, 21, 42, 63]
-        }
+        },
+        { "kind": "win-jingle", "at": 72 }
       ]
     },
     {

@@ -224,11 +224,14 @@ function playClip(ctx: BaseAudioContext, clip: VoiceClip, midi: number, start: n
 export const clipOf = (note: SongNote, clips: VoiceClips): VoiceClip | undefined =>
   note.kind === 'melody' && note.move !== undefined ? clips.get(note.move) : undefined;
 
-// Notes of a song, each with its own set and its own start in seconds after the current time of `ctx`, in the
-// song mix. The video spot (video/) times each note itself. Returns the mix.
-export function scheduleNotes(notes: readonly { note: SongNote; set: SoundSet; at: number }[], ctx: BaseAudioContext): AudioNode {
+// A sound to schedule: a note of a song with its set, or ready voices (a preview strike, the win jingle).
+// `at` is the start in seconds after the current time of the context.
+export type ScheduledSound = { at: number } & ({ note: SongNote; set: SoundSet } | { voices: readonly Voice[] });
+
+// Plays the sounds in the song mix. The video spot (video/) times each sound itself. Returns the mix.
+export function scheduleNotes(sounds: readonly ScheduledSound[], ctx: BaseAudioContext): AudioNode {
   const mix = songMix(ctx);
-  for (const { note, set, at } of notes) play(noteVoices(note, set), 1, at, ctx, mix);
+  for (const sound of sounds) play('voices' in sound ? sound.voices : noteVoices(sound.note, sound.set), 1, sound.at, ctx, mix);
   return mix;
 }
 
@@ -270,6 +273,13 @@ export function renderSong(song: Song, clips: VoiceClips): Promise<AudioBuffer> 
 // The preview plays softer than a move: 0.12 against 0.28 in the Cells set.
 const PREVIEW_SCALE = 0.12 / 0.28;
 
+// The preview strike of a cell: the strike of X in `set`, softer. The video spot (video/) plays it on a threat.
+export const previewVoices = (set: SoundSet, cell: number): Voice[] => set.voices(cell, 'X').map((voice) => ({ ...voice, level: voice.level * PREVIEW_SCALE }));
+
+// The win jingle: C5, E5, G5, C6, E6, `gap` seconds apart. The game plays it fast; the video spot one note per sixteenth.
+const WIN_NOTES = [523.25, 659.25, 783.99, 1046.5, 1318.5] as const;
+export const winVoices = (gap: number): Voice[] => WIN_NOTES.map((frequency, i) => ({ wave: 'triangle', frequency, at: i * gap, attack: 0.01, decay: 0.35, level: 0.2 }));
+
 export const sounds = {
   place(player: Player, cell: number): void {
     play(soundSet.voices(cell, player));
@@ -292,7 +302,7 @@ export const sounds = {
   },
   // The sound of a cell before it is played, for example from the keypad: the same strike, softer.
   preview(cell: number): void {
-    play(soundSet.voices(cell, 'X'), PREVIEW_SCALE);
+    play(previewVoices(soundSet, cell));
   },
   invalid(): void {
     tone({ frequency: 180, duration: 0.12, type: 'square', volume: 0.06 });
@@ -316,9 +326,7 @@ export const sounds = {
     tone({ frequency: 1200, duration: 0.04, volume: 0.05 });
   },
   win(): void {
-    [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((frequency, i) =>
-      tone({ frequency, at: i * 0.09, duration: 0.35, type: 'triangle', volume: 0.2 }),
-    );
+    play(winVoices(0.09));
   },
   lose(): void {
     [392, 349.23, 311.13, 261.63].forEach((frequency, i) =>

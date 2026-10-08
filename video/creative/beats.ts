@@ -26,6 +26,10 @@ type BeatEvent =
   | { kind: 'layer-slam'; at: number; layer: number }
   // The empty cells that win for the player now. They blink in --win.
   | { kind: 'threats'; at: number; cells: readonly number[] }
+  // The blinking threat cells pulse on an eighth note. Sound: the preview strike of each cell (sounds.preview), in the set of the bar.
+  | { kind: 'threat-pulse'; at: number; cells: readonly number[] }
+  // The win jingle of the game (sounds.win): five notes, one per sixteenth from `at`. The beam throbs on each.
+  | { kind: 'win-jingle'; at: number }
   // All 76 lines of LINES flash as thin beams, then fade out at `until`.
   | { kind: 'ghost-lines'; at: number; until: number }
   // The winning line becomes a light beam. It lights one cell per sixteenth from `at`, in the order of `line`.
@@ -114,11 +118,12 @@ function line(value: unknown, path: string): Line {
 function beatEvent(value: unknown, path: string): BeatEvent {
   const e = record(value, path);
   const at = time(e['at'], `${path}.at`);
-  const kind = oneOf(['layer-slam', 'threats', 'ghost-lines', 'beam', 'confetti', 'replay', 'final-chord'] as const, e['kind'], `${path}.kind`);
+  const kind = oneOf(['layer-slam', 'threats', 'threat-pulse', 'ghost-lines', 'beam', 'confetti', 'replay', 'win-jingle', 'final-chord'] as const, e['kind'], `${path}.kind`);
   switch (kind) {
     case 'layer-slam':
       return { kind, at, layer: count(e['layer'], `${path}.layer`, 3) };
     case 'threats':
+    case 'threat-pulse':
       return { kind, at, cells: list(e['cells'], `${path}.cells`).map((c, i) => cell(c, `${path}.cells[${i}]`)) };
     case 'ghost-lines':
       return { kind, at, until: time(e['until'], `${path}.until`) };
@@ -126,6 +131,7 @@ function beatEvent(value: unknown, path: string): BeatEvent {
       return { kind, at, line: line(e['line'], `${path}.line`) };
     case 'confetti':
     case 'replay':
+    case 'win-jingle':
     case 'final-chord':
       return { kind, at };
   }

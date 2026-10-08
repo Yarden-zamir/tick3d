@@ -5,7 +5,7 @@ import { OfflineAudioContext } from 'node-web-audio-api';
 import { SIXTEENTH } from '../../src/song.ts';
 import { scheduleNotes } from '../../src/sound.ts';
 import { encodeWav } from '../../src/wav.ts';
-import { spotNotes } from '../src/soundtrack.ts';
+import { spotSounds } from '../src/soundtrack.ts';
 import { BEATS } from '../src/timeline.ts';
 
 const RATE = 44_100;
@@ -13,10 +13,10 @@ const FADE_SECONDS = 0.05;
 const out = new URL('../out/', import.meta.url);
 const pub = new URL('../public/', import.meta.url);
 
-const notes = spotNotes();
+const sounds = spotSounds();
 const length = BEATS.durationSeconds * RATE;
 const ctx = new OfflineAudioContext(2, length, RATE);
-scheduleNotes(notes.map(({ at, note, set }) => ({ note, set, at: at * SIXTEENTH })), ctx);
+scheduleNotes(sounds.map((sound) => ({ ...sound, at: sound.at * SIXTEENTH })), ctx);
 const buffer = await ctx.startRendering();
 
 const channels = [buffer.getChannelData(0), buffer.getChannelData(1)];
@@ -37,6 +37,6 @@ mkdirSync(pub, { recursive: true });
 writeFileSync(new URL('soundtrack.wav', out), wav);
 writeFileSync(new URL('soundtrack.wav', pub), wav);
 // The beat markers: the sixteenth and the time of every note onset.
-const onsets = [...new Set(notes.map((note) => note.at))].sort((a, b) => a - b);
+const onsets = [...new Set(sounds.map((sound) => sound.at))].sort((a, b) => a - b);
 writeFileSync(new URL('beats.txt', out), onsets.map((at) => `${at}\t${(at * SIXTEENTH).toFixed(4)}`).join('\n') + '\n');
-process.stdout.write(`soundtrack: ${notes.length} notes, ${onsets.length} onsets, ${(length / RATE).toFixed(3)} s\n`);
+process.stdout.write(`soundtrack: ${sounds.length} sounds, ${onsets.length} onsets, ${(length / RATE).toFixed(3)} s\n`);

@@ -44,8 +44,8 @@ In the spot, drop an added interval voice that leaves the scale. Keep the timbre
 | 1 | Four Classic slams: G5, E5, D5, C5, one per beat. |
 | 2 | Cells melody on eighth notes, bass on the beats. |
 | 3 | Chiptune melody on sixteenth notes, bass on the beats. |
-| 4 | Two Cells notes (the fork, the block). No bass. |
-| 5 | The win note on the downbeat (Chiptune), then the 4-note win run on s16 68–71. |
+| 4 | Two Cells notes (the fork, the block). The preview strike of each blinking threat cell on the eighth notes (s16 50–54 for cells 4 and 21, 58–62 for cell 21), softer than a move. No bass. |
+| 5 | The win note on the downbeat (Chiptune), the 4-note win run on s16 68–71, then the win jingle of the game (C5 E5 G5 C6 E6, triangle) on 72–76, one note per s16. |
 | 6–7 | The replay: 27 Cells notes, one per s16 (80–106). |
 | 8 | Four Classic notes rising: C5, D5, E5, G5. Then the final C major chord on s16 128. |
 

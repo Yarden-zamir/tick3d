@@ -1,13 +1,15 @@
-// The notes of the soundtrack: the song of the game (src/song.ts), retimed to the bars of beats.json, and the
-// Classic layer notes. Each note plays with the sound set of its bar. scripts/audio.ts renders them.
+// The sounds of the soundtrack: the song of the game (src/song.ts) retimed to the bars of beats.json, the
+// Classic layer notes, the preview strikes of the threats and the win jingle. Each note plays with the sound
+// set of its bar. scripts/audio.ts renders them.
 import { SIXTEENTH, type SongNote, scaleOf, songOf } from '../../src/song.ts';
+import { type ScheduledSound, previewVoices, winVoices } from '../../src/sound.ts';
 import { SOUND_SETS, type SoundSet, type Voice } from '../../src/sound-sets.ts';
 import { toCoords } from '../../src/game.ts';
 import { SIXTEENTHS_PER_BAR } from '../creative/beats.ts';
 import { BEATS, GAME, eventOf, eventsOf } from './timeline.ts';
 
-// A note at a whole sixteenth of the spot, with the voices of its bar.
-export type SpotNote = { at: number; note: SongNote; set: SoundSet };
+// A sound of the spot. `at` counts whole sixteenths here; scripts/audio.ts turns it into seconds.
+export type SpotSound = ScheduledSound;
 
 export const SCALE = scaleOf(BEATS.songKey);
 
@@ -48,10 +50,20 @@ export function inKey(set: SoundSet, midi: number): SoundSet {
 }
 
 // The sound set of the bar of a sixteenth. The final chord after bar 8 keeps the set of bar 8.
-function setAt(at: number, midi: number): SoundSet {
+function rawSetAt(at: number): SoundSet {
   const bar = BEATS.bars[Math.min(BEATS.bars.length - 1, Math.floor(at / SIXTEENTHS_PER_BAR))];
   if (bar === undefined) throw new RangeError(`no bar at sixteenth ${at}`);
-  return inKey(SOUND_SETS[bar.soundSet], midi);
+  return SOUND_SETS[bar.soundSet];
+}
+
+const setAt = (at: number, midi: number): SoundSet => inKey(rawSetAt(at), midi);
+
+// The pitch that the lead voice of a cell lands on in `set`.
+function leadMidi(set: SoundSet, cell: number): number {
+  const [lead] = set.voices(cell, 'X');
+  const pitch = lead === undefined ? undefined : landing(lead);
+  if (pitch === undefined) throw new Error(`${set.name} has no pitched voice for cell ${cell}`);
+  return Math.round(midiOf(pitch));
 }
 
 const sixteenthOf = (seconds: number): number => {
@@ -60,7 +72,7 @@ const sixteenthOf = (seconds: number): number => {
   return Math.round(s16);
 };
 
-export function spotNotes(): SpotNote[] {
+export function spotSounds(): SpotSound[] {
   const song = songOf(GAME, BEATS.songKey);
   const beam = eventOf('beam');
   const replay = eventOf('replay');
@@ -95,5 +107,17 @@ export function spotNotes(): SpotNote[] {
     notes.push({ at: slam.at, note: { kind: 'melody', at: 0, midi: Math.round(midiOf(voice.frequency)), player: 'X', cell: slam.layer * 16, level: 0.9 } });
   }
 
-  return notes.map(({ at, note }) => ({ at, note, set: setAt(at, note.midi) })).sort((a, b) => a.at - b.at);
+  const sounds: SpotSound[] = notes.map(({ at, note }) => ({ at, note, set: setAt(at, note.midi) }));
+
+  // The threat pulses: the preview strike of each blinking cell, as the keypad plays it, in the set of the bar.
+  for (const pulse of eventsOf('threat-pulse')) {
+    const raw = rawSetAt(pulse.at);
+    for (const cell of pulse.cells) sounds.push({ at: pulse.at, voices: previewVoices(inKey(raw, leadMidi(raw, cell)), cell) });
+  }
+
+  // The win jingle of the game, one note per sixteenth.
+  const jingle = eventOf('win-jingle');
+  winVoices(0).forEach((voice, i) => sounds.push({ at: jingle.at + i, voices: [voice] }));
+
+  return sounds.sort((a, b) => a.at - b.at);
 }

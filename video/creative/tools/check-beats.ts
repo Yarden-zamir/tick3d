@@ -62,6 +62,24 @@ beats.bars.forEach((bar, i) => {
   }
 });
 
+// A threat pulse sits on an eighth note, on a cell that blinks then: a threat of an earlier event that no piece took yet.
+const threatsAt = (at: number) => beats.bars.flatMap((bar) => bar.events.flatMap((e) => (e.kind === 'threats' && e.at <= at ? [e] : [])));
+const takenBy = (cell: number, at: number) => beats.moves.some((m) => m.cell === cell && m.at <= at);
+for (const event of beats.bars.flatMap((bar) => bar.events)) {
+  if (event.kind !== 'threat-pulse') continue;
+  check(event.at % 2 === 0, `the threat pulse at ${event.at} is on an eighth note`);
+  check(event.cells.length > 0, `the threat pulse at ${event.at} has cells`);
+  for (const cell of event.cells) {
+    check(threatsAt(event.at).some((t) => t.cells.includes(cell)), `cell ${cell} is a threat at ${event.at}`);
+    check(!takenBy(cell, event.at), `cell ${cell} is still empty at ${event.at}`);
+  }
+}
+// The win jingle comes once, after the winning move, in its bar.
+const jingles = beats.bars.flatMap((bar) => bar.events.filter((e) => e.kind === 'win-jingle').map((e) => ({ bar, e })));
+check(jingles.length === 1, 'exactly one win jingle');
+const winAt = beats.moves.at(-1)?.at ?? Infinity;
+check(jingles.every(({ bar, e }) => e.at > winAt && bar.start <= winAt), 'the win jingle follows the winning move in its bar');
+
 check(beats.text.length <= 3, 'at most 3 on-screen lines');
 for (const [i, entry] of beats.text.entries()) {
   check(entry.words.every((w) => w.at < entry.until), `text[${i}] words come before the line leaves`);

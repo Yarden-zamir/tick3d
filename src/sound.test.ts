@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { songOf } from './song.ts';
-import { type VoiceClip, type VoiceClips, clipOf, scheduleNotes } from './sound.ts';
+import { type VoiceClip, type VoiceClips, clipOf, previewVoices, scheduleNotes, winVoices } from './sound.ts';
 import { CELL_COUNT, replay, toCell } from './game.ts';
 import { SOUND_SET_GROUPS, SOUND_SET_IDS, SOUND_SETS, type Voice, harmonyNotes, midiHz } from './sound-sets.ts';
 
@@ -188,5 +188,24 @@ describe('scheduleNotes', () => {
     }
     // Cell 0 of Cells is a marimba: the note and its fourth harmonic.
     expect(sources[0]?.frequency).toBeCloseTo(midiHz(64), 6);
+  });
+});
+
+describe('previewVoices', () => {
+  it('is the strike of X on the cell, softer, with the same pitches', () => {
+    for (const id of SOUND_SET_IDS) {
+      const strike = SOUND_SETS[id].voices(21, 'X');
+      const preview = previewVoices(SOUND_SETS[id], 21);
+      expect(preview.map((v) => (v.wave === 'noise' ? undefined : v.frequency))).toEqual(strike.map((v) => (v.wave === 'noise' ? undefined : v.frequency)));
+      preview.forEach((voice, i) => expect(voice.level).toBeLessThan(strike[i]?.level ?? 0));
+    }
+  });
+});
+
+describe('winVoices', () => {
+  it('rises C5, E5, G5, C6, E6, one note per gap', () => {
+    const voices = winVoices(0.25);
+    expect(voices.map((v) => (v.wave === 'noise' ? undefined : Math.round(69 + 12 * Math.log2(v.frequency / 440))))).toEqual([72, 76, 79, 84, 88]);
+    expect(voices.map((v) => v.at)).toEqual([0, 0.25, 0.5, 0.75, 1]);
   });
 });
