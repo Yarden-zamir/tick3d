@@ -13,6 +13,11 @@ services:
     build:
       context: .
       target: site
+      # The build reads the release name from the commit (Dockerfile). .dockerignore keeps .git out of the main context.
+      additional_contexts:
+        git: .git
+      args:
+        KITSHN_ENVIRONMENT: ${KITSHN_ENVIRONMENT}
     pull_policy: build
     environment:
       KITSHN_RECIPE: ${KITSHN_RECIPE}
@@ -39,6 +44,11 @@ services:
     build:
       context: .
       target: api
+      # The build reads the release name from the commit (Dockerfile). .dockerignore keeps .git out of the main context.
+      additional_contexts:
+        git: .git
+      args:
+        KITSHN_ENVIRONMENT: ${KITSHN_ENVIRONMENT}
     pull_policy: build
     # GitHub login. KitSHn passes the repository's KITSHN_GITHUB_CLIENT_ID variable and the
     # KITSHN_GITHUB_CLIENT_SECRET and KITSHN_AUTH_SECRET secrets without their prefix.

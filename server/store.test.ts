@@ -652,6 +652,25 @@ describe('stats', () => {
     for (const secret of [alice, bob, carol, 'bob', nameOf(carol), 'TypeError']) expect(text).not.toContain(secret);
   });
 
+  it('names each page bundle by its release, newest release first, and keeps the first name of a version', async () => {
+    store = await openStore(':memory:');
+    expect(await store.addRelease({ version: 'main-old', name: 'feat: first release', at: ms(1_000) })).toBe(true);
+    expect(await store.addRelease({ version: 'main-new', name: 'fix: second release', at: ms(5_000) })).toBe(true);
+    // A later deploy with the same page bundle (a server-only change) keeps the first name.
+    expect(await store.addRelease({ version: 'main-new', name: 'docs: third deploy', at: ms(9_000) })).toBe(false);
+    await store.addResults(bob, [
+      result('abababab-1111-4000-8000-000000000001', { metrics: { ...METRICS, version: 'main-old' } }),
+      result('abababab-1111-4000-8000-000000000002', { metrics: { ...METRICS, version: 'main-old' } }),
+      result('abababab-1111-4000-8000-000000000003', { metrics: { ...METRICS, version: 'main-new' } }),
+      result('abababab-1111-4000-8000-000000000004', { metrics: { ...METRICS, version: 'main-gone' } }),
+    ]);
+    expect((await store.stats()).releases).toEqual([
+      { version: 'main-new', name: 'fix: second release', at: 5_000, count: 1 },
+      { version: 'main-old', name: 'feat: first release', at: 1_000, count: 2 },
+      { version: 'main-gone', name: null, at: null, count: 1 },
+    ]);
+  });
+
   it('keeps the answer for a minute', async () => {
     let time = 1_000_000;
     store = await openStore(':memory:', { now: () => ms(time) });

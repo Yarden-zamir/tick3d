@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -28,6 +29,7 @@ import { asHostId, parseAnnounce, parseAnswerRequest } from '../src/nearby/lobby
 import { type Hello, decodeSignal } from '../src/nearby/signal.ts';
 import { EMPTY_SESSION_TTL_MS, SessionError } from '../src/session/core.ts';
 import { isEpochMs } from '../src/epoch.ts';
+import { RELEASE_FILE, parseRelease } from '../src/release.ts';
 import {
   CREATES_PER_HOUR,
   DATA_DELETES_PER_HOUR,
@@ -125,6 +127,17 @@ function openTokens(code: Code): PlayerToken[] {
 }
 
 const store = await openStore(dbPath, { open: openTokens, onChange: notify });
+
+// The release of this build (src/release.ts). The Docker image holds release.json next to server/.
+// A local API has no build, so it records no release. A bad file stops the start: it is a build fault.
+const releaseFile = new URL(`../${RELEASE_FILE}`, import.meta.url);
+if (existsSync(releaseFile)) {
+  const release = parseRelease(JSON.parse(readFileSync(releaseFile, 'utf8')));
+  const added = await store.addRelease(release);
+  console.log(`release ${release.version}: ${release.name}${added ? ' (new)' : ''}`);
+} else {
+  console.log(`no ${RELEASE_FILE}: this build records no release`);
+}
 
 // A new name reaches the sessions that the player has open now. Other sessions show it with their next change.
 function notifyPlayer(token: PlayerToken): void {

@@ -2,13 +2,14 @@
 // fault reports. Nothing here holds a name, a chat message or an address.
 import { detectDevice } from '../nearby/device.ts';
 import { api } from '../online.ts';
-import { type ClientEvent, type Code, MAX_COUNT, MAX_THINK_MS, type Metrics, type Refusal, toVersion } from '../protocol.ts';
+import { type ClientEvent, type Code, MAX_COUNT, MAX_THINK_MS, type Metrics, type Refusal } from '../protocol.ts';
+import { versionOfScript } from '../release.ts';
 import { computerTuning } from './advanced.ts';
 import { settings } from './settings.ts';
 import { page } from './state.ts';
 
-// The page script file name carries the build hash, for example "index-B2x9kQ". In development it is the module name.
-const APP_VERSION = toVersion(new URL(import.meta.url).pathname.split('/').at(-1)?.split('.')[0] ?? '');
+// The page script file name carries the build hash (versionOfScript). vite.config.ts finds the same chunk for release.json.
+const APP_VERSION = versionOfScript(new URL(import.meta.url).pathname);
 
 const thisDevice = detectDevice();
 

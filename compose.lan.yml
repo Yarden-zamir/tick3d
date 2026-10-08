@@ -17,6 +17,9 @@ services:
     build:
       context: .
       target: site
+      # The build reads the release name from the commit (Dockerfile), so this needs a git clone, not a worktree or a zip.
+      additional_contexts:
+        git: .git
     volumes:
       - ./container/Caddyfile.lan:/etc/caddy/Caddyfile:ro
     ports:
@@ -31,6 +34,9 @@ services:
     build:
       context: .
       target: api
+      # The build reads the release name from the commit (Dockerfile), so this needs a git clone, not a worktree or a zip.
+      additional_contexts:
+        git: .git
     environment:
       LAN_HOST: "1"
       # The name the page shows ("Hosted on ..."). Set it, or the container's own name shows.
