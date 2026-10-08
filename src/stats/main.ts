@@ -131,7 +131,9 @@ function releaseBars(box: HTMLElement, releases: ReleaseCount[]): void {
     const name = el('span', 'stats-bar-label', label);
     name.title = entry.version;
     const item = el('li');
-    item.append(name, el('span', 'stats-release-version', entry.version), bar, el('span', 'stats-bar-value', `${number(entry.count)} · ${percent(entry.count, total)}`));
+    // An unknown release shows its version in the label already.
+    item.append(name, ...(entry.name === null ? [] : [el('span', 'stats-release-version', entry.version)]));
+    item.append(bar, el('span', 'stats-bar-value', `${number(entry.count)} · ${percent(entry.count, total)}`));
     list.append(item);
   }
   box.append(list);
@@ -536,7 +538,7 @@ function draw(stats: Stats): void {
   bars(looks, stats.views);
   bars(looks, stats.layouts, 'var(--toggle-on)');
   bars(card('Themes'), stats.themes, 'var(--primary)');
-  releaseBars(card('Releases', false, 'Metric reports per release, newest first. The small line is the page bundle.'), stats.releases);
+  releaseBars(card('Releases', false, 'Metric reports per release, newest first. The small line under a name is its page bundle.'), stats.releases);
 
   const input = card('Input and undo');
   bars(input, [

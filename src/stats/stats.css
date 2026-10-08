@@ -108,12 +108,17 @@
   font-size: 0.85rem;
 }
 
-/* The name and the bundle on one line, the bar and the count below. */
+/* The name and the bundle each on a full line, then the bar and the count. */
 .stats-releases li {
   display: grid;
   grid-template-columns: 1fr max-content;
   align-items: center;
   gap: 0.1rem 0.6rem;
+}
+
+.stats-releases .stats-bar-label,
+.stats-release-version {
+  grid-column: 1 / -1;
 }
 
 .stats-releases svg {
