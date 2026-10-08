@@ -23,6 +23,25 @@ const resultsSent = (page: Page) =>
     DB_NAME,
   );
 
+// The number of moves in the live game of the copy of an online session that the device keeps for offline use.
+const savedMoves = (page: Page, code: string) =>
+  page.evaluate(
+    ({ name, code }) =>
+      new Promise<number | null>((resolve, reject) => {
+        const request = indexedDB.open(name);
+        request.onerror = () => reject(request.error ?? new Error('indexedDB.open failed'));
+        request.onsuccess = () => {
+          const row = request.result.transaction('remote').objectStore('remote').get(code);
+          row.onerror = () => reject(row.error ?? new Error('get failed'));
+          row.onsuccess = () => {
+            const saved = row.result as { view: { games: { moves: number[] }[] } } | undefined;
+            resolve(saved?.view.games.at(-1)?.moves.length ?? null);
+          };
+        };
+      }),
+    { name: DB_NAME, code },
+  );
+
 test('a computer game plays and finishes offline, and its result uploads after a reconnect', async ({ open }) => {
   const { page, context } = await open({ settings: { mode: 'computer', difficulty: 'easy', human: 'X' } });
   await waitForServiceWorker(page);
@@ -55,10 +74,11 @@ test('a computer game plays and finishes offline, and its result uploads after a
 
 test('an online game seen before opens read-only offline', async ({ open }) => {
   const { page, context } = await open({ settings: { mode: 'computer' } });
-  await createOnline(page);
+  const code = await createOnline(page);
   const seen = page.url();
   await cell(page, 5).click();
-  await expect(page.locator('.cell.x')).toHaveCount(1);
+  // The mark shows before the server answers. The device keeps the session only from the answer.
+  await expect.poll(() => savedMoves(page, code)).toBe(1);
   await waitForServiceWorker(page);
 
   await context.setOffline(true);

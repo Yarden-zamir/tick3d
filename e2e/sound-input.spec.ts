@@ -159,14 +159,14 @@ test('a high sound below the low sound asks for a retry, and Cancel closes the c
 
 test('the back button leaves a calibration on the tab of the player, with no change and no extra history entry', async ({ page }) => {
   await oscillatorMic(page);
-  await page.goto('/sound-input?mode=echo');
+  await page.goto('/sound-input?tab=echo');
   await page.locator('#calibrate').click();
   const calibration = page.locator('#calibration');
   await expect(calibration).toBeVisible();
   await expect(page.locator('#tabs')).toBeHidden();
   await page.goBack();
   await expect(calibration).toBeHidden();
-  await expect(page).toHaveURL(/\/sound-input\?mode=echo$/);
+  await expect(page).toHaveURL(/\/sound-input\?tab=echo$/);
   await expect(page.locator('#tabs button[data-tab="echo"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#range-mode')).toHaveText(/^Default range/);
 });
@@ -178,6 +178,21 @@ test('from a link with a return, Cancel leaves the calibration back to that page
   await expect(page.locator('#calibration')).toBeVisible();
   await page.locator('#calibration-cancel').click();
   await expect(page).toHaveURL(/\/\?from=voice$/);
+});
+
+test('the address keeps the tab: a reload stays on it, and Back leaves the room', async ({ page }) => {
+  await page.goto('/sound-input?tab=echo');
+  await page.reload();
+  await expect(page.locator('#tabs button[data-tab="echo"]')).toHaveAttribute('aria-pressed', 'true');
+
+  await page.goto('/stats');
+  await page.goto('/sound-input?tab=nope');
+  await expect(page.locator('#tabs button[data-tab="free"]')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#tabs button[data-tab="targets"]').click();
+  await expect(page).toHaveURL(/\/sound-input\?tab=targets$/);
+  // A tab change replaces the history entry, so Back goes to the page before the room.
+  await page.goBack();
+  await expect(page).toHaveURL(/\/stats$/);
 });
 
 test('the stickiness settings stay after a reload', async ({ page }) => {
@@ -205,7 +220,7 @@ async function singTargets(page: Page, rounds: number): Promise<void> {
 test('a target run times each target, keeps the best, and puts the run on the leaderboard and the stats page', async ({ page }) => {
   const errors = trackErrors(page);
   await oscillatorMic(page);
-  await page.goto('/sound-input?mode=targets');
+  await page.goto('/sound-input?tab=targets');
   await expect(page.locator('#practice')).toBeVisible();
   await page.locator('#levels [data-value="easy"]').click();
   await page.locator('#start').click();
@@ -222,7 +237,7 @@ test('a target run times each target, keeps the best, and puts the run on the le
 
 test('an echo round plays a cell, takes the held cell as the answer, and shows the points', async ({ page }) => {
   await oscillatorMic(page);
-  await page.goto('/sound-input?mode=echo');
+  await page.goto('/sound-input?tab=echo');
   await page.locator('#start').click();
   await setTone(page, 600);
   await expect(page.locator('#round')).toHaveText('Round 1 of 8', { timeout: 10_000 });
@@ -282,4 +297,48 @@ test('a typed range and a spread apply, the board previews the frequency of each
   await page.reload();
   await expect(page.locator('#range-mode')).toHaveText('Your range: 200–800 Hz');
   await expect(page.locator('#spread [data-value="linear"]')).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('on a touch screen, tilt is off by default, asks for the sensor only when the player turns it on, and stays at most 3 cells', async ({ browser, baseURL }) => {
+  if (baseURL === undefined) throw new Error('the config sets no baseURL');
+  const context = await browser.newContext({ baseURL, hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  // The iOS question for the sensor: the stub counts each ask.
+  await context.addInitScript(() => {
+    const asks = { count: 0 };
+    (window as unknown as { e2eTiltAsks: typeof asks }).e2eTiltAsks = asks;
+    Object.assign(DeviceOrientationEvent, {
+      requestPermission: () => {
+        asks.count++;
+        return Promise.resolve('granted');
+      },
+    });
+  });
+  const page = await context.newPage();
+  const errors = trackErrors(page);
+  const asks = () => page.evaluate(() => (window as unknown as { e2eTiltAsks: { count: number } }).e2eTiltAsks.count);
+  await page.goto('/sound-input');
+
+  const tiltOn = page.locator('#tilt-on');
+  const recentre = page.locator('#tilt-recentre');
+  const strength = page.locator('#tilt-steps');
+  await expect(page.locator('#tilt-editor')).toBeVisible();
+  await expect(tiltOn).not.toBeChecked();
+  await expect(recentre).toBeHidden();
+  await expect(strength).toHaveValue('2');
+  await expect(strength).toHaveAttribute('max', '3');
+
+  // The mic starts with tilt off: no question for the sensor.
+  await page.locator('#mic').click();
+  await expect(page.locator('#mic')).toHaveText('Stop');
+  expect(await asks()).toBe(0);
+
+  // The tap that turns tilt on asks, and Recentre shows.
+  await tiltOn.click();
+  await expect(tiltOn).toBeChecked();
+  await expect(recentre).toBeVisible();
+  await expect.poll(asks).toBe(1);
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('tick3d.voice') ?? 'null') as { tilt: unknown });
+  expect(stored.tilt).toEqual({ on: true, steps: 2 });
+  expect(errors).toEqual([]);
+  await context.close();
 });

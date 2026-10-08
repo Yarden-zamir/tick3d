@@ -15,7 +15,7 @@ import { sounds } from '../sound.ts';
 import { clocksEl, clockNote, element, clockSummary } from './dom.ts';
 import { reject, showToast, showProblem } from './feedback.ts';
 import { playerName, render } from './render.ts';
-import { refresh, withBusy, applyView } from './sessions.ts';
+import { refresh, sendShownChange, withBusy } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
 import { current, nowMs, page, nextClock, canChangeMatch, settingsLocked, shared, isLive, updateSession } from './state.ts';
 
@@ -25,7 +25,9 @@ let lastFlagRefresh = 0;
 export function renderClocks(): void {
   const game = current();
   const left = remaining(game, nowMs());
-  clocksEl.hidden = left === null || page.review !== undefined || page.session === undefined;
+  clocksEl.hidden = left === null || page.session === undefined;
+  // A review keeps the box of the live clocks but does not show them, so the board does not move up (src/style.css).
+  clocksEl.toggleAttribute('data-reviewing', page.review !== undefined);
   if (left === null) return;
   const live = game.status.kind === 'playing';
   clocksEl.querySelectorAll<HTMLElement>('[data-clock]').forEach((chip) => {
@@ -149,14 +151,7 @@ function applyClock(clock: TimeControl): void {
   // Show the change at once, as with moves. The answer replaces it, or a refresh undoes it on an error.
   updateSession({ ...page.session, clock });
   render();
-  void withBusy(async () => {
-    try {
-      applyView(await backend.update(code, { clock }));
-    } catch (error) {
-      await refresh(code);
-      throw error;
-    }
-  });
+  void withBusy(() => sendShownChange(code, () => backend.update(code, { clock })));
 }
 
 function setLimit(kind: LimitKind, seconds: number | null): void {

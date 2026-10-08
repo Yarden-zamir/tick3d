@@ -42,3 +42,21 @@ test('the first loss of a setup sets its record without a message', async ({ ope
   expect(Object.keys(await storedRecords(page))).toContainEqual(expect.stringMatching(/history:true$/));
   await expect(page.locator('#end-card-image')).not.toHaveAttribute('alt', /New record/);
 });
+
+test('a tooltip inside the end card shows on top of the card, inside the viewport', async ({ open }) => {
+  const { page } = await open({ settings: hardComputer });
+  await loseToComputer(page);
+  await page.locator('#end-card-song').hover();
+  const tip = page.getByRole('tooltip');
+  await expect(tip).toContainText('Play as a song');
+  const hit = await tip.evaluate((box) => {
+    // The tooltip lets the pointer through. For the hit test only, it takes the pointer, so the test finds
+    // what paints on top at its centre.
+    box.style.pointerEvents = 'auto';
+    const rect = box.getBoundingClientRect();
+    const onTop = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) === box;
+    box.style.pointerEvents = '';
+    return { onTop, inside: rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight };
+  });
+  expect(hit).toEqual({ onTop: true, inside: true });
+});

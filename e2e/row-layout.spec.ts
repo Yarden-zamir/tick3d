@@ -110,3 +110,75 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     await expectSameGeometry(page, baseline, 'voice off');
   });
 }
+
+// A note or a control that shows late keeps its box while hidden (src/style.css), so the page under it stays.
+// The top on the page (not in the viewport: a click scrolls) and the height of one element, rounded to a pixel.
+async function box(page: Page, selector: string): Promise<{ top: number; height: number }> {
+  return page.locator(selector).evaluate((element) => {
+    const own = element.getBoundingClientRect();
+    return { top: Math.round(own.top + scrollY), height: Math.round(own.height) };
+  });
+}
+
+for (const [name, viewport] of Object.entries(VIEWPORTS)) {
+  test(`${name}: the clock note and the keypad speaker keep their place while hidden`, async ({ open }) => {
+    const { page } = await open(friend);
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    // A limit before the first move applies to this game, so the clocks and their note show.
+    await page.locator('[data-limit="perGame"] [data-limit-on]').check();
+    await expect(page.locator('#clock-note')).toBeVisible();
+    const board = await box(page, '#board');
+    // No move yet: the speaker does not show, but it has its box.
+    await expect(page.locator('#coords-hear')).toBeHidden();
+    expect((await box(page, '#coords-hear')).height).toBeGreaterThan(0);
+
+    // The note leaves after the first move of each player.
+    for (const index of X_WINS.slice(0, 2)) await cell(page, index).click();
+    await expect(page.locator('#clock-note')).toBeHidden();
+    await expect(page.locator('#coords-hear')).toBeVisible();
+    await expect.poll(() => box(page, '#board'), { message: 'the board moved when the note left' }).toEqual(board);
+  });
+
+  test(`${name}: the review bar takes the place of the keypad without a change of height`, async ({ open }) => {
+    const { page } = await open(friend);
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    for (const index of X_WINS) await cell(page, index).click();
+    await expect(status(page)).toHaveAttribute('data-state', 'won');
+    await page.locator('#end-card-close').click();
+    // The height only: the status in the header changes its text in a review, and it can wrap on a phone.
+    const { height } = await box(page, '.stage-controls');
+
+    await page.locator('#account-button').click();
+    await page.locator('#my-games-session li').first().getByRole('button', { name: 'Replay' }).click();
+    await expect(page.locator('#review')).toBeVisible();
+    await expect(page.locator('#coords')).toBeHidden();
+    await expect.poll(async () => (await box(page, '.stage-controls')).height, { message: 'the review bar changed the height' }).toBe(height);
+  });
+
+  test(`${name}: a review of a timed game keeps the place of the clocks`, async ({ open }) => {
+    const { page } = await open(friend);
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    // A 5 s move limit ends the game soon after the first move of each player, the shortest timed game.
+    const perMove = page.locator('[data-limit="perMove"]');
+    await perMove.locator('[data-limit-on]').check();
+    await perMove.locator('[data-limit-value]').fill('5');
+    await perMove.locator('[data-limit-value]').press('Tab');
+    await expect(page.locator('#clock-summary')).toContainText('5 s per move');
+    for (const index of X_WINS.slice(0, 2)) await cell(page, index).click();
+    await expect(status(page)).toHaveAttribute('data-state', 'timeout');
+    await page.locator('#end-card-close').click();
+    await expect(page.locator('#clocks')).toBeVisible();
+    // The board from the top of the stage: the status in the header changes its text in a review, and it can wrap on a phone.
+    const offset = async () => (await box(page, '#board')).top - (await box(page, '#stage')).top;
+    const before = await offset();
+
+    await page.locator('#account-button').click();
+    await page.locator('#my-games-session li').first().getByRole('button', { name: 'Replay' }).click();
+    await expect(page.locator('#review')).toBeVisible();
+    await expect(page.locator('#clocks')).toBeHidden();
+    await expect.poll(offset, { message: 'the board moved up when the clocks left' }).toBe(before);
+  });
+}
