@@ -33,6 +33,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: npm ci --no-audit --no-fund
+      # Right after a deploy, the new containers can drop connections for a moment ("socket hang up").
+      # The suite starts after the health check answers 5 times in a row, 2 seconds apart.
+      - name: Wait for a stable preview
+        run: |
+          ok=0
+          for attempt in $(seq 1 60); do
+            if curl -fsS --max-time 5 "$E2E_BASE_URL/api/health" > /dev/null; then ok=$((ok + 1)); else ok=0; fi
+            if [ "$ok" -ge 5 ]; then exit 0; fi
+            sleep 2
+          done
+          echo "The preview at $E2E_BASE_URL did not answer its health check 5 times in a row." >&2
+          exit 1
       - run: npm run e2e
       - if: failure()
         uses: actions/upload-artifact@v7
