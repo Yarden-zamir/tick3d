@@ -1219,9 +1219,9 @@ body[data-turn='O'] .status[data-state='playing'] {
   grid-area: swap;
 }
 
-/* One box with two parts: the speaker turns the sound on and off, the narrow caret opens the sound sets. */
-.sound-control {
-  grid-area: sound;
+/* A split control: one box with two parts. The main button takes the width, and the narrow caret opens a menu.
+   The sound control (speaker and sound sets) and the share link (Link and the link menu) use it. */
+.split-control {
   display: flex;
   min-height: 2.6rem;
   border: var(--border) solid var(--line);
@@ -1231,27 +1231,35 @@ body[data-turn='O'] .status[data-state='playing'] {
   overflow: hidden;
 }
 
-/* The speaker takes the width of the slot, the caret keeps its narrow width. */
-.sound-control #sound {
-  flex: 1;
-}
-
-.sound-control button {
+.split-control button {
   display: grid;
+  flex: 1;
   place-items: center;
   padding: 0.4rem 0.6rem;
   border: 0;
   background: transparent;
+  color: var(--ink);
+  font-weight: 700;
   cursor: pointer;
 }
 
-.sound-control button:hover {
+/* The box clips an outside focus ring, so the ring goes inside the button. */
+.split-control button:focus-visible {
+  outline-offset: -4px;
+}
+
+.split-control button:hover {
   background: var(--surface-2);
 }
 
-.sound-control #sound-set {
+.split-control button + button {
+  flex: none;
   padding-inline: 0.3rem;
   border-left: 2px solid var(--line);
+}
+
+.sound-control {
+  grid-area: sound;
 }
 
 /* Play by voice. On, the button takes the toggle color. A dot in its corner shows the state: green and
@@ -2951,6 +2959,39 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.4rem;
   font-weight: 700;
   text-align: center;
+}
+
+/* The link menu: a popover under the caret of Link, at its right edge. It flips above when there is no room below.
+   A browser without anchor positioning shows it in the middle of the screen, the default place of a popover. */
+#share-more {
+  anchor-name: --share-more;
+}
+
+.share-menu {
+  position-anchor: --share-more;
+  position-area: bottom span-left;
+  position-try-fallbacks: flip-block;
+  margin: 0.4rem 0;
+  padding: 0.5rem;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--page);
+  color: var(--ink);
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+.share-menu:popover-open {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.share-menu .btn {
+  justify-content: flex-start;
+}
+
+/* The switch over the QR code: the play link or the watch-only link. */
+.online-qr .segmented {
+  white-space: nowrap;
 }
 
 /* The QR code button stays pressed while its code shows. */

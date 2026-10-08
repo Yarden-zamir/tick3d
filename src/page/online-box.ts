@@ -12,7 +12,11 @@ import {
   newCodeButton,
   shareButton,
   shareQrButton,
+  shareMenu,
+  sharePlayButton,
   shareWatchButton,
+  qrPlayButton,
+  qrWatchButton,
   onlineQr,
   onlineQrCaption,
   onlineQrImage,
@@ -64,17 +68,28 @@ async function shareLink(intent: LinkIntent): Promise<void> {
 }
 
 // The game's link as a QR code: a friend's phone camera opens the online game directly.
-let onlineQrShown: Code | undefined;
+// The switch over the code picks the play link or the watch-only link.
+let qrIntent: LinkIntent = 'play';
+let onlineQrShown: string | undefined;
 export function renderOnlineQr(code: Code | undefined): void {
   const open = shareQrButton.getAttribute('aria-expanded') === 'true' && code !== undefined;
   onlineQr.hidden = !open;
-  if (!open || code === onlineQrShown) return;
-  onlineQrShown = code;
-  onlineQrCaption.textContent = `Scan with a phone camera to join ${code}.`;
-  const link = sessionLink(location.origin, code, 'play');
+  if (!open) return;
+  const link = sessionLink(location.origin, code, qrIntent);
+  if (link === onlineQrShown) return;
+  onlineQrShown = link;
+  qrPlayButton.setAttribute('aria-pressed', String(qrIntent === 'play'));
+  qrWatchButton.setAttribute('aria-pressed', String(qrIntent === 'watch'));
+  onlineQrCaption.textContent = `Scan with a phone camera to ${qrIntent === 'watch' ? 'watch' : 'join'} ${code}.`;
   void renderQr(link).then((svg) => {
-    if (onlineQrShown === code) onlineQrImage.replaceChildren(svg);
+    if (onlineQrShown === link) onlineQrImage.replaceChildren(svg);
   });
+}
+
+function setQrIntent(intent: LinkIntent): void {
+  sounds.click();
+  qrIntent = intent;
+  renderOnlineQr(page.session?.mode === 'online' ? page.session.code : undefined);
 }
 
 export function setupOnlineBox(): void {
@@ -100,7 +115,14 @@ export function setupOnlineBox(): void {
 
   shareButton.addEventListener('click', () => void shareLink('play'));
   shareWatchButton.insertAdjacentHTML('afterbegin', EYE_ICON);
-  shareWatchButton.addEventListener('click', () => void shareLink('watch'));
+  for (const [button, intent] of [[sharePlayButton, 'play'], [shareWatchButton, 'watch']] as const) {
+    button.addEventListener('click', () => {
+      shareMenu.hidePopover();
+      void shareLink(intent);
+    });
+  }
+  qrPlayButton.addEventListener('click', () => setQrIntent('play'));
+  qrWatchButton.addEventListener('click', () => setQrIntent('watch'));
   shareQrButton.addEventListener('click', () => {
     sounds.click();
     const open = shareQrButton.getAttribute('aria-expanded') !== 'true';

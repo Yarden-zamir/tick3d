@@ -151,7 +151,7 @@
           <button type="button" class="btn btn-icon" id="undo" aria-label="Undo" data-show-mode="computer friend online nearby" data-needs-session><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
           <button type="button" class="btn btn-icon" id="show-card" aria-label="Result card" data-tip="Result card of the last game" hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0V4ZM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 13v3M8 20h8l-1-4H9l-1 4Z"/></svg></button>
           <!-- One control for the sound: the speaker turns the sound on and off, the caret opens the sound set menu. -->
-          <div class="sound-control" role="group" aria-label="Sound controls">
+          <div class="split-control sound-control" role="group" aria-label="Sound controls">
             <button type="button" id="sound" aria-label="Sound" data-tip="Sound on or off"></button>
             <button type="button" id="sound-set" popovertarget="sound-sets" aria-label="Sound set" data-tip="Sound set: the sound of each move"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
           </div>
@@ -219,12 +219,24 @@
               <b id="online-code">····</b>
             </div>
             <div class="share-buttons">
-              <button type="button" class="btn" id="share">Link</button>
-              <button type="button" class="btn" id="share-watch" data-tip="Opens the game without a seat">Watch link</button>
+              <!-- Link shares the play link. The caret opens the link menu: the play link and the watch-only link. -->
+              <div class="split-control" role="group" aria-label="Share links">
+                <button type="button" id="share" data-tip="Share the link to play">Link</button>
+                <button type="button" id="share-more" popovertarget="share-menu" aria-label="More links" data-tip="Play or watch-only link"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
+              </div>
               <button type="button" class="btn" id="share-qr" aria-expanded="false" aria-controls="online-qr">QR code</button>
             </div>
           </div>
+          <!-- The link menu. It opens under the caret, and closes on a tap outside it or on Escape. -->
+          <div popover id="share-menu" class="share-menu">
+            <button type="button" class="btn btn-small" id="share-play" autofocus>Play link</button>
+            <button type="button" class="btn btn-small" id="share-watch" data-tip="Opens the game without a seat">Watch-only link</button>
+          </div>
           <div class="online-qr" id="online-qr" hidden>
+            <div class="segmented" role="group" aria-label="The QR code gives">
+              <button type="button" id="qr-play" aria-pressed="true">Play</button>
+              <button type="button" id="qr-watch" aria-pressed="false">Watch only</button>
+            </div>
             <div class="nearby-qr" id="online-qr-image"></div>
             <span id="online-qr-caption"></span>
           </div>
