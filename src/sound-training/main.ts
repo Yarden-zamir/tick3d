@@ -7,6 +7,8 @@ import { setSoundSet, sounds } from '../sound.ts';
 import { SOUND_SETS, type SoundSetId } from '../sound-sets.ts';
 import { settings } from '../page/settings.ts';
 import { setupSoundSets } from '../page/sound-set.ts';
+import { element } from '../element.ts';
+import { setupPageHeader } from '../header/header.ts';
 import { buildDeck, fitDeck, paint } from './deck.ts';
 import {
   type Asked,
@@ -30,12 +32,9 @@ import {
   splitItem,
   weakest,
 } from './schedule.ts';
+import { STORAGE_KEYS } from '../storage-keys.ts';
 
-function element<T extends HTMLElement>(selector: string, type: new () => T): T {
-  const found = document.querySelector(selector);
-  if (!(found instanceof type)) throw new Error(`sound-training.html misses ${selector}`);
-  return found;
-}
+setupPageHeader();
 
 const kindEl = element('#card-kind', HTMLParagraphElement);
 const titleEl = element('#card-title', HTMLHeadingElement);
@@ -78,11 +77,10 @@ let training = trainingOf(settings.soundSet);
 
 // ---- Storage ----
 
-const STORAGE_KEY = 'tick3d.sound-training';
 
 function load(): Progress {
   try {
-    return parseProgress(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null'));
+    return parseProgress(JSON.parse(localStorage.getItem(STORAGE_KEYS.soundTraining) ?? 'null'));
   } catch {
     return freshProgress();
   }
@@ -90,7 +88,7 @@ function load(): Progress {
 
 function save(): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+    localStorage.setItem(STORAGE_KEYS.soundTraining, JSON.stringify(progress));
   } catch {
     // Private mode or a full storage: the training still works for this visit.
   }
@@ -120,12 +118,14 @@ function guessedCell(pick: number): number {
 
 // ---- Sound ----
 
-let timers: number[] = [];
+// Seconds between two cells of a series.
+const CELL_GAP_S = 0.75;
+let stopCells = (): void => undefined;
 
 // Plays the cells one after the other. A new call stops the rest of an earlier one.
 function playCells(cells: readonly number[]): void {
-  for (const timer of timers) clearTimeout(timer);
-  timers = cells.map((cell, index) => window.setTimeout(() => sounds.place('X', cell), index * 750));
+  stopCells();
+  stopCells = sounds.placeSeries('X', cells, CELL_GAP_S);
 }
 
 // ---- Card ----
@@ -297,7 +297,7 @@ function dimensionBlock(dimension: Dimension): HTMLElement {
     const box = state === undefined ? 'new' : state.learn > 0 ? 'learn' : String(state.box + 1);
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'train-value';
+    button.className = 'btn train-value';
     button.dataset.item = item;
     button.dataset.box = box;
     // A quiz item that waits for its next card now.
@@ -315,7 +315,7 @@ function dimensionBlock(dimension: Dimension): HTMLElement {
   }
   const all = document.createElement('button');
   all.type = 'button';
-  all.className = 'train-all';
+  all.className = 'btn train-all';
   all.textContent = `Hear all four ${training.text[dimension].parts.toLowerCase()}`;
   all.addEventListener('click', () => playCells(VALUES.map((option) => withValue(card.cell, dimension, option))));
   block.append(title, bar, value, examples, all);

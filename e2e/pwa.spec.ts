@@ -1,5 +1,7 @@
 import { cell, createOnline, expect, expectToast, marks, playComputerUntilEnd, status, test, toasts } from './fixtures.ts';
 import type { Page } from '@playwright/test';
+import { DB_NAME } from '../src/device-db.ts';
+import { CELL_COUNT } from '../src/game.ts';
 
 async function waitForServiceWorker(page: Page): Promise<void> {
   await expect.poll(() => page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.active != null), { timeout: 20_000 }).toBe(true);
@@ -8,9 +10,9 @@ async function waitForServiceWorker(page: Page): Promise<void> {
 // The `sent` flag of each finished game result in the device database.
 const resultsSent = (page: Page) =>
   page.evaluate(
-    () =>
+    (name) =>
       new Promise<boolean[]>((resolve, reject) => {
-        const request = indexedDB.open('tick3d');
+        const request = indexedDB.open(name);
         request.onerror = () => reject(request.error ?? new Error('indexedDB.open failed'));
         request.onsuccess = () => {
           const all = request.result.transaction('results').objectStore('results').getAll();
@@ -18,6 +20,26 @@ const resultsSent = (page: Page) =>
           all.onsuccess = () => resolve((all.result as { sent: boolean }[]).map((result) => result.sent));
         };
       }),
+    DB_NAME,
+  );
+
+// The number of moves in the live game of the copy of an online session that the device keeps for offline use.
+const savedMoves = (page: Page, code: string) =>
+  page.evaluate(
+    ({ name, code }) =>
+      new Promise<number | null>((resolve, reject) => {
+        const request = indexedDB.open(name);
+        request.onerror = () => reject(request.error ?? new Error('indexedDB.open failed'));
+        request.onsuccess = () => {
+          const row = request.result.transaction('remote').objectStore('remote').get(code);
+          row.onerror = () => reject(row.error ?? new Error('get failed'));
+          row.onsuccess = () => {
+            const saved = row.result as { view: { games: { moves: number[] }[] } } | undefined;
+            resolve(saved?.view.games.at(-1)?.moves.length ?? null);
+          };
+        };
+      }),
+    { name: DB_NAME, code },
   );
 
 test('a computer game plays and finishes offline, and its result uploads after a reconnect', async ({ open }) => {
@@ -31,7 +53,7 @@ test('a computer game plays and finishes offline, and its result uploads after a
   await page.reload();
   await expect(marks(page)).toHaveCount(2);
 
-  await playComputerUntilEnd(page, Array.from({ length: 64 }, (_, i) => i));
+  await playComputerUntilEnd(page, Array.from({ length: CELL_COUNT }, (_, i) => i));
   await expect.poll(() => resultsSent(page)).toEqual([false]);
   await expect(page.locator('#end-card')).toHaveAttribute('open');
   await page.locator('#end-card-close').click();
@@ -50,12 +72,36 @@ test('a computer game plays and finishes offline, and its result uploads after a
   await expect(page.locator('.login-link')).toHaveCount(1);
 });
 
+// Runs in the page before the app: a Worker whose script never loads, like WebKit offline, where the
+// service worker does not serve the worker script.
+function workerScriptFails(): void {
+  window.Worker = class extends EventTarget {
+    constructor() {
+      super();
+      setTimeout(() => this.dispatchEvent(new Event('error')));
+    }
+    postMessage(): void {}
+    terminate(): void {}
+  } as unknown as typeof Worker;
+}
+
+test('offline, the computer plays on the main thread when its worker script does not load', async ({ open }) => {
+  const { page, context } = await open({ settings: { mode: 'computer', difficulty: 'hard', human: 'X' } });
+  await waitForServiceWorker(page);
+  await context.addInitScript(workerScriptFails);
+  await context.setOffline(true);
+  await page.reload();
+  await playComputerUntilEnd(page, Array.from({ length: CELL_COUNT }, (_, i) => i));
+  expect(await toasts(page)).not.toContainEqual(expect.stringContaining('move search'));
+});
+
 test('an online game seen before opens read-only offline', async ({ open }) => {
   const { page, context } = await open({ settings: { mode: 'computer' } });
-  await createOnline(page);
+  const code = await createOnline(page);
   const seen = page.url();
   await cell(page, 5).click();
-  await expect(page.locator('.cell.x')).toHaveCount(1);
+  // The mark shows before the server answers. The device keeps the session only from the answer.
+  await expect.poll(() => savedMoves(page, code)).toBe(1);
   await waitForServiceWorker(page);
 
   await context.setOffline(true);

@@ -13,6 +13,7 @@ import {
   ref,
   splitRoute,
 } from './api-docs.ts';
+import { IDEMPOTENCY_KEY_MAX_LENGTH, IDEMPOTENCY_TTL_MS } from './idempotency.ts';
 
 const route = (name: RouteName): Route => ROUTES[name];
 const pathParams = (path: string): string[] =>
@@ -50,6 +51,18 @@ export function curlOf(name: RouteName, origin: string): string {
 
 // ---- OpenAPI ----
 
+// The Idempotency-Key header (server/idempotency.ts), one entry that each route that accepts it refers to.
+const IDEMPOTENCY_KEY = {
+  name: 'Idempotency-Key',
+  in: 'header',
+  required: false,
+  description:
+    `Optional. A new random key for each change, for example a UUID. Send the same key when you send the request again: the server sends the first answer again and changes nothing. The server keeps a key for ${IDEMPOTENCY_TTL_MS / 60_000} minutes, for your player id and this path.`,
+  schema: { type: 'string', minLength: 1, maxLength: IDEMPOTENCY_KEY_MAX_LENGTH },
+};
+
+const RETRY_AFTER = { description: 'Whole seconds to wait before the next try.', schema: { type: 'integer', minimum: 1 } };
+
 export function openApi(origin: string): Record<string, unknown> {
   const paths: Record<string, Record<string, unknown>> = {};
   for (const name of ROUTE_NAMES) {
@@ -69,6 +82,7 @@ export function openApi(origin: string): Record<string, unknown> {
               schema: { type: 'string', pattern: '^[a-z0-9-]{16,64}$' },
             },
           ]),
+      ...(doc.idempotencyKey === true ? [{ $ref: '#/components/parameters/IdempotencyKey' }] : []),
     ];
     const { response } = doc;
     const success =
@@ -79,7 +93,11 @@ export function openApi(origin: string): Record<string, unknown> {
     const errors: Record<string, unknown> = {};
     for (const status of new Set(doc.errors.map((error) => error.status))) {
       const reasons = doc.errors.filter((error) => error.status === status).map((error) => error.when);
-      errors[String(status)] = { description: reasons.join(' Or: '), content: { 'application/json': { schema: ref('Error') } } };
+      errors[String(status)] = {
+        description: reasons.join(' Or: '),
+        ...(status === 429 ? { headers: { 'Retry-After': RETRY_AFTER } } : {}),
+        content: { 'application/json': { schema: ref('Error') } },
+      };
     }
     paths[path] ??= {};
     paths[path][method.toLowerCase()] = {
@@ -109,9 +127,10 @@ export function openApi(origin: string): Record<string, unknown> {
       { name: 'Nearby', description: 'The list of open Nearby games on your network. The page uses it.' },
       { name: 'Docs', description: 'This document, its web page and the health check.' },
       { name: 'Account', description: 'Routes for the page: GitHub login, stats, offline results and the previews list.' },
+      { name: 'Safety', description: 'Report and block people, and the moderation routes of the maintainers.' },
     ],
     paths,
-    components: { schemas: SCHEMAS },
+    components: { schemas: SCHEMAS, parameters: { IdempotencyKey: IDEMPOTENCY_KEY } },
   };
 }
 

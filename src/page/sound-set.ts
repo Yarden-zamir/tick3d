@@ -1,5 +1,6 @@
 // The sound set menu: one row per set, with a button to choose it and a demo button.
 // The game page and the ear training page (/sound-training) both use it.
+import { PLAY_ICON } from '../icons.ts';
 import { playDemo, playSample } from '../sound.ts';
 import { SOUND_SET_GROUPS, SOUND_SETS, type SoundSetId } from '../sound-sets.ts';
 import { settings, saveSettings } from './settings.ts';
@@ -10,7 +11,7 @@ function option(id: SoundSetId, choose: (id: SoundSetId) => void): HTMLElement {
   row.className = 'sound-set-option';
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'sound-set-choice';
+  button.className = 'btn btn-small sound-set-choice';
   button.dataset.soundSet = id;
   button.setAttribute('aria-label', `Use the ${set.name} sound set: ${set.description}`);
   const name = document.createElement('b');
@@ -21,8 +22,8 @@ function option(id: SoundSetId, choose: (id: SoundSetId) => void): HTMLElement {
   button.addEventListener('click', () => choose(id));
   const demo = document.createElement('button');
   demo.type = 'button';
-  demo.className = 'sound-set-play';
-  demo.textContent = '▶';
+  demo.className = 'btn btn-small btn-icon sound-set-play';
+  demo.innerHTML = PLAY_ICON;
   demo.setAttribute('aria-label', `Play the ${set.name} demo`);
   demo.addEventListener('click', () => playDemo(id));
   row.append(button, demo);

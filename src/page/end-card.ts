@@ -1,5 +1,5 @@
 // The end of a game: sounds, confetti, and the end card.
-import { type CardInput, drawCard, shareImage, saveImage } from '../card.ts';
+import { type CardInput, cardCellBox, cardFilename, drawCard, shareImage, saveImage } from '../card.ts';
 import { formatClock, describeClock } from '../clock.ts';
 import { type Game, other, winnerOf } from '../game.ts';
 import { isTunedFor } from '../tuning.ts';
@@ -8,8 +8,8 @@ import { computerTuning } from './advanced.ts';
 import {
   cardDialog,
   myGamesDialog,
-  previewsDialog,
   homeConfirm,
+  seatPrompt,
   burstEl,
   cardCode,
   cardLink,
@@ -19,16 +19,24 @@ import {
   newGameButton,
   cardShareButton,
   cardSaveButton,
+  cardSongButton,
+  cardLight,
+  cardVoiceOption,
+  cardVoice,
   cardCloseButton,
   showCardButton,
 } from './dom.ts';
 import { showToast } from './feedback.ts';
+import { previewsDialog } from '../header/previews.ts';
 import { type GameId, onlineGameId } from '../protocol.ts';
 import { nearbyKind, shareGameLink } from './nearby.ts';
 import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnlineMetrics, hostLinkOf, setHostLink } from './results.ts';
 import { setUrlGame, startNewGame } from './sessions.ts';
-import { playerName } from './render.ts';
+import { playerName, seatNow } from './render.ts';
 import { settings } from './settings.ts';
+import { songControl } from './song-control.ts';
+import { lightSungCell } from './board.ts';
+import { voiceClips } from './voice.ts';
 import { type Session, me, page, isLive, matchOptions } from './state.ts';
 
 const CARD_DELAY_MS = 1400;
@@ -58,7 +66,7 @@ export function finish(game: Game): void {
   setTimeout(() => {
     // Show the card only if that game is still the finished live game and nothing else is open.
     if (page.games.length - 1 !== index || isLive() || page.review !== undefined) return;
-    if (cardDialog.open || myGamesDialog.open || previewsDialog.open || homeConfirm.open) return;
+    if (cardDialog.open || myGamesDialog.open || previewsDialog.open || homeConfirm.open || seatPrompt.open) return;
     void openCard(index);
   }, CARD_DELAY_MS);
 }
@@ -66,9 +74,10 @@ export function finish(game: Game): void {
 // Saves the result of a game that just ended and puts the link of the game in the address.
 async function linkGame(open: Session, game: Game, index: number): Promise<void> {
   sendOnlineMetrics(open, index);
-  const own = open.mode === 'online' ? onlineGameId(open.code, index) : await recordResult(open, game, index);
+  const device = open.mode === 'online' ? undefined : await recordResult(open, game, index);
   // A Nearby host gives its link to the guests. A guest uses the host's link when it came already.
-  if (own !== undefined && open.mode === 'nearby' && nearbyKind() === 'hosting') shareGameLink(index, own);
+  if (device !== undefined && open.mode === 'nearby' && nearbyKind() === 'hosting') shareGameLink(index, device);
+  const own = open.mode === 'online' ? onlineGameId(open.code, index) : device;
   const id = (open.mode === 'nearby' ? hostLinkOf(open.code, index) : undefined) ?? own;
   // The player can move on while the result saves. Only the same finished game gets the link.
   if (id !== undefined && showsFinished(open, index)) setUrlGame(id);
@@ -108,20 +117,22 @@ function celebrate(): void {
 }
 
 function cardInput(game: Game, index: number, gameId: GameId | undefined): CardInput {
-  const winner = winnerOf(game.status);
+  // The seats can rotate between games: `winner` is the seat now of the player who won game `index`.
+  const result = winnerOf(game.status);
+  const winner = result === null ? null : seatNow(index, result);
   const mine = me();
   // The same names as the rest of the page (playerName), so the card matches the score and the chat.
   const title = winner === null ? 'Draw' : winner === mine ? 'You win!' : `${playerName(winner)} wins!`;
   const subtitle =
     game.status.kind === 'won'
       ? `Four in a row in ${game.moves.length} moves`
-      : game.status.kind === 'timeout'
-        ? `${playerName(other(game.status.winner))} ran out of time after ${game.moves.length} moves`
+      : game.status.kind === 'timeout' && winner !== null
+        ? `${playerName(other(winner))} ran out of time after ${game.moves.length} moves`
         : 'The cube is full. Nobody got four in a row.';
   const level = `${settings.difficulty.charAt(0).toUpperCase()}${settings.difficulty.slice(1)}${isTunedFor(computerTuning(), settings.difficulty) ? ' (tuned)' : ''}`;
   const matchup =
     page.session?.mode === 'computer'
-      ? `vs Computer · ${level} · You played ${page.session.you ?? settings.human}`
+      ? `vs Computer · ${level} · You played ${seatNow(index, page.session.you ?? settings.human)}`
       : page.session?.mode === 'online'
         ? `Online · ${page.session.name}`
         : page.session?.mode === 'nearby'
@@ -153,6 +164,9 @@ export async function openCard(index: number): Promise<void> {
   if (game === undefined || game.status.kind === 'playing') throw new Error(`game ${index} has no result to show`);
   // A local game has no code, so only the link option applies.
   cardCodeOption.hidden = page.session?.mode !== 'online';
+  cardVoiceOption.hidden = voiceClips(index).size === 0;
+  // "Include my voice" is off each time the card opens. A redraw of the open card keeps the choice.
+  if (!cardDialog.open) cardVoice.checked = false;
   const gameId = page.session === undefined ? undefined : await gameIdOf(page.session, index);
   const input = cardInput(game, index, gameId);
   const canvas = await drawCard(input);
@@ -167,11 +181,33 @@ export async function openCard(index: number): Promise<void> {
   if (!cardDialog.open) cardDialog.showModal();
 }
 
-function cardFilename(): string {
-  return `tick3d-${new Date().toISOString().slice(0, 10)}.png`;
+
+// Lights a cell of the card image while the song plays: a box over the image, placed in shares of its size.
+function lightCardCell(cell: number | undefined): void {
+  cardLight.hidden = cell === undefined;
+  if (cell === undefined) return;
+  const box = cardCellBox(cell);
+  cardLight.style.left = `${box.left * 100}%`;
+  cardLight.style.top = `${box.top * 100}%`;
+  cardLight.style.width = `${box.width * 100}%`;
+  cardLight.style.height = `${box.height * 100}%`;
 }
 
 export function setupEndCard(): void {
+  const song = songControl(cardSongButton, () => {
+    if (card === undefined) return undefined;
+    const game = page.games[card.index];
+    if (game === undefined) return undefined;
+    const input = cardInput(game, card.index, card.gameId);
+    // The board behind the card shows the same game only when the card is of the newest game.
+    const onBoard = card.index === page.games.length - 1 && page.review === undefined;
+    const light = (cell: number | undefined) => {
+      lightCardCell(cell);
+      if (onBoard) lightSungCell(cell);
+    };
+    return { game, filename: cardFilename('wav'), text: `${input.title}: ${input.subtitle} on tick3d, as a song.`, light, clips: voiceClips(card.index), shareVoice: cardVoice.checked };
+  });
+  cardDialog.addEventListener('close', song.stop);
   cardShareButton.addEventListener('click', () => {
     if (card === undefined) return;
     const { canvas, index, gameId } = card;
@@ -182,14 +218,14 @@ export function setupEndCard(): void {
     const gameLink = gameId === undefined ? undefined : `${location.origin}/?game=${gameId}`;
     const url = cardLink.checked ? (gameLink ?? (isOnline ? location.href : location.origin)) : undefined;
     const code = cardCode.checked && isOnline && page.session ? ` Code ${page.session.code}.` : '';
-    void shareImage(canvas, cardFilename(), `${input.title}: ${input.subtitle} on tick3d.${code}`, url).then((outcome) => {
+    void shareImage(canvas, cardFilename('png'), `${input.title}: ${input.subtitle} on tick3d.${code}`, url).then((outcome) => {
       if (outcome === 'copied') showToast('Image copied. Paste it anywhere.');
       if (outcome === 'saved') showToast('Image saved.');
     });
   });
 
   cardSaveButton.addEventListener('click', () => {
-    if (card !== undefined) void saveImage(card.canvas, cardFilename());
+    if (card !== undefined) void saveImage(card.canvas, cardFilename('png'));
   });
   cardCloseButton.addEventListener('click', () => cardDialog.close());
   cardNewGameButton.addEventListener('click', () => {

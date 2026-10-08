@@ -1,8 +1,10 @@
 // The device backend: computer and friend games, and Nearby games this device hosts. It runs the
 // same session rules as the server (src/session/core.ts) over IndexedDB, so these games work offline.
+import { isRecord } from './guards.ts';
 import type { Difficulty } from './ai.ts';
 import type { TimeControl } from './clock.ts';
 import type { Player } from './game.ts';
+import { epochNow } from './epoch.ts';
 import type { DeviceDb, DeviceSession } from './device-db.ts';
 import {
   CODE_ALPHABET,
@@ -11,9 +13,12 @@ import {
   type MoveRequest,
   type PlayerInfo,
   type PlayerToken,
+  type SeatAction,
   type SessionUpdate,
   type SessionView,
+  normalizeCode,
 } from './protocol.ts';
+import { nameOf } from './names.ts';
 import * as core from './session/core.ts';
 import { CURRENT_FORMAT, type SessionDoc, parseDoc } from './session/format.ts';
 
@@ -55,13 +60,19 @@ export function createLocalBackend(
   account: () => PlayerInfo | null,
 ) {
   const listeners = new Map<Code, Set<() => void>>();
-  // A Nearby host reports which seats are connected. Other sessions on this device are all present.
-  const presenceOf = new Map<Code, (doc: SessionDoc) => Record<Player, boolean>>();
+  // A Nearby host reports which seats are connected, its watchers and their names.
+  // Other sessions on this device have both seats present, no watchers, and no other person to block.
+  const audiences = new Map<Code, (doc: SessionDoc) => core.Audience>();
+  const audienceOf = (code: Code, doc: SessionDoc): core.Audience =>
+    audiences.get(code)?.(doc) ?? { presence: { X: doc.seats.X !== null, O: doc.seats.O !== null }, watchers: [], name: nameOf, person: () => null };
   // Other tabs of this device hear about changes, so two open tabs show the same game.
   const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel('tick3d-local');
   const fire = (code: Code) => listeners.get(code)?.forEach((listener) => listener());
   if (channel) channel.onmessage = (event: MessageEvent<unknown>) => {
-    if (typeof event.data === 'string') fire(event.data as Code);
+    // This file posts a valid code. A tab of another version can post something else, so a bad message is ignored.
+    const code = typeof event.data === 'string' ? normalizeCode(event.data) : undefined;
+    if (code === undefined) return console.warn(`Ignored an unexpected message on the local channel: ${String(event.data)}`);
+    fire(code);
   };
 
   // One change at a time in this tab, like the server queue. Two tabs that change the same
@@ -93,15 +104,16 @@ export function createLocalBackend(
   // The device holds its own seats; in a computer game it also moves for the computer.
   const identity = (withComputer = false): core.Identity => new Set(withComputer ? [token, core.COMPUTER_TOKEN] : [token]);
 
-  function view(row: DeviceSession, doc: SessionDoc, withComputer = false): SessionView {
+  // The view is always the human's: `you` is the seat of this device's player, also after a computer move.
+  function view(row: DeviceSession, doc: SessionDoc): SessionView {
     const info = account();
     const seatInfo = (seat: Player) => (doc.seats[seat] === token ? info : null);
     return core.viewOf(doc, {
       code: row.code,
       version: row.version,
-      identity: identity(withComputer),
-      now: Date.now(),
-      presence: presenceOf.get(row.code)?.(doc) ?? { X: doc.seats.X !== null, O: doc.seats.O !== null },
+      identity: identity(),
+      now: epochNow(),
+      audience: audienceOf(row.code, doc),
       players: { X: seatInfo('X'), O: seatInfo('O') },
     });
   }
@@ -111,8 +123,8 @@ export function createLocalBackend(
     return serialized(async () => {
       const loaded = await read(code);
       let row: DeviceSession = loaded;
-      let doc = core.settle(loaded.parsed, Date.now()) ?? loaded.parsed;
-      const stale = (loaded.doc as { format?: unknown }).format !== CURRENT_FORMAT;
+      let doc = core.settle(loaded.parsed, epochNow()) ?? loaded.parsed;
+      const stale = !isRecord(loaded.doc) || loaded.doc.format !== CURRENT_FORMAT;
       if (doc !== loaded.parsed || stale) row = await write(row, doc);
       const next = rule(doc);
       if (next !== doc) {
@@ -123,9 +135,9 @@ export function createLocalBackend(
     });
   }
 
-  async function change(code: Code, rule: (doc: SessionDoc) => SessionDoc, withComputer = false): Promise<SessionView> {
+  async function change(code: Code, rule: (doc: SessionDoc) => SessionDoc): Promise<SessionView> {
     const { row, doc } = await apply(code, rule);
-    return view(row, doc, withComputer);
+    return view(row, doc);
   }
 
   return {
@@ -148,22 +160,27 @@ export function createLocalBackend(
       }),
 
     load: (code: Code) => change(code, (doc) => doc),
-    move: (code: Code, request: MoveRequest) => change(code, (doc) => core.move(doc, identity(), request, Date.now())),
+    move: (code: Code, request: MoveRequest) => change(code, (doc) => core.move(doc, identity(), request, epochNow())),
     // The page plays the computer's moves through this, with the computer's token added.
     computerMove: (code: Code, request: MoveRequest) =>
-      change(code, (doc) => core.move(doc, identity(true), request, Date.now()), true),
+      change(code, (doc) => core.move(doc, identity(true), request, epochNow())),
     newGame: (code: Code) => change(code, (doc) => core.newGame(doc, identity())),
     update: (code: Code, changes: SessionUpdate) => change(code, (doc) => core.update(doc, identity(), changes)),
     lock: (code: Code) => change(code, (doc) => core.lock(doc, identity())),
-    chat: (code: Code, text: string) => change(code, (doc) => core.chat(doc, identity(), text, Date.now())),
+    chat: (code: Code, text: string) => change(code, (doc) => core.chat(doc, identity(), text, epochNow(), audienceOf(code, doc).person(token))),
     undo: (code: Code, count: number) => change(code, (doc) => core.undo(doc, identity(true), count)),
     // A device-held session has nobody else to join; a Nearby guest joins through the host.
     join: (code: Code) => change(code, (doc) => doc),
+    // The seat changes of the host's player in a Nearby game.
+    seat: (code: Code, action: SeatAction) =>
+      change(code, (doc) => core.seat(doc, identity(), action, audienceOf(code, doc).watchers, epochNow())),
+    answerSeat: (code: Code, accept: boolean) =>
+      change(code, (doc) => core.answerSeat(doc, identity(), accept, audienceOf(code, doc).watchers, epochNow())),
 
     // For a Nearby host: who is connected, and a nudge to redraw when a guest comes or goes.
-    setPresence(code: Code, presence: ((doc: SessionDoc) => Record<Player, boolean>) | undefined): void {
-      if (presence === undefined) presenceOf.delete(code);
-      else presenceOf.set(code, presence);
+    setAudience(code: Code, audience: ((doc: SessionDoc) => core.Audience) | undefined): void {
+      if (audience === undefined) audiences.delete(code);
+      else audiences.set(code, audience);
     },
     notify: (code: Code) => fire(code),
 

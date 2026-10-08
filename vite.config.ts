@@ -1,11 +1,49 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import twaManifest from './android/twa-manifest.json' with { type: 'json' };
+import { ASSET_LINKS_PATH, assetLinks } from './src/assetlinks.ts';
+import { execFileSync } from 'node:child_process';
+import { PAGES } from './src/pages.ts';
+import { RELEASE_FILE, releaseName, versionOfScript } from './src/release.ts';
+
+// The commit of this build. In the Docker build, .git is a read-only mount owned by another user, so
+// safe.directory lets git read it. Fields are split by NUL: parents, subject, commit time (s), body.
+function headCommit() {
+  const out = execFileSync('git', ['-c', 'safe.directory=*', 'log', '-1', '--format=%P%x00%s%x00%ct%x00%b', 'HEAD'], { encoding: 'utf8' });
+  const [parents = '', subject = '', seconds = '', body = ''] = out.split('\0');
+  const at = Number(seconds) * 1000;
+  if (!Number.isSafeInteger(at) || at <= 0) throw new Error(`git log gave no commit time: ${out}`);
+  return { parents: parents.trim().split(' ').filter(Boolean).length, subject, body, at };
+}
 
 // The service worker keeps the app shell on the device, so the game opens and plays offline.
 // The page registers it itself (src/pwa.ts) and shows its own "New version" notice.
 export default defineConfig({
   plugins: [
+    // release.json (src/release.ts): the version of the page script that sends game metrics, and the release name.
+    // The Dockerfile mounts .git and passes KITSHN_ENVIRONMENT (compose.yml). The API image copies the file.
+    {
+      name: 'tick3d-release',
+      apply: 'build',
+      generateBundle(_, bundle) {
+        const chunks = Object.values(bundle).filter(
+          (item) => item.type === 'chunk' && Object.keys(item.modules).some((id) => id.endsWith('/src/page/metrics.ts')),
+        );
+        const [chunk] = chunks;
+        if (chunk === undefined || chunks.length > 1) throw new Error(`release: expected one chunk with src/page/metrics.ts, found ${chunks.length}`);
+        const commit = headCommit();
+        const release = { version: versionOfScript(chunk.fileName), name: releaseName(commit, process.env.KITSHN_ENVIRONMENT), at: commit.at };
+        this.emitFile({ type: 'asset', fileName: RELEASE_FILE, source: `${JSON.stringify(release, null, 2)}\n` });
+      },
+    },
+    // The Digital Asset Links file of the Android app (src/assetlinks.ts). The Caddyfiles serve it as JSON.
+    {
+      name: 'tick3d-assetlinks',
+      generateBundle() {
+        this.emitFile({ type: 'asset', fileName: ASSET_LINKS_PATH, source: `${JSON.stringify(assetLinks(twaManifest), null, 2)}\n` });
+      },
+    },
     VitePWA({
       registerType: 'prompt',
       injectRegister: false,
@@ -15,9 +53,14 @@ export default defineConfig({
         name: 'tick3d',
         short_name: 'tick3d',
         description: '3D tic-tac-toe on a 4×4×4 cube',
+        // The app identity. It equals the old start_url, so an installed app stays the same app.
+        // The Android app (android/twa-manifest.json) opens the same start_url inside the same scope.
+        id: '/',
         start_url: '/',
         scope: '/',
         display: 'standalone',
+        display_override: ['standalone', 'minimal-ui'],
+        categories: ['games'],
         // The page color and the board color of the light theme (--page and --slab in src/style.css).
         // An installed app starts with these, then the page sets the bar to the saved theme.
         background_color: '#e4e7ff',
@@ -28,42 +71,32 @@ export default defineConfig({
           // Tom's 512 artwork at 62% on the page colour, inside the safe zone that Android crops to.
           { src: 'maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
+        // Phone shots for the install dialog: the same scenes as the Play listing (android/store/), smaller.
+        screenshots: [
+          { src: 'screenshots/tower.webp', sizes: '540x960', type: 'image/webp', form_factor: 'narrow', label: 'The 4×4×4 tower' },
+          { src: 'screenshots/win.webp', sizes: '540x960', type: 'image/webp', form_factor: 'narrow', label: 'A won game' },
+          { src: 'screenshots/online.webp', sizes: '540x960', type: 'image/webp', form_factor: 'narrow', label: 'An online game with chat' },
+        ],
       },
       workbox: {
         // The plugin adds manifest.webmanifest itself.
-        globPatterns: ['**/*.{js,css,html,svg,png}'],
+        // woff2: the page font (src/fonts), so the game keeps its look offline.
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // The install dialog loads the screenshots online only, so the offline cache skips them.
+        globIgnores: ['screenshots/**'],
         // A page address opens the cached app. API calls always go to the network.
         navigateFallback: 'index.html',
-        // /stats and /sound-training need no entry: the precache serves them from their .html files
-        // (clean URLs), online and offline.
-        navigateFallbackDenylist: [/^\/api\//],
-        runtimeCaching: [
-          {
-            // The font list from Google changes rarely. Keep a copy for offline use.
-            urlPattern: ({ url }) => url.origin === 'https://fonts.googleapis.com',
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-css',
-              expiration: { maxEntries: 10, maxAgeSeconds: 365 * 24 * 60 * 60 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            // Font files have versioned addresses, so a cached file never goes stale.
-            urlPattern: ({ url }) => url.origin === 'https://fonts.gstatic.com',
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-files',
-              expiration: { maxEntries: 30, maxAgeSeconds: 365 * 24 * 60 * 60 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
+        // The other pages (src/pages.ts) need no entry: the precache serves them from their .html files
+        // (clean URLs), online and offline. The query of a page address (?code=, ?mode=, ?return=) is for the page
+        // script only, so the precache ignores it. Else /sound-input?code=… finds no entry and gets index.html.
+        ignoreURLParametersMatching: [/./],
+        // /.well-known/: Android and a browser get the asset links file, not the app.
+        navigateFallbackDenylist: [/^\/api\//, /^\/\.well-known\//],
       },
     }),
   ],
-  // Three pages: the game, the hidden stats page at /stats, and the ear training at /sound-training.
-  build: { rollupOptions: { input: { main: 'index.html', stats: 'stats.html', training: 'sound-training.html' } } },
+  // One entry per page in src/pages.ts.
+  build: { rollupOptions: { input: Object.fromEntries(Object.entries(PAGES).map(([name, { file }]) => [name, file])) } },
   // Vitest runs the unit tests only. Playwright runs the e2e/ tests against a deployed site (npm run e2e).
   test: { include: ['{src,server}/**/*.test.ts'] },
 });

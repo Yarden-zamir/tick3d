@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { toEpochMs as ms } from './epoch.ts';
 import { replay } from './game.ts';
 import {
+  asPlayerToken,
   normalizeChat,
   normalizeCode,
   parsePlayerInfo,
+  parsePreviews,
   parseResultUpload,
   parseClientEvent,
+  isOnlineGameId,
+  onlineGameParts,
+  parseDeviceGameId,
   parseGameId,
   parseHistoryPage,
   parseMetrics,
@@ -15,8 +21,22 @@ import {
   type Code,
   parseSessionUpdate,
   parseSessionView,
+  parseCustomName,
+  parseSeatAction,
+  parseSeatAnswer,
   toRecord,
+  ALL_STATS,
+  parseStatsFilter,
+  parsePersonId,
+  statsQuery,
 } from './protocol.ts';
+
+describe('asPlayerToken', () => {
+  it('accepts a browser token and refuses an account token, because a GitHub id is public', () => {
+    expect(asPlayerToken('aaaaaaaa-0000-4000-8000-000000000001')).toBe('aaaaaaaa-0000-4000-8000-000000000001');
+    expect(asPlayerToken('account-0000000000000101')).toBeUndefined();
+  });
+});
 
 describe('normalizeCode', () => {
   it('accepts 4 characters from the alphabet in any case', () => {
@@ -38,14 +58,21 @@ describe('parseSessionView', () => {
     options: { hideBoard: true, hideHistory: false, hideCoordinates: true },
     locked: false,
     clock: { perMove: 30, perGame: 300 },
+    fixedSeats: false,
+    flipped: [false],
     now: 30,
     version: 2,
-    chat: [{ id: 7, from: 'O', text: 'good luck', at: 1_700_000_000_000 }],
+    chat: [{ id: 7, from: 'O', text: 'good luck', at: 1_700_000_000_000, by: '00112233445566ff' }, { id: 8, from: 'X', text: 'thanks', at: 1_700_000_000_001 }],
     presence: { X: true, O: false },
     players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' }, O: null },
     names: { X: 'braveOtter', O: null },
+    people: { X: '0123456789abcdef', O: null },
+    watchers: [{ id: '0123456789abcdef', name: 'Carol', player: null, person: 'fedcba9876543210' }],
+    youWatcher: '0123456789abcdef',
+    seatRequest: { kind: 'replace', from: 'X', watcher: { name: 'Carol', player: null }, expiresAt: 90 },
     turn: 'X',
     status: { kind: 'playing' },
+    playoff: null,
   };
 
   it('accepts a valid view', () => {
@@ -57,9 +84,34 @@ describe('parseSessionView', () => {
     expect(parseSessionView(older).options).toEqual({ hideBoard: true, hideHistory: false, hideCoordinates: false });
   });
 
+  it('gives no playoff when a sender has no playoff field, and refuses a broken one', () => {
+    const { playoff: _playoff, ...older } = valid;
+    expect(parseSessionView(older).playoff).toBeNull();
+    expect(() => parseSessionView({ ...valid, playoff: { id: 1 } })).toThrow();
+  });
+
+  it('gives no person ids when an older sender has none, and refuses a broken one', () => {
+    const { people: _people, ...older } = valid;
+    const parsed = parseSessionView({ ...older, watchers: [{ id: '0123456789abcdef', name: 'Carol', player: null }] });
+    expect(parsed.people).toEqual({ X: null, O: null });
+    expect(parsed.watchers[0]?.person).toBeNull();
+    expect(() => parseSessionView({ ...valid, people: { X: 'not-a-person-id!', O: null } })).toThrow();
+    expect(() => parseSessionView({ ...valid, chat: [{ id: 1, from: 'X', text: 'hi', at: 1, by: 'TOKEN' }] })).toThrow();
+  });
+
   it('gives no names when a sender has no names field', () => {
     const { names: _names, ...older } = valid;
     expect(parseSessionView(older).names).toEqual({ X: null, O: null });
+  });
+
+  it('gives no watchers and no seat request when a sender is from before seat controls', () => {
+    const { watchers: _watchers, youWatcher: _you, seatRequest: _request, ...older } = valid;
+    expect(parseSessionView(older)).toMatchObject({ watchers: [], youWatcher: null, seatRequest: null });
+  });
+
+  it('reads fixed seats when an older sender has no seat rotation: its seats never rotated', () => {
+    const { fixedSeats: _fixed, flipped: _flipped, ...older } = valid;
+    expect(parseSessionView(older)).toMatchObject({ fixedSeats: true, flipped: [false] });
   });
 
   it('fills turn and status from the moves when a sender has no such fields', () => {
@@ -90,6 +142,17 @@ describe('parseSessionView', () => {
     ['names', { ...valid, names: { X: 'a'.repeat(41), O: null } }],
     ['names', { ...valid, names: { X: 'braveOtter' } }],
     ['names', { ...valid, names: null }],
+    // A watcher id is an opaque handle, never a player token.
+    ['watchers', { ...valid, watchers: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Carol', player: null }] }],
+    ['watchers', { ...valid, watchers: [{ id: '0123456789abcdef', name: '', player: null }] }],
+    ['watchers', { ...valid, watchers: null }],
+    ['youWatcher', { ...valid, youWatcher: 'aaaaaaaa-0000-4000-8000-000000000001' }],
+    ['seatRequest', { ...valid, seatRequest: { ...valid.seatRequest, kind: 'leave' } }],
+    ['seatRequest', { ...valid, seatRequest: { ...valid.seatRequest, watcher: null } }],
+    ['seatRequest', { ...valid, seatRequest: { kind: 'swap', from: 'X', watcher: { name: 'Carol', player: null }, expiresAt: 90 } }],
+    ['fixedSeats', { ...valid, fixedSeats: 'yes' }],
+    ['flipped', { ...valid, flipped: [] }],
+    ['flipped', { ...valid, flipped: ['no'] }],
   ])('throws on a bad %s field', (_, input) => {
     expect(() => parseSessionView(input)).toThrow();
   });
@@ -101,9 +164,10 @@ describe('parseSessionUpdate', () => {
     expect(parseSessionUpdate({ hideHistory: false })).toEqual({ hideHistory: false });
     expect(parseSessionUpdate({ hideCoordinates: true })).toEqual({ hideCoordinates: true });
     expect(parseSessionUpdate({ clock: { perMove: 30, perGame: null } })).toEqual({ clock: { perMove: 30, perGame: null } });
+    expect(parseSessionUpdate({ fixedSeats: true })).toEqual({ fixedSeats: true });
   });
 
-  it.each([{}, { name: '' }, { hideBoard: 'true' }, { hideCoordinates: 1 }, { locked: true }, { clock: { perMove: 2, perGame: null } }, null])('rejects %j', (input) => {
+  it.each([{}, { name: '' }, { hideBoard: 'true' }, { hideCoordinates: 1 }, { fixedSeats: 'on' }, { locked: true }, { clock: { perMove: 2, perGame: null } }, null])('rejects %j', (input) => {
     expect(parseSessionUpdate(input)).toBeUndefined();
   });
 });
@@ -136,9 +200,9 @@ describe('parseResultUpload', () => {
   const day = 86_400_000;
 
   it('accepts a finished game with a matching mode, seat and level', () => {
-    expect(parseResultUpload(valid, now)).toEqual({ ...valid, publicId: null, options: { hideBoard: false, hideHistory: false, hideCoordinates: false }, tuned: false, metrics: null, guest: null });
-    expect(parseResultUpload({ ...valid, mode: 'friend', you: null, difficulty: null }, now)).toBeDefined();
-    expect(parseResultUpload({ ...valid, finishedAt: now + day }, now)).toBeDefined();
+    expect(parseResultUpload(valid, ms(now))).toEqual({ ...valid, publicId: null, options: { hideBoard: false, hideHistory: false, hideCoordinates: false }, tuned: false, metrics: null, guest: null });
+    expect(parseResultUpload({ ...valid, mode: 'friend', you: null, difficulty: null }, ms(now))).toBeDefined();
+    expect(parseResultUpload({ ...valid, finishedAt: now + day }, ms(now))).toBeDefined();
   });
 
   it.each([
@@ -151,8 +215,9 @@ describe('parseResultUpload', () => {
     ['a finish time of zero', { ...valid, finishedAt: 0 }],
     ['a finish time more than a day ahead', { ...valid, finishedAt: now + day + 1 }],
     ['a finish time the database cannot store', { ...valid, finishedAt: 1e300 }],
+    ['a finish time with a fraction of a millisecond', { ...valid, finishedAt: 1.5 }],
   ])('refuses %s', (_, value) => {
-    expect(parseResultUpload(value, now)).toBeUndefined();
+    expect(parseResultUpload(value, ms(now))).toBeUndefined();
   });
 });
 
@@ -171,6 +236,21 @@ describe('game ids', () => {
 
   it.each(['ABCDEFG', 'ABCDEFGHJ', 'ABCDEFG0', 'AB3K-0', 'AB3K-01', 'AB3K-1e3', 'AB3K-1-2', 'AB0K-1', 'AB3K-', 42])('rejects %j', (input) => {
     expect(parseGameId(input)).toBeUndefined();
+  });
+
+  it('tells the two kinds apart, and splits an online id into its session and game index', () => {
+    const online = onlineGameId('AB3K' as Code, 11);
+    expect(isOnlineGameId(online)).toBe(true);
+    expect(onlineGameParts(online)).toEqual({ code: 'AB3K', index: 11 });
+    expect(isOnlineGameId(newGameId())).toBe(false);
+  });
+
+  it.each(['ABCDEFGH'])('takes %s as a device id', (input) => {
+    expect(parseDeviceGameId(input)).toBe(input);
+  });
+
+  it.each(['AB3K-1', 'abcdefgh', ' ABCDEFGH', 42])('does not take %j as a device id', (input) => {
+    expect(parseDeviceGameId(input)).toBeUndefined();
   });
 });
 
@@ -198,6 +278,8 @@ describe('parseMetrics', () => {
     ['an unknown key', { ...valid, extra: 1 }],
     ['a missing key', { ...valid, undos: undefined }],
     ['an unknown refusal', { ...valid, refused: { boom: 1 } }],
+    ['a list for the refusals', { ...valid, refused: [1, 2] }],
+    ['a think time that is not a number', { ...valid, thinkMs: ['12'] }],
     ['a negative count', { ...valid, input: { board: -1, keypad: 0 } }],
     ['an extra input key', { ...valid, input: { board: 1, keypad: 0, voice: 1 } }],
     ['too many think times', { ...valid, thinkMs: Array(65).fill(1) }],
@@ -214,8 +296,8 @@ describe('parseMetrics', () => {
   it('refuses a whole upload with invalid metrics', () => {
     const game = toRecord(replay([0, 1, 16, 2, 32, 3, 48]));
     const upload = { id: 'aaaaaaaa-0000-4000-8000-000000000001-ab3k-0', mode: 'friend', game, you: null, difficulty: null, finishedAt: 5 };
-    expect(parseResultUpload({ ...upload, metrics: valid }, 10)).toBeDefined();
-    expect(parseResultUpload({ ...upload, metrics: { ...valid, extra: true } }, 10)).toBeUndefined();
+    expect(parseResultUpload({ ...upload, metrics: valid }, ms(10))).toBeDefined();
+    expect(parseResultUpload({ ...upload, metrics: { ...valid, extra: true } }, ms(10))).toBeUndefined();
   });
 });
 
@@ -225,7 +307,7 @@ describe('parseResultUpload, the guest of a Nearby host', () => {
   const nearby = { id: 'aaaaaaaa-0000-4000-8000-000000000001-ab3k-0', mode: 'nearby', game, you: 'X', difficulty: null, finishedAt: 5 };
 
   it('keeps the guest token of a Nearby game', () => {
-    expect(parseResultUpload({ ...nearby, guest }, 10)?.guest).toBe(guest);
+    expect(parseResultUpload({ ...nearby, guest }, ms(10))?.guest).toBe(guest);
   });
 
   it.each([
@@ -233,7 +315,7 @@ describe('parseResultUpload, the guest of a Nearby host', () => {
     ['a guest in a friend game', { ...nearby, mode: 'friend', you: null, guest }],
     ['a guest that is not a token', { ...nearby, guest: 'Not a token!' }],
   ])('refuses %s', (_, value) => {
-    expect(parseResultUpload(value, 10)).toBeUndefined();
+    expect(parseResultUpload(value, ms(10))).toBeUndefined();
   });
 });
 
@@ -243,12 +325,12 @@ describe('parseResultUpload, game link fields', () => {
 
   it('keeps a device id, the hide options and the tuned flag', () => {
     const options = { hideBoard: true, hideHistory: false, hideCoordinates: true };
-    expect(parseResultUpload({ ...valid, publicId: 'ABCDEFGH', options, tuned: true }, 10)).toMatchObject({ publicId: 'ABCDEFGH', options, tuned: true });
+    expect(parseResultUpload({ ...valid, publicId: 'ABCDEFGH', options, tuned: true }, ms(10))).toMatchObject({ publicId: 'ABCDEFGH', options, tuned: true });
   });
 
   it('reads hide options from an older device, without hideCoordinates, as not hidden', () => {
     const older = { ...valid, options: { hideBoard: true, hideHistory: false } };
-    expect(parseResultUpload(older, 10)?.options).toEqual({ hideBoard: true, hideHistory: false, hideCoordinates: false });
+    expect(parseResultUpload(older, ms(10))?.options).toEqual({ hideBoard: true, hideHistory: false, hideCoordinates: false });
   });
 
   it.each([
@@ -258,7 +340,7 @@ describe('parseResultUpload, game link fields', () => {
     ['bad options', { ...valid, options: { hideBoard: 'yes', hideHistory: false } }],
     ['an unknown key', { ...valid, token: 'x' }],
   ])('refuses %s', (_, value) => {
-    expect(parseResultUpload(value, 10)).toBeUndefined();
+    expect(parseResultUpload(value, ms(10))).toBeUndefined();
   });
 });
 
@@ -285,6 +367,8 @@ describe('parsePublicGame', () => {
     ['an unfinished game', { ...valid, game: toRecord(replay([0, 1])) }],
     ['a computer game without the computer seat', { ...valid, computer: null }],
     ['a lower-case id', { ...valid, id: 'abcdefgh' }],
+    ['an online id for a computer game', { ...valid, id: 'AB3K-1' }],
+    ['a device id for an online game', { ...valid, mode: 'online', difficulty: null, computer: null }],
     ['no names', { ...valid, names: undefined }],
     ['an empty name', { ...valid, names: { X: '', O: null } }],
   ])('throws on %s', (_, value) => {
@@ -321,5 +405,90 @@ describe('parseClientEvent', () => {
     { kind: 'error', message: 'x', version: 'v', token: 'secret' },
   ])('refuses %j', (value) => {
     expect(parseClientEvent(value)).toBeUndefined();
+  });
+});
+
+describe('seat requests', () => {
+  it('reads every action, with a watcher id where the action needs one', () => {
+    expect(parseSeatAction({ action: 'swap' })).toEqual({ action: 'swap' });
+    expect(parseSeatAction({ action: 'give', watcher: '0123456789abcdef' })).toEqual({ action: 'give', watcher: '0123456789abcdef' });
+    expect(parseSeatAnswer({ accept: false })).toEqual({ accept: false });
+  });
+
+  it.each([
+    { action: 'kick' },
+    { action: 'swap', watcher: '0123456789abcdef' },
+    { action: 'seat' },
+    { action: 'replace', watcher: 'aaaaaaaa-0000-4000-8000-000000000001' },
+    { action: 'leave', extra: true },
+    null,
+  ])('refuses the seat action %j', (input) => {
+    expect(parseSeatAction(input)).toBeUndefined();
+  });
+
+  it.each([{}, { accept: 'yes' }, { accept: true, extra: 1 }])('refuses the answer %j', (input) => {
+    expect(parseSeatAnswer(input)).toBeUndefined();
+  });
+});
+
+describe('parseCustomName', () => {
+  it('trims, joins inner spaces, and allows letters of any script, digits, "-" and "_"', () => {
+    expect(parseCustomName('  Dana   the_3rd ')).toBe('Dana the_3rd');
+    expect(parseCustomName('יַרְדֵּן')).toBe('יַרְדֵּן');
+    expect(parseCustomName('Zoë-K')).toBe('Zoë-K');
+    expect(parseCustomName('a'.repeat(24))).toBe('a'.repeat(24));
+  });
+
+  it.each(['a', 'a'.repeat(25), '<b>bold</b>', 'name!', '___', '  ', 42, null])('refuses %j', (input) => {
+    expect(parseCustomName(input)).toBeUndefined();
+  });
+});
+
+describe('parseStatsFilter', () => {
+  const parse = (query: string) => parseStatsFilter(new URLSearchParams(query));
+
+  it('reads each filter and gives the default for a missing key', () => {
+    expect(parse('')).toEqual(ALL_STATS);
+    expect(parse('scope=mine&range=7d&mode=computer&level=hard')).toEqual({ scope: 'mine', range: '7d', mode: 'computer', level: 'hard', person: null });
+    expect(parse('person=0123456789abcdef&range=30d')).toEqual({ ...ALL_STATS, range: '30d', person: '0123456789abcdef' });
+    expect(parse('level=easy')).toEqual({ ...ALL_STATS, level: 'easy' });
+  });
+
+  it.each(['scope=all', 'range=1y', 'mode=', 'mode=Computer', 'level=expert', 'page=2', 'range=7d&range=30d', 'mode=online&level=hard', 'person=', 'person=0123456789ABCDEF', 'person=0123', 'scope=mine&person=0123456789abcdef'])(
+    'refuses %s',
+    (query) => expect(parse(query)).toBeUndefined(),
+  );
+
+  it('writes one address per view, without the defaults, that reads back the same', () => {
+    expect(statsQuery(ALL_STATS)).toBe('');
+    expect(statsQuery({ ...ALL_STATS, scope: 'mine' })).toBe('?scope=mine');
+    const filter = { scope: 'mine', range: '30d', mode: 'computer', level: 'medium', person: null } as const;
+    expect(parse(statsQuery(filter))).toEqual(filter);
+    const person = { ...ALL_STATS, level: 'easy', person: parsePersonId('0123456789abcdef') ?? null } as const;
+    expect(parse(statsQuery(person))).toEqual(person);
+  });
+});
+
+describe('parsePreviews', () => {
+  const preview = (number: number, parent: unknown) => ({
+    number,
+    title: `Pull ${number}`,
+    description: '',
+    url: `https://github.com/octo/game/pull/${number}`,
+    previewUrl: `https://pr-${number}.game.example.com`,
+    updatedAt: 0,
+    draft: false,
+    contributors: [],
+    parent,
+  });
+  const answer = (previews: unknown[]) => ({ main: 'https://game.example.com', previews, error: null });
+
+  it('keeps the parent of a stacked pull request through a round trip', () => {
+    const list = answer([preview(1, null), preview(2, 1)]);
+    expect(parsePreviews(JSON.parse(JSON.stringify(parsePreviews(list))))).toEqual(list);
+  });
+
+  it.each([0, -1, 1.5, '1', 2])('refuses the parent %j', (parent) => {
+    expect(() => parsePreviews(answer([preview(2, parent)]))).toThrow();
   });
 });

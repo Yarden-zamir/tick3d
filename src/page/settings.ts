@@ -4,6 +4,7 @@ import { type TimeControl, NO_LIMIT, parseClock } from '../clock.ts';
 import type { Player } from '../game.ts';
 import { LAYOUTS, type MATCH_OPTIONS, THEMES, VIEWS } from '../protocol.ts';
 import { SOUND_SET_IDS, type SoundSetId } from '../sound-sets.ts';
+import { STORAGE_KEYS } from '../storage-keys.ts';
 
 export const MODES = ['computer', 'friend', 'online', 'nearby'] as const;
 export const PLAYERS = ['X', 'O'] as const;
@@ -40,6 +41,8 @@ export type Settings = {
   theme: Theme;
   // The sound set of the moves. Like the theme and the mute, it belongs to the screen: the lock does not hold it.
   soundSet: SoundSetId;
+  // Play by voice (src/page/voice.ts). Like the mute, it belongs to the screen.
+  voice: boolean;
 };
 export type Toggle = (typeof MATCH_OPTIONS)[number];
 
@@ -53,9 +56,9 @@ export const DEFAULTS: Settings = {
   muted: false,
   spin: 45,
   theme: 'light',
-  soundSet: 'cells',
+  soundSet: 'pitched',
+  voice: false,
 };
-const STORAGE_KEY = 'tick3d.settings';
 
 export function oneOf<T extends string>(options: readonly T[], value: unknown, fallback: T): T {
   return options.find((option) => option === value) ?? fallback;
@@ -70,7 +73,7 @@ const finite = (value: unknown, fallback: number) =>
 function loadSettings(): Settings {
   let raw: unknown = null;
   try {
-    raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
+    raw = JSON.parse(localStorage.getItem(STORAGE_KEYS.settings) ?? 'null');
   } catch {
     raw = null;
   }
@@ -86,12 +89,13 @@ function loadSettings(): Settings {
     spin: wrapSpin(finite(stored.spin, DEFAULTS.spin)),
     theme: oneOf(THEMES, stored.theme, DEFAULTS.theme),
     soundSet: oneOf(SOUND_SET_IDS, stored.soundSet, DEFAULTS.soundSet),
+    voice: bool(stored.voice, DEFAULTS.voice),
   };
 }
 
 export function saveSettings(): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
   } catch {
     // Storage is blocked (private mode). Settings then last for this visit only.
   }

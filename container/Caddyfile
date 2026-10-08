@@ -32,29 +32,31 @@ http:// {
 				header Content-Type application/javascript*
 				header Content-Type text/javascript*
 				header Content-Type image/svg+xml*
+				header Content-Type application/manifest+json*
+				# favicon.ico holds raw bitmaps, so it shrinks to half.
+				header Content-Type image/vnd.microsoft.icon*
 			}
 		}
 
 		# Vite puts a content hash in every asset file name, so assets never change.
 		header /assets/* Cache-Control "public, max-age=31536000, immutable"
-		header / Cache-Control "no-cache"
+		# Pages have fixed names, so a browser checks them on every visit. This covers /index.html too.
+		@pages path / *.html
+		header @pages Cache-Control "no-cache"
 
-		# The hidden stats page. Search engines must not list it.
-		# Caddy sets headers before the rewrite, so the matcher names both paths.
-		@stats path /stats /stats.html
-		rewrite /stats /stats.html
-		header @stats Cache-Control "no-cache"
-		header @stats X-Robots-Tag "noindex, nofollow"
-
-		# The ear training page. It is public: the game links to it, and search engines may list it.
-		@training path /sound-training /sound-training.html
-		rewrite /sound-training /sound-training.html
-		header @training Cache-Control "no-cache"
+		# A page address without .html, such as /stats, serves the page file of the same name (src/pages.ts).
+		# Caddy sets headers before the rewrite. The file matcher checks {path}.html, so it covers the header too.
+		@page file {path}.html
+		rewrite @page {path}.html
+		header @page Cache-Control "no-cache"
 
 		# The service worker, its Workbox runtime and the manifest have fixed names. A browser must
 		# check them on every visit, or a new version never reaches a player who has the old one.
 		@pwa path /sw.js /workbox-*.js /manifest.webmanifest
 		header @pwa Cache-Control "no-cache"
+
+		# Digital Asset Links of the Android app (src/assetlinks.ts). Android requires JSON, without a redirect.
+		header /.well-known/assetlinks.json Content-Type application/json
 
 		file_server
 	}

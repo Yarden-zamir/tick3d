@@ -2,9 +2,10 @@ import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 import { openDeviceDb } from '../device-db.ts';
 import { createLocalBackend } from '../local.ts';
-import type { PlayerToken } from '../protocol.ts';
+import { type PlayerToken, personId } from '../protocol.ts';
 import { createNearbyGuest, createNearbyHost } from './session.ts';
 import { channelPair } from './testing.ts';
+import { openStore } from '../../server/store.ts';
 
 const host = 'aaaaaaaa-0000-4000-8000-000000000001' as PlayerToken;
 const guest = 'bbbbbbbb-0000-4000-8000-000000000002' as PlayerToken;
@@ -14,7 +15,7 @@ const phone = { device: 'phone' as const, name: 'Guest phone' };
 async function setup() {
   const local = createLocalBackend(await openDeviceDb(new IDBFactory(), 'nearby'), host, () => null);
   const view = await local.create({ mode: 'nearby', name: 'Nearby', clock: { perMove: null, perGame: null }, human: 'X' });
-  const nearby = createNearbyHost(local, view.code, host);
+  const nearby = createNearbyHost(local, view.code, host, () => 'Host laptop');
   const connect = (token: PlayerToken) => {
     const [hostSide, guestSide] = channelPair();
     nearby.addGuest(hostSide, phone);
@@ -84,11 +85,60 @@ describe('Nearby host and guest', () => {
     expect((await local.load(code)).chat.some((message) => message.text === 'too late')).toBe(false);
   });
 
+  it('gives a device the same person id as the server does, and ties its messages to it', async () => {
+    const server = await openStore(':memory:');
+    try {
+      const online = await server.create(guest, 'Online');
+      const { local, code, connect } = await setup();
+      const first = connect(guest);
+      await first.backend.join(code);
+      await first.backend.chat(code, 'hi from the phone');
+      const nearby = await local.load(code);
+      expect(nearby.people.O).toBe(online.people.X);
+      expect(nearby.people.O).not.toContain(guest);
+      expect(nearby.chat).toMatchObject([{ text: 'hi from the phone', by: online.people.X }]);
+    } finally {
+      server.close();
+    }
+  });
+
   it('does not report a goodbye when the guest leaves on purpose', async () => {
     const { code, connect } = await setup();
     const first = connect(guest);
     await first.backend.join(code);
     first.backend.close();
     expect(first.bye()).toBe('');
+  });
+
+  it('lets players change seats over the channel, with the other player asked first, and lists watchers by device name', async () => {
+    const { local, code, connect } = await setup();
+    const first = connect(guest);
+    await first.backend.join(code);
+    const second = connect(watcher);
+    const watching = await second.backend.load(code);
+    expect(watching.you).toBeNull();
+    const [listed] = (await local.load(code)).watchers;
+    expect(listed).toEqual({ id: expect.stringMatching(/^[0-9a-f]{16}$/), name: phone.name, player: null, person: await personId(watcher) });
+    expect(JSON.stringify(watching)).not.toContain(watcher);
+    // Each device sees its own watcher id only.
+    expect((await second.backend.load(code)).youWatcher).toBe(listed?.id);
+    expect((await first.backend.load(code)).youWatcher).toBeNull();
+    expect((await local.load(code)).youWatcher).toBeNull();
+    // The guest on O asks to swap. The host accepts.
+    expect((await first.backend.seat(code, { action: 'swap' })).seatRequest).toMatchObject({ kind: 'swap', from: 'O' });
+    expect((await local.answerSeat(code, true)).you).toBe('O');
+    expect((await first.backend.load(code)).you).toBe('X');
+    // The host gives its seat to the watcher without asking, and then watches.
+    if (listed === undefined) throw new Error('no watcher');
+    expect((await local.seat(code, { action: 'give', watcher: listed.id })).you).toBeNull();
+    expect((await second.backend.load(code)).you).toBe('O');
+    expect((await local.load(code)).names.O).toBe(phone.name);
+    // The guest on X moves and asks to undo. The watcher on O now accepts over the channel.
+    await first.backend.move(code, { game: 0, moveCount: 0, cell: 5 });
+    expect((await first.backend.seat(code, { action: 'undo' })).seatRequest).toMatchObject({ kind: 'undo' });
+    expect((await second.backend.answerSeat(code, true)).games[0]?.moves).toEqual([]);
+    // A bad argument is refused, and an answer needs an open request.
+    await expect(first.backend.seat(code, { action: 'kick' } as never)).rejects.toMatchObject({ status: 400 });
+    await expect(first.backend.answerSeat(code, true)).rejects.toMatchObject({ status: 409 });
   });
 });

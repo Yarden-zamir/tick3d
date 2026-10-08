@@ -17,30 +17,58 @@
     </script>
     <title>tick3d · ear training</title>
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet" />
+    <!-- The page font (src/style.css). The preload starts the download before the stylesheet asks for it. -->
+    <link rel="preload" href="/src/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
     <main class="train">
       <header class="brand train-head">
-        <h1><a href="/" class="home-link">tick<span>3d</span></a> ear training</h1>
-        <button type="button" id="sound-set" popovertarget="sound-sets" aria-label="Sound set" title="Sound set"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg><span id="sound-set-name"></span></button>
+        <h1><a href="/" class="home-link" id="home-link" title="Home">tick<span>3d</span></a></h1>
+        <div class="page-title">
+          <span>Ear training</span>
+          <button type="button" class="btn" id="sound-set" popovertarget="sound-sets" aria-label="Sound set" data-tip="Sound set"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg><span id="sound-set-name"></span></button>
+        </div>
+        <div class="brand-links">
+          <a class="repo-link account-button" id="account-button" href="/?open=my-games" aria-label="My games" data-tip="My games">
+            <!-- [html-validate-disable-next element-required-attributes: the page sets src after login] -->
+            <img class="avatar" id="account-avatar" alt="" hidden />
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0V4ZM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 13v3M8 20h8l-1-4H9l-1 4Z"/></svg>
+            <span id="account-name">My games</span>
+          </a>
+          <button type="button" class="info-button" id="info-button" popovertarget="info-panel" aria-label="Info" data-tip="Info: how this page works">
+            <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+              <circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" stroke-width="1.6" />
+              <circle cx="8" cy="4.9" r="1.05" fill="currentColor" />
+              <path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+            </svg>
+          </button>
+          <button type="button" class="repo-link" id="previews-button" aria-haspopup="dialog" aria-label="kitshn: previews of open pull requests" data-tip="Previews of open pull requests">
+            <!-- The KitSHn pot, drawn inline so that it works offline. -->
+            <svg viewBox="0 0 14 14" width="18" height="18" fill="currentColor" aria-hidden="true"><rect x="6" y="1.2" width="2" height="1.6" rx="0.5"/><rect x="2.2" y="3.4" width="9.6" height="1.5" rx="0.75"/><rect x="3" y="5.6" width="8" height="6.6" rx="1.6"/><rect x="0.8" y="6.8" width="2.4" height="1.4" rx="0.7"/><rect x="10.8" y="6.8" width="2.4" height="1.4" rx="0.7"/></svg>
+            <span>kitshn</span>
+          </button>
+          <a class="repo-link" href="https://github.com/Yarden-zamir/tick3d" target="_blank" rel="noopener" aria-label="GitHub" data-tip="The source code on GitHub">
+            <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+              <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+            </svg>
+            <span>GitHub</span>
+          </a>
+        </div>
       </header>
 
       <section class="train-card" id="card" aria-label="Card">
         <p class="train-kind" id="card-kind"></p>
         <h2 id="card-title">Loading…</h2>
-        <button type="button" class="train-play" id="play" aria-keyshortcuts="Space">▶ Play</button>
+        <button type="button" class="btn train-play" id="play" aria-keyshortcuts="Space"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5Z"/></svg><span>Play</span></button>
         <p class="train-answer" id="card-answer" hidden></p>
         <div class="train-deck-wrap">
           <div class="board flat train-deck" id="deck" role="group" aria-label="Board: tap your answer"></div>
           <div class="train-dots" id="deck-dots"></div>
         </div>
         <div class="train-actions">
-          <button type="button" class="primary" id="check" aria-keyshortcuts="Enter">Check</button>
-          <button type="button" id="yours" hidden>Hear yours</button>
-          <button type="button" class="primary" id="next" aria-keyshortcuts="Enter" hidden>Next</button>
+          <button type="button" class="btn btn-primary" id="check" aria-keyshortcuts="Enter">Check</button>
+          <button type="button" class="btn" id="yours" hidden>Hear yours</button>
+          <button type="button" class="btn btn-primary" id="next" aria-keyshortcuts="Enter" hidden>Next</button>
         </div>
         <p class="train-feedback" id="card-feedback" aria-live="polite"></p>
         <p class="train-keys">Keys: Space plays. Arrows move on the board, Enter or Space picks, Enter again checks.</p>
@@ -48,27 +76,48 @@
 
       <section class="train-progress" aria-labelledby="progress-title">
         <h2 id="progress-title">What you hear</h2>
-        <p class="train-intro">Hear a cell and find its place on the board. Headphones help with the columns.</p>
         <p class="train-hint" id="hint"></p>
         <div class="train-dimensions" id="dimensions"></div>
         <p class="train-totals" id="totals"></p>
-        <button type="button" class="train-reset" id="reset">Reset progress</button>
+        <button type="button" class="btn train-reset" id="reset">Reset progress</button>
       </section>
     </main>
+    <dialog class="end-card my-games" id="previews" aria-labelledby="previews-title">
+      <div class="my-games-head">
+        <h2 id="previews-title">Previews</h2>
+        <button type="button" class="btn btn-small btn-icon" id="previews-close" aria-label="Close"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <p class="my-games-note" id="previews-note"></p>
+      <ul class="my-games-list previews-list" id="previews-list"></ul>
+    </dialog>
+    <div class="info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
+      <h2 id="info-title">How the ear training works</h2>
+      <p>Each cell of the board has its own sound. The sound has three parts: one for the layer, one for the row and one for the column. Hear a cell and find its place.</p>
+      <ul>
+        <li>A new sound comes as a learn card first. The card shows the answer, and the board lights the whole layer, row or column.</li>
+        <li>After two learn cards, the sound joins the quiz. A quiz card hides the answer. Tap any cell in the area that you hear, then Check.</li>
+        <li>A right answer moves the sound to a later box, so it comes back less often. A wrong answer brings it back soon.</li>
+        <li>The part that you hear least well gets more cards. When every sound is in the quiz, full cells come too: find the exact cell. They come more often as you get better.</li>
+        <li>The trainer uses the sound set of the game, or Cells when the game uses Classic. Change it with the note button. Headphones help with the columns.</li>
+        <li>Your progress stays in this browser.</li>
+        <li><a href="/sound-input">Try whistling to the board</a>: your pitch lights a cell, live.</li>
+      </ul>
+      <button type="button" class="btn btn-small info-close" popovertarget="info-panel" popovertargetaction="hide">Close</button>
+    </div>
     <!-- The sound set menu of the game page (index.html). It is outside .train, so the .train button style does not apply. -->
     <div popover id="sound-sets" class="sound-sets" role="dialog" aria-labelledby="sound-sets-title">
       <div class="sound-sets-head">
         <h2 id="sound-sets-title">Sound set</h2>
-        <button type="button" popovertarget="sound-sets" popovertargetaction="hide" aria-label="Close the sound sets">✕</button>
+        <button type="button" class="btn btn-small btn-icon" popovertarget="sound-sets" popovertargetaction="hide" aria-label="Close the sound sets"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
-      <p class="sound-sets-note">The game uses the same set. ▶ plays four moves of the set. Classic does not name cells, so the trainer uses Cells.</p>
+      <p class="sound-sets-note">The game uses the same set. The play button of a set plays four moves of it. Classic does not name cells, so the trainer uses Cells.</p>
       <div id="sound-set-list"></div>
     </div>
     <dialog class="end-card home-confirm" id="reset-confirm" aria-labelledby="reset-confirm-text">
       <p id="reset-confirm-text">Reset your ear training? Every sound starts as new again.</p>
       <div class="end-card-actions">
-        <button type="button" class="primary" id="reset-yes">Reset</button>
-        <button type="button" id="reset-no">Keep</button>
+        <button type="button" class="btn btn-primary" id="reset-yes">Reset</button>
+        <button type="button" class="btn" id="reset-no">Keep</button>
       </div>
     </dialog>
     <script type="module" src="/src/sound-training/main.ts"></script>

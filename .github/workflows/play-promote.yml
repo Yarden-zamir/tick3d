@@ -1,0 +1,81 @@
+name: play-promote
+
+# Promotes a release from one Play track to the next: internal > closed (alpha) > production.
+# A rollout under 100 % starts a staged rollout. Run it again with a higher percentage to widen it.
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: Track that holds the release
+        type: choice
+        options: [internal, alpha, beta]
+        default: internal
+      to:
+        description: Track to promote to (alpha is closed testing)
+        type: choice
+        options: [alpha, beta, production]
+        default: alpha
+      rollout:
+        description: Share of users in percent, 1 to 100
+        type: number
+        default: 100
+      version_code:
+        description: Version code to promote. Empty takes the one completed release of the track.
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: play
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the input
+        env:
+          ROLLOUT: ${{ inputs.rollout }}
+        run: |
+          [[ "$ROLLOUT" =~ ^[0-9]+$ ]] && (( ROLLOUT >= 1 && ROLLOUT <= 100 )) || { echo "::error::rollout must be 1 to 100, not $ROLLOUT"; exit 1; }
+          [[ '${{ inputs.from }}' != '${{ inputs.to }}' ]] || { echo "::error::from and to are the same track"; exit 1; }
+
+      - name: Play API
+        id: play
+        uses: ./.github/actions/play-api
+        with:
+          service-account-json: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+
+      - uses: ruby/setup-ruby@v1.327.0
+        if: steps.play.outputs.ready == 'true'
+        with:
+          ruby-version: '4.0'
+          bundler-cache: true
+          working-directory: android
+
+      - name: Promote
+        if: steps.play.outputs.ready == 'true'
+        working-directory: android
+        env:
+          SUPPLY_JSON_KEY_DATA: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          version=()
+          if [[ -n "$VERSION_CODE" ]]; then
+            [[ "$VERSION_CODE" =~ ^[0-9]+$ ]] || { echo "::error::version_code must be a number"; exit 1; }
+            version=(--version_code "$VERSION_CODE")
+          fi
+          fraction=$(awk -v percent='${{ inputs.rollout }}' 'BEGIN { printf "%.2f", percent / 100 }')
+          bundle exec fastlane supply \
+            --package_name '${{ steps.play.outputs.package }}' \
+            --track '${{ inputs.from }}' \
+            --track_promote_to '${{ inputs.to }}' \
+            --rollout "$fraction" "${version[@]}" \
+            --skip_upload_apk true --skip_upload_aab true --skip_upload_metadata true \
+            --skip_upload_changelogs true --skip_upload_images true --skip_upload_screenshots true
+          echo "Promoted ${{ inputs.from }} > ${{ inputs.to }} at ${{ inputs.rollout }} %" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,228 @@
+name: android
+
+# Builds the Android app (a Trusted Web Activity of the production site) from android/twa-manifest.json
+# with Bubblewrap. It runs by hand or on a tag such as android-v1.2.0, never on a pull request.
+# The Gradle project is generated here on every run, so the repository keeps only twa-manifest.json.
+# A tag also uploads to the internal track with release notes (android/release-notes.sh).
+# Every build makes a GitHub release with the bundle. Promotion to other tracks: play-promote.yml.
+#
+# The secrets have no KITSHN_ prefix: KitSHn forwards every KITSHN_ secret to the server, and the
+# signing key must never go there. They are plain repository secrets.
+# Without the upload key the job builds an unsigned bundle. Without the service account it uploads nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: Play track for the upload (only with signing and PLAY_SERVICE_ACCOUNT_JSON)
+        type: choice
+        options: [none, internal, alpha]
+        default: none
+  push:
+    tags: ['android-v*']
+
+# contents: write makes the GitHub release of a tag. pull-requests: read lists the release notes.
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BUILD_DIR: ${{ github.workspace }}/build/android
+    steps:
+      # The tags and their history let android/release-notes.sh find the previous release.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      # Bubblewrap 1.25 generates a project for Android Gradle Plugin 8.9, which runs on JDK 17.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # The template targets API 36 (Android 16). Bubblewrap 1.25 signs with build-tools 36.1.0.
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.1.0'
+
+      # The Bubblewrap version lives in android/package-lock.json, so Dependabot updates it.
+      - name: Install Bubblewrap
+        run: |
+          npm ci --prefix android --no-audit --no-fund
+          echo "$GITHUB_WORKSPACE/android/node_modules/.bin" >> "$GITHUB_PATH"
+          mkdir -p ~/.bubblewrap
+          # Bubblewrap accepts an SDK only with a bin/ or tools/ folder at its root, the layout of its own
+          # download. The runner keeps sdkmanager in cmdline-tools/<version>/bin, so a link adds bin/.
+          if [[ ! -e "$ANDROID_HOME/bin" ]]; then
+            sdkbin=$(find "$ANDROID_HOME/cmdline-tools" -maxdepth 3 -name sdkmanager -path '*/bin/*' -printf '%h\n' | head -n 1)
+            [[ -n "$sdkbin" ]] || { echo "::error::No sdkmanager under $ANDROID_HOME/cmdline-tools"; exit 1; }
+            sudo ln -s "$sdkbin" "$ANDROID_HOME/bin"
+          fi
+          jq -n --arg jdk "$JAVA_HOME" --arg sdk "$ANDROID_HOME" '{jdkPath: $jdk, androidSdkPath: $sdk}' > ~/.bubblewrap/config.json
+
+      # The version code must grow with every upload: the run number of this workflow does.
+      # A tag android-v1.2.0 names the version 1.2.0. A run by hand gets 0.<run number>.
+      - name: Version
+        id: version
+        run: |
+          code=${{ github.run_number }}
+          if [[ "$GITHUB_REF" == refs/tags/android-v* ]]; then name="${GITHUB_REF#refs/tags/android-v}"; else name="0.$code"; fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "package=$(jq --exit-status --raw-output .packageId android/twa-manifest.json)" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "Version $name (code $code)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Signing
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          if [[ -n "$KEYSTORE_B64" && -n "$KEY_ALIAS" && -n "$STORE_PASSWORD" && -n "$KEY_PASSWORD" ]]; then
+            echo "sign=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sign=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No upload key (ANDROID_UPLOAD_* secrets). The bundle is unsigned, and Play does not take it."
+          fi
+
+      - name: Generate the Android project
+        env:
+          KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+        run: |
+          mkdir -p "$BUILD_DIR"
+          jq --argjson code '${{ steps.version.outputs.code }}' --arg name '${{ steps.version.outputs.name }}' --arg alias "${KEY_ALIAS:-upload}" \
+            '.appVersionCode = $code | .appVersionName = $name | .signingKey = {path: "./upload.keystore", alias: $alias}' \
+            android/twa-manifest.json > "$BUILD_DIR/twa-manifest.json"
+          cd "$BUILD_DIR"
+          bubblewrap update --skipVersionUpgrade --manifest=./twa-manifest.json
+          # The Bubblewrap 1.25 template still names JCenter, which only redirects to Maven Central, and a
+          # failed redirect broke a build. Maven Central directly removes that step.
+          # Revisit this when a Bubblewrap update drops jcenter() from its template.
+          grep -q 'jcenter()' build.gradle
+          sed -i 's/jcenter()/mavenCentral()/' build.gradle
+
+      - name: Build
+        working-directory: ${{ env.BUILD_DIR }}
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          if [[ '${{ steps.signing.outputs.sign }}' == true ]]; then
+            base64 --decode <<< "$KEYSTORE_B64" > upload.keystore
+            bubblewrap build
+            rm upload.keystore
+            mv app-release-bundle.aab tick3d.aab
+            mv app-release-signed.apk tick3d.apk
+          else
+            bubblewrap build --skipSigning
+            mv app/build/outputs/bundle/release/app-release.aab tick3d-unsigned.aab
+            mv app-release-unsigned-aligned.apk tick3d-unsigned.apk
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tick3d-android-${{ steps.version.outputs.name }}
+          path: |
+            ${{ env.BUILD_DIR }}/tick3d*.aab
+            ${{ env.BUILD_DIR }}/tick3d*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Release notes
+        id: notes
+        if: startsWith(github.ref, 'refs/tags/android-v') || inputs.track != 'none'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=$(android/release-notes.sh "${{ github.ref_name }}")
+          printf '%s\n' "$notes" | tee "$RUNNER_TEMP/release-notes.txt" >> "$GITHUB_STEP_SUMMARY"
+          # fastlane supply reads the notes of a version code from the metadata folder.
+          mkdir -p android/store/en-US/changelogs
+          cp "$RUNNER_TEMP/release-notes.txt" "android/store/en-US/changelogs/${{ steps.version.outputs.code }}.txt"
+
+      - name: Play API
+        id: play
+        if: steps.signing.outputs.sign == 'true' && (startsWith(github.ref, 'refs/tags/android-v') || inputs.track != 'none')
+        uses: ./.github/actions/play-api
+        with:
+          service-account-json: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+
+      - uses: ruby/setup-ruby@v1.327.0
+        if: steps.play.outputs.ready == 'true'
+        with:
+          ruby-version: '4.0'
+          bundler-cache: true
+          working-directory: android
+
+      # A tag uploads to the internal track. While the app is a draft in Play, a release must be a draft
+      # too: set the repository variable PLAY_RELEASE_STATUS to completed after the first publication.
+      - name: Upload to Google Play
+        if: steps.play.outputs.ready == 'true'
+        working-directory: android
+        env:
+          SUPPLY_JSON_KEY_DATA: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          bundle exec fastlane supply \
+            --package_name '${{ steps.play.outputs.package }}' \
+            --aab "$BUILD_DIR/tick3d.aab" \
+            --track '${{ inputs.track || 'internal' }}' \
+            --release_status '${{ vars.PLAY_RELEASE_STATUS || 'draft' }}' \
+            --metadata_path store \
+            --skip_upload_apk true --skip_upload_metadata true --skip_upload_images true --skip_upload_screenshots true
+
+      - name: No Play upload
+        if: steps.play.outputs.ready != 'true'
+        run: |
+          echo "::notice::No Play upload. It needs a tag or a track, the upload key (ANDROID_UPLOAD_*), PLAY_SERVICE_ACCOUNT_JSON, and the app in Play."
+
+      # Every build makes a GitHub release with the bundle. A tag android-v1.2.0 makes a normal release.
+      # A run by hand makes a pre-release on a new tag android-0.<run number>, at the built commit.
+      # The changelog lists the commits since the previous release tag (android/changelog.sh).
+      - name: Release text
+        id: release
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/android-v* ]]; then
+            tag=$GITHUB_REF_NAME; pattern='android-v*'; prerelease=false
+          else
+            tag="android-${{ steps.version.outputs.name }}"; pattern='android-*'; prerelease=true
+          fi
+          if [[ '${{ steps.signing.outputs.sign }}' == true ]]; then signing=signed; else signing=unsigned; fi
+          body="$RUNNER_TEMP/release.md"
+          {
+            echo "Version ${{ steps.version.outputs.name }} (code ${{ steps.version.outputs.code }}), **${signing}**."
+            if [[ "$signing" == unsigned ]]; then echo "Play does not take an unsigned bundle. It installs only for tests."; fi
+            echo
+            android/changelog.sh "$pattern"
+          } > "$body"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "title=tick3d ${{ steps.version.outputs.name }} for Android (${signing})" >> "$GITHUB_OUTPUT"
+          echo "body=$body" >> "$GITHUB_OUTPUT"
+
+      - name: GitHub release
+        uses: softprops/action-gh-release@v3.0.3
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.release.outputs.title }}
+          body_path: ${{ steps.release.outputs.body }}
+          prerelease: ${{ steps.release.outputs.prerelease }}
+          make_latest: ${{ steps.release.outputs.prerelease == 'false' }}
+          fail_on_unmatched_files: true
+          files: |
+            ${{ env.BUILD_DIR }}/tick3d*.aab
+            ${{ env.BUILD_DIR }}/tick3d*.apk

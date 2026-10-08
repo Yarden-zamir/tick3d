@@ -5,6 +5,7 @@
 // The account cookie is set for COOKIE_DOMAIN and its subdomains, so pull request previews see it.
 // Every environment that shares AUTH_SECRET can check the cookie. Without the GitHub settings,
 // login is off and the page hides it: a local or LAN host runs without any secret.
+import { isRecord } from '../src/guards.ts';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { type PlayerInfo, parsePlayerInfo } from '../src/protocol.ts';
@@ -66,9 +67,8 @@ function verify(config: AuthConfig, value: string | undefined, now: number): Rec
   } catch {
     return undefined;
   }
-  if (typeof payload !== 'object' || payload === null) return undefined;
-  const fields = payload as Record<string, unknown>;
-  return typeof fields.exp === 'number' && fields.exp > now ? fields : undefined;
+  if (!isRecord(payload)) return undefined;
+  return typeof payload.exp === 'number' && payload.exp > now ? payload : undefined;
 }
 
 function readCookie(req: IncomingMessage, name: string): string | undefined {
@@ -154,7 +154,7 @@ export function createAuth(config: AuthConfig, fetchImpl: typeof fetch = fetch, 
         headers: { authorization: `Bearer ${accessToken}`, accept: 'application/vnd.github+json', 'user-agent': 'tick3d' },
       });
       const body: unknown = await userResponse.json();
-      const fields = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+      const fields = isRecord(body) ? body : {};
       const info = parsePlayerInfo({ login: fields.login, avatar: fields.avatar_url });
       if (typeof fields.id !== 'number' || info === undefined) throw new Error('GitHub sent an unexpected profile');
       const user: GitHubUser = { id: fields.id, login: info.login, avatar: info.avatar };
@@ -177,6 +177,10 @@ export function createAuth(config: AuthConfig, fetchImpl: typeof fetch = fetch, 
 
 export type Auth = ReturnType<typeof createAuth>;
 
+// The GitHub logins that can read reports and moderate. GitHub logins ignore case.
+const MAINTAINERS = ['yarden-zamir', 'tomcohendev'];
+export const isMaintainer = (login: string): boolean => MAINTAINERS.includes(login.toLowerCase());
+
 // ---- Request limits ----
 
 // The address of the client. Caddy writes the client address as the last X-Forwarded-For entry.
@@ -187,12 +191,23 @@ export function clientOf(req: IncomingMessage): string {
   return last || req.socket.remoteAddress || 'unknown';
 }
 
-// Allows each client `limit` actions per window, and returns false for more.
+// A refused request: the server answers 429 with Retry-After in whole seconds.
+export class TooManyRequests extends Error {
+  readonly status = 429;
+  readonly headers: Record<string, string>;
+  constructor(message: string, retryAfterMs: number) {
+    super(message);
+    this.headers = { 'retry-after': String(Math.max(1, Math.ceil(retryAfterMs / 1000))) };
+  }
+}
+
+// Allows each client `limit` actions per window, and throws TooManyRequests for more until the window ends.
+// It returns nothing, so a caller cannot test the answer by mistake instead of the refusal.
 // It keeps at most `maxClients` windows: when full, it forgets the client with the oldest window.
-export function createLimiter(limit: number, windowMs: number, maxClients: number) {
+export function createLimiter(limit: number, windowMs: number, maxClients: number, message: string) {
   if (!(limit >= 1 && windowMs > 0 && maxClients >= 1)) throw new RangeError('a limiter needs positive settings');
   const windows = new Map<string, { count: number; endsAt: number }>();
-  return (client: string, now: number): boolean => {
+  return (client: string, now: number): void => {
     let window = windows.get(client);
     if (window === undefined || window.endsAt <= now) {
       // Delete first, so the new window goes to the end of the map's insertion order.
@@ -203,6 +218,6 @@ export function createLimiter(limit: number, windowMs: number, maxClients: numbe
       windows.set(client, window);
     }
     window.count++;
-    return window.count <= limit;
+    if (window.count > limit) throw new TooManyRequests(message, window.endsAt - now);
   };
 }

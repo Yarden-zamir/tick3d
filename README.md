@@ -9,47 +9,30 @@
 ## Rules
 
 - Two players take turns. X moves first.
-- Four marks in a straight line win. There are 76 lines: 48 along an axis, 24 diagonals inside a plane, and 4 through the cube.
+- Four marks in a straight line win. The cube has 76 lines.
+- In an online or Nearby session, X and O swap for each new game, so the first move alternates. Against the computer you start every game unless you unlock the seats.
 - A full cube with no line is a draw.
 
 ## Features
 
-- Play against the computer, a friend on the same device, a friend online, or devices on the same Wi-Fi with Nearby.
-- The computer has three levels. Each level plays a different game each time: the first move goes to a random strong cell, and later choices are weighted by how good a cell is, not fixed. A strong cell is one of the 8 corners or the 8 inner cells, which each sit on 7 lines.
-  - Easy: takes a win when it sees one. It blocks your win a bit more than half the time early in a game, and cares more about its own lines than yours, so it leaves openings.
-  - Medium: takes a win and always blocks your win early in a game. Sometimes it makes a double threat (two winning cells at once), or takes the cell where you could make one. Otherwise it picks one of its best cells by weight.
-  - Hard: takes a win and blocks your win. It looks for a win by threats in a row, and avoids a move that gives you one. Otherwise it searches ahead with alpha-beta pruning for up to 600 ms (at most 1000 ms in the advanced settings) and picks among the moves that score about the same as the best.
-  - Easy and medium tire in a long game, like a person under more and more load. From a set move on, they block less often, see fewer double threats, and choose more randomly. A missed block means that the computer did not see your threat at all. Medium starts to tire at move 20 and is fully tired at move 60, when it blocks 85% of the time. Hard does not tire.
-- Advanced settings: in computer mode, "Advanced: computer player" at the bottom of the panel lists every number behind the computer, for each level. Easy and medium have a fresh and a tired value for each chance and for the randomness, and the moves where tiring starts and ends. Hard has its thinking time, search width, threat depth and equal-move margin. A change applies from the next computer move, and "Reset to defaults" restores the tested values. A lock also locks these settings. A game counts as tuned when the settings of its own level, or the setting for all levels, differ from the defaults: a changed hard level does not make an easy game tuned. A tuned game keeps its own survival records, and its end card says "(tuned)".
-- Move validation: an occupied cell, a move after the game ends, a move out of turn, or a move by a spectator is refused with a sound and a message. A tap on an occupied cell then also plays the sound of the mark on it. Every mode runs the same session rules (`src/session/core.ts`): the server for online games, the device for computer and friend games, the host's device for Nearby games.
-- Hide the board, or hide all marks except the last move. Play by coordinates: tap the layer, row and column on the 1 to 4 keypad, for example `2 3 4`. The target cell is outlined before you place. Until you tap a number, the keypad shows the coordinates of the last move, yours or the other player's, so you can follow the game with the board hidden. Hidden marks show again when the game ends.
-- Lock settings: after a lock, no setting (the view included) changes until the game ends. The session keeps the lock, so a reload does not end it. With another device, either player can lock, and the lock holds for both players.
-- Session history: the panel lists the games of the session. Replay steps through a finished game move by move. A session holds any number of games.
-- Time limits, like a chess clock: a limit per player for the whole game (30 s to 120 min), a limit per move (3 s to 10 min), or both. Each limit has a switch, a number box and quick picks. A player who runs out of either limit loses. The first move of each player is untimed, so the clock starts after both players moved once. A clock ticks in the last 10 seconds. A timed game has no undo.
-- A game keeps the time limit it started with. A change during a game starts with the next game, and the panel shows both limits until then.
-- End card: at the end of a game, a card shows the result, the final board and the game details, the hide settings included. New game on the card starts the next game. The card uses the active theme. Share sends the image through the system share sheet. Without file sharing (most desktop browsers), Share copies the image, and Save image downloads it. Two check boxes, both on by default, add the game code and the link of the game (see Game links) to the card and the share text. A local game has no code, so it shows only the link option.
-- Survival records: when the computer wins, the number of moves that the game lasted can be a new record. Each level, time limit and hide setting keeps its own record. A new record shows as a message and as a sticker on the end card, with the old best. The first loss of a setup sets the record without a message. The device keeps its records for offline play, and the server keeps the records of every game it received. On each visit the page takes the higher record of each setup from the server, so a new record must beat the best of every device of the account.
-- Sound effects made with Web Audio. The note button next to the Sound button opens the sound set menu. The menu groups the sets by character: Instruments, World and voice, Playful, For musicians and Original. Each set has a ▶ demo. The choice belongs to the screen, like the theme, and the default is Cells. In every set except Classic, each cell has its own single sound, so a game works by ear. X and O always sound different.
-  - Cells: the pitch is the layer (C, D, E, G of a pentatonic scale, higher layers higher), the instrument is the row (marimba, glass bell, plucked string, whistle), and the width is the column (one voice, then a fifth, an octave, both; on headphones also left to right). O sounds one octave below X.
-  - Soft, Orchestra, Lo-fi keys: the Cells map with other instruments. Soft has flute, clarinet, felt piano, vibraphone. Orchestra has pizzicato strings, harp, French horn, celesta. Lo-fi keys has electric piano, pad pluck, upright bass, music box.
-  - Gamelan: the layer is a slendro note, the row is the bronze instrument (saron, bonang, gender, gong), the column is the beat of the tuned pair (none, slow, fast, shimmer). O plays an octave lower.
-  - Chiptune: the layer is the note, the row is the move of the first note (blip, jump, drop, warble), the column is the arpeggio length (1 to 4 notes). X is a square wave, O a triangle wave an octave lower.
-  - Kalimba: the layer is the note, the row is the tine (warm, steel, buzz, wah), the column is the count of box echoes (0 to 3). O plays an octave lower.
-  - Percussion: no melody. The layer is the drum (kick, tom, snare, woodblock), the row is the tuning, the column is the stroke (single, flam, double, drag). X plays with sticks, O with soft mallets.
-  - Choir: the layer is the sung note, the row is the vowel (ah, eh, ee, oh), the column is the harmony (solo, third, fifth, full chord). X is a tenor, O a bass.
-  - Nature: the layer is the source (wood knock, water drop, cricket, bird), the row is its size, the column is the weather (calm, breeze, rain, cave echo). O is the night, an octave lower.
-  - Harmony: for musicians. Equal temperament, A4 = 440 Hz, chords of C major. The layer is the octave of the root (3 to 6), the row is the chord (I, IV, V, vi), the column is the voicing (root position, 1st inversion, 2nd inversion, seventh chord: Cmaj7, Fmaj7, G7, Am7). X plays a piano, O an organ.
-  - Classic: the first sound of the game. Each layer has one note, so it does not name the row or the column.
-
-  The keypad plays the cell's sound when its third number is in, and the speaker button by the keypad plays the last move again. With Classic, the third number plays only a click, and the cell sounds first on Place; the speaker then plays only the last move. A mute button keeps the choice. `/sound-training` (the "Train your ear" button at the bottom of the panel) is an ear trainer like Anki. It trains the chosen sound set, and Cells when the choice is Classic. The note button in its header opens the same sound set menu as the game, and a choice there changes the set of the game too. It shows each sound with its answer first, then asks for it with the answer hidden, and gives more cards for the part that the player misses most. The player answers on the four layers of the board: a tap selects the whole layer, row or column that the card asks for, or one cell. The board size and layout fit the screen, and on a phone the layers scroll sideways. After a check, the exact tapped cell keeps an outline, also when the asked part is right. It keeps its progress in the browser and works offline. Search engines may list it.
-- Drag sideways anywhere around the tower to turn it all the way round. A drag that starts on the keypad or on another control does not turn the tower. The tilt stays at the resting view. On a touch screen, a vertical swipe still scrolls the page. Reset angle returns to the resting view, and the browser keeps the angle. A drag never places a mark. Boards and tiles have real 3D depth in the tower, so they look solid at any turn. Layer 1 is the bottom plane and layer 4 the top one; the flat view labels each layer.
-- The status of the game (whose move, the result) sits in the header row. Below 64rem it takes its own line under the header row, and a long status wraps.
-- Two views: a 3D tower of tilted layers and a flat view. The flat view has four layouts: grid, side by side, top to bottom, and steps.
-- Twelve neo-brutalist themes in a folding menu in the panel: Light (the default), Dark, Snow, Candy, Mint, Retro, Midnight, Synthwave, Bloodmoon, Dark coffee, Batman (dark, no color) and Mono. Like the mute button, the theme stays open during a lock.
-- Point at a cell to light up the cells above and below it.
-- A GitHub button in the header links to this repository.
-- A kitshn button in the header lists the open pull requests that have a live preview: the title, the first paragraph of the text, the contributors, and links to the preview and to the pull request. A preview page marks its own entry with "You are here".
-- The browser keeps the settings in `localStorage`. The app checks each stored value and uses the default for a value that is not valid.
+- Play against the computer, a friend on the same device, a friend online, or a device on the same Wi-Fi (Nearby).
+- Three computer levels: easy, medium and hard. "Advanced: computer player" in the panel tunes each level.
+- Two views: a 3D tower that you turn with a drag, and a flat view with four layouts.
+- Play by coordinates on the keypad, with the board or the marks hidden.
+- Time limits per game, per move, or both. A player who runs out loses.
+- Lock: no setting changes until the game ends.
+- Seat lock: keeps X and O between games. It sits next to "You play" (computer) and in the Players box (online, Nearby). Either player can change it.
+- Sound sets where each cell has its own sound, and an ear trainer at `/sound-training`.
+- One sound rule on every page: a press on a button, switch or menu item clicks at once. A control with its own sound (a move, a refusal, a sample, a song) plays only that sound. Disabled controls stay quiet, and the mute holds.
+- Play by voice: tap the mic, then hold a note on a free cell for 1 second to place your move. On a phone, turn on Tilt in the Voice room settings (off by default): a small tilt nudges the cell up to 3 cells.
+- The Voice room at `/sound-input`: calibrate the mic to your voice, then practice with Free play, Targets, Echo, or a Playoff against the other player of an online game. The page finds the pitch on the device and sends no sound.
+- Your game as a song: the Song button on the end card and on a game link. A long press shares the song as a WAV file, with your voice on the moves that your voice placed.
+- An end card with the result, to share or save as an image.
+- Survival records: the longest game against each computer level and setup.
+- Twelve themes.
+- The same header on every page, with My games, Info, kitshn and GitHub (`src/header/`).
+- The kitshn button lists the production site and the open pull request previews. A stacked pull request shows inside its parent.
+- The browser keeps the settings in `localStorage`, and the page checks each stored value.
 
 ![The flat view in the grid layout, Midnight theme](docs/screenshots/flat.png)
 
@@ -59,71 +42,49 @@
 
 ## Game links and match history
 
-- Every finished game gets an id and a read-only link. An online game uses its session code and game number (`/?game=AB3K-2`). Any other game gets 8 random characters from the device that played it (`/?game=K7P2QX9M`). The server keeps each id unique and gives a new id when two devices pick the same one.
-- At the end of a game the address shows the link, and the end card shares it. A new game, a switch to another game or Home removes it from the address. An online game keeps its `?code` too.
-- The link shows the final board with the replay controls, the players (the GitHub name of a player with a login, else the generated name), the mode, the level, the time limit, the hide settings, the date and the result. Nobody can move in it, and it has no next game. Play goes back to a game of your own.
-- A game that this device did not upload yet opens from the device copy, also offline.
-- My games has a History list of every finished game in every mode, newest first, 50 at a time, with a View button. Offline, it lists the games on this device.
-- Clear history in My games asks first, then removes every finished game from the player's history: on the server for every device of the account (or for this browser without a login), and from the uploaded results on this device. The survival records and the totals stay. An online game stays in the opponent's history, and every game still counts in the site stats.
-- A game stored before game links shows in the history without a View button, until a one-off migration gives it an id.
+- Every finished game gets a read-only link, for example `/?game=AB3K-2` (online) or `/?game=K7P2QX9M` (other modes).
+- My games lists every finished game, newest first, and can clear the history.
 
 ## Online play
 
-- Choose Online to create a session. The page shows a 4 character code and puts it in the link (`?code=AB3K`). Link sends the link, or copies it when the device cannot share. QR code shows the link as a QR code, which a phone camera opens directly.
-- Codes use letters and digits without `0`, `O`, `1` and `I`, so a code read aloud is not ambiguous.
-- The creator plays X. The first other browser that opens the code plays O. Further browsers watch.
-- A browser keeps its seat through a random token in `localStorage`.
-- A link with a code that opens no game (no game with that code, or no network for a new game) shows the error, drops the code from the address, and starts the page as usual.
-- A code loads the full session, finished games included. Either player can name the session and start the next game after a game ends.
-- Chat: on a wide screen a column at the left, on a narrower one a box under the board. It sends messages to the other player in real time, online and over Nearby. Only the two players can write, watchers read along. A session keeps its newest 50 messages of up to 200 characters.
-- Hide coordinates keeps the coordinates of the last move off the keypad: the slots show "?", and the speaker button still plays the move, so the game goes by ear. Turning it on highlights the "Train your ear" button.
-- Hide board, Hide history and Hide coordinates belong to the session. A change by either player applies to both players and to watchers. View and layout stay per screen.
-- The time limit also belongs to the session. A new session takes the time limit of the screen that creates it. Either player can change it at any time, except during a lock. The change reaches both players and starts with the next game. The server records the move times and decides a timeout, so a page that closes cannot avoid a loss on time.
-- A session with moves never expires, so the same two players can keep playing for as long as they like. A session where no game has a move goes away after 9 hours without a change, unless a player has it open. After the first join, a player can leave and come back later: the game waits for their move. The other player sees them as away (a dimmed score tile and "is away" in the status), so a game can also run asynchronously. A clock keeps running while a player is away.
-- There is no limit on played sessions or on games per session. Add one when storage use calls for it.
+- Choose Online to create a session with a 4 character code (`?code=AB3K`). Share the link or the QR code.
+- The creator plays X, the first other browser plays O, and further browsers watch.
+- Either player controls the seats. A change to the other player's seat, and an undo, waits until that player accepts.
+- After each new game, the seats swap unless a player locked them. The score and My games count each game for the player who played it.
+- Chat, the hide options, the lock and the time limit belong to the session, so both players share them.
+- The server decides a timeout, so a page that closes cannot avoid a loss on time.
+- A session with moves never expires. A player can leave and come back, so a game can run asynchronously.
+
+### Report and block
+
+- Hold, right-click, or press the context-menu key (Shift+F10) on a chat message, a player or a watcher. A small menu offers Report and Block.
+- Block hides the person's messages, and shows a generated name and picture in place of theirs. The server keeps the list per player, so it follows a GitHub login. Unblock in My games.
+- Report sends a reason and a short note to the maintainers, and hides that message on your device. Report works in Online games only: the server cannot see a Nearby game.
+- Each person has a public person id, a hash of the player token. A chat message keeps the person id of its author, so it stays with the author when the seats change. Older messages have none: they show with the player on their seat.
+- The maintainers (GitHub logins Yarden-zamir and TomCohenDev) read the reports with `GET /api/reports`. They can hide a message for everyone or clear a custom name, and the server logs each action.
 
 ![An online game with chat, while the other player is away](docs/screenshots/online.png)
 
 ## Play with an AI agent
 
-- An AI agent can play through the tick3d HTTP API, with plain HTTP or curl. It needs no account and no key.
-- In computer mode, open "Advanced: computer player". The "Play with your AI agent" part has a short text and a Copy button. Give the text to your agent.
-- The text points the agent to the OpenAPI document at `/api/openapi.json`, and tells it to wait for your instructions. The agent starts no game on its own. The document tells the agent how to create or join a game, take a seat from a link, move, chat and wait for changes.
-- The agent can play you or another agent. In a game between two agents, the agent gives you the game link, and you watch.
-- A browser that opens the link while a seat is free takes that seat. So an agent gives the link for watching after both seats are taken.
-- A player that uses the API has no open page, so the page shows that player as away. The game goes on as usual.
-
-The docs of the tick3d HTTP API come from one file, `server/api-docs.ts`:
-
-- `GET /api/openapi.json`: the OpenAPI 3.1 document. `info.description` holds the guide: the quick start, the player id, the cell numbers, waiting, refused moves, game links and limits. Each operation has a description and a curl example.
-- `GET /api/docs`: the document in Swagger UI, with "Try it out". The page loads Swagger UI from jsDelivr, pinned to one version with integrity hashes.
-- `GET /api/sessions/<code>?wait=<version>`: a long poll. The server holds the request until the session version is greater than `<version>`, or for about 25 s. Then it returns the session. At most 2000 requests wait at the same time.
-- Every session answer has `turn` (the player to move, or null after the game ends) and `status` (playing, won with the line, timeout or draw), so an agent needs no rules of its own.
+- An AI agent plays through the HTTP API, with no account and no key.
+- In computer mode, open "Advanced: computer player" and copy the text under "Play with your AI agent". Give it to your agent.
+- The text points the agent to `/api/openapi.json`. The agent can play you or another agent.
 
 ## Offline play
 
-- After the first visit, the game opens without a network: a service worker keeps the page, the fonts and the icons. The game is installable on a phone.
-- Computer and friend games run on the device and are stored in its IndexedDB. Every played session stays on the device, with no limit. A session with no move goes away 9 hours after its last change, when the game next starts. A reload or a restart continues the game.
-- An online game this device saw before opens read-only without a network, as last seen.
-- When a computer, friend or Nearby game ends and the network is up, the device sends the result to the server. Results from games played offline go along with it. A result has an id from the device, so the server stores it once.
-- After a deploy, a returning player sees "A new version of tick3d is ready" with a Reload button. The page never reloads by itself in the middle of a game.
-- Safari deletes the stored data of a site that the player does not open for 7 days. A game added to the home screen keeps its data.
+- After the first visit, a service worker keeps the page, so the game opens without a network. The game is installable.
+- Computer, friend and Nearby games run on the device and stay in IndexedDB. The device uploads results when it has a network.
+- After a deploy, the page shows "A new version of tick3d is ready" with a Reload button.
+- Safari deletes the data of a site that you do not open for 7 days, unless you add the game to the home screen.
 
 ## Nearby
 
 - Choose Nearby to play with devices on the same Wi-Fi. One device hosts, the others join.
-- Games near you: while a device is online, its hosted game shows up in a list on the other devices of the same network. The list updates every 3 seconds. Each game shows the device icon, the name and a Join button, and one tap joins it. The host's panel says "Visible to devices on this network". The list never shows the game of this device.
-- A web page cannot broadcast or discover on a local network: browsers have no UDP and no mDNS API. So the host announces its game through the server, and the list works only while both devices are online. The server lists a game only for requests from the same network: the same IPv4 address, or the same IPv6 /64 prefix. A home where one device uses IPv4 and another IPv6 is two networks for the server, so the two devices do not see each other in the list.
-- A game leaves the list within seconds when the host ends it, closes the page, goes offline or switches mode. A host that loses the network without a word leaves the list after 35 seconds at most.
-- Without internet, the list is off, and the codes below connect the devices.
-- Join with a code: the host shows a QR code. The guest scans it with the phone's own camera, which opens the game, and shows its own code, which the host scans the same way. On the host, the answer opens in a new tab that hands the code to the hosting tab. Each code also has a text form to copy and paste, for a device without a camera.
-- The devices then talk directly over WebRTC. The host's device holds the session and checks every move with the same rules as the server, so a guest can never move for the host.
-- The panel lists the connected devices with an icon for each kind: phone, tablet or computer. The device name starts as the player's name, and the player can change it. The first guest plays O, later guests watch.
-- The host's screen stays on while it hosts. When the host ends the game or closes the page, the guests see a message.
-- Chat, the lock, the hide options and time limits work as in an online game.
-- At the end of a game, the host sends the result with both players. The game link then shows both names, and the game is in the history of the guest too.
-- The host also gives that game link to every connected device, so the end card and the address show the same link on all devices. A guest still keeps its own copy of the result for its stats. The link opens once the host's result reaches the server.
-- Host on a laptop: `docker compose -f compose.lan.yml up --build` runs the full game server on a computer. Others on the same network open `http://<that computer's address>:8080` and play the Online mode, with no codes to scan. The online box shows the host with a server icon. Without HTTPS, a browser gives that page no offline cache and no camera; the game itself works. Set `LAN_HOST_NAME` for the name it shows, and `LAN_PORT` when port 8080 is taken.
+- Online, the hosted game shows in "Games near you" on the other devices of the same network.
+- Offline, the devices exchange QR codes, or text codes to copy and paste.
+- The devices talk directly over WebRTC. The host's device holds the session and checks every move with the same rules as the server.
+- To host a full server on a laptop, run `docker compose -f compose.lan.yml up --build`. Others open `http://<that computer's address>:8080` and play Online. Set `LAN_HOST_NAME` for the host name and `LAN_PORT` for another port.
 
 ![A laptop hosts a Nearby game, a phone joins](docs/screenshots/nearby.png)
 
@@ -133,98 +94,92 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 
 | Control | Computer | Friend | Online | Nearby | Game from a link |
 | --- | --- | --- | --- | --- | --- |
-| Opponent, view, layout, theme, sound, How to play | yes | yes | yes | yes | yes |
+| Opponent, view, layout, theme, sound | yes | yes | yes | yes | yes |
 | Difficulty, You play, Advanced | yes | no | no | no | no |
-| Game code, Link, QR code, session name | no | no | yes | no | no |
+| Seat lock (keep X and O between games) | next to You play | no | in the Players box | in the Players box | no |
+| Game code, Link, QR code, session name | no | no | yes (grey until a game starts) | no | no |
 | Host, Join with a code, Games near you, device list | no | no | no | yes | no |
-| Join a friend (code and New code) | yes | yes | yes | no | no |
+| Join a friend (code and New code) | no | no | yes | no | no |
+| Players (seats, watchers and seat controls) | no | no | yes (grey until a game starts) | yes (grey until a game starts) | no |
 | Time limit | yes | yes | yes | yes | no |
-| Hide board, history and coordinates, Lock | yes | yes | in a game | in a game | no |
-| Score, New game, Games in this session | yes | yes | in a game | in a game | yes |
-| Undo | yes | yes | no | no | no |
-| Chat | no | no | yes | yes | no |
+| Hide board, history and coordinates, Lock | yes | yes | yes (off until a game starts) | yes (off until a game starts) | no |
+| Score, New game, the session games in My games | yes | yes | yes (grey until a game starts) | yes (grey until a game starts) | yes (no session games) |
+| Undo (during a game) | yes | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
+| Result card (after a game) | yes | yes | in a game | in a game | no |
+| Chat | no (a wide screen keeps its space) | no | yes | yes | no |
+| Report and block (hold or right-click a person) | no | no | yes | Block only | no |
+| Play by voice | yes | yes | with a seat | with a seat | no |
 
-- The score and the New game, Undo, Sound and Sound set row are at the top of the panel. On a phone, the panel is under the board, so this row is right under the board.
-- "In a game" means after a create or a join (Online), or after Host or Join (Nearby).
-- Join a friend stays in computer and friend mode as a shortcut: a code from a friend opens the online game at once. A switch to Online first would create a new session for nothing.
-- Nearby has no Join a friend: a code there is an online game, and Nearby has its own Join.
+"In a game" and "a game starts" mean after a create or a join (Online), or after Host or Join (Nearby).
+
+Before a game starts, a control of a game (`data-needs-session`) draws at once in its final place, grey and disabled (`data-pending` in `src/style.css`). The Players box shows two "Waiting…" seats with grey pictures, and the clocks of a time limit keep their place. When the server or the Nearby host answers, the page fills in the real values, and nothing moves. If the server fails, the error shows and the controls stay grey in their place.
+
+The actions row has fixed slots (`.slot-row` in `src/style.css`), so a control that shows or hides never moves another control. `e2e/row-layout.spec.ts` checks this.
+
+A mode change moves neither the board nor the Opponent picker:
+
+- Everything above the picker keeps its box in every mode. Before a game, the score and New game show grey and disabled in their place. The Players box sits under the mode boxes.
+- A wide screen (72rem and wider) keeps the chat column in every mode. Outside a game with another device, that column stays empty.
+- On a phone the chat opens above the panel. If the player works in the panel, the page scrolls by the height of the chat, so the panel stays still (`src/page/panel-anchor.ts`).
 
 ## Accounts and My games
 
-- Login with GitHub is optional. Every browser plays with a random token either way.
-- A login links the browser's token to the GitHub account. Sessions then follow the player: a seat taken on a laptop also plays from a phone that logged in to the same account, so an async game can continue on another device.
-- The score shows a player's GitHub name and avatar, and the chat uses the name.
-- A player without a GitHub login gets a generated name: an adjective and an animal in camelCase, such as "braveOtter". The server makes it from the player's token, so every screen shows the same name. A login replaces it with the GitHub name. My games shows the name to its player. The words come from unique-names-generator (MIT).
-- The score, the status, the chat, the clocks, the end card and the game links use the same name for each player. The own seat is "You", and a friend game on one screen uses "Player X" and "Player O".
-- My games (the button in the header) shows the account, stats per mode and per computer level, the match history, the online sessions with a "Your turn" mark and a Continue button, and every session on this device. Offline, it shows the games on this device.
-- The login runs on the production address. Its cookie is signed and valid for `tick3d.yarden-zamir.com` and its subdomains, so pull request previews see it too. Without the GitHub settings, login is off and the page hides it.
+- Login with GitHub is optional. Without a login, every browser plays with a random token and a generated name, such as "braveOtter".
+- A login lets a player continue a game on every device of the account.
+- A player without a login can choose a name in My games.
+- My games shows the account, the stats, the games of the open session, the match history and the online sessions. Stats in its head opens your own stats.
 
 <img src="docs/screenshots/my-games.png" alt="My games: stats and sessions" width="480">
 
 ## Code
 
-- `src/game.ts`: board, lines, move validation, win and draw detection, undo.
-- `src/ai.ts`: the three computer levels.
-- `src/ai-worker.ts` and `src/move-search.ts`: every level searches in a Web Worker, so the page stays responsive while the computer thinks. The service worker precaches the worker, so the computer also plays offline.
-- `src/sound.ts`: synthesized sounds. `src/sound-sets.ts`: the sound sets, as data that `src/sound.ts` plays. `src/page/sound-set.ts`: the sound set menu.
-- `src/clock.ts`: time limits and the time left for each player.
-- `src/card.ts`: draws the end card on a canvas and shares it.
-- `src/protocol.ts`: the contract between the page and the API (code format, names, results, response checks).
-- `src/session/core.ts`: the session rules as pure functions. `src/session/format.ts`: the stored session format and its upgrades.
-- `src/online.ts`: the API client and the live update stream. `src/local.ts` and `src/device-db.ts`: the device backend on IndexedDB.
-- `src/nearby/`: WebRTC connections, QR codes, the messages between host and guests, device kinds, and the host and guest sessions.
-- `src/pwa.ts` and `vite.config.ts`: the service worker and the manifest.
-- `src/main.ts`, `src/style.css`, `index.html`: the page. `src/main.ts` starts the page; `src/page/` holds the page script, one module per feature (board, sessions, Nearby, My games, clocks, chat and more). `src/page/state.ts` holds the state that more than one module changes.
-- `public/`: the favicons and touch icons, copied into the build as is. The service worker plugin writes the web manifest.
-- `server/main.ts`: the HTTP API and server-sent events. `server/lobby.ts`: the list of open Nearby games. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login. `server/previews.ts`: the list of the kitshn button. `server/stats.ts`: the SQL of the stats page. `server/waiters.ts`: the long polls.
-- `stats.html`, `src/stats/`: the hidden stats page.
-- `sound-training.html`, `src/sound-training/`: the ear training page. `schedule.ts` picks the cards (Leitner boxes, weakest part first), `deck.ts` draws the board, and `fit.ts` sizes it to the screen.
-- `server/api-docs.ts`: every API route with its shapes, examples and errors, and the guide. The server finds the route of a request in this list, so a route without docs cannot exist. `server/api-docs-render.ts` makes the OpenAPI document and the Swagger UI page. A test runs every example through the real parsers in `src/protocol.ts`, and checks the document against the official OpenAPI 3.1 JSON Schema with `@seriousme/openapi-schema-validator`.
-- To add a route: add one entry to `ROUTES` in `server/api-docs.ts` and one case to the switch in `server/main.ts`. The type check fails when one of the two is missing.
+- `src/game.ts`: board, lines, move validation, win and draw.
+- `src/ai.ts`, `src/ai-worker.ts`, `src/move-search.ts`: the computer levels, in a Web Worker.
+- `src/session/core.ts`: the session rules. The server, the device and the Nearby host all run them.
+- `src/session/format.ts`: the stored session format.
+- `src/protocol.ts`: the contract between the page and the API.
+- `src/online.ts`: the API client. `src/local.ts` and `src/device-db.ts`: the device backend on IndexedDB.
+- `src/nearby/`: WebRTC, QR codes and the host and guest sessions.
+- `src/sound.ts`, `src/sound-sets.ts`: the sounds and the sound sets. `src/click-sound.ts`: the click of every control. `src/song.ts`: a finished game as a song.
+- `src/voice/`: the voice engine (pitch, range, sticky cells, tilt, clips) for the game and the Voice room. `src/page/voice.ts`: play by voice in the game.
+- `sound-input.html`, `src/sound-input/`: the Voice room. `src/practice/`: the practice and playoff rules, shared with `server/practice.ts`.
+- `src/main.ts`, `src/page/`, `index.html`, `src/style.css`: the game page, one module per feature in `src/page/`.
+- `src/page/safety.ts`, `src/page/person-mark.ts`: the report and block menu.
+- `src/header/`: the header of every page. `src/markup.test.ts` checks that every page has the same header.
+- `stats.html`, `src/stats/`: the stats page. `sound-training.html`, `src/sound-training/`: the ear trainer.
+- `src/pwa.ts`, `vite.config.ts`: the service worker and the manifest.
+- `server/main.ts`: the HTTP API. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login.
+- `server/api-docs.ts`: every API route with its docs. The server finds routes in this list.
 
-The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs on Node 26, which runs TypeScript directly, and stores sessions in [DuckDB](https://duckdb.org) through `@duckdb/node-api`.
+To add a route, add one entry to `ROUTES` in `server/api-docs.ts` and one case to the switch in `server/main.ts`. The type check fails when one of the two is missing.
+
+The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs TypeScript directly on Node 26 and stores data in [DuckDB](https://duckdb.org).
 
 ## Stored data and format changes
 
-- The `sessions` table has one row per session: the code, a creation order, a version, timestamps, and the session as one `VARIANT` document. `users` and `player_tokens` link browsers to GitHub accounts. `results` holds every finished game, one row per game: the games that devices sent, and the online games, which the server records when they end. Its columns hold the public game id, the token of each seat, the winner, how the game ended and the game metrics. `events` holds the faults that pages report.
-- Rows from before game links have NULL in the new columns. The queries read them from `token` and `doc` instead (`SEAT_X` and `SEAT_O` in `server/stats.ts`), and a finished online game that has no row reads from its session. The server never writes data into old rows.
-- `hidden_x` and `hidden_o` mark a seat that its player cleared from the history. `seat_metrics` holds the metrics of each player of an online game, one row per seat.
-- A device stores its sessions in the same document format in IndexedDB, so the same rules read and upgrade them on a phone.
-- The document carries a `format` number. `src/session/format.ts` reads every known format, upgrades old documents step by step, and writes the current format back on the first read.
-- A new optional field needs only a default in `parseDoc`. A breaking change needs a new `CURRENT_FORMAT` and one `UPGRADES` step. Neither needs a database reset or a manual migration.
-- A server refuses a document from a newer format, so an older server version never overwrites newer data.
-- Every write goes through the same check as every read, so the table never holds a document that cannot be read back.
-- `src/session/fixtures/` holds a stored document of each released format. A test reads each one, so old data keeps working.
-- Table changes are append-only statements such as `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS`, which run on every start.
+- The server and the device store a session as the same document, with a `format` number.
+- A new optional field needs only a default in `parseDoc` (`src/session/format.ts`). It needs no migration and no database reset.
+- A breaking change needs a new `CURRENT_FORMAT` and one `UPGRADES` step. `src/session/format.ts` explains the rules.
+- `src/session/fixtures/` holds a document of each released format. A test reads each one.
+- Table changes are append-only statements in `server/store.ts`, such as `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
 
 ## API
 
-The full reference, with every shape, error and a curl example, is the OpenAPI 3.1 document at `/api/openapi.json`. `/api/docs` shows it in Swagger UI. It comes from `server/api-docs.ts`. This table is a summary.
+- `/api/openapi.json`: the OpenAPI 3.1 document, with every route, shape, error and a curl example.
+- `/api/docs`: the same document in Swagger UI.
 
-| Route | What it does |
-| --- | --- |
-| `POST /api/sessions`, `GET /api/sessions/:code` and the other session routes | Online play. `GET /api/sessions/:code?wait=<version>` waits for a change. |
-| `POST /api/results` | Finished games from a device. The answer holds the new public id of each result that the server renamed. |
-| `GET /api/games/:id` | One finished game, read-only. No token and no result id. |
-| `GET /api/me/games` | My games: tallies and online sessions. |
-| `GET /api/me/history?offset=0` | The match history of the player (by account, else by browser token), 50 games per page, newest first. |
-| `GET /api/me/records` | The survival records of the player, with the same keys as on the device (`src/records.ts`). |
-| `DELETE /api/me/history` | Clears the history of the player. Needs the X-Player header. |
-| `POST /api/games/:id/metrics` | The metrics of a player's device for a finished online game. Only a player of that game may send them, once per seat. |
-| `GET /api/nearby/hosts` | The open Nearby games on the network of the caller, without its own. |
-| `POST /api/nearby/hosts` | A host puts its Nearby game in the list, and gets its id at once. With the id, the server holds the request until a guest answers, or for about 25 s. Needs the X-Player header. |
-| `POST /api/nearby/hosts/:id/answer` | A guest sends its answer to the offer of a host. Needs the X-Player header. |
-| `POST /api/events` | A fault report from a page. At most 1 kB, 30 per 10 minutes per address. |
-| `GET /api/stats` | The aggregates of the stats page. The server computes them at most once a minute. |
-| `GET /api/previews` | The open pull requests with a live preview, for the kitshn button. The server reads GitHub at most once per 2 minutes, without a token. |
+Both come from `server/api-docs.ts`. The routes that change a game accept an `Idempotency-Key` header, and every 429 has a `Retry-After` header.
 
 ## Stats page and what is logged
 
-- `/stats` is a page that nothing links to. It shows games per day, players per day, a weekday and hour heatmap, games by mode, results and survival leaderboards per computer level, game length, time per move (players and computer), the slowest thinkers, first-player advantage, opening moves and all moves over the 4 layers, how games end, hide setting and time limit use, tuned computers, devices, views, layouts, themes, app versions, board and keypad input, refusals, undo use, offline games, Nearby device mixes and page faults. It uses the saved theme. Search engines are told not to list it.
-- The page shows counts only. A leaderboard shows the GitHub name of a player with a login, else the generated name. It never shows a token, a result id or a game id.
-- What a finished game sends, besides the game itself: the kind of device (phone, tablet or computer), the view, the layout, the theme, how many moves came from the board and from the keypad, the refused actions by reason, the number of undos, the thinking time of each computer move, whether the device was offline, the app version (the file name of the page script), the computer settings of a tuned computer, and for Nearby the role of the device and the kind of the other device.
-- A fault report holds the error message with the file name and line, or the reason of a burst of refused moves, and the app version. It holds no token and no address. A page sends at most 10 per visit.
-- Each player of an online game sends the same metrics for that game, without the computer and Nearby parts.
+- `/stats` is public: the game Info panel and My games link to it, and search engines may list it.
+- Filters: Everyone or Mine, the time (7 days, 30 days or all), the mode and the level. The address holds them, for example `/stats?scope=mine&range=30d`. `GET /api/stats` takes the same query and answers 400 for an unknown value.
+- A person filter (`/stats?person=<person id>`) shows the games of one person, with their name and picture. A click on a person's picture in the game opens it large, with a Stats link to this view.
+- "Hide my stats" in My games closes your person view to everyone but you: `GET /api/stats` then answers 403. Mine still works, and Everyone still counts your games without your name. The setting follows a GitHub login.
+- Everyone shows counts only: no player names and no page faults. Mine (your games on every linked device) adds your win rate over time, streaks, results, survival records and favourite opponents. A person view adds the same, without the opponents.
+- The stats never show a token, a result id or a game id.
+- A finished game sends, besides the game: the device kind, the view, the layout, the theme, input and undo counts, refusals, computer thinking times, the offline flag and the app version.
+- A fault report holds the error message, the file and line, and the app version. It holds no token and no address.
 
 ## Develop
 
@@ -235,29 +190,26 @@ docker run --rm -v "$PWD":/app -w /app node:26-alpine sh -c 'npm ci && npm run c
 docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:26-alpine npx vite --host
 ```
 
-`npm run check` runs the type check, every linter and the tests. `npm run build` runs the type check (`tsc`) before the Vite build. `npm run api` starts the API on port 8080 with `./dev.duckdb`.
+- `npm run check` runs the type check, the linters (`npm run lint`) and the unit tests.
+- `npm run build` runs the type check and the Vite build.
+- `npm run api` starts the API on port 8080 with `./dev.duckdb`.
 
-`npm run lint` runs these checks. Each one catches faults that the type check does not:
-
-- [oxlint](https://oxc.rs) with type-aware rules (`.oxlintrc.json`). It runs on the TypeScript 7 checker through `oxlint-tsgolint`. typescript-eslint does not support TypeScript 7. The rules catch promises that nobody awaits or catches, promises passed where a function must return nothing, switches that miss a case, and needless type assertions. Style rules are off.
-- [stylelint](https://stylelint.io) with `stylelint-config-recommended` (`.stylelintrc.json`): unknown properties, invalid values and duplicate selectors in the CSS. No style rules.
-- [html-validate](https://html-validate.org) (`.htmlvalidate.json`): invalid markup and accessibility faults in `index.html`, such as a button without a name or an input without a type.
-- [Knip](https://knip.dev): files, exports and packages that nothing uses.
-
-`npm run e2e` runs the Playwright tests in `e2e/` against a deployed site in Chromium. Set `E2E_BASE_URL` to the site, for example a pull request preview. Without it, the run stops at once. Run the tests in the Playwright image:
+`npm run e2e` runs the Playwright tests in `e2e/` against a deployed site. Set `E2E_BASE_URL` to the site, for example a pull request preview:
 
 ```sh
-docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr.17.tick3d.yarden-zamir.com mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'npm ci && npm run e2e'
+docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr-17.tick3d.yarden-zamir.com mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'npm ci && npm run e2e'
 ```
 
-- The image tag must match the `@playwright/test` version in `package.json`. Update both together.
-- `npm ci` in the Playwright image installs packages for glibc. Run `npm ci` again before you use `node:26-alpine`.
-- Each test opens fresh browser contexts, and the tests run in parallel. The HTML report goes to `e2e/playwright-report/`. A failed test keeps a trace in `e2e/test-results/`.
-- One run creates 8 online sessions. The server allows 60 new sessions per hour from one address.
-- The `e2e` workflow runs the suite after a successful pull request preview deploy. When a test fails, the workflow uploads the HTML report.
-- Knip finds the tests through its `entry` setting in `package.json`. Its Playwright plugin is off, because the plugin loads the config, and the config stops without `E2E_BASE_URL`.
-- The laptop host (`compose.lan.yml`) has no automatic test. It needs a local Docker host and a second device on the network.
+- Keep the image tag equal to the `@playwright/test` version in `package.json`.
+- After a run in the Playwright image, run `npm ci` again before you use `node:26-alpine`.
+- The `e2e` workflow runs the suite after each successful pull request preview deploy. It starts when the preview answers its health check 3 times in a row.
 
 ## Deploy
 
 See [kitshn.md](kitshn.md). A push to `main` deploys production.
+
+The paid Android app on Google Play wraps the production site. The `android` workflow builds it from [android/twa-manifest.json](android/twa-manifest.json), and the `play-*` workflows release it, sync the listing and file issues from reviews and crashes.
+
+## License
+
+[MIT](LICENSE)

@@ -1,13 +1,15 @@
 // Draws the whole page from the settings and the open session.
+import { avatarFor, avatarPlaceholder } from '../avatar.ts';
 import { hasLimit } from '../clock.ts';
+import { showSegmented } from '../board/view-controls.ts';
 import { type Player, other, type Game, replay, toCoords, winnerOf } from '../game.ts';
 import { applyCamera, cells, marks } from './board.ts';
 import { renderChat } from './chat.ts';
 import { renderClockEditor, renderClocks } from './clocks.ts';
-import { startReview } from './controls.ts';
 import {
   boardEl,
   boardHiddenEl,
+  seatLockButtons,
   statusEl,
   reviewEl,
   reviewLabel,
@@ -19,7 +21,6 @@ import {
   joinCodeInput,
   newCodeButton,
   scoreEl,
-  historyEl,
   newGameButton,
   tuningEl,
   undoButton,
@@ -28,19 +29,19 @@ import {
   soundButton,
   trainLink,
 } from './dom.ts';
-import { openCard } from './end-card.ts';
 import { renderGameView, viewerName } from './game-view.ts';
 import { renderCoords } from './keypad.ts';
-import { renderAccount } from './my-games.ts';
+import { renderSessionGames } from './my-games.ts';
+import { showAccount } from '../header/header.ts';
+import { LOCK_CLOSED_ICON, LOCK_OPEN_ICON, SOUND_OFF_ICON, SOUND_ON_ICON } from '../icons.ts';
+import { seatIn } from '../protocol.ts';
 import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
-import { settings, type Settings, type Toggle } from './settings.ts';
-import { me, page, shared, current, isLive, matchOptions, settingsLocked, canChangeMatch } from './state.ts';
-
-// Inline icons draw in the text color, so they follow the theme. Emoji do not.
-const SPEAKER = '<path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>';
-const SOUND_ON_ICON = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">${SPEAKER}<path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/></svg>`;
-const SOUND_OFF_ICON = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">${SPEAKER}<path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>`;
+import { markPerson } from './person-mark.ts';
+import { renderPlayers, seatPerson } from './players.ts';
+import { settings, type Toggle } from './settings.ts';
+import { syncVoice } from './voice.ts';
+import { me, page, shared, current, isLive, isWatching, matchOptions, settingsLocked, canChangeMatch, bothSeated, awaitingSession } from './state.ts';
 
 // One name per seat, the same in the score, status, chat, clocks, keypad, history and end card.
 // This screen's own seat is "You". Then come "Computer", the GitHub login and the generated name.
@@ -52,8 +53,13 @@ export function playerName(player: Player): string {
   if (session === undefined || session.mode === 'friend') return `Player ${player}`;
   if (player === me()) return 'You';
   if (session.mode === 'computer') return 'Computer';
-  return session.players[player]?.login ?? session.names[player] ?? `Player ${player}`;
+  return seatPerson(session, player).name;
 }
+
+const TALLY_AVATAR_PIXELS = 24;
+
+// The seat now of the player who held `seat` in game `index`, and the reverse: the seats can rotate between games.
+export const seatNow = (index: number, seat: Player): Player => seatIn(page.session?.flipped ?? [], index, seat);
 
 // "You win!", or the winner's name: "Computer wins!", "braveOtter wins!", "Player X wins!".
 const winText = (winner: Player) => (winner === me() ? 'You win!' : `${playerName(winner)} wins!`);
@@ -65,12 +71,13 @@ function awayPlayer(): Player | undefined {
   return page.session.seats[opponent] && !page.session.presence[opponent] ? opponent : undefined;
 }
 
-function resultText(game: Game): string {
+// The result of game `index` of the open session, with the name of the player who won it.
+export function resultText(game: Game, index: number): string {
   switch (game.status.kind) {
     case 'won':
-      return `${playerName(game.status.winner)} won`;
+      return `${playerName(seatNow(index, game.status.winner))} won`;
     case 'timeout':
-      return `${playerName(game.status.winner)} won on time`;
+      return `${playerName(seatNow(index, game.status.winner))} won on time`;
     case 'draw':
       return 'Draw';
     case 'playing':
@@ -127,15 +134,25 @@ function statusText(): string {
   }
 }
 
+// Why Undo cannot run now, or undefined. With another device, only the own last move can go back,
+// and the other player must accept (src/page/players.ts). The session rules check the same again.
+function undoProblemText(): string | undefined {
+  const game = current();
+  if (!isLive()) return 'The game is over.';
+  if (game.moves.length === 0) return 'No move to take back yet.';
+  if (hasLimit(game.clock)) return 'A timed game has no undo.';
+  if (!shared()) return undefined;
+  if (page.session?.you == null) return 'Only the two players can undo.';
+  if (game.turn === page.session.you) return 'Only your own last move can go back, before the other player moves.';
+  if (page.session.seatRequest !== null) return 'Wait for the open request first.';
+  return undefined;
+}
+
 // A panel control shows only where it applies (see the table in README "Controls per mode").
-// data-show-mode lists the modes of a control, and such a control is for play, so a game from a link
-// hides it. data-needs-session marks a control of an open game, which online and Nearby mode have
-// only after a create, a join or a host.
+// data-show-mode lists the modes of a control, and such a control is for play, so a game from a link hides it.
 function applies(field: HTMLElement): boolean {
   const modes = field.dataset.showMode;
-  if (modes !== undefined && (page.viewing !== undefined || !modes.split(' ').includes(settings.mode))) return false;
-  const waiting = page.session === undefined && page.viewing === undefined && (settings.mode === 'online' || settings.mode === 'nearby');
-  return !(field.dataset.needsSession !== undefined && waiting);
+  return modes === undefined || (page.viewing === undefined && modes.split(' ').includes(settings.mode));
 }
 
 function shownGame(): Game {
@@ -188,23 +205,20 @@ export function render(): void {
   coordsForm.hidden = page.review !== undefined;
   renderCoords();
   renderChat();
+  renderPlayers();
   renderGameView();
 
-  document.querySelectorAll<HTMLElement>('[data-show-mode], [data-needs-session]').forEach((field) => {
+  document.querySelectorAll<HTMLElement>('[data-show-mode]').forEach((field) => {
     field.hidden = !applies(field);
   });
-  document.querySelectorAll<HTMLElement>('[data-show-view]').forEach((field) => {
-    field.hidden = field.dataset.showView !== settings.view;
+  // data-needs-session marks a control of an open game. Before the session comes (the server, the Nearby host,
+  // or the device store), it draws in its final place, grey and disabled, and the session fills it in place.
+  // Its own rules below disable its buttons, because no session gives no action.
+  const pending = awaitingSession();
+  document.querySelectorAll<HTMLElement>('[data-needs-session]').forEach((field) => {
+    field.toggleAttribute('data-pending', pending);
   });
-  document.querySelectorAll<HTMLElement>('.segmented').forEach((group) => {
-    const value = settings[group.dataset.setting as keyof Settings];
-    // Segmented controls exist for the text settings only (mode, level, view and the like).
-    if (typeof value !== 'string') throw new Error(`segmented control for a setting that is not text: ${group.dataset.setting}`);
-    group.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
-      button.setAttribute('aria-pressed', String(button.dataset.value === value));
-      button.disabled = frozen;
-    });
-  });
+  showSegmented(document, settings, frozen);
   document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) => {
     button.setAttribute('aria-pressed', String(options[button.dataset.toggle as Toggle]));
     button.disabled = frozen || page.busy || !canChangeMatch();
@@ -223,14 +237,15 @@ export function render(): void {
   joinCodeInput.disabled = frozen || page.busy;
   newCodeButton.disabled = frozen || page.busy;
 
-  // Score: finished games of this session only.
+  // Score: finished games of this session only, per player. The seats can rotate between games.
   const score = { X: 0, O: 0, draw: 0 };
-  for (const g of page.games) {
+  for (const [index, g] of page.games.entries()) {
     const winner = winnerOf(g.status);
-    if (winner !== null) score[winner]++;
+    if (winner !== null) score[seatNow(index, winner)]++;
     if (g.status.kind === 'draw') score.draw++;
   }
   const away = awayPlayer();
+  const sharedMode = settings.mode === 'online' || settings.mode === 'nearby';
   scoreEl.replaceChildren(
     ...([
       ['X', playerName('X'), score.X],
@@ -243,61 +258,71 @@ export function render(): void {
       const count = document.createElement('b');
       count.textContent = String(value);
       const name = document.createElement('span');
-      const info = key === 'draw' || page.session === undefined ? null : page.session.players[key];
-      if (info) {
-        const avatar = document.createElement('img');
-        avatar.src = `${info.avatar}&s=48`;
-        avatar.alt = '';
-        avatar.className = 'avatar';
-        name.append(avatar);
+      // A GitHub account shows in every mode. A generated picture shows only with another device,
+      // where the seat is a person and not "Computer" or a friend on this device.
+      const session = page.session;
+      // Online and Nearby before the session: the seats wait for their people. A short "···", like the game code box,
+      // because a tally is narrow, and a longer word wraps to a second line and makes the score taller.
+      if (key !== 'draw' && pending && sharedMode) {
+        name.append(avatarPlaceholder(), '···');
+        tally.append(count, name);
+        return tally;
       }
+      if (key !== 'draw' && session !== undefined && (session.players[key] !== null || (shared() && session.seats[key]))) {
+        name.append(avatarFor(seatPerson(session, key), TALLY_AVATAR_PIXELS, session.people[key]));
+      }
+      // Another player's name opens the report and block menu (src/page/safety.ts).
+      const person = key === 'draw' || session === undefined || !shared() || key === session.you ? null : session.people[key];
+      if (person !== null) markPerson(name, { person, name: label, message: null });
       name.append(key === away ? `${label} · away` : label);
       tally.append(count, name);
       return tally;
     }),
   );
 
-  historyEl.replaceChildren(
-    ...page.games.map((g, index) => {
-      const item = document.createElement('li');
-      const reviewable = g !== current() || g.status.kind !== 'playing';
-      item.innerHTML = `<span>Game ${index + 1}</span><span class="result">${resultText(g)} · ${g.moves.length} moves</span>`;
-      if (reviewable) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = page.review?.game === index ? 'Viewing' : 'Replay';
-        button.addEventListener('click', () => startReview(index));
-        item.append(button);
-      }
-      // A game from a link has no session for the card to describe.
-      if (g.status.kind !== 'playing' && page.viewing === undefined) {
-        const cardButton = document.createElement('button');
-        cardButton.type = 'button';
-        cardButton.textContent = 'Card';
-        cardButton.addEventListener('click', () => void openCard(index));
-        item.append(cardButton);
-      }
-      item.classList.toggle('active', page.review?.game === index);
-      return item;
-    }),
-  );
+  renderSessionGames();
 
   // With another device, a game must end before the next one starts.
   const sharedLive = shared() && isLive() && current().moves.length > 0;
   // A game from a link: New game goes back to play.
   newGameButton.disabled = page.viewing === undefined && (frozen || page.busy || page.thinking || page.session?.you == null || sharedLive);
   for (const input of tuningEl.querySelectorAll('input')) input.disabled = frozen;
-  undoButton.disabled =
-    frozen || page.thinking || page.review !== undefined || !isLive() || current().moves.length === 0 || hasLimit(current().clock);
+  const undoProblem = undoProblemText();
+  undoButton.disabled = frozen || page.thinking || page.busy || page.review !== undefined || undoProblem !== undefined;
+  undoButton.title = undoProblem ?? (shared() ? 'Ask the other player to take back your last move.' : 'Take back the last move.');
+  // Undo is for a live game, and the result card for a finished one. So they share one place in the actions row.
+  // A watcher has no move to take back, so a watcher sees no Undo at all.
+  if (!isLive() || isWatching()) undoButton.hidden = true;
   showCardButton.hidden = isLive() || page.review !== undefined;
   renderClockEditor(frozen);
   renderClocks();
-  lockButton.disabled = frozen || page.busy || !isLive() || page.review !== undefined || !canChangeMatch();
+  // A watcher sees the lock of the session, but the lock does not hold the watcher's own settings.
+  const locked = page.session?.locked ?? false;
+  // A held lock stays enabled, so its tooltip shows on hover. A click on it changes nothing.
+  lockButton.disabled = !locked && (page.busy || !isLive() || page.review !== undefined || !canChangeMatch() || !bothSeated());
   const lockScope = shared() ? ' for both players' : '';
-  lockButton.textContent = frozen ? '🔒 Locked' : '🔓 Lock';
-  lockButton.title = frozen ? `Settings are locked${lockScope} until this game ends.` : `Lock every setting${lockScope} until this game ends.`;
-  lockButton.setAttribute('aria-pressed', String(frozen));
-  renderAccount();
+  lockButton.dataset.tip = locked
+    ? `Locked${lockScope} until this game ends. Leaving stays possible.`
+    : bothSeated()
+      ? `Lock${lockScope}: no setting changes (level, time limit, hide options, view) until this game ends. Leaving stays possible.`
+      : 'Lock: waits for the second player.';
+  lockButton.innerHTML = locked ? `${LOCK_CLOSED_ICON}<span>Locked</span>` : `${LOCK_OPEN_ICON}<span>Lock</span>`;
+  lockButton.setAttribute('aria-pressed', String(locked));
+  renderSeatLocks(frozen);
+  showAccount(page.account.user);
   soundButton.innerHTML = settings.muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
   soundButton.setAttribute('aria-pressed', String(!settings.muted));
+  syncVoice();
+}
+
+// The seat lock next to "You play" (computer) and in the Players box (online, Nearby). Off: X and O
+// swap after each game. On: the seats stay. A friend game has one device on both seats: no lock there.
+function renderSeatLocks(frozen: boolean): void {
+  const fixed = page.session?.fixedSeats ?? false;
+  for (const button of seatLockButtons) {
+    button.innerHTML = fixed ? LOCK_CLOSED_ICON : LOCK_OPEN_ICON;
+    button.setAttribute('aria-pressed', String(fixed));
+    button.disabled = frozen || page.busy || !canChangeMatch();
+    button.dataset.tip = fixed ? 'Keep seats' : 'Swap seats each game';
+  }
 }

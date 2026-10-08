@@ -55,16 +55,37 @@ const panned = (voices: readonly Voice[], column: number): Voice[] => voices.map
 // the tone an octave lower. The row and the column do not change the sound, so it does not name a cell.
 const LAYER_NOTES: Four<number> = [523.25, 587.33, 659.25, 783.99]; // C5, D5, E5, G5
 
+// The Classic tone at `note`. The overtone stays at the X pitch for O too, so a low O tone stays audible.
+const classicTone = (note: number, player: Player): Voice[] => [
+  { wave: 'triangle', frequency: player === 'X' ? note : note / 2, attack: 0.01, decay: 0.18, level: 0.25 },
+  { wave: 'sine', frequency: note * 2, at: 0.02, attack: 0.01, decay: 0.08, level: 0.06 },
+];
+
 const classic: SoundSet = {
   name: 'Classic',
   description: 'The first sound: one note for each layer. It does not name the row or the column.',
   keypadPreview: false,
+  voices: (cell, player) => classicTone(at4(LAYER_NOTES, toCoords(cell).layer), player),
+};
+
+// ---- Classic, pitched: the first sound, with a pitch for every cell ----
+// The same tone as Classic, and the layer keeps its Classic note (C, D, E or G). The row moves the note by
+// octaves: row 1 one octave up, row 2 as Classic, row 3 one octave down, row 4 two octaves down. The column
+// comes from the side on headphones, left (1) to right (4). A mono speaker plays the four columns of a row
+// alike, because more pitch steps would make the tone shrill or muddy.
+const ROW_OCTAVES: Four<number> = [2, 1, 1 / 2, 1 / 4];
+
+const pitched: SoundSet = {
+  name: 'Classic, pitched',
+  description: 'The first sound, with a pitch for each cell: the note is the layer, the octave the row, the side the column.',
+  parts: {
+    layer: { hint: 'note', names: ['C', 'D', 'E', 'G'] },
+    row: { hint: 'octave', names: ['highest', 'high', 'low', 'lowest'] },
+    column: { hint: 'side, on headphones', names: ['left', 'mid-left', 'mid-right', 'right'] },
+  },
   voices(cell, player) {
-    const note = at4(LAYER_NOTES, toCoords(cell).layer);
-    return [
-      { wave: 'triangle', frequency: player === 'X' ? note : note / 2, attack: 0.01, decay: 0.18, level: 0.25 },
-      { wave: 'sine', frequency: note * 2, at: 0.02, attack: 0.01, decay: 0.08, level: 0.06 },
-    ];
+    const { layer, row, column } = toCoords(cell);
+    return panned(classicTone(at4(LAYER_NOTES, layer) * at4(ROW_OCTAVES, row), player), column);
   },
 };
 
@@ -530,6 +551,7 @@ const harmony: SoundSet = {
 
 export const SOUND_SETS = {
   classic,
+  pitched,
   cells,
   soft,
   orchestra,
@@ -551,5 +573,5 @@ export const SOUND_SET_GROUPS: readonly { title: string; subtitle: string; ids: 
   { title: 'World and voice', subtitle: 'Bronze, tines and voices, each with its own map.', ids: ['gamelan', 'kalimba', 'choir'] },
   { title: 'Playful', subtitle: 'Game blips, drums and nature sounds, each with its own map.', ids: ['chiptune', 'percussion', 'nature'] },
   { title: 'For musicians', subtitle: 'Real chords in C major, named as in a music lesson.', ids: ['harmony'] },
-  { title: 'Original', subtitle: 'The first sounds: one note per layer.', ids: ['classic'] },
+  { title: 'Original', subtitle: 'The first sound, with one note per layer or a pitch per cell.', ids: ['classic', 'pitched'] },
 ];

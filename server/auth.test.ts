@@ -1,6 +1,7 @@
 import type { IncomingMessage } from 'node:http';
 import { describe, expect, it } from 'vitest';
-import { type AuthConfig, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
+import { PRACTICE_RUNS_PER_10_MINUTES } from './api-docs.ts';
+import { type AuthConfig, TooManyRequests, authConfigFromEnv, clientOf, createAuth, createLimiter } from './auth.ts';
 
 const config: AuthConfig = {
   clientId: 'client-id',
@@ -28,7 +29,7 @@ function fakeGitHub(profile: object = { id: 7, login: 'octo', avatar_url: 'https
   return { impl, calls };
 }
 
-async function login(returnTo = 'https://pr.5.tick3d.example.com/?code=ABCD', profile?: object) {
+async function login(returnTo = 'https://pr-5.tick3d.example.com/?code=ABCD', profile?: object) {
   const github = fakeGitHub(profile);
   const auth = createAuth(config, github.impl, () => 1_000);
   const start = auth.start(config.origin, returnTo);
@@ -41,14 +42,14 @@ async function login(returnTo = 'https://pr.5.tick3d.example.com/?code=ABCD', pr
 describe('GitHub login', () => {
   it('sends a preview to the login origin first', () => {
     const auth = createAuth(config, fakeGitHub().impl);
-    const { location } = auth.start('https://pr.5.tick3d.example.com', 'https://pr.5.tick3d.example.com/');
-    expect(location).toBe('https://tick3d.example.com/api/auth/login?return=https%3A%2F%2Fpr.5.tick3d.example.com%2F');
+    const { location } = auth.start('https://pr-5.tick3d.example.com', 'https://pr-5.tick3d.example.com/');
+    expect(location).toBe('https://tick3d.example.com/api/auth/login?return=https%3A%2F%2Fpr-5.tick3d.example.com%2F');
   });
 
   it('logs in, sets a cookie for the whole domain, and returns to the page', async () => {
     const { auth, done, github } = await login();
     expect(done.user).toEqual({ id: 7, login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' });
-    expect(done.location).toBe('https://pr.5.tick3d.example.com/?code=ABCD');
+    expect(done.location).toBe('https://pr-5.tick3d.example.com/?code=ABCD');
     const account = done.cookies.find((c) => c.startsWith('t3_user='));
     expect(account).toContain('Domain=tick3d.example.com');
     expect(account).toContain('HttpOnly');
@@ -104,20 +105,47 @@ describe('request limits', () => {
     expect(clientOf(from({}))).toBe('10.0.0.9');
   });
 
+  // The answer of one call: allowed, or refused with the Retry-After header in whole seconds.
+  const answer = (allow: (client: string, now: number) => void, client: string, now: number): string => {
+    try {
+      allow(client, now);
+      return 'ok';
+    } catch (error) {
+      if (!(error instanceof TooManyRequests)) throw error;
+      expect(error.status).toBe(429);
+      expect(error.message).toBe('slow down');
+      return error.headers['retry-after'] ?? 'no header';
+    }
+  };
+
   it('allows a client the limit per window, and again after the window', () => {
-    const allow = createLimiter(2, 1_000, 10);
-    expect([allow('a', 0), allow('a', 1), allow('a', 2)]).toEqual([true, true, false]);
-    expect(allow('b', 2)).toBe(true);
-    expect(allow('a', 1_000)).toBe(true);
+    const allow = createLimiter(2, 1_000, 10, 'slow down');
+    expect([answer(allow, 'a', 0), answer(allow, 'a', 1), answer(allow, 'a', 2)]).toEqual(['ok', 'ok', '1']);
+    expect(answer(allow, 'b', 2)).toBe('ok');
+    expect(answer(allow, 'a', 1_000)).toBe('ok');
+  });
+
+  it('says in whole seconds, rounded up, when the window of a refused client ends', () => {
+    const allow = createLimiter(1, 600_000, 10, 'slow down');
+    allow('a', 100);
+    expect(answer(allow, 'a', 1_000)).toBe('600');
+    expect(answer(allow, 'a', 599_950)).toBe('1');
+    expect(answer(allow, 'a', 600_100)).toBe('ok');
+  });
+
+  it('refuses the practice run after the documented limit', () => {
+    const allow = createLimiter(PRACTICE_RUNS_PER_10_MINUTES, 600_000, 10, 'slow down');
+    for (let run = 0; run < PRACTICE_RUNS_PER_10_MINUTES; run++) expect(answer(allow, 'a', run)).toBe('ok');
+    expect(answer(allow, 'a', PRACTICE_RUNS_PER_10_MINUTES)).toBe('600');
   });
 
   it('keeps a bounded number of clients and forgets the oldest first', () => {
-    const allow = createLimiter(1, 1_000, 2);
-    allow('a', 0);
-    allow('b', 1);
-    expect(allow('b', 2)).toBe(false);
-    allow('c', 3);
-    expect(allow('a', 4)).toBe(true);
-    expect(allow('c', 5)).toBe(false);
+    const allow = createLimiter(1, 1_000, 2, 'slow down');
+    answer(allow, 'a', 0);
+    answer(allow, 'b', 1);
+    expect(answer(allow, 'b', 2)).toBe('1');
+    answer(allow, 'c', 3);
+    expect(answer(allow, 'a', 4)).toBe('ok');
+    expect(answer(allow, 'c', 5)).toBe('1');
   });
 });

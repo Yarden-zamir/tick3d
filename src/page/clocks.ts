@@ -15,9 +15,9 @@ import { sounds } from '../sound.ts';
 import { clocksEl, clockNote, element, clockSummary } from './dom.ts';
 import { reject, showToast, showProblem } from './feedback.ts';
 import { playerName, render } from './render.ts';
-import { refresh, withBusy, applyView } from './sessions.ts';
+import { refresh, sendShownChange, withBusy } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
-import { current, nowMs, page, nextClock, canChangeMatch, settingsLocked, shared, isLive } from './state.ts';
+import { current, nowMs, page, nextClock, canChangeMatch, settingsLocked, shared, isLive, updateSession, awaitingSession } from './state.ts';
 
 let lastTickSecond: number | undefined;
 let lastFlagRefresh = 0;
@@ -25,7 +25,11 @@ let lastFlagRefresh = 0;
 export function renderClocks(): void {
   const game = current();
   const left = remaining(game, nowMs());
-  clocksEl.hidden = left === null || page.review !== undefined || page.session === undefined;
+  // Before the session comes, the clocks of the next game keep their place, grey (data-pending in src/page/render.ts),
+  // so the board under them does not move. A game from a link has no clocks.
+  clocksEl.hidden = left === null || (page.session === undefined && !awaitingSession());
+  // A review keeps the box of the live clocks but does not show them, so the board does not move up (src/style.css).
+  clocksEl.toggleAttribute('data-reviewing', page.review !== undefined);
   if (left === null) return;
   const live = game.status.kind === 'playing';
   clocksEl.querySelectorAll<HTMLElement>('[data-clock]').forEach((chip) => {
@@ -135,7 +139,6 @@ function applyClock(clock: TimeControl): void {
     return reject(undefined, 'locked');
   }
   if (sameClock(clock, nextClock())) return render();
-  sounds.click();
   settings.clock = clock;
   saveSettings();
   if (page.session === undefined) return render();
@@ -147,16 +150,9 @@ function applyClock(clock: TimeControl): void {
   // A game keeps the limit it started with, so a change during a game starts with the next one.
   if (!shared() && isLive() && current().moves.length > 0) showToast('The new time limit starts with the next game.');
   // Show the change at once, as with moves. The answer replaces it, or a refresh undoes it on an error.
-  page.session = { ...page.session, clock };
+  updateSession({ ...page.session, clock });
   render();
-  void withBusy(async () => {
-    try {
-      applyView(await backend.update(code, { clock }));
-    } catch (error) {
-      await refresh(code);
-      throw error;
-    }
-  });
+  void withBusy(() => sendShownChange(code, () => backend.update(code, { clock })));
 }
 
 function setLimit(kind: LimitKind, seconds: number | null): void {

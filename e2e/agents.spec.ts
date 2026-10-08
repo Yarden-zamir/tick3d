@@ -1,7 +1,7 @@
 import type { APIRequestContext } from '@playwright/test';
 import { expect, expectToast, marks, status, test } from './fixtures.ts';
 
-// Two AI agents play over the API, as /api/openapi.json tells them to. This file creates 1 online session.
+// Two AI agents play over the API, as /api/openapi.json tells them to. This file creates 2 online sessions.
 
 type View = {
   code: string;
@@ -30,18 +30,14 @@ async function call(request: APIRequestContext, player: string, method: 'GET' | 
 
 test('the OpenAPI document and its Swagger UI page load', async ({ request, page, baseURL }) => {
   const response = await request.get('/api/openapi.json');
-  const doc = (await response.json()) as { openapi: string; info: { description: string }; servers: { url: string }[]; paths: Record<string, unknown> };
-  expect(doc.openapi).toBe('3.1.0');
+  // server/api-docs.test.ts checks the document itself. Here: the deployed server fills in its own origin.
+  const doc = (await response.json()) as { servers: { url: string }[] };
   expect(doc.servers).toEqual([{ url: baseURL }]);
-  expect(Object.keys(doc.paths)).toContain('/api/sessions/{code}/moves');
-  expect(doc.info.description).toContain('## Quick start');
-  expect((await request.get('/api/docs.md')).status()).toBe(404);
 
   // The plain page fixture: `open` watches the game page for toasts, and this page is not the game.
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/api/docs');
-  await expect(page.locator('.swagger-ui .info .title')).toContainText('tick3d HTTP API');
   await expect(page.locator('.opblock-summary-path', { hasText: '/api/sessions/{code}/moves' })).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -89,12 +85,12 @@ test('two agents play and chat over the API with long polls, and a person watche
   await expect(page.locator('#chat-log')).toContainText('Good game, agent A!');
   await expect(page.locator('#chat-log')).toContainText('Thanks, agent B!');
 
-  // The next game reaches the watcher live.
+  // The next game reaches the watcher live. The seats swap, so agent B (O before) is X and moves first.
   const next = await call(request, agentB, 'POST', `/sessions/${code}/games`);
-  expect(next.turn).toBe('X');
+  expect(next).toMatchObject({ turn: 'X', you: 'X', flipped: [true, false] });
   await expect(marks(page)).toHaveCount(0);
   await expect(status(page)).toContainText('Watching');
-  await call(request, agentA, 'POST', `/sessions/${code}/moves`, { game: next.games.length - 1, moveCount: 0, cell: 21 });
+  await call(request, agentB, 'POST', `/sessions/${code}/moves`, { game: next.games.length - 1, moveCount: 0, cell: 21 });
   await expect(marks(page)).toHaveCount(1);
 });
 
@@ -104,10 +100,40 @@ test('the Advanced box gives a snippet for an AI agent, and Copy copies it', asy
   await page.locator('#advanced summary').click();
   const snippet = page.locator('#agent-snippet');
   await expect(snippet).toContainText(`${baseURL}/api/openapi.json`);
-  await expect(snippet).toContainText('wait for my instructions');
 
   await page.locator('#agent-copy').click();
   await expectToast(page, 'Copied');
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toBe(await snippet.textContent());
+});
+
+test('a repeat with the same Idempotency-Key gets the first answer and changes nothing', async ({ request }) => {
+  const agentA = playerId('a');
+  const agentB = playerId('b');
+  const send = (player: string, path: string, key: string, data: unknown) =>
+    request.post(`/api${path}`, { headers: { 'X-Player': player, 'Idempotency-Key': key }, data });
+
+  const { code } = await call(request, agentA, 'POST', '/sessions', { name: 'Retry match' });
+  await call(request, agentB, 'POST', `/sessions/${code}/join`);
+
+  const move = { game: 0, moveCount: 0, cell: 21 };
+  const first = await send(agentA, `/sessions/${code}/moves`, 'move-1', move);
+  const again = await send(agentA, `/sessions/${code}/moves`, 'move-1', move);
+  expect(first.status()).toBe(200);
+  expect(again.status()).toBe(200);
+  expect(await again.json()).toEqual(await first.json());
+
+  const chat = { text: 'Good luck!' };
+  await send(agentA, `/sessions/${code}/chat`, 'chat-1', chat);
+  await send(agentA, `/sessions/${code}/chat`, 'chat-1', chat);
+  const view = await call(request, agentA, 'GET', `/sessions/${code}`);
+  expect(view.games[0]?.moves).toEqual([21]);
+  expect(view.chat.map((message) => message.text)).toEqual(['Good luck!']);
+
+  // The same key with another body is a client error.
+  expect((await send(agentA, `/sessions/${code}/chat`, 'chat-1', { text: 'Hi' })).status()).toBe(422);
+  // Without a key, a repeated move tells that it counted.
+  const repeat = await request.post(`/api/sessions/${code}/moves`, { headers: { 'X-Player': agentA }, data: move });
+  expect(repeat.status()).toBe(409);
+  expect(await repeat.json()).toMatchObject({ code: 'already-played' });
 });

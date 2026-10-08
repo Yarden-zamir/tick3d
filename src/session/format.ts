@@ -10,10 +10,14 @@
 // fixtures/format-1.json holds a real format 1 document. Its test proves that old data still reads.
 import { DIFFICULTIES, type Difficulty } from '../ai.ts';
 import { NO_LIMIT, type TimeControl, parseClock } from '../clock.ts';
+import { type EpochMs, isEpochMs, toEpochMs } from '../epoch.ts';
 import type { Player } from '../game.ts';
+import { type Playoff, parsePlayoff } from '../practice/playoff.ts';
 import {
   CHAT_KEEP,
+  CONSENT_ACTIONS,
   type ChatMessage,
+  type ConsentAction,
   type GameRecord,
   type MatchOptions,
   SESSION_MODES,
@@ -43,7 +47,24 @@ export type SessionDoc = {
   clock: TimeControl;
   // Oldest first, the newest CHAT_KEEP messages only.
   chat: ChatMessage[];
+  // The sound playoff of the session (src/practice/playoff.ts), or null. Older documents have none.
+  playoff: Playoff | null;
+  // A seat change that waits for the other player (see seat in core.ts), or null.
+  seatRequest: StoredSeatRequest | null;
+  // False: the players swap X and O for each new game (newGame in core.ts). True: the seats stay.
+  // The default depends on the mode (defaultFixedSeats).
+  fixedSeats: boolean;
+  // One entry per game: true when the two players sat the other way round in that game (seatIn in protocol.ts).
+  // The live game is always false while it goes on.
+  flipped: boolean[];
 };
+
+// `watcher` is the player token of the watcher that takes the other seat (replace), else null.
+// `at` is the time of the request. The request ends SEAT_REQUEST_MS (core.ts) later.
+type StoredSeatRequest = { kind: ConsentAction; from: Player; watcher: string | null; at: EpochMs };
+
+// Against the computer the player starts every game until they unlock the seats. Two people swap by default.
+export const defaultFixedSeats = (mode: SessionMode): boolean => mode === 'computer';
 
 type RawDoc = Record<string, unknown>;
 export type Upgrade = (doc: RawDoc) => RawDoc;
@@ -58,8 +79,8 @@ const isRecord = (value: unknown): value is RawDoc => typeof value === 'object' 
 function readGame(value: unknown, index: number): GameRecord {
   if (!isRecord(value) || !isMoveList(value.moves)) throw new FormatError(`game ${index} has no valid moves`);
   const moves = value.moves;
-  const times = Array.isArray(value.times) ? value.times : moves.map(() => 0);
-  if (times.length !== moves.length || !times.every((time) => typeof time === 'number' && Number.isFinite(time))) {
+  const times: unknown[] = Array.isArray(value.times) ? value.times : moves.map(() => toEpochMs(0));
+  if (times.length !== moves.length || !times.every(isEpochMs)) {
     throw new FormatError(`game ${index} has invalid move times`);
   }
   const clock = value.clock === undefined ? NO_LIMIT : parseClock(value.clock);
@@ -107,6 +128,15 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
   if (mode === undefined) throw new FormatError(`unknown session mode ${String(doc.mode)}`);
   const chat = doc.chat === undefined ? [] : doc.chat;
   if (!Array.isArray(chat) || !chat.every(isChatMessage)) throw new FormatError('the chat is invalid');
+  const playoff = doc.playoff === undefined || doc.playoff === null ? null : parsePlayoff(doc.playoff);
+  if (playoff === undefined) throw new FormatError('the playoff is invalid');
+  // A document from before seat controls has no seat request.
+  const seatRequest = doc.seatRequest === undefined || doc.seatRequest === null ? null : readSeatRequest(doc.seatRequest);
+  // A document from before seat rotation gets the default of its mode. Its earlier games sat as the seats are now.
+  const flipped = doc.flipped === undefined ? doc.games.map(() => false) : doc.flipped;
+  if (!Array.isArray(flipped) || flipped.length !== doc.games.length || !flipped.every((entry): entry is boolean => typeof entry === 'boolean')) {
+    throw new FormatError('the flipped seats do not match the games');
+  }
   return {
     format: CURRENT_FORMAT,
     mode,
@@ -119,7 +149,23 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
     lockedGame,
     clock,
     chat: chat.slice(-CHAT_KEEP),
+    playoff,
+    seatRequest,
+    fixedSeats: doc.fixedSeats === undefined ? defaultFixedSeats(mode) : doc.fixedSeats === true,
+    flipped,
   };
+}
+
+function readSeatRequest(value: unknown): StoredSeatRequest {
+  if (!isRecord(value)) throw new FormatError('the seat request is invalid');
+  const kind = CONSENT_ACTIONS.find((known) => known === value.kind);
+  const { from, watcher, at } = value;
+  if (kind === undefined || (from !== 'X' && from !== 'O') || !isEpochMs(at)) {
+    throw new FormatError('the seat request is invalid');
+  }
+  const target = kind === 'replace' ? (typeof watcher === 'string' ? watcher : undefined) : watcher === null ? null : undefined;
+  if (target === undefined) throw new FormatError('the seat request has an invalid watcher');
+  return { kind, from, watcher: target, at };
 }
 
 function readComputer(value: unknown, mode: SessionMode): SessionDoc['computer'] {

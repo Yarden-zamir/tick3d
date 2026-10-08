@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       url:
-        description: The site to test, for example https://pr.17.tick3d.yarden-zamir.com
+        description: The site to test, for example https://pr-17.tick3d.yarden-zamir.com
         required: true
         type: string
 
@@ -20,10 +20,6 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.deployment_status.state == 'success' && startsWith(github.event.deployment.environment, 'pr-'))
     runs-on: ubuntu-latest
-    # The image tag must match the @playwright/test version in package.json.
-    container:
-      image: mcr.microsoft.com/playwright:v1.63.0-noble
-      options: --ipc=host
     concurrency:
       group: e2e-${{ github.event.deployment.environment || inputs.url }}
       cancel-in-progress: true
@@ -32,7 +28,34 @@ jobs:
       E2E_BASE_URL: ${{ github.event.deployment_status.environment_url || inputs.url }}
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
       - run: npm ci --no-audit --no-fund
+      # The browser comes from the cache, keyed on the installed @playwright/test version. The runner
+      # image has the system libraries of Chromium, so only a cache miss installs them.
+      - id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - id: browser-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - if: steps.browser-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps --only-shell chromium
+      # Right after a deploy, the new containers can drop connections for a moment ("socket hang up").
+      # The suite starts after the health check answers 3 times in a row, 1 second apart.
+      - name: Wait for a stable preview
+        run: |
+          ok=0
+          for attempt in $(seq 1 120); do
+            if curl -fsS --max-time 5 "$E2E_BASE_URL/api/health" > /dev/null; then ok=$((ok + 1)); else ok=0; fi
+            if [ "$ok" -ge 3 ]; then exit 0; fi
+            sleep 1
+          done
+          echo "The preview at $E2E_BASE_URL did not answer its health check 3 times in a row." >&2
+          exit 1
       - run: npm run e2e
       - if: failure()
         uses: actions/upload-artifact@v7

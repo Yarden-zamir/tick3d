@@ -1,10 +1,12 @@
 // Results of games away from the server, game ids, and the survival records against the computer.
-import { type Game, type Player, other } from '../game.ts';
+import { epochNow } from '../epoch.ts';
+import type { Game } from '../game.ts';
 import { type RecordNews, type Records, parseRecords, addLoss, mergeRecords } from '../records.ts';
 import { isTunedFor } from '../tuning.ts';
 import { token, api, OnlineError } from '../online.ts';
 import {
   type Code,
+  type DeviceGameId,
   type GameId,
   type PlayerToken,
   type ResultUpload,
@@ -20,6 +22,7 @@ import { gameMetrics } from './metrics.ts';
 import { nearbyKind, nearbyMetrics } from './nearby.ts';
 import { settings } from './settings.ts';
 import { type Session, page } from './state.ts';
+import { STORAGE_KEYS } from '../storage-keys.ts';
 
 let flushing = false;
 
@@ -28,7 +31,7 @@ const resultIdOf = (code: Code, index: number) => `${token}-${code.toLowerCase()
 
 // Keeps a finished computer, friend or Nearby game for upload, and returns the id of its link.
 // Online games are on the server already, and a Nearby watcher played no part: both get undefined.
-export async function recordResult(open: Session, game: Game, index: number): Promise<GameId | undefined> {
+export async function recordResult(open: Session, game: Game, index: number): Promise<DeviceGameId | undefined> {
   if (page.deviceDb === undefined || open.mode === 'online') return undefined;
   const you = open.mode === 'friend' ? null : open.you;
   if (open.mode !== 'friend' && you === null) return undefined;
@@ -46,12 +49,12 @@ export async function recordResult(open: Session, game: Game, index: number): Pr
     game: toRecord(game),
     you,
     difficulty: open.mode === 'computer' ? settings.difficulty : null,
-    finishedAt: game.times.at(-1) ?? Date.now(),
+    finishedAt: game.times.at(-1) ?? epochNow(),
     publicId: newGameId(),
     options: open.options,
     tuned,
     metrics: { ...metrics, nearby: open.mode === 'nearby' ? await nearbyMetrics() : null },
-    guest: hosting && you !== null ? await guestOf(open.code, you) : null,
+    guest: hosting && you !== null ? await guestOf(open.code) : null,
   };
   await page.deviceDb.put('results', { id, upload, sent: false });
   await flushResults();
@@ -60,10 +63,12 @@ export async function recordResult(open: Session, game: Game, index: number): Pr
 
 // The token of the guest on the other seat of a Nearby game that this device hosts. The host holds
 // the session document, so it knows the token. Null while the other seat is empty.
-async function guestOf(code: Code, you: Player): Promise<PlayerToken | null> {
+// It reads the seat that the host does not hold, so a new game that rotated the seats meanwhile changes nothing.
+async function guestOf(code: Code): Promise<PlayerToken | null> {
   const summary = await page.local?.summary(code);
   if (summary === undefined || summary.doc.mode !== 'nearby') throw new Error(`the hosted Nearby session ${code} is not on this device`);
-  const seat = summary.doc.seats[other(you)] ?? null;
+  const { X, O } = summary.doc.seats;
+  const seat = X === token ? O : O === token ? X : null;
   if (seat === null) return null;
   const guest = asPlayerToken(seat);
   if (guest === undefined || guest === token) throw new Error(`the guest seat of ${code} holds no guest token`);
@@ -119,14 +124,20 @@ export async function flushResults(): Promise<void> {
   }
 }
 
-const RECORDS_KEY = 'tick3d.records';
+// Deletes the results on this device that the server has. Unsent results stay for the next upload.
+export async function deleteSentResults(): Promise<void> {
+  const db = page.deviceDb;
+  if (db === undefined) return;
+  for (const result of await db.all('results')) if (result.sent) await db.delete('results', result.id);
+}
+
 // Records that a game broke in this visit, by session code and game index, for its end card.
 export const recordNews = new Map<string, RecordNews>();
 
 // The device keeps its records, so they work offline. syncRecords adds the account's records from the server.
 function loadRecords(): Records {
   try {
-    return parseRecords(JSON.parse(localStorage.getItem(RECORDS_KEY) ?? 'null'));
+    return parseRecords(JSON.parse(localStorage.getItem(STORAGE_KEYS.records) ?? 'null'));
   } catch {
     return {};
   }
@@ -134,9 +145,18 @@ function loadRecords(): Records {
 
 function saveRecords(records: Records): void {
   try {
-    localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
+    localStorage.setItem(STORAGE_KEYS.records, JSON.stringify(records));
   } catch {
     // Storage is blocked (private mode). Records then last for this visit only.
+  }
+}
+
+// After a logout the records belong to the account, and this browser starts again from none.
+export function forgetRecords(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEYS.records);
+  } catch {
+    // Storage is blocked (private mode), so it holds no records.
   }
 }
 

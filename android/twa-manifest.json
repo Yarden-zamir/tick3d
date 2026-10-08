@@ -1,0 +1,55 @@
+{
+  "packageId": "com.yardenzamir.tick3d",
+  "host": "tick3d.yarden-zamir.com",
+  "name": "tick3d",
+  "launcherName": "tick3d",
+  "display": "standalone",
+  "displayOverride": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "default",
+  "themeColor": "#ffe14d",
+  "themeColorDark": "#ffe14d",
+  "navigationColor": "#e4e7ff",
+  "navigationColorDark": "#e4e7ff",
+  "navigationDividerColor": "#00000000",
+  "navigationDividerColorDark": "#00000000",
+  "backgroundColor": "#e4e7ff",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "https://tick3d.yarden-zamir.com/android-chrome-512x512.png",
+  "maskableIconUrl": "https://tick3d.yarden-zamir.com/maskable-icon-512x512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./upload.keystore",
+    "alias": "upload"
+  },
+  "appVersionCode": 1,
+  "appVersionName": "1.0.0",
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://tick3d.yarden-zamir.com/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://tick3d.yarden-zamir.com/",
+  "minSdkVersion": 24,
+  "fingerprints": [
+    {
+      "name": "Play app signing key: signs the builds that Google Play installs",
+      "value": "D7:61:88:49:A9:66:47:54:AD:32:55:48:B1:40:4D:9C:8F:A1:22:21:98:8B:B1:DD:1A:B3:E7:D5:78:9B:11:87"
+    },
+    {
+      "name": "Upload key: signs the CI builds, so a build installed outside Play also opens without the browser bar",
+      "value": "BD:FD:C2:7E:46:40:60:1B:89:63:FB:A9:73:9E:1C:98:F6:03:A9:E6:1E:FC:63:91:60:27:A8:47:46:A7:F9:FD"
+    }
+  ],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": []
+}

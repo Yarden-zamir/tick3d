@@ -1,14 +1,16 @@
 import './style.css';
-import { openDeviceDb, memoryDeviceDb } from './device-db.ts';
+import { type DeviceDb, openDeviceDb, memoryDeviceDb } from './device-db.ts';
 import { createLocalBackend } from './local.ts';
 import { EMPTY_SESSION_TTL_MS } from './session/core.ts';
 import { setupPwa } from './pwa.ts';
 import { token } from './online.ts';
 import { normalizeCode, parseGameId } from './protocol.ts';
+import { readLinkIntent } from './session-link.ts';
 import { setMuted, setSoundSet } from './sound.ts';
 import { setupAdvanced } from './page/advanced.ts';
 import { applyCamera, setupBoard } from './page/board.ts';
 import { setupChat } from './page/chat.ts';
+import { setupPanelAnchor } from './page/panel-anchor.ts';
 import { setupClocks, tickClock } from './page/clocks.ts';
 import { setupControls } from './page/controls.ts';
 import { soundSetList, updateBar, updateReload } from './page/dom.ts';
@@ -18,10 +20,14 @@ import { openGameView, setupGameView } from './page/game-view.ts';
 import { setupHome } from './page/home.ts';
 import { renderCoords, setupKeypad } from './page/keypad.ts';
 import { setupReports } from './page/metrics.ts';
-import { refreshAccount, setupMyGames } from './page/my-games.ts';
-import { setupPreviews } from './page/previews.ts';
+import { openMyGames, refreshAccount, setupMyGames } from './page/my-games.ts';
+import { setupGameHeader } from './header/header.ts';
+import { readMyGamesRequest, withoutMyGamesRequest } from './header/my-games-link.ts';
 import { openNearbyLink, openNearby, setupNearby } from './page/nearby.ts';
 import { checkLanHost, setupOnlineBox } from './page/online-box.ts';
+import { setupPlayers } from './page/players.ts';
+import { setupSafety } from './page/safety.ts';
+import { setupAvatarViewer } from './page/avatar-viewer.ts';
 import { render } from './page/render.ts';
 import { flushResults } from './page/results.ts';
 import { refresh, setUrlCode, setUrlGame, joinSession, openLocalSession } from './page/sessions.ts';
@@ -29,14 +35,16 @@ import { settings } from './page/settings.ts';
 import { page } from './page/state.ts';
 import { applyTheme, setupTheme } from './page/theme.ts';
 import { setupSoundSets } from './page/sound-set.ts';
+import { setupVoice } from './page/voice.ts';
 
 // Every module only declares things on import. These calls add the listeners and build the
 // board, tuning and theme controls, in the order of the old single page script.
 setupBoard();
 setupControls();
+setupVoice();
 setupNearby();
 setupMyGames();
-setupPreviews();
+setupGameHeader();
 
 setupPwa({
   onNeedRefresh(reload) {
@@ -63,24 +71,67 @@ setupSoundSets(soundSetList, (id) => {
 });
 setupKeypad();
 setupChat();
+setupPanelAnchor();
 setupOnlineBox();
+setupPlayers();
+setupSafety();
+setupAvatarViewer();
 setupHome();
 setupGameView();
 setupReports();
 
-async function start(): Promise<void> {
-  try {
-    page.deviceDb = await openDeviceDb();
-  } catch {
-    // The browser blocks storage (some private modes). Games then last for this visit only.
-    page.deviceDb = memoryDeviceDb();
-    showToast('This browser does not let the game store data, so games last for this visit only.');
-  }
-  page.local = createLocalBackend(page.deviceDb, token, () => page.account.user);
+// Another tab or the installed app can hold the device database: a frozen page in the middle of a write
+// keeps its transaction open. Every transaction of this page then waits, with no end and no error, and
+// the page stays on "Getting the game ready…". After this wait the game starts with storage for this visit.
+const STORAGE_WAIT_MS = 4000;
+
+class StorageWaitError extends Error {}
+
+// Opens the device database and prunes empty sessions. The prune reads the sessions store, so it also
+// proves that no other tab holds that store.
+async function openStorage(): Promise<DeviceDb> {
+  const db = await openDeviceDb();
   // Before any session opens, so a session the start opens is never pruned under it.
-  await page.local.pruneEmpty(EMPTY_SESSION_TTL_MS);
-  void refreshAccount();
+  await createLocalBackend(db, token, () => page.account.user).pruneEmpty(EMPTY_SESSION_TTL_MS);
+  return db;
+}
+
+// Limit: only the start has this wait. A tab that takes the database later still stalls a move of this tab.
+// Revisit this if players report a stuck game after the start.
+async function startStorage(): Promise<DeviceDb> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const waited = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new StorageWaitError()), STORAGE_WAIT_MS);
+  });
+  try {
+    // A late success after the wait leaves one unused connection open. It closes with the page.
+    return await Promise.race([openStorage(), waited]);
+  } catch (error) {
+    // Games then last for this visit only.
+    showToast(
+      error instanceof StorageWaitError
+        ? 'Another tick3d tab or app holds the game data, so this game lasts for this visit only. Close the other tick3d tabs and the app, then reload.'
+        : // The browser blocks storage (some private modes), or an older tab blocks it.
+          'This browser does not let the game store data, so games last for this visit only.',
+    );
+    return memoryDeviceDb();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function start(): Promise<void> {
+  page.deviceDb = await startStorage();
+  page.local = createLocalBackend(page.deviceDb, token, () => page.account.user);
+  const account = refreshAccount();
   void checkLanHost();
+  // The account button of another page asks to open My games. The dialog opens after the account
+  // is known, so it shows the right login.
+  const myGamesRequest = readMyGamesRequest(new URL(location.href));
+  if (myGamesRequest !== undefined) {
+    history.replaceState(null, '', withoutMyGamesRequest(new URL(location.href)));
+    void account.then(() => openMyGames(myGamesRequest.returnTo)).catch(showError);
+  }
   const params = new URLSearchParams(location.search);
   if (params.get('login') === 'failed') {
     showProblem('The GitHub login did not work. Try again.');
@@ -104,7 +155,10 @@ async function start(): Promise<void> {
     showToast(`The link code "${linkCode}" is not valid.`);
   }
   if (code !== undefined) {
-    await joinSession(code);
+    const intent = readLinkIntent(params);
+    // A broken watch value still only watches: a seat taken by mistake is worse than no seat.
+    if (intent === 'invalid') showToast(`The link value watch="${params.getAll('watch').join(',')}" is not valid. Use watch=1.`);
+    await joinSession(code, intent === 'play' ? 'play' : 'watch');
     if (page.session?.code === code) return;
     // The code opened no game (none with that code, or no network), and the error shows already.
     // The address drops the code, so a reload does not repeat the error, and the page starts as usual.

@@ -1,22 +1,30 @@
 // The account button and the My games dialog.
 import { winnerOf } from '../game.ts';
+import { avatarFor, type Person } from '../avatar.ts';
 import { nameOf } from '../names.ts';
-import { api, OnlineError, token } from '../online.ts';
+import { type Me, api, OnlineError, token } from '../online.ts';
 import {
   type GameId,
   HISTORY_PAGE_SIZE,
   type HistoryEntry,
   type Outcome,
+  type PlayerInfo,
   type SessionMode,
   type SessionSummary,
   type Tally,
+  CUSTOM_NAME_MAX_LENGTH,
+  CUSTOM_NAME_MIN_LENGTH,
+  ALL_STATS,
   outcomeOf,
+  parseCustomName,
+  statsQuery,
   toGame,
 } from '../protocol.ts';
+import { STATS_ICON } from '../icons.ts';
+import { deviceDataKeys } from '../storage-keys.ts';
+import { syncDeletions } from './deletions.ts';
+import { accountLink } from '../header/header.ts';
 import {
-  accountAvatar,
-  accountName,
-  accountButton,
   myGamesDialog,
   accountBox,
   myGamesDevice,
@@ -26,27 +34,34 @@ import {
   clearConfirm,
   clearConfirmYes,
   clearConfirmNo,
+  deleteConfirm,
+  deleteConfirmForm,
+  deleteConfirmNo,
+  deleteConfirmScope,
+  deleteConfirmSettings,
+  deleteConfirmStatus,
+  deleteConfirmYes,
+  myGamesDelete,
   myGamesStats,
   myGamesOnline,
   myGamesNote,
   myGamesOnlineBox,
   myGamesClose,
+  myGamesStatsLink,
+  myGamesPrivate,
+  myGamesPrivateOption,
+  myGamesSession,
+  myGamesSessionBox,
 } from './dom.ts';
 import { showError, reject } from './feedback.ts';
 import { openGameView } from './game-view.ts';
-import { render } from './render.ts';
-import { flushResults, syncRecords } from './results.ts';
-import { openDeviceSession, joinSession } from './sessions.ts';
-import { page, settingsLocked } from './state.ts';
-
-export function renderAccount(): void {
-  const user = page.account.user;
-  accountAvatar.hidden = user === null;
-  if (user !== null) accountAvatar.src = `${user.avatar}&s=48`;
-  accountName.textContent = user?.login ?? 'My games';
-  // On narrow phones only the icon shows, so the spoken name carries the login too.
-  accountButton.setAttribute('aria-label', user === null ? 'My games' : `My games, logged in as ${user.login}`);
-}
+import { startReview } from './controls.ts';
+import { openCard } from './end-card.ts';
+import { render, resultText } from './render.ts';
+import { loadBlocks, renderBlockedList } from './safety.ts';
+import { deleteSentResults, flushResults, forgetRecords, syncRecords } from './results.ts';
+import { openDeviceSession, joinSession, refresh } from './sessions.ts';
+import { ownName, page, current, saveAccount, settingsLocked } from './state.ts';
 
 function tallyBox(label: string, tally: Tally): HTMLElement {
   const box = document.createElement('div');
@@ -62,9 +77,15 @@ function tallyBox(label: string, tally: Tally): HTMLElement {
   return box;
 }
 
-// Without an action the item has no button.
-function listItem(title: string, detail: string, action: string | undefined, onClick: () => void, badge?: string): HTMLLIElement {
+// A button of a list item. A click closes the dialog first.
+type Action = { label: string; run: () => void };
+
+const LIST_AVATAR_PIXELS = 28;
+
+// `person` is the other player of the game, when there is one: their picture leads the item.
+function listItem(title: string, detail: string, actions: readonly Action[], badge?: string, person?: Person): HTMLLIElement {
   const item = document.createElement('li');
+  if (person !== undefined) item.append(avatarFor(person, LIST_AVATAR_PIXELS, null));
   const text = document.createElement('div');
   const name = document.createElement('b');
   name.textContent = title;
@@ -78,15 +99,17 @@ function listItem(title: string, detail: string, action: string | undefined, onC
     mark.textContent = badge;
     item.append(mark);
   }
-  if (action === undefined) return item;
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = action;
-  button.addEventListener('click', () => {
-    myGamesDialog.close();
-    onClick();
-  });
-  item.append(button);
+  for (const { label, run } of actions) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-small';
+    button.textContent = label;
+    button.addEventListener('click', () => {
+      myGamesDialog.close();
+      run();
+    });
+    item.append(button);
+  }
   return item;
 }
 
@@ -105,10 +128,15 @@ async function deviceTallies(): Promise<Tally> {
 }
 
 // The same rule as playerName in render.ts. A null name means that the other seat is still empty.
-function opponentOf(summary: SessionSummary): string {
-  const name = summary.opponent?.login ?? summary.opponentName;
-  return name === null ? 'Waiting for a second player' : `vs ${name}`;
+function opponentOf({ opponent, opponentName }: { opponent: PlayerInfo | null; opponentName: string | null }): Person | undefined {
+  const name = opponent?.login ?? opponentName;
+  return name === null ? undefined : { player: opponent, name };
 }
+
+const opponentText = (summary: SessionSummary) => {
+  const person = opponentOf(summary);
+  return person === undefined ? 'Waiting for a second player' : `vs ${person.name}`;
+};
 
 const gameCount = (count: number) => `${count} ${count === 1 ? 'game' : 'games'}`;
 
@@ -122,13 +150,13 @@ function viewGame(id: GameId): void {
 
 function historyItem(entry: HistoryEntry): HTMLLIElement {
   const level = entry.difficulty === null ? '' : `, ${entry.difficulty}`;
-  const opponentName = entry.opponent?.login ?? entry.opponentName;
-  const opponent = opponentName === null ? '' : ` · vs ${opponentName}`;
+  const person = opponentOf(entry);
+  const opponent = person === undefined ? '' : ` · vs ${person.name}`;
   const title = `${OUTCOME_NAMES[entry.result]} · ${MODE_NAMES[entry.mode]}${level}`;
   const detail = `${entry.moves} moves${opponent} · ${ago(entry.finishedAt)}`;
   // A game stored before game links has no link to view.
   const id = entry.id;
-  return id === null ? listItem(title, detail, undefined, () => undefined) : listItem(title, detail, 'View', () => viewGame(id));
+  return listItem(title, detail, id === null ? [] : [{ label: 'View', run: () => viewGame(id) }], undefined, person);
 }
 
 // The finished games on this device that have a link, newest first, for when the server is out of reach.
@@ -168,38 +196,66 @@ async function loadHistory(request: number, append: boolean): Promise<void> {
   myGamesMore.hidden = !next.more;
 }
 
+const ACCOUNT_AVATAR_PIXELS = 32;
+
+// "Hide my stats" (StatsPrivacy in src/protocol.ts). Without a network or an answer, the switch stays hidden.
+async function loadStatsPrivacy(request: number): Promise<void> {
+  myGamesPrivateOption.hidden = true;
+  if (!navigator.onLine) return;
+  try {
+    const privacy = await api.statsPrivacy();
+    if (request !== myGamesRequest) return;
+    myGamesPrivate.checked = privacy.private;
+    myGamesPrivateOption.hidden = false;
+  } catch (error) {
+    if (!(error instanceof OnlineError)) throw error;
+  }
+}
+
+async function changeStatsPrivacy(): Promise<void> {
+  const wanted = myGamesPrivate.checked;
+  try {
+    myGamesPrivate.checked = (await api.setStatsPrivacy(wanted)).private;
+  } catch (error) {
+    myGamesPrivate.checked = !wanted;
+    throw error;
+  }
+}
+
 // Opening the dialog again while a list loads starts over, so a late answer never adds a second copy.
 let myGamesRequest = 0;
 
-async function openMyGames(): Promise<void> {
+// `returnTo` is the page that a GitHub login returns to. Without it, the login returns to this page.
+export async function openMyGames(returnTo?: string): Promise<void> {
   const request = ++myGamesRequest;
   myGamesDialog.showModal();
+  renderBlockedList();
+  void loadStatsPrivacy(request).catch(showError);
   // Account
   accountBox.replaceChildren();
   if (page.account.user) {
-    const avatar = document.createElement('img');
-    avatar.className = 'avatar';
-    avatar.src = `${page.account.user.avatar}&s=64`;
-    avatar.alt = '';
+    const avatar = avatarFor({ player: page.account.user, name: page.account.user.login }, ACCOUNT_AVATAR_PIXELS, null);
     const name = document.createElement('b');
     name.textContent = page.account.user.login;
     const logout = document.createElement('button');
     logout.type = 'button';
+    logout.className = 'btn btn-small';
     logout.textContent = 'Log out';
-    logout.addEventListener('click', () => void api.logout().then(refreshAccount).then(() => myGamesDialog.close(), showError));
+    logout.addEventListener('click', () => void logOut().then(() => myGamesDialog.close(), showError));
     accountBox.append(avatar, name, logout);
   } else {
-    // The same generated name that the server shows to the other players (src/names.ts).
+    // The same name that the server shows to the other players: the custom name, else the generated one (src/names.ts).
     const text = document.createElement('span');
     const name = document.createElement('b');
-    name.textContent = nameOf(token);
+    name.textContent = ownName();
     text.append('You play as ', name, '.');
-    accountBox.append(text);
+    accountBox.append(avatarFor({ player: null, name: ownName() }, ACCOUNT_AVATAR_PIXELS, null), text);
+    if (navigator.onLine) accountBox.append(renameControls());
     if (page.account.loginAvailable && navigator.onLine) {
       text.append(' Log in with GitHub to use your GitHub name.');
       const login = document.createElement('a');
-      login.className = 'login-link';
-      login.href = api.loginUrl();
+      login.className = 'btn btn-small btn-primary login-link';
+      login.href = api.loginUrl(returnTo);
       login.textContent = 'Log in with GitHub';
       accountBox.append(login);
     }
@@ -211,10 +267,15 @@ async function openMyGames(): Promise<void> {
     ...deviceSessions
       .filter((entry) => entry.mode !== 'nearby')
       .map((entry) =>
-        listItem(entry.name, `${entry.mode === 'computer' ? 'Computer' : 'Friend'} · ${gameCount(entry.games)} · ${ago(entry.updatedAt)}`, 'Open', () => {
-          if (settingsLocked()) return reject(undefined, 'locked');
-          void openDeviceSession(entry.code).catch(showError);
-        }),
+        listItem(entry.name, `${entry.mode === 'computer' ? 'Computer' : 'Friend'} · ${gameCount(entry.games)} · ${ago(entry.updatedAt)}`, [
+          {
+            label: 'Open',
+            run: () => {
+              if (settingsLocked()) return reject(undefined, 'locked');
+              void openDeviceSession(entry.code).catch(showError);
+            },
+          },
+        ]),
       ),
   );
   if (myGamesDevice.childElementCount === 0) myGamesDevice.innerHTML = '<li class="empty">No games on this device yet.</li>';
@@ -237,10 +298,10 @@ async function openMyGames(): Promise<void> {
       ...mine.sessions.map((summary) =>
         listItem(
           summary.name,
-          `${opponentOf(summary)} · ${gameCount(summary.games)} · ${ago(summary.updatedAt)}`,
-          'Continue',
-          () => (settingsLocked() ? reject(undefined, 'locked') : void joinSession(summary.code)),
+          `${opponentText(summary)} · ${gameCount(summary.games)} · ${ago(summary.updatedAt)}`,
+          [{ label: 'Continue', run: () => (settingsLocked() ? reject(undefined, 'locked') : void joinSession(summary.code, 'play')) }],
           summary.yourTurn ? 'Your turn' : undefined,
+          opponentOf(summary),
         ),
       ),
     );
@@ -270,8 +331,7 @@ async function clearHistory(): Promise<void> {
     // Upload what waits first, so a result that arrives later does not bring a cleared game back.
     await flushResults();
     await api.clearHistory();
-    const db = page.deviceDb;
-    if (db !== undefined) for (const result of await db.all('results')) if (result.sent) await db.delete('results', result.id);
+    await deleteSentResults();
     clearConfirm.close();
     historyOffset = 0;
     // The dialog covers the toasts, so the list itself says what happened.
@@ -283,12 +343,168 @@ async function clearHistory(): Promise<void> {
   }
 }
 
+// Logout. The server moves the finished games and seats of this browser to the account, so this
+// device drops its copies of account data: the uploaded results, the survival records and the cached
+// online games. Settings, sound, tuning and the sessions on this device stay.
+// Limit: a result that does not upload before the logout stays, and uploads later for this browser.
+// Revisit this if players report a logged-in game in the stats of a logged-out browser.
+async function logOut(): Promise<void> {
+  await flushResults();
+  await api.logout();
+  await deleteSentResults();
+  forgetRecords();
+  const db = page.deviceDb;
+  if (db !== undefined) for (const cached of await db.all('remote')) await db.delete('remote', cached.code);
+  await refreshAccount();
+}
+
+// Delete my data. The server deletes the data of this player, and of the account when this browser
+// is logged in, and logs out. Then this device deletes its copies: saved sessions, results, cached
+// online games and the stored data (deviceDataKeys). The player token stays, so the people who
+// blocked or reported this player still recognise them. Closing the dialog then reloads the page,
+// so no game in memory writes its data back.
+let dataDeleted = false;
+
+function openDeleteConfirm(): void {
+  const user = page.account.user;
+  deleteConfirmScope.textContent =
+    user === null ? 'This deletes the data of this device, on the server and here:' : `This deletes the data of the GitHub account ${user.login} on every device, and of this device:`;
+  deleteConfirmSettings.checked = false;
+  deleteConfirmStatus.hidden = true;
+  deleteConfirm.showModal();
+  deleteConfirmNo.focus();
+}
+
+async function deleteMyData(): Promise<void> {
+  deleteConfirmYes.disabled = true;
+  try {
+    await api.deleteData();
+  } catch (error) {
+    if (!(error instanceof OnlineError)) throw error;
+    // The dialog covers the toasts, so it says what happened.
+    deleteConfirmStatus.textContent = `Nothing was deleted: ${error.message}`;
+    deleteConfirmStatus.hidden = false;
+    return;
+  } finally {
+    deleteConfirmYes.disabled = false;
+  }
+  const db = page.deviceDb;
+  if (db !== undefined) for (const store of ['sessions', 'results', 'remote'] as const) await db.clear(store);
+  try {
+    for (const key of deviceDataKeys(Object.keys(localStorage), deleteConfirmSettings.checked)) localStorage.removeItem(key);
+  } catch {
+    // Storage is blocked (private mode), so it holds no data.
+  }
+  dataDeleted = true;
+  deleteConfirmForm.hidden = true;
+  deleteConfirmYes.hidden = true;
+  deleteConfirmNo.textContent = 'Close';
+  deleteConfirmStatus.textContent = 'Your data is deleted. The page starts fresh when you close this.';
+  deleteConfirmStatus.hidden = false;
+}
+
+// The games of the open session, oldest first, with Replay and the result card. render() calls this,
+// so the list stays current while the dialog is open. A game from a link has no session here.
+export function renderSessionGames(): void {
+  myGamesSessionBox.hidden = page.session === undefined;
+  myGamesSession.replaceChildren(
+    ...page.games.map((game, index) => {
+      const actions: Action[] = [];
+      // The live game has no moves to replay until it ends: the board shows it.
+      if (game !== current() || game.status.kind !== 'playing') {
+        actions.push({ label: page.review?.game === index ? 'Viewing' : 'Replay', run: () => startReview(index) });
+      }
+      if (game.status.kind !== 'playing') actions.push({ label: 'Card', run: () => void openCard(index).catch(showError) });
+      const item = listItem(`Game ${index + 1}`, `${resultText(game, index)} · ${game.moves.length} ${game.moves.length === 1 ? 'move' : 'moves'}`, actions);
+      item.classList.toggle('active', page.review?.game === index);
+      return item;
+    }),
+  );
+}
+
+// Rename for a player without a GitHub login: an inline form, and a reset to the generated name.
+// The dialog covers the toasts, so a refused name shows in the form.
+function renameControls(): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'rename';
+  const open = document.createElement('button');
+  open.className = 'btn btn-small';
+  open.type = 'button';
+  open.textContent = 'Rename';
+  const form = document.createElement('form');
+  form.className = 'rename-form';
+  form.hidden = true;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.maxLength = CUSTOM_NAME_MAX_LENGTH;
+  input.value = page.account.name ?? '';
+  input.placeholder = nameOf(token);
+  input.setAttribute('aria-label', 'Your name');
+  const save = document.createElement('button');
+  save.className = 'btn btn-small btn-primary';
+  save.type = 'submit';
+  save.textContent = 'Save';
+  const cancel = document.createElement('button');
+  cancel.className = 'btn btn-small';
+  cancel.type = 'button';
+  cancel.textContent = 'Cancel';
+  const problem = document.createElement('small');
+  problem.className = 'rename-problem';
+  form.append(input, save, cancel, problem);
+  box.append(open, form);
+  if (page.account.name !== null) {
+    const reset = document.createElement('button');
+    reset.className = 'btn btn-small';
+    reset.type = 'button';
+    reset.textContent = 'Reset to generated name';
+    reset.addEventListener('click', () => void changeName(() => api.clearName(), problem));
+    box.append(reset);
+  }
+  open.addEventListener('click', () => {
+    form.hidden = false;
+    open.hidden = true;
+    input.focus();
+  });
+  cancel.addEventListener('click', () => {
+    form.hidden = true;
+    open.hidden = false;
+    problem.textContent = '';
+  });
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const name = parseCustomName(input.value);
+    if (name === undefined) {
+      problem.textContent = `A name needs ${CUSTOM_NAME_MIN_LENGTH} to ${CUSTOM_NAME_MAX_LENGTH} letters, digits, spaces, "-" or "_".`;
+      return;
+    }
+    void changeName(() => api.setName(name), problem);
+  });
+  return box;
+}
+
+async function changeName(call: () => Promise<Me>, problem: HTMLElement): Promise<void> {
+  try {
+    saveAccount(await call());
+  } catch (error) {
+    if (!(error instanceof OnlineError)) throw error;
+    problem.textContent = error.message;
+    return;
+  }
+  // The open game shows the new name at once. The server tells the other screens of the game.
+  if (page.session?.mode === 'online') await refresh(page.session.code);
+  render();
+  await openMyGames();
+}
+
 // Asks the server who is logged in. Without a network the page keeps the last answer.
 export async function refreshAccount(): Promise<void> {
   if (!navigator.onLine) return;
   try {
-    page.account = await api.me();
+    saveAccount(await api.me());
     void syncRecords();
+    void syncDeletions().catch(showError);
+    // The blocks follow a login, so they load after the account.
+    void loadBlocks().catch(showError);
   } catch (error) {
     if (!(error instanceof OnlineError)) throw error;
   }
@@ -296,8 +512,18 @@ export async function refreshAccount(): Promise<void> {
 }
 
 export function setupMyGames(): void {
-  accountButton.addEventListener('click', () => void openMyGames().catch(showError));
+  // The account button is a link to the My games request (src/header/my-games-link.ts). Here it opens
+  // the dialog at once. A modified click opens a new tab, as for any link, and the dialog opens there.
+  accountLink.addEventListener('click', (event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    void openMyGames().catch(showError);
+  });
   myGamesClose.addEventListener('click', () => myGamesDialog.close());
+  // The stats page, with your own games.
+  myGamesStatsLink.href = `/stats${statsQuery({ ...ALL_STATS, scope: 'mine' })}`;
+  myGamesStatsLink.insertAdjacentHTML('afterbegin', STATS_ICON);
+  myGamesPrivate.addEventListener('change', () => void changeStatsPrivacy().catch(showError));
   myGamesMore.addEventListener('click', () => void loadHistory(myGamesRequest, true).catch(showError));
   myGamesClear.addEventListener('click', () => {
     clearConfirm.showModal();
@@ -307,6 +533,15 @@ export function setupMyGames(): void {
   clearConfirmYes.addEventListener('click', () => void clearHistory().catch(showError));
   clearConfirm.addEventListener('click', (event) => {
     if (event.target === clearConfirm) clearConfirm.close();
+  });
+  myGamesDelete.addEventListener('click', openDeleteConfirm);
+  deleteConfirmNo.addEventListener('click', () => deleteConfirm.close());
+  deleteConfirmYes.addEventListener('click', () => void deleteMyData().catch(showError));
+  deleteConfirm.addEventListener('click', (event) => {
+    if (event.target === deleteConfirm) deleteConfirm.close();
+  });
+  deleteConfirm.addEventListener('close', () => {
+    if (dataDeleted) location.assign('/');
   });
   myGamesDialog.addEventListener('click', (event) => {
     if (event.target === myGamesDialog) myGamesDialog.close();

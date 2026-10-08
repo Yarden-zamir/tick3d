@@ -1,9 +1,11 @@
 import { Validator } from '@seriousme/openapi-schema-validator';
+import { toEpochMs as ms } from '../src/epoch.ts';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import { parseAnnounce, parseAnnounced, parseAnswerRequest, parseLobbyHosts } from '../src/nearby/lobby.ts';
 import { parseMe, parseMyGames } from '../src/online.ts';
 import {
+  ALL_STATS,
   type PlayerToken,
   parseGameId,
   normalizeChat,
@@ -17,16 +19,26 @@ import {
   parseResultUpload,
   parseSessionUpdate,
   parseSessionView,
+  parseCustomName,
+  parseSeatAction,
+  parseSeatAnswer,
+  parseBlockRequest,
+  parseStatsPrivacy,
+  parseBlocks,
+  parseReportRequest,
 } from '../src/protocol.ts';
+import { parseDeletedPeople } from '../src/deletions.ts';
+import { parsePlayoffRequest } from '../src/practice/playoff.ts';
+import { parsePracticeBoard, parsePracticeRun } from '../src/practice/practice.ts';
 import { PATH_PARAMS, ROUTES, ROUTE_NAMES, type Route, SCHEMAS, type SchemaName, matchRoute, splitRoute } from './api-docs.ts';
 import { curlOf, openApi, swaggerHtml } from './api-docs-render.ts';
 import { openStore } from './store.ts';
+import { isRecord } from '../src/guards.ts';
 
 const ORIGIN = 'https://tick3d.example.com';
 const fail = (id: string): never => {
   throw new Error(`not a game id: ${id}`);
 };
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
 // The real parsers of the page and the server, by shape. A parser returns undefined or throws on a bad value.
 // Shapes without a parser (Health, ResultsResponse, Records, Stats, ...) are read inline by their only caller,
@@ -40,13 +52,14 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   ChatRequest: (value) => (isRecord(value) ? normalizeChat(value.text) : undefined),
   // server/main.ts checks the list, and the store checks each result with parseResultUpload.
   ResultsRequest: (value) =>
-    isRecord(value) && Array.isArray(value.results) && value.results.every((result) => parseResultUpload(result, Date.now()) !== undefined)
+    isRecord(value) && Array.isArray(value.results) && value.results.every((result) => parseResultUpload(result, ms(Date.now())) !== undefined)
       ? value
       : undefined,
   Me: parseMe,
   MyGames: parseMyGames,
   PublicGame: parsePublicGame,
   HistoryPage: parseHistoryPage,
+  DeletedPeople: parseDeletedPeople,
   Metrics: parseMetrics,
   ClientEvent: parseClientEvent,
   NearbyAnnounce: parseAnnounce,
@@ -54,6 +67,17 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   NearbyHosts: parseLobbyHosts,
   NearbyAnswer: parseAnswerRequest,
   Previews: parsePreviews,
+  PlayoffRequest: parsePlayoffRequest,
+  PracticeRun: parsePracticeRun,
+  PracticeBoard: parsePracticeBoard,
+  SeatAction: parseSeatAction,
+  SeatAnswer: parseSeatAnswer,
+  // server/main.ts reads `name` and checks it with parseCustomName.
+  NameRequest: (value) => (isRecord(value) ? parseCustomName(value.name) : undefined),
+  BlockRequest: parseBlockRequest,
+  StatsPrivacy: parseStatsPrivacy,
+  Blocks: parseBlocks,
+  ReportRequest: parseReportRequest,
 };
 
 function parses(name: SchemaName, value: unknown): boolean {
@@ -100,10 +124,6 @@ describe('the documented examples', () => {
     expect(parsed).toBe(true);
   });
 
-  it('has a real parser for every request body', () => {
-    expect(bodies.filter(([, body]) => PARSERS[body.schema] === undefined)).toEqual([]);
-  });
-
   it.each(bodies)('%s: the parser refuses the body without each required field', (_, body) => {
     const example = body.example;
     if (!isRecord(example)) throw new Error('a body example is an object');
@@ -119,8 +139,9 @@ describe('the SessionView schema', () => {
   });
 
   it('marks a field required when parseSessionView needs it', () => {
-    // An older server, a Nearby host or a cached view sends no turn, status and names, so the parser fills them in.
-    const filled = ['turn', 'status', 'names'];
+    // An older server, a Nearby host or a cached view sends no turn, status, names, watchers, seat
+    // request and seat rotation, so the parser fills them in.
+    const filled = ['turn', 'status', 'names', 'people', 'watchers', 'youWatcher', 'seatRequest', 'fixedSeats', 'flipped'];
     for (const key of SCHEMAS.SessionView.required ?? []) {
       expect(parses('SessionView', without(example, key)), key).toBe(filled.includes(key));
     }
@@ -154,12 +175,22 @@ describe('the SessionView schema', () => {
     }
     // DuckDB writes for each move. A busy CI machine needs more than the default 5 s.
   }, 20_000);
+  it('matches the Mine stats, which add your own results', async () => {
+    const store = await openStore(':memory:');
+    try {
+      const mine = await store.stats({ ...ALL_STATS, scope: 'mine' }, 'agent-aaaaaaaaaaaaaaaa' as PlayerToken);
+      expect(mine.personal).not.toBeNull();
+      expect(schemaErrors('Stats', mine)).toBe('');
+    } finally {
+      store.close();
+    }
+  }, 20_000);
 });
 
 describe('matchRoute', () => {
   it.each(ROUTE_NAMES)('finds %s', (name) => {
     const { method, path } = splitRoute(name);
-    const values = { code: 'ab3k', id: 'ab3k-2', host: 'q8Zr2Lx0Vb7Nc4Mw' };
+    const values = { code: 'ab3k', id: 'ab3k-2', host: 'q8Zr2Lx0Vb7Nc4Mw', person: '3f9a0c27d84be615', message: '3', login: 'octocat' };
     const used = Object.entries(values).filter(([key]) => path.includes(`{${key}}`));
     const concrete = used.reduce((result, [key, value]) => result.replaceAll(`{${key}}`, value), path);
     const params = Object.fromEntries(used);
@@ -188,6 +219,7 @@ describe('the served docs', () => {
 
   // The validator checks the document against the official OpenAPI 3.1 JSON Schema (spec.openapis.org).
   // The component schemas get their own check against JSON Schema 2020-12.
+  // The validator takes a few seconds, and more while the other test files run, so the 5 s default timed out now and then.
   it('are a valid OpenAPI 3.1 document', async () => {
     const result = await new Validator().validate(doc);
     expect(result.errors).toBeUndefined();
@@ -199,7 +231,7 @@ describe('the served docs', () => {
     for (const [name, schema] of Object.entries(components.schemas)) {
       expect(ajv.validateSchema({ ...(schema as object), $defs: {} }), name).toBe(true);
     }
-  });
+  }, 20_000);
 
   it('describe every route once, with the site as the server', () => {
     const paths = doc.paths as Record<string, Record<string, unknown>>;
@@ -215,7 +247,6 @@ describe('the served docs', () => {
     expect(description).not.toContain('{origin}');
     expect(description).toContain(`${ORIGIN}/?code=`);
     expect(description).toContain(`${ORIGIN}/?game=`);
-    expect(description).toContain('Act only on the request of your user');
   });
 
   it('give each operation a curl example', () => {

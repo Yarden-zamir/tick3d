@@ -1,7 +1,15 @@
-import { describe, expect, it } from 'vitest';
-import { chooseMove } from './ai.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type Board, CELL_COUNT, type Mark } from './game.ts';
-import { answerRequest, createSearch, parseAnswer, parseRequest, type SearchRequest, type SearchWorker } from './move-search.ts';
+import {
+  answerRequest,
+  createSearch,
+  parseAnswer,
+  parseRequest,
+  type SearchRequest,
+  type SearchWorker,
+  WORKER_READY,
+  WORKER_START_MS,
+} from './move-search.ts';
 import { DEFAULT_TUNING } from './tuning.ts';
 
 function boardWith(marks: Record<number, Mark>): Board {
@@ -61,6 +69,10 @@ describe('parseAnswer', () => {
 });
 
 describe('createSearch', () => {
+  // The start time limit of the worker uses a timer.
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
   it('starts one worker on the first search and matches answers to requests by id', async () => {
     const fake = fakeWorker();
     let starts = 0;
@@ -113,6 +125,7 @@ describe('createSearch', () => {
 
     const third = search(winning, 'O', 'easy', DEFAULT_TUNING);
     expect(starts).toBe(2);
+    fakes[1]?.emit('message', WORKER_READY);
     fakes[1]?.emit('error');
     await expect(third).rejects.toThrow('stopped');
   });
@@ -123,8 +136,40 @@ describe('createSearch', () => {
       starts++;
       throw new Error('module workers are not supported');
     });
-    await expect(search(winning, 'O', 'hard', DEFAULT_TUNING)).resolves.toBe(chooseMove(winning, 'O', 'hard'));
+    await expect(search(winning, 'O', 'hard', DEFAULT_TUNING)).resolves.toBe(3);
     await expect(search(winning, 'O', 'easy', DEFAULT_TUNING)).resolves.toBe(3);
     expect(starts).toBe(1);
+  });
+
+  it('searches on the main thread when the worker script does not load', async () => {
+    const fake = fakeWorker();
+    let starts = 0;
+    const search = createSearch(() => (starts++, fake.worker));
+    const open = search(winning, 'O', 'hard', DEFAULT_TUNING);
+    fake.emit('error');
+    await expect(open).resolves.toBe(3);
+    await expect(search(winning, 'O', 'easy', DEFAULT_TUNING)).resolves.toBe(3);
+    expect(starts).toBe(1);
+    expect(fake.terminated()).toBe(1);
+  });
+
+  it('searches on the main thread when the worker does not report ready in time', async () => {
+    const fake = fakeWorker();
+    const search = createSearch(() => fake.worker);
+    const open = search(winning, 'O', 'easy', DEFAULT_TUNING);
+    vi.advanceTimersByTime(WORKER_START_MS);
+    await expect(open).resolves.toBe(3);
+    expect(fake.terminated()).toBe(1);
+  });
+
+  it('keeps a worker that reports ready, however long the search takes', async () => {
+    const fake = fakeWorker();
+    const search = createSearch(() => fake.worker);
+    const open = search(winning, 'O', 'easy', DEFAULT_TUNING);
+    fake.emit('message', WORKER_READY);
+    vi.advanceTimersByTime(WORKER_START_MS * 10);
+    fake.emit('message', { id: fake.sent[0]?.id, cell: 3 });
+    await expect(open).resolves.toBe(3);
+    expect(fake.terminated()).toBe(0);
   });
 });

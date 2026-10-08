@@ -2,20 +2,15 @@
 .stats {
   max-width: 76rem;
   margin: 0 auto;
-  padding: max(1rem, env(safe-area-inset-top)) 1rem 3rem;
+  padding: max(1.25rem, env(safe-area-inset-top)) 1rem 3rem;
 }
 
 .stats-head {
   margin-bottom: 1.2rem;
 }
 
-.stats-head h1 {
-  font-size: clamp(2rem, 9vw, 3.2rem);
-  white-space: nowrap;
-}
-
-.stats-head p {
-  margin: 0.8rem 0 0;
+.stats-note {
+  margin: 0 0 1.2rem;
   color: var(--muted);
   font-weight: 600;
 }
@@ -102,6 +97,39 @@
 .stats-bar-label {
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.stats-releases {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+
+/* The name and the bundle each on a full line, then the bar and the count. */
+.stats-releases li {
+  display: grid;
+  grid-template-columns: 1fr max-content;
+  align-items: center;
+  gap: 0.1rem 0.6rem;
+}
+
+.stats-releases .stats-bar-label,
+.stats-release-version {
+  grid-column: 1 / -1;
+}
+
+.stats-releases svg {
+  width: 100%;
+  height: 0.9rem;
+}
+
+.stats-release-version {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-family: ui-monospace, monospace;
 }
 
 .stats-bar-value {
@@ -210,4 +238,76 @@
 
 .stats-table td {
   font-variant-numeric: tabular-nums;
+}
+
+/* The filters: one labelled row of toggle buttons per filter. */
+/* The person of a person filter: picture and name. */
+.stats-person {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+
+.stats-person .avatar {
+  width: 3rem;
+  height: 3rem;
+}
+
+.stats-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.4rem;
+  margin-bottom: 1rem;
+}
+
+.stats-filter {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.stats-filter-label {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.stats-filter .toggles {
+  gap: 0.4rem;
+}
+
+.stats-filter .toggles .btn {
+  flex: none;
+}
+
+.stats-line {
+  width: 100%;
+  height: 8rem;
+  border-bottom: 2px solid var(--line);
+}
+
+.stats-line .stats-guide {
+  stroke: var(--dot);
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.stats-line .stats-stroke {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Room for the cards while the first numbers load. */
+.stats-placeholder {
+  min-height: 10rem;
+  opacity: 0.45;
+}
+
+.stats-grid[aria-busy='true'] > .stats-card:not(.stats-placeholder) {
+  opacity: 0.55;
+  transition: opacity 0.2s;
 }

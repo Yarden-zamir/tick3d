@@ -1,4 +1,5 @@
 import type { TimeControl } from './clock.ts';
+import { type EpochMs, epochNow, toEpochMs } from './epoch.ts';
 
 // Rules for 3D tic-tac-toe on a 4x4x4 cube (also known as Qubic).
 // A cell is an index 0..63: layer * 16 + row * 4 + column.
@@ -25,8 +26,8 @@ export type Game = {
   first: Player;
   status: Status;
   moves: readonly number[];
-  // When each move happened, in epoch milliseconds. The clock reads these.
-  times: readonly number[];
+  // When each move happened. The clock reads these.
+  times: readonly EpochMs[];
   // The time limit this game is played with. It never changes during the game.
   clock: TimeControl;
 };
@@ -127,7 +128,7 @@ export function newGame(first: Player = 'X', clock: TimeControl = { perMove: nul
   };
 }
 
-export function play(game: Game, cell: number, at: number = Date.now()): MoveResult {
+export function play(game: Game, cell: number, at: EpochMs = epochNow()): MoveResult {
   assertCell(cell);
   if (game.status.kind !== 'playing') return { ok: false, error: 'game-over' };
   if (game.board[cell] !== null) return { ok: false, error: 'occupied' };
@@ -150,7 +151,7 @@ export function timeOut(game: Game): Game {
   return { ...game, status: { kind: 'timeout', winner: other(game.turn) } };
 }
 
-type ReplayOptions = { first?: Player; times?: readonly number[]; clock?: TimeControl };
+type ReplayOptions = { first?: Player; times?: readonly EpochMs[]; clock?: TimeControl };
 
 // Replays a move list from an empty board. Throws if a move is not legal.
 // Without `times`, every move gets time 0, which is fine for positions that no clock reads.
@@ -158,7 +159,7 @@ export function replay(moves: readonly number[], { first = 'X', times, clock }: 
   if (times !== undefined && times.length !== moves.length) throw new Error('times and moves differ in length');
   let game = newGame(first, clock);
   for (const [i, cell] of moves.entries()) {
-    const result = play(game, cell, times?.[i] ?? 0);
+    const result = play(game, cell, times?.[i] ?? toEpochMs(0));
     if (!result.ok) throw new Error(`move history is not valid: ${result.error} at cell ${cell}`);
     game = result.game;
   }
@@ -178,7 +179,8 @@ export function parseCoordinates(text: string): Coords | undefined {
   if (parts.length !== 3) return undefined;
   const values = parts.map(Number);
   if (!values.every((value) => Number.isInteger(value) && value >= 1 && value <= SIZE)) return undefined;
-  const [layer, row, column] = values as [number, number, number];
+  const [layer, row, column] = values;
+  if (layer === undefined || row === undefined || column === undefined) return undefined;
   return { layer: layer - 1, row: row - 1, column: column - 1 };
 }
 

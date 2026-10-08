@@ -1,6 +1,8 @@
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
 import jsQR from 'jsqr';
 import { PNG } from 'pngjs';
+import { normalizeCode, parseDeviceGameId } from '../src/protocol.ts';
+import { STORAGE_KEYS } from '../src/storage-keys.ts';
 
 // The app checks each stored field and uses the default for a field that is not valid.
 type Settings = Record<string, string | boolean>;
@@ -20,23 +22,27 @@ interface Opened {
 interface Seed {
   settings: Settings | undefined;
   records: Record<string, number> | undefined;
+  keys: typeof STORAGE_KEYS;
 }
 
 // Runs in the page before the app. A seed goes in only when the key is empty, so a reload keeps the
 // changes that the app made. The toast observer keeps every message, because a later toast
 // replaces the text of an earlier one.
-function seed({ settings, records }: Seed): void {
+function seed({ settings, records, keys }: Seed): void {
   // A new page starts on about:blank, which has no storage.
   if (!location.protocol.startsWith('http')) return;
-  if (settings !== undefined && localStorage.getItem('tick3d.settings') === null) {
-    localStorage.setItem('tick3d.settings', JSON.stringify(settings));
+  if (settings !== undefined && localStorage.getItem(keys.settings) === null) {
+    localStorage.setItem(keys.settings, JSON.stringify(settings));
   }
-  if (records !== undefined && localStorage.getItem('tick3d.records') === null) {
-    localStorage.setItem('tick3d.records', JSON.stringify(records));
+  if (records !== undefined && localStorage.getItem(keys.records) === null) {
+    localStorage.setItem(keys.records, JSON.stringify(records));
   }
   const toasts: string[] = [];
   (window as unknown as { e2eToasts: string[] }).e2eToasts = toasts;
   addEventListener('DOMContentLoaded', () => {
+    // Only the game page (/) has a toast. A test can go on to another page of the site in the same context,
+    // for example the Voice room from the game. That page has no toast to watch.
+    if (location.pathname !== '/') return;
     const toast = document.querySelector('#toast');
     if (toast === null) throw new Error('the page has no #toast');
     new MutationObserver(() => {
@@ -55,7 +61,7 @@ export const test = base.extend<{ open: (options?: OpenOptions) => Promise<Opene
       const context = await browser.newContext({ baseURL, ...(storageState === undefined ? {} : { storageState }) });
       contexts.push(context);
       context.on('weberror', (error) => errors.push(error.error().message));
-      await context.addInitScript(seed, { settings, records });
+      await context.addInitScript(seed, { settings, records, keys: STORAGE_KEYS });
       const page = await context.newPage();
       await page.goto(path);
       return { page, context };
@@ -79,15 +85,38 @@ export const cell = (page: Page, index: number) => page.locator('.cell').nth(ind
 export const marks = (page: Page) => page.locator('.cell.x, .cell.o');
 export const status = (page: Page) => page.locator('#status');
 
+// An address with the link of a finished game that a device made (`?game=<id>`).
+export const hasDeviceGameLink = (url: URL): boolean => parseDeviceGameId(url.searchParams.get('game')) !== undefined;
+
+// The player token of the page's browser, for API calls as that player.
+export const playerToken = (page: Page): Promise<string> => page.evaluate((key) => localStorage.getItem(key) ?? '', STORAGE_KEYS.player);
+
+// Calls the API as the page's browser, with its player token.
+export const callApi = async (page: Page, path: string) =>
+  page.evaluate(
+    async ({ path, token }) => {
+      const response = await fetch(path, { headers: { 'x-player': token } });
+      return (await response.json()) as unknown;
+    },
+    { path, token: await playerToken(page) },
+  );
+
+// The settings that the page stored, or an empty object before the first save.
+export const storedSettings = (page: Page): Promise<Record<string, unknown>> =>
+  page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>, STORAGE_KEYS.settings);
+
+// The status can say "Your move" while the answer to the last move of this page is still on its way.
+// The board takes no move until then, and shows that with the class `thinking`.
 export async function expectMyMove(page: Page): Promise<void> {
   await expect(status(page)).toContainText('Your move');
+  await expect(page.locator('#board')).not.toHaveClass(/\bthinking\b/);
 }
 
 // Creates an online session from the page and returns its code. Each call counts against the
 // server limit of 60 new sessions per hour for one client address.
 export async function createOnline(page: Page): Promise<string> {
   await page.getByRole('button', { name: 'Online', exact: true }).click();
-  await expect(page).toHaveURL(/[?&]code=\w{4}/);
+  await expect(page).toHaveURL((url) => normalizeCode(url.searchParams.get('code') ?? '') !== undefined);
   const code = new URL(page.url()).searchParams.get('code');
   if (code === null) throw new Error('the address has no code');
   return code;
@@ -102,6 +131,27 @@ export async function ownName(page: Page): Promise<string> {
   expect(name).toMatch(/^[a-z]+[A-Z][a-z]+$/);
   return name;
 }
+
+// Online turns: each page waits for its move, plays one cell, and waits until the turn passes.
+export async function playTurns(turns: readonly (readonly [Page, number])[]): Promise<void> {
+  for (const [page, index] of turns) {
+    await expectMyMove(page);
+    await cell(page, index).click();
+    await expect(status(page)).not.toContainText('Your move');
+  }
+}
+
+// X wins on 0, 16, 32, 48. O plays 1, 2, 3 in between.
+export const xWins = (alice: Page, bob: Page) =>
+  [
+    [alice, 0],
+    [bob, 1],
+    [alice, 16],
+    [bob, 2],
+    [alice, 32],
+    [bob, 3],
+    [alice, 48],
+  ] as const;
 
 // Joins with a fresh context and waits until the joiner holds the O seat.
 export async function joinAsO(open: (options?: OpenOptions) => Promise<Opened>, path: string): Promise<Opened> {
@@ -141,3 +191,26 @@ export async function playComputerUntilEnd(page: Page, order: readonly number[])
   }
   await expect(status(page)).not.toHaveAttribute('data-state', 'playing');
 }
+
+// Runs in the page before the app: the microphone is an oscillator. window.e2eTone(frequency) sets its
+// pitch, and window.e2eTone(null) makes it silent.
+export function oscillatorMic(): void {
+  navigator.mediaDevices.getUserMedia = async () => {
+    const context = new AudioContext();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    gain.gain.value = 0;
+    const output = context.createMediaStreamDestination();
+    oscillator.connect(gain).connect(output);
+    oscillator.start();
+    (window as unknown as { e2eTone: (frequency: number | null) => void }).e2eTone = (frequency) => {
+      gain.gain.setValueAtTime(frequency === null ? 0 : 0.5, context.currentTime);
+      if (frequency !== null) oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+    };
+    await context.resume();
+    return output.stream;
+  };
+}
+
+export const setTone = (page: Page, frequency: number | null) =>
+  page.evaluate((value) => (window as unknown as { e2eTone: (frequency: number | null) => void }).e2eTone(value), frequency);

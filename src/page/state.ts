@@ -1,63 +1,166 @@
 // The open session and the state that more than one module reads and changes.
 import type { TimeControl } from '../clock.ts';
 import type { DeviceDb } from '../device-db.ts';
+import { type EpochMs, toEpochMs } from '../epoch.ts';
 import { type Game, type Player, newGame } from '../game.ts';
 import type { LocalBackend } from '../local.ts';
-import type { Me } from '../online.ts';
-import type { SessionView, MatchOptions, Code, MoveRequest, SessionUpdate, PublicGame } from '../protocol.ts';
+import { nameOf } from '../names.ts';
+import { type Me, token } from '../online.ts';
+import { parseCustomName } from '../protocol.ts';
+import type { SessionView, MatchOptions, Code, MoveRequest, SeatAction, SessionUpdate, PublicGame } from '../protocol.ts';
 import { type Mode, settings } from './settings.ts';
+import { STORAGE_KEYS } from '../storage-keys.ts';
 
 // The open session: its latest view, the backend that holds it, and its mode.
 export type Session = SessionView & { backend: SessionBackend; mode: Mode; unsubscribe: () => void };
 
+// A past position on the board: the game index and the number of moves shown.
+export type Review = { game: number; move: number };
+
+// What the board shows: nothing yet, an open session, or a finished game from its link (/?game=<id>,
+// read-only). A switch replaces the whole screen, so the review and the computer search of the old
+// screen end with it. Only the functions below change it.
+type Screen =
+  | { kind: 'empty' }
+  // `thinking`: the computer searches its move.
+  | { kind: 'session'; session: Session; review: Review | undefined; thinking: boolean }
+  | { kind: 'viewing'; game: PublicGame; review: Review | undefined };
+
+let screen: Screen = { kind: 'empty' };
+
+// Async work holds a token from its start, and drops its result when the token is stale:
+// a newer token of the same kind exists.
+export type Token = { readonly isStale: () => boolean };
+
+function tokens(): { next: () => Token; now: () => Token } {
+  let latest = 0;
+  const at = (mine: number): Token => ({ isStale: () => mine !== latest });
+  return { next: () => at(++latest), now: () => at(latest) };
+}
+
+// Every switch to another session takes a new token. A slow load of an older switch then opens
+// nothing, so a quick Easy → Hard or Online → Computer ends on the last choice.
+const switches = tokens();
+export const newSwitch = switches.next;
+
+// A round is one game position that the computer can answer. A new screen, a new game and an undo
+// start a new round, so a computer move found for the old round is dropped.
+const rounds = tokens();
+export const newRound = (): void => void rounds.next();
+export const currentRound = rounds.now;
+
+export function showSession(session: Session): void {
+  rounds.next();
+  screen = { kind: 'session', session, review: undefined, thinking: false };
+}
+
+// A newer view of the open session. The review and the computer search go on.
+export function updateSession(session: Session): void {
+  if (screen.kind !== 'session' || screen.session.code !== session.code) throw new Error(`session ${session.code} is not open`);
+  screen = { ...screen, session };
+}
+
+export function showGame(game: PublicGame, review: Review): void {
+  rounds.next();
+  screen = { kind: 'viewing', game, review };
+}
+
+export function clearScreen(): void {
+  rounds.next();
+  screen = { kind: 'empty' };
+}
+
+// An empty screen has no review: clearing it there changes nothing.
+export function setReview(review: Review | undefined): void {
+  if (screen.kind === 'empty') {
+    if (review === undefined) return;
+    throw new Error('a review without a game on the board');
+  }
+  screen = { ...screen, review };
+}
+
+// Only a session has a computer that thinks: clearing it elsewhere changes nothing.
+export function setThinking(thinking: boolean): void {
+  if (screen.kind !== 'session') {
+    if (!thinking) return;
+    throw new Error('the computer thinks without a session');
+  }
+  screen = { ...screen, thinking };
+}
+
 // The state that more than one module changes. A module cannot assign to a variable that it
-// imports, so all modules change these fields through the one `page` object.
+// imports, so all modules change these fields through the one `page` object. The screen fields
+// are read-only views of `screen`: the functions above change them.
 type PageState = {
   // The games of the open session, oldest first. The last game is the live one.
   games: Game[];
-  session: Session | undefined;
-  review: { game: number; move: number } | undefined;
+  readonly session: Session | undefined;
+  readonly review: Review | undefined;
   // Storage on this device, and the backend for computer, friend and hosted Nearby games.
   deviceDb: DeviceDb | undefined;
   local: LocalBackend | undefined;
   // Login state from the server. Without a network or on a LAN host, login is not available.
   account: Me;
-  thinking: boolean;
+  readonly thinking: boolean;
+  // An action waits for its backend. Also before a session is open, such as the first online game.
   busy: boolean;
   // Milliseconds from the search request to its answer, for each computer move of the current game.
   // Index 0 is the computer's first move. A new game and a session switch empty the list, and an undo
   // drops the entries of the moves that it takes back. A game that this page did not see from its first
   // move keeps a shorter list (see src/page/computer.ts).
   computerThinkMs: number[];
-  // Increments on every new local game, so a computer move scheduled for an old game is dropped.
-  round: number;
   // Session holder time minus local time. Move times come from the server or the Nearby host, so the clocks use its time.
   serverOffset: number;
   // The keypad entry: layer, row, column, each 1..4. A tap fills the next one.
   coordDigits: number[];
-  // Every switch to another session takes a new number. A slow load of an older switch then opens
-  // nothing, so a quick Easy → Hard or Online → Computer ends on the last choice. A switch also ends
-  // a Nearby game, so a host never serves guests in the background.
-  navigation: number;
   // A finished game opened from its link (/?game=<id>), read-only. No session is open meanwhile.
-  viewing: PublicGame | undefined;
+  readonly viewing: PublicGame | undefined;
 };
+
+// The custom name from the last /api/me answer, so the page shows it offline too.
+
+function storedName(): string | null {
+  try {
+    return parseCustomName(localStorage.getItem(STORAGE_KEYS.name)) ?? null;
+  } catch {
+    return null; // Storage is blocked. The name comes with the next /api/me answer.
+  }
+}
+
+export function saveAccount(account: Me): void {
+  page.account = account;
+  try {
+    if (account.name === null) localStorage.removeItem(STORAGE_KEYS.name);
+    else localStorage.setItem(STORAGE_KEYS.name, account.name);
+  } catch {
+    // Storage is blocked. The page keeps the name for this visit.
+  }
+}
+
+// The name that other players see for this player: the GitHub login, the custom name, or the generated name.
+export const ownName = (): string => page.account.user?.login ?? page.account.name ?? nameOf(token);
 
 export const page: PageState = {
   games: [newGame('X', settings.clock)],
-  session: undefined,
-  review: undefined,
+  get session() {
+    return screen.kind === 'session' ? screen.session : undefined;
+  },
+  get review() {
+    return screen.kind === 'empty' ? undefined : screen.review;
+  },
   deviceDb: undefined,
   local: undefined,
-  account: { loginAvailable: false, user: null },
-  thinking: false,
+  account: { loginAvailable: false, user: null, name: storedName() },
+  get thinking() {
+    return screen.kind === 'session' && screen.thinking;
+  },
   busy: false,
   computerThinkMs: [],
-  round: 0,
   serverOffset: 0,
   coordDigits: [],
-  navigation: 0,
-  viewing: undefined,
+  get viewing() {
+    return screen.kind === 'viewing' ? screen.game : undefined;
+  },
 };
 
 export function current(): Game {
@@ -71,9 +174,17 @@ export function setCurrent(game: Game): void {
 }
 
 export const isLive = () => current().status.kind === 'playing';
-export const settingsLocked = () => page.session?.locked ?? false;
-// A game with another device: online, or Nearby. Moves are final and chat is open.
+// The lock holds the two players. A watcher keeps every own setting, so a lock never traps a watcher in a game.
+export const settingsLocked = () => page.session !== undefined && page.session.locked && page.session.you !== null;
+// Both seats have a player. A game with another device waits for the second player before a lock.
+export const bothSeated = () => page.session !== undefined && page.session.seats.X && page.session.seats.O;
+// A game with another device: online, or Nearby. An undo needs the other player, and chat is open.
 export const shared = () => page.session?.mode === 'online' || page.session?.mode === 'nearby';
+// A screen that waits for its session: Online and Nearby before a create, a join or a host, and every mode
+// while the page starts. The controls of an open game then draw grey and disabled (data-pending in src/page/render.ts).
+export const awaitingSession = () => page.session === undefined && page.viewing === undefined;
+// A screen that watches a game with another device: it holds no seat.
+export const isWatching = () => shared() && page.session?.you === null;
 
 // The hide options belong to the session. With another device they apply to both players.
 export function matchOptions(): MatchOptions {
@@ -85,7 +196,7 @@ export function nextClock(): TimeControl {
   return page.session?.clock ?? settings.clock;
 }
 
-export const nowMs = () => Date.now() + page.serverOffset;
+export const nowMs = (): EpochMs => toEpochMs(Date.now() + page.serverOffset);
 
 // Watchers cannot change a session.
 export const canChangeMatch = () => page.session !== undefined && page.session.you !== null;
@@ -106,5 +217,7 @@ export type SessionBackend = {
   update(code: Code, changes: SessionUpdate): Promise<SessionView>;
   lock(code: Code): Promise<SessionView>;
   chat(code: Code, text: string): Promise<SessionView>;
+  seat(code: Code, action: SeatAction): Promise<SessionView>;
+  answerSeat(code: Code, accept: boolean): Promise<SessionView>;
   subscribe(code: Code, onChange: () => void): () => void;
 };

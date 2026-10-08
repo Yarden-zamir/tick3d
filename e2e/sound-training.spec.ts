@@ -1,5 +1,15 @@
 import type { Page } from '@playwright/test';
+import { CELL_COUNT, SIZE, toCoords } from '../src/game.ts';
+import { DEFAULTS } from '../src/page/settings.ts';
+import { PAGES } from '../src/pages.ts';
+import { SOUND_SETS } from '../src/sound-sets.ts';
+import { MIN_CELL } from '../src/sound-training/fit.ts';
+import { ITEMS, RECENT_SIZE, freshProgress } from '../src/sound-training/schedule.ts';
+import { STORAGE_KEYS } from '../src/storage-keys.ts';
 import { expect, test } from './fixtures.ts';
+
+// A layer, a row and a column of the board each hold this many cells.
+const AREA = SIZE ** 2;
 
 // The ear training page needs no server: it keeps its progress in localStorage.
 // It plays sounds, and a headless browser plays them without a speaker.
@@ -9,19 +19,18 @@ const deckCell = (page: Page, cell: number) => page.locator(`#deck .cell[data-ce
 
 // Every sound in the quiz, and every part at 100%, so the page asks for layers, rows, columns and full cells.
 async function seedQuiz(page: Page): Promise<void> {
-  const items: Record<string, { learn: number; box: number; due: number }> = {};
-  for (const dimension of ['layer', 'row', 'column']) for (const value of [0, 1, 2, 3]) items[`${dimension}-${value}`] = { learn: 0, box: 1, due: 0 };
-  const recent = Array<boolean>(20).fill(true);
-  const progress = { version: 1, turn: 100, items, recent: { layer: recent, row: recent, column: recent }, last: null };
-  await page.goto('/sound-training');
-  await page.evaluate((value) => localStorage.setItem('tick3d.sound-training', JSON.stringify(value)), progress);
+  const items = Object.fromEntries(ITEMS.map((item) => [item, { learn: 0, box: 1, due: 0 }]));
+  const recent = Array<boolean>(RECENT_SIZE).fill(true);
+  const progress = { ...freshProgress(), turn: 100, items, recent: { layer: recent, row: recent, column: recent } };
+  await page.goto(PAGES.training.path);
+  await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEYS.soundTraining, value: progress });
   await page.reload();
 }
 
 test('the ear training shows answers first, then hides them, and keeps its progress', async ({ page }) => {
   const errors: Error[] = [];
   page.on('pageerror', (error) => errors.push(error));
-  const response = await page.goto('/sound-training');
+  const response = await page.goto(PAGES.training.path);
   // The page is public: search engines may list it.
   expect(response?.headers()['x-robots-tag']).toBeUndefined();
 
@@ -32,7 +41,7 @@ test('the ear training shows answers first, then hides them, and keeps its progr
   await expect(kind).toHaveText('New sound');
   await expect(answer).toBeVisible();
   await expect(answer).toContainText('layer');
-  await expect(deckCells(page, '.right')).toHaveCount(16);
+  await expect(deckCells(page, '.right')).toHaveCount(AREA);
 
   // A few learn cards later, the first quiz card hides the answer.
   for (let i = 0; i < 10 && (await kind.textContent()) !== 'Quiz'; i++) await next.click();
@@ -49,18 +58,18 @@ test('the ear training shows answers first, then hides them, and keeps its progr
       await next.click();
       continue;
     }
-    await deckCell(page, 63).click();
+    await deckCell(page, CELL_COUNT - 1).click();
     await page.locator('#check').click();
     if ((await feedback.textContent())?.includes('wrong')) break;
     await next.click();
   }
   await expect(feedback).toContainText('wrong');
-  await expect(deckCells(page, '.wrong')).toHaveCount(16);
-  await expect(deckCells(page, '.right')).toHaveCount(16);
+  await expect(deckCells(page, '.wrong')).toHaveCount(AREA);
+  await expect(deckCells(page, '.right')).toHaveCount(AREA);
   await expect(page.locator('#yours')).toBeVisible();
   const asked = await page.locator('#deck').getAttribute('data-asked');
   const cell = Number(await deckCells(page, '.right').first().getAttribute('data-cell'));
-  const coords = { layer: Math.floor(cell / 16), row: Math.floor(cell / 4) % 4, column: cell % 4 };
+  const coords = toCoords(cell);
   if (asked !== 'layer' && asked !== 'row' && asked !== 'column') throw new Error(`a quiz card asks for ${asked}`);
   const item = page.locator(`.train-value[data-item="${asked}-${coords[asked]}"]`);
   await expect(item).toHaveAttribute('data-box', '1');
@@ -77,7 +86,7 @@ test('the ear training shows answers first, then hides them, and keeps its progr
 
 test('a tap selects a whole layer, row or column, or one cell on a full card', async ({ page }) => {
   await seedQuiz(page);
-  const expected: Record<string, number> = { layer: 16, row: 16, column: 16, cell: 1 };
+  const expected: Record<string, number> = { layer: AREA, row: AREA, column: AREA, cell: 1 };
   const seen = new Set<string>();
   for (let i = 0; i < 60 && seen.size < 4; i++) {
     const asked = (await page.locator('#deck').getAttribute('data-asked')) ?? '';
@@ -148,20 +157,20 @@ test('on a phone, the prompt, Play, the board and Check fit the screen', async (
   if (scroll.mode === 'scroll') {
     expect(scroll.snap).toContain('x');
     expect(scroll.overflows).toBe(true);
-    await expect(page.locator('.train-dot')).toHaveCount(4);
+    await expect(page.locator('.train-dot')).toHaveCount(SIZE);
   }
   // Every cell stays large enough to tap.
-  expect((await box('#deck .cell')).width).toBeGreaterThanOrEqual(36);
+  expect((await box('#deck .cell')).width).toBeGreaterThanOrEqual(MIN_CELL);
 });
 
 test('the sound set menu on the trainer changes the set, keeps it after a reload, and the game uses it too', async ({ page }) => {
-  await page.goto('/sound-training');
+  await page.goto(PAGES.training.path);
   const name = page.locator('#sound-set-name');
   const totals = page.locator('#totals');
-  // The first row sound: the instrument in Cells, the chord in Harmony.
+  // The first row sound: the octave in Classic, pitched (the default), the chord in Harmony.
   const firstRow = page.locator('.train-value[data-item="row-0"]');
-  await expect(name).toHaveText('Cells');
-  await expect(firstRow).toContainText('marimba');
+  await expect(name).toHaveText(SOUND_SETS[DEFAULTS.soundSet].name);
+  await expect(firstRow).toContainText('highest');
 
   const menu = page.locator('#sound-sets');
   await page.getByRole('button', { name: 'Sound set', exact: true }).click();
@@ -184,7 +193,7 @@ test('the sound set menu on the trainer changes the set, keeps it after a reload
   await expect(page.locator('#sound-sets [data-sound-set="harmony"]')).toHaveAttribute('aria-pressed', 'true');
 
   // Classic does not name cells: the menu shows it as the choice, and the trainer trains Cells.
-  await page.goto('/sound-training');
+  await page.goto(PAGES.training.path);
   await page.getByRole('button', { name: 'Sound set', exact: true }).click();
   await menu.locator('[data-sound-set="classic"]').click();
   await page.keyboard.press('Escape');

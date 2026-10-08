@@ -2,6 +2,32 @@
    A theme sets data-theme on <html> (index.html applies a stored one before the first paint).
    Without data-theme, the page is light. The theme rules match any element, so the theme
    picker draws each preview with that theme's own tokens. */
+
+/* Bricolage Grotesque (SIL Open Font License, src/fonts/OFL.txt), served from this site: no
+   render-blocking request to another origin, and the service worker keeps it for offline play.
+   One variable file holds every weight. The files are the latin and latin-ext subsets from
+   Google Fonts. The browser fetches latin-ext only when a page shows one of its characters.
+   Each HTML page preloads the latin file. */
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('./fonts/bricolage-grotesque-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('./fonts/bricolage-grotesque-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
   /* Piece and accent colors with black text. Batman overrides them with greys. */
   --x: #ff5277;
@@ -238,38 +264,97 @@ input::placeholder {
   font-weight: 400;
 }
 
-.actions button,
-.toggles button,
-.lock,
-.online button,
-.join button,
-.coords button,
-.review button,
-.history button,
-.end-card-actions button,
-.train button:where(:not(.cell, .train-dot)) {
-  padding: 0.55rem 0.85rem;
-  border-radius: 8px;
+/* Buttons. Every button and button-like link uses .btn, with at most these modifiers:
+   .btn-primary for the main action, .btn-small for a compact control, .btn-icon for an icon in a square.
+   The disabled look below and the focus ring above apply to all of them. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.6rem;
+  padding: 0.45rem 0.85rem;
   border: var(--border) solid var(--line);
+  border-radius: 8px;
   background: var(--surface);
+  color: var(--ink);
   box-shadow: 3px 3px 0 var(--shadow);
   font-weight: 700;
+  line-height: 1.15;
+  text-decoration: none;
   cursor: pointer;
   transition: translate 0.08s, box-shadow 0.08s, background 0.15s;
 }
 
-:is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:hover:not(:disabled),
-.train button:where(:not(.cell, .train-dot)):hover:not(:disabled),
-.lock:hover:not(:disabled) {
+.btn:hover:not(:disabled) {
   translate: -1px -1px;
   box-shadow: 4px 4px 0 var(--shadow);
 }
 
-:is(.actions, .toggles, .online, .join, .coords, .review, .history, .end-card-actions) button:active:not(:disabled),
-.train button:where(:not(.cell, .train-dot)):active:not(:disabled),
-.lock:active:not(:disabled) {
+.btn:active:not(:disabled) {
   translate: 3px 3px;
   box-shadow: 0 0 0 var(--shadow);
+}
+
+.btn svg {
+  flex: none;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--on-color);
+  font-weight: 800;
+}
+
+.btn-small {
+  min-height: 2.1rem;
+  padding: 0.25rem 0.65rem;
+  border-width: 2px;
+  box-shadow: 2px 2px 0 var(--shadow);
+  font-size: 0.88rem;
+}
+
+.btn-small:hover:not(:disabled) {
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+.btn-small:active:not(:disabled) {
+  translate: 2px 2px;
+}
+
+.btn-icon {
+  width: 2.6rem;
+  padding: 0;
+}
+
+.btn-small.btn-icon {
+  width: 2.1rem;
+}
+
+/* The tooltip of an element with data-tip (src/tooltip.ts): a manual popover in the top layer.
+   The inset, margin and overflow undo the centred box of a popover. */
+.tip {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  overflow: visible;
+  max-width: min(20rem, calc(100vw - 1rem));
+  padding: 0.35rem 0.6rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--surface);
+  box-shadow: 2px 2px 0 var(--shadow);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.3;
+  pointer-events: none;
+}
+
+/* A long press shows the tooltip, so the press must not select text or open the system menu. */
+[data-tip] {
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
 button:disabled,
@@ -279,12 +364,30 @@ input:disabled {
   box-shadow: none;
 }
 
+/* A control of an open game before the session comes (src/page/render.ts): it has its final place and size,
+   grey like a disabled button. Its buttons are disabled too, and the box is dim already, so they do not dim twice.
+   e2e/row-layout.spec.ts checks that nothing moves when the session comes. */
+[data-pending] {
+  opacity: 0.45;
+  filter: grayscale(1);
+}
+
+[data-pending] :disabled {
+  opacity: 1;
+}
+
 /* ---- Page layout ---- */
+
+/* The game page keeps the settings panel still itself (src/page/panel-anchor.ts), like Safari, which has no
+   scroll anchoring. The browser anchoring of Chrome would scroll a second time for the same change. */
+:root:has(> body > .app) {
+  overflow-anchor: none;
+}
 
 .app {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 21rem;
-  /* Chat, shown in online sessions only, sits under the board. */
+  /* The chat, open in a game with another device, sits under the board. A wide screen gives it a column (below). */
   grid-template-areas:
     'brand brand'
     'stage panel'
@@ -314,9 +417,9 @@ input:disabled {
   gap: 0.6rem;
 }
 
-/* Small buttons in the brutalist style, one height. Rules is an icon that opens the rules banner. */
+/* Small buttons in the brutalist style, one height. Info is an icon that opens the Info panel. */
 .repo-link,
-.rules-button {
+.info-button {
   flex: none;
   box-sizing: border-box;
   height: 2.5rem;
@@ -336,13 +439,13 @@ input:disabled {
 }
 
 .repo-link:hover,
-.rules-button:hover {
+.info-button:hover {
   translate: -1px -1px;
   box-shadow: 4px 4px 0 var(--shadow);
 }
 
 .repo-link:active,
-.rules-button:active {
+.info-button:active {
   translate: 3px 3px;
   box-shadow: 0 0 0 var(--shadow);
 }
@@ -381,7 +484,7 @@ input:disabled {
 }
 
 /* The icon-only buttons are square. */
-.rules-button {
+.info-button {
   justify-content: center;
   width: 2.5rem;
   padding: 0;
@@ -400,42 +503,71 @@ input:disabled {
   }
 }
 
-.rules-banner {
+.info-panel {
   position: fixed;
-  z-index: 11;
-  top: max(0.75rem, env(safe-area-inset-top));
-  left: 50%;
+  inset: max(0.75rem, env(safe-area-inset-top)) auto auto 50%;
   translate: -50% 0;
-  display: grid;
-  gap: 0.25rem;
-  width: min(calc(100vw - 2rem), 26rem);
-  padding: 0.7rem 0.9rem;
+  box-sizing: border-box;
+  width: min(calc(100vw - 2rem), 30rem);
+  max-height: calc(100dvh - 2rem);
+  margin: 0;
+  overflow: auto;
+  padding: 0.8rem 1rem;
   border: var(--border) solid #000;
   border-radius: 12px;
   background: var(--primary);
   color: var(--on-color);
   box-shadow: 5px 5px 0 #000;
-  text-align: left;
   line-height: 1.4;
-  cursor: pointer;
+}
+
+/* A popover hides itself while it is closed. A display value here must not show it. */
+.info-panel:popover-open {
+  display: grid;
+  gap: 0.5rem;
   animation: banner-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.rules-banner b {
-  font-size: 1rem;
+.info-panel h2 {
+  margin: 0;
+  font-size: 1.05rem;
   font-weight: 800;
 }
 
-.rules-banner span {
+/* A section heading of a long Info text. */
+.info-panel h3 {
+  margin: 0.3rem 0 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.info-panel :is(p, ul) {
+  margin: 0;
   font-size: 0.9rem;
   font-weight: 600;
 }
 
-.rules-banner small {
+.info-panel ul {
+  display: grid;
+  gap: 0.3rem;
+  padding-left: 1.2rem;
+}
+
+.info-close {
   justify-self: end;
-  font-size: 0.75rem;
-  font-weight: 700;
-  opacity: 0.75;
+}
+
+/* Links to other pages, then Close at the end. */
+.info-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* The links stay together on the left. Close keeps the right edge, also on its own line. */
+.info-actions .info-close {
+  margin-left: auto;
 }
 
 @keyframes banner-in {
@@ -539,9 +671,14 @@ input:disabled {
   display: none;
 }
 
+/* A caret icon, drawn by a mask in the text color. */
 .theme-menu summary::after {
-  content: '▾';
+  content: '';
+  width: 1rem;
+  height: 1rem;
   margin-left: auto;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
   transition: rotate 0.15s;
 }
 
@@ -597,15 +734,15 @@ input:disabled {
 }
 
 /* The status sits in the header row. Below 64rem the header buttons need the row, so the status
-   takes its own line under it. A long status wraps. */
-.brand:has(> .status) {
+   takes its own line under it. A long status wraps. The name of another page takes the same place. */
+.brand:has(> .status, > .page-title) {
   flex-wrap: wrap;
   row-gap: 0.9rem;
 }
 
 /* Below 64rem the header buttons stay at the right, also when they wrap under the wordmark. */
 @media (width < 64rem) {
-  .brand:has(> .status) > .brand-links {
+  .brand:has(> .status, > .page-title) > .brand-links {
     margin-left: auto;
   }
 }
@@ -627,11 +764,28 @@ input:disabled {
   transition: background 0.2s;
 }
 
+/* In the header row the status keeps one width, whatever its text, so a new status never moves the
+   wordmark or the header buttons (see .slot-row). It shrinks only when the window is narrow. */
 @media (min-width: 64rem) {
   .status {
     order: 0;
-    flex: 0 1 auto;
-    max-width: 28rem;
+    flex: 0 1 28rem;
+  }
+}
+
+.page-title {
+  order: 1;
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: clamp(1.4rem, 5vw, 1.8rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+@media (min-width: 64rem) {
+  .page-title {
+    order: 0;
+    flex: 1 1 auto;
   }
 }
 
@@ -661,6 +815,15 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: flex;
   gap: 0.5rem;
   max-width: 100%;
+}
+
+/* src/page/board.ts builds the board after the first paint on a slow device. Until then the empty
+   board keeps the height of the tower (four layers, three gaps and the bottom padding, see
+   .board.tower), so the controls under it do not jump. Limit: the flat view is shorter, so a
+   player who saved it sees the page close up once. Revisit if flat becomes the default view.
+   The rule names the stage, so the ear training deck (also a .board) keeps its own size. */
+.stage > .board:empty {
+  min-height: calc(var(--side) * (0.72 * 4 + 0.3) + 0.5rem * 3);
 }
 
 .board.thinking {
@@ -819,25 +982,15 @@ body[data-turn='O'] .status[data-state='playing'] {
     drop-shadow(0 -1px 0 var(--line));
 }
 
-.angle-row {
+/* The view picker. */
+.view-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.6rem;
-  color: var(--muted);
-  font-size: 0.85rem;
-  font-weight: 600;
 }
 
-.angle-row button {
-  flex: none;
-  padding: 0.35rem 0.7rem;
-  border-radius: 8px;
-  border: 2px solid var(--line);
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  font-weight: 700;
-  cursor: pointer;
+.view-row .segmented {
+  flex: 1;
 }
 
 /* Flat: the four layers as plain grids, in one of four layouts. */
@@ -1004,6 +1157,14 @@ body[data-turn='O'] .status[data-state='playing'] {
   text-align: center;
 }
 
+/* The score stays empty until the page script draws the tallies. Until then it keeps the tally
+   height (padding, border, the count line and the name line, about 1.2rem with the page font), so
+   the panel under it does not jump.
+   Limit: the height follows the .tally rules below by hand. Revisit when a tally changes its lines. */
+.score:empty {
+  min-height: calc(0.9rem + var(--border) * 2 + 1.7rem * 1.1 + 1.2rem);
+}
+
 .tally {
   padding: 0.45rem 0.25rem;
   border: var(--border) solid var(--line);
@@ -1034,29 +1195,191 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
-.actions {
-  display: flex;
+/* A row of fixed slots. A control that shows, hides or changes with the game state must not move another control.
+   - Each control has its own grid area. Two controls that take turns share one area, so the slot fits the wider one.
+   - A hidden control keeps its box: it is invisible and takes no click or focus, but its slot stays.
+   - A label never wraps, so a control never grows taller.
+   e2e/row-layout.spec.ts checks this geometry. */
+.slot-row {
+  display: grid;
+  align-items: stretch;
   gap: 0.6rem;
 }
 
-.actions button {
-  flex: 1;
-  padding: 0.7rem 0.8rem;
+.slot-row > * {
+  white-space: nowrap;
 }
 
-.actions .primary {
-  flex: 2;
-  background: var(--primary);
-  color: var(--on-color);
-  font-weight: 800;
+/* Every child of a slot row is a flex box (.btn and the sound control), so display: flex brings the box back.
+   The global [hidden] rule uses !important, so this more specific rule needs it too. */
+.slot-row > [hidden] {
+  display: flex !important;
+  visibility: hidden;
 }
 
-#sound,
-#sound-set {
-  flex: 0 0 3.2rem;
+/* New game has the first line. Under it, three equal slots: Undo or the result card (they take turns in one slot),
+   the sound control and the microphone of play by voice. One line for all four does not fit a 360 px phone or the desktop panel.
+   minmax(max-content, ...): a row that is too narrow overflows, and e2e/row-layout.spec.ts sees it. */
+.actions {
+  grid-template-areas:
+    'new new new'
+    'swap sound voice';
+  grid-template-columns: repeat(3, minmax(max-content, 1fr));
+}
+
+#new-game {
+  grid-area: new;
+}
+
+/* An icon button fills its slot, like the sound control next to it. */
+.actions > .btn-icon {
+  width: auto;
+}
+
+#undo,
+#show-card {
+  grid-area: swap;
+}
+
+/* A split control: one box with two parts. The main button takes the width, and the narrow caret opens a menu.
+   The sound control (speaker and sound sets) and the share link (Link and the link menu) use it. */
+.split-control {
+  display: flex;
+  min-height: 2.6rem;
+  border: var(--border) solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+
+.split-control button {
   display: grid;
+  flex: 1;
   place-items: center;
-  padding: 0;
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* The box clips an outside focus ring, so the ring goes inside the button. */
+.split-control button:focus-visible {
+  outline-offset: -4px;
+}
+
+.split-control button:hover {
+  background: var(--surface-2);
+}
+
+.split-control button + button {
+  flex: none;
+  padding-inline: 0.3rem;
+  border-left: 2px solid var(--line);
+}
+
+.sound-control {
+  grid-area: sound;
+}
+
+/* Play by voice. On, the button takes the toggle color. A dot in its corner shows the state: green and
+   pulsing while the microphone listens, muted while it pauses. */
+#voice {
+  grid-area: voice;
+  position: relative;
+}
+
+#voice[aria-pressed='true'] {
+  background: var(--toggle-on);
+  color: var(--on-color);
+}
+
+#voice[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+#voice[aria-pressed='true'][data-state='listening']::after {
+  background: var(--win);
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  50% {
+    scale: 1.4;
+  }
+}
+
+.voice-panel {
+  display: grid;
+  gap: 0.3rem;
+  width: min(100%, 26rem);
+  margin-inline: auto;
+}
+
+/* The state at the start, the link at the end. */
+.voice-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 0.6rem;
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+/* The texts of all voice states share one grid cell. Only the text of the current state shows (src/page/voice.ts). */
+.voice-state {
+  display: inline-grid;
+}
+
+.voice-state > span {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+
+.voice-state > [data-shown] {
+  visibility: visible;
+}
+
+.voice-status a {
+  color: inherit;
+  font-weight: 600;
+}
+
+.voice-panel #voice-recentre {
+  justify-self: center;
+}
+
+/* Recentre tilt shows only with tilt on, after the first tilt reading, a moment after the voice starts.
+   With tilt on, a touch screen keeps its box while hidden, so it does not push the keypad down when it shows.
+   With tilt off (the default), it keeps no box (.tilt-on comes from src/page/voice.ts).
+   Limit: a touch screen without a tilt sensor keeps an empty line, and a desktop with a sensor moves once.
+   Revisit if players report the empty line. */
+@media (pointer: coarse) {
+  .voice-panel.tilt-on #voice-recentre[hidden] {
+    display: inline-flex !important;
+    visibility: hidden;
+  }
+}
+
+/* Play by voice: the hold fills the Place button with the color of the mark, as it fills the lit cell
+   (src/voice/visuals.css). --voice-hold (0 to 1) comes from src/page/voice.ts. */
+.keypad .btn.place.voice-hold {
+  background: linear-gradient(to right, var(--voice-hold-color, var(--x)) calc(var(--voice-hold, 0) * 100%), var(--win) 0);
+}
+
+.keypad .btn.place[data-voice-mark='O'] {
+  --voice-hold-color: var(--o);
 }
 
 /* The sound set menu: a popover in the middle of the screen, so it fits a phone too. */
@@ -1113,38 +1436,15 @@ body[data-turn='O'] .status[data-state='playing'] {
   margin-bottom: 0.5rem;
 }
 
-.sound-sets button {
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  color: inherit;
-  box-shadow: 2px 2px 0 var(--shadow);
-  font: inherit;
-  cursor: pointer;
-  transition: translate 0.08s, box-shadow 0.08s;
-}
-
-.sound-sets button:hover {
-  translate: -1px -1px;
-  box-shadow: 3px 3px 0 var(--shadow);
-}
-
-.sound-sets button:active {
-  translate: 2px 2px;
-  box-shadow: 0 0 0 var(--shadow);
-}
-
-.sound-sets-head button {
-  width: 2.2rem;
-  height: 2.2rem;
-  font-weight: 800;
-}
-
+/* A set in the menu: a .btn-small that holds a name and a line of text. */
 .sound-set-choice {
   flex: 1;
   display: grid;
+  justify-content: stretch;
   gap: 0.15rem;
   padding: 0.45rem 0.6rem;
+  font-size: 1rem;
+  font-weight: 400;
   text-align: left;
 }
 
@@ -1158,9 +1458,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--on-color);
 }
 
-.sound-set-play {
-  flex: 0 0 2.8rem;
-  font-size: 1rem;
+.btn.sound-set-play {
+  flex: none;
+  width: 2.8rem;
+  height: auto;
 }
 
 .toggles {
@@ -1170,17 +1471,30 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* Three hide options share the row of the panel, so the sides are narrow. */
-.toggles button {
+.toggles .btn {
   flex: 1;
   padding-inline: 0.5rem;
   color: var(--muted);
   font-weight: 600;
 }
 
-.toggles button[aria-pressed='true'] {
+.toggles .btn[aria-pressed='true'] {
   background: var(--toggle-on);
   color: var(--on-color);
   font-weight: 800;
+}
+
+/* A label row with a small control at its end, such as Hide and the lock. */
+.field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.lock svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .lock[aria-pressed='true'] {
@@ -1241,8 +1555,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-size: 0.92rem;
 }
 
-.help summary,
-.history summary {
+.help summary {
   cursor: pointer;
   color: var(--ink);
   font-weight: 800;
@@ -1288,15 +1601,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .tuning-reset {
   margin-top: 0.8rem;
-  padding: 0.35rem 0.75rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  color: var(--ink);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
 }
 
 /* ---- Online ---- */
@@ -1314,7 +1618,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* The box keeps black lines on cyan in both themes. */
-.online button,
+.online .btn,
 .online input {
   border-color: #000;
   background: #fff;
@@ -1322,7 +1626,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   box-shadow: 3px 3px 0 #000;
 }
 
-.online button:hover:not(:disabled) {
+.online .btn:hover:not(:disabled) {
   box-shadow: 4px 4px 0 #000;
 }
 
@@ -1395,6 +1699,25 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.55rem;
 }
 
+/* The review bar and the keypad share one grid cell. In a review, the keypad keeps its box but does not show,
+   so the cell keeps the height of the keypad and the page under it does not move up.
+   The global [hidden] rule uses !important, so this more specific rule needs it too. */
+.stage-controls {
+  display: grid;
+  justify-items: center;
+  max-width: 100%;
+}
+
+.stage-controls > * {
+  grid-area: 1 / 1;
+  align-self: start;
+}
+
+.stage-controls:has(> .review:not([hidden])) > .coords[hidden] {
+  display: flex !important;
+  visibility: hidden;
+}
+
 .coords-head {
   display: flex;
   align-items: center;
@@ -1409,16 +1732,16 @@ body[data-turn='O'] .status[data-state='playing'] {
   line-height: 1.2;
 }
 
-/* A small square icon button, like the rules button. `.coords button` gives the border, the shadow
+/* A small square icon button, like the Info button. `.coords button` gives the border, the shadow
    and the hover and press moves; this rule only makes it square and keeps the icon centered. */
-.coords .coords-hear {
-  display: grid;
+.coords-hear {
   flex: none;
-  place-items: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  padding: 0;
-  color: var(--ink);
+}
+
+/* The speaker shows only with a last move or a full typed cell. Its box stays, so the title does not move when it shows. */
+.coords-hear[hidden] {
+  display: inline-flex !important;
+  visibility: hidden;
 }
 
 /* Three read-only slots: layer, row, column. The next one to fill is highlighted. */
@@ -1482,7 +1805,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.5rem;
 }
 
-.keypad button {
+.keypad .btn {
   min-width: 2.9rem;
   min-height: 2.9rem;
   padding: 0.4rem 0.6rem;
@@ -1490,7 +1813,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 800;
 }
 
-.keypad .place {
+.keypad .btn.place {
   background: var(--win);
   color: var(--on-color);
 }
@@ -1555,16 +1878,53 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .chat-empty {
   margin: auto;
+  text-align: center;
   color: var(--muted);
   font-weight: 600;
 }
 
-/* A bubble in the color of its sender's mark. Your own bubbles sit on the right. */
-.chat-message {
-  display: grid;
-  max-width: 85%;
+/* Messages in a row from one sender: one picture at the bottom, the name, then the bubbles.
+   Your own groups sit on the right, with the picture on the right. */
+.chat-group {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4rem;
+  max-width: 90%;
   align-self: flex-start;
-  padding: 0.3rem 0.6rem 0.35rem;
+}
+
+.chat-group.mine {
+  flex-direction: row-reverse;
+  align-self: flex-end;
+}
+
+.chat-group > .avatar {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.chat-group-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.chat-group.mine .chat-group-body {
+  align-items: flex-end;
+}
+
+.chat-group-body b {
+  padding-inline: 0.2rem;
+  font-size: 0.75rem;
+}
+
+/* A bubble in the color of its sender's mark. */
+.chat-message {
+  max-width: 100%;
+  padding: 0.25rem 0.6rem 0.3rem;
   border: 2px solid var(--line);
   border-radius: 8px 8px 8px 2px;
   box-shadow: 2px 2px 0 var(--shadow);
@@ -1572,21 +1932,16 @@ body[data-turn='O'] .status[data-state='playing'] {
   overflow-wrap: anywhere;
 }
 
-.chat-message.mine {
-  align-self: flex-end;
+.chat-group.mine .chat-message {
   border-radius: 8px 8px 2px 8px;
 }
 
-.chat-message.from-x {
+.from-x .chat-message {
   background: var(--x);
 }
 
-.chat-message.from-o {
+.from-o .chat-message {
   background: var(--o);
-}
-
-.chat-message b {
-  font-size: 0.75rem;
 }
 
 .chat-form {
@@ -1596,28 +1951,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .chat-form input {
   flex: 1;
-}
-
-.chat-form button {
-  padding: 0.5rem 0.9rem;
-  border-radius: 8px;
-  border: var(--border) solid var(--line);
-  background: var(--primary);
-  color: var(--on-color);
-  box-shadow: 3px 3px 0 var(--shadow);
-  font-weight: 800;
-  cursor: pointer;
-  transition: translate 0.08s, box-shadow 0.08s;
-}
-
-.chat-form button:hover:not(:disabled) {
-  translate: -1px -1px;
-  box-shadow: 4px 4px 0 var(--shadow);
-}
-
-.chat-form button:active:not(:disabled) {
-  translate: 3px 3px;
-  box-shadow: 0 0 0 var(--shadow);
 }
 
 /* A bar that slides in from the top when the other player writes. */
@@ -1651,7 +1984,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 .chat-notice-icon {
-  font-size: 1.3rem;
+  flex: none;
 }
 
 .chat-notice-body {
@@ -1684,51 +2017,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   from {
     translate: -50% -150%;
   }
-}
-
-/* ---- History ---- */
-
-.history ol {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  max-height: 14rem;
-  overflow-y: auto;
-  margin: 0.6rem 0 0;
-  /* Room for the row buttons' shadows. */
-  padding: 0 0.3rem 0.3rem 0;
-  list-style: none;
-}
-
-.history li {
-  display: grid;
-  /* Name, result, then the Replay and Card buttons. */
-  grid-template-columns: auto 1fr auto auto;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.35rem 0.5rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-2);
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
-.history li.active {
-  background: var(--win);
-  color: var(--on-color);
-}
-
-.history .result {
-  color: inherit;
-  font-weight: 400;
-  opacity: 0.8;
-}
-
-.history button {
-  padding: 0.2rem 0.6rem;
-  font-size: 0.85rem;
-  box-shadow: 2px 2px 0 var(--shadow);
 }
 
 /* ---- Time limit editor ---- */
@@ -1961,6 +2249,18 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--muted);
 }
 
+/* The note leaves after the second move. Its line stays, so the board under the clocks does not move up.
+   Limit: the empty line stays for the rest of the game. Revisit if the clocks get a second line of their own. */
+.clock-note[hidden] {
+  display: block !important;
+  visibility: hidden;
+}
+
+/* The clocks of the live game do not belong to a review. They keep their box, so the board stays (src/page/clocks.ts). */
+.clocks[data-reviewing] {
+  visibility: hidden;
+}
+
 @keyframes clock-blink {
   50% {
     background: var(--danger);
@@ -2002,6 +2302,43 @@ body[data-turn='O'] .status[data-state='playing'] {
   border-radius: 10px;
 }
 
+/* The card image keeps its own shape (1080 x 1350), so the song light can sit over a cell in shares of its size. */
+.end-card-picture {
+  position: relative;
+  align-self: center;
+  width: min(100%, calc(70dvh * 1080 / 1350));
+  aspect-ratio: 1080 / 1350;
+}
+
+.end-card-picture img {
+  height: 100%;
+  max-height: none;
+}
+
+/* The cell of the note that sounds. With reduced motion, the global rule removes the pop. */
+.song-light {
+  position: absolute;
+  border: 4px solid var(--primary);
+  border-radius: 18%;
+  box-shadow: 0 0 0 3px var(--line), 0 0 18px var(--primary);
+  background: rgb(255 255 255 / 0.25);
+  pointer-events: none;
+  animation: song-pop 0.18s ease-out;
+}
+
+@keyframes song-pop {
+  from {
+    scale: 1.35;
+  }
+}
+
+/* A cell of the board that sounds in the song: of a game from a link, or of the newest game behind its end card. */
+.cell.sung {
+  outline: 4px solid var(--primary);
+  outline-offset: 2px;
+  z-index: 2;
+}
+
 .include-options {
   display: flex;
   flex-wrap: wrap;
@@ -2029,7 +2366,24 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.6rem;
 }
 
-.end-card-actions button {
+/* The song button sits at the end of the include options, near the card. A long press shares the song,
+   so a touch must not select its text or open the image menu. */
+.end-card .song {
+  margin-left: auto;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.end-card .song:is([data-state='held'], [data-state='rendering']) {
+  background: var(--primary);
+  color: var(--on-color);
+}
+
+.end-card .song[data-state='playing'] {
+  background: var(--surface-2);
+}
+
+.end-card-actions .btn {
   flex: 1;
   white-space: nowrap;
 }
@@ -2042,11 +2396,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   }
 }
 
-.end-card-actions .primary {
+.end-card-actions .btn-primary {
   flex: 1.5;
-  background: var(--primary);
-  color: var(--on-color);
-  font-weight: 800;
 }
 
 .home-confirm {
@@ -2056,6 +2407,101 @@ body[data-turn='O'] .status[data-state='playing'] {
 .home-confirm p {
   margin: 0;
   font-weight: 700;
+}
+
+/* Delete my data (src/page/my-games.ts): the list of what goes. */
+.delete-confirm #delete-confirm-form:not([hidden]) {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.delete-confirm ul {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.delete-confirm label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-weight: 700;
+}
+
+.delete-confirm #delete-confirm-status:not([hidden]) {
+  display: block;
+  margin-top: 0.5rem;
+}
+
+.my-games-data .my-games-note {
+  margin: 0 0 0.5rem;
+}
+
+/* A person's picture, large (src/page/avatar-viewer.ts). */
+/* A long press opens the report and block menu, so a touch must not select the picture or open the image menu. */
+.avatar[role='button'] {
+  cursor: pointer;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.avatar-viewer {
+  width: min(92vw, 18rem);
+  text-align: center;
+}
+
+.avatar-viewer-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.avatar-viewer-actions .btn {
+  flex: 1;
+}
+
+.avatar-viewer-picture {
+  display: flex;
+  justify-content: center;
+}
+
+/* Two classes, so the round avatar wins over `.end-card img`. */
+.avatar-viewer .avatar {
+  width: min(240px, 100%);
+  height: auto;
+  aspect-ratio: 1;
+  border-width: var(--border);
+  border-radius: 50%;
+}
+
+/* The report and block menu (src/page/safety.ts). */
+.safety-report {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.safety-report fieldset {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  border: 2px solid currentcolor;
+  padding: 0.5rem 0.75rem;
+}
+
+.safety-report textarea {
+  font: inherit;
+  resize: vertical;
+}
+
+/* A message or a person that opens the menu: on touch, a long press must not select its text. */
+@media (pointer: coarse) {
+  [data-person] {
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
 }
 
 /* ---- Feedback ---- */
@@ -2142,10 +2588,16 @@ body[data-turn='O'] .status[data-state='playing'] {
   to { scale: 1; }
 }
 
-/* Wide screens with an online session: the chat gets its own column at the left, where the
-   page had empty space, and stays in view while the page scrolls. */
+/* The chat is closed outside a game with another device (src/page/chat.ts). A narrow screen hides it. */
+.chat.closed {
+  display: none;
+}
+
+/* Wide screens: the chat has its own column at the left in every mode, so nothing moves to the right
+   when a game with another device opens it. It stays in view while the page scrolls.
+   A closed chat keeps its column but shows nothing. */
 @media (min-width: 72rem) {
-  .app:has(> .chat:not([hidden])) {
+  .app {
     grid-template-columns: 19rem minmax(0, 1fr) 21rem;
     grid-template-areas:
       'brand brand brand'
@@ -2154,14 +2606,19 @@ body[data-turn='O'] .status[data-state='playing'] {
     max-width: 90rem;
   }
 
-  .app:has(> .chat:not([hidden])) .chat {
+  .chat {
     position: sticky;
     top: 1rem;
     justify-self: stretch;
     width: auto;
   }
 
-  .app:has(> .chat:not([hidden])) .chat-log {
+  .chat.closed {
+    display: flex;
+    visibility: hidden;
+  }
+
+  .chat-log {
     height: min(30rem, calc(100dvh - 10rem));
   }
 }
@@ -2217,7 +2674,12 @@ body[data-turn='O'] .status[data-state='playing'] {
 .my-games-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+/* Stats and Close sit together at the end of the head. */
+.my-games-head h2 {
+  flex: 1;
 }
 
 .my-games h2,
@@ -2231,26 +2693,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-size: 1rem;
 }
 
-.my-games-head button,
-.account button,
-.my-games-list button,
-.login-link {
-  padding: 0.35rem 0.75rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  color: var(--ink);
-  font-weight: 800;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.login-link {
-  background: var(--primary);
-  color: var(--on-color);
-}
-
 .account {
   display: flex;
   flex-wrap: wrap;
@@ -2258,9 +2700,17 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.6rem;
 }
 
+/* Two classes, so the round avatar wins over `.end-card img` (My games is an end-card dialog). */
 .account .avatar {
+  flex-shrink: 0;
   width: 2rem;
   height: 2rem;
+  border-radius: 50%;
+}
+
+/* "You play as …" sits next to the picture, and wraps under it only on a narrow screen. */
+.account > span {
+  flex: 1 1 14rem;
 }
 
 .my-games-note {
@@ -2312,8 +2762,25 @@ body[data-turn='O'] .status[data-state='playing'] {
   min-width: 0;
 }
 
+.my-games-list .avatar {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+}
+
 .my-games-list small {
   color: var(--muted);
+}
+
+/* The game under replay in the list of this session. */
+.my-games-list li.active {
+  background: var(--win);
+  color: var(--on-color);
+}
+
+.my-games-list li.active small {
+  color: inherit;
 }
 
 .my-games-list .empty {
@@ -2338,10 +2805,20 @@ body[data-turn='O'] .status[data-state='playing'] {
   border-style: dashed;
 }
 
+/* The grey circle in the place of a picture before the session comes (avatarPlaceholder in src/avatar.ts). */
+.avatar-pending {
+  display: inline-block;
+  background: var(--muted);
+}
+
 .tally .avatar {
   width: 1.1rem;
   height: 1.1rem;
   margin-right: 0.25rem;
+  /* The picture is taller than the text. The negative margins keep the line, so a tally with a picture
+     (Online and Nearby) has the height of a tally without one. */
+  margin-block: -0.2rem;
+  vertical-align: middle;
 }
 
 .update-bar {
@@ -2359,16 +2836,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   background: var(--surface);
   box-shadow: 5px 5px 0 var(--shadow);
   font-weight: 700;
-}
-
-.update-bar button {
-  padding: 0.35rem 0.8rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--primary);
-  color: var(--on-color);
-  font-weight: 800;
-  cursor: pointer;
 }
 
 /* ---- Nearby ---- */
@@ -2421,20 +2888,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.5rem;
 }
 
-.nearby button {
+.nearby .btn {
   flex: 1;
-  padding: 0.5rem 0.75rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.nearby-start button:first-child {
-  background: var(--primary);
-  color: var(--on-color);
 }
 
 .nearby-step {
@@ -2511,11 +2966,9 @@ body[data-turn='O'] .status[data-state='playing'] {
   overflow-wrap: anywhere;
 }
 
-.nearby-hosts li > button {
+.nearby-hosts li > .btn {
   grid-column: 3;
   grid-row: 1 / span 2;
-  background: var(--primary);
-  color: var(--on-color);
 }
 
 .nearby-note {
@@ -2583,6 +3036,39 @@ body[data-turn='O'] .status[data-state='playing'] {
   text-align: center;
 }
 
+/* The link menu: a popover under the caret of Link, at its right edge. It flips above when there is no room below.
+   A browser without anchor positioning shows it in the middle of the screen, the default place of a popover. */
+#share-more {
+  anchor-name: --share-more;
+}
+
+.share-menu {
+  position-anchor: --share-more;
+  position-area: bottom span-left;
+  position-try-fallbacks: flip-block;
+  margin: 0.4rem 0;
+  padding: 0.5rem;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--page);
+  color: var(--ink);
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+.share-menu:popover-open {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.share-menu .btn {
+  justify-content: flex-start;
+}
+
+/* The switch over the QR code: the play link or the watch-only link. */
+.online-qr .segmented {
+  white-space: nowrap;
+}
+
 /* The QR code button stays pressed while its code shows. */
 #share-qr[aria-expanded='true'] {
   background: var(--ink);
@@ -2644,15 +3130,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
-.game-view button {
-  padding: 0.55rem 1.2rem;
-  border: var(--border) solid var(--line);
-  border-radius: 8px;
-  background: var(--primary);
-  box-shadow: 3px 3px 0 var(--shadow);
-  color: var(--on-color);
-  font-weight: 800;
-  cursor: pointer;
+.game-view .btn {
+  padding-inline: 1.2rem;
 }
 
 .my-games-history-actions {
@@ -2663,14 +3142,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .my-games-more {
   margin-top: 0.5rem;
-  padding: 0.35rem 0.75rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow);
-  color: var(--ink);
-  font-weight: 800;
-  cursor: pointer;
 }
 
 /* The Previews dialog (the kitshn button): one card per open pull request with a live preview. */
@@ -2757,9 +3228,161 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--on-color);
 }
 
+/* Stacked pull requests: a nested list inside the card of the parent, with a line on the left. */
+.previews-list .preview-children {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.2rem 0 0;
+  padding: 0 0 0 0.6rem;
+  border-left: 3px solid var(--line);
+  list-style: none;
+}
+
+/* The nested card stands out from the parent card behind it. */
+.previews-list .preview-children .preview {
+  background: var(--surface);
+}
+
+.badge-quiet {
+  background: var(--surface);
+  color: var(--ink);
+}
+
 /* Narrow phones: the time takes its own row, so both links stay together on the next row. */
 @media (max-width: 30rem) {
   .preview-foot small {
     flex-basis: 100%;
   }
+}
+
+/* ---- Players: seat controls in online and Nearby games ---- */
+
+.players {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.players-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A row: the seat mark, the name over its note, and the actions under them. */
+.players-list li {
+  display: grid;
+  grid-template-columns: 2rem 1fr;
+  column-gap: 0.6rem;
+  row-gap: 0.35rem;
+  align-items: center;
+  padding: 0.45rem 0.55rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.players-mark {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 6px;
+  border: 2px solid var(--line);
+  font-weight: 900;
+}
+
+.players-mark.x {
+  background: var(--x);
+  color: var(--on-color);
+}
+
+.players-mark.o {
+  background: var(--o);
+  color: var(--on-color);
+}
+
+.players-name .avatar {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.players-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
+.players-note {
+  grid-column: 2;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.players-row-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.players-row-actions:empty {
+  display: none;
+}
+
+
+.players-request {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.55rem;
+  border: 2px dashed var(--line);
+  border-radius: 8px;
+}
+
+.players-request p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.players-request-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+
+/* Rename in My games: Rename opens an inline form. */
+.rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.rename-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.rename-form input {
+  flex: 1 1 10rem;
+}
+
+.rename-problem {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.rename-problem:empty {
+  display: none;
 }

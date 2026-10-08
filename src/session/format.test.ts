@@ -30,7 +30,33 @@ describe('parseDoc', () => {
       options: { hideBoard: false, hideHistory: false, hideCoordinates: false },
       lockedGame: null,
       clock: { perMove: null, perGame: null },
+      playoff: null,
+      seatRequest: null,
+      fixedSeats: false,
+      flipped: [false],
     });
+  });
+
+  it('reads a stored playoff, and refuses a broken one', () => {
+    const playoff = { id: 1, seed: 7, preset: 'easy', by: 'X', seats: { X: { joined: true, times: [1200] }, O: { joined: true, times: [] } }, startAt: 5000, ended: null };
+    expect(parseDoc({ name: 'With playoff', games: [{ moves: [] }], playoff }).playoff).toEqual(playoff);
+    expect(() => parseDoc({ name: 'Broken', games: [{ moves: [] }], playoff: { ...playoff, preset: 'insane' } })).toThrow();
+  });
+
+  it('reads a seat request, and a stored document from before seat controls as having none', () => {
+    expect(parseDoc(formatOne).seatRequest).toBeNull();
+    const request = { kind: 'replace', from: 'X', watcher: 'cccccccc-0000-4000-8000-000000000003', at: 5 };
+    expect(parseDoc({ ...(formatOne as object), seatRequest: request }).seatRequest).toEqual(request);
+    expect(() => parseDoc({ ...(formatOne as object), seatRequest: { ...request, kind: 'leave' } })).toThrow(FormatError);
+    expect(() => parseDoc({ ...(formatOne as object), seatRequest: { ...request, watcher: null } })).toThrow(FormatError);
+  });
+
+  it('reads a document from before seat rotation with the default of its mode, and every earlier game as seated now', () => {
+    const doc = parseDoc({ name: 'Old', games: [{ moves: [5] }, { moves: [] }], seats: {} });
+    expect(doc).toMatchObject({ fixedSeats: false, flipped: [false, false] });
+    expect(() => parseDoc({ name: 'Old', games: [{ moves: [] }], flipped: [true, false] })).toThrow(FormatError);
+    const computer = { difficulty: 'easy', seat: 'O' };
+    expect(parseDoc({ name: 'Old', mode: 'computer', computer, games: [{ moves: [] }], seats: {} }).fixedSeats).toBe(true);
   });
 
   it('runs the upgrade steps in order up to the current format', () => {

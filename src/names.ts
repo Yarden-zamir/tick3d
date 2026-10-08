@@ -69,8 +69,8 @@ const ANIMALS = [
   'wildebeest', 'wolf', 'wolverine', 'wombat', 'woodpecker', 'worm', 'wren', 'yak', 'zebra',
 ] as const;
 
-// FNV-1a: a small, fast hash that spreads similar ids over the whole range.
-function hash(text: string): number {
+// FNV-1a: a small, fast hash that spreads similar ids over the whole range. src/avatar.ts uses it too.
+export function hash(text: string): number {
   let value = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     value ^= text.charCodeAt(i);
