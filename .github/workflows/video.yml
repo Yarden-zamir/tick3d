@@ -1,0 +1,77 @@
+name: video
+
+# Renders the 15 s spot of video/ (issue #119): both MP4s, the stills of each bar and the soundtrack.
+# It runs by hand, on a push to main that touches the video, and on a pull request that touches it. A manual
+# run needs the workflow on main, so the pull request trigger is the one that renders a branch before it merges.
+# A tag such as video-v1 also attaches the files to a GitHub Release. No secrets.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['video/**', 'src/song.ts', 'src/sound.ts', 'src/sound-sets.ts', 'src/style.css', '.github/workflows/video.yml']
+    tags: ['video-v*']
+  pull_request:
+    paths: ['video/**', 'src/song.ts', 'src/sound.ts', 'src/sound-sets.ts', 'src/style.css', '.github/workflows/video.yml']
+
+# contents: write makes the GitHub Release of a tag.
+permissions:
+  contents: write
+
+concurrency:
+  group: video-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            video/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
+        working-directory: video
+      - name: Check beats.json against the game code
+        run: node video/creative/tools/check-beats.ts
+      - name: Check the video code
+        run: npm run check
+        working-directory: video
+      # Remotion downloads Chrome Headless Shell on the first render. The runner image has its system libraries.
+      - name: Render the spot
+        run: npm run video
+        working-directory: video
+      # ffprobe ships with Remotion.
+      - name: Check the length and the size of both MP4s
+        working-directory: video
+        run: |
+          for crop in landscape:1920x1080 portrait:1080x1920; do
+            name=${crop%%:*}
+            size=${crop##*:}
+            file=out/tick3d-15s-$name.mp4
+            got=$(npx remotion ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$file")
+            seconds=$(npx remotion ffprobe -v error -show_entries format=duration -of csv=p=0 "$file")
+            echo "$file: $got, $seconds s"
+            [ "$got" = "$size" ] || { echo "$file is $got, not $size" >&2; exit 1; }
+            awk -v s="$seconds" 'BEGIN { exit !(s >= 14.9 && s <= 15.1) }' || { echo "$file lasts $seconds s, not 15.0 s" >&2; exit 1; }
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tick3d-video
+          path: |
+            video/out/*.mp4
+            video/out/stills/
+            video/out/soundtrack.wav
+            video/out/beats.txt
+          if-no-files-found: error
+      - if: startsWith(github.ref, 'refs/tags/video-v')
+        uses: softprops/action-gh-release@v3.0.3
+        with:
+          files: |
+            video/out/*.mp4
+            video/out/stills/*.png
