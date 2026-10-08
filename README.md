@@ -191,7 +191,7 @@ docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr.17.
 
 - Keep the image tag equal to the `@playwright/test` version in `package.json`.
 - After a run in the Playwright image, run `npm ci` again before you use `node:26-alpine`.
-- The `e2e` workflow runs the suite after each successful pull request preview deploy. It starts when the preview answers its health check 5 times in a row.
+- The `e2e` workflow runs the suite after each successful pull request preview deploy. It starts when the preview answers its health check 3 times in a row.
 
 ## Deploy
 
