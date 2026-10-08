@@ -8,7 +8,7 @@
 // - the commits of a pull request are read again only when its head commit changes;
 // - when GitHub says that few calls are left, the server makes no call until the limit resets;
 // - on any GitHub failure, the server keeps the last good list and adds a note.
-// "Live" means that https://pr.<n>.<domain>/api/health answers { ok: true } now. That costs no GitHub call.
+// "Live" means that https://pr-<n>.<domain>/api/health answers { ok: true } now. That costs no GitHub call.
 import { PREVIEWS_CACHE_MS, PREVIEWS_RELAY_CACHE_MS } from './api-docs.ts';
 import { type EpochMs, isEpochMs } from '../src/epoch.ts';
 import { type Contributor, type PlayerInfo, type Preview, type Previews, PREVIEW_DESCRIPTION_LENGTH, parsePlayerInfo, parsePreviews } from '../src/protocol.ts';
@@ -29,7 +29,7 @@ const PRODUCTION_TIMEOUT_MS = 20_000;
 export type PreviewsConfig = {
   // owner/name of the GitHub repository, for example Yarden-zamir/tick3d.
   repo: string;
-  // The previews live at https://pr.<n>.<domain>.
+  // The previews live at https://pr-<n>.<domain>.
   domain: string;
   // Where the list comes from: GitHub on production, production's GET /api/previews on any other environment.
   source: 'github' | 'production';
@@ -285,7 +285,7 @@ export function createPreviews(config: PreviewsConfig, fetchImpl: typeof fetch =
     }
   }
 
-  const previewUrl = (number: number) => `https://pr.${number}.${config.domain}`;
+  const previewUrl = (number: number) => `https://pr-${number}.${config.domain}`;
 
   async function refresh(): Promise<Preview[]> {
     const answer = await github(`/pulls?state=open&sort=updated&direction=desc&per_page=${MAX_PULLS}`);

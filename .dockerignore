@@ -9,3 +9,5 @@ dist
 dev.duckdb*
 e2e/test-results
 e2e/playwright-report
+android/store
+android/node_modules

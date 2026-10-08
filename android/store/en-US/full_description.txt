@@ -1,0 +1,16 @@
+tick3d is tic-tac-toe in three dimensions. The board is a tower of four 4×4 layers. Get four marks in a straight line to win: along a row or a column, up through the layers, or diagonally through the whole cube.
+
+Ways to play
+• Against the computer, from easy to hard.
+• With a friend on one screen.
+• Online: share a code or a link, and chat during the game.
+• Nearby: devices on the same Wi-Fi find each other.
+
+More to explore
+• Every cell has its own sound. Play a finished game back as a song.
+• Play by voice: hold a note to pick a cell. Calibrate and practise in the Voice room. The microphone audio stays on your device.
+• Time limits that work like a chess clock.
+• Stats for every game, and a history of your own games.
+• Twelve themes, from light and dark to retro and synthwave.
+
+No ads. No trackers. No in-app purchases.

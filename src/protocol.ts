@@ -468,6 +468,7 @@ function sameStatus(value: unknown, status: Status): boolean {
 }
 
 const GITHUB_LOGIN_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
+export const isGitHubLogin = (login: string): boolean => login.length >= 1 && login.length <= 39 && [...login].every((char) => GITHUB_LOGIN_CHARS.includes(char));
 
 const isDisplayName = (value: unknown): value is string => typeof value === 'string' && value.length >= 1 && value.length <= NAME_MAX_LENGTH;
 const isSeatName = (value: unknown): value is string | null => value === null || isDisplayName(value);
@@ -486,8 +487,7 @@ function parseSeatNames(value: unknown): SeatNames | undefined {
 export function parsePlayerInfo(value: unknown): PlayerInfo | undefined {
   if (!isRecord(value)) return undefined;
   const { login, avatar } = value;
-  if (typeof login !== 'string' || login.length < 1 || login.length > 39) return undefined;
-  if (![...login].every((char) => GITHUB_LOGIN_CHARS.includes(char))) return undefined;
+  if (typeof login !== 'string' || !isGitHubLogin(login)) return undefined;
   // Avatars come from GitHub only, so a page never loads an image from an address a player chose.
   if (typeof avatar !== 'string' || !avatar.startsWith('https://avatars.githubusercontent.com/')) return undefined;
   return { login, avatar };
@@ -1076,7 +1076,7 @@ function parsePreview(value: unknown): Preview | undefined {
   if (typeof title !== 'string' || typeof description !== 'string' || description.length > PREVIEW_DESCRIPTION_LENGTH) return undefined;
   // The page puts both addresses in links, so each must go to the expected kind of site.
   if (typeof url !== 'string' || !url.startsWith('https://github.com/')) return undefined;
-  if (typeof previewUrl !== 'string' || !previewUrl.startsWith(`https://pr.${number}.`)) return undefined;
+  if (typeof previewUrl !== 'string' || !previewUrl.startsWith(`https://pr-${number}.`)) return undefined;
   if (!isEpochMs(updatedAt) || typeof draft !== 'boolean' || !Array.isArray(contributors)) return undefined;
   const people = contributors.map(parseContributor);
   if (!people.every((person) => person !== undefined)) return undefined;

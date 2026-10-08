@@ -1,0 +1,66 @@
+/* The privacy policy page. It uses the theme tokens of style.css, so it follows the saved theme. */
+.privacy {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: max(1.25rem, env(safe-area-inset-top)) 1rem 3rem;
+}
+
+.privacy-head {
+  margin-bottom: 1.2rem;
+}
+
+/* The short version on top, in the card look of the stats page. */
+.privacy-card {
+  padding: 0.9rem 1.1rem 1rem;
+  border: var(--border) solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+.privacy-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.2rem;
+}
+
+.privacy-card ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.privacy-text {
+  margin-top: 1.6rem;
+  line-height: 1.45;
+}
+
+.privacy-text h2 {
+  margin: 1.4rem 0 0.4rem;
+  font-size: 1.05rem;
+}
+
+.privacy-text ul {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.privacy-text p {
+  margin: 0.5rem 0 0;
+}
+
+.privacy-text .privacy-foot {
+  margin-top: 1.8rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.privacy a {
+  color: inherit;
+  text-decoration-thickness: 2px;
+  overflow-wrap: anywhere;
+}

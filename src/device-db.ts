@@ -68,6 +68,8 @@ export type DeviceDb = {
   put<S extends StoreName>(store: S, value: Stores[S]): Promise<void>;
   all<S extends StoreName>(store: S): Promise<Stores[S][]>;
   delete(store: StoreName, key: string): Promise<void>;
+  // Deletes every row, also rows that do not parse.
+  clear(store: StoreName): Promise<void>;
 };
 
 export async function openDeviceDb(factory: IDBFactory = indexedDB, name: string = DB_NAME): Promise<DeviceDb> {
@@ -115,6 +117,9 @@ export async function openDeviceDb(factory: IDBFactory = indexedDB, name: string
     async delete(name, key) {
       await request(store(name, 'readwrite').delete(key));
     },
+    async clear(name) {
+      await request(store(name, 'readwrite').clear());
+    },
   };
 }
 
@@ -134,6 +139,9 @@ export function memoryDeviceDb(): DeviceDb {
     },
     async delete(name, key) {
       stores[name].delete(key);
+    },
+    async clear(name) {
+      stores[name].clear();
     },
   };
 }

@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test';
 // default, so a run cannot reach production by mistake.
 const baseURL = process.env.E2E_BASE_URL;
 if (!baseURL) {
-  throw new Error('Set E2E_BASE_URL to the site to test, for example https://pr.17.tick3d.yarden-zamir.com');
+  throw new Error('Set E2E_BASE_URL to the site to test, for example https://pr-17.tick3d.yarden-zamir.com');
 }
 
 export default defineConfig({

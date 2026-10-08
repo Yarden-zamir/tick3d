@@ -8,7 +8,7 @@ const preview = (number: number, parent: number | null = null): Preview => ({
   title: `Pull ${number}`,
   description: '',
   url: `https://github.com/octo/game/pull/${number}`,
-  previewUrl: `https://pr.${number}.game.example.com`,
+  previewUrl: `https://pr-${number}.game.example.com`,
   updatedAt: toEpochMs(0),
   draft: false,
   contributors: [],

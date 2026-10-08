@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       url:
-        description: The site to test, for example https://pr.17.tick3d.yarden-zamir.com
+        description: The site to test, for example https://pr-17.tick3d.yarden-zamir.com
         required: true
         type: string
 

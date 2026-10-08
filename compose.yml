@@ -1,5 +1,15 @@
+# Log limits for tick3d only: Docker keeps at most 3 files of 10 MB per container, and drops the oldest.
+# KitSHn recreates the containers on every deploy, so a change here applies at the next deploy.
+# The host's Docker and journald settings stay as they are for the other sites. /privacy states this limit.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
 services:
   site:
+    logging: *logging
     build:
       context: .
       target: site
@@ -25,6 +35,7 @@ services:
 
   # Online sessions: a Node API with a DuckDB file on the sessions volume. Caddy in `site` proxies /api/* here.
   api:
+    logging: *logging
     build:
       context: .
       target: api
@@ -39,7 +50,7 @@ services:
       AUTH_SECRET: ${AUTH_SECRET:-}
       AUTH_ORIGIN: https://tick3d.yarden-zamir.com
       COOKIE_DOMAIN: tick3d.yarden-zamir.com
-      # The kitshn button lists the open pull requests of this repository that have a live preview at pr.<n>.<domain>.
+      # The kitshn button lists the open pull requests of this repository that have a live preview at pr-<n>.<domain>.
       PREVIEWS_REPO: Yarden-zamir/tick3d
       PREVIEWS_DOMAIN: tick3d.yarden-zamir.com
       # prod or pr-<n>. Only prod calls GitHub; every other environment reads the list from production.

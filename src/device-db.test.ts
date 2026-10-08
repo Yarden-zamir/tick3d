@@ -50,4 +50,15 @@ describe('openDeviceDb', () => {
     expect(await db.all('results')).toEqual([]);
     await expect(db.get('results', 'r1')).rejects.toThrow();
   });
+
+  it('clears a store, also the rows that do not parse, and leaves the other stores', async () => {
+    const factory = new IDBFactory();
+    const db = await openDeviceDb(factory, 'device');
+    const session = { code: 'WXYZ' as Code, doc: {}, version: 1, updatedAt: 1000 };
+    await db.put('sessions', session);
+    await putRaw(factory, 'results', { id: 'r1', upload: { id: 'short' }, sent: false });
+    await db.clear('results');
+    await expect(db.get('results', 'r1')).resolves.toBeUndefined();
+    expect(await db.all('sessions')).toEqual([session]);
+  });
 });

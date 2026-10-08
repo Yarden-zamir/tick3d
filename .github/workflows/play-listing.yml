@@ -1,0 +1,53 @@
+name: play-listing
+
+# Pushes the store listing in android/store/ (texts, icon, feature graphic, screenshots) to Play
+# when it changes on main. Images upload only when their checksum differs from the one in Play.
+on:
+  push:
+    branches: [main]
+    paths: ['android/store/en-US/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: play
+  cancel-in-progress: false
+
+jobs:
+  listing:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Play API
+        id: play
+        uses: ./.github/actions/play-api
+        with:
+          service-account-json: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+
+      - uses: ruby/setup-ruby@v1.327.0
+        if: steps.play.outputs.ready == 'true'
+        with:
+          ruby-version: '4.0'
+          bundler-cache: true
+          working-directory: android
+
+      # supply looks up one release of a track even for a listing-only upload, so this names the
+      # internal track, which holds one release after the first upload.
+      # Limit: two releases on the internal track (a draft next to a completed one) stop this step.
+      # Revisit this if that happens: name the version with --version_code.
+      - name: Upload the listing
+        if: steps.play.outputs.ready == 'true'
+        working-directory: android
+        env:
+          SUPPLY_JSON_KEY_DATA: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          bundle exec fastlane supply \
+            --package_name '${{ steps.play.outputs.package }}' \
+            --metadata_path store \
+            --track internal \
+            --sync_image_upload true \
+            --skip_upload_apk true --skip_upload_aab true --skip_upload_changelogs true

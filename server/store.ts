@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, randomInt } from 'node:crypto';
-import { DuckDBInstance, listValue } from '@duckdb/node-api';
+import { type DuckDBValue, DuckDBInstance, listValue } from '@duckdb/node-api';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { NO_LIMIT, type TimeControl } from '../src/clock.ts';
 import { type EpochMs, MAX_EPOCH_MS, epochNow, toEpochMs } from '../src/epoch.ts';
@@ -65,6 +65,8 @@ import * as core from '../src/session/core.ts';
 import { CURRENT_FORMAT, type SessionDoc, parseDoc } from '../src/session/format.ts';
 import type { PlayoffRequest } from '../src/practice/playoff.ts';
 import type { PracticeBoard, PracticeMode, PracticeRun, PresetId } from '../src/practice/practice.ts';
+import { DELETED_NAME } from '../src/deletions.ts';
+import { DATA_TABLES, type DeletedData } from './api-docs.ts';
 import { practiceBoard, practiceStats } from './practice.ts';
 import { type Rows, bigId, bool, code as codeColumn, deviceGameId, epoch, gameId, int, json, nullable, oneOf, readRow, text } from './sql.ts';
 import { computeStats, SEAT_O, SEAT_X } from './stats.ts';
@@ -81,7 +83,9 @@ const SEATS = ['X', 'O'] as const satisfies readonly Player[];
 // Each statement is idempotent and runs on every start, in order. To change a table, append a
 // statement such as `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ... DEFAULT ...`. Never edit one.
 // A session is a VARIANT document (see src/session/format.ts), so most format changes need no SQL at all.
-// Only pruneEmpty deletes rows: sessions where no game has a move. Games and results have no limit until storage calls for one.
+// pruneEmpty deletes sessions where no game has a move, pruneOld deletes old reports, moderation log,
+// page faults and deletion notices, and deleteFor deletes the data of one player. Games and results
+// have no limit until storage calls for one.
 const SCHEMA = [
   'CREATE SEQUENCE IF NOT EXISTS session_order',
   `CREATE TABLE IF NOT EXISTS sessions (
@@ -208,6 +212,15 @@ const SCHEMA = [
      person VARCHAR,
      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
+  // Delete my data (deleteData) keeps a report that a player filed, without the link to that player.
+  'ALTER TABLE reports ALTER COLUMN reporter DROP NOT NULL',
+  'ALTER TABLE reports ALTER COLUMN reporter_person DROP NOT NULL',
+  // Deletion notices: the person id of each player who deleted their data, and the time. Pages read
+  // them (deletedSince) and remove that person from their own copies. pruneOld deletes a notice after a year.
+  `CREATE TABLE IF NOT EXISTS deleted_people (
+     person VARCHAR PRIMARY KEY,
+     deleted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
 ];
 
 // The token that a seat holds when a logged-in player takes it. The account has a player_tokens row
@@ -229,7 +242,8 @@ export type StoredReport = {
   name: string | null;
   reason: ReportReason;
   note: string | null;
-  reporter: PersonId;
+  // Null when the reporter deleted their data.
+  reporter: PersonId | null;
   reporterLogin: string | null;
   at: EpochMs;
 };
@@ -243,6 +257,13 @@ export type ModerationAction = {
 };
 const REPORTS_SHOWN = 200;
 export const REMOVED_MESSAGE = 'A moderator removed this message.';
+export const DELETED_MESSAGE = 'Deleted by its author.';
+// Reports, the moderation log and page faults go after 90 days (pruneOld). Moderation needs a
+// report for a few weeks at most. Revisit this if a maintainer needs older reports.
+export const REPORTS_KEPT_MS = 90 * 24 * 3_600_000;
+// A deletion notice stays for a year, so a device that comes back within a year still cleans its
+// copies. Limit: a device that stays away longer keeps them. Revisit this if players ask about it.
+export const DELETION_NOTICES_KEPT_MS = 365 * 24 * 3_600_000;
 const BLOCKS_KEPT = 500;
 
 type Row = { code: Code; doc: SessionDoc; version: number; stale: boolean };
@@ -727,6 +748,129 @@ export async function openStore(
   // Everyone answers by filter query (statsQuery). The filters have a few dozen combinations, so the map stays small.
   const statsCache = new Map<string, Stats>();
 
+  // Delete my data: deletes or anonymises every row of this player, on every linked device, in one
+  // transaction. A second call finds nothing and returns zero counts. Per table:
+  // - sessions: the player's seats and seat request go, and the player's chat messages lose their
+  //   text. A session that has no player and no move after that goes.
+  // - results: a game that the player uploaded goes. An online game with another player stays for
+  //   that player, and so does another player's upload: the player's seat becomes null.
+  // - seat_metrics of the player's seats, player_names, the player's own blocks, private_stats, practice_runs: deleted.
+  // - reports: a report about the player stays for moderation. A report that the player filed loses its reporter.
+  // - player_tokens and users: the account goes, so no device acts for it any more.
+  // Limit: a device of the account that is still logged in links itself again on its next visit,
+  // because its login cookie stays valid. That account then starts empty. Revisit this if the
+  // server ever keeps login sessions that it can end.
+  // Limit: the session query reads every session document, like myGames. Revisit it at the same size.
+  // `token` is a device token, or the account token of a maintainer request (deleteDataOf).
+  async function deleteFor(token: PlayerToken): Promise<DeletedData> {
+    const identity = await identityOf(token);
+    const ids = listValue([...identity]);
+    const ownPersons = new Set(await Promise.all([...identity].map((owner) => personId(owner))));
+    const persons = listValue([...ownPersons]);
+    const [linked] = await rows('FROM player_tokens SELECT github_id WHERE token = $token', { token }, { github_id: bigId });
+    const mine = (seat: string | null) => seat !== null && identity.has(seat);
+    const counts = Object.fromEntries(DATA_TABLES.map((table) => [table, { deleted: 0, anonymised: 0 }])) as DeletedData;
+    // The ids of the rows that a statement with `RETURNING ... AS id` changed.
+    const changedIds = async (sql: string, values: Record<string, DuckDBValue>) => (await rows(sql, values, { id: text })).map((row) => row.id);
+    const changed: Code[] = [];
+    await db.run('BEGIN TRANSACTION');
+    try {
+      const held = await rows(
+        `FROM sessions SELECT code
+         WHERE list_contains($ids, doc.seats.X::VARCHAR) OR list_contains($ids, doc.seats.O::VARCHAR)
+           OR list_contains($ids, doc.seatRequest.watcher::VARCHAR)
+           OR list_has_any($persons, json_extract_string(doc::JSON, '$.chat[*].by'))`,
+        { ids, persons },
+        { code: codeColumn },
+      );
+      for (const { code } of held) {
+        const { doc } = await loadRaw(code);
+        const seats = { X: mine(doc.seats.X) ? null : doc.seats.X, O: mine(doc.seats.O) ? null : doc.seats.O };
+        const freed = seats.X !== doc.seats.X || seats.O !== doc.seats.O;
+        const seatRequest = freed || mine(doc.seatRequest?.watcher ?? null) ? null : doc.seatRequest;
+        // The message keeps its id and seat, so the ids of later messages stay unique.
+        const chat = doc.chat.map((message) => {
+          if (message.by === undefined || !ownPersons.has(message.by)) return message;
+          counts.chat_messages.anonymised++;
+          return { id: message.id, from: message.from, text: DELETED_MESSAGE, at: message.at };
+        });
+        changed.push(code);
+        if (seats.X === null && seats.O === null && core.isEmptySession(doc)) {
+          await db.run('DELETE FROM sessions WHERE code = $code', { code });
+          counts.sessions.deleted++;
+          continue;
+        }
+        await db.run('UPDATE sessions SET doc = $doc::JSON::VARIANT, version = version + 1, updated_at = now() WHERE code = $code', {
+          code,
+          doc: serialize({ ...doc, seats, seatRequest, chat }),
+        });
+        counts.sessions.anonymised++;
+      }
+
+      // Before the seats of the results change: a metrics row finds its player through them.
+      counts.seat_metrics.deleted = (
+        await changedIds(
+          `DELETE FROM seat_metrics WHERE EXISTS (FROM results r SELECT 1 WHERE r.public_id = seat_metrics.public_id
+             AND ((seat_metrics.seat = 'X' AND list_contains($ids, r.player_x)) OR (seat_metrics.seat = 'O' AND list_contains($ids, r.player_o))))
+           RETURNING public_id || seat AS id`,
+          { ids },
+        )
+      ).length;
+
+      // The games that this player uploaded, and the online games without another player.
+      const deleted = await changedIds(
+        `DELETE FROM results WHERE (list_contains($ids, token) AND doc.mode::VARCHAR IS DISTINCT FROM 'online')
+           OR (doc.mode::VARCHAR = 'online' AND (list_contains($ids, player_x) OR list_contains($ids, player_o))
+             AND coalesce(list_contains($ids, player_x), true) AND coalesce(list_contains($ids, player_o), true))
+         RETURNING id`,
+        { ids },
+      );
+      // An online game that stays has another player on the other seat, who becomes its uploader.
+      const anonymised = new Set(
+        await changedIds('UPDATE results SET token = CASE WHEN list_contains($ids, player_x) THEN player_o ELSE player_x END WHERE list_contains($ids, token) RETURNING id', { ids }),
+      );
+      for (const column of ['player_x', 'player_o'] as const) {
+        for (const id of await changedIds(`UPDATE results SET ${column} = NULL WHERE list_contains($ids, ${column}) RETURNING id`, { ids })) anonymised.add(id);
+      }
+      counts.results = { deleted: deleted.length, anonymised: anonymised.size };
+
+      counts.player_names.deleted = (await changedIds('DELETE FROM player_names WHERE list_contains($ids, token) RETURNING token AS id', { ids })).length;
+      counts.blocks.deleted = (await changedIds('DELETE FROM blocks WHERE list_contains($ids, owner) RETURNING person AS id', { ids })).length;
+      counts.private_stats.deleted = (await changedIds('DELETE FROM private_stats WHERE list_contains($ids, owner) RETURNING owner AS id', { ids })).length;
+      // A block of this player by another player stays for that player, without the name.
+      counts.blocks.anonymised = (
+        await changedIds('UPDATE blocks SET name = $name WHERE list_contains($persons, person) AND name <> $name RETURNING owner || person AS id', { persons, name: DELETED_NAME })
+      ).length;
+      counts.practice_runs.deleted = (await changedIds('DELETE FROM practice_runs WHERE list_contains($ids, token) RETURNING id', { ids })).length;
+      counts.reports.anonymised = (
+        await changedIds(
+          `UPDATE reports SET reporter = NULL, reporter_person = NULL
+           WHERE list_contains($ids, reporter) OR list_contains($persons, reporter_person) RETURNING id::VARCHAR AS id`,
+          { ids, persons },
+        )
+      ).length;
+      const account = linked?.github_id ?? null;
+      counts.player_tokens.deleted = (
+        await changedIds('DELETE FROM player_tokens WHERE list_contains($ids, token) OR github_id = $account RETURNING token AS id', { ids, account })
+      ).length;
+      // The notice tells the devices of other players to clean their copies (deletedSince).
+      await db.run(
+        `INSERT INTO deleted_people (person, deleted_at) SELECT unnest($persons), make_timestamptz($now * 1000)
+         ON CONFLICT (person) DO UPDATE SET deleted_at = excluded.deleted_at`,
+        { persons, now: now() },
+      );
+      if (account !== null) {
+        counts.users.deleted = (await changedIds('DELETE FROM users WHERE github_id = $account RETURNING login AS id', { account })).length;
+      }
+      await db.run('COMMIT');
+    } catch (error) {
+      await db.run('ROLLBACK');
+      throw error;
+    }
+    for (const code of changed) onChange(code);
+    return counts;
+  }
+
   return {
     // The creator takes seat X, so the creator moves first in the first game.
     create: (token: PlayerToken, name: string, clock: TimeControl = NO_LIMIT): Promise<SessionView> =>
@@ -906,7 +1050,7 @@ export async function openStore(
             name: nullable(text),
             reason: oneOf(REPORT_REASONS),
             note: nullable(text),
-            reporter: personColumn,
+            reporter: nullable(personColumn),
             reporterLogin: nullable(text),
             at: epoch,
           },
@@ -1155,6 +1299,36 @@ export async function openStore(
         return hidden;
       }),
 
+    // Delete my data for this device, and for the account when the device is logged in (deleteFor).
+    deleteData: (token: PlayerToken): Promise<DeletedData> => serialized(() => deleteFor(token)),
+
+    // The same deletion for an email request, by a maintainer: by public person id, or by GitHub login.
+    // 404 when nobody has that id or login. A person id names a canonical token (see canonical), so the
+    // search reads the columns that hold tokens of people. Limit: it scans those columns. Revisit this
+    // when one call takes more than about a second.
+    deleteDataOf: (target: { person: PersonId } | { login: string }): Promise<DeletedData> =>
+      serialized(async () => {
+        let token: string | undefined;
+        if ('login' in target) {
+          const [user] = await rows('FROM users SELECT github_id WHERE lower(login) = lower($login)', { login: target.login }, { github_id: bigId });
+          if (user !== undefined) token = await ensureAccountRow(user.github_id);
+        } else {
+          const [found] = await rows(
+            `WITH tokens AS (
+               FROM player_tokens SELECT token UNION FROM player_names SELECT token UNION FROM practice_runs SELECT token
+               UNION FROM blocks SELECT owner UNION FROM results SELECT token UNION FROM results SELECT player_x UNION FROM results SELECT player_o
+               UNION FROM sessions SELECT doc.seats.X::VARCHAR UNION FROM sessions SELECT doc.seats.O::VARCHAR)
+             FROM tokens SELECT token WHERE token IS NOT NULL AND left(sha256($prefix || token), ${PERSON_ID_LENGTH}) = $person LIMIT 1`,
+            { prefix: PERSON_ID_PREFIX, person: target.person },
+            { token: text },
+          );
+          token = found?.token;
+        }
+        if (token === undefined) throw new SessionError(404, 'Nobody has that person id or GitHub login.');
+        // An account token is not a valid X-Player value, but identityOf reads it like a device token of the account.
+        return deleteFor(token as PlayerToken);
+      }),
+
     // The metrics of one player's device for a finished online game. The first report per seat
     // counts, so a page that sends again changes nothing. Returns false for a repeat.
     addSeatMetrics: (id: GameId, token: PlayerToken, metrics: Metrics): Promise<boolean> =>
@@ -1301,6 +1475,31 @@ export async function openStore(
           deleted.push(code);
         }
         return deleted;
+      }),
+
+    // The deletion notices since `since` (epoch ms), and the server time of the answer for the next call.
+    deletedSince: (since: EpochMs): Promise<{ people: PersonId[]; until: EpochMs }> =>
+      serialized(async () => {
+        const until = now();
+        const found = await rows(
+          'FROM deleted_people SELECT person WHERE deleted_at >= make_timestamptz($since * 1000) AND deleted_at < make_timestamptz($until * 1000) ORDER BY person',
+          { since, until },
+          { person: personColumn },
+        );
+        return { people: found.map((row) => row.person), until };
+      }),
+
+    // Retention: reports, the moderation log and page faults after REPORTS_KEPT_MS, and deletion
+    // notices after DELETION_NOTICES_KEPT_MS. Returns how many rows went from each table.
+    pruneOld: (): Promise<Record<'reports' | 'moderation_log' | 'events' | 'deleted_people', number>> =>
+      serialized(async () => {
+        const prune = async (sql: string, ageMs: number) => (await rows(sql, { cutoff: toEpochMs(now() - ageMs) }, { n: int })).length;
+        return {
+          reports: await prune('DELETE FROM reports WHERE created_at < make_timestamptz($cutoff * 1000) RETURNING 1 AS n', REPORTS_KEPT_MS),
+          moderation_log: await prune('DELETE FROM moderation_log WHERE created_at < make_timestamptz($cutoff * 1000) RETURNING 1 AS n', REPORTS_KEPT_MS),
+          events: await prune('DELETE FROM events WHERE created_at < make_timestamptz($cutoff * 1000) RETURNING 1 AS n', REPORTS_KEPT_MS),
+          deleted_people: await prune('DELETE FROM deleted_people WHERE deleted_at < make_timestamptz($cutoff * 1000) RETURNING 1 AS n', DELETION_NOTICES_KEPT_MS),
+        };
       }),
 
     close(): void {

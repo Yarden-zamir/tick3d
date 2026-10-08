@@ -468,6 +468,11 @@
         <h3>On this device</h3>
         <ul class="my-games-list" id="my-games-device"></ul>
       </section>
+      <section class="my-games-data">
+        <h3>Your data</h3>
+        <p class="my-games-note">Delete your games, name and account from the server and from this device, at once. See the <a href="/privacy">privacy policy</a>.</p>
+        <button type="button" class="btn btn-small" id="my-games-delete">Delete my data</button>
+      </section>
     </dialog>
     <dialog class="end-card my-games" id="previews" aria-labelledby="previews-title">
       <div class="my-games-head">
@@ -497,6 +502,28 @@
       <div class="end-card-actions">
         <button type="button" class="btn btn-primary" id="clear-confirm-yes">Clear history</button>
         <button type="button" class="btn" id="clear-confirm-no">Keep</button>
+      </div>
+    </dialog>
+    <!-- Delete my data: src/page/my-games.ts. -->
+    <dialog class="end-card home-confirm delete-confirm" id="delete-confirm" aria-labelledby="delete-confirm-title">
+      <p id="delete-confirm-title">Delete your data now?</p>
+      <div id="delete-confirm-form">
+        <!-- src/page/my-games.ts names the account or this device. -->
+        <span id="delete-confirm-scope"></span>
+        <ul>
+          <li>Your finished games and survival records. A game with another player stays for that player, without you.</li>
+          <li>Your seats in online games, and the text of your chat messages.</li>
+          <li>Your custom name, the people that you blocked, and your Voice practice runs.</li>
+          <li>Your GitHub login link, if you logged in. This logs you out.</li>
+          <li>On this device: saved games, results, records and cached online games.</li>
+        </ul>
+        <span>Reports that other players made about you stay for the moderators, for up to 90 days. You cannot undo this.</span>
+        <label><input type="checkbox" id="delete-confirm-settings" /> Also reset settings on this device</label>
+      </div>
+      <span id="delete-confirm-status" role="status" hidden></span>
+      <div class="end-card-actions">
+        <button type="button" class="btn btn-primary" id="delete-confirm-yes">Delete my data</button>
+        <button type="button" class="btn" id="delete-confirm-no">Keep</button>
       </div>
     </dialog>
     <!-- A person's picture, large: src/page/avatar-viewer.ts. -->
@@ -566,6 +593,7 @@
       </ul>
       <div class="info-actions">
         <a class="btn btn-small" id="info-stats-link" href="/stats"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>Stats of all games</a>
+        <a class="btn btn-small" id="info-privacy-link" href="/privacy">Privacy</a>
         <button type="button" class="btn btn-small info-close" popovertarget="info-panel" popovertargetaction="hide">Close</button>
       </div>
     </div>

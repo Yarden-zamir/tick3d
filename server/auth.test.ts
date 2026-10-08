@@ -29,7 +29,7 @@ function fakeGitHub(profile: object = { id: 7, login: 'octo', avatar_url: 'https
   return { impl, calls };
 }
 
-async function login(returnTo = 'https://pr.5.tick3d.example.com/?code=ABCD', profile?: object) {
+async function login(returnTo = 'https://pr-5.tick3d.example.com/?code=ABCD', profile?: object) {
   const github = fakeGitHub(profile);
   const auth = createAuth(config, github.impl, () => 1_000);
   const start = auth.start(config.origin, returnTo);
@@ -42,14 +42,14 @@ async function login(returnTo = 'https://pr.5.tick3d.example.com/?code=ABCD', pr
 describe('GitHub login', () => {
   it('sends a preview to the login origin first', () => {
     const auth = createAuth(config, fakeGitHub().impl);
-    const { location } = auth.start('https://pr.5.tick3d.example.com', 'https://pr.5.tick3d.example.com/');
-    expect(location).toBe('https://tick3d.example.com/api/auth/login?return=https%3A%2F%2Fpr.5.tick3d.example.com%2F');
+    const { location } = auth.start('https://pr-5.tick3d.example.com', 'https://pr-5.tick3d.example.com/');
+    expect(location).toBe('https://tick3d.example.com/api/auth/login?return=https%3A%2F%2Fpr-5.tick3d.example.com%2F');
   });
 
   it('logs in, sets a cookie for the whole domain, and returns to the page', async () => {
     const { auth, done, github } = await login();
     expect(done.user).toEqual({ id: 7, login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' });
-    expect(done.location).toBe('https://pr.5.tick3d.example.com/?code=ABCD');
+    expect(done.location).toBe('https://pr-5.tick3d.example.com/?code=ABCD');
     const account = done.cookies.find((c) => c.startsWith('t3_user='));
     expect(account).toContain('Domain=tick3d.example.com');
     expect(account).toContain('HttpOnly');

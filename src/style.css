@@ -539,13 +539,17 @@ input:disabled {
   justify-self: end;
 }
 
-/* A link to another page, then Close at the end. */
+/* Links to other pages, then Close at the end. */
 .info-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: 0.6rem;
+}
+
+/* The links stay together on the left. Close keeps the right edge, also on its own line. */
+.info-actions .info-close {
+  margin-left: auto;
 }
 
 @keyframes banner-in {
@@ -2384,6 +2388,37 @@ body[data-turn='O'] .status[data-state='playing'] {
 .home-confirm p {
   margin: 0;
   font-weight: 700;
+}
+
+/* Delete my data (src/page/my-games.ts): the list of what goes. */
+.delete-confirm #delete-confirm-form:not([hidden]) {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.delete-confirm ul {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.delete-confirm label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-weight: 700;
+}
+
+.delete-confirm #delete-confirm-status:not([hidden]) {
+  display: block;
+  margin-top: 0.5rem;
+}
+
+.my-games-data .my-games-note {
+  margin: 0 0 0.5rem;
 }
 
 /* A person's picture, large (src/page/avatar-viewer.ts). */

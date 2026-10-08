@@ -1,0 +1,86 @@
+name: Play API
+description: >-
+  Signs in to Google Play with the PLAY_SERVICE_ACCOUNT_JSON secret, and checks that the app exists in Play.
+  The steps after it run only when `ready` is true, so every Play workflow skips cleanly until the first
+  bundle went up by hand in Play Console.
+inputs:
+  service-account-json:
+    description: The PLAY_SERVICE_ACCOUNT_JSON secret. Empty means no Play access.
+    required: true
+outputs:
+  ready:
+    description: "'true' when the token works and the app exists in Play."
+    value: ${{ steps.probe.outputs.ready }}
+  token:
+    description: An OAuth access token for the Play Developer API and the Play Developer Reporting API.
+    value: ${{ steps.auth.outputs.access_token }}
+  package:
+    description: The package id from android/twa-manifest.json.
+    value: ${{ steps.package.outputs.package }}
+runs:
+  using: composite
+  steps:
+    - id: package
+      shell: bash
+      run: echo "package=$(jq --exit-status --raw-output .packageId android/twa-manifest.json)" >> "$GITHUB_OUTPUT"
+
+    - id: secret
+      shell: bash
+      env:
+        SERVICE_ACCOUNT: ${{ inputs.service-account-json }}
+      run: |
+        if [[ -n "$SERVICE_ACCOUNT" ]]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+
+    # A service account key signs a JWT, and Google trades it for an access token (the OAuth 2.0
+    # service account flow). Plain openssl and curl, so the key needs no extra Google Cloud role.
+    - id: auth
+      if: steps.secret.outputs.present == 'true'
+      shell: bash
+      env:
+        SERVICE_ACCOUNT: ${{ inputs.service-account-json }}
+      run: |
+        b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+        key=$(mktemp)
+        trap 'rm -f "$key"' EXIT
+        jq --exit-status --raw-output .private_key <<< "$SERVICE_ACCOUNT" > "$key"
+        email=$(jq --exit-status --raw-output .client_email <<< "$SERVICE_ACCOUNT")
+        now=$(date +%s)
+        scope="https://www.googleapis.com/auth/androidpublisher https://www.googleapis.com/auth/playdeveloperreporting"
+        header=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
+        claims=$(jq --null-input --compact-output --arg iss "$email" --arg scope "$scope" --argjson now "$now" \
+          '{iss: $iss, scope: $scope, aud: "https://oauth2.googleapis.com/token", iat: $now, exp: ($now + 3600)}' | b64url)
+        signature=$(printf '%s.%s' "$header" "$claims" | openssl dgst -sha256 -sign "$key" | b64url)
+        token=$(curl --silent --fail-with-body https://oauth2.googleapis.com/token \
+          --data-urlencode grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer \
+          --data-urlencode "assertion=$header.$claims.$signature" | jq --exit-status --raw-output .access_token)
+        echo "::add-mask::$token"
+        echo "access_token=$token" >> "$GITHUB_OUTPUT"
+
+    # A new edit answers 404 while the app does not exist in Play. The probe deletes the edit again.
+    - id: probe
+      shell: bash
+      env:
+        PRESENT: ${{ steps.secret.outputs.present }}
+        TOKEN: ${{ steps.auth.outputs.access_token }}
+        PACKAGE: ${{ steps.package.outputs.package }}
+      run: |
+        if [[ "$PRESENT" != true ]]; then
+          echo "::notice::No PLAY_SERVICE_ACCOUNT_JSON secret: the Play steps skip."
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        api="https://androidpublisher.googleapis.com/androidpublisher/v3/applications/$PACKAGE/edits"
+        body=$(mktemp)
+        status=$(curl --silent --output "$body" --write-out '%{http_code}' --request POST --header "Authorization: Bearer $TOKEN" "$api")
+        case "$status" in
+          200)
+            edit=$(jq --exit-status --raw-output .id "$body")
+            curl --silent --fail-with-body --request DELETE --header "Authorization: Bearer $TOKEN" "$api/$edit" > /dev/null
+            echo "ready=true" >> "$GITHUB_OUTPUT" ;;
+          404)
+            echo "::notice::$PACKAGE does not exist in Play yet. Upload the first bundle by hand in Play Console; the Play steps skip until then."
+            echo "ready=false" >> "$GITHUB_OUTPUT" ;;
+          *)
+            echo "::error::The Play API answered $status: $(jq --compact-output . "$body" 2>/dev/null || cat "$body")"
+            exit 1 ;;
+        esac

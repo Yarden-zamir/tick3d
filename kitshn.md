@@ -2,7 +2,7 @@
 
 This repository deploys tick3d to `tick3d.yarden-zamir.com` with KitSHn.
 
-- A push to `main` deploys `prod`. A pull request deploys to `pr.<number>.tick3d.yarden-zamir.com`.
+- A push to `main` deploys `prod`. A pull request deploys to `pr-<number>.tick3d.yarden-zamir.com`.
 - The `check` job of `.github/workflows/kitshn.yml` runs `npm run check` and `npm run build`. A production or manual deploy waits for it. A pull request preview starts at once, next to the check.
 - The `site` service (Caddy, `container/Caddyfile`) serves `dist/` on the KitSHn Unix socket. The host Caddy (`Caddyfile.j2`) routes the hostname to that socket.
 - The `api` service serves `/api/*`. It keeps data in DuckDB at `/data/tick3d.duckdb` on the `sessions` volume. Each environment has its own volume.
