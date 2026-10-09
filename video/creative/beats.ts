@@ -11,7 +11,7 @@ import type { SoundSetId } from '../../src/sound-sets.ts';
 const THEMES = ['light', 'dark', 'candy', 'mint', 'midnight', 'snow', 'retro', 'synthwave', 'bloodmoon', 'coffee', 'batman', 'mono'] as const;
 type ThemeId = (typeof THEMES)[number];
 
-const CAMERAS = ['slam', 'swoop', 'dive', 'orbit', 'push', 'ride', 'pull-back', 'settle'] as const;
+const CAMERAS = ['slam', 'dive', 'orbit', 'push', 'ride', 'pull-back', 'settle'] as const;
 // The only sound sets of the spot (maintainer rule on #119).
 const SPOT_SOUND_SETS = ['classic', 'cells', 'chiptune'] as const satisfies readonly SoundSetId[];
 type Camera = (typeof CAMERAS)[number];
@@ -57,10 +57,15 @@ type TimedMove = { move: number; player: Player; cell: number; at: number };
 // - 'center': two word groups across the middle, the second one a sticker (src/hud.ts LOOKS);
 // - 'top': two word groups above the tower, the second one a sticker;
 // - 'cards': feature cards in the sticker style of the wordmark above the tower, one at a time;
-// - 'end-card': the wordmark and the URL suffix. It is the last line, and it stays to the end of the spot.
-const TEXT_STYLES = ['center', 'top', 'cards', 'end-card'] as const;
+// - 'list': feature cards above the tower that scroll up as a list, two at a time;
+// - 'end-card': the wordmark, the URL suffix, a call to action, then store badges (words with an icon). It is
+//   the last line, and it stays to the end of the spot.
+const TEXT_STYLES = ['center', 'top', 'cards', 'list', 'end-card'] as const;
 export type TextStyle = (typeof TEXT_STYLES)[number];
-type TextLine = { words: readonly { text: string; at: number }[]; until: number; style: TextStyle };
+// A store badge on the end card shows this icon before its text.
+const ICONS = ['play-store', 'apple'] as const;
+export type Icon = (typeof ICONS)[number];
+type TextLine = { words: readonly { text: string; at: number; icon?: Icon }[]; until: number; style: TextStyle };
 
 export type Beats = {
   bpm: 136;
@@ -209,7 +214,8 @@ export function parseBeats(value: unknown): Beats {
       const entry = record(t, `text[${i}]`);
       const words = list(entry['words'], `text[${i}].words`).map((w, j) => {
         const word = record(w, `text[${i}].words[${j}]`);
-        return { text: text(word['text'], `text[${i}].words[${j}].text`), at: time(word['at'], `text[${i}].words[${j}].at`) };
+        const entry = { text: text(word['text'], `text[${i}].words[${j}].text`), at: time(word['at'], `text[${i}].words[${j}].at`) };
+        return word['icon'] === undefined ? entry : { ...entry, icon: oneOf(ICONS, word['icon'], `text[${i}].words[${j}].icon`) };
       });
       return { words, until: time(entry['until'], `text[${i}].until`), style: oneOf(TEXT_STYLES, entry['style'], `text[${i}].style`) };
     }),

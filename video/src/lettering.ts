@@ -2,6 +2,7 @@
 // shows as a texture. Layout units are pixels of the 1080 × 1080 centre square, origin in its middle, y down.
 // The times of the words are sixteenths of the beat grid (src/grid.ts).
 import { spring } from 'remotion';
+import type { Icon } from '../creative/beats.ts';
 import { FPS, S16_FRAMES, frameOf, since } from './grid.ts';
 import type { Rgba, Theme, Token } from './themes.ts';
 
@@ -16,14 +17,14 @@ const SUFFIX = 0.55;
 
 const css = ({ r, g, b, a }: Rgba) => `rgb(${Math.round(r * 255)} ${Math.round(g * 255)} ${Math.round(b * 255)} / ${a})`;
 
-export type Word = { text: string; at: number };
+export type Word = { text: string; at: number; icon?: Icon };
 // A plain word: `--surface` letters with a thick `--line` outline and a hard shadow. A sticker: the "3d" of
 // the wordmark, a `--line` box in a token color with `--on-color` letters, tilted by `tilt` degrees (-5 as in the
 // wordmark).
 export type Look = { y: number; size: number; sticker?: Token; tilt?: number };
 
 // The drop-in of a word group: 0 before its sixteenth, then a spring with a small overshoot, settled in 1 sixteenth.
-const dropIn = (frame: number, at: number) =>
+export const dropIn = (frame: number, at: number) =>
   frame < frameOf(at) ? 0 : spring({ frame: frame - frameOf(at), fps: FPS, config: { damping: 11, stiffness: 320, mass: 0.6 }, durationInFrames: Math.ceil(S16_FRAMES) + 1 });
 
 function plainWord(ctx: CanvasRenderingContext2D, text: string, size: number, theme: Theme): void {
@@ -47,7 +48,7 @@ function roundedBox(ctx: CanvasRenderingContext2D, x: number, y: number, width: 
 }
 
 // The sticker of `.brand h1 span` in src/style.css, centred on the origin. Returns its width.
-function sticker(ctx: CanvasRenderingContext2D, text: string, size: number, fill: Token, theme: Theme, letterSpacing = '-0.03em', tilt = -5): number {
+export function sticker(ctx: CanvasRenderingContext2D, text: string, size: number, fill: Token, theme: Theme, letterSpacing = '-0.03em', tilt = -5): number {
   ctx.font = `800 ${size}px ${FONT}`;
   ctx.letterSpacing = letterSpacing;
   const width = ctx.measureText(text).width + size * 0.28;
@@ -91,17 +92,124 @@ export function wordAt(ctx: CanvasRenderingContext2D, frame: number, word: Word,
   ctx.restore();
 }
 
-// The call to action under the address: a small `--o` sticker.
-const CALL_TO_ACTION: Look = { y: 420, size: 74, sticker: 'o', tilt: -3 };
+// The call to action under the address: a small `--o` sticker. The store badges sit in a row under it.
+const CALL_TO_ACTION: Look = { y: 372, size: 62, sticker: 'o', tilt: -3 };
+const BADGE_Y = 466;
+const BADGE_GAP = 28;
+const BADGE_SIZE = 46;
+
+// The store icons, drawn in the flat style of the game, centred on the origin, `s` pixels tall. They are styled
+// shapes, not the official badges of Google and Apple.
+function playStoreIcon(ctx: CanvasRenderingContext2D, s: number, theme: Theme): void {
+  const a = { x: -0.42 * s, y: -0.5 * s };
+  const b = { x: -0.42 * s, y: 0.5 * s };
+  const c = { x: 0.5 * s, y: 0 };
+  const p = { x: -0.06 * s, y: 0 };
+  const lerp = (from: { x: number; y: number }, to: { x: number; y: number }, t: number) => ({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t });
+  const fill = (points: readonly { x: number; y: number }[], color: string) => {
+    ctx.beginPath();
+    points.forEach((point, i) => (i === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y)));
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+  };
+  // The four colours of the Google Play mark: blue on the left, green on top, red below, yellow at the tip.
+  fill([a, b, p], '#00a0ff');
+  fill([a, p, c], '#00e676');
+  fill([b, c, p], '#ff3d57');
+  fill([lerp(a, c, 0.55), c, lerp(b, c, 0.55), { x: 0.14 * s, y: 0 }], '#ffd500');
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(c.x, c.y);
+  ctx.closePath();
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1.5 * PX;
+  ctx.strokeStyle = css(theme.surface);
+  ctx.stroke();
+}
+
+// An apple with a bite and a leaf, in `--surface`. The bite paints the badge colour over the body.
+function appleIcon(ctx: CanvasRenderingContext2D, s: number, theme: Theme, badge: string): void {
+  const disc = (x: number, y: number, r: number, color: string) => {
+    ctx.beginPath();
+    ctx.arc(x * s, y * s, r * s, 0, 2 * Math.PI);
+    ctx.fillStyle = color;
+    ctx.fill();
+  };
+  const body = css(theme.surface);
+  disc(-0.19, 0.06, 0.3, body);
+  disc(0.19, 0.06, 0.3, body);
+  ctx.beginPath();
+  ctx.ellipse(0, 0.2 * s, 0.36 * s, 0.3 * s, 0, 0, 2 * Math.PI);
+  ctx.fillStyle = body;
+  ctx.fill();
+  disc(0, -0.25, 0.07, badge);
+  disc(0.47, 0.02, 0.17, badge);
+  ctx.beginPath();
+  ctx.ellipse(0.07 * s, -0.4 * s, 0.07 * s, 0.15 * s, (35 * Math.PI) / 180, 0, 2 * Math.PI);
+  ctx.fillStyle = body;
+  ctx.fill();
+}
+
+// A store badge: a `--line` box with a hard shadow, the icon, and the text in `--surface`. Returns its width.
+function badgeWidth(ctx: CanvasRenderingContext2D, text: string): number {
+  ctx.font = `800 ${BADGE_SIZE}px ${FONT}`;
+  ctx.letterSpacing = '-0.02em';
+  return ctx.measureText(text).width + BADGE_SIZE * 1.9;
+}
+
+function badge(ctx: CanvasRenderingContext2D, word: Word & { icon: Icon }, theme: Theme): void {
+  const width = badgeWidth(ctx, word.text);
+  const height = BADGE_SIZE * 1.5;
+  roundedBox(ctx, -width / 2 + SHADOW, -height / 2 + SHADOW, width, height);
+  ctx.fillStyle = css(theme.shadow);
+  ctx.fill();
+  roundedBox(ctx, -width / 2, -height / 2, width, height);
+  ctx.fillStyle = css(theme.line);
+  ctx.fill();
+  ctx.save();
+  ctx.translate(-width / 2 + BADGE_SIZE * 0.85, 0);
+  if (word.icon === 'play-store') playStoreIcon(ctx, BADGE_SIZE * 0.9, theme);
+  else appleIcon(ctx, BADGE_SIZE * 0.95, theme, css(theme.line));
+  ctx.restore();
+  ctx.font = `800 ${BADGE_SIZE}px ${FONT}`;
+  ctx.letterSpacing = '-0.02em';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = css(theme.surface);
+  ctx.fillText(word.text, -width / 2 + BADGE_SIZE * 1.55, BADGE_SIZE * 0.04);
+  ctx.textAlign = 'center';
+}
+
+// The store badges in one row, centred, each dropping in on its sixteenth.
+function badges(ctx: CanvasRenderingContext2D, frame: number, words: readonly (Word & { icon: Icon })[], theme: Theme): void {
+  const widths = words.map((word) => badgeWidth(ctx, word.text));
+  let x = -(widths.reduce((sum, width) => sum + width, 0) + BADGE_GAP * (words.length - 1)) / 2;
+  words.forEach((word, i) => {
+    const width = widths[i] ?? 0;
+    const p = dropIn(frame, word.at);
+    if (p > 0) {
+      ctx.save();
+      ctx.translate(x + width / 2, BADGE_Y - (1 - p) * 120);
+      ctx.scale(1 + (1 - p) * 0.4, 1 + (1 - p) * 0.4);
+      badge(ctx, word, theme);
+      ctx.restore();
+    }
+    x += width + BADGE_GAP;
+  });
+}
 
 // The wordmark of the game header: "tick" in `--ink` and the "3d" sticker. The URL suffix slides out of the
-// sticker to the right, so the whole line reads as the address. An optional third word group is the call to action.
+// sticker to the right, so the whole line reads as the address. A third word group is the call to action, and
+// the word groups after it, each with an icon, are the store badges.
 export function endCard(ctx: CanvasRenderingContext2D, frame: number, words: readonly Word[], theme: Theme): void {
   const [mark, suffix, action, ...rest] = words;
-  if (mark === undefined || suffix === undefined || rest.length > 0 || !mark.text.endsWith('3d')) {
-    throw new Error('the end card needs the wordmark "…3d", the URL suffix and at most a call to action');
+  const stores = rest.filter((word): word is Word & { icon: Icon } => word.icon !== undefined);
+  if (mark === undefined || suffix === undefined || stores.length !== rest.length || !mark.text.endsWith('3d') || [mark, suffix, action].some((word) => word?.icon !== undefined)) {
+    throw new Error('the end card needs the wordmark "…3d", the URL suffix, then a call to action and store badges with icons');
   }
   if (action !== undefined) wordAt(ctx, frame, action, CALL_TO_ACTION, theme);
+  badges(ctx, frame, stores, theme);
   const name = mark.text.slice(0, -2);
   const slam = dropIn(frame, mark.at);
   if (slam <= 0) return;

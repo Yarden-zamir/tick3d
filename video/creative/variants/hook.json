@@ -1,6 +1,6 @@
 {
   "name": "hook",
-  "differs": "A cold open for social feeds: bar 1 plays in the black and white Mono theme while \"Tic-tac-toe? / Too easy.\" slams in with the layers, then colour sweeps in on \"4 in a row. In 3D.\"",
+  "differs": "A cold open for social feeds: bar 1 plays in the Mono theme while \"Tic-tac-toe? / Too easy.\" slams in with the layers, then colour sweeps in on \"4 in a row. In 3D.\". Then 12 feature cards, one per beat: the ways to play in bar 3 (computer, online, nearby, your AI agent), more in bar 4 (13 sound sets, ear trainer, voice, share your win), and in bar 6, while the game replays as its song: song, 12 themes, time limits, offline.",
   "text": [
     {
       "style": "top",
@@ -31,18 +31,70 @@
       "until": 32
     },
     {
-      "style": "top",
+      "style": "cards",
       "words": [
         {
-          "text": "Every cell",
+          "text": "Vs computer.",
+          "at": 32
+        },
+        {
+          "text": "Play online.",
+          "at": 36
+        },
+        {
+          "text": "Play nearby.",
+          "at": 40
+        },
+        {
+          "text": "Vs your AI agent.",
+          "at": 44
+        }
+      ],
+      "until": 48
+    },
+    {
+      "style": "cards",
+      "words": [
+        {
+          "text": "13 sound sets.",
           "at": 48
         },
         {
-          "text": "has a note.",
+          "text": "Ear trainer.",
           "at": 52
+        },
+        {
+          "text": "Play by voice.",
+          "at": 56
+        },
+        {
+          "text": "Share your win.",
+          "at": 60
         }
       ],
-      "until": 62
+      "until": 64
+    },
+    {
+      "style": "cards",
+      "words": [
+        {
+          "text": "Your game is a song.",
+          "at": 80
+        },
+        {
+          "text": "12 themes.",
+          "at": 84
+        },
+        {
+          "text": "Time limits.",
+          "at": 88
+        },
+        {
+          "text": "Works offline.",
+          "at": 92
+        }
+      ],
+      "until": 96
     },
     {
       "style": "end-card",
@@ -58,6 +110,16 @@
         {
           "text": "Play in your browser.",
           "at": 112
+        },
+        {
+          "text": "Android",
+          "at": 116,
+          "icon": "play-store"
+        },
+        {
+          "text": "iOS",
+          "at": 120,
+          "icon": "apple"
         }
       ],
       "until": 128

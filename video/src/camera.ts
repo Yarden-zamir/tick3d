@@ -45,14 +45,6 @@ export function cameraAt(frame: number, bar: Bar): Shot {
       const target = TOWER_CENTER.clone().add(new Vector3(0, ease(u, 1.3, 0, Easing.out(cubic)) + jolt(frame), 0));
       return shot(orbit(target, HOME_AZIMUTH, ELEVATION, HOME_DISTANCE).add(shake(frame)), target);
     }
-    case 'swoop': {
-      // The arcade hook: the camera flies in low and fast from the far side, under the first layers as they
-      // land, and climbs to the home view by the end of the bar.
-      const w = ease(u, 0, 1, Easing.out(cubic));
-      const target = TOWER_CENTER.clone().add(new Vector3(0, interpolate(w, [0, 1], [2.2, 0]) + jolt(frame), 0));
-      const position = orbit(target, interpolate(w, [0, 1], [HOME_AZIMUTH + 150, HOME_AZIMUTH]), interpolate(w, [0, 1], [-12, ELEVATION]), interpolate(w, [0, 1], [8, HOME_DISTANCE]));
-      return shot(position.add(shake(frame)), target, interpolate(w, [0, 1], [50, HOME_FOV]));
-    }
     case 'dive': {
       // A corkscrew down past the tower: from high above, the camera spirals a third of a turn around the tower
       // while it sinks, with the gaps between the layers open to the lens, so every move shows as it lands. In
