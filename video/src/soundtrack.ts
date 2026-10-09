@@ -1,61 +1,18 @@
 // The sounds of the soundtrack: the song of the game (src/song.ts) retimed to the bars of beats.json, the
 // Classic layer notes, the preview strikes of the threats and the win jingle. Each note plays with the sound
 // set of its bar. scripts/audio.ts renders them.
-import { type SongNote, scaleOf, songOf } from '../../src/song.ts';
+import { type SongNote, songOf } from '../../src/song.ts';
 import { type ScheduledSound, previewVoices, winVoices } from '../../src/sound.ts';
-import { SOUND_SETS, type SoundSet, type Voice } from '../../src/sound-sets.ts';
-import { SIZE, toCoords } from '../../src/game.ts';
+import { SOUND_SETS, type SoundSet } from '../../src/sound-sets.ts';
+import { inKey, landing, midiOf, withoutBell } from './key.ts';
 import { SIXTEENTHS_PER_BAR } from '../creative/beats.ts';
 import { BEATS, GAME, eventOf, eventsOf } from './timeline.ts';
 
 // A sound of the spot. `at` counts whole sixteenths here; scripts/audio.ts turns it into seconds.
 export type SpotSound = ScheduledSound;
 
-export const SCALE = scaleOf(BEATS.songKey);
-
-const midiOf = (frequency: number) => 69 + 12 * Math.log2(frequency / 440);
-// The pitch that a pitched voice lands on: the end of its glide, if it glides.
-const landing = (voice: Voice): number | undefined => (voice.wave === 'noise' ? undefined : (voice.slideTo ?? voice.frequency));
-
-function withoutGlide(voice: Voice): Voice {
-  if (voice.wave === 'noise' || voice.slideTo === undefined) return voice;
-  const blip = { ...voice, frequency: voice.slideTo };
-  delete blip.slideTo;
-  delete blip.slideTime;
-  return blip;
-}
-
-// A set without the added interval voices that leave the key (music.md): the Cells fifth over E and the
-// Chiptune arpeggio steps off the scale. The voices of one interval, timbre partials included, come in a
-// group as long as the voices of the thinnest cell of the row (column 0), so a whole group stays or goes.
-// A Chiptune glide (jump, drop) starts outside the key, so the spot plays it as a blip on its landing note.
-export function inKey(set: SoundSet, midi: number): SoundSet {
-  return {
-    ...set,
-    voices(cell, player) {
-      const voices = set.voices(cell, player).map(withoutGlide);
-      const groupSize = set.voices(cell - toCoords(cell).column, player).length;
-      const lead = voices[0] === undefined ? undefined : landing(voices[0]);
-      if (lead === undefined) return voices;
-      const kept: Voice[] = [];
-      for (let start = 0; start < voices.length; start += groupSize) {
-        const group = voices.slice(start, start + groupSize);
-        const head = group[0] === undefined ? undefined : landing(group[0]);
-        const pitch = head === undefined ? midi : Math.round(midi + midiOf(head) - midiOf(lead));
-        if (SCALE.includes(((pitch % 12) + 12) % 12)) kept.push(...group);
-      }
-      return kept;
-    },
-  };
-}
-
-// The glass bell of Cells (the second row) rings for 0.9 s with partials off the harmonic series. In the spot it
-// sounded harsh (maintainer feedback on #119), so the spot plays that row with the marimba of the first row.
-const BELL_ROW = 1;
-const withoutBell = (set: SoundSet): SoundSet => ({
-  ...set,
-  voices: (cell, player) => set.voices(toCoords(cell).row === BELL_ROW ? cell - SIZE : cell, player),
-});
+// The key and the cut sets of src/key.ts. beats.json has the same key (songKey, checked by parseBeats).
+export { SCALE, inKey } from './key.ts';
 
 // The runs of one note per sixteenth (the moves of bar 3 and the replay) play softer, so they do not crowd the
 // mix (maintainer feedback on #119).

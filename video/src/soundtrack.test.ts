@@ -1,42 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { scheduleNotes } from '../../src/sound.ts';
 import { SOUND_SETS } from '../../src/sound-sets.ts';
 import { SPOT_SIXTEENTHS } from '../creative/beats.ts';
 import { SCALE, type SpotSound, inKey, spotSounds } from './soundtrack.ts';
 import { BEATS, eventsOf } from './timeline.ts';
+import { oscillatorPitches } from './oscillators.ts';
 
 const sounds = spotSounds();
 const notes = sounds.flatMap((sound) => ('note' in sound ? [sound] : []));
 const pitchClass = (midi: number) => ((Math.round(midi) % 12) + 12) % 12;
 const midiOf = (hz: number) => 69 + 12 * Math.log2(hz / 440);
-
-// Schedules one sound into a fake audio context, and returns the pitches of every oscillator that the sound
-// starts: the value set at the start, then the target of a glide. A vibrato LFO is an oscillator too, far below
-// 30 Hz, and it is left out.
-function oscillatorPitches(sound: SpotSound): number[][] {
-  const pitches: number[][] = [];
-  const param = () => ({ setValueAtTime: () => undefined, exponentialRampToValueAtTime: () => undefined });
-  const node = (extra: object = {}): object => ({ ...extra, connect: (to: unknown) => to });
-  const ctx = {
-    currentTime: 0,
-    sampleRate: 44_100,
-    destination: {},
-    createBuffer: () => ({ getChannelData: () => new Float32Array(44_100) }),
-    createBufferSource: () => node({ start: () => undefined, stop: () => undefined }),
-    createGain: () => node({ gain: param() }),
-    createDynamicsCompressor: () => node({ threshold: param(), ratio: param(), attack: param(), release: param() }),
-    createStereoPanner: () => node({ pan: param() }),
-    createBiquadFilter: () => node({ frequency: param(), Q: param() }),
-    createOscillator: () => {
-      const own: number[] = [];
-      pitches.push(own);
-      const record = (value: number) => own.push(value);
-      return node({ frequency: { setValueAtTime: record, exponentialRampToValueAtTime: record }, start: () => undefined, stop: () => undefined });
-    },
-  };
-  scheduleNotes([{ ...sound, at: 0 }], ctx as unknown as BaseAudioContext);
-  return pitches.filter((own) => own.every((hz) => hz >= 30));
-}
 
 describe('the soundtrack', () => {
   it('plays every sound on a whole sixteenth inside the spot', () => {
