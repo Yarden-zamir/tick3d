@@ -1082,7 +1082,7 @@ describe('report and block', () => {
     // The seats rotate with the new game: Bob plays X now, and the message keeps its author.
     const rotated = await store.newGame(code, alice);
     expect(rotated.people.X).toBe(bobId);
-    expect(rotated.chat).toMatchObject([{ text: 'hello', by: bobId }]);
+    expect(rotated.chat).toMatchObject([{ text: 'hello', by: bobId }, { event: { kind: 'new-game', swapped: true } }]);
   });
 
   it('keeps blocks per player until an unblock, and refuses a block of yourself', async () => {
@@ -1217,7 +1217,7 @@ describe('delete my data', () => {
     expect(view.you).toBe('O');
     expect(view.players.X).toBeNull();
     expect(view.chat).toMatchObject([{ text: DELETED_MESSAGE }, { text: 'thanks', by: await personId(bob) }]);
-    expect(view.chat[0]?.by).toBeUndefined();
+    expect(view.chat[0]).not.toHaveProperty('by');
     expect((await store.history(bob, 0)).games.map((game) => game.id)).toEqual(expect.arrayContaining([online, nearby]));
     expect((await store.game(online)).names.X).toBeNull();
     expect(await store.customName(bob)).toBe('Bob B');

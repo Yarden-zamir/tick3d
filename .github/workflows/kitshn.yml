@@ -44,9 +44,13 @@ jobs:
   # A PR preview (and its teardown) starts at once, next to the check, so it is ready sooner.
   # A failing check still marks the PR red. Pushes to other branches deploy nothing (kitshn resolves that).
   # Dependabot runs get no deploy secrets, so they skip the preview.
+  # An open PR with the label no-preview builds no preview. Its close still runs the teardown. A preview that
+  # exists before the label stays until the PR closes: kitshn tears down only on close. Revisit if a labelled PR
+  # must lose its preview at once (that needs a teardown input in kitshn's deploy.yml).
   preview:
     if: >-
       github.actor != 'dependabot[bot]' &&
+      !(github.event_name == 'pull_request' && github.event.action != 'closed' && contains(github.event.pull_request.labels.*.name, 'no-preview')) &&
       (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main'))
     uses: Yarden-zamir/kitshn/.github/workflows/deploy.yml@main
     secrets: inherit

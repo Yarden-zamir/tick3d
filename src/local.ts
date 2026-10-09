@@ -167,7 +167,11 @@ export function createLocalBackend(
     newGame: (code: Code) => change(code, (doc) => core.newGame(doc, identity())),
     update: (code: Code, changes: SessionUpdate) => change(code, (doc) => core.update(doc, identity(), changes)),
     lock: (code: Code) => change(code, (doc) => core.lock(doc, identity())),
-    chat: (code: Code, text: string) => change(code, (doc) => core.chat(doc, identity(), text, epochNow(), audienceOf(code, doc).person(token))),
+    chat: (code: Code, text: string) =>
+      change(code, (doc) => {
+        const audience = audienceOf(code, doc);
+        return core.chat(doc, identity(), text, epochNow(), audience.person(token), audience.watchers);
+      }),
     undo: (code: Code, count: number) => change(code, (doc) => core.undo(doc, identity(true), count)),
     // A device-held session has nobody else to join; a Nearby guest joins through the host.
     join: (code: Code) => change(code, (doc) => doc),

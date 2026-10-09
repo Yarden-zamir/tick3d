@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { type PersonId, type SessionView, parseSessionView } from '../protocol.ts';
+import { type PersonId, type SessionView, isChatEvent, parseSessionView } from '../protocol.ts';
 import { authorOf, markPerson, personTarget, visibleMessages } from './person-mark.ts';
 
 const ALICE = 'aaaaaaaaaaaaaaaa' as PersonId;
@@ -39,7 +39,7 @@ describe('the messages to show', () => {
 
   it('gives a message without a person id to the holder of its seat now', () => {
     const swapped = view({ X: BOB, O: ALICE });
-    expect(swapped.chat.map((message) => authorOf(swapped, message))).toEqual([BOB, ALICE, BOB]);
+    expect(swapped.chat.map((entry) => (isChatEvent(entry) ? undefined : authorOf(swapped, entry)))).toEqual([BOB, ALICE, BOB]);
   });
 
   it('hides a message that this device reported', () => {

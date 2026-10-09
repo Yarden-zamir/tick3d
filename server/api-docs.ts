@@ -109,6 +109,7 @@ export type SchemaName =
   | 'GameRecord'
   | 'Status'
   | 'ChatMessage'
+  | 'ChatEvent'
   | 'PlayerInfo'
   | 'SeatNames'
   | 'Watcher'
@@ -244,11 +245,26 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
   },
   ChatMessage: object('A chat message.', {
     id: { type: 'integer', description: 'Grows by 1 with each message.' },
-    from: { ...ref('Player'), description: 'The seat of the sender when they sent the message.' },
+    from: { type: 'string', enum: ['X', 'O', 'watcher'], description: 'The seat of the sender when they sent the message, or "watcher" for a sender without a seat.' },
     text: chatText,
     at: { type: 'number', description: 'Server time in epoch milliseconds.' },
     by: { ...person, description: 'The person id of the sender. An older message has none: then the holder of `from` stands for the sender.' },
   }, ['by']),
+  ChatEvent: object('A change to the session, between the messages of the chat. It names no player.', {
+    id: { type: 'integer', description: 'The same sequence as the message ids.' },
+    event: {
+      oneOf: [
+        object('A new game started. swapped: X and O swapped for it.', { kind: { const: 'new-game' }, game: { type: 'integer', minimum: 1 }, swapped: { type: 'boolean' } }),
+        object('A match option changed.', { kind: { const: 'option' }, option: { type: 'string', enum: ['hideBoard', 'hideHistory', 'hideCoordinates'] }, on: { type: 'boolean' } }),
+        object('fixedSeats changed.', { kind: { const: 'fixed-seats' }, on: { type: 'boolean' } }),
+        object('watcherChat changed.', { kind: { const: 'watcher-chat' }, on: { type: 'boolean' } }),
+        object('The time limit for the next game changed.', { kind: { const: 'clock' }, clock: ref('TimeControl') }),
+        object('The session got a new name.', { kind: { const: 'name' }, name }),
+        object('A player locked the settings until the live game ends.', { kind: { const: 'lock' } }),
+        object('A seat change or an undo applied.', { kind: { const: 'seat' }, action: { type: 'string', enum: ['swap', 'leave', 'give', 'seat', 'unseat', 'replace', 'undo'] } }),
+      ],
+    },
+  }),
   PlayerInfo: object('The GitHub account of a seat, when its player logged in on the page.', {
     login: { type: 'string', minLength: 1, maxLength: 39 },
     avatar: { type: 'string', pattern: '^https://avatars\\.githubusercontent\\.com/' },
@@ -282,6 +298,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     locked: { type: 'boolean', description: 'True when a player locked the settings until the live game ends.' },
     clock: { ...ref('TimeControl'), description: 'The time limit for the next game.' },
     fixedSeats: { type: 'boolean', description: 'false (the default): the players swap X and O for each new game, so the first move alternates. true: the seats stay the same.' },
+    watcherChat: { type: 'boolean', description: 'true (the default): watchers can write in the chat too. false: only the two players can.' },
     flipped: {
       type: 'array',
       items: { type: 'boolean' },
@@ -289,7 +306,12 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     },
     now: { type: 'number', description: 'Server time in epoch milliseconds.' },
     version: { type: 'integer', description: 'Grows with every change. Send it as ?wait=<version> to wait for the next change.' },
-    chat: { type: 'array', items: ref('ChatMessage'), maxItems: CHAT_KEEP, description: `The newest ${CHAT_KEEP} messages, oldest first.` },
+    chat: {
+      type: 'array',
+      items: { oneOf: [ref('ChatMessage'), ref('ChatEvent')] },
+      maxItems: CHAT_KEEP,
+      description: `The newest ${CHAT_KEEP} entries, oldest first: messages, and an event for each new game, change of settings and change of seats.`,
+    },
     presence: object('True when the seat has the game open in a browser now. An API client shows as away.', {
       X: { type: 'boolean' },
       O: { type: 'boolean' },
@@ -319,8 +341,9 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
         hideCoordinates: { type: 'boolean', description: 'Hide the coordinates of the last move on the keypad, for play by ear.' },
         clock: { ...ref('TimeControl'), description: 'The time limit from the next game on.' },
         fixedSeats: { type: 'boolean', description: 'true: keep the seats for the next games. false: swap X and O for each new game.' },
+        watcherChat: { type: 'boolean', description: 'true: watchers can write in the chat. false: only the two players can. A lock leaves it open.' },
       },
-      ['name', 'hideBoard', 'hideHistory', 'hideCoordinates', 'clock', 'fixedSeats'],
+      ['name', 'hideBoard', 'hideHistory', 'hideCoordinates', 'clock', 'fixedSeats', 'watcherChat'],
     ),
     minProperties: 1,
   },
@@ -739,6 +762,7 @@ function view(fields: Record<string, unknown>): Record<string, unknown> {
     locked: false,
     clock: NO_LIMIT,
     fixedSeats: false,
+    watcherChat: true,
     flipped: [false],
     now: T0,
     version: 1,
@@ -1008,7 +1032,7 @@ export const ROUTES = {
     operationId: 'sendChat',
     tag: 'Play',
     summary: 'Send a chat message.',
-    description: `Only the two players can write. The session keeps the newest ${CHAT_KEEP} messages.`,
+    description: `The two players can write, and watchers too while \`watcherChat\` is true. A watcher must have the session open. The session keeps the newest ${CHAT_KEEP} messages.`,
     player: 'required',
     idempotencyKey: true,
     body: { schema: 'ChatRequest', example: { text: 'Good luck!' } },
@@ -1045,7 +1069,7 @@ export const ROUTES = {
     operationId: 'updateSession',
     tag: 'Play',
     summary: 'Rename a session, or change its options, time limit or seat rotation.',
-    description: 'A new time limit starts with the next game. `fixedSeats` decides if X and O swap for each new game. During a lock, only the name can change.',
+    description: 'A new time limit starts with the next game. `fixedSeats` decides if X and O swap for each new game. `watcherChat` decides if watchers can write in the chat. During a lock, only the name and `watcherChat` can change.',
     player: 'required',
     idempotencyKey: true,
     body: { schema: 'SessionUpdate', example: { name: 'Rematch' } },
@@ -1845,7 +1869,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
     blocks: [
       { p: 'A finished game has its own read-only link: `{origin}/?game=<CODE>-<n>`, where n is the game number in the session, counted from 1 (`games.length` for the live game). It shows the final board and a replay. After a game, this is the best link to give your user. `GET /api/games/<CODE>-<n>` returns the same game as JSON.' },
       { p: 'A game ends when `status.kind` is "won", "timeout" or "draw". Either player starts the next game with `POST /api/sessions/<code>/games`. The new game is the last item of `games`. X moves first in every game, but the players swap X and O for each new game: the player who was O is now X. Read `you` again after each new game. To keep the seats, send `PATCH /api/sessions/<code>` with `{"fixedSeats":true}`. A session keeps every game.' },
-      { p: `Chat with \`POST /api/sessions/<code>/chat\` and \`{"text":"Good luck!"}\`. A message has 1 to ${CHAT_MAX_LENGTH} characters. Only the two players can write. Watchers read along. The session keeps the newest ${CHAT_KEEP} messages.` },
+      { p: `Chat with \`POST /api/sessions/<code>/chat\` and \`{"text":"Good luck!"}\`. A message has 1 to ${CHAT_MAX_LENGTH} characters. The two players can write. Watchers can write too, unless a player sends \`{"watcherChat":false}\` with \`PATCH /api/sessions/<code>\`. The session keeps the newest ${CHAT_KEEP} messages.` },
     ],
   },
   {

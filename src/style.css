@@ -1485,6 +1485,11 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* A label row with a small control at its end, such as Hide and the lock. */
+.field-head-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
 .field-head {
   display: flex;
   align-items: center;
@@ -1492,12 +1497,14 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.6rem;
 }
 
-.lock svg {
+.lock svg,
+.watcher-chat svg {
   width: 1rem;
   height: 1rem;
 }
 
-.lock[aria-pressed='true'] {
+.lock[aria-pressed='true'],
+.watcher-chat[aria-pressed='true'] {
   opacity: 1;
   background: var(--primary);
   color: var(--on-color);
@@ -1883,6 +1890,16 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
+/* A change to the session (a new game, a setting, a seat change) between the messages. */
+.chat-event {
+  align-self: center;
+  max-width: 90%;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 /* Messages in a row from one sender: one picture at the bottom, the name, then the bubbles.
    Your own groups sit on the right, with the picture on the right. */
 .chat-group {
@@ -1942,6 +1959,12 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .from-o .chat-message {
   background: var(--o);
+}
+
+/* A watcher has no seat color. */
+.from-watcher .chat-message {
+  background: var(--peer);
+  color: var(--ink);
 }
 
 .chat-form {
