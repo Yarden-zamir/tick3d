@@ -1,0 +1,109 @@
+{
+  "name": "memory",
+  "differs": "Classic, with the memory line in bar 4: \"Hide the board. / Play from memory.\" The tower fades out to the dashed \"Board hidden\" box of the game, while the threat cells still ring, and comes back on the win.",
+  "text": [
+    {
+      "words": [
+        {
+          "text": "4 in a row.",
+          "at": 16
+        },
+        {
+          "text": "In 3D.",
+          "at": 24
+        }
+      ],
+      "until": 32
+    },
+    {
+      "words": [
+        {
+          "text": "Hide the board.",
+          "at": 48
+        },
+        {
+          "text": "Play from memory.",
+          "at": 52
+        }
+      ],
+      "until": 62
+    },
+    {
+      "words": [
+        {
+          "text": "tick3d",
+          "at": 96
+        },
+        {
+          "text": ".yarden-zamir.com",
+          "at": 100
+        }
+      ],
+      "until": 128
+    }
+  ],
+  "bars": {
+    "4": {
+      "events": [
+        {
+          "kind": "threats",
+          "at": 48,
+          "cells": [
+            4,
+            21
+          ]
+        },
+        {
+          "kind": "threat-pulse",
+          "at": 50,
+          "cells": [
+            4,
+            21
+          ]
+        },
+        {
+          "kind": "threat-pulse",
+          "at": 52,
+          "cells": [
+            4,
+            21
+          ]
+        },
+        {
+          "kind": "threat-pulse",
+          "at": 54,
+          "cells": [
+            4,
+            21
+          ]
+        },
+        {
+          "kind": "threat-pulse",
+          "at": 58,
+          "cells": [
+            21
+          ]
+        },
+        {
+          "kind": "threat-pulse",
+          "at": 60,
+          "cells": [
+            21
+          ]
+        },
+        {
+          "kind": "threat-pulse",
+          "at": 62,
+          "cells": [
+            21
+          ]
+        },
+        {
+          "kind": "hide-board",
+          "at": 48,
+          "until": 64
+        }
+      ]
+    }
+  }
+}

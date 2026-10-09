@@ -13,10 +13,11 @@ const NO_TIME = toEpochMs(0);
 
 import arcade from '../creative/variants/arcade.json' with { type: 'json' };
 import mellow from '../creative/variants/mellow.json' with { type: 'json' };
+import memory from '../creative/variants/memory.json' with { type: 'json' };
 
 // The variants of the spot: VIDEO_VARIANT picks an overlay of video/creative/variants/. Unset, or 'classic', is
 // the approved cut. scripts/render.ts passes the variable into the render browser.
-export const VARIANTS = { classic: undefined, arcade, mellow } as const;
+export const VARIANTS = { classic: undefined, arcade, mellow, memory } as const;
 export type VariantName = keyof typeof VARIANTS;
 const isVariantName = (name: string): name is VariantName => Object.hasOwn(VARIANTS, name);
 const requested = globalThis.process?.env?.['VIDEO_VARIANT'] ?? 'classic';
@@ -56,6 +57,16 @@ type EventOf<K extends BeatEvent['kind']> = Extract<BeatEvent, { kind: K }>;
 
 export function eventsOf<K extends BeatEvent['kind']>(kind: K): EventOf<K>[] {
   return BEATS.bars.flatMap((bar) => bar.events.filter((event): event is EventOf<K> => event.kind === kind));
+}
+
+// How much of the tower shows, 0 to 1: a hide-board event fades it out over 2 sixteenths, and it is back on `until`.
+export function boardShown(frame: number): number {
+  let shown = 1;
+  for (const event of eventsOf('hide-board')) {
+    const t = since(frame, event.at);
+    if (t >= 0 && frame < frameOf(event.until)) shown = Math.min(shown, Math.max(0, 1 - t / 2));
+  }
+  return shown;
 }
 
 // The one event of a kind. The spot is built for exactly one beam, one confetti burst and so on.

@@ -2,7 +2,7 @@
 // Layout units are pixels of the 1080 × 1080 centre square, origin in its middle, y down.
 import { spring } from 'remotion';
 import { SPOT_SIXTEENTHS } from '../creative/beats.ts';
-import { BEATS, FPS, S16_FRAMES, frameOf } from './timeline.ts';
+import { BEATS, FPS, S16_FRAMES, boardShown, frameOf } from './timeline.ts';
 import type { Rgba, Theme, Token } from './themes.ts';
 
 // Video pixels per CSS pixel: the video draws the game as a phone screen at 2x does.
@@ -148,6 +148,41 @@ function endCard(ctx: CanvasRenderingContext2D, frame: number, words: readonly W
   ctx.restore();
 }
 
+// The "Board hidden" box of `.board-hidden` in src/style.css, where the tower stands: a dashed `--line` border on
+// `--surface` with thin diagonal `--dot` stripes, and the heading in `--ink`. `alpha` fades it in.
+function boardHidden(ctx: CanvasRenderingContext2D, theme: Theme, alpha: number): void {
+  const size = 460;
+  const y = 60;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  roundedBox(ctx, -size / 2, y - size / 2, size, size);
+  ctx.fillStyle = css(theme.surface);
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  ctx.strokeStyle = css(theme.dot);
+  ctx.lineWidth = 2 * PX;
+  for (let x = -size; x <= size; x += 14 * PX) {
+    ctx.beginPath();
+    ctx.moveTo(x - size / 2, y + size / 2);
+    ctx.lineTo(x + size / 2, y - size / 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+  // The stripes replaced the path, so the border draws the box again.
+  roundedBox(ctx, -size / 2, y - size / 2, size, size);
+  ctx.setLineDash([4 * BORDER, 2 * BORDER]);
+  ctx.lineWidth = BORDER;
+  ctx.strokeStyle = css(theme.line);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = `800 ${26 * PX}px ${FONT}`;
+  ctx.letterSpacing = '-0.03em';
+  ctx.fillStyle = css(theme.ink);
+  ctx.fillText('Board hidden', 0, y);
+  ctx.restore();
+}
+
 // Draws the text of `frame` in `theme` on the whole canvas.
 export function drawHud(ctx: CanvasRenderingContext2D, frame: number, theme: Theme): void {
   const { width, height } = ctx.canvas;
@@ -157,6 +192,8 @@ export function drawHud(ctx: CanvasRenderingContext2D, frame: number, theme: The
   ctx.scale(Math.min(width, height) / SQUARE, Math.min(width, height) / SQUARE);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  const shown = boardShown(frame);
+  if (shown < 1) boardHidden(ctx, theme, 1 - shown);
   BEATS.text.forEach((line, index) => {
     // A line that lasts to the end of the 8 bars stays on the end card while the final chord rings.
     if (line.until < SPOT_SIXTEENTHS && frame >= frameOf(line.until)) return;

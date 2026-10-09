@@ -30,6 +30,9 @@ type BeatEvent =
   | { kind: 'threat-pulse'; at: number; cells: readonly number[] }
   // The win jingle of the game (sounds.win): five notes, one per sixteenth from `at`. The beam throbs on each.
   | { kind: 'win-jingle'; at: number }
+  // Hide board, as in the game: the tower fades out to the dashed "Board hidden" box of `.board-hidden`, and comes
+  // back on `until`. No sound: the moves and the threat pulses still play.
+  | { kind: 'hide-board'; at: number; until: number }
   // The winning line becomes a light beam. It lights one cell per sixteenth from `at`, in the order of `line`.
   // Sound: the 4 ending melody notes of songOf, one per cell.
   | { kind: 'beam'; at: number; line: Line }
@@ -69,10 +72,12 @@ export type Beats = {
   text: readonly TextLine[];
 };
 
-// A variant of the spot: a small overlay on beats.json in video/creative/variants/<name>.json. It changes only the
-// theme, the sound set and the camera of bars, never the game, the events or the text. VIDEO_VARIANT selects one.
-// Shape: { name, differs, bars: { "<bar number>": { theme?, soundSet?, camera? } } }. withVariant checks it.
-const VARIANT_KEYS: readonly string[] = ['theme', 'soundSet', 'camera'];
+// A variant of the spot: a small overlay on beats.json in video/creative/variants/<name>.json. It changes the
+// theme, the sound set, the camera and the events of bars, and the text, never the game. VIDEO_VARIANT selects one.
+// Shape: { name, differs, text?, bars: { "<bar number>": { theme?, soundSet?, camera?, events? } } }. A value
+// replaces the value of beats.json. withVariant checks the keys, and parseBeats checks the merged timeline.
+const VARIANT_KEYS: readonly string[] = ['name', 'differs', 'text', 'bars'];
+const VARIANT_BAR_KEYS: readonly string[] = ['theme', 'soundSet', 'camera', 'events'];
 
 // The JSON of beats.json with the overlay of a variant merged in, for parseBeats.
 export function withVariant(beats: unknown, variant: unknown): unknown {
@@ -80,17 +85,18 @@ export function withVariant(beats: unknown, variant: unknown): unknown {
   const v = record(variant, 'variant');
   const name = text(v['name'], 'variant.name');
   text(v['differs'], `variant ${name}.differs`);
+  for (const key of Object.keys(v)) if (!VARIANT_KEYS.includes(key)) fail(`variant ${name}.${key}`, VARIANT_KEYS.join(' | '));
   const bars = record(v['bars'], `variant ${name}.bars`);
   const merged = list(root['bars'], 'bars').map((entry, i) => {
     const bar = record(entry, `bars[${i}]`);
     const overlay = bars[String(i + 1)];
     if (overlay === undefined) return bar;
     const o = record(overlay, `variant ${name}.bars.${i + 1}`);
-    for (const key of Object.keys(o)) if (!VARIANT_KEYS.includes(key)) fail(`variant ${name}.bars.${i + 1}.${key}`, VARIANT_KEYS.join(' | '));
+    for (const key of Object.keys(o)) if (!VARIANT_BAR_KEYS.includes(key)) fail(`variant ${name}.bars.${i + 1}.${key}`, VARIANT_BAR_KEYS.join(' | '));
     return { ...bar, ...o };
   });
   for (const key of Object.keys(bars)) if (!(Number(key) >= 1 && Number(key) <= merged.length)) fail(`variant ${name}.bars.${key}`, `a bar 1..${merged.length}`);
-  return { ...root, bars: merged };
+  return { ...root, bars: merged, ...(v['text'] === undefined ? {} : { text: v['text'] }) };
 }
 
 // ---- Runtime check of the JSON. It throws on the first value that does not fit the type. ----
@@ -137,7 +143,7 @@ function line(value: unknown, path: string): Line {
 function beatEvent(value: unknown, path: string): BeatEvent {
   const e = record(value, path);
   const at = time(e['at'], `${path}.at`);
-  const kind = oneOf(['layer-slam', 'threats', 'threat-pulse', 'beam', 'confetti', 'replay', 'win-jingle', 'final-chord'] as const, e['kind'], `${path}.kind`);
+  const kind = oneOf(['layer-slam', 'threats', 'threat-pulse', 'beam', 'confetti', 'replay', 'win-jingle', 'hide-board', 'final-chord'] as const, e['kind'], `${path}.kind`);
   switch (kind) {
     case 'layer-slam':
       return { kind, at, layer: count(e['layer'], `${path}.layer`, 3) };
@@ -146,6 +152,10 @@ function beatEvent(value: unknown, path: string): BeatEvent {
       return { kind, at, cells: list(e['cells'], `${path}.cells`).map((c, i) => cell(c, `${path}.cells[${i}]`)) };
     case 'beam':
       return { kind, at, line: line(e['line'], `${path}.line`) };
+    case 'hide-board': {
+      const until = time(e['until'], `${path}.until`);
+      return until > at ? { kind, at, until } : fail(`${path}.until`, `a sixteenth after ${at}`);
+    }
     case 'confetti':
     case 'replay':
     case 'win-jingle':

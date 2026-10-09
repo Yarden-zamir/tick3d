@@ -38,7 +38,7 @@ import { PX, drawHud } from './hud.ts';
 import { CELL, LAYER_GAP, OUTLINE, PIECE_HEIGHT, TILE_HEIGHT, cellBase, cellCenter } from './layout.ts';
 import { oShape, xShape } from './pieces.ts';
 import { type Theme, type ThemeId, type Token, readTheme, readXPolygon } from './themes.ts';
-import { BEATS, S16_FRAMES, barAt, barBefore, eventOf, eventsOf, frameOf, since } from './timeline.ts';
+import { BEATS, S16_FRAMES, barAt, barBefore, boardShown, eventOf, eventsOf, frameOf, since } from './timeline.ts';
 
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
 // A cell closer than NEAR to the camera is not drawn, and one closer than NEAR_FADE fades, so the ride along
@@ -173,7 +173,7 @@ export function createWorld(width: number, height: number): World {
     if (entry === undefined) throw new RangeError(`no cell ${cell}`);
     entry.group.add(mesh);
     const pulses = eventsOf('threat-pulse').filter((event) => event.cells.includes(cell));
-    return { mesh, material: material.material, pulses };
+    return { cell, mesh, material: material.material, pulses };
   });
 
   // ---- The pieces: an extruded X or O with a `--line` outline and a flat `--shadow` on the tile ----
@@ -288,8 +288,10 @@ export function createWorld(width: number, height: number): World {
     camera.zoom = shot.zoom;
     camera.setViewOffset(width, height, 0, (shot.lift * Math.min(width, height)) / 2, width, height);
     camera.updateProjectionMatrix();
+    // Hide board fades the whole tower: the tiles, and the pieces and the note rings on them.
+    const shown = boardShown(frame);
     for (const cell of cells) {
-      cell.near = interpolate(cell.group.getWorldPosition(new Vector3()).distanceTo(camera.position), [NEAR, NEAR_FADE], [0, 1], clamp);
+      cell.near = interpolate(cell.group.getWorldPosition(new Vector3()).distanceTo(camera.position), [NEAR, NEAR_FADE], [0, 1], clamp) * shown;
       cell.group.visible = cell.near > 0;
       for (const material of cell.materials) {
         material.opacity = cell.near;
@@ -352,7 +354,7 @@ export function createWorld(width: number, height: number): World {
       ring.mesh.visible = t < 2;
       const grow = (CELL / 2) * (1 + 0.7 * t);
       ring.mesh.scale.set(grow, 1, grow);
-      ring.material.opacity = interpolate(t, [0, 2], [1, 0], clamp);
+      ring.material.opacity = interpolate(t, [0, 2], [1, 0], clamp) * (cells[ring.cell]?.near ?? 1);
     }
 
     // Pieces: a drop over 1 sixteenth onto the note, a pulse on every note of the piece, then the finished board.
