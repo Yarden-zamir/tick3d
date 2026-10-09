@@ -1,9 +1,11 @@
 name: video
 
-# Renders the 15 s spot of video/ (issue #119): both MP4s, the stills of each bar and the soundtrack.
-# It runs by hand, on a push to main that touches the video, and on a pull request that touches it. A manual
-# run needs the workflow on main, so the pull request trigger is the one that renders a branch before it merges.
-# A tag such as video-v1 also attaches the files to a GitHub Release. No secrets.
+# Renders the 15 s spot of video/ (issue #119): every variant in both crops, as parallel jobs, each with the
+# stills per bar and the soundtrack. On a pull request from this repository, the previews job then publishes a
+# GIF, the stills sheets and the MP4s of each variant to the pr-assets branch, where the pull request and the
+# issue link them. It runs by hand, on a push to main that touches the video, and on a pull request that touches
+# it. A tag such as video-v1 also attaches the classic files to a GitHub Release. No secrets.
+# A new variant in video/creative/variants/ goes into the matrix and the previews list below.
 on:
   workflow_dispatch:
   push:
@@ -13,7 +15,7 @@ on:
   pull_request:
     paths: ['video/**', 'src/song.ts', 'src/sound.ts', 'src/sound-sets.ts', 'src/style.css', '.github/workflows/video.yml']
 
-# contents: write makes the GitHub Release of a tag.
+# contents: write pushes the previews to pr-assets and makes the GitHub Release of a tag.
 permissions:
   contents: write
 
@@ -21,10 +23,14 @@ concurrency:
   group: video-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Where the previews of a pull request go on the pr-assets branch.
+  PREVIEW_DIR: issue-119/variants
+
 jobs:
-  render:
+  check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -37,41 +43,124 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm ci --no-audit --no-fund
         working-directory: video
-      - name: Check beats.json against the game code
+      - name: Check beats.json and every variant against the game code
         run: node video/creative/tools/check-beats.ts
       - name: Check the video code
         run: npm run check
         working-directory: video
-      # Remotion downloads Chrome Headless Shell on the first render. The runner image has its system libraries.
-      - name: Render the spot
-        run: npm run video
+
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [classic, arcade, mellow]
+        crop: [landscape, portrait]
+    env:
+      VIDEO_VARIANT: ${{ matrix.variant }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            video/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
         working-directory: video
-      # ffprobe ships with Remotion.
-      - name: Check the length and the size of both MP4s
+      # Remotion downloads Chrome Headless Shell into node_modules/.remotion on the first render.
+      - name: Cache Chrome Headless Shell
+        uses: actions/cache@v5
+        with:
+          path: video/node_modules/.remotion
+          key: chrome-headless-shell-${{ runner.os }}-${{ hashFiles('video/package-lock.json') }}
+      - name: Render ${{ matrix.variant }}, ${{ matrix.crop }}
+        working-directory: video
+        run: npm run video -- --crop ${{ matrix.crop }}
+      # The files of this variant, in one folder for the artifact. ffprobe ships with Remotion.
+      - name: Check the length and the size of the MP4
         working-directory: video
         run: |
-          for crop in landscape:1920x1080 portrait:1080x1920; do
-            name=${crop%%:*}
-            size=${crop##*:}
-            file=out/tick3d-15s-$name.mp4
-            got=$(npx remotion ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$file")
-            seconds=$(npx remotion ffprobe -v error -show_entries format=duration -of csv=p=0 "$file")
-            echo "$file: $got, $seconds s"
-            [ "$got" = "$size" ] || { echo "$file is $got, not $size" >&2; exit 1; }
-            awk -v s="$seconds" 'BEGIN { exit !(s >= 14.9 && s <= 15.1) }' || { echo "$file lasts $seconds s, not 15.0 s" >&2; exit 1; }
-          done
+          case "${{ matrix.crop }}" in landscape) size=1920x1080 ;; portrait) size=1080x1920 ;; esac
+          dir=out; [ "${{ matrix.variant }}" = classic ] || dir=out/variants/${{ matrix.variant }}
+          mkdir -p render/stills
+          cp "$dir"/tick3d-15s-${{ matrix.crop }}.mp4 "$dir"/soundtrack.wav "$dir"/beats.txt render/
+          cp "$dir"/stills/${{ matrix.crop }}-bar-*.png render/stills/
+          file=render/tick3d-15s-${{ matrix.crop }}.mp4
+          got=$(npx remotion ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$file")
+          seconds=$(npx remotion ffprobe -v error -show_entries format=duration -of csv=p=0 "$file")
+          echo "$file: $got, $seconds s"
+          [ "$got" = "$size" ] || { echo "$file is $got, not $size" >&2; exit 1; }
+          awk -v s="$seconds" 'BEGIN { exit !(s >= 14.9 && s <= 15.1) }' || { echo "$file lasts $seconds s, not 15.0 s" >&2; exit 1; }
       - uses: actions/upload-artifact@v7
         with:
-          name: tick3d-video
-          path: |
-            video/out/*.mp4
-            video/out/stills/
-            video/out/soundtrack.wav
-            video/out/beats.txt
+          name: tick3d-video-${{ matrix.variant }}-${{ matrix.crop }}
+          path: video/render/
           if-no-files-found: error
-      - if: startsWith(github.ref, 'refs/tags/video-v')
-        uses: softprops/action-gh-release@v3.0.3
+
+  # The previews of a pull request from this repository: a GIF, the stills sheets and the MP4s of each variant,
+  # pushed to pr-assets with the token of the run. A fork has no token for that, so it is skipped.
+  previews:
+    needs: render
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: pr-assets
+          path: pr-assets
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: tick3d-video-*
+          path: renders
+      # ImageMagick and ffmpeg are on the runner image.
+      - name: Build the previews
+        run: |
+          set -eu
+          for variant in classic arcade mellow; do
+            dest=pr-assets/$PREVIEW_DIR/$variant
+            land=renders/tick3d-video-$variant-landscape
+            port=renders/tick3d-video-$variant-portrait
+            mkdir -p "$dest"
+            landscape=(); portrait=()
+            for n in 1 2 3 4 5 6 7 8; do landscape+=("$land/stills/landscape-bar-$n.png"); portrait+=("$port/stills/portrait-bar-$n.png"); done
+            montage "${landscape[@]}" -tile 4x2 -geometry 400x225+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/bars.png"
+            montage "${portrait[@]}" -tile 8x1 -geometry 198x352+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/portrait.png"
+            ffmpeg -v error -y -i "$land/tick3d-15s-landscape.mp4" -vf 'fps=12,scale=360:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=64[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3' -loop 0 "$dest/spot.gif"
+            cp "$land/tick3d-15s-landscape.mp4" "$port/tick3d-15s-portrait.mp4" "$dest/"
+          done
+          ls -l "pr-assets/$PREVIEW_DIR"/*
+      - name: Push the previews to pr-assets
+        working-directory: pr-assets
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$PREVIEW_DIR"
+          if git diff --cached --quiet; then echo 'the previews did not change'; exit 0; fi
+          git commit -m "docs: previews of the spot from run ${{ github.run_id }} (${{ github.event.pull_request.head.sha }})"
+          for _ in 1 2 3; do
+            if git push; then exit 0; fi
+            git pull --rebase
+          done
+          exit 1
+
+  release:
+    needs: render
+    if: startsWith(github.ref, 'refs/tags/video-v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: tick3d-video-classic-*
+          path: renders
+      - uses: softprops/action-gh-release@v3.0.3
         with:
           files: |
-            video/out/*.mp4
-            video/out/stills/*.png
+            renders/*/tick3d-15s-*.mp4
+            renders/*/stills/*.png

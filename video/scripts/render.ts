@@ -1,7 +1,12 @@
-// Renders the spot: out/tick3d-15s-<crop>.mp4 (H.264, AAC) for both crops, and a still of the middle of each
-// bar in out/stills/. Run scripts/audio.ts first (`npm run video` does both).
+// Renders the spot. Without options: out/tick3d-15s-<crop>.mp4 (H.264, AAC) for both crops, and a still of
+// the middle of each bar in out/stills/. Run scripts/audio.ts first (`npm run video` does both).
+//   --crop landscape|portrait   one crop only (CI renders one crop per job)
+//   --stills                    the full stills only, no MP4
+//   --draft                     half-size JPEG stills only, in out/draft/: the local check of an edit
+//   --bars 2,5                  only these bars of the stills
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import { bundle } from '@remotion/bundler';
 import { type ChromiumOptions, renderMedia, renderStill, selectComposition } from '@remotion/renderer';
 import { SIXTEENTHS_PER_BAR } from '../creative/beats.ts';
@@ -10,24 +15,45 @@ import { BEATS, VARIANT, frameOf } from '../src/timeline.ts';
 const path = (relative: string) => fileURLToPath(new URL(relative, import.meta.url));
 // WebGL in headless Chrome on a machine without a GPU: ANGLE on SwiftShader.
 const chromiumOptions: ChromiumOptions = { gl: 'swangle' };
-// Two browser tabs: the host also serves production.
-const CONCURRENCY = 2;
+// Browser tabs: a CI runner takes all of its cores, a developer host keeps some for its other work.
+const CONCURRENCY = process.env['CI'] === undefined ? 2 : 4;
+
+const CROPS = ['landscape', 'portrait'] as const;
+type Crop = (typeof CROPS)[number];
+const isCrop = (value: string): value is Crop => (CROPS as readonly string[]).includes(value);
+
+const { values } = parseArgs({ options: { crop: { type: 'string' }, stills: { type: 'boolean' }, draft: { type: 'boolean' }, bars: { type: 'string' } } });
+if (values.crop !== undefined && !isCrop(values.crop)) throw new Error(`--crop ${values.crop}: use ${CROPS.join(' or ')}`);
+const crops: readonly Crop[] = values.crop === undefined || !isCrop(values.crop) ? CROPS : [values.crop];
+const bars =
+  values.bars === undefined
+    ? BEATS.bars
+    : values.bars.split(',').map((number) => {
+        const bar = BEATS.bars.find((entry) => entry.bar === Number(number));
+        if (bar === undefined) throw new RangeError(`--bars ${number}: no such bar`);
+        return bar;
+      });
+const draft = values.draft === true;
+const stillsOnly = draft || values.stills === true;
 
 // The base cut renders into out/, a variant into out/variants/<name>/. The variant goes to the render browser as
 // VIDEO_VARIANT (the timeline reads it) and as an input prop (Spot.tsx checks that both agree).
 const out = VARIANT === 'classic' ? '../out/' : `../out/variants/${VARIANT}/`;
+const stills = draft ? `${out}draft/` : `${out}stills/`;
 const envVariables = { VIDEO_VARIANT: VARIANT };
 const inputProps = { variant: VARIANT };
-mkdirSync(path(`${out}stills`), { recursive: true });
+mkdirSync(path(stills), { recursive: true });
 const serveUrl = await bundle({ entryPoint: path('../src/index.ts'), publicDir: path('../public') });
-for (const id of ['landscape', 'portrait'] as const) {
+for (const id of crops) {
   const composition = await selectComposition({ serveUrl, id, chromiumOptions, envVariables, inputProps });
-  for (const bar of BEATS.bars) {
+  for (const bar of bars) {
     const frame = frameOf(bar.start + SIXTEENTHS_PER_BAR / 2);
-    await renderStill({ composition, serveUrl, frame, output: path(`${out}stills/${id}-bar-${bar.bar}.png`), chromiumOptions, envVariables, inputProps });
+    const output = path(`${stills}${id}-bar-${bar.bar}.${draft ? 'jpg' : 'png'}`);
+    const format = draft ? { imageFormat: 'jpeg' as const, jpegQuality: 80, scale: 0.5 } : {};
+    await renderStill({ composition, serveUrl, frame, output, chromiumOptions, envVariables, inputProps, ...format });
   }
-  process.stdout.write(`${id}: stills done\n`);
-  if (process.argv.includes('--stills')) continue;
+  process.stdout.write(`${VARIANT} ${id}: ${bars.length} ${draft ? 'draft ' : ''}stills done\n`);
+  if (stillsOnly) continue;
   await renderMedia({
     composition,
     serveUrl,
@@ -42,5 +68,5 @@ for (const id of ['landscape', 'portrait'] as const) {
       if (Math.round(progress * 100) % 10 === 0) process.stdout.write(`${id}: ${Math.round(progress * 100)} %\r`);
     },
   });
-  process.stdout.write(`${id}: video done\n`);
+  process.stdout.write(`${VARIANT} ${id}: video done\n`);
 }

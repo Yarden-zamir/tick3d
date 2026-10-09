@@ -215,7 +215,15 @@ docker run --rm -v "$PWD":/app -w /app/video node:26 sh -c 'npm ci && npm run ch
 - `npm run video` writes `video/out/tick3d-15s-landscape.mp4` (1920×1080), `video/out/tick3d-15s-portrait.mp4` (1080×1920), one still per bar in `video/out/stills/` and the soundtrack in `video/out/soundtrack.wav`.
 - The render needs the system libraries of Chrome Headless Shell, so use `node:26`, not the Alpine image.
 - `VIDEO_VARIANT=<name> npm run video` renders a variant of the spot into `video/out/variants/<name>/`. A variant is a small overlay on `beats.json` in `video/creative/variants/<name>.json` that changes the themes, the sound sets and the camera of bars, never the game.
-- The `video` workflow renders the same files on a manual run, on a push to `main` that touches `video/`, and on a pull request that touches it. It uploads them as the `tick3d-video` artifact. A tag `video-v*` also attaches them to a GitHub Release.
+- The `video` workflow renders every variant in both crops, one job each, on a manual run, on a push to `main` that touches `video/`, and on a pull request that touches it. It uploads one `tick3d-video-<variant>-<crop>` artifact per job. On a pull request from this repository it also publishes a GIF, the stills sheets and the MP4s of each variant to the `pr-assets` branch. A tag `video-v*` also attaches the classic files to a GitHub Release.
+
+**Fast iteration.** Do not render MP4s on a developer host. Check an edit with half-size draft stills of the bars that changed, then push, and CI renders and publishes the previews in about 5 minutes:
+
+```sh
+docker run --rm -v "$PWD":/app -w /app/video node:26 node scripts/render.ts --draft --bars 2,5
+```
+
+`video/scripts/previews.sh <out-dir> <dest-dir>` makes the same previews as CI (the stills sheets, the GIF and the MP4s) from a local render, with ImageMagick and ffmpeg on PATH. The drafts land in `video/out/draft/` (or `video/out/variants/<name>/draft/` with `VIDEO_VARIANT`). Locally, run only `npm run check` in `video/` and `node video/creative/tools/check-beats.ts`; the required `check` workflow runs the full gate on every push.
 
 ## Deploy
 
