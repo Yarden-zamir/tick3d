@@ -42,8 +42,8 @@ Move numbers on this page count from 1. The `move` field in `beats.json` counts 
 
 Each file in `variants/` is a complete take on top of this script (`VIDEO_VARIANT=<name>`). Its `differs` field says what changes.
 
-- `hook`: a cold open for social feeds. Bar 1 plays in the Mono theme while "Tic-tac-toe?" (s16 0) and "Too easy." (s16 8) slam in with the layers, in the `top` style. The colour sweeps in on the bar 2 downbeat with "4 in a row.". In place of the notes line, 12 feature cards follow in the `cards` style, one per beat: bar 3 the ways to play ("Vs computer.", "Play online.", "Play nearby.", "Vs your AI agent."), bar 4 ("13 sound sets.", "Ear trainer.", "Play by voice.", "Share your win."), bar 6 while the game replays as its song ("Your game is a song.", "12 themes.", "Time limits.", "Works offline."). Bar 5, the win, has no text.
-- `hook-list`: the hook take, with the same 12 cards in the `list` style: each new card pushes the one before it up a row, so two features show at a time.
+- `hook`: a cold open for social feeds. Bar 1 plays in the Mono theme while "Tic-tac-toe?" (s16 0) and "Too easy." (s16 8) slam in with the layers, in the `top` style. The colour sweeps in on the bar 2 downbeat with "4 in a row.". In place of the notes line, 12 feature cards follow in the `cards` style, one every 5 s16 from 32 to 87, without a pause through the win, until the end card on 96: "Vs computer.", "Play online.", "Play nearby.", "Vs your AI agent.", "13 sound sets.", "Ear trainer.", "Play by voice.", "Share your win.", "Your game is a song.", "12 themes.", "Time limits.", "Works offline.".
+- `hook-list`: the hook take, with the same 12 cards in the `list` style: a ticker that never stops. Each card enters the bottom row and rises at a constant speed, so two cards show at a time, each for about 1.1 s.
 
 ## Transitions
 
