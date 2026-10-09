@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { LINES, linesThrough } from '../../../src/game.ts';
 import { SIXTEENTH } from '../../../src/song.ts';
 import { frameOf } from '../grid.ts';
+import { NOTE_DELAY } from '../lettering.ts';
 import { KINDS, STRONG_CELLS, kindOf } from './lines.ts';
 import { DURATION_FRAMES, DURATION_SECONDS, END, SECTIONS, eventsOf, sectionAt } from './plan.ts';
 
@@ -36,8 +37,11 @@ describe('the tutorial plan', () => {
   it('ends on the end card of the spot, with every word on screen for at least 1 s', () => {
     const [card, ...rest] = eventsOf('end-card');
     expect(rest).toHaveLength(0);
-    expect(card?.event.words.map((word) => word.text)).toEqual(['tick3d', '.yarden-zamir.com', 'Play in your browser.', 'Android', 'iOS']);
-    for (const word of card?.event.words ?? []) expect((END - word.at) * SIXTEENTH, word.text).toBeGreaterThanOrEqual(1);
+    expect(card?.event.words.map((word) => word.text)).toEqual(['tick3d', '.yarden-zamir.com', 'Play in your browser.', 'App Store', 'Google Play']);
+    for (const word of card?.event.words ?? []) {
+      const last = word.note === undefined ? word.at : word.at + NOTE_DELAY;
+      expect((END - last) * SIXTEENTH, word.text).toBeGreaterThanOrEqual(1);
+    }
   });
 
   it('shows the kinds in order, each set inside its kind, with every line once, so the counter reaches 76', () => {

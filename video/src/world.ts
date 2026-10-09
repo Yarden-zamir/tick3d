@@ -23,7 +23,7 @@ import { cameraAt } from './camera.ts';
 import type { Picture } from './Film.tsx';
 import { drawHud } from './hud.ts';
 import { CELL, LAYER_GAP, OUTLINE, TILE_HEIGHT, cellCenter } from './layout.ts';
-import { PX } from './lettering.ts';
+import { type BadgeArt, PX } from './lettering.ts';
 import { aim, clamp } from './rig.ts';
 import { SCREEN_VERTEX, createStage, pulse, squareFrame } from './stage.ts';
 import { type Theme, type ThemeId, readTheme } from './themes.ts';
@@ -44,7 +44,7 @@ void main() {
   gl_FragColor = vec4(color, 1.0);
 }`;
 
-export function createWorld(width: number, height: number): Picture {
+export function createWorld(width: number, height: number, art: BadgeArt): Picture {
   const themes = new Map<ThemeId, Theme>();
   const themeOf = (id: ThemeId): Theme => {
     let theme = themes.get(id);
@@ -249,7 +249,7 @@ export function createWorld(width: number, height: number): Picture {
   }
 
   function draw(gl: WebGLRenderer, frame: number, theme: Theme, target: WebGLRenderTarget | null): void {
-    stage.draw(gl, theme, target, (context) => drawHud(context, frame, theme));
+    stage.draw(gl, theme, target, (context) => drawHud(context, frame, theme, art));
   }
 
   return {

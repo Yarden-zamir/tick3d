@@ -174,29 +174,36 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -eu
-          PREVIEW_DIR="$PREVIEW_ROOT/${HEAD_SHA:0:7}"
+          sha=${HEAD_SHA:0:7}
+          PREVIEW_DIR="$PREVIEW_ROOT/$sha"
           echo "PREVIEW_DIR=$PREVIEW_DIR" >> "$GITHUB_ENV"
           for variant in classic hook hook-list; do
             dest=pr-assets/$PREVIEW_DIR/$variant
+            # Every file name holds the variant and the commit, so downloads of different renders never collide.
+            name=tick3d-$variant-$sha
             land=renders/tick3d-video-$variant-landscape
             port=renders/tick3d-video-$variant-portrait
             mkdir -p "$dest"
             landscape=(); portrait=()
             for n in 1 2 3 4 5 6 7 8; do landscape+=("$land/stills/landscape-bar-$n.png"); portrait+=("$port/stills/portrait-bar-$n.png"); done
-            montage "${landscape[@]}" -tile 4x2 -geometry 400x225+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/bars.png"
-            montage "${portrait[@]}" -tile 8x1 -geometry 198x352+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/portrait.png"
-            ffmpeg -v error -y -i "$land/tick3d-15s-landscape.mp4" -vf 'fps=12,scale=360:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=64[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3' -loop 0 "$dest/spot.gif"
-            cp "$land/tick3d-15s-landscape.mp4" "$port/tick3d-15s-portrait.mp4" "$dest/"
+            montage "${landscape[@]}" -tile 4x2 -geometry 400x225+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/$name-stills.png"
+            montage "${portrait[@]}" -tile 8x1 -geometry 198x352+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/$name-portrait-stills.png"
+            ffmpeg -v error -y -i "$land/tick3d-15s-landscape.mp4" -vf 'fps=12,scale=360:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=64[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3' -loop 0 "$dest/$name.gif"
+            cp "$land/tick3d-15s-landscape.mp4" "$dest/$name-landscape.mp4"
+            cp "$port/tick3d-15s-portrait.mp4" "$dest/$name-portrait.mp4"
           done
-          # The tutorial: one still per section (14), in order by their numbered names.
+          # The tutorial: one still per section (14), in order by their numbered names. The file names hold the
+          # commit too, as for the variants.
           dest=pr-assets/$PREVIEW_DIR/tutorial
+          name=tick3d-tutorial-$sha
           land=renders/tick3d-tutorial-landscape
           port=renders/tick3d-tutorial-portrait
           mkdir -p "$dest"
-          montage "$land"/stills/landscape-*.png -tile 5x3 -geometry 400x225+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/sections.png"
-          montage "$port"/stills/portrait-*.png -tile 7x2 -geometry 198x352+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/portrait.png"
-          ffmpeg -v error -y -i "$land/tick3d-tutorial-landscape.mp4" -vf 'fps=12,scale=360:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=64[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3' -loop 0 "$dest/spot.gif"
-          cp "$land/tick3d-tutorial-landscape.mp4" "$port/tick3d-tutorial-portrait.mp4" "$dest/"
+          montage "$land"/stills/landscape-*.png -tile 5x3 -geometry 400x225+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/$name-stills.png"
+          montage "$port"/stills/portrait-*.png -tile 7x2 -geometry 198x352+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/$name-portrait-stills.png"
+          ffmpeg -v error -y -i "$land/tick3d-tutorial-landscape.mp4" -vf 'fps=12,scale=360:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=64[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3' -loop 0 "$dest/$name.gif"
+          cp "$land/tick3d-tutorial-landscape.mp4" "$dest/$name-landscape.mp4"
+          cp "$port/tick3d-tutorial-portrait.mp4" "$dest/$name-portrait.mp4"
           ls -l "pr-assets/$PREVIEW_DIR"/*
       - name: Push the previews to pr-assets
         working-directory: pr-assets

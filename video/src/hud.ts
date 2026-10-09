@@ -1,6 +1,6 @@
 // The on-screen text of the spot: the lines of beats.json, in the lettering of src/lettering.ts.
 import { SPOT_SIXTEENTHS, type TextStyle } from '../creative/beats.ts';
-import { type Look, type Word, endCard, onSquare, sticker, wordAt } from './lettering.ts';
+import { BEAT_PULSE, type BadgeArt, type Look, type Word, beatBump, endCard, onSquare, sticker, wordAt } from './lettering.ts';
 import { BEATS, frameOf, since } from './timeline.ts';
 import type { Theme } from './themes.ts';
 
@@ -12,10 +12,10 @@ const LOOKS: Readonly<Record<Exclude<TextStyle, 'end-card' | 'list'>, readonly L
   // One sticker at a time in the free space above the tower. When the next card slams in, the card before it
   // shrinks and fades out over 1 sixteenth.
   cards: [
-    { y: -466, size: 88, sticker: 'x', tilt: -5 },
-    { y: -466, size: 88, sticker: 'o', tilt: 4 },
-    { y: -466, size: 88, sticker: 'x', tilt: -3 },
-    { y: -466, size: 88, sticker: 'o', tilt: 5 },
+    { y: -466, size: 88, sticker: 'x', tilt: -5, pulse: true },
+    { y: -466, size: 88, sticker: 'o', tilt: 4, pulse: true },
+    { y: -466, size: 88, sticker: 'x', tilt: -3, pulse: true },
+    { y: -466, size: 88, sticker: 'o', tilt: 5, pulse: true },
   ],
 };
 
@@ -42,19 +42,20 @@ function listLine(ctx: CanvasRenderingContext2D, frame: number, line: { words: r
     ctx.save();
     ctx.globalAlpha = fade * ending;
     ctx.translate(0, LIST_BOTTOM - rows * LIST_ROW);
+    ctx.scale(1 + BEAT_PULSE * beatBump(frame), 1 + BEAT_PULSE * beatBump(frame));
     sticker(ctx, word.text, LIST_SIZE, i % 2 === 0 ? 'x' : 'o', theme, '-0.03em', i % 2 === 0 ? -3 : 3);
     ctx.restore();
   });
 }
 
 // Draws the text of `frame` in `theme` on the whole canvas.
-export function drawHud(ctx: CanvasRenderingContext2D, frame: number, theme: Theme): void {
+export function drawHud(ctx: CanvasRenderingContext2D, frame: number, theme: Theme, art: BadgeArt): void {
   onSquare(ctx, () => {
     BEATS.text.forEach((line, index) => {
       // A line that lasts to the end of the 8 bars stays on the end card while the final chord rings.
       if (line.until < SPOT_SIXTEENTHS && frame >= frameOf(line.until)) return;
       if (line.style === 'end-card') {
-        endCard(ctx, frame, line.words, theme);
+        endCard(ctx, frame, line.words, theme, art);
         return;
       }
       if (line.style === 'list') {

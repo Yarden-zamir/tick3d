@@ -182,7 +182,8 @@ export const SECTIONS: readonly Section[] = [
     counter: false,
     events: [
       // As in the spot: the suffix slides out 4 sixteenths after the wordmark. The call to action comes on the
-      // beat after the suffix settles, and the badges one beat apart, so "iOS" still shows for 1 s at the end.
+      // beat after the suffix settles, both badges on the beat after it (App Store first), and the "soon" note one
+      // beat later (lettering.ts), so every part shows for at least 1 s before the end.
       {
         kind: 'end-card',
         at: 224,
@@ -190,8 +191,8 @@ export const SECTIONS: readonly Section[] = [
           { text: 'tick3d', at: 224 },
           { text: '.yarden-zamir.com', at: 228 },
           { text: 'Play in your browser.', at: 232 },
-          { text: 'Android', at: 236, icon: 'play-store' },
-          { text: 'iOS', at: 240, icon: 'apple' },
+          { text: 'App Store', at: 236, badge: 'app-store', note: 'soon' },
+          { text: 'Google Play', at: 236, badge: 'google-play' },
         ],
       },
       ...[0, 1, 2, 3].map((layer) => ({ kind: 'layer-pulse' as const, at: 224 + layer * 4, layer })),

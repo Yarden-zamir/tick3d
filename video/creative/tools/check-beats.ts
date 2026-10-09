@@ -86,6 +86,9 @@ function checkTimeline(beats: Beats, name: string): void {
   rule(jingles.every(({ bar, e }) => e.at > winAt && bar.start <= winAt), 'the win jingle follows the winning move in its bar');
 
   rule(beats.text.length <= 6, 'at most 6 on-screen lines');
+  // Apple's badge rule: when several store badges show, the App Store badge comes first.
+  const badges = beats.text.flatMap((line) => line.words.flatMap((word) => (word.badge === undefined ? [] : [word.badge])));
+  rule(!badges.includes('app-store') || badges[0] === 'app-store', 'the App Store badge comes first');
   for (const [i, line] of beats.text.entries()) {
     if (line.style !== 'list') continue;
     const gap = (line.words[1]?.at ?? 0) - (line.words[0]?.at ?? 0);

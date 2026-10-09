@@ -14,9 +14,9 @@ function checkVariant(): void {
 export const Spot = () => (
   <Film
     audio="soundtrack.wav"
-    create={(width, height) => {
+    create={(width, height, art) => {
       checkVariant();
-      return createWorld(width, height);
+      return createWorld(width, height, art);
     }}
   />
 );

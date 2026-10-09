@@ -100,14 +100,15 @@
           "at": 112
         },
         {
-          "text": "Android",
+          "text": "App Store",
           "at": 116,
-          "icon": "play-store"
+          "badge": "app-store",
+          "note": "soon"
         },
         {
-          "text": "iOS",
-          "at": 120,
-          "icon": "apple"
+          "text": "Google Play",
+          "at": 116,
+          "badge": "google-play"
         }
       ],
       "until": 128

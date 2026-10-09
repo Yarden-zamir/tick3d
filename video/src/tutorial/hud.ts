@@ -1,7 +1,7 @@
 // The on-screen text of the tutorial, in the lettering of src/lettering.ts: the label of a section above the
 // tower, the running count of the lines under it, and the end card.
 import { frameOf, since } from '../grid.ts';
-import { type Look, endCard, onSquare, wordAt, wordWidth } from '../lettering.ts';
+import { type BadgeArt, type Look, endCard, onSquare, wordAt, wordWidth } from '../lettering.ts';
 import { pulse } from '../stage.ts';
 import type { Theme } from '../themes.ts';
 import { SECTIONS, eventsOf, sectionAt } from './plan.ts';
@@ -61,10 +61,10 @@ function counter(ctx: CanvasRenderingContext2D, frame: number, theme: Theme): vo
 }
 
 // Draws the text of `frame` in `theme` on the whole canvas.
-export function drawText(ctx: CanvasRenderingContext2D, frame: number, theme: Theme): void {
+export function drawText(ctx: CanvasRenderingContext2D, frame: number, theme: Theme, art: BadgeArt): void {
   onSquare(ctx, () => {
     label(ctx, frame, theme);
     if (sectionAt(frame).counter) counter(ctx, frame, theme);
-    for (const { event } of eventsOf('end-card')) endCard(ctx, frame, event.words, theme);
+    for (const { event } of eventsOf('end-card')) endCard(ctx, frame, event.words, theme, art);
   });
 }

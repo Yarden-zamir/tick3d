@@ -5,6 +5,7 @@ import { interpolate } from 'remotion';
 import { LINES, type Line, linesThrough } from '../../../src/game.ts';
 import type { Picture } from '../Film.tsx';
 import { frameOf, since } from '../grid.ts';
+import type { BadgeArt } from '../lettering.ts';
 import { CELL, OUTLINE, TILE_HEIGHT, cellCenter } from '../layout.ts';
 import { aim, clamp } from '../rig.ts';
 import { createStage, pulse, squareFrame } from '../stage.ts';
@@ -27,7 +28,7 @@ const flash = (t: number, rest: number) => interpolate(t, [0, 4], [1, rest], cla
 // Where a line stands at a frame: drawn up to `length`, at `opacity`, `throb` wide. Undefined: hidden.
 type Show = { length: number; opacity: number; throb: number };
 
-export function createTutorialWorld(width: number, height: number): Picture {
+export function createTutorialWorld(width: number, height: number, art: BadgeArt): Picture {
   const theme = readTheme('light');
   const stage = createStage(width, height);
   const { camera, paint, layers, cells } = stage;
@@ -155,7 +156,7 @@ export function createTutorialWorld(width: number, height: number): Picture {
     render(gl, frame) {
       gl.autoClear = false;
       update(frame);
-      stage.draw(gl, theme, null, (context) => drawText(context, frame, theme));
+      stage.draw(gl, theme, null, (context) => drawText(context, frame, theme, art));
     },
     dispose() {
       stage.dispose();

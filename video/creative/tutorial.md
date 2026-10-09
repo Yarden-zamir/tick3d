@@ -36,7 +36,7 @@ The 8 corners and the 8 cells of the core lie on 7 lines each. Every other cell 
 | 11 | Strong cells | 176–191 / 19.412–21.066 | Corner 63 lights, then its 7 lines, one per s16. On s16 184 core cell 42 does the same. | "Corners and the core" / "7 lines each" | A rising note per line: 7 notes, twice. |
 | 12 | Other cells | 192–207 / 21.176–22.831 | Cell 61 lights, then its 4 lines, one per eighth note. | "Every other cell" / "4 lines" | 4 rising notes. |
 | 13 | Take them | 208–223 / 22.941–24.596 | The 8 corners light on s16 208, the 8 core cells on 212. They stay lit to the end. | "The 16 strong cells" / "Take them." | A chord on 208 and 212, the win jingle on 216. |
-| 14 | End card | 224–249.3 / 24.706–27.500 | The tower shrinks into the top half of the square. | The end card of the spot: the `tick3d` wordmark on 224, ".yarden-zamir.com" on 228, "Play in your browser." on 232, then the "Android" and "iOS" badges on 236 and 240. | Classic C5, D5, E5, G5 on the beats, the final chord on 240. |
+| 14 | End card | 224–249.3 / 24.706–27.500 | The tower shrinks into the top half of the square. | The end card of the spot: the `tick3d` wordmark on 224, ".yarden-zamir.com" on 228, "Play in your browser." on 232, then the official App Store and Google Play badges on 236, and the "soon" note on 240. | Classic C5, D5, E5, G5 on the beats, the final chord on 240. |
 
 The rising diagonals and the space diagonals are the hard kinds, so each one gets 2 bars. Each bar shows its own example and half of the set, seen square on.
 
