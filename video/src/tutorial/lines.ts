@@ -1,11 +1,11 @@
 // The winning lines of the game (LINES of src/game.ts), sorted into the six kinds that the tutorial shows, and
 // the strong cells: the cells on the most lines. Everything here comes from the cell coordinates.
-import { CELL_COUNT, LINES, type Line, linesThrough, toCoords } from '../../../src/game.ts';
+import { CELL_COUNT, type Coords, LINES, type Line, linesThrough, toCoords } from '../../../src/game.ts';
 
 // In the order of the tutorial. A row runs along the columns of one row of a layer, a column along the rows of
-// one column, a pillar straight up. A layer diagonal stays in its layer, a climbing diagonal climbs one layer per
+// one column, a pillar straight up. A flat diagonal stays in its layer, a rising diagonal rises one layer per
 // cell on a vertical plane, and a space diagonal runs corner to corner through the cube.
-export const KINDS = ['row', 'column', 'pillar', 'layer-diagonal', 'climbing-diagonal', 'space-diagonal'] as const;
+export const KINDS = ['row', 'column', 'pillar', 'flat-diagonal', 'rising-diagonal', 'space-diagonal'] as const;
 export type Kind = (typeof KINDS)[number];
 
 // The kind of a line, from the coordinates that change between its first two cells.
@@ -16,12 +16,15 @@ export function kindOf(line: Line): Kind {
   const row = a.row !== b.row;
   const column = a.column !== b.column;
   if (layer && row && column) return 'space-diagonal';
-  if (layer) return row || column ? 'climbing-diagonal' : 'pillar';
-  if (row && column) return 'layer-diagonal';
+  if (layer) return row || column ? 'rising-diagonal' : 'pillar';
+  if (row && column) return 'flat-diagonal';
   if (row) return 'column';
   if (column) return 'row';
   throw new RangeError(`not a line: ${line.join('-')}`);
 }
+
+// True when the coordinate `coordinate` stays the same along the line.
+export const keeps = (line: Line, coordinate: keyof Coords): boolean => line.every((cell) => toCoords(cell)[coordinate] === toCoords(line[0])[coordinate]);
 
 export const linesOf = (kind: Kind): readonly Line[] => LINES.filter((line) => kindOf(line) === kind);
 

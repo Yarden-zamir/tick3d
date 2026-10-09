@@ -11,7 +11,7 @@ import { createStage, pulse, squareFrame } from '../stage.ts';
 import { readTheme } from '../themes.ts';
 import { shotAt } from './camera.ts';
 import { drawText } from './hud.ts';
-import { KINDS, STRONG_CELLS, isCorner, kindOf, linesOf } from './lines.ts';
+import { KINDS, STRONG_CELLS, isCorner, kindOf } from './lines.ts';
 import { END, type Section, eventsOf } from './plan.ts';
 
 // The ends of a line, `cap` past the centres of its end cells.
@@ -70,8 +70,9 @@ export function createTutorialWorld(width: number, height: number): Picture {
       if (t >= 0) shows.push({ length: Math.min(1, t), opacity, throb });
     };
     for (const { event, section } of eventsOf('set')) {
-      if (!live(frame, event.at, section) || kindOf(line) !== event.lines) continue;
-      const t = since(frame, event.at + 0.125 * linesOf(event.lines).indexOf(line));
+      const index = event.lines.indexOf(line);
+      if (!live(frame, event.at, section) || index < 0) continue;
+      const t = since(frame, event.at + 0.125 * index);
       add(t, flash(t, 0.5), interpolate(t, [0, 4], [1.6, 1], clamp));
     }
     for (const { event, section } of eventsOf('all')) {

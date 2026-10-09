@@ -5,7 +5,7 @@ import { type ScheduledSound, winVoices } from '../../../src/sound.ts';
 import { SOUND_SETS, type SoundSet } from '../../../src/sound-sets.ts';
 import { linesThrough } from '../../../src/game.ts';
 import { SCALE, inKey, landing, midiOf, withoutBell } from '../key.ts';
-import { KINDS, kindOf, linesOf } from './lines.ts';
+import { KINDS, linesOf } from './lines.ts';
 import { SECTIONS } from './plan.ts';
 
 const CELLS = withoutBell(SOUND_SETS.cells);
@@ -42,19 +42,21 @@ function layerNote(at: number, layer: number): ScheduledSound {
 
 export function tutorialSounds(): ScheduledSound[] {
   const sounds: ScheduledSound[] = [];
+  let examples = 0;
+  let sets = 0;
   for (const event of SECTIONS.flatMap((section) => section.events)) {
     switch (event.kind) {
       case 'layer-pulse':
         sounds.push(layerNote(event.at, event.layer));
         break;
       case 'line': {
-        // A rising run, one note per cell. Each kind starts one step higher than the kind before it.
-        const start = KINDS.indexOf(kindOf(event.line));
+        // A rising run, one note per cell. Each example line starts one step higher than the one before it.
+        const start = examples++;
         event.line.forEach((cell, i) => sounds.push(note(event.at + i * event.gap, pitchOf(start + i), cell)));
         break;
       }
       case 'set':
-        sounds.push(...chord(event.at, KINDS.indexOf(event.lines) % 2 === 0 ? C_MAJOR : A_MINOR));
+        sounds.push(...chord(event.at, sets++ % 2 === 0 ? C_MAJOR : A_MINOR));
         break;
       case 'all':
         KINDS.forEach((kind, k) => {

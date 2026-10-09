@@ -4,8 +4,7 @@ import { frameOf, since } from '../grid.ts';
 import { type Look, endCard, onSquare, wordAt, wordWidth } from '../lettering.ts';
 import { pulse } from '../stage.ts';
 import type { Theme } from '../themes.ts';
-import { linesOf } from './lines.ts';
-import { eventsOf, sectionAt } from './plan.ts';
+import { SECTIONS, eventsOf, sectionAt } from './plan.ts';
 
 // The label: a plain line in the top band of the square, and a sticker under it. The tower stays below y -320.
 const LABEL: Look = { y: -470, size: 96 };
@@ -17,7 +16,15 @@ const COUNT: Look = { y: 458, size: 84, sticker: 'win', tilt: -3 };
 const COUNT_WORDS: Look = { y: 458, size: 60 };
 const COUNT_GAP = 22;
 
-const sets = eventsOf('set').map(({ event }) => ({ at: event.at, count: linesOf(event.lines).length }));
+// A label with the same text as the label before it keeps its words in place: only its sticker slams in again.
+const LABELS = SECTIONS.flatMap((section) => section.labels);
+function textAt(label: (typeof LABELS)[number]): number {
+  let first = label;
+  for (let i = LABELS.indexOf(label) - 1; i >= 0 && LABELS[i]?.text === label.text; i--) first = LABELS[i] ?? first;
+  return first.at;
+}
+
+const sets = eventsOf('set').map(({ event }) => ({ at: event.at, count: event.lines.length }));
 // The count rolls up to its new total over 2 sixteenths.
 const ROLL = 2;
 
@@ -26,7 +33,7 @@ function label(ctx: CanvasRenderingContext2D, frame: number, theme: Theme): void
   if (shown === undefined) return;
   let size = LABEL.size;
   while (wordWidth(ctx, shown.text, { ...LABEL, size }) > LABEL_WIDTH) size -= 2;
-  wordAt(ctx, frame, { text: shown.text, at: shown.at }, { ...LABEL, size }, theme);
+  wordAt(ctx, frame, { text: shown.text, at: textAt(shown) }, { ...LABEL, size }, theme);
   wordAt(ctx, frame, { text: shown.sticker, at: shown.stickerAt }, LABEL_STICKER, theme);
 }
 

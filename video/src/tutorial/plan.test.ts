@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { LINES, linesThrough } from '../../../src/game.ts';
 import { SIXTEENTH } from '../../../src/song.ts';
 import { frameOf } from '../grid.ts';
-import { KINDS, STRONG_CELLS, kindOf, linesOf } from './lines.ts';
+import { KINDS, STRONG_CELLS, kindOf } from './lines.ts';
 import { DURATION_FRAMES, DURATION_SECONDS, END, SECTIONS, eventsOf, sectionAt } from './plan.ts';
 
 describe('the tutorial plan', () => {
-  it('lasts at most 25.0 s, in whole frames', () => {
-    expect(DURATION_SECONDS).toBeLessThanOrEqual(25);
+  it('lasts at most 29.0 s, in whole frames', () => {
+    expect(DURATION_SECONDS).toBeLessThanOrEqual(29);
     expect(Number.isInteger(DURATION_FRAMES)).toBe(true);
   });
 
@@ -40,20 +40,29 @@ describe('the tutorial plan', () => {
     for (const word of card?.event.words ?? []) expect((END - word.at) * SIXTEENTH, word.text).toBeGreaterThanOrEqual(1);
   });
 
-  it('shows each kind once, in order, with an example line of that kind, and counts up to 76', () => {
-    const sets = eventsOf('set').map(({ event }) => event.lines);
-    expect(sets).toEqual([...KINDS]);
-    expect(sets.reduce((sum, kind) => sum + linesOf(kind).length, 0)).toBe(LINES.length);
+  it('shows the kinds in order, each set inside its kind, with every line once, so the counter reaches 76', () => {
+    const sets = eventsOf('set').map(({ event }) => event);
+    expect([...new Set(sets.map((set) => set.of))]).toEqual([...KINDS]);
+    expect(sets.map((set) => KINDS.indexOf(set.of))).toEqual(sets.map((set) => KINDS.indexOf(set.of)).toSorted((a, b) => a - b));
+    for (const set of sets) for (const line of set.lines) expect(kindOf(line)).toBe(set.of);
+    const shown = sets.flatMap((set) => set.lines.map((line) => line.join('-')));
+    expect(shown.toSorted()).toEqual(LINES.map((line) => line.join('-')).toSorted());
     for (const { event, section } of eventsOf('line')) {
       expect(LINES).toContainEqual(event.line);
       const set = section.events.find((other) => other.kind === 'set');
-      expect(set?.kind === 'set' && set.lines, section.name).toBe(kindOf(event.line));
+      expect(set?.kind === 'set' && set.lines, section.name).toContainEqual(event.line);
     }
+  });
+
+  it('gives the rising and the space diagonals 2 bars each', () => {
+    const bars = (kind: string) => eventsOf('set').filter(({ event }) => event.of === kind).reduce((sum, { section }) => sum + (section.end - section.start) / 16, 0);
+    expect(bars('rising-diagonal')).toBe(2);
+    expect(bars('space-diagonal')).toBe(2);
   });
 
   it('puts the counts of the code on screen', () => {
     const stickers = SECTIONS.flatMap((section) => section.labels.map((label) => [section.name, label.sticker] as const));
-    for (const kind of KINDS) expect(stickers).toContainEqual([kind === 'row' ? 'rows' : kind, `+${linesOf(kind).length}`]);
+    for (const { event, section } of eventsOf('set')) expect(stickers).toContainEqual([section.name, `+${event.lines.length}`]);
     expect(SECTIONS.find((section) => section.name === 'all')?.labels[0]?.text).toBe('76 ways');
     expect(stickers).toContainEqual(['strong', '7 lines each']);
     expect(stickers).toContainEqual(['other', '4 lines']);
