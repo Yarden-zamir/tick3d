@@ -30,8 +30,6 @@ type BeatEvent =
   | { kind: 'threat-pulse'; at: number; cells: readonly number[] }
   // The win jingle of the game (sounds.win): five notes, one per sixteenth from `at`. The beam throbs on each.
   | { kind: 'win-jingle'; at: number }
-  // All 76 lines of LINES flash as thin beams, then fade out at `until`.
-  | { kind: 'ghost-lines'; at: number; until: number }
   // The winning line becomes a light beam. It lights one cell per sixteenth from `at`, in the order of `line`.
   // Sound: the 4 ending melody notes of songOf, one per cell.
   | { kind: 'beam'; at: number; line: Line }
@@ -66,9 +64,6 @@ export type Beats = {
   game: { seed: number; first: Player; levels: Readonly<Record<Player, Difficulty>>; winner: Player; line: Line };
   // The key of the song. songOf picks a key from a hash of the moves; the spot forces C major pentatonic.
   songKey: { root: 0; mode: 'major pentatonic' };
-  // songOf(game) plays from this sixteenth: a bass note under the moves plays at songOffset + at, if that is before bassUntil.
-  songOffset: number;
-  bassUntil: number;
   moves: readonly TimedMove[];
   bars: readonly Bar[];
   text: readonly TextLine[];
@@ -142,15 +137,13 @@ function line(value: unknown, path: string): Line {
 function beatEvent(value: unknown, path: string): BeatEvent {
   const e = record(value, path);
   const at = time(e['at'], `${path}.at`);
-  const kind = oneOf(['layer-slam', 'threats', 'threat-pulse', 'ghost-lines', 'beam', 'confetti', 'replay', 'win-jingle', 'final-chord'] as const, e['kind'], `${path}.kind`);
+  const kind = oneOf(['layer-slam', 'threats', 'threat-pulse', 'beam', 'confetti', 'replay', 'win-jingle', 'final-chord'] as const, e['kind'], `${path}.kind`);
   switch (kind) {
     case 'layer-slam':
       return { kind, at, layer: count(e['layer'], `${path}.layer`, 3) };
     case 'threats':
     case 'threat-pulse':
       return { kind, at, cells: list(e['cells'], `${path}.cells`).map((c, i) => cell(c, `${path}.cells[${i}]`)) };
-    case 'ghost-lines':
-      return { kind, at, until: time(e['until'], `${path}.until`) };
     case 'beam':
       return { kind, at, line: line(e['line'], `${path}.line`) };
     case 'confetti':
@@ -193,8 +186,6 @@ export function parseBeats(value: unknown): Beats {
       root: exactly(0, record(root['songKey'], 'songKey')['root'], 'songKey.root'),
       mode: oneOf(['major pentatonic'] as const, record(root['songKey'], 'songKey')['mode'], 'songKey.mode'),
     },
-    songOffset: time(root['songOffset'], 'songOffset'),
-    bassUntil: time(root['bassUntil'], 'bassUntil'),
     moves: list(root['moves'], 'moves').map((m, i) => {
       const move = record(m, `moves[${i}]`);
       return {

@@ -12,7 +12,7 @@ Tic-tac-toe, four in a row, in a 4×4×4 cube.
 
 ## Supporting points (each one is true in the code)
 
-1. **76 ways to win.** `LINES` in `src/game.ts` has 76 lines. `tools/check-beats.ts` asserts it.
+1. **76 ways to win.** `LINES` in `src/game.ts` has 76 lines. The spot does not say it (maintainer feedback on #119).
 2. **Every cell has its own sound, and a game becomes a song.** `src/sound-sets.ts` (13 sets) and `songOf` in `src/song.ts` (136 BPM). README: "Your game as a song".
 3. **Twelve themes.** The `[data-theme]` blocks in `src/style.css`.
 
@@ -30,5 +30,5 @@ Loud, flat and quick, like the UI: thick black lines, hard shadows, flat color. 
 ## The 3 lines (all of them)
 
 1. "4 in a row. In 3D."
-2. "76 ways to win."
+2. "Every cell has a note." (supporting point 2)
 3. "tick3d.yarden-zamir.com" (the "tick3d" part is the wordmark).

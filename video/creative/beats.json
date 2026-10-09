@@ -16,8 +16,6 @@
     "root": 0,
     "mode": "major pentatonic"
   },
-  "songOffset": 16,
-  "bassUntil": 48,
   "moves": [
     { "move": 0, "player": "X", "cell": 22, "at": 16 },
     { "move": 1, "player": "O", "cell": 26, "at": 18 },
@@ -99,16 +97,11 @@
     {
       "bar": 4,
       "start": 48,
-      "scene": "Theme sweep. The double threat: X takes corner 0, the 76 lines flash, two cells blink, O blocks one.",
+      "scene": "Theme sweep. The double threat: X takes corner 0, two cells blink and ring their notes, O blocks one.",
       "theme": "midnight",
       "soundSet": "cells",
       "camera": "push",
       "events": [
-        {
-          "kind": "ghost-lines",
-          "at": 48,
-          "until": 56
-        },
         {
           "kind": "threats",
           "at": 48,
@@ -217,11 +210,11 @@
     {
       "words": [
         {
-          "text": "76 ways",
+          "text": "Every cell",
           "at": 48
         },
         {
-          "text": "to win.",
+          "text": "has a note.",
           "at": 52
         }
       ],

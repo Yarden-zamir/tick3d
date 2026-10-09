@@ -1,4 +1,4 @@
-// The three.js scene of the spot: the dotted page, the tower, the pieces, the lines, the beam, the confetti and
+// The three.js scene of the spot: the dotted page, the tower, the pieces, the beam, the confetti and
 // the text. `render` draws one frame, and everything in it is a function of the frame number.
 import {
   BackSide,
@@ -29,7 +29,7 @@ import {
   type WebGLRenderer,
 } from 'three';
 import { interpolate } from 'remotion';
-import { CELL_COUNT, LINES, SIZE, toCoords } from '../../src/game.ts';
+import { CELL_COUNT, SIZE, toCoords } from '../../src/game.ts';
 import { seededRandom } from '../../src/practice/practice.ts';
 import { SIXTEENTH } from '../../src/song.ts';
 import { winVoices } from '../../src/sound.ts';
@@ -179,19 +179,6 @@ export function createWorld(width: number, height: number): World {
     if (cell === undefined) throw new RangeError(`no cell ${move.cell}`);
     cell.group.add(group);
     return { move, group, lift, materials };
-  });
-
-  // ---- The 76 lines, as thin beams ----
-  const ghostLines = BEATS.bars.flatMap((bar) => bar.events).find((event) => event.kind === 'ghost-lines');
-  const ghostMaterial = paint('line', { transparent: true, depthWrite: false });
-  const ghostGeometry = unitCylinder(0.028);
-  const ghosts = LINES.map((line, index) => {
-    const mesh = new Mesh(ghostGeometry, ghostMaterial.material);
-    const a = cellCenter(line[0]);
-    const d = cellCenter(line[3]);
-    const reach = d.clone().sub(a).normalize().multiplyScalar(0.5);
-    scene.add(mesh);
-    return { mesh, from: a.sub(reach), to: d.add(reach), index };
   });
 
   // ---- The winning beam: a `--win` core with a `--line` outline and two soft halos ----
@@ -359,15 +346,6 @@ export function createWorld(width: number, height: number): World {
         entry.material.depthWrite = opacity > 0.99;
       }
     }
-
-    // The 76 lines shoot out from their first cell, then fade until `until`.
-    for (const ghost of ghosts) {
-      const t = ghostLines === undefined ? -1 : since(frame, ghostLines.at);
-      const visible = ghostLines !== undefined && t >= 0 && frame < frameOf(ghostLines.until);
-      ghost.mesh.visible = visible;
-      if (visible) stretch(ghost.mesh, ghost.from, ghost.to, interpolate(t - (ghost.index % 8) * 0.06, [0, 1], [0, 1], clamp));
-    }
-    if (ghostLines !== undefined) ghostMaterial.material.opacity = interpolate(since(frame, ghostLines.at), [0, ghostLines.until - ghostLines.at], [0.95, 0.3], clamp);
 
     // The beam joins the 4 lit cells on the sixteenth after the last one lights. It throbs on each note of the
     // win jingle, then on every beat.

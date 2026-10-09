@@ -1,10 +1,10 @@
 // The sounds of the soundtrack: the song of the game (src/song.ts) retimed to the bars of beats.json, the
 // Classic layer notes, the preview strikes of the threats and the win jingle. Each note plays with the sound
 // set of its bar. scripts/audio.ts renders them.
-import { SIXTEENTH, type SongNote, scaleOf, songOf } from '../../src/song.ts';
+import { type SongNote, scaleOf, songOf } from '../../src/song.ts';
 import { type ScheduledSound, previewVoices, winVoices } from '../../src/sound.ts';
 import { SOUND_SETS, type SoundSet, type Voice } from '../../src/sound-sets.ts';
-import { toCoords } from '../../src/game.ts';
+import { SIZE, toCoords } from '../../src/game.ts';
 import { SIXTEENTHS_PER_BAR } from '../creative/beats.ts';
 import { BEATS, GAME, eventOf, eventsOf } from './timeline.ts';
 
@@ -49,11 +49,24 @@ export function inKey(set: SoundSet, midi: number): SoundSet {
   };
 }
 
+// The glass bell of Cells (the second row) rings for 0.9 s with partials off the harmonic series. In the spot it
+// sounded harsh (maintainer feedback on #119), so the spot plays that row with the marimba of the first row.
+const BELL_ROW = 1;
+const withoutBell = (set: SoundSet): SoundSet => ({
+  ...set,
+  voices: (cell, player) => set.voices(toCoords(cell).row === BELL_ROW ? cell - SIZE : cell, player),
+});
+
+// The moves of bar 3 come one per sixteenth. They play softer, so the doubled speed does not crowd the mix (#119).
+const RUN_BAR = 3;
+const RUN_LEVEL = 0.55;
+const inRunBar = (at: number): boolean => Math.floor(at / SIXTEENTHS_PER_BAR) === RUN_BAR - 1;
+
 // The sound set of the bar of a sixteenth. The final chord after bar 8 keeps the set of bar 8.
 function rawSetAt(at: number): SoundSet {
   const bar = BEATS.bars[Math.min(BEATS.bars.length - 1, Math.floor(at / SIXTEENTHS_PER_BAR))];
   if (bar === undefined) throw new RangeError(`no bar at sixteenth ${at}`);
-  return SOUND_SETS[bar.soundSet];
+  return bar.soundSet === 'cells' ? withoutBell(SOUND_SETS.cells) : SOUND_SETS[bar.soundSet];
 }
 
 const setAt = (at: number, midi: number): SoundSet => inKey(rawSetAt(at), midi);
@@ -65,12 +78,6 @@ function leadMidi(set: SoundSet, cell: number): number {
   if (pitch === undefined) throw new Error(`${set.name} has no pitched voice for cell ${cell}`);
   return Math.round(midiOf(pitch));
 }
-
-const sixteenthOf = (seconds: number): number => {
-  const s16 = seconds / SIXTEENTH;
-  if (Math.abs(s16 - Math.round(s16)) > 1e-6) throw new RangeError(`a song note is off the grid: ${seconds} s`);
-  return Math.round(s16);
-};
 
 export function spotSounds(): SpotSound[] {
   const song = songOf(GAME, BEATS.songKey);
@@ -85,17 +92,15 @@ export function spotSounds(): SpotSound[] {
     if (note.kind === 'melody' && note.move !== undefined) {
       const move = BEATS.moves[note.move];
       if (move === undefined) throw new RangeError(`no move ${note.move}`);
-      notes.push({ at: move.at, note }, { at: replay.at + note.move, note });
+      notes.push({ at: move.at, note: inRunBar(move.at) ? { ...note, level: note.level * RUN_LEVEL } : note }, { at: replay.at + note.move, note });
     } else if (note.kind === 'melody') {
       // The winner's run up the tonic chord: one note on each cell of the beam.
       notes.push({ at: beam.at + winRun, note });
       winRun++;
     } else if (note.at === finalAt) {
       notes.push({ at: finalChord.at, note });
-    } else if (note.kind === 'bass') {
-      const at = BEATS.songOffset + sixteenthOf(note.at);
-      if (at < BEATS.bassUntil) notes.push({ at, note });
-    } else {
+    } else if (note.kind !== 'bass') {
+      // The bass line under the moves does not play: it made the mix noisy (maintainer feedback on #119).
       throw new Error(`the spot has no place for a ${note.kind} note at ${note.at} s`);
     }
   }

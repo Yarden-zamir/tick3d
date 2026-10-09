@@ -1,6 +1,6 @@
 {
   "name": "mellow",
-  "differs": "Mallet and bell voices on every bar, the win run on the marimba, and the soft themes: mint, snow, coffee and candy, with a snow end card.",
+  "differs": "Mallet voices on every bar, the win run on the marimba, and the soft themes: mint, snow, coffee and candy, with a snow end card.",
   "bars": {
     "1": { "theme": "mint", "soundSet": "cells" },
     "2": { "theme": "mint" },

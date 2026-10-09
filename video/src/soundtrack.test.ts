@@ -54,8 +54,7 @@ describe('the soundtrack', () => {
 
   it('keeps every pitched voice that it schedules in C, D, E, G or A (the maintainer audio rule on #119)', () => {
     // A voice within 15 cents of a whole number of semitones from the lead of its sound is a pitch: the lead, an
-    // added interval, an octave, a bass or chord note. The others are the timbre partials of a bell or a
-    // marimba (2.76, 5.4 times the pitch), and they are exempt.
+    // added interval, an octave or a chord note. The others are timbre partials, and they are exempt.
     let pitched = 0;
     for (const sound of sounds) {
       const voices = oscillatorPitches(sound);
@@ -77,6 +76,19 @@ describe('the soundtrack', () => {
     const wide = 3; // Column 3 of Cells: the note, its fifth and its octave.
     expect(inKey(SOUND_SETS.cells, 64).voices(wide, 'X').length).toBeLessThan(SOUND_SETS.cells.voices(wide, 'X').length);
     expect(inKey(SOUND_SETS.cells, 60).voices(wide, 'X')).toHaveLength(SOUND_SETS.cells.voices(wide, 'X').length);
+  });
+
+  it('plays no bass line under the moves and no glass bell (maintainer feedback on #119)', () => {
+    // The only bass note is the root of the final chord.
+    const [finalChord] = eventsOf('final-chord');
+    expect(notes.filter(({ note }) => note.kind === 'bass').every(({ at }) => at === finalChord?.at)).toBe(true);
+    // The glass bell of Cells (cell 4 is on its row) is the only voice with a partial at 2.76 times its pitch.
+    const bellPartial = (sound: SpotSound): boolean => {
+      const [lead, ...rest] = oscillatorPitches(sound).map((own) => own[0] ?? 0);
+      return lead !== undefined && rest.some((hz) => Math.abs(hz / lead - 2.76) < 0.01);
+    };
+    expect(bellPartial({ at: 0, note: { kind: 'melody', at: 0, midi: 60, player: 'X', cell: 4, level: 1 }, set: SOUND_SETS.cells })).toBe(true);
+    for (const sound of sounds) expect(bellPartial(sound), `a bell partial at sixteenth ${sound.at}`).toBe(false);
   });
 
   it('hits the bar 1 downbeat, the win on the bar 5 downbeat and the end card on the bar 7 downbeat', () => {

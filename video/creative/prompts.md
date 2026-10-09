@@ -35,7 +35,6 @@ Place the game of `beats.json` on the timeline.
 - Rebuild the game from `game.seed` and `game.levels` with `chooseMove` (`src/ai.ts`) and `seededRandom` (`src/practice/practice.ts`), as `tools/check-beats.ts` does. Throw if it differs from `beats.moves`.
 - Show each move at its `at`. A piece drops in over 1 s16 and pulses (scale 1 → 1.25 → 1) on its note.
 - `threats`: the cells blink in `--win`, as `.cell.win` does. A blink stops when a piece takes the cell.
-- `ghost-lines`: all 76 `LINES` as thin beams, out at `until`.
 - `beam`: one cell of the line per s16 in `--win`, then a beam through all four. The other pieces drop to 35 % opacity.
 - `replay`: each piece pulses again, one per s16 from `at`, in move order.
 
@@ -53,7 +52,7 @@ Render the soundtrack to `video/out/soundtrack.wav` (44.1 kHz stereo, 15.0 s) wi
 - The key: `songOf` picks a key from a hash of the moves (A dorian for this game). Add an optional `key` parameter to `songOf` in `src/song.ts`, default `keyOf(game)`, with a unit test. Pass `beats.songKey`.
 - The song: `songOf(replay(moves), beats.songKey)`. Retime its notes:
   - a melody note with `move = i` plays at `moves[i].at`;
-  - a bass note under the moves plays at `songOffset + at / SIXTEENTH`, only if that is before `bassUntil`;
+  - a bass note under the moves does not play (maintainer feedback on #119);
   - the 4 melody notes without `move` (the win run) play at `beam.at + k`;
   - the chord notes and the bass note at the same time as them (the final chord) play at `final-chord.at`;
   - `replay`: the melody note of move `i` plays again at `replay.at + i`.

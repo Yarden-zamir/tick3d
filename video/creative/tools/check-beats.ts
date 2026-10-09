@@ -34,8 +34,6 @@ const final = replay(beats.moves.map((m) => m.cell), { first: beats.game.first }
 check(final.status.kind === 'won' && final.status.winner === beats.game.winner, 'the game ends with a win of game.winner');
 check(final.status.kind === 'won' && JSON.stringify(final.status.line) === JSON.stringify(beats.game.line), 'game.line is the winning line');
 check(LINES.some((l) => JSON.stringify(l) === JSON.stringify(beats.game.line)), 'game.line is in LINES');
-// The copy says "76 ways to win".
-check(LINES.length === 76, 'the cube has 76 lines');
 
 beats.moves.forEach((move, i) => {
   check(move.move === i, `moves[${i}].move is ${i}`);
@@ -94,6 +92,5 @@ const barStart = (bar: number) => (bar - 1) * SIXTEENTHS_PER_BAR;
 check(beats.bars[0]?.events.some((e) => e.at === 0) === true, 'a hit on the bar 1 downbeat');
 check(beats.moves.at(-1)?.at === barStart(5), 'the winning move lands on the bar 5 downbeat');
 check(beats.text.at(-1)?.words[0]?.at === barStart(7), 'the end card lands on the bar 7 downbeat');
-check(beats.bassUntil <= SPOT_SIXTEENTHS, 'bassUntil is inside the spot');
 
 process.stdout.write(`beats.json ok: ${beats.moves.length} legal moves, ${beats.game.winner} wins on line ${beats.game.line.join('-')}, ${variantFiles.length} variants\n`);
