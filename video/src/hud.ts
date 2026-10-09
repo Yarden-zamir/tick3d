@@ -33,6 +33,7 @@ const LOOKS: Readonly<Record<Exclude<TextStyle, 'end-card'>, readonly Look[]>> =
     { y: -466, size: 88, sticker: 'x', tilt: -5 },
     { y: -466, size: 88, sticker: 'o', tilt: 4 },
     { y: -466, size: 88, sticker: 'x', tilt: -3 },
+    { y: -466, size: 88, sticker: 'o', tilt: 5 },
   ],
 };
 
@@ -97,13 +98,17 @@ function wordAt(ctx: CanvasRenderingContext2D, frame: number, word: Word, look: 
   ctx.restore();
 }
 
+// The call to action under the address: a small `--o` sticker.
+const CALL_TO_ACTION: Look = { y: 420, size: 74, sticker: 'o', tilt: -3 };
+
 // The wordmark of the game header: "tick" in `--ink` and the "3d" sticker. The URL suffix slides out of the
-// sticker to the right, so the whole line reads as the address.
+// sticker to the right, so the whole line reads as the address. An optional third word group is the call to action.
 function endCard(ctx: CanvasRenderingContext2D, frame: number, words: readonly Word[], theme: Theme): void {
-  const [mark, suffix, ...rest] = words;
+  const [mark, suffix, action, ...rest] = words;
   if (mark === undefined || suffix === undefined || rest.length > 0 || !mark.text.endsWith('3d')) {
-    throw new Error('the end card needs the wordmark "…3d" and the URL suffix');
+    throw new Error('the end card needs the wordmark "…3d", the URL suffix and at most a call to action');
   }
+  if (action !== undefined) wordAt(ctx, frame, action, CALL_TO_ACTION, theme);
   const name = mark.text.slice(0, -2);
   const slam = dropIn(frame, mark.at);
   if (slam <= 0) return;

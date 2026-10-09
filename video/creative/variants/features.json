@@ -1,0 +1,105 @@
+{
+  "name": "features",
+  "differs": "Classic, with the 13 best features: \"In 3D.\" in bar 2, then one card per beat. Bar 3, the ways to play: computer, online, nearby, your AI agent. Bar 4, the sound: 13 sound sets, ear trainer, voice, blind. Bar 6, while the game replays as a song: song, 12 themes, time limits, offline.",
+  "text": [
+    {
+      "style": "center",
+      "words": [
+        {
+          "text": "4 in a row.",
+          "at": 16
+        },
+        {
+          "text": "In 3D.",
+          "at": 24
+        }
+      ],
+      "until": 32
+    },
+    {
+      "style": "cards",
+      "words": [
+        {
+          "text": "Vs computer.",
+          "at": 32
+        },
+        {
+          "text": "Play online.",
+          "at": 36
+        },
+        {
+          "text": "Play nearby.",
+          "at": 40
+        },
+        {
+          "text": "Vs your AI agent.",
+          "at": 44
+        }
+      ],
+      "until": 48
+    },
+    {
+      "style": "cards",
+      "words": [
+        {
+          "text": "13 sound sets.",
+          "at": 48
+        },
+        {
+          "text": "Ear trainer.",
+          "at": 52
+        },
+        {
+          "text": "Play by voice.",
+          "at": 56
+        },
+        {
+          "text": "Play blind.",
+          "at": 60
+        }
+      ],
+      "until": 64
+    },
+    {
+      "style": "cards",
+      "words": [
+        {
+          "text": "Your game is a song.",
+          "at": 80
+        },
+        {
+          "text": "12 themes.",
+          "at": 84
+        },
+        {
+          "text": "Time limits.",
+          "at": 88
+        },
+        {
+          "text": "Works offline.",
+          "at": 92
+        }
+      ],
+      "until": 96
+    },
+    {
+      "style": "end-card",
+      "words": [
+        {
+          "text": "tick3d",
+          "at": 96
+        },
+        {
+          "text": ".yarden-zamir.com",
+          "at": 100
+        },
+        {
+          "text": "Play in your browser.",
+          "at": 112
+        }
+      ],
+      "until": 128
+    }
+  ],
+  "bars": {}
+}

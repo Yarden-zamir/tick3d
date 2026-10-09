@@ -53,7 +53,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [classic, hook, arcade, mellow]
+        variant: [classic, hook, features, arcade, mellow]
         crop: [landscape, portrait]
     env:
       VIDEO_VARIANT: ${{ matrix.variant }}
@@ -119,7 +119,7 @@ jobs:
       - name: Build the previews
         run: |
           set -eu
-          for variant in classic hook arcade mellow; do
+          for variant in classic hook features arcade mellow; do
             dest=pr-assets/$PREVIEW_DIR/$variant
             land=renders/tick3d-video-$variant-landscape
             port=renders/tick3d-video-$variant-portrait
