@@ -3,7 +3,7 @@
 This repository deploys tick3d to `tick3d.yarden-zamir.com` with KitSHn.
 
 - A push to `main` deploys `prod`. A pull request deploys to `pr-<number>.tick3d.yarden-zamir.com`.
-- The `check` job of `.github/workflows/kitshn.yml` runs `npm run check` and `npm run build`. A production or manual deploy waits for it. A pull request preview starts at once, next to the check.
+- The `check` job of `.github/workflows/kitshn.yml` runs `npm run check` and `npm run build`. A production or manual deploy waits for it. A pull request preview starts at once, next to the check. A pull request with the label `no-preview` builds no preview; closing it still tears down an old one.
 - The `site` service (Caddy, `container/Caddyfile`) serves `dist/` on the KitSHn Unix socket. The host Caddy (`Caddyfile.j2`) routes the hostname to that socket.
 - The image build reads the release name from the deployed commit: the pull request title of a merge, else the commit subject. A preview adds `(pr-<number>)`. `compose.yml` passes the checkout's `.git` as a second build context. The `api` service stores the name in the `releases` table at start, and the stats page shows it.
 - The `api` service serves `/api/*`. It keeps data in DuckDB at `/data/tick3d.duckdb` on the `sessions` volume. Each environment has its own volume.
