@@ -34,7 +34,7 @@ import { seededRandom } from '../../src/practice/practice.ts';
 import { SIXTEENTH } from '../../src/song.ts';
 import { winVoices } from '../../src/sound.ts';
 import { cameraAt } from './camera.ts';
-import { PX, drawHud } from './hud.ts';
+import { type BadgeArt, PX, drawHud } from './hud.ts';
 import { CELL, LAYER_GAP, OUTLINE, PIECE_HEIGHT, TILE_HEIGHT, cellBase, cellCenter } from './layout.ts';
 import { oShape, xShape } from './pieces.ts';
 import { type Theme, type ThemeId, type Token, readTheme, readXPolygon } from './themes.ts';
@@ -89,7 +89,7 @@ function stretch(mesh: Object3D, a: Vector3, b: Vector3, length = 1): void {
 
 export type World = { render(gl: WebGLRenderer, frame: number): void; dispose(): void };
 
-export function createWorld(width: number, height: number): World {
+export function createWorld(width: number, height: number, art: BadgeArt): World {
   const themes = new Map<ThemeId, Theme>();
   const themeOf = (id: ThemeId): Theme => {
     let theme = themes.get(id);
@@ -417,7 +417,7 @@ export function createWorld(width: number, height: number): World {
     page.uniforms['page']?.value.setRGB(theme.page.r, theme.page.g, theme.page.b);
     const dot = page.uniforms['dotColor'];
     if (dot !== undefined) dot.value = [theme.dot.r, theme.dot.g, theme.dot.b, theme.dot.a];
-    drawHud(context, frame, theme);
+    drawHud(context, frame, theme, art);
     texture.needsUpdate = true;
     gl.setRenderTarget(target);
     gl.clear();

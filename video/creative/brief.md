@@ -31,4 +31,4 @@ Loud, flat and quick, like the UI: thick black lines, hard shadows, flat color. 
 
 1. "4 in a row. In 3D."
 2. "Every cell has a note." (supporting point 2)
-3. "tick3d.yarden-zamir.com" (the "tick3d" part is the wordmark), with "Play in your browser." under it, then the "Android" and "iOS" store badges. On iOS the game runs in the browser and installs to the home screen: there is no App Store app.
+3. "tick3d.yarden-zamir.com" (the "tick3d" part is the wordmark), with "Play in your browser." under it, then the official App Store (with "soon") and Google Play badges. On iOS the game runs in the browser and installs to the home screen: there is no App Store app yet.

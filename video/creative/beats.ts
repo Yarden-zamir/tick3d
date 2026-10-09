@@ -58,14 +58,15 @@ type TimedMove = { move: number; player: Player; cell: number; at: number };
 // - 'top': two word groups above the tower, the second one a sticker;
 // - 'cards': feature cards in the sticker style of the wordmark above the tower, one at a time;
 // - 'list': feature cards above the tower that scroll up as a list, two at a time;
-// - 'end-card': the wordmark, the URL suffix, a call to action, then store badges (words with an icon). It is
-//   the last line, and it stays to the end of the spot.
+// - 'end-card': the wordmark, the URL suffix, a call to action, then official store badges (words with a
+//   `badge`). It is the last line, and it stays to the end of the spot.
 const TEXT_STYLES = ['center', 'top', 'cards', 'list', 'end-card'] as const;
 export type TextStyle = (typeof TEXT_STYLES)[number];
-// A store badge on the end card shows this icon before its text.
-const ICONS = ['play-store', 'apple'] as const;
-export type Icon = (typeof ICONS)[number];
-type TextLine = { words: readonly { text: string; at: number; icon?: Icon }[]; until: number; style: TextStyle };
+// An official store badge on the end card (video/public/badges/). Its `text` names it and is not drawn; an optional
+// `note`, such as "soon", is a small sticker next to it.
+const BADGES = ['app-store', 'google-play'] as const;
+export type Badge = (typeof BADGES)[number];
+type TextLine = { words: readonly { text: string; at: number; badge?: Badge; note?: string }[]; until: number; style: TextStyle };
 
 export type Beats = {
   bpm: 136;
@@ -215,7 +216,9 @@ export function parseBeats(value: unknown): Beats {
       const words = list(entry['words'], `text[${i}].words`).map((w, j) => {
         const word = record(w, `text[${i}].words[${j}]`);
         const entry = { text: text(word['text'], `text[${i}].words[${j}].text`), at: time(word['at'], `text[${i}].words[${j}].at`) };
-        return word['icon'] === undefined ? entry : { ...entry, icon: oneOf(ICONS, word['icon'], `text[${i}].words[${j}].icon`) };
+        if (word['badge'] === undefined) return entry;
+        const badge = { ...entry, badge: oneOf(BADGES, word['badge'], `text[${i}].words[${j}].badge`) };
+        return word['note'] === undefined ? badge : { ...badge, note: text(word['note'], `text[${i}].words[${j}].note`) };
       });
       return { words, until: time(entry['until'], `text[${i}].until`), style: oneOf(TEXT_STYLES, entry['style'], `text[${i}].style`) };
     }),
