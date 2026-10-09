@@ -85,6 +85,8 @@ function isLocked(doc: SessionDoc): boolean {
 }
 
 // Adds events to the chat log of a game with another device. A game on one device shows no chat.
+// Limit: events count toward CHAT_KEEP, so many changes push old messages out sooner. Revisit this
+// if players lose messages that they still want: then keep events in their own short list.
 function logEvents(doc: SessionDoc, events: readonly SessionEvent[]): SessionDoc {
   if ((doc.mode !== 'online' && doc.mode !== 'nearby') || events.length === 0) return doc;
   const first = (doc.chat.at(-1)?.id ?? 0) + 1;
