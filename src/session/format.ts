@@ -16,13 +16,13 @@ import { type Playoff, parsePlayoff } from '../practice/playoff.ts';
 import {
   CHAT_KEEP,
   CONSENT_ACTIONS,
-  type ChatMessage,
+  type ChatEntry,
   type ConsentAction,
   type GameRecord,
   type MatchOptions,
   SESSION_MODES,
   type SessionMode,
-  isChatMessage,
+  isChatEntry,
   isMoveList,
   normalizeName,
   toGame,
@@ -46,7 +46,7 @@ export type SessionDoc = {
   // The time limit for the next game.
   clock: TimeControl;
   // Oldest first, the newest CHAT_KEEP messages only.
-  chat: ChatMessage[];
+  chat: ChatEntry[];
   // The sound playoff of the session (src/practice/playoff.ts), or null. Older documents have none.
   playoff: Playoff | null;
   // A seat change that waits for the other player (see seat in core.ts), or null.
@@ -129,7 +129,7 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
   const mode = doc.mode === undefined ? 'online' : SESSION_MODES.find((known) => known === doc.mode);
   if (mode === undefined) throw new FormatError(`unknown session mode ${String(doc.mode)}`);
   const chat = doc.chat === undefined ? [] : doc.chat;
-  if (!Array.isArray(chat) || !chat.every(isChatMessage)) throw new FormatError('the chat is invalid');
+  if (!Array.isArray(chat) || !chat.every(isChatEntry)) throw new FormatError('the chat is invalid');
   const playoff = doc.playoff === undefined || doc.playoff === null ? null : parsePlayoff(doc.playoff);
   if (playoff === undefined) throw new FormatError('the playoff is invalid');
   // A document from before seat controls has no seat request.

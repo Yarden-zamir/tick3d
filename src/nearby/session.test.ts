@@ -82,7 +82,7 @@ describe('Nearby host and guest', () => {
     nearby.stop('The host ended the game.');
     await expect(first.backend.chat(code, 'too late')).rejects.toMatchObject({ status: 503 });
     await new Promise((resolve) => setTimeout(resolve, 300));
-    expect((await local.load(code)).chat.some((message) => message.text === 'too late')).toBe(false);
+    expect((await local.load(code)).chat.some((entry) => 'text' in entry && entry.text === 'too late')).toBe(false);
   });
 
   it('gives a device the same person id as the server does, and ties its messages to it', async () => {

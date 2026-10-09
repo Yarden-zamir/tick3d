@@ -1890,6 +1890,16 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
+/* A change to the session (a new game, a setting, a seat change) between the messages. */
+.chat-event {
+  align-self: center;
+  max-width: 90%;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 /* Messages in a row from one sender: one picture at the bottom, the name, then the bubbles.
    Your own groups sit on the right, with the picture on the right. */
 .chat-group {

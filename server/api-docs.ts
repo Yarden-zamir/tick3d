@@ -109,6 +109,7 @@ export type SchemaName =
   | 'GameRecord'
   | 'Status'
   | 'ChatMessage'
+  | 'ChatEvent'
   | 'PlayerInfo'
   | 'SeatNames'
   | 'Watcher'
@@ -249,6 +250,21 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     at: { type: 'number', description: 'Server time in epoch milliseconds.' },
     by: { ...person, description: 'The person id of the sender. An older message has none: then the holder of `from` stands for the sender.' },
   }, ['by']),
+  ChatEvent: object('A change to the session, between the messages of the chat. It names no player.', {
+    id: { type: 'integer', description: 'The same sequence as the message ids.' },
+    event: {
+      oneOf: [
+        object('A new game started. swapped: X and O swapped for it.', { kind: { const: 'new-game' }, game: { type: 'integer', minimum: 1 }, swapped: { type: 'boolean' } }),
+        object('A match option changed.', { kind: { const: 'option' }, option: { type: 'string', enum: ['hideBoard', 'hideHistory', 'hideCoordinates'] }, on: { type: 'boolean' } }),
+        object('fixedSeats changed.', { kind: { const: 'fixed-seats' }, on: { type: 'boolean' } }),
+        object('watcherChat changed.', { kind: { const: 'watcher-chat' }, on: { type: 'boolean' } }),
+        object('The time limit for the next game changed.', { kind: { const: 'clock' }, clock: ref('TimeControl') }),
+        object('The session got a new name.', { kind: { const: 'name' }, name }),
+        object('A player locked the settings until the live game ends.', { kind: { const: 'lock' } }),
+        object('A seat change or an undo applied.', { kind: { const: 'seat' }, action: { type: 'string', enum: ['swap', 'leave', 'give', 'seat', 'unseat', 'replace', 'undo'] } }),
+      ],
+    },
+  }),
   PlayerInfo: object('The GitHub account of a seat, when its player logged in on the page.', {
     login: { type: 'string', minLength: 1, maxLength: 39 },
     avatar: { type: 'string', pattern: '^https://avatars\\.githubusercontent\\.com/' },
@@ -290,7 +306,12 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     },
     now: { type: 'number', description: 'Server time in epoch milliseconds.' },
     version: { type: 'integer', description: 'Grows with every change. Send it as ?wait=<version> to wait for the next change.' },
-    chat: { type: 'array', items: ref('ChatMessage'), maxItems: CHAT_KEEP, description: `The newest ${CHAT_KEEP} messages, oldest first.` },
+    chat: {
+      type: 'array',
+      items: { oneOf: [ref('ChatMessage'), ref('ChatEvent')] },
+      maxItems: CHAT_KEEP,
+      description: `The newest ${CHAT_KEEP} entries, oldest first: messages, and an event for each new game, change of settings and change of seats.`,
+    },
     presence: object('True when the seat has the game open in a browser now. An API client shows as away.', {
       X: { type: 'boolean' },
       O: { type: 'boolean' },

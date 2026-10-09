@@ -46,6 +46,7 @@ import {
   type Tally,
   ALL_STATS,
   WATCHER_ID_LENGTH,
+  isChatEvent,
   isGameRecord,
   parseMatchOptions,
   newGameId,
@@ -799,7 +800,7 @@ export async function openStore(
         const seatRequest = freed || mine(doc.seatRequest?.watcher ?? null) ? null : doc.seatRequest;
         // The message keeps its id and seat, so the ids of later messages stay unique.
         const chat = doc.chat.map((message) => {
-          if (message.by === undefined || !ownPersons.has(message.by)) return message;
+          if (isChatEvent(message) || message.by === undefined || !ownPersons.has(message.by)) return message;
           counts.chat_messages.anonymised++;
           return { id: message.id, from: message.from, text: DELETED_MESSAGE, at: message.at };
         });
@@ -1022,7 +1023,8 @@ export async function openStore(
         if ('message' in request.target) {
           const id = request.target.message;
           const message = row.doc.chat.find((entry) => entry.id === id);
-          if (message === undefined) throw new SessionError(404, 'That message is not in the chat any more.');
+          // An event has no writer and no text, so nobody can report it.
+          if (message === undefined || isChatEvent(message)) throw new SessionError(404, 'That message is not in the chat any more.');
           // The writer by person id. An older message without one stands for the holder of its seat.
           const byPerson = message.by;
           const author =
@@ -1084,8 +1086,8 @@ export async function openStore(
     hideMessage: (code: Code, message: number, login: string): Promise<void> =>
       serialized(async () => {
         const row = await load(code);
-        if (!row.doc.chat.some((entry) => entry.id === message)) throw new SessionError(404, 'That message is not in the chat.');
-        const chat = row.doc.chat.map((entry) => (entry.id === message ? { ...entry, text: REMOVED_MESSAGE } : entry));
+        if (!row.doc.chat.some((entry) => entry.id === message && !isChatEvent(entry))) throw new SessionError(404, 'That message is not in the chat.');
+        const chat = row.doc.chat.map((entry) => (entry.id === message && !isChatEvent(entry) ? { ...entry, text: REMOVED_MESSAGE } : entry));
         await save(row, { ...row.doc, chat });
         await logModeration(login, 'hide-message', { code, message });
       }),

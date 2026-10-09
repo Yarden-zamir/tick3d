@@ -2,7 +2,7 @@
 // play and a Nearby host all run these, so a rule changes in one place for every mode.
 // No function here does I/O: each takes a document and returns a new one, or throws a SessionError.
 import type { Difficulty } from '../ai.ts';
-import { NO_LIMIT, type TimeControl, isFlagged } from '../clock.ts';
+import { NO_LIMIT, type TimeControl, isFlagged, sameClock } from '../clock.ts';
 import { type EpochMs, toEpochMs } from '../epoch.ts';
 import { type Game, type Player, other, play, timeOut, undo as undoGame } from '../game.ts';
 import { nameOf } from '../names.ts';
@@ -19,6 +19,7 @@ import {
   type SeatAction,
   type SessionMode,
   type SessionUpdate,
+  type SessionEvent,
   type SessionView,
   normalizeChat,
   normalizeName,
@@ -81,6 +82,14 @@ function requireSeat(doc: SessionDoc, identity: Identity): Player[] {
 
 function isLocked(doc: SessionDoc): boolean {
   return doc.lockedGame === doc.games.length - 1 && currentGame(doc).status.kind === 'playing';
+}
+
+// Adds events to the chat log of a game with another device. A game on one device shows no chat.
+function logEvents(doc: SessionDoc, events: readonly SessionEvent[]): SessionDoc {
+  if ((doc.mode !== 'online' && doc.mode !== 'nearby') || events.length === 0) return doc;
+  const first = (doc.chat.at(-1)?.id ?? 0) + 1;
+  const added = events.map((event, index) => ({ id: first + index, event }));
+  return { ...doc, chat: [...doc.chat, ...added].slice(-CHAT_KEEP) };
 }
 
 function replaceCurrent(doc: SessionDoc, game: Game): SessionDoc {
@@ -186,7 +195,9 @@ export function newGame(doc: SessionDoc, identity: Identity): SessionDoc {
   const next: SessionDoc = { ...doc, games: [...games, emptyRecord(doc.clock)], flipped: [...flipped, false] };
   // After a played game the players swap X and O, so the first move alternates. A friend game
   // holds both seats on one device, so it has nothing to swap.
-  return played && !doc.fixedSeats && doc.mode !== 'friend' ? swapSeats(next) : next;
+  if (!played) return next;
+  const swapped = !doc.fixedSeats && doc.mode !== 'friend';
+  return logEvents(swapped ? swapSeats(next) : next, [{ kind: 'new-game', game: next.games.length, swapped }]);
 }
 
 // X and O trade players. An open request stays with its player, and each
@@ -228,7 +239,15 @@ export function update(doc: SessionDoc, identity: Identity, changes: SessionUpda
   if (changes.clock !== undefined && live !== undefined && live.moves.length === 0 && !live.timedOut) {
     next.games = [...next.games.slice(0, -1), emptyRecord(changes.clock)];
   }
-  return next;
+  const events: SessionEvent[] = [];
+  if (next.name !== doc.name) events.push({ kind: 'name', name: next.name });
+  for (const option of MATCH_OPTIONS) {
+    if (next.options[option] !== doc.options[option]) events.push({ kind: 'option', option, on: next.options[option] });
+  }
+  if (!sameClock(next.clock, doc.clock)) events.push({ kind: 'clock', clock: next.clock });
+  if (next.fixedSeats !== doc.fixedSeats) events.push({ kind: 'fixed-seats', on: next.fixedSeats });
+  if (next.watcherChat !== doc.watcherChat) events.push({ kind: 'watcher-chat', on: next.watcherChat });
+  return logEvents(next, events);
 }
 
 // Locks the match options, and every screen's own settings, for both players until the live game ends.
@@ -238,7 +257,7 @@ export function lock(doc: SessionDoc, identity: Identity): SessionDoc {
   if (currentGame(doc).status.kind !== 'playing') throw new SessionError(409, 'This game is over. Start a new game first.');
   // Without a second player the game cannot end, so the lock would hold for good.
   if (doc.seats.X === null || doc.seats.O === null) throw new SessionError(409, 'Wait for the second player before a lock.');
-  return { ...doc, lockedGame: doc.games.length - 1 };
+  return logEvents({ ...doc, lockedGame: doc.games.length - 1 }, [{ kind: 'lock' }]);
 }
 
 // The two players write, and the watchers too while watcherChat is on. A message comes from the seat
@@ -331,7 +350,11 @@ function undoProblem(doc: SessionDoc, from: Player): string | undefined {
 // Limit: the next playoff starts again at id 1, so a late request for the ended playoff can reach it.
 // That needs a request in flight across a seat change, and a playoff is friendly. Revisit this if a
 // stale hit ever shows in a new playoff: then keep a playoff counter in the session document.
-function applySeatChange(doc: SessionDoc, { kind, from, watcher }: SeatChange): SessionDoc {
+function applySeatChange(doc: SessionDoc, change: SeatChange): SessionDoc {
+  return logEvents(seatChanged(doc, change), [{ kind: 'seat', action: change.kind }]);
+}
+
+function seatChanged(doc: SessionDoc, { kind, from, watcher }: SeatChange): SessionDoc {
   if (kind === 'undo') {
     const problem = undoProblem(doc, from);
     if (problem !== undefined) throw new SessionError(409, problem);

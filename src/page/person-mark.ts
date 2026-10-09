@@ -1,7 +1,7 @@
 // The marks on a page element that stands for a person: a chat message, a seat, a watcher or a score.
 // A right-click, a long press or the context-menu key on it opens the report and block menu (src/page/safety.ts).
 // This module has no page elements, so the chat log stays testable.
-import { type ChatMessage, type PersonId, type SessionView, parsePersonId } from '../protocol.ts';
+import { type ChatEntry, type ChatMessage, type PersonId, type SessionView, isChatEvent, parsePersonId } from '../protocol.ts';
 
 // `name` is the name that the page shows. `message` is the chat message id, for a message.
 export type PersonTarget = { person: PersonId; name: string; message: number | null };
@@ -31,9 +31,10 @@ export function personTarget(element: EventTarget | null): { element: HTMLElemen
 export const authorOf = (view: SessionView, message: ChatMessage): PersonId | null =>
   message.by ?? (message.from === 'watcher' ? null : view.people[message.from]);
 
-// The messages to show: none from a blocked person, and none whose "<code>:<id>" this device reported.
-export const visibleMessages = (view: SessionView, blocked: ReadonlySet<PersonId>, reported: ReadonlySet<string>): ChatMessage[] =>
-  view.chat.filter((message) => {
-    const author = authorOf(view, message);
-    return !(author !== null && blocked.has(author)) && !reported.has(`${view.code}:${message.id}`);
+// The log to show: every event, no message from a blocked person, and no message whose "<code>:<id>" this device reported.
+export const visibleMessages = (view: SessionView, blocked: ReadonlySet<PersonId>, reported: ReadonlySet<string>): ChatEntry[] =>
+  view.chat.filter((entry) => {
+    if (isChatEvent(entry)) return true;
+    const author = authorOf(view, entry);
+    return !(author !== null && blocked.has(author)) && !reported.has(`${view.code}:${entry.id}`);
   });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { toEpochMs as ms } from '../epoch.ts';
 import type { TimeControl } from '../clock.ts';
 import { nameOf } from '../names.ts';
-import { CHAT_KEEP, CHAT_MAX_LENGTH, type Code, personId, seatIn } from '../protocol.ts';
+import { CHAT_KEEP, CHAT_MAX_LENGTH, type Code, isChatEvent, personId, seatIn } from '../protocol.ts';
 import * as core from './core.ts';
 import type { SessionDoc } from './format.ts';
 
@@ -267,6 +267,33 @@ describe('chat', () => {
   });
 });
 
+describe('chat events', () => {
+  const events = (doc: SessionDoc) => doc.chat.filter(isChatEvent).map((entry) => entry.event);
+
+  it('logs each real change of the settings, a lock and a new game, in the id order of the messages', () => {
+    let doc = core.chat(onlineDoc(), alice, 'hi', ms(1), null, []);
+    // A change to the same value logs nothing.
+    doc = core.update(doc, alice, { hideBoard: true, hideHistory: false, fixedSeats: true, watcherChat: false, name: 'Rematch' });
+    doc = core.update(doc, bob, { clock: { perMove: 30, perGame: null } });
+    expect(events(doc)).toEqual([
+      { kind: 'name', name: 'Rematch' },
+      { kind: 'option', option: 'hideBoard', on: true },
+      { kind: 'fixed-seats', on: true },
+      { kind: 'watcher-chat', on: false },
+      { kind: 'clock', clock: { perMove: 30, perGame: null } },
+    ]);
+    doc = core.lock(play(doc, [0]), alice);
+    expect(events(doc).at(-1)).toEqual({ kind: 'lock' });
+    expect(doc.chat.map((entry) => entry.id)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it('logs nothing for a game on one device, and nothing when an empty game is replaced', () => {
+    const friend = core.createDoc({ name: 'Couch', mode: 'friend', seats: { X: ALICE, O: ALICE } });
+    expect(core.update(friend, alice, { hideBoard: true }).chat).toEqual([]);
+    expect(core.newGame(onlineDoc(), alice).chat).toEqual([]);
+  });
+});
+
 describe('seat controls', () => {
   // Carol has the game open without a seat. The holder gives her an opaque id.
   const watchers: core.OpenWatcher[] = [{ id: 'c0ffee0000000001', token: CAROL, player: null }];
@@ -515,8 +542,14 @@ describe('seat rotation', () => {
     const swapped = core.answerSeat(core.seat(rotated, alice, { action: 'swap' }, watchers, ms(1)), bob, true, watchers, ms(2));
     const given = core.seat(swapped, alice, { action: 'give', watcher: 'c0ffee0000000001' }, watchers, ms(3));
     for (const doc of [rotated, swapped, given]) {
-      expect(doc.chat).toEqual(sent.chat);
-      expect(doc.chat[0]?.by).toBe(author);
+      expect(doc.chat.filter((entry) => !isChatEvent(entry))).toEqual(sent.chat);
+      expect(doc.chat[0]).toMatchObject({ by: author });
     }
+    // Each change adds an event to the log, after the message.
+    expect(given.chat.filter(isChatEvent).map((entry) => entry.event)).toEqual([
+      { kind: 'new-game', game: 2, swapped: true },
+      { kind: 'seat', action: 'swap' },
+      { kind: 'seat', action: 'give' },
+    ]);
   });
 });

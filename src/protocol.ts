@@ -42,6 +42,22 @@ export function parseMatchOptions(value: unknown): MatchOptions | undefined {
 // then shows the holder of `from`. A deleted sender's message also loses `by`.
 export type ChatFrom = Player | 'watcher';
 export type ChatMessage = { id: number; from: ChatFrom; text: string; at: EpochMs; by?: PersonId };
+
+// A change to the session that the chat log shows between the messages, for the players and the watchers.
+// It names no player: the seats can swap later, so a seat would point at the wrong person.
+export type SessionEvent =
+  | { kind: 'new-game'; game: number; swapped: boolean }
+  | { kind: 'option'; option: (typeof MATCH_OPTIONS)[number]; on: boolean }
+  | { kind: 'fixed-seats'; on: boolean }
+  | { kind: 'watcher-chat'; on: boolean }
+  | { kind: 'clock'; clock: TimeControl }
+  | { kind: 'name'; name: string }
+  | { kind: 'lock' }
+  | { kind: 'seat'; action: SeatAction['action'] };
+// Events share the id sequence of the messages, so the log keeps one order.
+export type ChatEvent = { id: number; event: SessionEvent };
+export type ChatEntry = ChatMessage | ChatEvent;
+export const isChatEvent = (entry: ChatEntry): entry is ChatEvent => 'event' in entry;
 // A GitHub account linked to a seat. Shown next to the seat, never required to play.
 export type PlayerInfo = { login: string; avatar: string };
 // The generated name of each seat's player (src/names.ts). The server computes it from the seat's
@@ -78,7 +94,8 @@ export type SessionView = {
   now: EpochMs;
   version: number;
   // Oldest first. The two players write, and the watchers too while watcherChat is on. Everybody with the code reads.
-  chat: ChatMessage[];
+  // The session adds an event for each new game, change of settings and change of seats.
+  chat: ChatEntry[];
   // Which seats have the session open right now. A seat that is away still plays: moves wait for it.
   presence: Record<Player, boolean>;
   // The GitHub account behind each seat, when its player logged in.
@@ -309,7 +326,39 @@ export function asPlayerToken(input: unknown): PlayerToken | undefined {
 const isCell = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < CELL_COUNT;
 
-export function isChatMessage(value: unknown): value is ChatMessage {
+const isOn = (value: Record<string, unknown>) => typeof value.on === 'boolean';
+
+function isSessionEvent(value: unknown): value is SessionEvent {
+  if (!isRecord(value)) return false;
+  switch (value.kind) {
+    case 'new-game':
+      return typeof value.game === 'number' && Number.isInteger(value.game) && value.game >= 1 && typeof value.swapped === 'boolean';
+    case 'option':
+      return MATCH_OPTIONS.some((option) => option === value.option) && isOn(value);
+    case 'fixed-seats':
+    case 'watcher-chat':
+      return isOn(value);
+    case 'clock':
+      return parseClock(value.clock) !== undefined;
+    case 'name':
+      return normalizeName(value.name) === value.name;
+    case 'lock':
+      return true;
+    case 'seat':
+      return SEAT_ACTIONS.some((action) => action === value.action);
+    default:
+      return false;
+  }
+}
+
+export function isChatEntry(value: unknown): value is ChatEntry {
+  if (isRecord(value) && 'event' in value) {
+    return typeof value.id === 'number' && Number.isInteger(value.id) && isSessionEvent(value.event);
+  }
+  return isChatMessage(value);
+}
+
+function isChatMessage(value: unknown): value is ChatMessage {
   if (!isRecord(value)) return false;
   const { id, from, text, at, by } = value;
   return (
@@ -413,7 +462,7 @@ export function parseSessionView(value: unknown): SessionView {
   if (clock === undefined) return fail('clock');
   if (!isEpochMs(now)) return fail('now');
   if (typeof version !== 'number' || !Number.isInteger(version)) return fail('version');
-  if (!Array.isArray(chat) || chat.length > CHAT_KEEP || !chat.every(isChatMessage)) return fail('chat');
+  if (!Array.isArray(chat) || chat.length > CHAT_KEEP || !chat.every(isChatEntry)) return fail('chat');
   if (!isRecord(presence) || typeof presence.X !== 'boolean' || typeof presence.O !== 'boolean') return fail('presence');
   if (!isRecord(players)) return fail('players');
   const playerX = players.X === null ? null : parsePlayerInfo(players.X);
@@ -457,7 +506,11 @@ export function parseSessionView(value: unknown): SessionView {
     flipped,
     now,
     version,
-    chat: chat.map(({ id, from, text, at, by }) => ({ id, from, text, at, ...(by === undefined ? {} : { by }) })),
+    chat: chat.map((entry) =>
+      isChatEvent(entry)
+        ? { id: entry.id, event: entry.event }
+        : { id: entry.id, from: entry.from, text: entry.text, at: entry.at, ...(entry.by === undefined ? {} : { by: entry.by }) },
+    ),
     presence: { X: presence.X, O: presence.O },
     players: { X: playerX, O: playerO },
     names,

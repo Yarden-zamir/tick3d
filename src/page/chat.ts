@@ -1,6 +1,6 @@
 // The chat with the other player in a game with another device.
 import { other } from '../game.ts';
-import { type ChatMessage, type SessionView, normalizeChat } from '../protocol.ts';
+import { type ChatMessage, type SessionView, isChatEvent, normalizeChat } from '../protocol.ts';
 import { sounds } from '../sound.ts';
 import { chatEl, chatInput, chatSend, chatLog, chatNoticeFrom, chatNoticeText, chatNotice, chatForm } from './dom.ts';
 import { type Sender, chatGroups } from './chat-log.ts';
@@ -63,7 +63,7 @@ export function renderChat(): void {
   const session = page.session;
   const messages = visibleChat(session);
   // A block changes the shown names, so the key holds the shown sender of every message.
-  const shown = `${session.code}:${messages.map((message) => `${message.id}:${senderOf(session, message).label}`).join(',')}`;
+  const shown = `${session.code}:${messages.map((entry) => `${entry.id}:${isChatEvent(entry) ? 'event' : senderOf(session, entry).label}`).join(',')}`;
   if (shown === chatShown) return;
   chatShown = shown;
   if (messages.length === 0) {

@@ -3,11 +3,12 @@ import { sameClock, describeClock } from '../clock.ts';
 import { checkPlayoffInvite } from './playoff-invite.ts';
 import { play, newGame, type Player, other } from '../game.ts';
 import { OnlineError, api } from '../online.ts';
-import { type Code, type GameId, type SessionView, parseSessionView, toGame } from '../protocol.ts';
+import { type ChatMessage, type Code, type GameId, MATCH_OPTIONS, type SessionView, isChatEvent, parseSessionView, toGame } from '../protocol.ts';
 import { type LinkIntent, withWatch } from '../session-link.ts';
 import type { SessionDoc } from '../session/format.ts';
 import { sounds } from '../sound.ts';
 import { notifyChat } from './chat.ts';
+import { eventText } from './chat-log.ts';
 import { ownPerson, visibleChat } from './safety.ts';
 import { scheduleComputer } from './computer.ts';
 import { burstEl } from './dom.ts';
@@ -111,10 +112,8 @@ export function applyView(view: SessionView): void {
     if (page.session.watcherChat !== previous.watcherChat) showToast(watcherChatText(page.session.watcherChat));
     const seatChange = seatChangeText(previous, page.session);
     if (seatChange !== undefined) showToast(seatChange);
-    for (const [option, label] of [['hideBoard', 'Hide board'], ['hideHistory', 'Hide history'], ['hideCoordinates', 'Hide coordinates']] as const) {
-      if (page.session.options[option] !== previous.options[option]) {
-        showToast(`${label} is ${page.session.options[option] ? 'on' : 'off'} for both players.`);
-      }
+    for (const option of MATCH_OPTIONS) {
+      if (page.session.options[option] !== previous.options[option]) showToast(eventText({ kind: 'option', option, on: page.session.options[option] }));
     }
   }
   // A move that is not on screen yet came from the other player or the computer. Our own moves were announced already.
@@ -132,7 +131,10 @@ export function applyView(view: SessionView): void {
   const lastSeen = previous.chat.at(-1)?.id ?? -1;
   // Messages from a blocked person or reported here give no sound and no notice.
   const own = ownPerson(page.session);
-  const incoming = visibleChat(page.session).filter((message) => message.id > lastSeen && (message.by === undefined ? message.from !== page.session?.you : message.by !== own));
+  // Events give no sound: a toast already tells of each change.
+  const incoming = visibleChat(page.session).filter(
+    (entry): entry is ChatMessage => !isChatEvent(entry) && entry.id > lastSeen && (entry.by === undefined ? entry.from !== page.session?.you : entry.by !== own),
+  );
   const newest = incoming.at(-1);
   if (newest !== undefined && shared()) {
     sounds.message();
@@ -248,11 +250,9 @@ export function defaultSessionName(mode: Mode = 'online'): string {
   return mode === 'online' ? `Game of ${day}` : `${kind[0]?.toUpperCase()}${kind.slice(1)} · ${day}`;
 }
 
-export const seatLockText = (fixedSeats: boolean): string =>
-  fixedSeats ? 'Seats kept.' : 'Seats swap each game.';
+export const seatLockText = (on: boolean): string => eventText({ kind: 'fixed-seats', on });
 
-export const watcherChatText = (watcherChat: boolean): string =>
-  watcherChat ? 'Watchers can chat.' : 'Only the players can chat.';
+export const watcherChatText = (on: boolean): string => eventText({ kind: 'watcher-chat', on });
 
 // In a computer game the seats rotate between games, so "You play" follows the seat of the live game.
 // Limit: a click on the other seat still opens the newest session of that match-up, as before rotation.
