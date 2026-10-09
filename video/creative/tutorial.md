@@ -1,6 +1,6 @@
 # Tutorial: "How to win"
 
-A 27.5 s video that shows which lines win and why. The plan is `video/src/tutorial/plan.ts`. This page explains it.
+A 40 s video that shows which lines win and why. It goes slowly on purpose: every label stays long enough to read, and every example draws one cell per eighth note (maintainer feedback on #119). The plan is `video/src/tutorial/plan.ts`. This page explains it.
 
 Times are sixteenths (s16) of the 136 BPM grid of `src/song.ts`, and seconds. One s16 is 0.1103 s. One bar is 16 s16.
 
@@ -23,22 +23,22 @@ The 8 corners and the 8 cells of the core lie on 7 lines each. Every other cell 
 
 | # | Section | s16 / seconds | Picture | Text | Sound |
 |---|---|---|---|---|---|
-| 1 | Title | 0–15 / 0.000–1.654 | The tower from the home view. The layers bump one per beat. | "How to" / "win" | Classic C5, D5, E5, G5, one per layer. |
-| 2 | Rows | 16–47 / 1.765–5.184 | An X drops on each cell of row 60–63, one per eighth note. The win beam joins them on s16 24. On s16 32 all 16 rows flash, then stay faint. | "4 in a row" / "wins.", then "Rows" / "+16". The counter starts. | A soft Cells note per cell, the win jingle on s16 24, a soft chord on s16 32. |
-| 3 | Columns | 48–63 / 5.294–6.949 | The camera turns so the columns run across. Example 51–55–59–63, then all 16 columns. | "Columns" / "+16" | A note per cell, a chord on beat 3. |
-| 4 | Pillars | 64–79 / 7.059–8.713 | From the side, low. Example 14–30–46–62, then all 16 pillars. | "Pillars: the 3D twist" / "+16" | As section 3. |
-| 5 | Flat diagonals | 80–95 / 8.824–10.478 | From high above. Example 48–53–58–63, then all 8. | "Flat diagonals" / "+8" | As section 3. |
-| 6 | Rising diagonals, front | 96–111 / 10.588–12.243 | Square to the front. Example 12–29–46–63, then the 8 rising diagonals on the planes that face the front. | "Rising diagonals" / "+8" | As section 3. |
-| 7 | Rising diagonals, side | 112–127 / 12.353–14.007 | The camera turns a quarter turn. Example 3–23–43–63, then the 8 on the side planes. | The words stay; a new "+8" | As section 3. |
-| 8 | Corner to corner, first pair | 128–143 / 14.118–15.772 | Square to the plane of corners 0 and 63. Example 0–21–42–63, then the 2 diagonals that cross in that plane. | "Corner to corner" / "+2" | As section 3. |
-| 9 | Corner to corner, second pair | 144–159 / 15.882–17.537 | A quarter turn. Example 3–22–41–60, then the other 2. The counter reaches 76. | The words stay; a new "+2" | As section 3. |
-| 10 | 76 ways | 160–175 / 17.647–19.301 | All 76 lines flash, one kind per s16, then stay faint. | "76 ways" / "to win." | A rising note per kind. |
-| 11 | Strong cells | 176–191 / 19.412–21.066 | Corner 63 lights, then its 7 lines, one per s16. On s16 184 core cell 42 does the same. | "Corners and the core" / "7 lines each" | A rising note per line: 7 notes, twice. |
-| 12 | Other cells | 192–207 / 21.176–22.831 | Cell 61 lights, then its 4 lines, one per eighth note. | "Every other cell" / "4 lines" | 4 rising notes. |
-| 13 | Take them | 208–223 / 22.941–24.596 | The 8 corners light on s16 208, the 8 core cells on 212. They stay lit to the end. | "The 16 strong cells" / "Take them." | A chord on 208 and 212, the win jingle on 216. |
-| 14 | End card | 224–249.3 / 24.706–27.500 | The tower shrinks into the top half of the square. | The end card of the spot: the `tick3d` wordmark on 224, ".yarden-zamir.com" on 228, "Play in your browser." on 232, then the official App Store and Google Play badges on 236, and the "soon" note on 240. | Classic C5, D5, E5, G5 on the beats, the final chord on 240. |
+| 1 | Title | 0–15 / 0.000–1.654 | The tower from the home view. The layers bump one per beat. | "How to" / "win" on 4 | Classic C5, D5, E5, G5, one per layer. |
+| 2 | Rows | 16–55 / 1.765–6.066 | An X drops on each cell of row 60–63, one per eighth note. The win beam joins them on s16 24. On s16 40 all 16 rows flash, then stay faint. | "4 in a row" / "wins." on 24, then "Rows" on 36 / "+16" on 40. The counter starts. | A soft Cells note per cell, the win jingle on s16 24, a soft chord on s16 40. |
+| 3 | Columns | 56–79 / 6.176–8.713 | The camera turns so the columns run across. Example 51–55–59–63, one cell per eighth note, then all 16 columns halfway. | "Columns" / "+16" 6 s16 later | A note per cell, a chord when the set shows. |
+| 4 | Pillars | 80–103 / 8.824–11.360 | From the side, low. Example 14–30–46–62, then all 16 pillars. | "Pillars: the 3D twist" / "+16" | As section 3. |
+| 5 | Flat diagonals | 104–127 / 11.471–14.007 | From high above. Example 48–53–58–63, then all 8. | "Flat diagonals" / "+8" | As section 3. |
+| 6 | Rising diagonals, front | 128–151 / 14.118–16.654 | Square to the front. Example 12–29–46–63, then the 8 rising diagonals on the planes that face the front. | "Rising diagonals" / "+8" | As section 3. |
+| 7 | Rising diagonals, side | 152–175 / 16.765–19.301 | The camera turns a quarter turn. Example 3–23–43–63, then the 8 on the side planes. | The words stay; a new "+8" | As section 3. |
+| 8 | Corner to corner, first pair | 176–199 / 19.412–21.949 | Square to the plane of corners 0 and 63. Example 0–21–42–63, then the 2 diagonals that cross in that plane. | "Corner to corner" / "+2" | As section 3. |
+| 9 | Corner to corner, second pair | 200–223 / 22.059–24.596 | A quarter turn. Example 3–22–41–60, then the other 2. The counter reaches 76. | The words stay; a new "+2" | As section 3. |
+| 10 | 76 ways | 224–247 / 24.706–27.243 | All 76 lines flash, one kind per s16, then stay faint. | "76 ways" / "to win." on 230 | A rising note per kind. |
+| 11 | Strong cells | 248–287 / 27.353–31.654 | Corner 63 lights, then its 7 lines, one per eighth note. On s16 268 core cell 42 does the same. | "Corners and the core" / "7 lines each" on 254 | A rising note per line: 7 notes, twice. |
+| 12 | Other cells | 288–311 / 31.765–34.301 | Cell 61 lights, then its 4 lines, one per beat. | "Every other cell" / "4 lines" on 294 | 4 rising notes. |
+| 13 | Take them | 312–335 / 34.412–36.949 | The 8 corners light on s16 312, the 8 core cells on 316. They stay lit to the end. | "The 16 strong cells" / "Take them." on 322 | A chord on 312 and 316, the win jingle on 324. |
+| 14 | End card | 336–362.7 / 37.059–40.000 | The tower shrinks into the top half of the square. | The end card of the spot: the `tick3d` wordmark on 336, ".yarden-zamir.com" on 340, "Play in your browser." on 344, then the official App Store and Google Play badges on 348, and the "soon" note on 352. | Classic C5, D5, E5, G5 on the beats, the final chord on 352. |
 
-The rising diagonals and the space diagonals are the hard kinds, so each one gets 2 bars. Each bar shows its own example and half of the set, seen square on.
+Each kind of line gets 1.5 bars, so a section can start on a half bar. The rising diagonals and the space diagonals are the hard kinds, so each one gets 2 sections (3 bars). Each section shows its own example and half of the set, seen square on.
 
 ## Rules
 

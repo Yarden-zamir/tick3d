@@ -7,17 +7,17 @@ import { KINDS, STRONG_CELLS, kindOf } from './lines.ts';
 import { DURATION_FRAMES, DURATION_SECONDS, END, SECTIONS, eventsOf, sectionAt } from './plan.ts';
 
 describe('the tutorial plan', () => {
-  it('lasts at most 29.0 s, in whole frames', () => {
-    expect(DURATION_SECONDS).toBeLessThanOrEqual(29);
+  it('lasts at most 45.0 s, in whole frames', () => {
+    expect(DURATION_SECONDS).toBeLessThanOrEqual(45);
     expect(Number.isInteger(DURATION_FRAMES)).toBe(true);
   });
 
-  it('runs its sections back to back from 0 to the end, each on a downbeat', () => {
+  it('runs its sections back to back from 0 to the end, each on a half bar', () => {
     expect(SECTIONS[0]?.start).toBe(0);
     expect(SECTIONS.at(-1)?.end).toBe(END);
     expect(SECTIONS.slice(0, -1).map((section) => section.end)).toEqual(SECTIONS.slice(1).map((section) => section.start));
     for (const section of SECTIONS) {
-      expect(section.start % 16, section.name).toBe(0);
+      expect(section.start % 8, section.name).toBe(0);
       expect(section.end, section.name).toBeGreaterThan(section.start);
       expect(sectionAt(frameOf(section.start))).toBe(section);
     }
@@ -58,10 +58,10 @@ describe('the tutorial plan', () => {
     }
   });
 
-  it('gives the rising and the space diagonals 2 bars each', () => {
+  it('gives the rising and the space diagonals 3 bars each', () => {
     const bars = (kind: string) => eventsOf('set').filter(({ event }) => event.of === kind).reduce((sum, { section }) => sum + (section.end - section.start) / 16, 0);
-    expect(bars('rising-diagonal')).toBe(2);
-    expect(bars('space-diagonal')).toBe(2);
+    expect(bars('rising-diagonal')).toBe(3);
+    expect(bars('space-diagonal')).toBe(3);
   });
 
   it('puts the counts of the code on screen', () => {

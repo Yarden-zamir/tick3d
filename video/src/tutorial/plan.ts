@@ -8,9 +8,10 @@ import type { Word } from '../lettering.ts';
 import { ELEVATION, HOME_AZIMUTH, HOME_DISTANCE } from '../rig.ts';
 import { type Kind, MOST_LINES, STRONG_CELLS, keeps, linesOf } from './lines.ts';
 
-export const DURATION_SECONDS = 27.5;
+// Slow enough to read every label and follow every example (maintainer feedback on #119). The limit is 45 s.
+export const DURATION_SECONDS = 40;
 export const DURATION_FRAMES = DURATION_SECONDS * FPS;
-// The end of the tutorial in sixteenths: 249.3, so the final chord rings for a little over 1 s.
+// The end of the tutorial in sixteenths: 362.7, so the final chord rings for a little over 1 s.
 export const END = DURATION_SECONDS / SIXTEENTH;
 
 // Where the camera stands: a point on an orbit around the centre of the tower. `zoom` and `lift` frame the
@@ -61,20 +62,22 @@ export type Section = {
 
 const view = (azimuth: number, elevation: number, distance = HOME_DISTANCE, zoom = 0.86, lift = -0.08): View => ({ azimuth, elevation, distance, zoom, lift });
 
-// A bar for a kind of line: the label at the downbeat, an example line from the downbeat, one cell per sixteenth,
-// and on beat 3 the lines of the kind that this bar shows (all of them by default) with their count.
+// A section for a kind of line, 1.5 bars long: the label at the start and its count 6 sixteenths later, an example
+// line from the start, one cell per eighth note, and halfway the lines of the kind that this section shows (all of
+// them by default).
+const KIND_LENGTH = 24;
 function kindSection(name: string, of: Kind, start: number, text: string, line: Line, where: View, lines = linesOf(of)): Section {
   return {
     name,
     start,
-    end: start + 16,
+    end: start + KIND_LENGTH,
     view: where,
     arrive: 'lead',
-    labels: [{ at: start, text, stickerAt: start + 8, sticker: `+${lines.length}` }],
+    labels: [{ at: start, text, stickerAt: start + 6, sticker: `+${lines.length}` }],
     counter: true,
     events: [
-      { kind: 'line', at: start, gap: 1, line },
-      { kind: 'set', at: start + 8, of, lines },
+      { kind: 'line', at: start, gap: 2, line },
+      { kind: 'set', at: start + KIND_LENGTH / 2, of, lines },
     ],
   };
 }
@@ -101,79 +104,79 @@ export const SECTIONS: readonly Section[] = [
   {
     name: 'rows',
     start: 16,
-    end: 48,
+    end: 56,
     view: view(12, 32),
     arrive: 'lead',
     labels: [
       { at: 16, text: '4 in a row', stickerAt: 24, sticker: 'wins.' },
-      { at: 32, text: 'Rows', stickerAt: 32, sticker: `+${linesOf('row').length}` },
+      { at: 36, text: 'Rows', stickerAt: 40, sticker: `+${linesOf('row').length}` },
     ],
     counter: true,
     events: [
       { kind: 'line', at: 16, gap: 2, line: [60, 61, 62, 63] },
       { kind: 'jingle', at: 24 },
-      { kind: 'set', at: 32, of: 'row', lines: linesOf('row') },
+      { kind: 'set', at: 40, of: 'row', lines: linesOf('row') },
     ],
   },
-  kindSection('columns', 'column', 48, 'Columns', [51, 55, 59, 63], view(68, 32)),
-  kindSection('pillars', 'pillar', 64, 'Pillars: the 3D twist', [14, 30, 46, 62], view(22, 9)),
-  kindSection('flat', 'flat-diagonal', 80, 'Flat diagonals', [48, 53, 58, 63], view(30, 62)),
-  // The rising diagonals take 2 bars: the 8 on the planes that face the front, then the 8 on the side planes,
+  kindSection('columns', 'column', 56, 'Columns', [51, 55, 59, 63], view(68, 32)),
+  kindSection('pillars', 'pillar', 80, 'Pillars: the 3D twist', [14, 30, 46, 62], view(22, 9)),
+  kindSection('flat', 'flat-diagonal', 104, 'Flat diagonals', [48, 53, 58, 63], view(30, 62)),
+  // The rising diagonals take 3 bars: the 8 on the planes that face the front, then the 8 on the side planes,
   // each seen square on.
-  kindSection('rising-front', 'rising-diagonal', 96, 'Rising diagonals', [12, 29, 46, 63], view(0, 12), linesOf('rising-diagonal').filter((line) => keeps(line, 'row'))),
-  kindSection('rising-side', 'rising-diagonal', 112, 'Rising diagonals', [3, 23, 43, 63], view(90, 12), linesOf('rising-diagonal').filter((line) => keeps(line, 'column'))),
-  // The space diagonals take 2 bars: one crossing pair each.
-  kindSection('corners-1', 'space-diagonal', 128, 'Corner to corner', [0, 21, 42, 63], view(-45, 14), spacePair((row, column) => row === column)),
-  kindSection('corners-2', 'space-diagonal', 144, 'Corner to corner', [3, 22, 41, 60], view(45, 14), spacePair((row, column) => row + column === 3)),
+  kindSection('rising-front', 'rising-diagonal', 128, 'Rising diagonals', [12, 29, 46, 63], view(0, 12), linesOf('rising-diagonal').filter((line) => keeps(line, 'row'))),
+  kindSection('rising-side', 'rising-diagonal', 152, 'Rising diagonals', [3, 23, 43, 63], view(90, 12), linesOf('rising-diagonal').filter((line) => keeps(line, 'column'))),
+  // The space diagonals take 3 bars: one crossing pair each.
+  kindSection('corners-1', 'space-diagonal', 176, 'Corner to corner', [0, 21, 42, 63], view(-45, 14), spacePair((row, column) => row === column)),
+  kindSection('corners-2', 'space-diagonal', 200, 'Corner to corner', [3, 22, 41, 60], view(45, 14), spacePair((row, column) => row + column === 3)),
   {
     name: 'all',
-    start: 160,
-    end: 176,
+    start: 224,
+    end: 248,
     view: view(HOME_AZIMUTH, ELEVATION),
     arrive: 'lead',
-    labels: [{ at: 160, text: `${LINES.length} ways`, stickerAt: 162, sticker: 'to win.' }],
+    labels: [{ at: 224, text: `${LINES.length} ways`, stickerAt: 230, sticker: 'to win.' }],
     counter: false,
-    events: [{ kind: 'all', at: 160 }],
+    events: [{ kind: 'all', at: 224 }],
   },
   {
     name: 'strong',
-    start: 176,
-    end: 192,
+    start: 248,
+    end: 288,
     view: view(38, 20),
     arrive: 'lead',
-    labels: [{ at: 176, text: 'Corners and the core', stickerAt: 178, sticker: `${MOST_LINES} lines each` }],
+    labels: [{ at: 248, text: 'Corners and the core', stickerAt: 254, sticker: `${MOST_LINES} lines each` }],
     counter: false,
     events: [
-      { kind: 'through', at: 176, gap: 1, cell: 63 },
-      { kind: 'through', at: 184, gap: 1, cell: 42 },
+      { kind: 'through', at: 248, gap: 2, cell: 63 },
+      { kind: 'through', at: 268, gap: 2, cell: 42 },
     ],
   },
   {
     name: 'other',
-    start: 192,
-    end: 208,
+    start: 288,
+    end: 312,
     view: view(20, 26),
     arrive: 'lead',
-    labels: [{ at: 192, text: 'Every other cell', stickerAt: 194, sticker: `${linesThrough(OTHER_CELL).length} lines` }],
+    labels: [{ at: 288, text: 'Every other cell', stickerAt: 294, sticker: `${linesThrough(OTHER_CELL).length} lines` }],
     counter: false,
-    events: [{ kind: 'through', at: 192, gap: 2, cell: OTHER_CELL }],
+    events: [{ kind: 'through', at: 288, gap: 4, cell: OTHER_CELL }],
   },
   {
     name: 'take',
-    start: 208,
-    end: 224,
+    start: 312,
+    end: 336,
     view: view(HOME_AZIMUTH, 22),
     arrive: 'lead',
-    labels: [{ at: 208, text: `The ${STRONG_CELLS.length} strong cells`, stickerAt: 216, sticker: 'Take them.' }],
+    labels: [{ at: 312, text: `The ${STRONG_CELLS.length} strong cells`, stickerAt: 322, sticker: 'Take them.' }],
     counter: false,
     events: [
-      { kind: 'strong', at: 208 },
-      { kind: 'jingle', at: 216 },
+      { kind: 'strong', at: 312 },
+      { kind: 'jingle', at: 324 },
     ],
   },
   {
     name: 'end-card',
-    start: 224,
+    start: 336,
     end: END,
     // The end card of the spot (the 'settle' camera): the tower shrinks into the top half of the square.
     view: { azimuth: HOME_AZIMUTH, elevation: ELEVATION, distance: HOME_DISTANCE, zoom: 0.58, lift: 0.46 },
@@ -186,17 +189,17 @@ export const SECTIONS: readonly Section[] = [
       // beat later (lettering.ts), so every part shows for at least 1 s before the end.
       {
         kind: 'end-card',
-        at: 224,
+        at: 336,
         words: [
-          { text: 'tick3d', at: 224 },
-          { text: '.yarden-zamir.com', at: 228 },
-          { text: 'Play in your browser.', at: 232 },
-          { text: 'App Store', at: 236, badge: 'app-store', note: 'soon' },
-          { text: 'Google Play', at: 236, badge: 'google-play' },
+          { text: 'tick3d', at: 336 },
+          { text: '.yarden-zamir.com', at: 340 },
+          { text: 'Play in your browser.', at: 344 },
+          { text: 'App Store', at: 348, badge: 'app-store', note: 'soon' },
+          { text: 'Google Play', at: 348, badge: 'google-play' },
         ],
       },
-      ...[0, 1, 2, 3].map((layer) => ({ kind: 'layer-pulse' as const, at: 224 + layer * 4, layer })),
-      { kind: 'final-chord', at: 240 },
+      ...[0, 1, 2, 3].map((layer) => ({ kind: 'layer-pulse' as const, at: 336 + layer * 4, layer })),
+      { kind: 'final-chord', at: 352 },
     ],
   },
 ];
