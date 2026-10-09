@@ -1,7 +1,7 @@
 name: video
 
 # Renders the 15 s spot of video/ (issue #119): every variant in both crops, as parallel jobs, each with the
-# stills per bar and the soundtrack. It also renders the 24 s tutorial "How to win" in both crops. On a pull
+# stills per bar and the soundtrack. It also renders the 27.5 s tutorial "How to win" in both crops. On a pull
 # request from this repository, the previews job then publishes a GIF, the stills sheets and the MP4s of each
 # variant and of the tutorial to the pr-assets branch, where the pull request and the issue link them. It runs by
 # hand, on a push to main that touches the video, and on a pull request that touches it. A tag such as video-v1
@@ -100,7 +100,7 @@ jobs:
           if-no-files-found: error
 
   # The tutorial "How to win" (video/src/tutorial/), one job per crop: the MP4, the soundtrack and one still per
-  # section. It lasts 24.0 s; the hard limit is 25.0 s.
+  # section. It lasts 27.5 s (the check allows 0.1 s either way); the hard limit is 29.0 s.
   tutorial:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -134,7 +134,7 @@ jobs:
           seconds=$(npx remotion ffprobe -v error -show_entries format=duration -of csv=p=0 "$file")
           echo "$file: $got, $seconds s"
           [ "$got" = "$size" ] || { echo "$file is $got, not $size" >&2; exit 1; }
-          awk -v s="$seconds" 'BEGIN { exit !(s >= 23.9 && s <= 25.0) }' || { echo "$file lasts $seconds s, not 24.0 s (at most 25.0 s)" >&2; exit 1; }
+          awk -v s="$seconds" 'BEGIN { exit !(s >= 27.4 && s <= 27.6 && s <= 29.0) }' || { echo "$file lasts $seconds s, not 27.5 s (at most 29.0 s)" >&2; exit 1; }
       - uses: actions/upload-artifact@v7
         with:
           name: tick3d-tutorial-${{ matrix.crop }}
@@ -188,13 +188,13 @@ jobs:
             ffmpeg -v error -y -i "$land/tick3d-15s-landscape.mp4" -vf 'fps=12,scale=360:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=64[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3' -loop 0 "$dest/spot.gif"
             cp "$land/tick3d-15s-landscape.mp4" "$port/tick3d-15s-portrait.mp4" "$dest/"
           done
-          # The tutorial: one still per section (12), in order by their numbered names.
+          # The tutorial: one still per section (14), in order by their numbered names.
           dest=pr-assets/$PREVIEW_DIR/tutorial
           land=renders/tick3d-tutorial-landscape
           port=renders/tick3d-tutorial-portrait
           mkdir -p "$dest"
-          montage "$land"/stills/landscape-*.png -tile 4x3 -geometry 400x225+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/sections.png"
-          montage "$port"/stills/portrait-*.png -tile 6x2 -geometry 198x352+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/portrait.png"
+          montage "$land"/stills/landscape-*.png -tile 5x3 -geometry 400x225+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/sections.png"
+          montage "$port"/stills/portrait-*.png -tile 7x2 -geometry 198x352+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/portrait.png"
           ffmpeg -v error -y -i "$land/tick3d-tutorial-landscape.mp4" -vf 'fps=12,scale=360:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=64[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3' -loop 0 "$dest/spot.gif"
           cp "$land/tick3d-tutorial-landscape.mp4" "$port/tick3d-tutorial-portrait.mp4" "$dest/"
           ls -l "pr-assets/$PREVIEW_DIR"/*
