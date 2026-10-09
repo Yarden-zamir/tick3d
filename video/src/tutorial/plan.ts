@@ -4,6 +4,7 @@
 import { LINES, type Line, linesThrough } from '../../../src/game.ts';
 import { SIXTEENTH } from '../../../src/song.ts';
 import { FPS, frameOf } from '../grid.ts';
+import type { Word } from '../lettering.ts';
 import { ELEVATION, HOME_AZIMUTH, HOME_DISTANCE } from '../rig.ts';
 import { type Kind, MOST_LINES, STRONG_CELLS, linesOf } from './lines.ts';
 
@@ -33,8 +34,9 @@ type TutorialEvent =
   | { kind: 'strong'; at: number }
   // The win jingle of the game, one note per sixteenth.
   | { kind: 'jingle'; at: number }
-  // The wordmark slams in at `at`, the URL suffix slides out of it 4 sixteenths later.
-  | { kind: 'end-card'; at: number }
+  // The end card of the spot (lettering.ts endCard): the wordmark, the URL suffix, the call to action and the
+  // store badges, each at its own sixteenth.
+  | { kind: 'end-card'; at: number; words: readonly Word[] }
   // The final chord, to the end.
   | { kind: 'final-chord'; at: number };
 
@@ -169,7 +171,19 @@ export const SECTIONS: readonly Section[] = [
     labels: [],
     counter: false,
     events: [
-      { kind: 'end-card', at: 192 },
+      // As in the spot: the suffix slides out 4 sixteenths after the wordmark. The call to action comes on the
+      // beat after the suffix settles, and the badges one beat apart, so "iOS" still shows for 1 s at the end.
+      {
+        kind: 'end-card',
+        at: 192,
+        words: [
+          { text: 'tick3d', at: 192 },
+          { text: '.yarden-zamir.com', at: 196 },
+          { text: 'Play in your browser.', at: 200 },
+          { text: 'Android', at: 204, icon: 'play-store' },
+          { text: 'iOS', at: 208, icon: 'apple' },
+        ],
+      },
       ...[0, 1, 2, 3].map((layer) => ({ kind: 'layer-pulse' as const, at: 192 + layer * 4, layer })),
       { kind: 'final-chord', at: 208 },
     ],

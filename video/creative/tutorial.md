@@ -34,7 +34,7 @@ The 8 corners and the 8 cells of the core lie on 7 lines each. Every other cell 
 | 9 | Strong cells | 144–159 / 15.882–17.537 | Corner 63 lights, then its 7 lines, one per s16. On s16 152 core cell 42 does the same. | "Corners and the core" / "7 lines each" | A rising note per line: 7 notes, twice. |
 | 10 | Other cells | 160–175 / 17.647–19.301 | Cell 61 lights, then its 4 lines, one per eighth note. | "Every other cell" / "4 lines" | 4 rising notes. |
 | 11 | Take them | 176–191 / 19.412–21.066 | The 8 corners light on s16 176, the 8 core cells on 180. They stay lit to the end. | "The 16 strong cells" / "Take them." | A chord on 176 and 180, the win jingle on 184. |
-| 12 | End card | 192–217.6 / 21.176–24.000 | The tower shrinks into the top half of the square. | The `tick3d` wordmark on 192, ".yarden-zamir.com" slides out on 196. | Classic C5, D5, E5, G5 on the beats, the final chord on 208. |
+| 12 | End card | 192–217.6 / 21.176–24.000 | The tower shrinks into the top half of the square. | The end card of the spot: the `tick3d` wordmark on 192, ".yarden-zamir.com" on 196, "Play in your browser." on 200, then the "Android" and "iOS" badges on 204 and 208. | Classic C5, D5, E5, G5 on the beats, the final chord on 208. |
 
 ## Rules
 

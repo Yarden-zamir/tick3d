@@ -58,8 +58,6 @@ export function drawText(ctx: CanvasRenderingContext2D, frame: number, theme: Th
   onSquare(ctx, () => {
     label(ctx, frame, theme);
     if (sectionAt(frame).counter) counter(ctx, frame, theme);
-    for (const { event } of eventsOf('end-card')) {
-      endCard(ctx, frame, [{ text: 'tick3d', at: event.at }, { text: '.yarden-zamir.com', at: event.at + 4 }], theme);
-    }
+    for (const { event } of eventsOf('end-card')) endCard(ctx, frame, event.words, theme);
   });
 }
