@@ -3,11 +3,11 @@ import { DIFFICULTIES } from '../ai.ts';
 import { onSegmented } from '../board/view-controls.ts';
 import { setMuted } from '../sound.ts';
 import { undoMove } from './computer.ts';
-import { reviewEl, newGameButton, undoButton, lockButton, seatLockButtons, soundButton } from './dom.ts';
+import { reviewEl, newGameButton, undoButton, lockButton, seatLockButtons, soundButton, watcherChatButton } from './dom.ts';
 import { reject, showError, showToast } from './feedback.ts';
 import { nearbyKind, endNearby, openNearby } from './nearby.ts';
 import { render } from './render.ts';
-import { leaveSession, createSession, openLocalSession, withBusy, applyView, startNewGame, seatLockText } from './sessions.ts';
+import { leaveSession, createSession, openLocalSession, withBusy, applyView, startNewGame, seatLockText, watcherChatText } from './sessions.ts';
 import { LAYOUTS, MATCH_OPTIONS, VIEWS } from '../protocol.ts';
 import { settings, oneOf, MODES, PLAYERS, saveSettings } from './settings.ts';
 import { page, settingsLocked, isLive, setReview, shared } from './state.ts';
@@ -106,6 +106,18 @@ export function setupControls(): void {
       });
     });
   }
+
+  // Watcher chat: on, watchers can write in the chat. A lock leaves it open, so a player can turn it off mid-game.
+  watcherChatButton.addEventListener('click', () => {
+    if (page.session === undefined) return reject(undefined, 'no-session');
+    if (page.session.you === null) return reject(undefined, 'spectator');
+    const { code, backend } = page.session;
+    const watcherChat = !page.session.watcherChat;
+    void withBusy(async () => {
+      applyView(await backend.update(code, { watcherChat }));
+      if (!shared()) showToast(watcherChatText(watcherChat));
+    });
+  });
 
   lockButton.addEventListener('click', () => {
     if (!isLive() || page.review || page.session === undefined || page.session.locked) return;

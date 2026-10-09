@@ -21,6 +21,11 @@ export const PLAY_ICON = icon('<path d="M8 5.5v13l10.5-6.5Z" fill="currentColor"
 // An eye: a watcher in the Players box.
 export const EYE_ICON = icon('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>');
 
+// Watcher chat: a speech bubble, the same as the chat notice in index.html. Off adds a slash.
+const BUBBLE = '<path d="M5 4.5h14a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-7l-4.5 3.5V17H5a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2Z"/>';
+export const CHAT_ON_ICON = icon(`${BUBBLE}<path d="M8 9.5h8M8 13h5"/>`);
+export const CHAT_OFF_ICON = icon(`${BUBBLE}<path d="M3 3l18 18"/>`);
+
 // A bar chart: the Stats button of My games.
 export const STATS_ICON = icon('<path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/>');
 // Report: a flag. Block: a circle with a slash.
