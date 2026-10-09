@@ -195,6 +195,7 @@
   ],
   "text": [
     {
+      "style": "center",
       "words": [
         {
           "text": "4 in a row.",
@@ -208,6 +209,7 @@
       "until": 32
     },
     {
+      "style": "top",
       "words": [
         {
           "text": "Every cell",
@@ -221,6 +223,7 @@
       "until": 62
     },
     {
+      "style": "end-card",
       "words": [
         {
           "text": "tick3d",

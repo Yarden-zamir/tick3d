@@ -13,11 +13,11 @@ const NO_TIME = toEpochMs(0);
 
 import arcade from '../creative/variants/arcade.json' with { type: 'json' };
 import mellow from '../creative/variants/mellow.json' with { type: 'json' };
-import cards from '../creative/variants/cards.json' with { type: 'json' };
+import hook from '../creative/variants/hook.json' with { type: 'json' };
 
 // The variants of the spot: VIDEO_VARIANT picks an overlay of video/creative/variants/. Unset, or 'classic', is
 // the approved cut. scripts/render.ts passes the variable into the render browser.
-export const VARIANTS = { classic: undefined, arcade, mellow, cards } as const;
+export const VARIANTS = { classic: undefined, hook, arcade, mellow } as const;
 export type VariantName = keyof typeof VARIANTS;
 const isVariantName = (name: string): name is VariantName => Object.hasOwn(VARIANTS, name);
 const requested = globalThis.process?.env?.['VIDEO_VARIANT'] ?? 'classic';

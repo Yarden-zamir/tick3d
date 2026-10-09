@@ -1,0 +1,67 @@
+{
+  "name": "hook",
+  "differs": "A cold open for social feeds: bar 1 plays in the black and white Mono theme while \"Tic-tac-toe? / Too easy.\" slams in with the layers, then colour sweeps in on \"4 in a row. In 3D.\"",
+  "text": [
+    {
+      "style": "top",
+      "words": [
+        {
+          "text": "Tic-tac-toe?",
+          "at": 0
+        },
+        {
+          "text": "Too easy.",
+          "at": 8
+        }
+      ],
+      "until": 16
+    },
+    {
+      "style": "center",
+      "words": [
+        {
+          "text": "4 in a row.",
+          "at": 16
+        },
+        {
+          "text": "In 3D.",
+          "at": 24
+        }
+      ],
+      "until": 32
+    },
+    {
+      "style": "top",
+      "words": [
+        {
+          "text": "Every cell",
+          "at": 48
+        },
+        {
+          "text": "has a note.",
+          "at": 52
+        }
+      ],
+      "until": 62
+    },
+    {
+      "style": "end-card",
+      "words": [
+        {
+          "text": "tick3d",
+          "at": 96
+        },
+        {
+          "text": ".yarden-zamir.com",
+          "at": 100
+        }
+      ],
+      "until": 128
+    }
+  ],
+  "bars": {
+    "1": {
+      "theme": "mono"
+    }
+  }
+}

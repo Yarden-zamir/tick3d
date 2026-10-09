@@ -53,11 +53,14 @@ type Bar = {
 // A move on the timeline. Sound: the melody note of songOf for this move index, in the sound set of its bar.
 type TimedMove = { move: number; player: Player; cell: number; at: number };
 
-// One on-screen line. Each word group slams in at its own sixteenth. The line leaves at `until`.
-// Style 'cards': each word group is a feature card in the sticker style of the wordmark, slapped on top of the
-// card before it.
-const TEXT_STYLES = ['cards'] as const;
-type TextLine = { words: readonly { text: string; at: number }[]; until: number; style?: (typeof TEXT_STYLES)[number] };
+// One on-screen line. Each word group slams in at its own sixteenth. The line leaves at `until`. The style places it:
+// - 'center': two word groups across the middle, the second one a sticker (src/hud.ts LOOKS);
+// - 'top': two word groups above the tower, the second one a sticker;
+// - 'cards': feature cards in the sticker style of the wordmark above the tower, one at a time;
+// - 'end-card': the wordmark and the URL suffix. It is the last line, and it stays to the end of the spot.
+const TEXT_STYLES = ['center', 'top', 'cards', 'end-card'] as const;
+export type TextStyle = (typeof TEXT_STYLES)[number];
+type TextLine = { words: readonly { text: string; at: number }[]; until: number; style: TextStyle };
 
 export type Beats = {
   bpm: 136;
@@ -208,8 +211,7 @@ export function parseBeats(value: unknown): Beats {
         const word = record(w, `text[${i}].words[${j}]`);
         return { text: text(word['text'], `text[${i}].words[${j}].text`), at: time(word['at'], `text[${i}].words[${j}].at`) };
       });
-      const until = time(entry['until'], `text[${i}].until`);
-      return entry['style'] === undefined ? { words, until } : { words, until, style: oneOf(TEXT_STYLES, entry['style'], `text[${i}].style`) };
+      return { words, until: time(entry['until'], `text[${i}].until`), style: oneOf(TEXT_STYLES, entry['style'], `text[${i}].style`) };
     }),
   };
 }

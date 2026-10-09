@@ -1,7 +1,7 @@
-// The on-screen text: the 3 lines of beats.json, drawn on a 2D canvas that three.js shows as a texture.
+// The on-screen text: the lines of beats.json, drawn on a 2D canvas that three.js shows as a texture.
 // Layout units are pixels of the 1080 × 1080 centre square, origin in its middle, y down.
 import { spring } from 'remotion';
-import { SPOT_SIXTEENTHS } from '../creative/beats.ts';
+import { SPOT_SIXTEENTHS, type TextStyle } from '../creative/beats.ts';
 import { BEATS, FPS, S16_FRAMES, frameOf, since } from './timeline.ts';
 import type { Rgba, Theme, Token } from './themes.ts';
 
@@ -22,19 +22,19 @@ type Word = { text: string; at: number };
 // wordmark).
 type Look = { y: number; size: number; sticker?: Token; tilt?: number };
 
-// The look of each word group of the first two lines, in the order of beats.json.
-const LINE_LOOKS: readonly (readonly Look[])[] = [
-  [{ y: -80, size: 132 }, { y: 100, size: 120, sticker: 'x' }],
-  [{ y: -496, size: 100 }, { y: -398, size: 90, sticker: 'x' }],
-];
+// The look of each word group of a line, by the style of the line ('end-card' draws with endCard).
+const LOOKS: Readonly<Record<Exclude<TextStyle, 'end-card'>, readonly Look[]>> = {
+  center: [{ y: -80, size: 132 }, { y: 100, size: 120, sticker: 'x' }],
+  top: [{ y: -496, size: 100 }, { y: -398, size: 90, sticker: 'x' }],
 
-// The feature cards of a 'cards' line: one sticker at a time in the free space above the tower. When the next
-// card slams in, the card before it shrinks and fades out over 1 sixteenth.
-const CARD_LOOKS: readonly Look[] = [
-  { y: -466, size: 88, sticker: 'x', tilt: -5 },
-  { y: -466, size: 88, sticker: 'o', tilt: 4 },
-  { y: -466, size: 88, sticker: 'x', tilt: -3 },
-];
+  // One sticker at a time in the free space above the tower. When the next card slams in, the card before it
+  // shrinks and fades out over 1 sixteenth.
+  cards: [
+    { y: -466, size: 88, sticker: 'x', tilt: -5 },
+    { y: -466, size: 88, sticker: 'o', tilt: 4 },
+    { y: -466, size: 88, sticker: 'x', tilt: -3 },
+  ],
+};
 
 // The drop-in of a word group: 0 before its sixteenth, then a spring with a small overshoot, settled in 1 sixteenth.
 const dropIn = (frame: number, at: number) =>
@@ -172,12 +172,14 @@ export function drawHud(ctx: CanvasRenderingContext2D, frame: number, theme: The
   BEATS.text.forEach((line, index) => {
     // A line that lasts to the end of the 8 bars stays on the end card while the final chord rings.
     if (line.until < SPOT_SIXTEENTHS && frame >= frameOf(line.until)) return;
-    if (index === BEATS.text.length - 1) {
+    if (line.style === 'end-card') {
       endCard(ctx, frame, line.words, theme);
       return;
     }
-    const looks = line.style === 'cards' ? CARD_LOOKS.slice(0, line.words.length) : LINE_LOOKS[index];
-    if (looks === undefined || looks.length !== line.words.length) throw new Error(`no look for the words of text line ${index + 1}`);
+    const looks = LOOKS[line.style];
+    if (looks.length < line.words.length || (line.style !== 'cards' && looks.length !== line.words.length)) {
+      throw new Error(`text line ${index + 1} has ${line.words.length} word groups, and the '${line.style}' style has ${looks.length}`);
+    }
     line.words.forEach((word, i) => {
       const look = looks[i];
       if (look !== undefined) wordAt(ctx, frame, word, look, theme, line.style === 'cards' ? line.words[i + 1]?.at : undefined);

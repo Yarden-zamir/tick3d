@@ -23,11 +23,11 @@ Loud, flat and quick, like the UI: thick black lines, hard shadows, flat color. 
 ## Mandatory
 
 - 15.0 s: 8 bars at 136 BPM (14.118 s), then the final chord rings to 15.0 s.
-- At most 3 on-screen lines. No claim that the code does not prove. No people, no voice-over, no stock footage.
+- At most 4 on-screen lines (`tools/check-beats.ts`). No claim that the code does not prove. No people, no voice-over, no stock footage.
 - Every frame drawn by three.js. Only the game's own sound code makes the audio.
 - The game on screen is the seeded self-play of `src/ai.ts`. Every move is legal, and the win is a line in `LINES`.
 
-## The 3 lines (all of them)
+## The 3 lines of the base cut (the variants in `script.md` add or swap one)
 
 1. "4 in a row. In 3D."
 2. "Every cell has a note." (supporting point 2)

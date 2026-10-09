@@ -38,6 +38,14 @@ Move numbers on this page count from 1. The `move` field in `beats.json` counts 
 | 8 | 112–127 / 12.353–14.008 | End card holds. The four layers of the small tower pulse bottom to top, one per beat. | Light / Classic | The URL stays. | Classic C5, D5, E5, G5: one per layer, rising into the chord. |
 | – | 128 / 14.118–15.000 | End card holds. | Light / Classic | The URL stays. | The final chord of the song (C major) rings, with a 50 ms fade to silence at 15.0 s. |
 
+## Variants
+
+Each file in `variants/` is a complete take on top of this script (`VIDEO_VARIANT=<name>`). Its `differs` field says what changes.
+
+- `hook`: a cold open for social feeds. Bar 1 plays in the Mono theme while "Tic-tac-toe?" (s16 0) and "Too easy." (s16 8) slam in with the layers, in the `top` style. The colour sweeps in on the bar 2 downbeat with "4 in a row.".
+- `arcade`: the neon themes and Chiptune on every move. Bar 4 shows three feature cards in place of the notes line: "Play by ear." (48), "Play by voice." (52), "Play blind." (56), until 64.
+- `mellow`: the soft themes and the Cells mallets on every bar.
+
 ## Transitions
 
 - A theme change is a diagonal wipe, bottom left to top right, over one eighth note from the downbeat. A 3 px `--line` band runs on the wipe edge. The new tokens apply behind the band.

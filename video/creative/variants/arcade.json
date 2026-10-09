@@ -1,14 +1,85 @@
 {
   "name": "arcade",
-  "differs": "A low fly-in hook, Chiptune square leads on every move, and the neon themes: synthwave, batman and bloodmoon.",
+  "differs": "A low fly-in hook, Chiptune square leads on every move, the neon themes (retro, synthwave, batman, bloodmoon), and three feature cards in bar 4: \"Play by ear.\", \"Play by voice.\", \"Play blind.\"",
+  "text": [
+    {
+      "style": "center",
+      "words": [
+        {
+          "text": "4 in a row.",
+          "at": 16
+        },
+        {
+          "text": "In 3D.",
+          "at": 24
+        }
+      ],
+      "until": 32
+    },
+    {
+      "style": "cards",
+      "words": [
+        {
+          "text": "Play by ear.",
+          "at": 48
+        },
+        {
+          "text": "Play by voice.",
+          "at": 52
+        },
+        {
+          "text": "Play blind.",
+          "at": 56
+        }
+      ],
+      "until": 64
+    },
+    {
+      "style": "end-card",
+      "words": [
+        {
+          "text": "tick3d",
+          "at": 96
+        },
+        {
+          "text": ".yarden-zamir.com",
+          "at": 100
+        }
+      ],
+      "until": 128
+    }
+  ],
   "bars": {
-    "1": { "theme": "retro", "camera": "swoop" },
-    "2": { "theme": "retro", "soundSet": "chiptune" },
-    "3": { "theme": "synthwave", "soundSet": "chiptune" },
-    "4": { "theme": "batman", "soundSet": "chiptune" },
-    "5": { "theme": "batman", "soundSet": "chiptune" },
-    "6": { "theme": "bloodmoon", "soundSet": "chiptune" },
-    "7": { "theme": "synthwave", "soundSet": "chiptune" },
-    "8": { "theme": "synthwave" }
+    "1": {
+      "theme": "retro",
+      "camera": "swoop"
+    },
+    "2": {
+      "theme": "retro",
+      "soundSet": "chiptune"
+    },
+    "3": {
+      "theme": "synthwave",
+      "soundSet": "chiptune"
+    },
+    "4": {
+      "theme": "batman",
+      "soundSet": "chiptune"
+    },
+    "5": {
+      "theme": "batman",
+      "soundSet": "chiptune"
+    },
+    "6": {
+      "theme": "bloodmoon",
+      "soundSet": "chiptune"
+    },
+    "7": {
+      "theme": "synthwave",
+      "soundSet": "chiptune"
+    },
+    "8": {
+      "theme": "synthwave"
+    }
   }
 }
