@@ -24,8 +24,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Where the previews of a pull request go on the pr-assets branch.
-  PREVIEW_DIR: issue-119/variants
+  # Where the previews of a pull request go on the pr-assets branch: one folder per head commit
+  # (renders/<7 characters of the sha>/<variant>), so a comment that links them always shows that render.
+  PREVIEW_ROOT: issue-119/renders
 
 jobs:
   check:
@@ -105,6 +106,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
+      # A full checkout: every run adds a folder of about 115 MB (5 variants). Revisit when this checkout takes more
+      # than a minute: then check out pr-assets sparsely, or prune old renders folders.
       - uses: actions/checkout@v7
         with:
           ref: pr-assets
@@ -117,8 +120,12 @@ jobs:
       - name: Install ImageMagick and ffmpeg
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends imagemagick ffmpeg
       - name: Build the previews
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -eu
+          PREVIEW_DIR="$PREVIEW_ROOT/${HEAD_SHA:0:7}"
+          echo "PREVIEW_DIR=$PREVIEW_DIR" >> "$GITHUB_ENV"
           for variant in classic hook features arcade mellow; do
             dest=pr-assets/$PREVIEW_DIR/$variant
             land=renders/tick3d-video-$variant-landscape
