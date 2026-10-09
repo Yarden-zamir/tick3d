@@ -103,10 +103,11 @@ const CALL_TO_ACTION: Look = { y: 360, size: 62, sticker: 'o', tilt: -3 };
 // the badge height; the App Store badge first; the Google Play badge at least as tall as the others; a credit line.
 const BADGE_Y = 452;
 const BADGE_HEIGHT = 64;
-const BADGE_CLEAR = BADGE_HEIGHT / 4;
 const BADGE_GAP = 40;
-// The note next to a badge (for example "soon") drops in 1 beat after the badge, outside its clear space.
-const NOTE_SIZE = 30;
+// The note on a badge (for example "soon"): a small `--x` pill on the top right corner of the badge, outlined in
+// `--surface` so it stands off the black badge. It pops in 1 beat after the badge. The maintainers chose to put it on
+// the badge, inside Apple's clear space (#119).
+const NOTE_SIZE = 22;
 export const NOTE_DELAY = 4;
 const LEGAL_SIZE = 14;
 const LEGAL_Y = 512;
@@ -131,30 +132,50 @@ const badgeWidth = (badge: Badge) => {
   return (BADGE_HEIGHT * w) / h;
 };
 
-function noteWidth(ctx: CanvasRenderingContext2D, note: string): number {
+// The note pill, centred on (x, y), in upper case, with a small pop on its sixteenth.
+function noteTag(ctx: CanvasRenderingContext2D, frame: number, note: string, at: number, x: number, y: number, theme: Theme): void {
+  const p = dropIn(frame, at);
+  if (p <= 0) return;
+  const text = note.toUpperCase();
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate((8 * Math.PI) / 180);
+  ctx.scale(0.6 + 0.4 * p, 0.6 + 0.4 * p);
   ctx.font = `800 ${NOTE_SIZE}px ${FONT}`;
-  ctx.letterSpacing = '-0.03em';
-  return ctx.measureText(note).width + NOTE_SIZE * 0.28;
+  ctx.letterSpacing = '0.08em';
+  const width = ctx.measureText(text).width + NOTE_SIZE * 1.1;
+  const height = NOTE_SIZE * 1.5;
+  ctx.beginPath();
+  ctx.roundRect(-width / 2, -height / 2, width, height, height / 2);
+  ctx.fillStyle = css(theme.x);
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = css(theme.surface);
+  ctx.stroke();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = css(theme['on-color']);
+  // The letter spacing also follows the last letter, so the text moves right by half of it.
+  ctx.fillText(text, NOTE_SIZE * 0.04, NOTE_SIZE * 0.06);
+  ctx.restore();
 }
 
-// The badges in one row, centred, each with its note after its clear space, and the credit lines under them. A
+// The badges in one row, centred, each with its note on its top right corner, and the credit lines under them. A
 // badge cuts in on its sixteenth, as provided: no drop, no scale, no tilt.
 function badges(ctx: CanvasRenderingContext2D, frame: number, words: readonly BadgeWord[], theme: Theme, art: BadgeArt): void {
-  const slots = words.map((word) => ({ word, width: badgeWidth(word.badge), note: word.note === undefined ? 0 : BADGE_CLEAR + noteWidth(ctx, word.note) }));
-  let x = -(slots.reduce((sum, slot) => sum + slot.width + slot.note, 0) + BADGE_GAP * (slots.length - 1)) / 2;
+  const widths = words.map((word) => badgeWidth(word.badge));
+  let x = -(widths.reduce((sum, width) => sum + width, 0) + BADGE_GAP * (words.length - 1)) / 2;
   const shown: Badge[] = [];
-  for (const { word, width, note } of slots) {
+  words.forEach((word, i) => {
+    const width = widths[i] ?? 0;
     if (frame >= frameOf(word.at)) {
       shown.push(word.badge);
       const [sx, sy, sw, sh] = BADGE_ART[word.badge].crop;
       ctx.drawImage(art[word.badge], sx, sy, sw, sh, x, BADGE_Y - BADGE_HEIGHT / 2, width, BADGE_HEIGHT);
-      if (word.note !== undefined) {
-        const noteX = x + width + BADGE_CLEAR + (note - BADGE_CLEAR) / 2;
-        wordAt(ctx, frame, { text: word.note, at: word.at + NOTE_DELAY }, { y: BADGE_Y - BADGE_HEIGHT * 0.2, size: NOTE_SIZE, sticker: 'x', tilt: 6 }, theme, undefined, noteX);
-      }
+      if (word.note !== undefined) noteTag(ctx, frame, word.note, word.at + NOTE_DELAY, x + width - 2, BADGE_Y - BADGE_HEIGHT / 2 - 6, theme);
     }
-    x += width + note + BADGE_GAP;
-  }
+    x += width + BADGE_GAP;
+  });
   ctx.font = `600 ${LEGAL_SIZE}px ${FONT}`;
   ctx.letterSpacing = '0em';
   ctx.fillStyle = css(theme.ink);
