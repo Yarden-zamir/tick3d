@@ -28,14 +28,13 @@ describe('the timeline', () => {
     expect(barAt(DURATION_FRAMES - 1).bar).toBe(8);
   });
 
-  it('merges every variant into a timeline with the same game, text timing and end card, and a real change', () => {
+  it('merges every variant into a timeline with the same game, events and end card, and a real change', () => {
     const base = parseBeats(beatsJson);
-    const timing = (beats: typeof base) => beats.text.map((line) => ({ until: line.until, at: line.words.map((word) => word.at) }));
     for (const [name, overlay] of Object.entries(VARIANTS)) {
       if (overlay === undefined) continue;
       const beats = parseBeats(withVariant(beatsJson, overlay));
       expect(beats.moves, name).toEqual(base.moves);
-      expect(timing(beats), name).toEqual(timing(base));
+      expect(beats.bars.map((bar) => bar.events), name).toEqual(base.bars.map((bar) => bar.events));
       expect(beats.text.at(-1), name).toEqual(base.text.at(-1));
       expect(JSON.stringify({ bars: beats.bars, text: beats.text }), name).not.toBe(JSON.stringify({ bars: base.bars, text: base.text }));
     }

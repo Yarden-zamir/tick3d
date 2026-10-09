@@ -30,9 +30,6 @@ type BeatEvent =
   | { kind: 'threat-pulse'; at: number; cells: readonly number[] }
   // The win jingle of the game (sounds.win): five notes, one per sixteenth from `at`. The beam throbs on each.
   | { kind: 'win-jingle'; at: number }
-  // Hide board, as in the game: the tower fades out to the dashed "Board hidden" box of `.board-hidden`, and comes
-  // back on `until`. No sound: the moves and the threat pulses still play.
-  | { kind: 'hide-board'; at: number; until: number }
   // The winning line becomes a light beam. It lights one cell per sixteenth from `at`, in the order of `line`.
   // Sound: the 4 ending melody notes of songOf, one per cell.
   | { kind: 'beam'; at: number; line: Line }
@@ -57,7 +54,10 @@ type Bar = {
 type TimedMove = { move: number; player: Player; cell: number; at: number };
 
 // One on-screen line. Each word group slams in at its own sixteenth. The line leaves at `until`.
-type TextLine = { words: readonly { text: string; at: number }[]; until: number };
+// Style 'cards': each word group is a feature card in the sticker style of the wordmark, slapped on top of the
+// card before it.
+const TEXT_STYLES = ['cards'] as const;
+type TextLine = { words: readonly { text: string; at: number }[]; until: number; style?: (typeof TEXT_STYLES)[number] };
 
 export type Beats = {
   bpm: 136;
@@ -73,11 +73,11 @@ export type Beats = {
 };
 
 // A variant of the spot: a small overlay on beats.json in video/creative/variants/<name>.json. It changes the
-// theme, the sound set, the camera and the events of bars, and the text, never the game. VIDEO_VARIANT selects one.
-// Shape: { name, differs, text?, bars: { "<bar number>": { theme?, soundSet?, camera?, events? } } }. A value
-// replaces the value of beats.json. withVariant checks the keys, and parseBeats checks the merged timeline.
+// theme, the sound set and the camera of bars, and the text, never the game or the events. VIDEO_VARIANT selects one.
+// Shape: { name, differs, text?, bars: { "<bar number>": { theme?, soundSet?, camera? } } }. A value replaces the
+// value of beats.json. withVariant checks the keys, and parseBeats checks the merged timeline.
 const VARIANT_KEYS: readonly string[] = ['name', 'differs', 'text', 'bars'];
-const VARIANT_BAR_KEYS: readonly string[] = ['theme', 'soundSet', 'camera', 'events'];
+const VARIANT_BAR_KEYS: readonly string[] = ['theme', 'soundSet', 'camera'];
 
 // The JSON of beats.json with the overlay of a variant merged in, for parseBeats.
 export function withVariant(beats: unknown, variant: unknown): unknown {
@@ -143,7 +143,7 @@ function line(value: unknown, path: string): Line {
 function beatEvent(value: unknown, path: string): BeatEvent {
   const e = record(value, path);
   const at = time(e['at'], `${path}.at`);
-  const kind = oneOf(['layer-slam', 'threats', 'threat-pulse', 'beam', 'confetti', 'replay', 'win-jingle', 'hide-board', 'final-chord'] as const, e['kind'], `${path}.kind`);
+  const kind = oneOf(['layer-slam', 'threats', 'threat-pulse', 'beam', 'confetti', 'replay', 'win-jingle', 'final-chord'] as const, e['kind'], `${path}.kind`);
   switch (kind) {
     case 'layer-slam':
       return { kind, at, layer: count(e['layer'], `${path}.layer`, 3) };
@@ -152,10 +152,6 @@ function beatEvent(value: unknown, path: string): BeatEvent {
       return { kind, at, cells: list(e['cells'], `${path}.cells`).map((c, i) => cell(c, `${path}.cells[${i}]`)) };
     case 'beam':
       return { kind, at, line: line(e['line'], `${path}.line`) };
-    case 'hide-board': {
-      const until = time(e['until'], `${path}.until`);
-      return until > at ? { kind, at, until } : fail(`${path}.until`, `a sixteenth after ${at}`);
-    }
     case 'confetti':
     case 'replay':
     case 'win-jingle':
@@ -212,7 +208,8 @@ export function parseBeats(value: unknown): Beats {
         const word = record(w, `text[${i}].words[${j}]`);
         return { text: text(word['text'], `text[${i}].words[${j}].text`), at: time(word['at'], `text[${i}].words[${j}].at`) };
       });
-      return { words, until: time(entry['until'], `text[${i}].until`) };
+      const until = time(entry['until'], `text[${i}].until`);
+      return entry['style'] === undefined ? { words, until } : { words, until, style: oneOf(TEXT_STYLES, entry['style'], `text[${i}].style`) };
     }),
   };
 }

@@ -1,0 +1,51 @@
+{
+  "name": "cards",
+  "differs": "Classic, with three feature cards in bar 4 in place of the notes line: \"Play by ear.\", \"Play by voice.\" and \"Play blind.\", one per beat, each slapped on the one before.",
+  "text": [
+    {
+      "words": [
+        {
+          "text": "4 in a row.",
+          "at": 16
+        },
+        {
+          "text": "In 3D.",
+          "at": 24
+        }
+      ],
+      "until": 32
+    },
+    {
+      "style": "cards",
+      "words": [
+        {
+          "text": "Play by ear.",
+          "at": 48
+        },
+        {
+          "text": "Play by voice.",
+          "at": 52
+        },
+        {
+          "text": "Play blind.",
+          "at": 56
+        }
+      ],
+      "until": 64
+    },
+    {
+      "words": [
+        {
+          "text": "tick3d",
+          "at": 96
+        },
+        {
+          "text": ".yarden-zamir.com",
+          "at": 100
+        }
+      ],
+      "until": 128
+    }
+  ],
+  "bars": {}
+}
