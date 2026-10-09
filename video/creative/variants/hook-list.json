@@ -1,7 +1,21 @@
 {
-  "name": "features",
-  "differs": "Classic, with the 13 best features: \"In 3D.\" in bar 2, then one card per beat. Bar 3, the ways to play: computer, online, nearby, your AI agent. Bar 4, the sound: 13 sound sets, ear trainer, voice, blind. Bar 6, while the game replays as a song: song, 12 themes, time limits, offline.",
+  "name": "hook-list",
+  "differs": "The hook take, with the 12 features as a list that scrolls up: each new card pushes the one before it up a row, so two features show at a time.",
   "text": [
+    {
+      "style": "top",
+      "words": [
+        {
+          "text": "Tic-tac-toe?",
+          "at": 0
+        },
+        {
+          "text": "Too easy.",
+          "at": 8
+        }
+      ],
+      "until": 16
+    },
     {
       "style": "center",
       "words": [
@@ -17,7 +31,7 @@
       "until": 32
     },
     {
-      "style": "cards",
+      "style": "list",
       "words": [
         {
           "text": "Vs computer.",
@@ -39,7 +53,7 @@
       "until": 48
     },
     {
-      "style": "cards",
+      "style": "list",
       "words": [
         {
           "text": "13 sound sets.",
@@ -54,14 +68,14 @@
           "at": 56
         },
         {
-          "text": "Play blind.",
+          "text": "Share your win.",
           "at": 60
         }
       ],
       "until": 64
     },
     {
-      "style": "cards",
+      "style": "list",
       "words": [
         {
           "text": "Your game is a song.",
@@ -96,10 +110,24 @@
         {
           "text": "Play in your browser.",
           "at": 112
+        },
+        {
+          "text": "Android",
+          "at": 116,
+          "icon": "play-store"
+        },
+        {
+          "text": "iOS",
+          "at": 120,
+          "icon": "apple"
         }
       ],
       "until": 128
     }
   ],
-  "bars": {}
+  "bars": {
+    "1": {
+      "theme": "mono"
+    }
+  }
 }

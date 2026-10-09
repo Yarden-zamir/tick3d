@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [classic, hook, features, arcade, mellow]
+        variant: [classic, hook, hook-list]
         crop: [landscape, portrait]
     env:
       VIDEO_VARIANT: ${{ matrix.variant }}
@@ -106,7 +106,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      # A full checkout: every run adds a folder of about 115 MB (5 variants). Revisit when this checkout takes more
+      # A full checkout: every run adds a folder of about 70 MB (3 variants). Revisit when this checkout takes more
       # than a minute: then check out pr-assets sparsely, or prune old renders folders.
       - uses: actions/checkout@v7
         with:
@@ -126,7 +126,7 @@ jobs:
           set -eu
           PREVIEW_DIR="$PREVIEW_ROOT/${HEAD_SHA:0:7}"
           echo "PREVIEW_DIR=$PREVIEW_DIR" >> "$GITHUB_ENV"
-          for variant in classic hook features arcade mellow; do
+          for variant in classic hook hook-list; do
             dest=pr-assets/$PREVIEW_DIR/$variant
             land=renders/tick3d-video-$variant-landscape
             port=renders/tick3d-video-$variant-portrait

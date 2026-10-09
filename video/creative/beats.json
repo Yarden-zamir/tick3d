@@ -236,6 +236,16 @@
         {
           "text": "Play in your browser.",
           "at": 112
+        },
+        {
+          "text": "Android",
+          "at": 116,
+          "icon": "play-store"
+        },
+        {
+          "text": "iOS",
+          "at": 120,
+          "icon": "apple"
         }
       ],
       "until": 128

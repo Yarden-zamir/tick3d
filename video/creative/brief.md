@@ -23,7 +23,7 @@ Loud, flat and quick, like the UI: thick black lines, hard shadows, flat color. 
 ## Mandatory
 
 - 15.0 s: 8 bars at 136 BPM (14.118 s), then the final chord rings to 15.0 s.
-- At most 5 on-screen lines (`tools/check-beats.ts`). No claim that the code does not prove. No people, no voice-over, no stock footage.
+- At most 6 on-screen lines (`tools/check-beats.ts`). No claim that the code does not prove. No people, no voice-over, no stock footage.
 - Every frame drawn by three.js. Only the game's own sound code makes the audio.
 - The game on screen is the seeded self-play of `src/ai.ts`. Every move is legal, and the win is a line in `LINES`.
 
@@ -31,4 +31,4 @@ Loud, flat and quick, like the UI: thick black lines, hard shadows, flat color. 
 
 1. "4 in a row. In 3D."
 2. "Every cell has a note." (supporting point 2)
-3. "tick3d.yarden-zamir.com" (the "tick3d" part is the wordmark), with "Play in your browser." under it.
+3. "tick3d.yarden-zamir.com" (the "tick3d" part is the wordmark), with "Play in your browser." under it, then the "Android" and "iOS" store badges. On iOS the game runs in the browser and installs to the home screen: there is no App Store app.
