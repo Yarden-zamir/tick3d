@@ -86,6 +86,11 @@ function checkTimeline(beats: Beats, name: string): void {
   rule(jingles.every(({ bar, e }) => e.at > winAt && bar.start <= winAt), 'the win jingle follows the winning move in its bar');
 
   rule(beats.text.length <= 6, 'at most 6 on-screen lines');
+  for (const [i, line] of beats.text.entries()) {
+    if (line.style !== 'list') continue;
+    const gap = (line.words[1]?.at ?? 0) - (line.words[0]?.at ?? 0);
+    rule(gap > 0 && line.words.every((word, j) => word.at === (line.words[0]?.at ?? 0) + j * gap), `text[${i}] is a list with evenly spaced cards`);
+  }
   rule(beats.text.filter((line) => line.style === 'end-card').length === 1 && beats.text.at(-1)?.style === 'end-card', 'the end card is the last line, and the only one');
   for (const [i, entry] of beats.text.entries()) {
     rule(entry.words.every((w) => w.at < entry.until), `text[${i}] words come before the line leaves`);

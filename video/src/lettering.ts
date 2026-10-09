@@ -24,7 +24,7 @@ export type Word = { text: string; at: number; icon?: Icon };
 export type Look = { y: number; size: number; sticker?: Token; tilt?: number };
 
 // The drop-in of a word group: 0 before its sixteenth, then a spring with a small overshoot, settled in 1 sixteenth.
-export const dropIn = (frame: number, at: number) =>
+const dropIn = (frame: number, at: number) =>
   frame < frameOf(at) ? 0 : spring({ frame: frame - frameOf(at), fps: FPS, config: { damping: 11, stiffness: 320, mass: 0.6 }, durationInFrames: Math.ceil(S16_FRAMES) + 1 });
 
 function plainWord(ctx: CanvasRenderingContext2D, text: string, size: number, theme: Theme): void {

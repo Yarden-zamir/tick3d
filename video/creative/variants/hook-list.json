@@ -1,6 +1,6 @@
 {
   "name": "hook-list",
-  "differs": "The hook take, with the 12 features as a list that scrolls up: each new card pushes the one before it up a row, so two features show at a time.",
+  "differs": "The hook take, with the 12 features as a ticker that never stops: the cards rise at a constant speed from the bar 3 downbeat to the end card, two at a time.",
   "text": [
     {
       "style": "top",
@@ -39,59 +39,47 @@
         },
         {
           "text": "Play online.",
-          "at": 36
+          "at": 37
         },
         {
           "text": "Play nearby.",
-          "at": 40
+          "at": 42
         },
         {
           "text": "Vs your AI agent.",
-          "at": 44
-        }
-      ],
-      "until": 48
-    },
-    {
-      "style": "list",
-      "words": [
-        {
-          "text": "13 sound sets.",
-          "at": 48
+          "at": 47
         },
         {
-          "text": "Ear trainer.",
+          "text": "13 sound sets.",
           "at": 52
         },
         {
+          "text": "Ear trainer.",
+          "at": 57
+        },
+        {
           "text": "Play by voice.",
-          "at": 56
+          "at": 62
         },
         {
           "text": "Share your win.",
-          "at": 60
-        }
-      ],
-      "until": 64
-    },
-    {
-      "style": "list",
-      "words": [
+          "at": 67
+        },
         {
           "text": "Your game is a song.",
-          "at": 80
+          "at": 72
         },
         {
           "text": "12 themes.",
-          "at": 84
+          "at": 77
         },
         {
           "text": "Time limits.",
-          "at": 88
+          "at": 82
         },
         {
           "text": "Works offline.",
-          "at": 92
+          "at": 87
         }
       ],
       "until": 96

@@ -1,6 +1,6 @@
 {
   "name": "hook",
-  "differs": "A cold open for social feeds: bar 1 plays in the Mono theme while \"Tic-tac-toe? / Too easy.\" slams in with the layers, then colour sweeps in on \"4 in a row. In 3D.\". Then 12 feature cards, one per beat: the ways to play in bar 3 (computer, online, nearby, your AI agent), more in bar 4 (13 sound sets, ear trainer, voice, share your win), and in bar 6, while the game replays as its song: song, 12 themes, time limits, offline.",
+  "differs": "A cold open for social feeds: bar 1 plays in the Mono theme while \"Tic-tac-toe? / Too easy.\" slams in with the layers, then colour sweeps in on \"4 in a row. In 3D.\". Then 12 feature cards, one every 5 sixteenths without a pause, from the bar 3 downbeat to the end card.",
   "text": [
     {
       "style": "top",
@@ -39,59 +39,47 @@
         },
         {
           "text": "Play online.",
-          "at": 36
+          "at": 37
         },
         {
           "text": "Play nearby.",
-          "at": 40
+          "at": 42
         },
         {
           "text": "Vs your AI agent.",
-          "at": 44
-        }
-      ],
-      "until": 48
-    },
-    {
-      "style": "cards",
-      "words": [
-        {
-          "text": "13 sound sets.",
-          "at": 48
+          "at": 47
         },
         {
-          "text": "Ear trainer.",
+          "text": "13 sound sets.",
           "at": 52
         },
         {
+          "text": "Ear trainer.",
+          "at": 57
+        },
+        {
           "text": "Play by voice.",
-          "at": 56
+          "at": 62
         },
         {
           "text": "Share your win.",
-          "at": 60
-        }
-      ],
-      "until": 64
-    },
-    {
-      "style": "cards",
-      "words": [
+          "at": 67
+        },
         {
           "text": "Your game is a song.",
-          "at": 80
+          "at": 72
         },
         {
           "text": "12 themes.",
-          "at": 84
+          "at": 77
         },
         {
           "text": "Time limits.",
-          "at": 88
+          "at": 82
         },
         {
           "text": "Works offline.",
-          "at": 92
+          "at": 87
         }
       ],
       "until": 96

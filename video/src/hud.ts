@@ -1,7 +1,7 @@
 // The on-screen text of the spot: the lines of beats.json, in the lettering of src/lettering.ts.
 import { SPOT_SIXTEENTHS, type TextStyle } from '../creative/beats.ts';
-import { type Look, type Word, dropIn, endCard, onSquare, sticker, wordAt } from './lettering.ts';
-import { BEATS, frameOf } from './timeline.ts';
+import { type Look, type Word, endCard, onSquare, sticker, wordAt } from './lettering.ts';
+import { BEATS, frameOf, since } from './timeline.ts';
 import type { Theme } from './themes.ts';
 
 // The look of each word group of a line, by the style of the line ('end-card' draws with endCard).
@@ -19,23 +19,29 @@ const LOOKS: Readonly<Record<Exclude<TextStyle, 'end-card' | 'list'>, readonly L
   ],
 };
 
-// The 'list' style: a new card lands in the bottom row and pushes the cards before it up one row. A card two
-// rows up fades out, so two features show at a time and none of them holds the screen alone.
-const LIST_BOTTOM = -414;
-const LIST_ROW = 84;
-const LIST_SIZE = 64;
+// The 'list' style: a ticker that never stops. Each card enters the bottom row on its sixteenth and rises one row
+// per gap between cards, at a constant speed, so two cards show at a time. A card fades in over its first 0.4 of
+// a row and out over its last 0.4 row, before it reaches the top edge. The words must be evenly spaced, so the speed stays constant.
+const LIST_BOTTOM = -410;
+const LIST_ROW = 66;
+const LIST_SIZE = 58;
+const LIST_FADE = 0.4;
 
-function listLine(ctx: CanvasRenderingContext2D, frame: number, words: readonly Word[], theme: Theme): void {
+function listLine(ctx: CanvasRenderingContext2D, frame: number, line: { words: readonly Word[]; until: number }, theme: Theme): void {
+  const { words, until } = line;
+  const [first, second] = words;
+  if (first === undefined || second === undefined) throw new Error('a list needs at least 2 cards');
+  const gap = second.at - first.at;
+  if (gap <= 0 || words.some((word, i) => word.at !== first.at + i * gap)) throw new Error('the cards of a list must be evenly spaced');
+  // The whole list fades out over the last sixteenth before `until`.
+  const ending = Math.min(1, Math.max(0, -since(frame, until)));
   words.forEach((word, i) => {
-    const p = dropIn(frame, word.at);
-    if (p <= 0) return;
-    // How far the later cards pushed this one up, in rows.
-    const rows = words.slice(i + 1).reduce((sum, later) => sum + Math.min(1, dropIn(frame, later.at)), 0);
-    if (rows >= 2) return;
+    const rows = since(frame, word.at) / gap;
+    if (rows < 0 || rows >= 2) return;
+    const fade = Math.min(1, rows / LIST_FADE, (2 - rows) / LIST_FADE);
     ctx.save();
-    ctx.globalAlpha = rows > 1 ? 2 - rows : 1;
-    ctx.translate(0, LIST_BOTTOM - rows * LIST_ROW - (1 - p) * 120);
-    ctx.scale(1 + (1 - p) * 0.4, 1 + (1 - p) * 0.4);
+    ctx.globalAlpha = fade * ending;
+    ctx.translate(0, LIST_BOTTOM - rows * LIST_ROW);
     sticker(ctx, word.text, LIST_SIZE, i % 2 === 0 ? 'x' : 'o', theme, '-0.03em', i % 2 === 0 ? -3 : 3);
     ctx.restore();
   });
@@ -52,16 +58,18 @@ export function drawHud(ctx: CanvasRenderingContext2D, frame: number, theme: The
         return;
       }
       if (line.style === 'list') {
-        listLine(ctx, frame, line.words, theme);
+        listLine(ctx, frame, line, theme);
         return;
       }
       const looks = LOOKS[line.style];
-      if (looks.length < line.words.length || (line.style !== 'cards' && looks.length !== line.words.length)) {
+      // The cards cycle through their looks; the other styles have one look per word group.
+      const cards = line.style === 'cards';
+      if (!cards && looks.length !== line.words.length) {
         throw new Error(`text line ${index + 1} has ${line.words.length} word groups, and the '${line.style}' style has ${looks.length}`);
       }
       line.words.forEach((word, i) => {
-        const look = looks[i];
-        if (look !== undefined) wordAt(ctx, frame, word, look, theme, line.style === 'cards' ? line.words[i + 1]?.at : undefined);
+        const look = looks[cards ? i % looks.length : i];
+        if (look !== undefined) wordAt(ctx, frame, word, look, theme, cards ? (line.words[i + 1]?.at ?? line.until - 1) : undefined);
       });
     });
   });
