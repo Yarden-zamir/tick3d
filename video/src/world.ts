@@ -145,15 +145,35 @@ export function createWorld(width: number, height: number): World {
     return { group, tile, materials: [tile.material, line.material, shade.material], near: 1 };
   });
 
+  // A flat square frame from -1 to 1, with a hole of half-width `inner`.
+  const squareFrame = (inner: number): BufferGeometry => {
+    const shape = new Shape().moveTo(-1, -1).lineTo(1, -1).lineTo(1, 1).lineTo(-1, 1).lineTo(-1, -1);
+    shape.holes.push(new Shape().moveTo(-inner, -inner).lineTo(-inner, inner).lineTo(inner, inner).lineTo(inner, -inner).lineTo(-inner, -inner));
+    return new ShapeGeometry(shape).rotateX(-Math.PI / 2);
+  };
+
   // The shockwave of a layer slam: a thick square `--line` frame that grows, holds, then fades.
-  const frameShape = new Shape().moveTo(-1, -1).lineTo(1, -1).lineTo(1, 1).lineTo(-1, 1).lineTo(-1, -1);
-  frameShape.holes.push(new Shape().moveTo(-0.9, -0.9).lineTo(-0.9, 0.9).lineTo(0.9, 0.9).lineTo(0.9, -0.9).lineTo(-0.9, -0.9));
-  const frameGeometry = new ShapeGeometry(frameShape).rotateX(-Math.PI / 2);
+  const frameGeometry = squareFrame(0.9);
   const shockwaves = layers.map((layer) => {
     const material = paint('line', { transparent: true, side: DoubleSide, depthWrite: false });
     const mesh = new Mesh(frameGeometry, material.material);
     layer.add(mesh);
     return { mesh, material };
+  });
+
+  // The note ring of a threat pulse: a `--win` frame that grows out of the cell and fades, so the cell reads as
+  // a note ("Every cell has a note."). Like the beam it is light, so it draws over the layers above the cell.
+  const ringGeometry = squareFrame(0.7);
+  const rings = [...new Set(eventsOf('threat-pulse').flatMap((event) => event.cells))].map((cell) => {
+    const material = paint('win', { transparent: true, side: DoubleSide, depthTest: false, depthWrite: false });
+    const mesh = new Mesh(ringGeometry, material.material);
+    mesh.renderOrder = 20;
+    mesh.position.y = TILE_HEIGHT / 2 + OUTLINE + 0.01;
+    const entry = cells[cell];
+    if (entry === undefined) throw new RangeError(`no cell ${cell}`);
+    entry.group.add(mesh);
+    const pulses = eventsOf('threat-pulse').filter((event) => event.cells.includes(cell));
+    return { mesh, material: material.material, pulses };
   });
 
   // ---- The pieces: an extruded X or O with a `--line` outline and a flat `--shadow` on the tile ----
@@ -325,6 +345,14 @@ export function createWorld(width: number, height: number): World {
     for (const event of eventsOf('threat-pulse')) {
       const swell = 1 + 0.18 * pulse(since(frame, event.at));
       for (const cell of event.cells) cells[cell]?.group.scale.setScalar(swell);
+    }
+    // A note ring grows from half a cell to 1.2 cells and fades out over 2 sixteenths after each pulse.
+    for (const ring of rings) {
+      const t = Math.min(...ring.pulses.map((event) => since(frame, event.at)).filter((age) => age >= 0));
+      ring.mesh.visible = t < 2;
+      const grow = (CELL / 2) * (1 + 0.7 * t);
+      ring.mesh.scale.set(grow, 1, grow);
+      ring.material.opacity = interpolate(t, [0, 2], [1, 0], clamp);
     }
 
     // Pieces: a drop over 1 sixteenth onto the note, a pulse on every note of the piece, then the finished board.

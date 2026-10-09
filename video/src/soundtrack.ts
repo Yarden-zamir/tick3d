@@ -57,10 +57,12 @@ const withoutBell = (set: SoundSet): SoundSet => ({
   voices: (cell, player) => set.voices(toCoords(cell).row === BELL_ROW ? cell - SIZE : cell, player),
 });
 
-// The moves of bar 3 come one per sixteenth. They play softer, so the doubled speed does not crowd the mix (#119).
+// The runs of one note per sixteenth (the moves of bar 3 and the replay) play softer, so they do not crowd the
+// mix (maintainer feedback on #119).
 const RUN_BAR = 3;
-const RUN_LEVEL = 0.55;
+const RUN_LEVEL = 0.7;
 const inRunBar = (at: number): boolean => Math.floor(at / SIXTEENTHS_PER_BAR) === RUN_BAR - 1;
+const soft = (note: SongNote): SongNote => (note.kind === 'melody' ? { ...note, level: note.level * RUN_LEVEL } : note);
 
 // The sound set of the bar of a sixteenth. The final chord after bar 8 keeps the set of bar 8.
 function rawSetAt(at: number): SoundSet {
@@ -92,7 +94,7 @@ export function spotSounds(): SpotSound[] {
     if (note.kind === 'melody' && note.move !== undefined) {
       const move = BEATS.moves[note.move];
       if (move === undefined) throw new RangeError(`no move ${note.move}`);
-      notes.push({ at: move.at, note: inRunBar(move.at) ? { ...note, level: note.level * RUN_LEVEL } : note }, { at: replay.at + note.move, note });
+      notes.push({ at: move.at, note: inRunBar(move.at) ? soft(note) : note }, { at: replay.at + note.move, note: soft(note) });
     } else if (note.kind === 'melody') {
       // The winner's run up the tonic chord: one note on each cell of the beam.
       notes.push({ at: beam.at + winRun, note });
