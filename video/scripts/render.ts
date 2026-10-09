@@ -50,15 +50,18 @@ const serveUrl = await bundle({ entryPoint: path('../src/index.ts'), publicDir: 
 const puppeteerInstance = await openBrowser('chrome', { chromiumOptions });
 for (const id of crops) {
   const composition = await selectComposition({ serveUrl, id, chromiumOptions, envVariables, inputProps, puppeteerInstance });
-  // The stills of a crop render in parallel, one browser tab each (8 at most).
+  // The stills of a crop render in parallel, one browser tab each, at most CONCURRENCY at a time: more tabs than
+  // cores make a page miss the render timeout of Remotion.
   const format = draft ? { imageFormat: 'jpeg' as const, jpegQuality: 80, scale: 0.5 } : {};
-  await Promise.all(
-    bars.map((bar) => {
-      const frame = frameOf(bar.start + SIXTEENTHS_PER_BAR / 2);
-      const output = path(`${stills}${id}-bar-${bar.bar}.${draft ? 'jpg' : 'png'}`);
-      return renderStill({ composition, serveUrl, frame, output, chromiumOptions, envVariables, inputProps, puppeteerInstance, ...format });
-    }),
-  );
+  for (let i = 0; i < bars.length; i += CONCURRENCY) {
+    await Promise.all(
+      bars.slice(i, i + CONCURRENCY).map((bar) => {
+        const frame = frameOf(bar.start + SIXTEENTHS_PER_BAR / 2);
+        const output = path(`${stills}${id}-bar-${bar.bar}.${draft ? 'jpg' : 'png'}`);
+        return renderStill({ composition, serveUrl, frame, output, chromiumOptions, envVariables, inputProps, puppeteerInstance, ...format });
+      }),
+    );
+  }
   process.stdout.write(`${VARIANT} ${id}: ${bars.length} ${draft ? 'draft ' : ''}stills done\n`);
   if (stillsOnly) continue;
   await renderMedia({
