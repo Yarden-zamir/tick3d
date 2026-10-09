@@ -1,10 +1,11 @@
 name: video
 
 # Renders the 15 s spot of video/ (issue #119): every variant in both crops, as parallel jobs, each with the
-# stills per bar and the soundtrack. On a pull request from this repository, the previews job then publishes a
-# GIF, the stills sheets and the MP4s of each variant to the pr-assets branch, where the pull request and the
-# issue link them. It runs by hand, on a push to main that touches the video, and on a pull request that touches
-# it. A tag such as video-v1 also attaches the classic files to a GitHub Release. No secrets.
+# stills per bar and the soundtrack. It also renders the 27.5 s tutorial "How to win" in both crops. On a pull
+# request from this repository, the previews job then publishes a GIF, the stills sheets and the MP4s of each
+# variant and of the tutorial to the pr-assets branch, where the pull request and the issue link them. It runs by
+# hand, on a push to main that touches the video, and on a pull request that touches it. A tag such as video-v1
+# also attaches the classic files to a GitHub Release. No secrets.
 # A new variant in video/creative/variants/ goes into the matrix and the previews list below.
 on:
   workflow_dispatch:
@@ -98,10 +99,55 @@ jobs:
           path: video/render/
           if-no-files-found: error
 
-  # The previews of a pull request from this repository: a GIF, the stills sheets and the MP4s of each variant,
-  # pushed to pr-assets with the token of the run. A fork has no token for that, so it is skipped.
+  # The tutorial "How to win" (video/src/tutorial/), one job per crop: the MP4, the soundtrack and one still per
+  # section. It lasts 27.5 s (the check allows 0.1 s either way); the hard limit is 29.0 s.
+  tutorial:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        crop: [landscape, portrait]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: video/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: video
+      - name: Cache Chrome Headless Shell
+        uses: actions/cache@v5
+        with:
+          path: video/node_modules/.remotion
+          key: chrome-headless-shell-${{ runner.os }}-${{ hashFiles('video/package-lock.json') }}
+      - name: Render the tutorial, ${{ matrix.crop }}
+        working-directory: video
+        run: npm run tutorial -- --crop ${{ matrix.crop }}
+      - name: Check the length and the size of the MP4
+        working-directory: video/out/tutorial
+        run: |
+          case "${{ matrix.crop }}" in landscape) size=1920x1080 ;; portrait) size=1080x1920 ;; esac
+          file=tick3d-tutorial-${{ matrix.crop }}.mp4
+          got=$(npx remotion ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$file")
+          seconds=$(npx remotion ffprobe -v error -show_entries format=duration -of csv=p=0 "$file")
+          echo "$file: $got, $seconds s"
+          [ "$got" = "$size" ] || { echo "$file is $got, not $size" >&2; exit 1; }
+          awk -v s="$seconds" 'BEGIN { exit !(s >= 27.4 && s <= 27.6 && s <= 29.0) }' || { echo "$file lasts $seconds s, not 27.5 s (at most 29.0 s)" >&2; exit 1; }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tick3d-tutorial-${{ matrix.crop }}
+          path: |
+            video/out/tutorial/tick3d-tutorial-${{ matrix.crop }}.mp4
+            video/out/tutorial/soundtrack.wav
+            video/out/tutorial/stills/${{ matrix.crop }}-*.png
+          if-no-files-found: error
+
+  # The previews of a pull request from this repository: a GIF, the stills sheets and the MP4s of each variant and
+  # of the tutorial, pushed to pr-assets with the token of the run. A fork has no token for that, so it is skipped.
   previews:
-    needs: render
+    needs: [render, tutorial]
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -115,6 +161,10 @@ jobs:
       - uses: actions/download-artifact@v7
         with:
           pattern: tick3d-video-*
+          path: renders
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: tick3d-tutorial-*
           path: renders
       # The ubuntu-24.04 runner image does not have ImageMagick.
       - name: Install ImageMagick and ffmpeg
@@ -142,6 +192,18 @@ jobs:
             cp "$land/tick3d-15s-landscape.mp4" "$dest/$name-landscape.mp4"
             cp "$port/tick3d-15s-portrait.mp4" "$dest/$name-portrait.mp4"
           done
+          # The tutorial: one still per section (14), in order by their numbered names. The file names hold the
+          # commit too, as for the variants.
+          dest=pr-assets/$PREVIEW_DIR/tutorial
+          name=tick3d-tutorial-$sha
+          land=renders/tick3d-tutorial-landscape
+          port=renders/tick3d-tutorial-portrait
+          mkdir -p "$dest"
+          montage "$land"/stills/landscape-*.png -tile 5x3 -geometry 400x225+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/$name-stills.png"
+          montage "$port"/stills/portrait-*.png -tile 7x2 -geometry 198x352+4+4 -background '#111' -depth 8 -colors 255 PNG8:"$dest/$name-portrait-stills.png"
+          ffmpeg -v error -y -i "$land/tick3d-tutorial-landscape.mp4" -vf 'fps=12,scale=360:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=64[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3' -loop 0 "$dest/$name.gif"
+          cp "$land/tick3d-tutorial-landscape.mp4" "$dest/$name-landscape.mp4"
+          cp "$port/tick3d-tutorial-portrait.mp4" "$dest/$name-portrait.mp4"
           ls -l "pr-assets/$PREVIEW_DIR"/*
       - name: Push the previews to pr-assets
         working-directory: pr-assets
@@ -151,7 +213,7 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add "$PREVIEW_DIR"
           if git diff --cached --quiet; then echo 'the previews did not change'; exit 0; fi
-          git commit -m "docs: previews of the spot from run ${{ github.run_id }} (${{ github.event.pull_request.head.sha }})"
+          git commit -m "docs: previews of the videos from run ${{ github.run_id }} (${{ github.event.pull_request.head.sha }})"
           for _ in 1 2 3; do
             if git push; then exit 0; fi
             git pull --rebase

@@ -8,6 +8,7 @@
     "studio": "remotion studio src/index.ts",
     "audio": "node scripts/audio.ts",
     "video": "node scripts/audio.ts && node scripts/render.ts",
+    "tutorial": "node scripts/tutorial.ts",
     "check": "tsc && npm run lint && vitest run",
     "lint": "oxlint -c ../.oxlintrc.json --type-aware --deny-warnings src scripts && knip"
   },

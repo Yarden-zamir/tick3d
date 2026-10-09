@@ -5,7 +5,7 @@ import { BAR_COUNT, SIXTEENTHS_PER_BAR, parseBeats, withVariant, type Beats } fr
 import { chooseMove } from '../../src/ai.ts';
 import { type Board, type Game, newGame, play, replay } from '../../src/game.ts';
 import { seededRandom } from '../../src/practice/practice.ts';
-import { SIXTEENTH } from '../../src/song.ts';
+import { FPS, frameOf } from './grid.ts';
 import { toEpochMs } from '../../src/epoch.ts';
 
 // The move times of the game. The spot never reads them, and a fixed time keeps Date.now() out.
@@ -25,17 +25,9 @@ export const VARIANT: VariantName = requested;
 const overlay = VARIANTS[VARIANT];
 
 export const BEATS: Beats = parseBeats(overlay === undefined ? beatsJson : withVariant(beatsJson, overlay));
-export const FPS = BEATS.fps;
+// The grid of src/grid.ts. beats.json has fps 30, the frame rate of the grid (parseBeats checks it).
+export { FPS, S16_FRAMES, frameOf, since } from './grid.ts';
 export const DURATION_FRAMES = BEATS.durationSeconds * FPS;
-// The length of one sixteenth note in frames: about 3.3.
-export const S16_FRAMES = SIXTEENTH * FPS;
-
-// The frame where sixteenth `s16` starts (script.md). Events and cuts land on these frames.
-export const frameOf = (s16: number): number => Math.round(s16 * S16_FRAMES);
-
-// The time since sixteenth `at`, in sixteenths: below 0 before it, 0 on its frame. Motion reads this, so
-// a motion that starts on an event starts on the same frame as the event.
-export const since = (frame: number, at: number): number => (frame - frameOf(at)) / S16_FRAMES;
 
 type Bar = Beats['bars'][number];
 
