@@ -50,13 +50,28 @@ describe('page markup', () => {
     const ids = lookedUpIds('./header/');
     expect(ids.length).toBeGreaterThan(5);
     const links = (html: string) => block(html, '<div class="brand-links">', '</div>');
-    const previews = (html: string) => block(html, '<dialog class="end-card my-games" id="previews"', '</dialog>');
+    const previews = (html: string) => block(html, '<dialog class="modal end-card my-games" id="previews"', '</dialog>');
     const game = read(GAME);
     for (const page of PAGE_FILES) {
       const html = read(page);
       expect(missingIn(html, [...ids, 'info-panel', 'info-title']), page).toEqual([]);
       expect(links(html), page).toBe(links(game));
       expect(previews(html), page).toBe(previews(game));
+    }
+  });
+
+  // The .modal class in style.css holds the page scroll and keeps the scroll inside the modal.
+  it('gives every modal surface the modal class', () => {
+    const openTags = (html: string) => html.split('<').slice(1).map((part) => part.slice(0, part.indexOf('>')));
+    const isModal = (tag: string) => tag === 'dialog' || tag.startsWith('dialog ') || (tag.includes(' popover') && tag.includes('role="dialog"'));
+    const classes = (tag: string) => {
+      const start = tag.indexOf('class="');
+      return start === -1 ? [] : tag.slice(start + 7, tag.indexOf('"', start + 7)).split(' ');
+    };
+    for (const page of PAGE_FILES) {
+      const modals = openTags(read(page)).filter(isModal);
+      expect(modals.length, page).toBeGreaterThan(0);
+      expect(modals.filter((tag) => !classes(tag).includes('modal')), page).toEqual([]);
     }
   });
 });

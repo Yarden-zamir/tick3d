@@ -233,10 +233,39 @@ body {
   background: radial-gradient(var(--dot) 1.2px, transparent 1.6px) 0 0 / 22px 22px, var(--page);
 }
 
-/* An open modal holds the scroll, so the page behind it stays still. The gutter stays, so the page does not shift. */
-html:has(dialog:modal) {
+/* Every modal surface carries .modal: each <dialog> and each popover with role="dialog".
+   src/markup.test.ts checks that. A modal scrolls inside itself, and the page behind it stays still.
+   The gutter stays, so the page does not shift when its scroll bar goes. */
+.modal {
+  --modal-pad: 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+html:has(.modal:modal, .modal:popover-open) {
   overflow: hidden;
   scrollbar-gutter: stable;
+}
+
+/* The title row of a modal, with its close button. It sticks to the top, so Close stays in reach
+   after a scroll. It spans the modal padding and takes the modal background, so content scrolls under it. */
+.modal-head {
+  position: sticky;
+  /* The sticky edge is inside the modal padding, so the head moves up by the padding to meet the border. */
+  top: calc(-1 * var(--modal-pad));
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: calc(-1 * var(--modal-pad)) calc(-1 * var(--modal-pad)) 0;
+  padding: var(--modal-pad) var(--modal-pad) 0.5rem;
+  background: inherit;
+}
+
+/* Other buttons, such as Stats, sit with Close at the end of the head. */
+.modal-head h2 {
+  flex: 1;
+  margin: 0;
 }
 
 button,
@@ -517,7 +546,6 @@ input:disabled {
   width: min(calc(100vw - 2rem), 30rem);
   max-height: calc(100dvh - 2rem);
   margin: 0;
-  overflow: auto;
   padding: 0.8rem 1rem;
   border: var(--border) solid #000;
   border-radius: 12px;
@@ -1396,8 +1424,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 .sound-sets {
   width: min(28rem, calc(100vw - 2rem));
   max-height: min(40rem, calc(100dvh - 2rem));
-  overflow-y: auto;
-  padding: 1rem;
+  padding: var(--modal-pad);
   border: var(--border) solid var(--line);
   border-radius: 12px;
   background: var(--page);
@@ -1409,14 +1436,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   background: rgb(0 0 0 / 35%);
 }
 
-.sound-sets-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.sound-sets-head h2 {
-  margin: 0;
+.sound-sets h2 {
   font-size: 1.2rem;
 }
 
@@ -2306,14 +2326,12 @@ body[data-turn='O'] .status[data-state='playing'] {
 .end-card {
   width: min(92vw, 30rem);
   max-height: 96dvh;
-  padding: 1rem;
+  padding: var(--modal-pad);
   border: var(--border) solid var(--line);
   border-radius: 14px;
   background: var(--surface);
   color: var(--ink);
   box-shadow: 8px 8px 0 var(--shadow);
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 
 .end-card[open] {
@@ -2703,17 +2721,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .my-games {
   width: min(94vw, 34rem);
-}
-
-.my-games-head {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-/* Stats and Close sit together at the end of the head. */
-.my-games-head h2 {
-  flex: 1;
 }
 
 .my-games h2,

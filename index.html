@@ -162,8 +162,8 @@
           <button type="button" class="btn btn-icon" id="voice" aria-label="Play by voice" aria-pressed="false" data-tip="Play by voice: hold a note to place" hidden></button>
         </div>
         <!-- The sound set menu. A popover closes on a tap outside it or on Escape. src/page/sound-set.ts fills the list. -->
-        <div popover id="sound-sets" class="sound-sets" role="dialog" aria-labelledby="sound-sets-title">
-          <div class="sound-sets-head">
+        <div popover id="sound-sets" class="modal sound-sets" role="dialog" aria-labelledby="sound-sets-title">
+          <div class="modal-head">
             <h2 id="sound-sets-title">Sound set</h2>
             <button type="button" class="btn btn-small btn-icon" popovertarget="sound-sets" popovertargetaction="hide" aria-label="Close the sound sets"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
           </div>
@@ -405,7 +405,7 @@
         </details>
       </aside>
     </main>
-    <dialog class="end-card" id="end-card" aria-label="Game result">
+    <dialog class="modal end-card" id="end-card" aria-label="Game result">
       <!-- The light shows the cell of the note while the song plays. src/page/end-card.ts places it. -->
       <div class="end-card-picture">
         <!-- [html-validate-disable-next element-required-attributes: the page draws the card and sets src] -->
@@ -436,8 +436,8 @@
         <button type="button" class="btn" id="end-card-close">Close</button>
       </div>
     </dialog>
-    <dialog class="end-card my-games" id="my-games" aria-label="My games">
-      <div class="my-games-head">
+    <dialog class="modal end-card my-games" id="my-games" aria-label="My games">
+      <div class="modal-head">
         <h2>My games</h2>
         <!-- src/page/my-games.ts adds the icon and the address of your stats. -->
         <a class="btn btn-small my-games-stats-link" id="my-games-stats-link" href="/stats" data-tip="Charts of your games">Stats</a>
@@ -482,8 +482,8 @@
         <button type="button" class="btn btn-small" id="my-games-delete">Delete my data</button>
       </section>
     </dialog>
-    <dialog class="end-card my-games" id="previews" aria-labelledby="previews-title">
-      <div class="my-games-head">
+    <dialog class="modal end-card my-games" id="previews" aria-labelledby="previews-title">
+      <div class="modal-head">
         <h2 id="previews-title">Previews</h2>
         <button type="button" class="btn btn-small btn-icon" id="previews-close" aria-label="Close"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
@@ -491,21 +491,21 @@
       <ul class="my-games-list previews-list" id="previews-list"></ul>
     </dialog>
     <!-- The other player started a sound playoff (src/page/playoff-invite.ts). -->
-    <dialog class="end-card home-confirm" id="playoff-invite" aria-labelledby="playoff-invite-text">
+    <dialog class="modal end-card home-confirm" id="playoff-invite" aria-labelledby="playoff-invite-text">
       <p id="playoff-invite-text"></p>
       <div class="end-card-actions">
         <button type="button" class="btn btn-primary" id="playoff-join">Join</button>
         <button type="button" class="btn" id="playoff-not-now">Not now</button>
       </div>
     </dialog>
-    <dialog class="end-card home-confirm" id="home-confirm" aria-labelledby="home-confirm-text">
+    <dialog class="modal end-card home-confirm" id="home-confirm" aria-labelledby="home-confirm-text">
       <p id="home-confirm-text"></p>
       <div class="end-card-actions">
         <button type="button" class="btn btn-primary" id="home-confirm-leave">Leave</button>
         <button type="button" class="btn" id="home-confirm-stay">Stay</button>
       </div>
     </dialog>
-    <dialog class="end-card home-confirm" id="clear-confirm" aria-labelledby="clear-confirm-text">
+    <dialog class="modal end-card home-confirm" id="clear-confirm" aria-labelledby="clear-confirm-text">
       <p id="clear-confirm-text">Clear your match history on every device? Your survival records and your totals stay. Opponents keep their copy of your online games, and the games still count in the site stats.</p>
       <div class="end-card-actions">
         <button type="button" class="btn btn-primary" id="clear-confirm-yes">Clear history</button>
@@ -513,7 +513,7 @@
       </div>
     </dialog>
     <!-- Delete my data: src/page/my-games.ts. -->
-    <dialog class="end-card home-confirm delete-confirm" id="delete-confirm" aria-labelledby="delete-confirm-title">
+    <dialog class="modal end-card home-confirm delete-confirm" id="delete-confirm" aria-labelledby="delete-confirm-title">
       <p id="delete-confirm-title">Delete your data now?</p>
       <div id="delete-confirm-form">
         <!-- src/page/my-games.ts names the account or this device. -->
@@ -535,7 +535,7 @@
       </div>
     </dialog>
     <!-- A person's picture, large: src/page/avatar-viewer.ts. -->
-    <dialog class="end-card home-confirm avatar-viewer" id="avatar-viewer" aria-labelledby="avatar-viewer-name">
+    <dialog class="modal end-card home-confirm avatar-viewer" id="avatar-viewer" aria-labelledby="avatar-viewer-name">
       <div class="avatar-viewer-picture" id="avatar-viewer-picture"></div>
       <p id="avatar-viewer-name"></p>
       <div class="avatar-viewer-actions">
@@ -544,7 +544,7 @@
       </div>
     </dialog>
     <!-- Report and block a person: src/page/safety.ts. -->
-    <dialog class="end-card home-confirm safety-menu" id="safety-menu" aria-labelledby="safety-title">
+    <dialog class="modal end-card home-confirm safety-menu" id="safety-menu" aria-labelledby="safety-title">
       <p id="safety-title"></p>
       <div class="end-card-actions" id="safety-actions">
         <button type="button" class="btn" id="safety-report">Report</button>
@@ -566,7 +566,7 @@
         </div>
       </form>
     </dialog>
-    <dialog class="end-card home-confirm" id="seat-prompt" aria-labelledby="seat-prompt-text">
+    <dialog class="modal end-card home-confirm" id="seat-prompt" aria-labelledby="seat-prompt-text">
       <p id="seat-prompt-text"></p>
       <div class="end-card-actions">
         <button type="button" class="btn btn-primary" id="seat-prompt-accept">Accept</button>
@@ -583,7 +583,7 @@
       <span class="chat-notice-body"><b id="chat-notice-from"></b><span id="chat-notice-text" dir="auto"></span></span>
       <small>Reply</small>
     </button>
-    <div class="info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
+    <div class="modal info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
       <h2 id="info-title">How to win</h2>
       <p>Get four marks in a straight line: along a row or column, up through the layers, or diagonally through the cube.</p>
       <ul>
