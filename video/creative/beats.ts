@@ -11,7 +11,7 @@ import type { SoundSetId } from '../../src/sound-sets.ts';
 const THEMES = ['light', 'dark', 'candy', 'mint', 'midnight', 'snow', 'retro', 'synthwave', 'bloodmoon', 'coffee', 'batman', 'mono'] as const;
 type ThemeId = (typeof THEMES)[number];
 
-const CAMERAS = ['slam', 'swoop', 'dive', 'orbit', 'push', 'ride', 'pull-back', 'settle'] as const;
+const CAMERAS = ['slam', 'dive', 'orbit', 'push', 'ride', 'pull-back', 'settle'] as const;
 // The only sound sets of the spot (maintainer rule on #119).
 const SPOT_SOUND_SETS = ['classic', 'cells', 'chiptune'] as const satisfies readonly SoundSetId[];
 type Camera = (typeof CAMERAS)[number];
