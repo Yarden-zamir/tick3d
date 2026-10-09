@@ -1,70 +1,38 @@
-// The three.js scene of the spot: the dotted page, the tower, the pieces, the beam, the confetti and
-// the text. `render` draws one frame, and everything in it is a function of the frame number.
+// The three.js scene of the spot: the stage of src/stage.ts with the moves, the threats, the beam, the confetti
+// and the text of beats.json. `render` draws one frame, and everything in it is a function of the frame number.
 import {
-  BackSide,
-  BoxGeometry,
-  CanvasTexture,
   Color,
-  CylinderGeometry,
   DoubleSide,
-  ExtrudeGeometry,
-  Group,
   InstancedMesh,
   Matrix4,
   Mesh,
-  MeshBasicMaterial,
-  NoColorSpace,
-  Object3D,
   OrthographicCamera,
-  PerspectiveCamera,
   PlaneGeometry,
   Quaternion,
   Scene,
   ShaderMaterial,
-  Shape,
-  ShapeGeometry,
   Vector3,
   WebGLRenderTarget,
-  type BufferGeometry,
   type WebGLRenderer,
 } from 'three';
 import { interpolate } from 'remotion';
-import { CELL_COUNT, SIZE, toCoords } from '../../src/game.ts';
 import { seededRandom } from '../../src/practice/practice.ts';
 import { SIXTEENTH } from '../../src/song.ts';
 import { winVoices } from '../../src/sound.ts';
 import { cameraAt } from './camera.ts';
-import { PX, drawHud } from './hud.ts';
-import { CELL, LAYER_GAP, OUTLINE, PIECE_HEIGHT, TILE_HEIGHT, cellBase, cellCenter } from './layout.ts';
-import { oShape, xShape } from './pieces.ts';
-import { type Theme, type ThemeId, type Token, readTheme, readXPolygon } from './themes.ts';
+import type { Picture } from './Film.tsx';
+import { drawHud } from './hud.ts';
+import { CELL, LAYER_GAP, OUTLINE, TILE_HEIGHT, cellCenter } from './layout.ts';
+import { PX } from './lettering.ts';
+import { aim, clamp } from './rig.ts';
+import { SCREEN_VERTEX, createStage, pulse, squareFrame } from './stage.ts';
+import { type Theme, type ThemeId, readTheme } from './themes.ts';
 import { BEATS, S16_FRAMES, barAt, barBefore, eventOf, eventsOf, frameOf, since } from './timeline.ts';
 
-const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
 // A cell closer than NEAR to the camera is not drawn, and one closer than NEAR_FADE fades, so the ride along
 // the beam never clips a slab.
 const NEAR = 1.5;
 const NEAR_FADE = 3.2;
-
-// The pulse of a note: up to 1 at once, back to 0 over 2 sixteenths. 0 before the note.
-function pulse(t: number): number {
-  if (t < 0 || t >= 2.25) return 0;
-  return t < 0.25 ? t / 0.25 : 1 - (t - 0.25) / 2;
-}
-
-// Every material takes its color from one theme token, so a theme change repaints the whole frame.
-type Painted = { material: MeshBasicMaterial; token: Token };
-
-const SCREEN_VERTEX = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
-
-// The page: `--page` with the `--dot` grid of 22 px (the body background of src/style.css).
-const PAGE_FRAGMENT = `
-uniform vec3 page; uniform vec4 dotColor; uniform float grid; uniform float inner; uniform float outer;
-void main() {
-  float d = length(mod(gl_FragCoord.xy, grid) - grid * 0.5);
-  float a = dotColor.a * (1.0 - smoothstep(inner, outer, d));
-  gl_FragColor = vec4(mix(page, dotColor.rgb, a), 1.0);
-}`;
 
 // The theme wipe: the new theme from the bottom left corner up to `front`, a `--line` band on the edge.
 const WIPE_FRAGMENT = `
@@ -76,20 +44,7 @@ void main() {
   gl_FragColor = vec4(color, 1.0);
 }`;
 
-// A cylinder of length 1 along y, centred on the origin: lines and the beam scale it.
-const unitCylinder = (radius: number) => new CylinderGeometry(radius, radius, 1, 12, 1, true);
-
-// Places a unit cylinder from `a` to `b`.
-function stretch(mesh: Object3D, a: Vector3, b: Vector3, length = 1): void {
-  const direction = b.clone().sub(a);
-  mesh.position.copy(a).addScaledVector(direction, length / 2);
-  mesh.quaternion.copy(new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), direction.clone().normalize()));
-  mesh.scale.set(1, Math.max(direction.length() * length, 1e-4), 1);
-}
-
-export type World = { render(gl: WebGLRenderer, frame: number): void; dispose(): void };
-
-export function createWorld(width: number, height: number): World {
+export function createWorld(width: number, height: number): Picture {
   const themes = new Map<ThemeId, Theme>();
   const themeOf = (id: ThemeId): Theme => {
     let theme = themes.get(id);
@@ -97,60 +52,8 @@ export function createWorld(width: number, height: number): World {
     return theme;
   };
 
-  const painted: Painted[] = [];
-  const paint = (token: Token, options: ConstructorParameters<typeof MeshBasicMaterial>[0] = {}): Painted => {
-    const entry = { material: new MeshBasicMaterial(options), token };
-    painted.push(entry);
-    return entry;
-  };
-
-  const scene = new Scene();
-  const camera = new PerspectiveCamera(30, width / height, 0.02, 200);
-  const screen = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
-
-  // ---- The page ----
-  const page = new ShaderMaterial({
-    uniforms: { page: { value: new Color() }, dotColor: { value: [0, 0, 0, 0] }, grid: { value: 22 * PX }, inner: { value: 1.2 * PX }, outer: { value: 1.6 * PX } },
-    vertexShader: SCREEN_VERTEX,
-    fragmentShader: PAGE_FRAGMENT,
-    depthTest: false,
-    depthWrite: false,
-  });
-  const pageScene = new Scene().add(new Mesh(new PlaneGeometry(2, 2), page));
-
-  // ---- The tower: four layers of 16 tiles. Each tile has a `--line` outline and a hard `--shadow` below it. ----
-  const tileGeometry = new BoxGeometry(CELL, TILE_HEIGHT, CELL);
-  // The hard shadow: a flat plane under the tile, offset to the right and the front. Its face points up, so
-  // it shows as the offset strips from above and is culled from below, where the slab stays its own colour.
-  const tileShadowGeometry = new PlaneGeometry(CELL + OUTLINE, CELL + OUTLINE).rotateX(-Math.PI / 2);
-  const tileOutline = new BoxGeometry(CELL + 2 * OUTLINE, TILE_HEIGHT + 2 * OUTLINE, CELL + 2 * OUTLINE);
-  const layers = Array.from({ length: SIZE }, (_, layer) => {
-    const group = new Group();
-    group.position.y = layer * LAYER_GAP;
-    scene.add(group);
-    return group;
-  });
-  const cells = Array.from({ length: CELL_COUNT }, (_, cell) => {
-    const group = new Group();
-    const base = cellBase(cell);
-    group.position.set(base.x, 0, base.z);
-    // Own materials per cell: a cell near the camera fades out, so a ride through the tower never clips a slab.
-    const tile = paint('slab', { transparent: true });
-    const line = paint('line', { side: BackSide, transparent: true });
-    const shade = paint('shadow', { transparent: true });
-    const shadow = new Mesh(tileShadowGeometry, shade.material);
-    shadow.position.set(0.07, -TILE_HEIGHT / 2 - OUTLINE - 0.002, 0.07);
-    group.add(new Mesh(tileGeometry, tile.material), new Mesh(tileOutline, line.material), shadow);
-    layers[toCoords(cell).layer]?.add(group);
-    return { group, tile, materials: [tile.material, line.material, shade.material], near: 1 };
-  });
-
-  // A flat square frame from -1 to 1, with a hole of half-width `inner`.
-  const squareFrame = (inner: number): BufferGeometry => {
-    const shape = new Shape().moveTo(-1, -1).lineTo(1, -1).lineTo(1, 1).lineTo(-1, 1).lineTo(-1, -1);
-    shape.holes.push(new Shape().moveTo(-inner, -inner).lineTo(-inner, inner).lineTo(inner, inner).lineTo(inner, -inner).lineTo(-inner, -inner));
-    return new ShapeGeometry(shape).rotateX(-Math.PI / 2);
-  };
+  const stage = createStage(width, height);
+  const { scene, camera, paint, layers, cells } = stage;
 
   // The shockwave of a layer slam: a thick square `--line` frame that grows, holds, then fades.
   const frameGeometry = squareFrame(0.9);
@@ -176,25 +79,9 @@ export function createWorld(width: number, height: number): World {
     return { mesh, material: material.material, pulses };
   });
 
-  // ---- The pieces: an extruded X or O with a `--line` outline and a flat `--shadow` on the tile ----
-  const corners = readXPolygon();
-  const extrude = (shape: Shape, depth: number, lift: number): BufferGeometry =>
-    new ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 40 }).translate(0, 0, lift).rotateX(-Math.PI / 2);
-  const shapes = {
-    X: { body: extrude(xShape(corners), PIECE_HEIGHT, 0), outline: extrude(xShape(corners, OUTLINE), PIECE_HEIGHT + 2 * OUTLINE, -OUTLINE), flat: new ShapeGeometry(xShape(corners)).rotateX(-Math.PI / 2) },
-    O: { body: extrude(oShape(), PIECE_HEIGHT, 0), outline: extrude(oShape(OUTLINE), PIECE_HEIGHT + 2 * OUTLINE, -OUTLINE), flat: new ShapeGeometry(oShape(), 40).rotateX(-Math.PI / 2) },
-  };
+  // ---- The pieces ----
   const pieces = BEATS.moves.map((move) => {
-    const shape = shapes[move.player];
-    const group = new Group();
-    const materials = [paint(move.player === 'X' ? 'x' : 'o', { transparent: true }), paint('line', { side: BackSide, transparent: true }), paint('shadow', { transparent: true })];
-    const [body, outline, shadow] = materials.map((entry) => entry.material);
-    if (body === undefined || outline === undefined || shadow === undefined) throw new Error('a piece needs 3 materials');
-    const flat = new Mesh(shape.flat, shadow);
-    flat.position.set(0.07, 0.003, 0.07);
-    const lift = new Group().add(new Mesh(shape.body, body), new Mesh(shape.outline, outline));
-    group.add(flat, lift);
-    group.position.y = TILE_HEIGHT / 2;
+    const { group, lift, materials } = stage.piece(move.player);
     const cell = cells[move.cell];
     if (cell === undefined) throw new RangeError(`no cell ${move.cell}`);
     cell.group.add(group);
@@ -210,17 +97,7 @@ export function createWorld(width: number, height: number): World {
   const beamReach = beamTo.clone().sub(beamFrom).normalize().multiplyScalar(0.3);
   beamFrom.sub(beamReach);
   beamTo.add(beamReach);
-  // The beam is light: it shines through the tiles, so it draws over the tower, the widest halo first.
-  const beamParts = [
-    new Mesh(unitCylinder(0.45), paint('win', { transparent: true, opacity: 0.14, depthTest: false, depthWrite: false }).material),
-    new Mesh(unitCylinder(0.24), paint('win', { transparent: true, opacity: 0.35, depthTest: false, depthWrite: false }).material),
-    new Mesh(unitCylinder(0.1 + OUTLINE), paint('line', { side: BackSide, transparent: true, depthTest: false, depthWrite: false }).material),
-    new Mesh(unitCylinder(0.1), paint('win', { transparent: true, depthTest: false, depthWrite: false }).material),
-  ];
-  beamParts.forEach((part, order) => {
-    part.renderOrder = 10 + order;
-    scene.add(part);
-  });
+  const beamLight = stage.beam();
 
   // ---- Confetti from the end of the winning line, in `--x`, `--o`, `--win` and `--slab` ----
   const confetti = eventOf('confetti');
@@ -245,24 +122,6 @@ export function createWorld(width: number, height: number): World {
   });
   const confettiFrom = cellCenter(beam.line[3]);
 
-  // ---- The text: a canvas texture on a screen quad ----
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext('2d') ?? (() => {
-    throw new Error('no 2D canvas for the text');
-  })();
-  const texture = new CanvasTexture(canvas);
-  texture.colorSpace = NoColorSpace;
-  const hudScene = new Scene().add(new Mesh(new PlaneGeometry(2, 2), new ShaderMaterial({
-    uniforms: { map: { value: texture } },
-    vertexShader: SCREEN_VERTEX,
-    fragmentShader: 'uniform sampler2D map; varying vec2 vUv; void main() { gl_FragColor = texture2D(map, vUv); }',
-    transparent: true,
-    depthTest: false,
-    depthWrite: false,
-  })));
-
   // ---- The theme wipe ----
   const targets = [new WebGLRenderTarget(width, height, { samples: 4 }), new WebGLRenderTarget(width, height, { samples: 4 })] as const;
   const wipe = new ShaderMaterial({
@@ -273,21 +132,12 @@ export function createWorld(width: number, height: number): World {
     depthWrite: false,
   });
   const wipeScene = new Scene().add(new Mesh(new PlaneGeometry(2, 2), wipe));
+  const screen = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
   // ---- One frame ----
   function update(frame: number): void {
     // The camera first: the cells near it fade, and the pieces on them fade with them.
-    const shot = cameraAt(frame, barAt(frame));
-    camera.position.copy(shot.position);
-    camera.up.copy(shot.up);
-    camera.lookAt(shot.target);
-    const aspect = width / height;
-    const square = (shot.fov * Math.PI) / 180;
-    camera.fov = aspect >= 1 ? shot.fov : (2 * Math.atan(Math.tan(square / 2) / aspect) * 180) / Math.PI;
-    camera.aspect = aspect;
-    camera.zoom = shot.zoom;
-    camera.setViewOffset(width, height, 0, (shot.lift * Math.min(width, height)) / 2, width, height);
-    camera.updateProjectionMatrix();
+    aim(camera, cameraAt(frame, barAt(frame)), width, height);
     for (const cell of cells) {
       cell.near = interpolate(cell.group.getWorldPosition(new Vector3()).distanceTo(camera.position), [NEAR, NEAR_FADE], [0, 1], clamp);
       cell.group.visible = cell.near > 0;
@@ -381,14 +231,8 @@ export function createWorld(width: number, height: number): World {
     const jingleHits = winVoices(1).map((voice) => jingle.at + (voice.at ?? 0));
     const lastHit = jingleHits.at(-1) ?? jingle.at;
     const hit = frame < frameOf(lastHit) ? Math.max(...jingleHits.map((at) => pulse(since(frame, at)))) : pulse(since(frame, lastHit) % 4);
-    for (const part of beamParts) {
-      part.visible = fire >= 0;
-      if (fire < 0) continue;
-      stretch(part, beamFrom, beamTo, interpolate(fire, [0, 1], [0, 1], clamp));
-      const throb = 1 + 0.25 * hit;
-      part.scale.x = throb;
-      part.scale.z = throb;
-    }
+    if (fire < 0) beamLight.hide();
+    else beamLight.place(beamFrom, beamTo, { length: interpolate(fire, [0, 1], [0, 1], clamp), throb: 1 + 0.25 * hit });
 
     // Confetti: thrown with gravity, turning, gone below the tower.
     const seconds = since(frame, confetti.at) * SIXTEENTH;
@@ -402,29 +246,10 @@ export function createWorld(width: number, height: number): World {
       });
       mesh.instanceMatrix.needsUpdate = true;
     }
-
   }
 
   function draw(gl: WebGLRenderer, frame: number, theme: Theme, target: WebGLRenderTarget | null): void {
-    for (const { material, token } of painted) {
-      const { r, g, b } = theme[token];
-      material.color.setRGB(r, g, b);
-    }
-    for (const { tile } of cells) {
-      const { r, g, b } = theme[tile.token];
-      tile.material.color.setRGB(r, g, b);
-    }
-    page.uniforms['page']?.value.setRGB(theme.page.r, theme.page.g, theme.page.b);
-    const dot = page.uniforms['dotColor'];
-    if (dot !== undefined) dot.value = [theme.dot.r, theme.dot.g, theme.dot.b, theme.dot.a];
-    drawHud(context, frame, theme);
-    texture.needsUpdate = true;
-    gl.setRenderTarget(target);
-    gl.clear();
-    gl.render(pageScene, screen);
-    gl.render(scene, camera);
-    gl.clearDepth();
-    gl.render(hudScene, screen);
+    stage.draw(gl, theme, target, (context) => drawHud(context, frame, theme));
   }
 
   return {
@@ -451,7 +276,7 @@ export function createWorld(width: number, height: number): World {
     },
     dispose() {
       for (const target of targets) target.dispose();
-      texture.dispose();
+      stage.dispose();
     },
   };
 }

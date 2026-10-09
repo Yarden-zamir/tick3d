@@ -4,29 +4,12 @@
 //   --stills                    the full stills only, no MP4
 //   --draft                     half-size JPEG stills only, in out/draft/: the local check of an edit
 //   --bars 2,5                  only these bars of the stills
-import { mkdirSync } from 'node:fs';
-import { availableParallelism, platform } from 'node:os';
-import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { bundle } from '@remotion/bundler';
-import { type ChromiumOptions, openBrowser, renderMedia, renderStill, selectComposition } from '@remotion/renderer';
 import { SIXTEENTHS_PER_BAR } from '../creative/beats.ts';
 import { BEATS, VARIANT, frameOf } from '../src/timeline.ts';
-
-const path = (relative: string) => fileURLToPath(new URL(relative, import.meta.url));
-// WebGL in headless Chrome: ANGLE on the GPU on macOS, ANGLE on SwiftShader (CPU) on Linux without a GPU (CI).
-// A Linux host with a GPU also gets SwiftShader. Revisit if such a host renders the video.
-const chromiumOptions: ChromiumOptions = { gl: platform() === 'darwin' ? 'angle' : 'swangle' };
-// Browser tabs: one per core. A CI runner has 4.
-const CONCURRENCY = availableParallelism();
-
-const CROPS = ['landscape', 'portrait'] as const;
-type Crop = (typeof CROPS)[number];
-const isCrop = (value: string): value is Crop => (CROPS as readonly string[]).includes(value);
+import { cropsOf, render } from './remotion.ts';
 
 const { values } = parseArgs({ options: { crop: { type: 'string' }, stills: { type: 'boolean' }, draft: { type: 'boolean' }, bars: { type: 'string' } } });
-if (values.crop !== undefined && !isCrop(values.crop)) throw new Error(`--crop ${values.crop}: use ${CROPS.join(' or ')}`);
-const crops: readonly Crop[] = values.crop === undefined || !isCrop(values.crop) ? CROPS : [values.crop];
 const bars =
   values.bars === undefined
     ? BEATS.bars
@@ -42,43 +25,13 @@ const stillsOnly = draft || values.stills === true;
 // VIDEO_VARIANT (the timeline reads it) and as an input prop (Spot.tsx checks that both agree).
 const out = VARIANT === 'classic' ? '../out/' : `../out/variants/${VARIANT}/`;
 const stills = draft ? `${out}draft/` : `${out}stills/`;
-const envVariables = { VIDEO_VARIANT: VARIANT };
-const inputProps = { variant: VARIANT };
-mkdirSync(path(stills), { recursive: true });
-const serveUrl = await bundle({ entryPoint: path('../src/index.ts'), publicDir: path('../public') });
-// One browser for the whole run: without it, every still starts its own browser.
-const puppeteerInstance = await openBrowser('chrome', { chromiumOptions });
-for (const id of crops) {
-  const composition = await selectComposition({ serveUrl, id, chromiumOptions, envVariables, inputProps, puppeteerInstance });
-  // The stills of a crop render in parallel, one browser tab each, at most CONCURRENCY at a time: more tabs than
-  // cores make a page miss the render timeout of Remotion.
-  const format = draft ? { imageFormat: 'jpeg' as const, jpegQuality: 80, scale: 0.5 } : {};
-  for (let i = 0; i < bars.length; i += CONCURRENCY) {
-    await Promise.all(
-      bars.slice(i, i + CONCURRENCY).map((bar) => {
-        const frame = frameOf(bar.start + SIXTEENTHS_PER_BAR / 2);
-        const output = path(`${stills}${id}-bar-${bar.bar}.${draft ? 'jpg' : 'png'}`);
-        return renderStill({ composition, serveUrl, frame, output, chromiumOptions, envVariables, inputProps, puppeteerInstance, ...format });
-      }),
-    );
-  }
-  process.stdout.write(`${VARIANT} ${id}: ${bars.length} ${draft ? 'draft ' : ''}stills done\n`);
-  if (stillsOnly) continue;
-  await renderMedia({
-    composition,
-    serveUrl,
-    codec: 'h264',
-    audioCodec: 'aac',
-    outputLocation: path(`${out}tick3d-15s-${id}.mp4`),
-    concurrency: CONCURRENCY,
-    chromiumOptions,
-    envVariables,
-    inputProps,
-    puppeteerInstance,
-    onProgress: ({ progress }) => {
-      if (Math.round(progress * 100) % 10 === 0) process.stdout.write(`${id}: ${Math.round(progress * 100)} %\r`);
-    },
-  });
-  process.stdout.write(`${VARIANT} ${id}: video done\n`);
-}
-await puppeteerInstance.close({ silent: false });
+await render({
+  name: VARIANT,
+  crops: cropsOf(values.crop),
+  composition: (crop) => crop,
+  stills: (crop) => bars.map((bar) => ({ frame: frameOf(bar.start + SIXTEENTHS_PER_BAR / 2), output: `${stills}${crop}-bar-${bar.bar}.${draft ? 'jpg' : 'png'}` })),
+  draft,
+  video: (crop) => (stillsOnly ? undefined : `${out}tick3d-15s-${crop}.mp4`),
+  envVariables: { VIDEO_VARIANT: VARIANT },
+  inputProps: { variant: VARIANT },
+});
