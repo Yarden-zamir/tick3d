@@ -25,7 +25,7 @@ type Look = { y: number; size: number; sticker?: Token; tilt?: number };
 // The look of each word group of the first two lines, in the order of beats.json.
 const LINE_LOOKS: readonly (readonly Look[])[] = [
   [{ y: -80, size: 132 }, { y: 100, size: 120, sticker: 'x' }],
-  [{ y: -488, size: 108 }, { y: -368, size: 98, sticker: 'x' }],
+  [{ y: -496, size: 100 }, { y: -398, size: 90, sticker: 'x' }],
 ];
 
 // The feature cards of a 'cards' line: one sticker at a time in the free space above the tower. When the next
