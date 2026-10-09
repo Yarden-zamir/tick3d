@@ -12,6 +12,7 @@ export type Mode = (typeof MODES)[number];
 type View = (typeof VIEWS)[number];
 type Layout = (typeof LAYOUTS)[number];
 type Theme = (typeof THEMES)[number];
+// A soft hyphen (\u00AD) marks where a long one-word name breaks on a small theme tile.
 export const THEME_NAMES: Record<Theme, string> = {
   light: 'Light',
   dark: 'Dark',
@@ -19,9 +20,9 @@ export const THEME_NAMES: Record<Theme, string> = {
   candy: 'Candy',
   mint: 'Mint',
   retro: 'Retro',
-  midnight: 'Midnight',
-  synthwave: 'Synthwave',
-  bloodmoon: 'Bloodmoon',
+  midnight: 'Mid\u00ADnight',
+  synthwave: 'Synth\u00ADwave',
+  bloodmoon: 'Blood\u00ADmoon',
   coffee: 'Dark coffee',
   batman: 'Batman',
   mono: 'Mono',
