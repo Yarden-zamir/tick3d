@@ -54,6 +54,8 @@ export type SessionDoc = {
   // False: the players swap X and O for each new game (newGame in core.ts). True: the seats stay.
   // The default depends on the mode (defaultFixedSeats).
   fixedSeats: boolean;
+  // True: watchers can write in the chat too. A document from before this field reads as true, the default.
+  watcherChat: boolean;
   // One entry per game: true when the two players sat the other way round in that game (seatIn in protocol.ts).
   // The live game is always false while it goes on.
   flipped: boolean[];
@@ -152,6 +154,7 @@ export function parseDoc(stored: unknown, upgrades: Readonly<Record<number, Upgr
     playoff,
     seatRequest,
     fixedSeats: doc.fixedSeats === undefined ? defaultFixedSeats(mode) : doc.fixedSeats === true,
+    watcherChat: doc.watcherChat !== false,
     flipped,
   };
 }

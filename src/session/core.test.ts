@@ -237,20 +237,33 @@ describe('clock', () => {
 
 describe('chat', () => {
   it('lets the two players write, from their own seat, and keeps the newest messages', () => {
-    let doc = core.chat(onlineDoc(), alice, '  good luck ', ms(5), null);
-    doc = core.chat(doc, bob, 'you too', ms(6), null);
+    let doc = core.chat(onlineDoc(), alice, '  good luck ', ms(5), null, []);
+    doc = core.chat(doc, bob, 'you too', ms(6), null, []);
     expect(doc.chat).toEqual([
       { id: 1, from: 'X', text: 'good luck', at: 5 },
       { id: 2, from: 'O', text: 'you too', at: 6 },
     ]);
-    expect(status(() => core.chat(doc, carol, 'hi', ms(7), null))).toBe(403);
-    expect(status(() => core.chat(doc, alice, '   ', ms(7), null))).toBe(400);
-    expect(status(() => core.chat(doc, alice, 'x'.repeat(CHAT_MAX_LENGTH + 1), ms(7), null))).toBe(400);
+    expect(status(() => core.chat(doc, carol, 'hi', ms(7), null, []))).toBe(403);
+    expect(status(() => core.chat(doc, alice, '   ', ms(7), null, []))).toBe(400);
+    expect(status(() => core.chat(doc, alice, 'x'.repeat(CHAT_MAX_LENGTH + 1), ms(7), null, []))).toBe(400);
     const sent = CHAT_KEEP + 10;
-    for (let i = 0; i < sent; i++) doc = core.chat(doc, alice, `m${i}`, ms(i), null);
+    for (let i = 0; i < sent; i++) doc = core.chat(doc, alice, `m${i}`, ms(i), null, []);
     expect(doc.chat).toHaveLength(CHAT_KEEP);
     // Two messages came before the loop, so the ids go on from 3.
     expect(doc.chat.at(-1)).toMatchObject({ id: sent + 2, text: `m${sent - 1}` });
+  });
+
+  it('lets a watcher write while watcherChat is on, and the players switch it, also during a lock', () => {
+    const watchers: core.OpenWatcher[] = [{ id: 'c0ffee0000000001', token: CAROL, player: null }];
+    const doc = core.chat(onlineDoc(), carol, 'go X', ms(5), null, watchers);
+    expect(doc.chat).toEqual([{ id: 1, from: 'watcher', text: 'go X', at: 5 }]);
+    // A caller who does not have the session open is no watcher.
+    expect(status(() => core.chat(doc, carol, 'hi', ms(6), null, []))).toBe(403);
+    const off = core.update(core.lock(doc, alice), bob, { watcherChat: false });
+    expect(off.watcherChat).toBe(false);
+    expect(status(() => core.chat(off, carol, 'hi', ms(6), null, watchers))).toBe(403);
+    expect(status(() => core.update(off, carol, { watcherChat: true }))).toBe(403);
+    expect(core.chat(off, alice, 'still here', ms(7), null, watchers).chat.at(-1)).toMatchObject({ from: 'X' });
   });
 });
 
@@ -496,7 +509,7 @@ describe('seat rotation', () => {
 
   it('keeps each chat message with its writer across a rotation, a swap and a give', async () => {
     const author = await personId(ALICE);
-    const sent = core.chat(afterGame(), alice, 'Again?', ms(0), author);
+    const sent = core.chat(afterGame(), alice, 'Again?', ms(0), author, []);
     const rotated = core.newGame(sent, bob);
     expect(view(rotated, alice).you).toBe('O');
     const swapped = core.answerSeat(core.seat(rotated, alice, { action: 'swap' }, watchers, ms(1)), bob, true, watchers, ms(2));

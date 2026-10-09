@@ -140,8 +140,8 @@ describe('the SessionView schema', () => {
 
   it('marks a field required when parseSessionView needs it', () => {
     // An older server, a Nearby host or a cached view sends no turn, status, names, watchers, seat
-    // request and seat rotation, so the parser fills them in.
-    const filled = ['turn', 'status', 'names', 'people', 'watchers', 'youWatcher', 'seatRequest', 'fixedSeats', 'flipped'];
+    // request, seat rotation and watcher chat, so the parser fills them in.
+    const filled = ['turn', 'status', 'names', 'people', 'watchers', 'youWatcher', 'seatRequest', 'fixedSeats', 'watcherChat', 'flipped'];
     for (const key of SCHEMAS.SessionView.required ?? []) {
       expect(parses('SessionView', without(example, key)), key).toBe(filled.includes(key));
     }

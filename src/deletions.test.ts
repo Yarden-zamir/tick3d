@@ -11,8 +11,8 @@ const guest = 'bbbbbbbb-0000-4000-8000-000000000002' as PlayerToken;
 // A Nearby session of the host with a guest, and one chat line from each.
 async function nearbyDoc() {
   const doc = core.createDoc({ name: 'Nearby', mode: 'nearby', seats: { X: host, O: guest } });
-  const said = core.chat(doc, new Set([host]), 'hello', ms(1), await personId(host));
-  return core.chat(said, new Set([guest]), 'hi', ms(2), await personId(guest));
+  const said = core.chat(doc, new Set([host]), 'hello', ms(1), await personId(host), []);
+  return core.chat(said, new Set([guest]), 'hi', ms(2), await personId(guest), []);
 }
 
 async function cachedView() {

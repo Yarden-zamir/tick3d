@@ -26,7 +26,7 @@ export function chatGroups(messages: readonly ChatMessage[], senderOf: (message:
     const first = group[0];
     if (first === undefined) throw new Error('a chat group is empty');
     const item = document.createElement('li');
-    // The color is the seat at send time.
+    // The color is the seat at send time. A watcher has none.
     item.className = `chat-group from-${first.from.toLowerCase()}`;
     item.classList.toggle('mine', sender.mine);
     const body = document.createElement('div');

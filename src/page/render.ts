@@ -10,6 +10,7 @@ import {
   boardEl,
   boardHiddenEl,
   seatLockButtons,
+  watcherChatButton,
   statusEl,
   reviewEl,
   reviewLabel,
@@ -33,7 +34,7 @@ import { renderGameView, viewerName } from './game-view.ts';
 import { renderCoords } from './keypad.ts';
 import { renderSessionGames } from './my-games.ts';
 import { showAccount } from '../header/header.ts';
-import { LOCK_CLOSED_ICON, LOCK_OPEN_ICON, SOUND_OFF_ICON, SOUND_ON_ICON } from '../icons.ts';
+import { CHAT_OFF_ICON, CHAT_ON_ICON, LOCK_CLOSED_ICON, LOCK_OPEN_ICON, SOUND_OFF_ICON, SOUND_ON_ICON } from '../icons.ts';
 import { seatIn } from '../protocol.ts';
 import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
@@ -309,10 +310,20 @@ export function render(): void {
   lockButton.innerHTML = locked ? `${LOCK_CLOSED_ICON}<span>Locked</span>` : `${LOCK_OPEN_ICON}<span>Lock</span>`;
   lockButton.setAttribute('aria-pressed', String(locked));
   renderSeatLocks(frozen);
+  renderWatcherChat();
   showAccount(page.account.user);
   soundButton.innerHTML = settings.muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
   soundButton.setAttribute('aria-pressed', String(!settings.muted));
   syncVoice();
+}
+
+// The watcher chat switch in the Players box. Unlike the seat lock, a settings lock leaves it open.
+function renderWatcherChat(): void {
+  const on = page.session?.watcherChat ?? true;
+  watcherChatButton.innerHTML = on ? CHAT_ON_ICON : CHAT_OFF_ICON;
+  watcherChatButton.setAttribute('aria-pressed', String(on));
+  watcherChatButton.disabled = page.busy || !canChangeMatch();
+  watcherChatButton.dataset.tip = on ? 'Watchers can chat' : 'Only players chat';
 }
 
 // The seat lock next to "You play" (computer) and in the Players box (online, Nearby). Off: X and O

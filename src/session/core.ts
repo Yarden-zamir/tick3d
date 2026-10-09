@@ -10,6 +10,7 @@ import {
   CHAT_KEEP,
   CHAT_MAX_LENGTH,
   MATCH_OPTIONS,
+  type ChatFrom,
   type Code,
   type GameRecord,
   type MoveRequest,
@@ -112,6 +113,7 @@ export function createDoc({ name, mode, clock = NO_LIMIT, seats, computer }: New
     playoff: null,
     seatRequest: null,
     fixedSeats: defaultFixedSeats(mode),
+    watcherChat: true,
     flipped: [false],
   };
 }
@@ -203,7 +205,7 @@ function swapSeats(doc: SessionDoc): SessionDoc {
   };
 }
 
-// The name stays open during a lock. The match options, the clock and the seat rotation do not.
+// The name and the watcher chat stay open during a lock. The match options, the clock and the seat rotation do not.
 export function update(doc: SessionDoc, identity: Identity, changes: SessionUpdate): SessionDoc {
   requireSeat(doc, identity);
   const changesMatch =
@@ -219,6 +221,7 @@ export function update(doc: SessionDoc, identity: Identity, changes: SessionUpda
     },
     clock: changes.clock ?? doc.clock,
     fixedSeats: changes.fixedSeats ?? doc.fixedSeats,
+    watcherChat: changes.watcherChat ?? doc.watcherChat,
   };
   // A game keeps the limit it started with. A game without moves has not started yet.
   const live = next.games.at(-1);
@@ -238,17 +241,31 @@ export function lock(doc: SessionDoc, identity: Identity): SessionDoc {
   return { ...doc, lockedGame: doc.games.length - 1 };
 }
 
-// Only the two players write. A message comes from the seat of the caller (X in a friend game).
-// `author` is the person id of the caller, from the holder of the session. Null when the holder has none
-// (a game on one device): then the message has no `by`.
-export function chat(doc: SessionDoc, identity: Identity, text: unknown, now: EpochMs, author: PersonId | null): SessionDoc {
-  const [seat] = requireSeat(doc, identity);
-  if (seat === undefined) throw new Error('requireSeat returned no seat');
+// The two players write, and the watchers too while watcherChat is on. A message comes from the seat
+// of the caller (X in a friend game), else from 'watcher'. `author` is the person id of the caller, from
+// the holder of the session. Null when the holder has none (a game on one device): then the message has no `by`.
+export function chat(
+  doc: SessionDoc,
+  identity: Identity,
+  text: unknown,
+  now: EpochMs,
+  author: PersonId | null,
+  watchers: readonly OpenWatcher[],
+): SessionDoc {
+  const from = chatSeat(doc, identity, watchers);
   const message = normalizeChat(text);
   if (message === undefined) throw new SessionError(400, `A message needs 1 to ${CHAT_MAX_LENGTH} characters.`);
   const id = (doc.chat.at(-1)?.id ?? 0) + 1;
-  const sent = { id, from: seat, text: message, at: now, ...(author === null ? {} : { by: author }) };
+  const sent = { id, from, text: message, at: now, ...(author === null ? {} : { by: author }) };
   return { ...doc, chat: [...doc.chat, sent].slice(-CHAT_KEEP) };
+}
+
+function chatSeat(doc: SessionDoc, identity: Identity, watchers: readonly OpenWatcher[]): ChatFrom {
+  const [seat] = seatsOf(doc, identity);
+  if (seat !== undefined) return seat;
+  if (!watchers.some((watcher) => identity.has(watcher.token))) throw new SessionError(403, 'Open the game to chat.');
+  if (!doc.watcherChat) throw new SessionError(403, 'The players turned off chat for watchers.');
+  return 'watcher';
 }
 
 // A request of a player for the sound playoff of an online session (src/practice/playoff.ts).
@@ -423,6 +440,7 @@ export function viewOf(doc: SessionDoc, { code, version, identity, now, audience
     locked: isLocked(doc),
     clock: doc.clock,
     fixedSeats: doc.fixedSeats,
+    watcherChat: doc.watcherChat,
     flipped: doc.flipped,
     now,
     version,

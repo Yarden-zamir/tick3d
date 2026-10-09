@@ -28,7 +28,8 @@ export function personTarget(element: EventTarget | null): { element: HTMLElemen
 // The author of a message. A message from before person ids has no `by`: it shows with the player who
 // holds its seat now. Limit: after a seat change such an old message shows with the new holder. Only
 // stored messages from before person ids have no `by`, and the chat keeps only the newest ones.
-export const authorOf = (view: SessionView, message: ChatMessage): PersonId | null => message.by ?? view.people[message.from];
+export const authorOf = (view: SessionView, message: ChatMessage): PersonId | null =>
+  message.by ?? (message.from === 'watcher' ? null : view.people[message.from]);
 
 // The messages to show: none from a blocked person, and none whose "<code>:<id>" this device reported.
 export const visibleMessages = (view: SessionView, blocked: ReadonlySet<PersonId>, reported: ReadonlySet<string>): ChatMessage[] =>

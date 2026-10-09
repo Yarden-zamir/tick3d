@@ -108,6 +108,7 @@ export function applyView(view: SessionView): void {
     }
     if (page.session.locked && !previous.locked) showToast('Settings are locked for both players until this game ends.');
     if (page.session.fixedSeats !== previous.fixedSeats) showToast(seatLockText(page.session.fixedSeats));
+    if (page.session.watcherChat !== previous.watcherChat) showToast(watcherChatText(page.session.watcherChat));
     const seatChange = seatChangeText(previous, page.session);
     if (seatChange !== undefined) showToast(seatChange);
     for (const [option, label] of [['hideBoard', 'Hide board'], ['hideHistory', 'Hide history'], ['hideCoordinates', 'Hide coordinates']] as const) {
@@ -249,6 +250,9 @@ export function defaultSessionName(mode: Mode = 'online'): string {
 
 export const seatLockText = (fixedSeats: boolean): string =>
   fixedSeats ? 'Seats kept.' : 'Seats swap each game.';
+
+export const watcherChatText = (watcherChat: boolean): string =>
+  watcherChat ? 'Watchers can chat.' : 'Only the players can chat.';
 
 // In a computer game the seats rotate between games, so "You play" follows the seat of the live game.
 // Limit: a click on the other seat still opens the newest session of that match-up, as before rotation.

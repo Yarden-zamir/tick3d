@@ -293,10 +293,13 @@
         <!-- The Players box of online and Nearby games: seats, watchers and seat controls (src/page/players.ts).
              It sits under the Opponent picker and the mode boxes, so it never moves the picker when it shows. -->
         <section class="players" id="players" aria-labelledby="players-title" data-show-mode="online nearby" data-needs-session>
-          <!-- The seat lock: X and O swap after each game unless it is on (src/page/controls.ts). -->
+          <!-- Watcher chat: watchers can write in the chat while it is on. The seat lock: X and O swap after each game unless it is on (src/page/controls.ts). -->
           <div class="field-head">
             <span class="label" id="players-title" data-tip="Hold or right-click a player to report or block">Players</span>
-            <button type="button" class="btn btn-small btn-icon lock" data-seat-lock aria-label="Keep the seats" aria-pressed="false"></button>
+            <span class="field-head-actions">
+              <button type="button" class="btn btn-small btn-icon watcher-chat" id="watcher-chat" aria-label="Watchers can chat" aria-pressed="true"></button>
+              <button type="button" class="btn btn-small btn-icon lock" data-seat-lock aria-label="Keep the seats" aria-pressed="false"></button>
+            </span>
           </div>
           <ul class="players-list" id="players-list"></ul>
           <div class="players-request" id="players-request" aria-live="polite" hidden>

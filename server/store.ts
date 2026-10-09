@@ -913,7 +913,7 @@ export async function openStore(
     lock: (code: Code, token: PlayerToken) => change(code, token, core.lock),
     chat: async (code: Code, token: PlayerToken, text: unknown) => {
       const author = await serialized(async () => personId(await ownerOf(token)));
-      return change(code, token, (doc, identity) => core.chat(doc, identity, text, now(), author));
+      return change(code, token, (doc, identity, watchers) => core.chat(doc, identity, text, now(), author, watchers));
     },
     playoff: (code: Code, token: PlayerToken, request: PlayoffRequest) =>
       change(code, token, (doc, identity) => core.playoff(doc, identity, request, now())),
@@ -1023,8 +1023,15 @@ export async function openStore(
           const id = request.target.message;
           const message = row.doc.chat.find((entry) => entry.id === id);
           if (message === undefined) throw new SessionError(404, 'That message is not in the chat any more.');
-          const author = row.doc.seats[message.from];
-          target = { message: id, text: message.text, person: author === null ? null : person(author), name: author === null ? null : name(author) };
+          // The writer by person id. An older message without one stands for the holder of its seat.
+          const byPerson = message.by;
+          const author =
+            byPerson !== undefined
+              ? (everyone.find((candidate) => candidate !== null && person(candidate) === byPerson) ?? null)
+              : message.from === 'watcher'
+                ? null
+                : row.doc.seats[message.from];
+          target = { message: id, text: message.text, person: byPerson ?? (author === null ? null : person(author)), name: author === null ? null : name(author) };
         } else {
           const id = request.target.person;
           const found = everyone.find((candidate) => candidate !== null && person(candidate) === id);
