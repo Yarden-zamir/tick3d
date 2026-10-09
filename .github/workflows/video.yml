@@ -37,10 +37,8 @@ jobs:
         with:
           node-version: 26
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            video/package-lock.json
-      - run: npm ci --no-audit --no-fund
+          cache-dependency-path: video/package-lock.json
+      # Only video/ needs packages: the game code that it imports from src/ has no dependencies.
       - run: npm ci --no-audit --no-fund
         working-directory: video
       - name: Check beats.json and every variant against the game code
@@ -65,10 +63,8 @@ jobs:
         with:
           node-version: 26
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            video/package-lock.json
-      - run: npm ci --no-audit --no-fund
+          cache-dependency-path: video/package-lock.json
+      # Only video/ needs packages: the game code that it imports from src/ has no dependencies.
       - run: npm ci --no-audit --no-fund
         working-directory: video
       # Remotion downloads Chrome Headless Shell into node_modules/.remotion on the first render.

@@ -9,7 +9,7 @@ import { availableParallelism, platform } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { bundle } from '@remotion/bundler';
-import { type ChromiumOptions, renderMedia, renderStill, selectComposition } from '@remotion/renderer';
+import { type ChromiumOptions, openBrowser, renderMedia, renderStill, selectComposition } from '@remotion/renderer';
 import { SIXTEENTHS_PER_BAR } from '../creative/beats.ts';
 import { BEATS, VARIANT, frameOf } from '../src/timeline.ts';
 
@@ -46,14 +46,19 @@ const envVariables = { VIDEO_VARIANT: VARIANT };
 const inputProps = { variant: VARIANT };
 mkdirSync(path(stills), { recursive: true });
 const serveUrl = await bundle({ entryPoint: path('../src/index.ts'), publicDir: path('../public') });
+// One browser for the whole run: without it, every still starts its own browser.
+const puppeteerInstance = await openBrowser('chrome', { chromiumOptions });
 for (const id of crops) {
-  const composition = await selectComposition({ serveUrl, id, chromiumOptions, envVariables, inputProps });
-  for (const bar of bars) {
-    const frame = frameOf(bar.start + SIXTEENTHS_PER_BAR / 2);
-    const output = path(`${stills}${id}-bar-${bar.bar}.${draft ? 'jpg' : 'png'}`);
-    const format = draft ? { imageFormat: 'jpeg' as const, jpegQuality: 80, scale: 0.5 } : {};
-    await renderStill({ composition, serveUrl, frame, output, chromiumOptions, envVariables, inputProps, ...format });
-  }
+  const composition = await selectComposition({ serveUrl, id, chromiumOptions, envVariables, inputProps, puppeteerInstance });
+  // The stills of a crop render in parallel, one browser tab each (8 at most).
+  const format = draft ? { imageFormat: 'jpeg' as const, jpegQuality: 80, scale: 0.5 } : {};
+  await Promise.all(
+    bars.map((bar) => {
+      const frame = frameOf(bar.start + SIXTEENTHS_PER_BAR / 2);
+      const output = path(`${stills}${id}-bar-${bar.bar}.${draft ? 'jpg' : 'png'}`);
+      return renderStill({ composition, serveUrl, frame, output, chromiumOptions, envVariables, inputProps, puppeteerInstance, ...format });
+    }),
+  );
   process.stdout.write(`${VARIANT} ${id}: ${bars.length} ${draft ? 'draft ' : ''}stills done\n`);
   if (stillsOnly) continue;
   await renderMedia({
@@ -66,9 +71,11 @@ for (const id of crops) {
     chromiumOptions,
     envVariables,
     inputProps,
+    puppeteerInstance,
     onProgress: ({ progress }) => {
       if (Math.round(progress * 100) % 10 === 0) process.stdout.write(`${id}: ${Math.round(progress * 100)} %\r`);
     },
   });
   process.stdout.write(`${VARIANT} ${id}: video done\n`);
 }
+await puppeteerInstance.close({ silent: false });
