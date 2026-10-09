@@ -1,4 +1,5 @@
 node_modules/
 out/
-# The soundtrack is rendered by `npm run audio` (scripts/audio.ts), never committed.
+# The soundtracks are rendered by `npm run audio` and `npm run tutorial`, never committed.
 public/soundtrack.wav
+public/tutorial.wav

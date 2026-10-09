@@ -69,6 +69,14 @@ function sticker(ctx: CanvasRenderingContext2D, text: string, size: number, fill
   return width;
 }
 
+// The width of a word group in `look`, as wordAt draws it at rest.
+export function wordWidth(ctx: CanvasRenderingContext2D, text: string, look: Look): number {
+  ctx.font = `800 ${look.size}px ${FONT}`;
+  ctx.letterSpacing = '-0.03em';
+  const width = ctx.measureText(text).width;
+  return look.sticker === undefined ? width : width + look.size * 0.28;
+}
+
 // `leave`: the sixteenth where the word starts to shrink and fade out, over 1 sixteenth.
 export function wordAt(ctx: CanvasRenderingContext2D, frame: number, word: Word, look: Look, theme: Theme, leave?: number): void {
   const p = dropIn(frame, word.at);
