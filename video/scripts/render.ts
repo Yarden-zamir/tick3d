@@ -5,6 +5,7 @@
 //   --draft                     half-size JPEG stills only, in out/draft/: the local check of an edit
 //   --bars 2,5                  only these bars of the stills
 import { mkdirSync } from 'node:fs';
+import { availableParallelism, platform } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { bundle } from '@remotion/bundler';
@@ -13,10 +14,11 @@ import { SIXTEENTHS_PER_BAR } from '../creative/beats.ts';
 import { BEATS, VARIANT, frameOf } from '../src/timeline.ts';
 
 const path = (relative: string) => fileURLToPath(new URL(relative, import.meta.url));
-// WebGL in headless Chrome on a machine without a GPU: ANGLE on SwiftShader.
-const chromiumOptions: ChromiumOptions = { gl: 'swangle' };
-// Browser tabs: a CI runner takes all of its cores, a developer host keeps some for its other work.
-const CONCURRENCY = process.env['CI'] === undefined ? 2 : 4;
+// WebGL in headless Chrome: ANGLE on the GPU on macOS, ANGLE on SwiftShader (CPU) on Linux without a GPU (CI).
+// A Linux host with a GPU also gets SwiftShader. Revisit if such a host renders the video.
+const chromiumOptions: ChromiumOptions = { gl: platform() === 'darwin' ? 'angle' : 'swangle' };
+// Browser tabs: one per core. A CI runner has 4.
+const CONCURRENCY = availableParallelism();
 
 const CROPS = ['landscape', 'portrait'] as const;
 type Crop = (typeof CROPS)[number];

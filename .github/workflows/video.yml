@@ -117,7 +117,9 @@ jobs:
         with:
           pattern: tick3d-video-*
           path: renders
-      # ImageMagick and ffmpeg are on the runner image.
+      # The ubuntu-24.04 runner image does not have ImageMagick.
+      - name: Install ImageMagick and ffmpeg
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends imagemagick ffmpeg
       - name: Build the previews
         run: |
           set -eu
