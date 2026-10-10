@@ -23,7 +23,6 @@ import {
   newCodeButton,
   scoreEl,
   newGameButton,
-  tuningEl,
   undoButton,
   showCardButton,
   lockButton,
@@ -219,7 +218,7 @@ export function render(): void {
   document.querySelectorAll<HTMLElement>('[data-needs-session]').forEach((field) => {
     field.toggleAttribute('data-pending', pending);
   });
-  showSegmented(document, settings, frozen);
+  showSegmented(document, settings);
   document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) => {
     button.setAttribute('aria-pressed', String(options[button.dataset.toggle as Toggle]));
     button.disabled = frozen || page.busy || !canChangeMatch();
@@ -235,8 +234,8 @@ export function render(): void {
   renderOnlineQr(onlineSession?.code);
   if (document.activeElement !== sessionNameInput) sessionNameInput.value = onlineSession?.name ?? '';
   sessionNameInput.disabled = onlineSession?.you == null || page.busy;
-  joinCodeInput.disabled = frozen || page.busy;
-  newCodeButton.disabled = frozen || page.busy;
+  joinCodeInput.disabled = page.busy;
+  newCodeButton.disabled = page.busy;
 
   // Score: finished games of this session only, per player. The seats can rotate between games.
   const score = { X: 0, O: 0, draw: 0 };
@@ -287,7 +286,6 @@ export function render(): void {
   const sharedLive = shared() && isLive() && current().moves.length > 0;
   // A game from a link: New game goes back to play.
   newGameButton.disabled = page.viewing === undefined && (frozen || page.busy || page.thinking || page.session?.you == null || sharedLive);
-  for (const input of tuningEl.querySelectorAll('input')) input.disabled = frozen;
   const undoProblem = undoProblemText();
   undoButton.disabled = frozen || page.thinking || page.busy || page.review !== undefined || undoProblem !== undefined;
   undoButton.title = undoProblem ?? (shared() ? 'Ask the other player to take back your last move.' : 'Take back the last move.');
@@ -301,11 +299,10 @@ export function render(): void {
   const locked = page.session?.locked ?? false;
   // A held lock stays enabled, so its tooltip shows on hover. A click on it changes nothing.
   lockButton.disabled = !locked && (page.busy || !isLive() || page.review !== undefined || !canChangeMatch() || !bothSeated());
-  const lockScope = shared() ? ' for both players' : '';
   lockButton.dataset.tip = locked
-    ? `Locked${lockScope} until this game ends. Leaving stays possible.`
+    ? 'Locked for both players until this game ends: hide options, time limit, seat rotation and undo.'
     : bothSeated()
-      ? `Lock${lockScope}: no setting changes (level, time limit, hide options, view) until this game ends. Leaving stays possible.`
+      ? 'Lock: neither player can change hide options, time limit, seat rotation or undo until this game ends.'
       : 'Lock: waits for the second player.';
   lockButton.innerHTML = locked ? `${LOCK_CLOSED_ICON}<span>Locked</span>` : `${LOCK_OPEN_ICON}<span>Lock</span>`;
   lockButton.setAttribute('aria-pressed', String(locked));
