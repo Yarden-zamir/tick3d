@@ -297,8 +297,6 @@ export function render(): void {
   renderClocks();
   // A watcher sees the lock of the session, but the lock does not hold the watcher's own settings.
   const locked = page.session?.locked ?? false;
-  // The lock is a promise between two people, so a game on one device has no lock.
-  lockButton.hidden = !shared();
   // A held lock stays enabled, so its tooltip shows on hover. A click on it changes nothing.
   lockButton.disabled = !locked && (page.busy || !isLive() || page.review !== undefined || !canChangeMatch() || !bothSeated());
   lockButton.dataset.tip = locked

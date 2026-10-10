@@ -367,10 +367,10 @@
 
         <!-- Before a game with another device starts, the hide options show but stay off (src/page/render.ts). -->
         <div class="field" data-show-mode="computer friend online nearby">
-          <!-- The lock sits with the match settings that it locks. -->
+          <!-- The lock sits with the match settings that it locks. It is a promise between two people, so only online and Nearby show it. -->
           <div class="field-head">
             <span class="label">Hide</span>
-            <button type="button" class="btn btn-small lock" id="lock" aria-pressed="false">Lock</button>
+            <button type="button" class="btn btn-small lock" id="lock" data-show-mode="online nearby" aria-pressed="false">Lock</button>
           </div>
           <div class="toggles">
             <button type="button" class="btn" data-toggle="hideBoard" aria-label="Hide board">Board</button>
