@@ -3013,6 +3013,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--muted);
 }
 
+.achievements[data-view='chips'] li.unlocked .achievement-count {
+  color: inherit;
+}
+
 /* The achievements that the game of the end card unlocked. */
 .end-card-achievements {
   margin: 0;
