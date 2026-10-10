@@ -1,4 +1,4 @@
-import { createOnline, expect, expectToast, joinAsO, playTurns, status, test, xWins } from './fixtures.ts';
+import { createOnline, expect, joinAsO, playTurns, status, test, xWins } from './fixtures.ts';
 import { ACHIEVEMENTS } from '../src/achievements.ts';
 
 // This file creates 1 online session (the server allows 60 per hour for one client address).
@@ -11,9 +11,14 @@ test('a won online game unlocks achievements on the end card and in My games', a
   await expect(status(alice)).toHaveText('You win!');
 
   // X won in 7 moves against a person online.
-  const unlocked = 'Achievements unlocked: First win, Seven moves, Worthy opponent';
-  await expect(alice.locator('#end-card-achievements')).toHaveText(unlocked);
-  await expectToast(alice, unlocked);
+  // The card is open, so the unlock shows on it, with a badge for each achievement, and not in a toast.
+  const strip = alice.locator('#end-card-achievements');
+  await expect(strip).toHaveAccessibleName('Achievements unlocked: First win, Seven moves, Worthy opponent');
+  await expect(strip.getByRole('button')).toHaveText(['', '', '']);
+  await expect(strip.getByRole('button', { name: 'Seven moves' })).toBeVisible();
+  await expect(strip).toContainText('First win');
+  await strip.getByRole('button', { name: 'Worthy opponent' }).click();
+  await expect(strip).toContainText('Beat a person online.');
   await expect(bob.locator('#end-card')).toHaveAttribute('open');
   await expect(bob.locator('#end-card-achievements')).toBeHidden();
 
@@ -24,5 +29,5 @@ test('a won online game unlocks achievements on the end card and in My games', a
     await expect(page.locator('#my-games-achievements li.unlocked')).toHaveCount(count);
   }
   // Bob played one game toward "Play 10 games".
-  await expect(bob.locator('#my-games-achievements li', { hasText: 'Regular' })).toContainText('1/10');
+  await expect(bob.locator('#my-games-achievements li', { hasText: 'Regular' })).toContainText('1 / 10');
 });

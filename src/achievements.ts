@@ -31,8 +31,8 @@ type Rule = {
   id: string;
   name: string;
   description: string;
-  // A short text for the badge, at most 3 characters.
-  mark: string;
+  // The color of the badge: how hard the goal is.
+  tier: 'bronze' | 'silver' | 'gold';
   goal: number;
   kind: 'count' | 'streak';
   test: (game: PlayedGame) => boolean;
@@ -47,15 +47,15 @@ const wonByLine = (game: PlayedGame) => won(game) && game.end.status.kind === 'w
 const FASTEST_WIN = 7;
 
 export const ACHIEVEMENTS = [
-  { id: 'first-win', name: 'First win', description: 'Win a game.', mark: '1', goal: 1, kind: 'count', test: won },
-  { id: 'beat-easy', name: 'Warm-up', description: 'Beat the computer on Easy.', mark: 'E', goal: 1, kind: 'count', test: beat('easy') },
-  { id: 'beat-medium', name: 'Getting serious', description: 'Beat the computer on Medium.', mark: 'M', goal: 1, kind: 'count', test: beat('medium') },
-  { id: 'beat-hard', name: 'Machine breaker', description: 'Beat the computer on Hard.', mark: 'H', goal: 1, kind: 'count', test: beat('hard') },
+  { id: 'first-win', name: 'First win', description: 'Win a game.', tier: 'bronze', goal: 1, kind: 'count', test: won },
+  { id: 'beat-easy', name: 'Warm-up', description: 'Beat the computer on Easy.', tier: 'bronze', goal: 1, kind: 'count', test: beat('easy') },
+  { id: 'beat-medium', name: 'Getting serious', description: 'Beat the computer on Medium.', tier: 'silver', goal: 1, kind: 'count', test: beat('medium') },
+  { id: 'beat-hard', name: 'Machine breaker', description: 'Beat the computer on Hard.', tier: 'gold', goal: 1, kind: 'count', test: beat('hard') },
   {
     id: 'fastest-win',
     name: 'Seven moves',
     description: 'Win in 7 moves, the fewest possible.',
-    mark: '7',
+    tier: 'gold',
     goal: 1,
     kind: 'count',
     test: (game) => wonByLine(game) && game.game.moves.length === FASTEST_WIN,
@@ -64,29 +64,29 @@ export const ACHIEVEMENTS = [
     id: 'space-diagonal',
     name: 'Through the core',
     description: 'Win with a diagonal through the cube.',
-    mark: '3D',
+    tier: 'silver',
     goal: 1,
     kind: 'count',
     test: (game) => game.end.status.kind === 'won' && won(game) && lineKind(game.end.status.line) === 'space',
   },
-  { id: 'board-hidden', name: 'Blindfold', description: 'Win with the board hidden.', mark: 'B', goal: 1, kind: 'count', test: (game) => won(game) && game.options.hideBoard },
+  { id: 'board-hidden', name: 'Blindfold', description: 'Win with the board hidden.', tier: 'gold', goal: 1, kind: 'count', test: (game) => won(game) && game.options.hideBoard },
   {
     id: 'coordinates-hidden',
     name: 'By ear',
     description: 'Win with the coordinates hidden.',
-    mark: '♪',
+    tier: 'silver',
     goal: 1,
     kind: 'count',
     test: (game) => won(game) && game.options.hideCoordinates,
   },
-  { id: 'timed-win', name: 'Against the clock', description: 'Win a game with a time limit.', mark: 'T', goal: 1, kind: 'count', test: (game) => won(game) && hasLimit(game.game.clock) },
-  { id: 'streak-3', name: 'Hat trick', description: 'Win 3 games in a row.', mark: '3×', goal: 3, kind: 'streak', test: won },
-  { id: 'streak-5', name: 'On fire', description: 'Win 5 games in a row.', mark: '5×', goal: 5, kind: 'streak', test: won },
-  { id: 'online-win', name: 'Worthy opponent', description: 'Beat a person online.', mark: '@', goal: 1, kind: 'count', test: (game) => won(game) && game.mode === 'online' },
-  { id: 'nearby-win', name: 'Face to face', description: 'Beat a person in Nearby.', mark: 'N', goal: 1, kind: 'count', test: (game) => won(game) && game.mode === 'nearby' },
-  { id: 'full-cube', name: 'Full cube', description: 'Play a game to a draw: the cube fills up.', mark: '=', goal: 1, kind: 'count', test: (game) => game.end.status.kind === 'draw' },
-  { id: 'games-10', name: 'Regular', description: 'Play 10 games.', mark: '10', goal: 10, kind: 'count', test: () => true },
-  { id: 'games-100', name: 'Centurion', description: 'Play 100 games.', mark: '100', goal: 100, kind: 'count', test: () => true },
+  { id: 'timed-win', name: 'Against the clock', description: 'Win a game with a time limit.', tier: 'bronze', goal: 1, kind: 'count', test: (game) => won(game) && hasLimit(game.game.clock) },
+  { id: 'streak-3', name: 'Hat trick', description: 'Win 3 games in a row.', tier: 'silver', goal: 3, kind: 'streak', test: won },
+  { id: 'streak-5', name: 'On fire', description: 'Win 5 games in a row.', tier: 'gold', goal: 5, kind: 'streak', test: won },
+  { id: 'online-win', name: 'Worthy opponent', description: 'Beat a person online.', tier: 'silver', goal: 1, kind: 'count', test: (game) => won(game) && game.mode === 'online' },
+  { id: 'nearby-win', name: 'Face to face', description: 'Beat a person in Nearby.', tier: 'silver', goal: 1, kind: 'count', test: (game) => won(game) && game.mode === 'nearby' },
+  { id: 'full-cube', name: 'Full cube', description: 'Play a game to a draw: the cube fills up.', tier: 'bronze', goal: 1, kind: 'count', test: (game) => game.end.status.kind === 'draw' },
+  { id: 'games-10', name: 'Regular', description: 'Play 10 games.', tier: 'bronze', goal: 10, kind: 'count', test: () => true },
+  { id: 'games-100', name: 'Centurion', description: 'Play 100 games.', tier: 'gold', goal: 100, kind: 'count', test: () => true },
 ] as const satisfies readonly Rule[];
 
 export type Achievement = (typeof ACHIEVEMENTS)[number];
