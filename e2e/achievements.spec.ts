@@ -26,7 +26,7 @@ test('a won online game unlocks achievements on the end card and in My games', a
     await page.locator('#end-card-close').click();
     await page.locator('#account-button').click();
     await expect(page.locator('#my-games-achievements-summary')).toHaveText(`${count} of ${ACHIEVEMENTS.length} unlocked`);
-    await expect(page.locator('#my-games-achievements li.unlocked')).toHaveCount(count);
+    await expect(page.locator('#my-games-achievements li[data-state="unlocked"]')).toHaveCount(count);
   }
   // Bob played one game toward "Play 10 games".
   await expect(bob.locator('#my-games-achievements li', { hasText: 'Regular' })).toContainText('1 / 10');
