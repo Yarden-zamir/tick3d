@@ -1,6 +1,6 @@
 // The aggregates of the public stats page (/stats), in DuckDB SQL. Everyone gets counts only: no
-// names, no page faults. Mine adds the names of your opponents. A person filter counts the games of one
-// person, without their opponents. The practice part (server/practice.ts)
+// names, no page faults. The leaderboard, which names players, is server/leaderboard.ts.
+// Mine adds the names of your opponents. A person filter counts the games of one person, without their opponents. The practice part (server/practice.ts)
 // adds the Voice room leaderboard, which GET /api/practice/best shows too. Never a token, a result id or a game id leaves this file.
 // An opponent without a login shows with a custom or a generated name.
 import { type DuckDBValue, listValue } from '@duckdb/node-api';
@@ -48,7 +48,7 @@ export const SEAT_O = `coalesce(results.player_o, CASE WHEN results.public_id IS
 // A row from before game links has no winner, ending or line columns. The game ended with its last
 // move (a win) or on time, so the last mover won. Only a full cube can also be a draw: such an old
 // game counts as a draw, and its winning line has no kind.
-const FILTERED_GAMES = `FROM results SELECT
+export const FILTERED_GAMES = `FROM results SELECT
     finished_at,
     doc.mode::VARCHAR AS mode,
     doc.difficulty::VARCHAR AS level,
@@ -148,7 +148,7 @@ function streaksOf(outcomes: readonly SideOutcome[]): Pick<PersonalStats, 'bestS
 }
 
 // The bound values of the GAMES filters. `tokens` are the tokens of one player for Mine, else null.
-function filterValues(filter: StatsFilter, tokens: readonly string[] | null, now: EpochMs): Record<string, DuckDBValue> {
+export function filterValues(filter: StatsFilter, tokens: readonly string[] | null, now: EpochMs): Record<string, DuckDBValue> {
   const days = RANGE_DAYS[filter.range];
   return {
     since: days === null ? null : now - days * 86_400_000,

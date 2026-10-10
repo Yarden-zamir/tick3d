@@ -622,6 +622,38 @@ describe('online game metrics', () => {
   });
 });
 
+describe('leaderboard', () => {
+  it('counts each person from their side, merges linked devices, and leaves out friend games and hidden people', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addResults(alicePhone, [result('aaaaaaaa-3333-4000-8000-000000000001', { finishedAt: ms(1_000) })]);
+    await store.addResults(carol, [
+      result('aaaaaaaa-3333-4000-8000-000000000002', { finishedAt: ms(1_000), game: finishedGame(X_WINS_LATE) }),
+      result('aaaaaaaa-3333-4000-8000-000000000003', { finishedAt: ms(2_000) }),
+      result('aaaaaaaa-3333-4000-8000-000000000004', { finishedAt: ms(3_000), you: 'O' }),
+      result('aaaaaaaa-3333-4000-8000-000000000005', { finishedAt: ms(4_000), mode: 'friend', you: null, difficulty: null }),
+    ]);
+    const board = await store.leaderboard(ALL_STATS, alice);
+    const aliceId = await personId(`account-${String(ALICE_GITHUB.id).padStart(16, '0')}`);
+    expect(board.you).toBe(aliceId);
+    expect(board.rows.find((found) => found.person === aliceId)).toMatchObject({ name: 'alice', player: { login: 'alice' }, games: 2, won: 2, lost: 0, bestStreak: 2 });
+    const carolId = await personId(carol);
+    expect(board.rows.find((found) => found.person === carolId)).toMatchObject({ games: 3, won: 2, lost: 1, fastestWin: X_WINS.length, bestStreak: 2 });
+    const bobId = await personId(bob);
+    expect(board.rows.find((found) => found.person === bobId)).toMatchObject({ games: 1, won: 0, lost: 1, fastestWin: null, bestStreak: 0 });
+    expect(board.rows.map((found) => found.games)).toEqual([3, 2, 1]);
+
+    // The computer filter keeps the computer games only, and "Hide my stats" takes a person off the board.
+    // A new filter has its own cache entry, so the change shows here at once.
+    await store.setStatsPrivate(carol, true);
+    const computer = await store.leaderboard({ ...ALL_STATS, mode: 'computer' }, undefined);
+    expect(computer.you).toBeNull();
+    expect(computer.rows.map((found) => found.person)).toEqual([aliceId]);
+  });
+});
+
 describe('stats', () => {
   it('lists levels and modes in their fixed order, not by count or name', async () => {
     store = await openStore(':memory:');

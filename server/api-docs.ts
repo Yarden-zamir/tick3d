@@ -26,6 +26,7 @@ import {
   REPORT_NOTE_MAX_LENGTH,
   REPORT_REASONS,
   HISTORY_PAGE_SIZE,
+  LEADERBOARD_ROWS,
   LAYOUTS,
   REFUSALS,
   RELEASE_ROWS,
@@ -72,9 +73,13 @@ export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number
 // That is about 45 of 55. Above the budget, production makes no call until the limit resets, and keeps the last list.
 // Revisit with more than about 15 open pull requests or about 25 pushes per hour: then use a GitHub token (5000 per hour).
 export const PREVIEWS_CACHE_MS = 180_000;
+// The stats page and the leaderboard ask often; the numbers change slowly.
+export const STATS_CACHE_MS = 60_000;
 // A preview server keeps production's list for this long. It costs no GitHub call, only a request to production.
 export const PREVIEWS_RELAY_CACHE_MS = 15_000;
 // The 400 answer of GET /api/stats for a query that parseStatsFilter refuses.
+// The 400 answer of GET /api/leaderboard for a query that parseLeaderboardFilter refuses.
+export const LEADERBOARD_FILTER_ERROR = `Unknown leaderboard filter. range: ${STATS_RANGES.join(', ')}. mode: ${SESSION_MODES.join(', ')}. level: ${DIFFICULTIES.join(', ')}, only with the computer mode or no mode. Each key at most once.`;
 export const STATS_FILTER_ERROR = `Unknown stats filter. scope: ${STATS_SCOPES.join(' or ')}. range: ${STATS_RANGES.join(', ')}. mode: ${SESSION_MODES.join(', ')}. level: ${DIFFICULTIES.join(', ')}, only with the computer mode or no mode. person: a person id of ${PERSON_ID_LENGTH} hex characters, not with scope mine. Each key at most once.`;
 
 // ---- Shapes (JSON Schema 2020-12, as OpenAPI 3.1 uses) ----
@@ -160,6 +165,8 @@ export type SchemaName =
   | 'PracticeStored'
   | 'PracticeLeader'
   | 'PracticeBoard'
+  | 'LeaderboardRow'
+  | 'Leaderboard'
   | 'BlockRequest'
   | 'Blocks'
   | 'ReportRequest'
@@ -658,6 +665,24 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     top: list('The best people, best first.', ref('PracticeLeader')),
     you: nullable(object('Your best run, on all your linked devices.', { totalMs: count(), score: count() })),
   }),
+  LeaderboardRow: object('The results of one person, from their side of each game.', {
+    person,
+    name: { ...displayName, description: 'The GitHub login, else the custom name, else the generated name.' },
+    player: nullable(ref('PlayerInfo')),
+    games: count(),
+    won: count(),
+    drawn: count(),
+    lost: count(),
+    fastestWin: { ...nullable(count()), description: 'The fewest moves of a won game. null without a win.' },
+    avgMoves: { type: 'number', minimum: 0, description: 'The mean number of moves of a game.' },
+    bestStreak: count('The longest run of won games.'),
+    lastPlayed: { type: 'integer', minimum: 0, description: 'When the last game ended, in epoch milliseconds.' },
+  }),
+  Leaderboard: object(`The common stats of each player, for the page to sort. The most active ${LEADERBOARD_ROWS} players at most.`, {
+    generatedAt: { type: 'integer', minimum: 0, description: 'Server time in epoch milliseconds.' },
+    rows: list('The players, most games first.', ref('LeaderboardRow')),
+    you: { ...nullable(person), description: 'Your person id, when the X-Player header names you. null without the header.' },
+  }),
   Contributor: object('A GitHub account that worked on a pull request.', {
     login: { type: 'string', minLength: 1, maxLength: 39 },
     avatar: { type: 'string', pattern: '^https://avatars\\.githubusercontent\\.com/' },
@@ -787,6 +812,13 @@ const X_WINS = [0, 1, 16, 2, 32, 3, 48];
 
 const zeroCount = () => ({ key: 'online', count: 0 });
 // The stats of a new server, shortened to one day.
+const LEADERBOARD_EXAMPLE = {
+  generatedAt: 1_760_000_000_000,
+  rows: [
+    { person: OTHER_PERSON, name: 'braveOtter', player: null, games: 12, won: 7, drawn: 1, lost: 4, fastestWin: 9, avgMoves: 17.5, bestStreak: 3, lastPlayed: 1_759_990_000_000 },
+  ],
+  you: null,
+};
 const STATS_EXAMPLE = {
   generatedAt: T0,
   totals: { games: 0, moves: 0, players: 0, accounts: 0, sessions: 0, gamesLast7Days: 0 },
@@ -1319,6 +1351,24 @@ export const ROUTES = {
       { ...BAD_PLAYER, when: `Scope mine only, or a person filter with an invalid header. ${BAD_PLAYER.when}` },
       { status: 403, when: 'A person filter: that person hides their stats ("Hide my stats" in My games).' },
       { status: 404, when: 'A person filter: no account and no finished game has that person id.' },
+    ],
+    examplePlayer: AGENT_A,
+  },
+  'GET /api/leaderboard': {
+    operationId: 'leaderboard',
+    tag: 'Account',
+    summary: 'The common stats of each player: games, results, fastest win, best streak.',
+    description: `The query takes the range, mode and level filters of GET /api/stats. Friend games and the computer do not count. A person who hides their stats ("Hide my stats" in My games) is not on it. Answers are at most ${STATS_CACHE_MS / 1000} seconds old.`,
+    player: 'optional',
+    query: {
+      range: { description: '7d, 30d or all (the default).', required: false, schema: strings(STATS_RANGES), example: '30d' },
+      mode: { description: 'One mode. Leave it out for every mode.', required: false, schema: strings(SESSION_MODES), example: 'computer' },
+      level: { description: 'One computer level, only with mode computer or without a mode.', required: false, schema: strings(DIFFICULTIES), example: 'hard' },
+    },
+    response: { status: 200, description: 'One row per player. No token.', schema: 'Leaderboard', example: LEADERBOARD_EXAMPLE },
+    errors: [
+      { status: 400, when: 'A key is unknown or repeated, a value is unknown, or a level comes with a mode other than computer.' },
+      { ...BAD_PLAYER, when: `Only with an invalid header. ${BAD_PLAYER.when}` },
     ],
     examplePlayer: AGENT_A,
   },

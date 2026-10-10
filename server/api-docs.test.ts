@@ -24,6 +24,7 @@ import {
   parseSeatAnswer,
   parseBlockRequest,
   parseStatsPrivacy,
+  parseLeaderboard,
   parseBlocks,
   parseReportRequest,
 } from '../src/protocol.ts';
@@ -70,6 +71,7 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   PlayoffRequest: parsePlayoffRequest,
   PracticeRun: parsePracticeRun,
   PracticeBoard: parsePracticeBoard,
+  Leaderboard: parseLeaderboard,
   SeatAction: parseSeatAction,
   SeatAnswer: parseSeatAnswer,
   // server/main.ts reads `name` and checks it with parseCustomName.
@@ -170,6 +172,9 @@ describe('the SessionView schema', () => {
       expect(schemaErrors('HistoryPage', await store.history(alice, 0))).toBe('');
       expect(schemaErrors('Records', { records: await store.records(alice) })).toBe('');
       expect(schemaErrors('Stats', await store.stats())).toBe('');
+      const board = await store.leaderboard(ALL_STATS, alice);
+      expect(board.rows).toHaveLength(2);
+      expect(schemaErrors('Leaderboard', board)).toBe('');
     } finally {
       store.close();
     }

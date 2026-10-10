@@ -40,6 +40,7 @@ import {
   type SessionUpdate,
   type SessionView,
   STATS_PRIVATE_MESSAGE,
+  type Leaderboard,
   type Stats,
   type StatsFilter,
   type StatsPerson,
@@ -68,10 +69,11 @@ import type { PlayoffRequest } from '../src/practice/playoff.ts';
 import type { PracticeBoard, PracticeMode, PracticeRun, PresetId } from '../src/practice/practice.ts';
 import { DELETED_NAME } from '../src/deletions.ts';
 import type { Release } from '../src/release.ts';
-import { DATA_TABLES, type DeletedData } from './api-docs.ts';
+import { DATA_TABLES, type DeletedData, STATS_CACHE_MS } from './api-docs.ts';
 import { practiceBoard, practiceStats } from './practice.ts';
 import { type Rows, bigId, bool, code as codeColumn, deviceGameId, epoch, gameId, int, json, nullable, oneOf, readRow, text } from './sql.ts';
 import { computeStats, SEAT_O, SEAT_X } from './stats.ts';
+import { leaderRows } from './leaderboard.ts';
 
 const { SessionError } = core;
 
@@ -301,8 +303,6 @@ const isFinished = (record: GameRecord) => toGame(record).status.kind !== 'playi
 const isDuplicateKey = (error: unknown) => error instanceof Error && error.message.includes('Duplicate key');
 // A unique id is a few random tries away. Twenty failures mean a bug, not bad luck.
 const MAX_ID_ATTEMPTS = 20;
-// The stats page asks often; the numbers change slowly.
-const STATS_CACHE_MS = 60_000;
 
 // What SQL cannot read from a stored game without a replay.
 type Ending = { winner: Player | null; ending: 'won' | 'timeout' | 'draw'; line: LineKind | null };
@@ -757,6 +757,7 @@ export async function openStore(
 
   // Everyone answers by filter query (statsQuery). The filters have a few dozen combinations, so the map stays small.
   const statsCache = new Map<string, Stats>();
+  const leaderboardCache = new Map<string, Omit<Leaderboard, 'you'>>();
 
   // Delete my data: deletes or anonymises every row of this player, on every linked device, in one
   // transaction. A second call finds nothing and returns zero counts. Per table:
@@ -1406,6 +1407,38 @@ export async function openStore(
         const fresh = { ...(await computeStats(rows, now(), filter, null)), person: null, practice: await practiceStats(rows) };
         statsCache.set(key, fresh);
         return fresh;
+      }),
+
+    // The leaderboard of a range, mode and level, at most STATS_CACHE_MS old. `you` is the person of the
+    // caller, when the X-Player header names one.
+    leaderboard: (filter: StatsFilter, token: PlayerToken | undefined): Promise<Leaderboard> =>
+      serialized(async () => {
+        const you = token === undefined ? null : await personId(await ownerOf(token));
+        const key = statsQuery(filter);
+        const cached = leaderboardCache.get(key);
+        if (cached !== undefined && now() - cached.generatedAt < STATS_CACHE_MS) return { ...cached, you };
+        const found = await leaderRows(rows, filter, now());
+        const names = await namesOf(found.map((row) => row.owner));
+        const fresh = {
+          generatedAt: now(),
+          rows: await Promise.all(
+            found.map(async (row) => ({
+              person: await personId(row.owner),
+              name: row.login ?? names(row.owner),
+              player: row.login === null || row.avatar === null ? null : { login: row.login, avatar: row.avatar },
+              games: row.games,
+              won: row.won,
+              drawn: row.drawn,
+              lost: row.lost,
+              fastestWin: row.fastest_win,
+              avgMoves: row.avg_moves,
+              bestStreak: row.best_streak,
+              lastPlayed: row.last_played,
+            })),
+          ),
+        };
+        leaderboardCache.set(key, fresh);
+        return { ...fresh, you };
       }),
 
     // Every session and result of this player, on all their linked devices.

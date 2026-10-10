@@ -26,6 +26,7 @@ import {
   type SeatAction,
   type SessionUpdate,
   type SessionView,
+  type Leaderboard,
   type StatsFilter,
   type StatsPrivacy,
   parseStatsPrivacy,
@@ -38,6 +39,7 @@ import {
   parsePreviews,
   parsePublicGame,
   parseSessionView,
+  parseLeaderboard,
   statsQuery,
 } from './protocol.ts';
 import { STORAGE_KEYS } from './storage-keys.ts';
@@ -212,6 +214,9 @@ export const api = {
   event: (event: ClientEvent) => call('POST', '/events', event),
   // The aggregates of the stats page. The page checks the shape (src/stats/main.ts).
   stats: (filter: StatsFilter): Promise<unknown> => call('GET', `/stats${statsQuery(filter)}`),
+  // The common stats of each player (GET /api/leaderboard). It takes the range, mode and level of `filter`.
+  leaderboard: async (filter: StatsFilter): Promise<Leaderboard> =>
+    parseLeaderboard(await call('GET', `/leaderboard${statsQuery({ ...filter, scope: 'everyone', person: null })}`)),
 
   // The Nearby lobby (server/lobby.ts). The server holds an announcement until a guest answers, or for about 25 s.
   announceNearby: async (offer: string, id: HostId | undefined, signal: AbortSignal): Promise<Announced> =>

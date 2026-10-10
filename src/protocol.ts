@@ -1099,6 +1099,77 @@ export function statsQuery(filter: StatsFilter): string {
   return text === '' ? '' : `?${text}`;
 }
 
+// ---- Leaderboard ----
+
+// GET /api/leaderboard: the common stats of every player, for the page to sort. It takes the range, mode
+// and level of the stats filters. A person who hides their stats is not on it.
+// Friend games have no side, and the computer is no player, so neither counts.
+export type LeaderboardRow = {
+  person: PersonId;
+  // The GitHub login, else the custom name, else the generated name: the name that the games show.
+  name: string;
+  player: PlayerInfo | null;
+  games: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  // The fewest moves of a won game. null without a win.
+  fastestWin: number | null;
+  avgMoves: number;
+  bestStreak: number;
+  lastPlayed: EpochMs;
+};
+export type Leaderboard = {
+  generatedAt: EpochMs;
+  // The most active players first, at most LEADERBOARD_ROWS.
+  rows: LeaderboardRow[];
+  // The caller, when the X-Player header names a player. Null without the header.
+  you: PersonId | null;
+};
+export const LEADERBOARD_ROWS = 500;
+
+// The filter of GET /api/leaderboard: the stats filter without a scope and a person.
+export function parseLeaderboardFilter(params: URLSearchParams): StatsFilter | undefined {
+  const filter = parseStatsFilter(params);
+  return filter === undefined || filter.scope !== 'everyone' || filter.person !== null ? undefined : filter;
+}
+
+// A total of a player, such as games or wins. Unlike isCount, it has no cap: an API agent can play many games.
+const isTotal = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+function parseLeaderboardRow(value: unknown): LeaderboardRow {
+  if (!isRecord(value)) throw new Error('invalid leaderboard row');
+  const person = parsePersonId(value.person);
+  const player = value.player === null ? null : parsePlayerInfo(value.player);
+  const { name, games, won, drawn, lost, fastestWin, avgMoves, bestStreak, lastPlayed } = value;
+  if (
+    person === undefined ||
+    player === undefined ||
+    !isDisplayName(name) ||
+    !isTotal(games) ||
+    !isTotal(won) ||
+    !isTotal(drawn) ||
+    !isTotal(lost) ||
+    won + drawn + lost !== games ||
+    (fastestWin !== null && !isTotal(fastestWin)) ||
+    typeof avgMoves !== 'number' ||
+    !Number.isFinite(avgMoves) ||
+    !isTotal(bestStreak) ||
+    !isEpochMs(lastPlayed)
+  ) {
+    throw new Error('invalid leaderboard row');
+  }
+  return { person, name, player, games, won, drawn, lost, fastestWin, avgMoves, bestStreak, lastPlayed };
+}
+
+// Throws on an answer that is not a leaderboard.
+export function parseLeaderboard(value: unknown): Leaderboard {
+  if (!isRecord(value) || !isEpochMs(value.generatedAt) || !isUnknownArray(value.rows)) throw new Error('invalid leaderboard');
+  const you = value.you === null ? null : parsePersonId(value.you);
+  if (you === undefined) throw new Error('invalid leaderboard');
+  return { generatedAt: value.generatedAt, rows: value.rows.map(parseLeaderboardRow), you };
+}
+
 export const MOVE_TIME_BUCKETS = ['< 1 s', '1–2 s', '2–5 s', '5–10 s', '10–30 s', '30–60 s', '1–5 min', '5 min +'] as const;
 
 export function outcomeOf(winner: Player | null, you: Player | null): Outcome {
