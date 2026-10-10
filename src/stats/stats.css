@@ -313,6 +313,17 @@
 }
 
 /* The leaderboard (src/stats/leaderboard.ts). The player column stays in view while the numbers scroll on a phone. */
+.leaderboard {
+  /* A track that can shrink to nothing: the table scrolls inside the card, and the card keeps the page width. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+}
+
+.leaderboard .stats-table {
+  width: 100%;
+}
+
 .leaderboard th,
 .leaderboard td {
   white-space: nowrap;
