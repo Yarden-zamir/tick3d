@@ -1,0 +1,309 @@
+{
+  "bpm": 136,
+  "fps": 30,
+  "durationSeconds": 15,
+  "game": {
+    "seed": 214,
+    "first": "X",
+    "levels": {
+      "X": "medium",
+      "O": "medium"
+    },
+    "winner": "X",
+    "line": [0, 21, 42, 63]
+  },
+  "songKey": {
+    "root": 0,
+    "mode": "major pentatonic"
+  },
+  "moves": [
+    { "move": 0, "player": "X", "cell": 22, "at": 16 },
+    { "move": 1, "player": "O", "cell": 26, "at": 18 },
+    { "move": 2, "player": "X", "cell": 42, "at": 20 },
+    { "move": 3, "player": "O", "cell": 38, "at": 22 },
+    { "move": 4, "player": "X", "cell": 2, "at": 24 },
+    { "move": 5, "player": "O", "cell": 62, "at": 26 },
+    { "move": 6, "player": "X", "cell": 50, "at": 28 },
+    { "move": 7, "player": "O", "cell": 18, "at": 30 },
+    { "move": 8, "player": "X", "cell": 25, "at": 32 },
+    { "move": 9, "player": "O", "cell": 28, "at": 33 },
+    { "move": 10, "player": "X", "cell": 41, "at": 34 },
+    { "move": 11, "player": "O", "cell": 3, "at": 35 },
+    { "move": 12, "player": "X", "cell": 8, "at": 36 },
+    { "move": 13, "player": "O", "cell": 59, "at": 37 },
+    { "move": 14, "player": "X", "cell": 48, "at": 38 },
+    { "move": 15, "player": "O", "cell": 49, "at": 39 },
+    { "move": 16, "player": "X", "cell": 57, "at": 40 },
+    { "move": 17, "player": "O", "cell": 9, "at": 41 },
+    { "move": 18, "player": "X", "cell": 63, "at": 42 },
+    { "move": 19, "player": "O", "cell": 6, "at": 43 },
+    { "move": 20, "player": "X", "cell": 12, "at": 44 },
+    { "move": 21, "player": "O", "cell": 36, "at": 45 },
+    { "move": 22, "player": "X", "cell": 40, "at": 46 },
+    { "move": 23, "player": "O", "cell": 43, "at": 47 },
+    { "move": 24, "player": "X", "cell": 0, "at": 48 },
+    { "move": 25, "player": "O", "cell": 4, "at": 56 },
+    { "move": 26, "player": "X", "cell": 21, "at": 64 }
+  ],
+  "bars": [
+    {
+      "bar": 1,
+      "start": 0,
+      "scene": "Cold open in the Mono theme: \"Tic-tac-toe? Too easy.\" while the four layers slam in, top layer first, one per beat.",
+      "theme": "mono",
+      "soundSet": "classic",
+      "camera": "slam",
+      "events": [
+        {
+          "kind": "layer-slam",
+          "at": 0,
+          "layer": 3
+        },
+        {
+          "kind": "layer-slam",
+          "at": 4,
+          "layer": 2
+        },
+        {
+          "kind": "layer-slam",
+          "at": 8,
+          "layer": 1
+        },
+        {
+          "kind": "layer-slam",
+          "at": 12,
+          "layer": 0
+        }
+      ]
+    },
+    {
+      "bar": 2,
+      "start": 16,
+      "scene": "The camera dives down the centre of the tower, one layer per beat. Moves 1 to 8 on eighth notes.",
+      "theme": "light",
+      "soundSet": "cells",
+      "camera": "dive",
+      "events": []
+    },
+    {
+      "bar": 3,
+      "start": 32,
+      "scene": "Theme sweep. The camera breaks out and orbits. Moves 9 to 24 double up to sixteenth notes.",
+      "theme": "synthwave",
+      "soundSet": "chiptune",
+      "camera": "orbit",
+      "events": []
+    },
+    {
+      "bar": 4,
+      "start": 48,
+      "scene": "Theme sweep. The double threat: X takes corner 0, two cells blink and ring their notes, O blocks one.",
+      "theme": "midnight",
+      "soundSet": "cells",
+      "camera": "push",
+      "events": [
+        {
+          "kind": "threats",
+          "at": 48,
+          "cells": [4, 21]
+        },
+        { "kind": "threat-pulse", "at": 50, "cells": [4, 21] },
+        { "kind": "threat-pulse", "at": 52, "cells": [4, 21] },
+        { "kind": "threat-pulse", "at": 54, "cells": [4, 21] },
+        { "kind": "threat-pulse", "at": 58, "cells": [21] },
+        { "kind": "threat-pulse", "at": 60, "cells": [21] },
+        { "kind": "threat-pulse", "at": 62, "cells": [21] }
+      ]
+    },
+    {
+      "bar": 5,
+      "start": 64,
+      "scene": "X plays 21 on the downbeat: the win. The line becomes a beam from corner 0 to corner 63, and the camera rides it.",
+      "theme": "midnight",
+      "soundSet": "chiptune",
+      "camera": "ride",
+      "events": [
+        {
+          "kind": "beam",
+          "at": 68,
+          "line": [0, 21, 42, 63]
+        },
+        { "kind": "win-jingle", "at": 72 }
+      ]
+    },
+    {
+      "bar": 6,
+      "start": 80,
+      "scene": "Theme sweep. Confetti. The camera pulls back, the tower turns once, every piece pulses with its note.",
+      "theme": "candy",
+      "soundSet": "cells",
+      "camera": "pull-back",
+      "events": [
+        {
+          "kind": "confetti",
+          "at": 80
+        },
+        {
+          "kind": "replay",
+          "at": 80
+        }
+      ]
+    },
+    {
+      "bar": 7,
+      "start": 96,
+      "scene": "Theme sweep. End card: the tower shrinks to the top half, the URL slams in.",
+      "theme": "light",
+      "soundSet": "cells",
+      "camera": "settle",
+      "events": []
+    },
+    {
+      "bar": 8,
+      "start": 112,
+      "scene": "End card holds. The four layers of the small tower pulse bottom to top, into the final chord.",
+      "theme": "light",
+      "soundSet": "classic",
+      "camera": "settle",
+      "events": [
+        {
+          "kind": "layer-slam",
+          "at": 112,
+          "layer": 0
+        },
+        {
+          "kind": "layer-slam",
+          "at": 116,
+          "layer": 1
+        },
+        {
+          "kind": "layer-slam",
+          "at": 120,
+          "layer": 2
+        },
+        {
+          "kind": "layer-slam",
+          "at": 124,
+          "layer": 3
+        },
+        {
+          "kind": "final-chord",
+          "at": 128
+        }
+      ]
+    }
+  ],
+  "text": [
+    {
+      "style": "top",
+      "words": [
+        {
+          "text": "Tic-tac-toe?",
+          "at": 0
+        },
+        {
+          "text": "Too easy.",
+          "at": 8
+        }
+      ],
+      "until": 16
+    },
+    {
+      "style": "center",
+      "words": [
+        {
+          "text": "4 in a row.",
+          "at": 16
+        },
+        {
+          "text": "In 3D.",
+          "at": 24
+        }
+      ],
+      "until": 32
+    },
+    {
+      "style": "list",
+      "words": [
+        {
+          "text": "Vs computer.",
+          "at": 32
+        },
+        {
+          "text": "Play online.",
+          "at": 37
+        },
+        {
+          "text": "Play nearby.",
+          "at": 42
+        },
+        {
+          "text": "Vs your AI agent.",
+          "at": 47
+        },
+        {
+          "text": "13 sound sets.",
+          "at": 52
+        },
+        {
+          "text": "Ear trainer.",
+          "at": 57
+        },
+        {
+          "text": "Play by voice.",
+          "at": 62
+        },
+        {
+          "text": "Share your win.",
+          "at": 67
+        },
+        {
+          "text": "Your game is a song.",
+          "at": 72
+        },
+        {
+          "text": "12 themes.",
+          "at": 77
+        },
+        {
+          "text": "Time limits.",
+          "at": 82
+        },
+        {
+          "text": "Works offline.",
+          "at": 87
+        }
+      ],
+      "until": 96
+    },
+    {
+      "style": "end-card",
+      "words": [
+        {
+          "text": "tick3d",
+          "at": 96
+        },
+        {
+          "text": ".yarden-zamir.com",
+          "at": 100
+        },
+        {
+          "text": "Play in your browser.",
+          "at": 112
+        },
+        {
+          "text": "App Store",
+          "at": 116,
+          "badge": "app-store",
+          "note": "soon"
+        },
+        {
+          "text": "Google Play",
+          "at": 116,
+          "badge": "google-play"
+        }
+      ],
+      "until": 128
+    }
+  ]
+}

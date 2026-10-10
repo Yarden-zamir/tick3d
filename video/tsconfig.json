@@ -3,16 +3,9 @@
     "target": "es2023",
     "module": "esnext",
     "moduleResolution": "bundler",
-    "lib": [
-      "es2023",
-      "dom",
-      "dom.iterable"
-    ],
-    "types": [
-      "vite/client",
-      "vite-plugin-pwa/client",
-      "node"
-    ],
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": ["node"],
+    "jsx": "react-jsx",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -23,14 +16,8 @@
     "skipLibCheck": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
     "erasableSyntaxOnly": true
   },
-  "include": [
-    "src",
-    "server",
-    "e2e",
-    "android/store/screenshots",
-    "video/creative",
-    "vite.config.ts"
-  ]
+  "include": ["src", "scripts"]
 }

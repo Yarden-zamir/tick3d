@@ -205,6 +205,29 @@ docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr-17.
 - After a run in the Playwright image, run `npm ci` again before you use `node:26-alpine`.
 - The `e2e` workflow runs the suite after each successful pull request preview deploy. It starts when the preview answers its health check 3 times in a row.
 
+## Video
+
+`video/` holds a 15 s spot made in code: three.js draws every frame, Remotion renders it, and the sound comes from the game's own sound code. The creative (brief, script, timeline, music notes and the tutorial plan) is in [video/creative/](video/creative/).
+
+```sh
+docker run --rm -v "$PWD":/app -w /app/video node:26 sh -c 'npm ci && npm run check && npm run video'
+```
+
+- `npm run video` writes `video/out/tick3d-15s-landscape.mp4` (1920×1080), `video/out/tick3d-15s-portrait.mp4` (1080×1920), one still per bar in `video/out/stills/` and the soundtrack in `video/out/soundtrack.wav`.
+- `npm run tutorial` renders the tutorial that shows which lines win and why, in both crops, into `video/out/tutorial/` (40 s). `TUTORIAL_PACE=short npm run tutorial` renders the 27.5 s cut into `video/out/tutorial-short/`. The plan is in [video/creative/tutorial.md](video/creative/tutorial.md).
+- The render needs the system libraries of Chrome Headless Shell, so use `node:26`, not the Alpine image.
+- `VIDEO_VARIANT=<name> npm run video` renders a variant of the spot into `video/out/variants/<name>/`. A variant is a small overlay on `beats.json` in `video/creative/variants/<name>.json` that changes the themes, the sound sets and the camera of bars, and the on-screen text, never the game or the events. The takes: `spot` (the default cut: a Mono cold open, "Tic-tac-toe? / Too easy.", then the feature list) and `classic` (the first approved cut, with "Every cell / has a note.").
+- `video/scripts/publish.sh` renders every take and both tutorial paces on the Mac, and publishes the previews to the `pr-assets` branch in `issue-119/renders/<sha7>/<take>/`: a GIF, a stills sheet per crop and both MP4s, named `tick3d-<take>-<sha7>-landscape.mp4` and so on. Each commit gets its own folder, so a comment that links a render keeps showing it, and each file has its own name, so downloads never overwrite each other. It needs ImageMagick and ffmpeg, and a committed, pushed HEAD.
+- The `video` workflow checks the video code on every pull request that touches it. It renders every variant and the tutorial in both crops, one job each, only on a manual run, on a push to `main` that touches `video/`, and on a tag, and uploads one artifact per job. A tag `video-v*` also attaches the classic files to a GitHub Release.
+
+**Fast iteration.** On macOS, the render uses WebGL on the GPU, one browser tab per core for the MP4, and one tab per still. On an M1 Max (10 cores), the draft stills of all 8 bars in both crops take 6 s. A full variant (`VIDEO_VARIANT=hook npm run video`: both MP4s and all stills) takes 25 s. The first render also downloads Chrome Headless Shell. On a Linux host without a GPU, WebGL runs on the CPU, and a full variant takes about 20 minutes. There, do not render MP4s: check an edit with half-size draft stills of the bars that changed, and publish from a Mac.
+
+```sh
+docker run --rm -v "$PWD":/app -w /app/video node:26 node scripts/render.ts --draft --bars 2,5
+```
+
+The drafts land in `video/out/draft/` (or `video/out/variants/<name>/draft/` with `VIDEO_VARIANT`). Locally, run only `npm run check` in `video/` and `node video/creative/tools/check-beats.ts`; the required `check` workflow runs the full gate on every push.
+
 ## Deploy
 
 See [kitshn.md](kitshn.md). A push to `main` deploys production.
