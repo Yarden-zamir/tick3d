@@ -15,6 +15,7 @@ import {
   cardLink,
   cardCodeOption,
   cardImage,
+  cardAchievements,
   cardNewGameButton,
   newGameButton,
   cardShareButton,
@@ -26,6 +27,7 @@ import {
   cardCloseButton,
   showCardButton,
 } from './dom.ts';
+import { achievementNews, noteAchievements } from './achievements.ts';
 import { showToast } from './feedback.ts';
 import { previewsDialog } from '../header/previews.ts';
 import { type GameId, onlineGameId } from '../protocol.ts';
@@ -81,6 +83,9 @@ async function linkGame(open: Session, game: Game, index: number): Promise<void>
   const id = (open.mode === 'nearby' ? hostLinkOf(open.code, index) : undefined) ?? own;
   // The player can move on while the result saves. Only the same finished game gets the link.
   if (id !== undefined && showsFinished(open, index)) setUrlGame(id);
+  // A watcher earns nothing. The open card of this game shows the news.
+  const player = open.mode === 'friend' || open.you !== null;
+  if (id !== undefined && player && (await noteAchievements(open.code, index, id)) && card?.index === index && cardDialog.open) await openCard(index);
 }
 
 const showsFinished = (open: Session, index: number) => page.session?.code === open.code && page.games.length - 1 === index && !isLive();
@@ -175,6 +180,9 @@ export async function openCard(index: number): Promise<void> {
   // A title such as "You win!" ends with its own mark.
   const titleText = input.title.endsWith('!') ? input.title : `${input.title}.`;
   cardImage.alt = `${titleText} ${input.subtitle}.${input.record ? ` New record: ${input.record.moves} moves.` : ''}`;
+  const unlocked = page.session === undefined ? undefined : achievementNews(page.session.code, index);
+  cardAchievements.textContent = unlocked ?? '';
+  cardAchievements.hidden = unlocked === undefined;
   // Only the newest game can start the next one. A card of an older game has no New game button.
   cardNewGameButton.hidden = index !== page.games.length - 1;
   cardNewGameButton.disabled = newGameButton.disabled;

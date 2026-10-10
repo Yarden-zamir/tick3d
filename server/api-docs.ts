@@ -3,8 +3,10 @@
 // To add a route, add one entry to ROUTES and one case to the switch in server/main.ts.
 // The type checker refuses a case without an entry, and a switch without a case for an entry.
 // server/api-docs.test.ts runs every example through the real parsers in src/protocol.ts.
+import { ACHIEVEMENT_IDS, achievementProgress } from '../src/achievements.ts';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { LIMIT_RANGE } from '../src/clock.ts';
+import { toEpochMs } from '../src/epoch.ts';
 import { CELL_COUNT } from '../src/game.ts';
 import { DEVICE_KINDS } from '../src/nearby/device.ts';
 import { HELLO_NAME_MAX_LENGTH, MAX_CODE_LENGTH } from '../src/nearby/signal.ts';
@@ -37,6 +39,7 @@ import {
   THEMES,
   VIEWS,
   WATCHER_ID_LENGTH,
+  parseGameId,
 } from '../src/protocol.ts';
 import { EMPTY_SESSION_TTL_MS, ERROR_CODES, SEAT_REQUEST_MS } from '../src/session/core.ts';
 
@@ -139,6 +142,7 @@ export type SchemaName =
   | 'HistoryPage'
   | 'Hidden'
   | 'Records'
+  | 'Achievements'
   | 'Metrics'
   | 'MetricsResponse'
   | 'ClientEvent'
@@ -499,6 +503,17 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       additionalProperties: { type: 'integer', minimum: 1 },
       description: 'The most moves before the computer won, per setup. A key looks like "hard|game:none|move:none|board:false|history:false".',
     },
+  }),
+  Achievements: object('Your achievements, every one once, in the order of src/achievements.ts. The page holds their names and goals.', {
+    achievements: list(
+      'One entry per achievement.',
+      object('How far you are with one achievement.', {
+        id: strings(ACHIEVEMENT_IDS),
+        count: count('Games that count toward the goal, or the longest run for a streak. It stops at the goal.'),
+        unlockedAt: { type: ['integer', 'null'], minimum: 0, description: 'When the game that reached the goal finished, in epoch ms. null until then.' },
+        unlockedBy: { ...nullable(ref('GameId')), description: 'The game that reached the goal. null until then, and for an old game without a link.' },
+      }),
+    ),
   }),
   Metrics: object('What one device saw during one game, for the stats page. Every field is required.', {
     device: strings(DEVICE_KINDS),
@@ -1245,6 +1260,34 @@ export const ROUTES = {
       description: 'The most moves before the computer won, per setup.',
       schema: 'Records',
       example: { records: { 'hard|game:none|move:none|board:false|history:false': 23 } },
+    },
+    errors: [BAD_PLAYER],
+    examplePlayer: AGENT_A,
+  },
+  'GET /api/me/achievements': {
+    operationId: 'myAchievements',
+    tag: 'Account',
+    summary: 'Your achievements over every finished game.',
+    description: 'Every finished game counts, also games from before achievements and games that left your history. A Nearby game counts once.',
+    player: 'required',
+    response: {
+      status: 200,
+      description: 'Every achievement with your progress. This example comes after one win in 7 moves against the computer on Hard.',
+      schema: 'Achievements',
+      example: {
+        achievements: achievementProgress([
+          {
+            id: parseGameId('Q7MZ4KTB') ?? null,
+            mode: 'computer',
+            game: { ...game(X_WINS), times: game(X_WINS).times.map(toEpochMs) },
+            you: 'X',
+            difficulty: 'hard',
+            options: { hideBoard: false, hideHistory: false, hideCoordinates: false },
+            tuned: false,
+            finishedAt: toEpochMs(T0 + 70_000),
+          },
+        ]),
+      },
     },
     errors: [BAD_PLAYER],
     examplePlayer: AGENT_A,

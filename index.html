@@ -412,6 +412,8 @@
         <img id="end-card-image" alt="" width="1080" height="1350" />
         <span class="song-light" id="end-card-light" hidden></span>
       </div>
+      <!-- The achievements that this game unlocked. src/page/end-card.ts fills it. -->
+      <p class="end-card-achievements" id="end-card-achievements" hidden></p>
       <div class="include-options">
         <label class="include" id="end-card-code-option">
           <input type="checkbox" id="end-card-code" checked />
@@ -455,6 +457,11 @@
       <section id="my-games-session-box">
         <h3 id="my-games-session-title">This session</h3>
         <ol class="my-games-list" id="my-games-session"></ol>
+      </section>
+      <!-- src/page/achievements.ts fills the list when the dialog opens. -->
+      <section>
+        <h3>Achievements <small class="achievements-summary" id="my-games-achievements-summary"></small></h3>
+        <ul class="achievements" id="my-games-achievements"></ul>
       </section>
       <section>
         <h3>History</h3>
