@@ -311,3 +311,84 @@
   opacity: 0.55;
   transition: opacity 0.2s;
 }
+
+/* The leaderboard (src/stats/leaderboard.ts). The player column stays in view while the numbers scroll on a phone. */
+.leaderboard {
+  /* A track that can shrink to nothing: the table scrolls inside the card, and the card keeps the page width. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+}
+
+.leaderboard .stats-table {
+  width: 100%;
+}
+
+.leaderboard th,
+.leaderboard td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.leaderboard .leaderboard-player {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+.leaderboard-rank {
+  min-width: 1.6em;
+  color: var(--muted);
+  font-weight: 400;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.leaderboard-name:hover span {
+  text-decoration: underline;
+}
+
+.leaderboard-name .avatar {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+}
+
+.leaderboard-sort {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.leaderboard th[aria-sort] .leaderboard-sort,
+.leaderboard-sorted {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.leaderboard-you td,
+.leaderboard-you .leaderboard-player {
+  background: color-mix(in srgb, var(--primary) 30%, var(--surface));
+}
+
+.leaderboard-gap td {
+  color: var(--muted);
+  text-align: center;
+}
+
+.leaderboard-more {
+  margin-top: 0.6rem;
+}

@@ -11,6 +11,7 @@ import { CELL_COUNT, SIZE } from '../game.ts';
 import { accountLink, setupPageHeader } from '../header/header.ts';
 import { myGamesHref } from '../header/my-games-link.ts';
 import { avatarImage } from '../avatar.ts';
+import { leaderboardCard } from './leaderboard.ts';
 import { OnlineError, api } from '../online.ts';
 import { releaseLabel } from '../release.ts';
 import {
@@ -404,6 +405,14 @@ function hideName(setting: string, coordinates: boolean): string {
 function draw(stats: Stats): void {
   const mine = stats.personal !== null;
   tiles(stats);
+  // The leaderboard names players, so it shows in the Everyone view only, not in Mine or for one person.
+  if (!mine && stats.person === null) {
+    leaderboardCard(
+      card('Leaderboard', true, 'Every player who does not hide their stats, with the filters above. Friend games do not count. Tap a column to sort, or a name for their stats.'),
+      stats.filter,
+      (person) => navigate({ ...stats.filter, person }),
+    );
+  }
   rateLine(
     card(
       'Win rate over time',
@@ -462,7 +471,7 @@ function draw(stats: Stats): void {
 
   // The practice modes of the Voice room (/sound-input). A practice run has no game mode, level or seat,
   // so these numbers show for Everyone without a mode or level filter, over all time. The Voice room shows its
-  // own leaderboards; this public page shows no names of people.
+  // own leaderboards, so this card shows counts only.
   if (stats.filter.scope === 'everyone' && stats.filter.mode === null && stats.filter.level === null) {
     const practiceName = (mode: PracticeMode, preset: PresetId) => `${mode === 'echo' ? 'Echo' : 'Targets'}, ${PRESETS[preset].name}`;
     const practice = card('Voice room practice', false, 'Practice runs per mode and level, all time. Average: the mean time of one target or echo round.');
