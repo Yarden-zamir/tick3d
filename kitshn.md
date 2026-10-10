@@ -1,32 +1,63 @@
 # KitSHn Recipe
 
-This repository deploys tick3d to `tick3d.yarden-zamir.com` with KitSHn.
+[![deployed with kitshn](https://raw.githubusercontent.com/Yarden-zamir/kitshn/main/assets/badge-deployed-with-kitshn.svg)](https://github.com/Yarden-zamir/kitshn)
 
-- A push to `main` deploys `prod`. A pull request deploys to `pr-<number>.tick3d.yarden-zamir.com`.
-- The `check` job of `.github/workflows/kitshn.yml` runs `npm run check` and `npm run build`. A production or manual deploy waits for it. A pull request preview starts at once, next to the check. A pull request with the label `no-preview` builds no preview; closing it still tears down an old one.
-- The `site` service (Caddy, `container/Caddyfile`) serves `dist/` on the KitSHn Unix socket. The host Caddy (`Caddyfile.j2`) routes the hostname to that socket.
-- The image build reads the release name from the deployed commit: the pull request title of a merge, else the commit subject. A preview adds `(pr-<number>)`. `compose.yml` passes the checkout's `.git` as a second build context. The `api` service stores the name in the `releases` table at start, and the stats page shows it.
-- The `api` service serves `/api/*`. It keeps data in DuckDB at `/data/tick3d.duckdb` on the `sessions` volume. Each environment has its own volume.
-- The kitshn button lists the previews of `PREVIEWS_REPO` at `PREVIEWS_DOMAIN`. Both values are in `compose.yml`. A fork changes them.
-- Only production (`KITSHN_ENVIRONMENT=prod`) calls GitHub for that list, because all environments share one GitHub rate limit. A preview reads the list from production.
-- GitHub login needs the repository variable `KITSHN_GITHUB_CLIENT_ID` and the secrets `KITSHN_GITHUB_CLIENT_SECRET` and `KITSHN_AUTH_SECRET` (at least 32 random characters). Without all three, login is off. With only some of them, the API stops at start.
-- The GitHub App [`tick3d-game`](https://github.com/apps/tick3d-game) handles the login. Its callback is `https://tick3d.yarden-zamir.com/api/auth/github/callback`. Previews use the production login.
+This repository is a KitSHn recipe repo. KitSHn deploys recipe repos from GitHub Actions onto a VPS by resolving GitHub events to deployment environments, copying deployment params, and running the hosted KitSHn CLI through `uvx` on the VPS.
 
-## Files
+## Contract
 
-- `.kitshn.yaml`, `.github/workflows/kitshn.yml`, `compose.yml`, `Caddyfile.j2`, `Dockerfile`, `container/Caddyfile`: the recipe.
+- `.kitshn.yaml` maps GitHub events to deployment environments.
+- `.github/workflows/kitshn.yml` calls the KitSHn reusable deploy workflow and grants it required GitHub token permissions.
+- `kitshn.md` documents the recipe contract and the KitSHn source commit that generated it. Rewrite the prose freely, but keep the Origin section at the end so `kitshn` can tell which template version produced this recipe.
+- Optional `compose.yml` defines container services for Docker Compose deployments.
+- Optional `Caddyfile.j2` defines public routing and is rendered on the VPS into a generated `Caddyfile`.
+- Socket ingress is the default routing pattern. Compose services can bind `${KITSHN_DEFAULT_SOCKET}` and Caddy can route to `{{ paths.default_socket }}`.
+- GitHub vars and secrets starting with `KITSHN_` become deployment params with the prefix stripped, except reserved infrastructure keys.
+- `KITSHN_SSH_KEY` and `KITSHN_VPS_HOST` are required for GitHub Actions to deploy to the VPS.
+- Run `kitshn recipe auth --vps-host <ssh-target>` before the first deploy-triggering push so those infrastructure keys exist.
+- Local users may run KitSHn from Homebrew or `uvx`; CI and VPS commands use hosted `uvx` and do not require a persistent VPS `kitshn` install.
 
 ## Operating This Deployment
 
-Run these on the VPS. They take `--environment <env>` and default to `prod`.
+Run these on the VPS. They take `--environment <env>` and default to `prod`. Pass `--help` to any
+of them for flags. Prefer them over raw `docker` and `docker compose`, which do not know this
+deployment's Compose project name or params file.
 
-- `kitshn diagnose Yarden-zamir/tick3d`: checks Compose, sockets, Caddy routing and config.
-- `kitshn status Yarden-zamir/tick3d`: ref, services, health, route, socket and last deploy, as JSON.
-- `kitshn logs Yarden-zamir/tick3d site`: the logs of the site container.
-- `kitshn logs Yarden-zamir/tick3d api`: the logs of the API container.
-- To query the database by hand, stop the `api` service first, because DuckDB lets only one process open the file. Then run `kitshn compose Yarden-zamir/tick3d -- run --rm api node --input-type=module -e "<script>"` with `@duckdb/node-api`, and start `api` again.
+- `kitshn diagnose <owner/repo>` — start here; checks Compose, sockets, Caddy routing and config.
+- `kitshn status <owner/repo>` — ref, services, health, route, socket, and last deploy, as JSON.
+- `kitshn logs <owner/repo> [service]` — Docker logs for this deployment.
+- `kitshn compose <owner/repo> -- <args>` — Docker Compose with this deployment's exact context.
+- `kitshn params list <owner/repo>` — param names without values.
+- `kitshn params get <owner/repo> <KEY> --show` — one param value, correctly decoded. Do not
+  hand-parse `params.env`; its values are quoted and escaped for Compose.
+
+Services publish no host ports. Reach them through the public Caddy route, through
+`kitshn compose ... -- exec`, or from the shared `kitshn-edge` Docker network. `127.0.0.1:<port>`
+does not reach them.
+
+This recipe can deploy any environment name on demand through the workflow's `workflow_dispatch`
+input, even if it only maps `main -> prod`. Make `Caddyfile.j2` hostnames environment-aware
+before doing so, or Caddy will reject the duplicate site definition.
+
+## This Recipe
+
+- Services: `site` (Caddy that serves `dist/` on the KitSHn socket) and `api` (Node, serves `/api/*`). `api` keeps DuckDB at `/data/tick3d.duckdb` on the `sessions` volume. Each environment has its own volume.
+- Environments: `prod` from a push to `main`, and an ephemeral `pr-<number>` for each pull request. A pull request with the label `no-preview` gets no preview.
+- Hostnames: `tick3d.yarden-zamir.com` for prod, `pr-<number>.tick3d.yarden-zamir.com` for previews.
+- Variables: `KITSHN_GITHUB_CLIENT_ID`. Secrets: `KITSHN_GITHUB_CLIENT_SECRET`, `KITSHN_AUTH_SECRET`. Without all three, login is off. With only some, `api` stops at start.
+- Previews use the production login. Only prod calls GitHub for the preview list.
+- DuckDB allows one process. Stop `api` before you query the database by hand, then start it again.
+
+## Badge
+
+The badge above shows that this repo deploys with KitSHn. For the state of the latest `prod`
+deploy in the README, use this line.
+
+```markdown
+[![kitshn prod](https://img.shields.io/github/deployments/Yarden-zamir/tick3d/prod?label=kitshn%20%C2%B7%20prod&labelColor=2F3532&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNCAxNCI+PGcgZmlsbD0iI2ZmZiI+PHJlY3QgeD0iNiIgeT0iMS4yIiB3aWR0aD0iMiIgaGVpZ2h0PSIxLjYiIHJ4PSIwLjUiLz48cmVjdCB4PSIyLjIiIHk9IjMuNCIgd2lkdGg9IjkuNiIgaGVpZ2h0PSIxLjUiIHJ4PSIwLjc1Ii8+PHJlY3QgeD0iMyIgeT0iNS42IiB3aWR0aD0iOCIgaGVpZ2h0PSI2LjYiIHJ4PSIxLjYiLz48cmVjdCB4PSIwLjgiIHk9IjYuOCIgd2lkdGg9IjIuNCIgaGVpZ2h0PSIxLjQiIHJ4PSIwLjciLz48cmVjdCB4PSIxMC44IiB5PSI2LjgiIHdpZHRoPSIyLjQiIGhlaWdodD0iMS40IiByeD0iMC43Ii8+PC9nPjwvc3ZnPgo=)](https://tick3d.yarden-zamir.com)
+```
 
 ## Origin
 
-- Generated from: https://github.com/Yarden-zamir/kitshn/blob/53fedf8e2c02905c3b83e8ebd2b3b3c453d0ce85/src/kitshn/repo_init.py
-- KitSHn commit: `53fedf8e2c02905c3b83e8ebd2b3b3c453d0ce85`
+- Generated from: https://github.com/Yarden-zamir/kitshn/blob/d266328205603dfddffc27c7ac5d42051883d0b0/src/kitshn/repo_init.py
+- KitSHn commit: `d266328205603dfddffc27c7ac5d42051883d0b0`
