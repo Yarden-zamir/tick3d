@@ -42,9 +42,15 @@ export function leaderboardCard(box: HTMLElement, filter: StatsFilter, open: (pe
 }
 
 function render(box: HTMLElement, board: Leaderboard, filter: StatsFilter, open: (person: PersonId) => void, all: boolean): void {
-  box.querySelector('.leaderboard')?.remove();
-  const wrap = el('div', 'stats-table leaderboard');
-  box.append(wrap);
+  // The sideways scroll of the old table, so a sort keeps the tapped column in view.
+  const old = box.querySelector('.leaderboard');
+  const scrolled = old?.querySelector('.stats-table')?.scrollLeft ?? 0;
+  old?.remove();
+  // The table scrolls sideways inside `wrap`; "Show all" stays outside it, so it never scrolls away.
+  const outer = el('div', 'leaderboard');
+  const wrap = el('div', 'stats-table');
+  outer.append(wrap);
+  box.append(outer);
   if (board.rows.length === 0) {
     wrap.append(el('p', 'stats-empty', 'No players yet.'));
     return;
@@ -53,7 +59,7 @@ function render(box: HTMLElement, board: Leaderboard, filter: StatsFilter, open:
 
   const table = el('table');
   const head = el('tr');
-  head.append(el('th', 'leaderboard-rank', '#'), el('th', 'leaderboard-player', 'Player'));
+  head.append(el('th', 'leaderboard-player', '# Player'));
   for (const column of COLUMNS) {
     const th = el('th');
     const active = sort.key === column.key;
@@ -68,7 +74,7 @@ function render(box: HTMLElement, board: Leaderboard, filter: StatsFilter, open:
       sort = active ? { key: column.key, lowFirst: !sort.lowFirst } : defaultSort(column.key);
       rerender();
       // The table is new, so the focus goes to the same button in it.
-      box.querySelector<HTMLButtonElement>(`[data-sort="${column.key}"]`)?.focus();
+      box.querySelector<HTMLButtonElement>(`[data-sort="${column.key}"]`)?.focus({ preventScroll: true });
     });
     th.append(button);
     head.append(th);
@@ -83,7 +89,7 @@ function render(box: HTMLElement, board: Leaderboard, filter: StatsFilter, open:
     if (row.person === board.you) tr.className = 'leaderboard-you';
     const link = el('a', 'leaderboard-name');
     link.href = `${location.pathname}${statsQuery({ ...filter, person: row.person })}`;
-    link.append(avatarImage(row, 24), el('span', '', row.name));
+    link.append(el('span', 'leaderboard-rank', String(rank)), avatarImage(row, 24), el('span', '', row.name));
     link.addEventListener('click', (event) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       event.preventDefault();
@@ -91,7 +97,8 @@ function render(box: HTMLElement, board: Leaderboard, filter: StatsFilter, open:
     });
     const player = el('td', 'leaderboard-player');
     player.append(link);
-    tr.append(el('td', 'leaderboard-rank', String(rank)), player);
+    // The rank sits in the player cell, which stays in view while the numbers scroll sideways.
+    tr.append(player);
     for (const column of COLUMNS) tr.append(el('td', sort.key === column.key ? 'leaderboard-sorted' : '', column.show(row)));
     body.append(tr);
   };
@@ -109,11 +116,12 @@ function render(box: HTMLElement, board: Leaderboard, filter: StatsFilter, open:
   }
   table.append(body);
   wrap.append(table);
+  wrap.scrollLeft = scrolled;
 
   if (sorted.length > SHOWN_ROWS) {
     const more = el('button', 'btn btn-small leaderboard-more', all ? 'Show fewer' : `Show all ${sorted.length} players`);
     more.type = 'button';
     more.addEventListener('click', () => rerender(!all));
-    wrap.append(more);
+    outer.append(more);
   }
 }

@@ -327,8 +327,11 @@
 }
 
 .leaderboard-rank {
+  min-width: 1.6em;
   color: var(--muted);
+  font-weight: 400;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .leaderboard-name {
