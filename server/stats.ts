@@ -25,6 +25,12 @@ import {
 } from '../src/protocol.ts';
 import { type RowOf, type Rows, type Shape, bool, epoch, int, nullable, num, oneOf, text } from './sql.ts';
 
+// An ORDER BY term that lists a category in its fixed order, such as DIFFICULTIES or SESSION_MODES, so every
+// table and chart lists it the same way. The values are constants of this code, never input.
+const inOrder = (column: string, order: readonly string[]): string =>
+  `list_position([${order.map((value) => `'${value}'`).join(', ')}], ${column})`;
+const HIDE_SETTINGS = ['none', 'board', 'history', 'both'] as const;
+
 
 // The token of each seat of a result row. A row from before game links has no player columns:
 // its uploader (`token`) holds the seat `doc.you`, or both seats in a friend game.
@@ -209,7 +215,7 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, no
     { day: int, hour: int, games: int },
   );
 
-  const byMode = await q(`${GAMES} SELECT mode AS key, count(*)::INTEGER AS count FROM g GROUP BY mode ORDER BY count DESC`, COUNT);
+  const byMode = await q(`${GAMES} SELECT mode AS key, count(*)::INTEGER AS count FROM g GROUP BY mode ORDER BY ${inOrder('mode', SESSION_MODES)}`, COUNT);
 
   const levels = await q(`${GAMES} SELECT level, count(*)::INTEGER AS games,
       count(*) FILTER (winner = you)::INTEGER AS won,
@@ -217,12 +223,12 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, no
       count(*) FILTER (winner = computer)::INTEGER AS lost,
       avg(len(moves)) AS avg_moves, median(len(moves)) AS median_moves,
       count(*) FILTER (tuned)::INTEGER AS tuned
-    FROM g WHERE mode = 'computer' GROUP BY level`,
+    FROM g WHERE mode = 'computer' GROUP BY level ORDER BY ${inOrder('level', DIFFICULTIES)}`,
     { level: oneOf(DIFFICULTIES), games: int, won: int, drawn: int, lost: int, avg_moves: num, median_moves: num, tuned: int },
   );
 
   const lengthByMode = await q(`${GAMES} SELECT mode, count(*)::INTEGER AS games, avg(len(moves)) AS avg,
-    median(len(moves)) AS median, quantile_cont(len(moves), 0.9) AS p90 FROM g GROUP BY mode ORDER BY games DESC`,
+    median(len(moves)) AS median, quantile_cont(len(moves), 0.9) AS p90 FROM g GROUP BY mode ORDER BY ${inOrder('mode', SESSION_MODES)}`,
     { mode: oneOf(SESSION_MODES), games: int, avg: num, median: num, p90: num },
   );
 
@@ -240,13 +246,14 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, no
       median(ms) FILTER (who = 'computer') AS computer_ms FROM steps GROUP BY key),
     search AS (SELECT level AS key, median(t) AS search_ms
       FROM (SELECT level, unnest(metrics.thinkMs::DOUBLE[]) AS t FROM g WHERE mode = 'computer') GROUP BY level)
-    SELECT key, human_ms, computer_ms, search_ms FROM timed LEFT JOIN search USING (key) ORDER BY key`,
+    SELECT key, human_ms, computer_ms, search_ms FROM timed LEFT JOIN search USING (key)
+    ORDER BY ${inOrder('key', [...DIFFICULTIES, ...SESSION_MODES])}`,
     { key: text, human_ms: nullable(num), computer_ms: nullable(num), search_ms: nullable(num) },
   );
 
   const firstPlayer = await q(`${GAMES} SELECT mode, count(*) FILTER (winner = 'X')::INTEGER AS x,
     count(*) FILTER (winner = 'O')::INTEGER AS o, count(*) FILTER (winner IS NULL)::INTEGER AS draws
-    FROM g GROUP BY mode ORDER BY mode`,
+    FROM g GROUP BY mode ORDER BY ${inOrder('mode', SESSION_MODES)}`,
     { mode: oneOf(SESSION_MODES), x: int, o: int, draws: int },
   );
 
@@ -273,8 +280,8 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, no
       count(*)::INTEGER AS games,
       count(*) FILTER (mode = 'computer')::INTEGER AS computer_games,
       count(*) FILTER (mode = 'computer' AND winner = you)::INTEGER AS human_wins
-    FROM g GROUP BY setting, coordinates ORDER BY games DESC`,
-    { setting: oneOf(['none', 'board', 'history', 'both'] as const), coordinates: bool, games: int, computer_games: int, human_wins: int },
+    FROM g GROUP BY setting, coordinates ORDER BY ${inOrder('setting', HIDE_SETTINGS)}, coordinates`,
+    { setting: oneOf(HIDE_SETTINGS), coordinates: bool, games: int, computer_games: int, human_wins: int },
   );
 
   const timeLimits = await q(`${GAMES} SELECT per_game, per_move, count(*)::INTEGER AS games FROM g
@@ -402,7 +409,7 @@ async function personalStats(q: Query, outcomes: SideOutcome[], withOpponents: b
       count(*) FILTER (winner = side)::INTEGER AS won,
       count(*) FILTER (winner IS NULL)::INTEGER AS drawn,
       count(*) FILTER (winner <> side)::INTEGER AS lost
-    FROM g WHERE side IS NOT NULL GROUP BY mode, level ORDER BY mode, level`,
+    FROM g WHERE side IS NOT NULL GROUP BY mode, level ORDER BY ${inOrder('mode', SESSION_MODES)}, ${inOrder('level', DIFFICULTIES)}`,
     { mode: oneOf(SESSION_MODES), level: nullable(oneOf(DIFFICULTIES)), won: int, drawn: int, lost: int },
   );
   // The other seat of a game against a person. A Nearby guest on another device has no token, so it is not here.
@@ -420,7 +427,7 @@ async function personalStats(q: Query, outcomes: SideOutcome[], withOpponents: b
   );
   // Your survival records: per level, the most moves of a game that the default computer won.
   const survival = await q(`${GAMES} SELECT level, max(len(moves))::INTEGER AS moves
-    FROM g WHERE mode = 'computer' AND side IS NOT NULL AND winner = computer AND NOT tuned GROUP BY level ORDER BY level`,
+    FROM g WHERE mode = 'computer' AND side IS NOT NULL AND winner = computer AND NOT tuned GROUP BY level ORDER BY ${inOrder('level', DIFFICULTIES)}`,
     { level: oneOf(DIFFICULTIES), moves: int },
   );
   return {

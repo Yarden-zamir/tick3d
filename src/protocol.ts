@@ -63,7 +63,8 @@ export type PlayerInfo = { login: string; avatar: string };
 // The generated name of each seat's player (src/names.ts). The server computes it from the seat's
 // token, so the token never leaves the server. Null for an empty seat, the computer, or an unknown player.
 type SeatNames = Record<Player, string | null>;
-export const SESSION_MODES = ['online', 'computer', 'friend', 'nearby'] as const;
+// The order of the mode picker. Lists of modes, such as the stats, follow it.
+export const SESSION_MODES = ['computer', 'friend', 'online', 'nearby'] as const;
 export type SessionMode = (typeof SESSION_MODES)[number];
 // One game as stored: moves, the time of each move, its time limit, and whether the player to move ran out of time.
 export type GameRecord = { moves: number[]; times: EpochMs[]; clock: TimeControl; timedOut: boolean };

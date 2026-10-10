@@ -2,11 +2,11 @@
 import { type Difficulty, DIFFICULTIES } from '../ai.ts';
 import { type TimeControl, NO_LIMIT, parseClock } from '../clock.ts';
 import type { Player } from '../game.ts';
-import { LAYOUTS, type MATCH_OPTIONS, THEMES, VIEWS } from '../protocol.ts';
+import { LAYOUTS, type MATCH_OPTIONS, SESSION_MODES, THEMES, VIEWS } from '../protocol.ts';
 import { SOUND_SET_IDS, type SoundSetId } from '../sound-sets.ts';
 import { STORAGE_KEYS } from '../storage-keys.ts';
 
-export const MODES = ['computer', 'friend', 'online', 'nearby'] as const;
+export const MODES = SESSION_MODES;
 export const PLAYERS = ['X', 'O'] as const;
 export type Mode = (typeof MODES)[number];
 type View = (typeof VIEWS)[number];

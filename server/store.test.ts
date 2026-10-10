@@ -623,6 +623,22 @@ describe('online game metrics', () => {
 });
 
 describe('stats', () => {
+  it('lists levels and modes in their fixed order, not by count or name', async () => {
+    store = await openStore(':memory:');
+    await store.addResults(bob, [
+      result('aaaaaaaa-2222-4000-8000-000000000001', { difficulty: 'hard' }),
+      result('aaaaaaaa-2222-4000-8000-000000000002', { difficulty: 'hard' }),
+      result('aaaaaaaa-2222-4000-8000-000000000003', { difficulty: 'medium' }),
+      result('aaaaaaaa-2222-4000-8000-000000000004', { difficulty: 'easy' }),
+      result('aaaaaaaa-2222-4000-8000-000000000005', { mode: 'friend', you: null, difficulty: null }),
+    ]);
+    const stats = await store.stats();
+    expect(stats.levels.map((row) => row.level)).toEqual(['easy', 'medium', 'hard']);
+    expect(stats.byMode.map((row) => row.key)).toEqual(['computer', 'friend']);
+    const mine = await store.stats({ ...ALL_STATS, scope: 'mine' }, bob);
+    expect(mine.personal?.results.map((row) => row.level)).toEqual(['easy', 'medium', 'hard']);
+  });
+
   it('counts games, levels, moves and metrics, with no names, no page faults and no tokens', async () => {
     const code = await session();
     await playMoves(code, X_WINS);
