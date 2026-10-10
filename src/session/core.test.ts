@@ -190,11 +190,16 @@ describe('match options and lock', () => {
     expect(status(() => core.lock(alone, alice))).toBe(409);
     const locked = core.lock(play(onlineDoc(), [0]), alice);
     expect(status(() => core.newGame(locked, alice))).toBe(409);
-    const couch = core.createDoc({ name: 'Couch', mode: 'friend', seats: { X: ALICE, O: ALICE } });
-    const lockedCouch = core.lock(core.move(couch, alice, { game: 0, moveCount: 0, cell: 0 }, ms(0)), alice);
-    expect(status(() => core.newGame(lockedCouch, alice))).toBe(409);
-    expect(status(() => core.undo(lockedCouch, alice, 1))).toBe(409);
-    expect(core.lock(lockedCouch, alice)).toBe(lockedCouch);
+    expect(core.lock(locked, alice)).toBe(locked);
+  });
+
+  it('has no lock in a game on one device, and ignores a lock kept from before', () => {
+    const couch = core.move(core.createDoc({ name: 'Couch', mode: 'friend', seats: { X: ALICE, O: ALICE } }), alice, { game: 0, moveCount: 0, cell: 0 }, ms(0));
+    expect(status(() => core.lock(couch, alice))).toBe(409);
+    const keptLock = { ...couch, lockedGame: 0 };
+    expect(view(keptLock, alice).locked).toBe(false);
+    expect(core.undo(keptLock, alice, 1).games[0]?.moves).toEqual([]);
+    expect(core.newGame(keptLock, alice).games).toHaveLength(2);
   });
 
   it('ends the lock when the game ends on time', () => {

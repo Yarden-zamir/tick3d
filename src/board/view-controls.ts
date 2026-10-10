@@ -4,7 +4,7 @@
 import type { Settings } from '../page/settings.ts';
 
 // Marks the chosen value of each segmented control, and shows the fields of the view now.
-export function showSegmented(root: ParentNode, settings: Settings, frozen: boolean): void {
+export function showSegmented(root: ParentNode, settings: Settings): void {
   root.querySelectorAll<HTMLElement>('[data-show-view]').forEach((field) => {
     field.hidden = field.dataset.showView !== settings.view;
   });
@@ -14,7 +14,6 @@ export function showSegmented(root: ParentNode, settings: Settings, frozen: bool
     if (typeof value !== 'string') throw new Error(`segmented control for a setting that is not text: ${group.dataset.setting}`);
     group.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
       button.setAttribute('aria-pressed', String(button.dataset.value === value));
-      button.disabled = frozen;
     });
   });
 }

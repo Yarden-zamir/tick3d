@@ -80,15 +80,20 @@ function requireSeat(doc: SessionDoc, identity: Identity): Player[] {
   return seats;
 }
 
+// A game with another device: online, or Nearby. Only such a game has another person to protect.
+const isShared = (doc: SessionDoc): boolean => doc.mode === 'online' || doc.mode === 'nearby';
+
+// A lock holds only in a game with another device. A lock that a one-device game kept from before
+// does not hold.
 function isLocked(doc: SessionDoc): boolean {
-  return doc.lockedGame === doc.games.length - 1 && currentGame(doc).status.kind === 'playing';
+  return isShared(doc) && doc.lockedGame === doc.games.length - 1 && currentGame(doc).status.kind === 'playing';
 }
 
 // Adds events to the chat log of a game with another device. A game on one device shows no chat.
 // Limit: events count toward CHAT_KEEP, so many changes push old messages out sooner. Revisit this
 // if players lose messages that they still want: then keep events in their own short list.
 function logEvents(doc: SessionDoc, events: readonly SessionEvent[]): SessionDoc {
-  if ((doc.mode !== 'online' && doc.mode !== 'nearby') || events.length === 0) return doc;
+  if (!isShared(doc) || events.length === 0) return doc;
   const first = (doc.chat.at(-1)?.id ?? 0) + 1;
   const added = events.map((event, index) => ({ id: first + index, event }));
   return { ...doc, chat: [...doc.chat, ...added].slice(-CHAT_KEEP) };
@@ -165,7 +170,7 @@ export function move(doc: SessionDoc, identity: Identity, request: MoveRequest, 
 // Takes back moves in a game on one device. With another device, an undo is a request (see seat).
 export function undo(doc: SessionDoc, identity: Identity, count: number): SessionDoc {
   requireSeat(doc, identity);
-  if (doc.mode === 'online' || doc.mode === 'nearby') throw new SessionError(409, 'With another device, the other player must accept an undo.');
+  if (isShared(doc)) throw new SessionError(409, 'With another device, the other player must accept an undo.');
   const game = currentGame(doc);
   if (game.status.kind !== 'playing') throw new SessionError(409, 'This game is over.');
   if (game.clock.perMove !== null || game.clock.perGame !== null) throw new SessionError(409, 'A timed game has no undo.');
@@ -186,8 +191,7 @@ export function newGame(doc: SessionDoc, identity: Identity): SessionDoc {
   const game = currentGame(doc);
   // On one device a player may give up a game: it stays in the history, unfinished.
   // With another device involved, a game must end first, so nobody can wipe a game they are losing.
-  const sharedGame = doc.mode === 'online' || doc.mode === 'nearby';
-  if (sharedGame && game.status.kind === 'playing' && game.moves.length > 0) throw new SessionError(409, 'Finish this game first.');
+  if (isShared(doc) && game.status.kind === 'playing' && game.moves.length > 0) throw new SessionError(409, 'Finish this game first.');
   // An empty live game is replaced, so a new game never leaves an empty one in the history.
   const played = game.moves.length > 0;
   const games = played ? doc.games : doc.games.slice(0, -1);
@@ -252,9 +256,11 @@ export function update(doc: SessionDoc, identity: Identity, changes: SessionUpda
   return logEvents(next, events);
 }
 
-// Locks the match options, and every screen's own settings, for both players until the live game ends.
+// Locks the rules of the live game for both players until it ends: the match options, the clock,
+// the seat rotation and undo. It is a promise between two people, so a one-device game has no lock.
 export function lock(doc: SessionDoc, identity: Identity): SessionDoc {
   requireSeat(doc, identity);
+  if (!isShared(doc)) throw new SessionError(409, 'A lock needs a game with another device.');
   if (isLocked(doc)) return doc;
   if (currentGame(doc).status.kind !== 'playing') throw new SessionError(409, 'This game is over. Start a new game first.');
   // Without a second player the game cannot end, so the lock would hold for good.
@@ -318,7 +324,7 @@ export const SEAT_REQUEST_MS = 60_000;
 type SeatChange = { kind: SeatAction['action']; from: Player; watcher: string | null };
 
 function requireShared(doc: SessionDoc): void {
-  if (doc.mode !== 'online' && doc.mode !== 'nearby') throw new SessionError(409, 'Seat changes need a game with another device.');
+  if (!isShared(doc)) throw new SessionError(409, 'Seat changes need a game with another device.');
 }
 
 function openRequest(doc: SessionDoc, now: EpochMs): SessionDoc['seatRequest'] {

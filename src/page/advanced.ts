@@ -1,9 +1,8 @@
 // The advanced settings of the computer.
 import { type Tuning, parseTuning, DEFAULT_TUNING, isDefaultTuning, TUNING_FIELDS, fieldValue } from '../tuning.ts';
 import { agentCopy, agentSnippet, tuningEl, tuningReset } from './dom.ts';
-import { copyText, showProblem, showToast, reject } from './feedback.ts';
+import { copyText, showProblem, showToast } from './feedback.ts';
 import { render } from './render.ts';
-import { settingsLocked } from './state.ts';
 import { STORAGE_KEYS } from '../storage-keys.ts';
 
 
@@ -81,7 +80,6 @@ export function setupAdvanced(): void {
   });
 
   tuningReset.addEventListener('click', () => {
-    if (settingsLocked()) return reject(undefined, 'locked');
     saveTuning(DEFAULT_TUNING);
     buildTuning();
     render();

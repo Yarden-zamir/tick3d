@@ -30,8 +30,8 @@ function stepReview(action: string | undefined): void {
   render();
 }
 
+// The lock holds the rules of a game, not the screen or the way out: these settings stay open.
 function changeSetting(setting: string, value: string | undefined): void {
-  if (settingsLocked()) return reject(undefined, 'locked');
   const previousMode = settings.mode;
   switch (setting) {
     case 'view':

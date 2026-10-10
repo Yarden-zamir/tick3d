@@ -3,12 +3,12 @@ import { hasLimit } from '../clock.ts';
 import { type Game, type Player, other } from '../game.ts';
 import { createSearch } from '../move-search.ts';
 import { computerTuning } from './advanced.ts';
-import { showError, reject } from './feedback.ts';
+import { showError } from './feedback.ts';
 import { requestUndo } from './players.ts';
 import { render } from './render.ts';
 import { applyView, withBusy } from './sessions.ts';
 import { settings } from './settings.ts';
-import { page, isLive, current, currentRound, newRound, setThinking, settingsLocked, shared } from './state.ts';
+import { page, isLive, current, currentRound, newRound, setThinking, shared } from './state.ts';
 
 const COMPUTER_DELAY_MS = 450;
 
@@ -75,7 +75,6 @@ export function undoMove(): void {
   if (page.thinking || page.review || !isLive() || current().moves.length === 0) return;
   // Undo would hand back time that the clock already counted, so a timed game has no undo.
   if (hasLimit(current().clock)) return;
-  if (settingsLocked()) return reject(undefined, 'locked');
   // Against the computer, go back to the last position where it was the human's turn.
   const you = page.session.you;
   const count = page.session.mode === 'computer' && current().turn === you && current().moves.length >= 2 ? 2 : 1;

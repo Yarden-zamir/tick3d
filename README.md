@@ -102,7 +102,8 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Join a friend (code and New code) | no | no | yes | no | no |
 | Players (seats, watchers and seat controls) | no | no | yes (grey until a game starts) | yes (grey until a game starts) | no |
 | Time limit | yes | yes | yes | yes | no |
-| Hide board, history and coordinates, Lock | yes | yes | yes (off until a game starts) | yes (off until a game starts) | no |
+| Hide board, history and coordinates | yes | yes | yes (off until a game starts) | yes (off until a game starts) | no |
+| Lock (rules of the live game, for both players) | no | no | yes (off until a game starts) | yes (off until a game starts) | no |
 | Score, New game, the session games in My games | yes | yes | yes (grey until a game starts) | yes (grey until a game starts) | yes (no session games) |
 | Undo (during a game) | yes | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
 | Result card (after a game) | yes | yes | in a game | in a game | no |
