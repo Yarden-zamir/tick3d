@@ -207,7 +207,17 @@ docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr-17.
 
 ## Video
 
-`video/` holds a 15 s spot made in code: three.js draws every frame, Remotion renders it, and the sound comes from the game's own sound code. The creative (brief, script, timeline, music notes and the tutorial plan) is in [video/creative/](video/creative/).
+`video/` holds a 15 s ad and a "How to win" tutorial, made in code: three.js draws every frame, Remotion renders it, and the sound comes from the game's own sound code. The creative (brief, script, timeline, music notes and the tutorial plan) is in [video/creative/](video/creative/).
+
+**The ad** (15 s): [landscape MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-landscape.mp4) · [portrait MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-portrait.mp4) · [stills](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-stills.png)
+
+![The 15 s tick3d ad](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f.gif)
+
+**The tutorial "How to win"** (40 s): [landscape MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-landscape.mp4) · [portrait MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-portrait.mp4) · [stills](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-stills.png). The short cut (27.5 s): [landscape MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial-short/tick3d-tutorial-short-a89435f-landscape.mp4) · [portrait MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial-short/tick3d-tutorial-short-a89435f-portrait.mp4) · [stills](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial-short/tick3d-tutorial-short-a89435f-stills.png).
+
+![The tutorial "How to win"](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f.gif)
+
+The files are the render of commit a89435f on the `pr-assets` branch. A new render goes to a new folder (`video/scripts/publish.sh`); update these links when one replaces them.
 
 ```sh
 docker run --rm -v "$PWD":/app -w /app/video node:26 sh -c 'npm ci && npm run check && npm run video'
