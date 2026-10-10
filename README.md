@@ -4,20 +4,16 @@
 
 3D tic-tac-toe on a 4×4×4 cube, at [tick3d.yarden-zamir.com](https://tick3d.yarden-zamir.com).
 
+
 [![The 15 s tick3d ad. Click to download the MP4 with sound.](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-readme.webp)](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-landscape.mp4)
-
-[![The tutorial "How to win": which lines win and why. Click to download the MP4 with sound.](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-readme.webp)](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-landscape.mp4)
-
-The ad (15 s) and the tutorial "How to win" (40 s) play here without sound. Click one to download its MP4 with sound. See [Video](#video) for the portrait cuts and the short tutorial.
-
-![A game against the computer in the tower view](docs/screenshots/tower.png)
-
 ## Rules
 
 - Two players take turns. X moves first.
 - Four marks in a straight line win. The cube has 76 lines.
 - In an online or Nearby session, X and O swap for each new game, so the first move alternates. Against the computer you start every game unless you unlock the seats.
 - A full cube with no line is a draw.
+
+[![The tutorial "How to win": which lines win and why. Click to download the MP4 with sound.](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-readme.webp)](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-landscape.mp4)
 
 ## Features
 
