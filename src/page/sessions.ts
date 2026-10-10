@@ -208,6 +208,20 @@ export async function refresh(code: Code): Promise<void> {
   }
 }
 
+// The callers that wait until the server answered every change that the screen shows already.
+let sentWaiters: (() => void)[] = [];
+
+export function changesSent(): Promise<void> {
+  if (shownChanges === 0) return Promise.resolve();
+  return new Promise((resolve) => sentWaiters.push(resolve));
+}
+
+function wakeSentWaiters(): void {
+  if (shownChanges > 0) return;
+  for (const wake of sentWaiters) wake();
+  sentWaiters = [];
+}
+
 // Sends a change that the screen shows already. An error loads the session again, which undoes the change.
 export async function sendShownChange(code: Code, send: () => Promise<SessionView>): Promise<void> {
   shownChanges += 1;
@@ -218,10 +232,12 @@ export async function sendShownChange(code: Code, send: () => Promise<SessionVie
     shownChanges -= 1;
     refreshOwed = false;
     await refresh(code);
+    wakeSentWaiters();
     throw error;
   }
   shownChanges -= 1;
   applyView(view);
+  wakeSentWaiters();
   if (shownChanges === 0 && refreshOwed) {
     refreshOwed = false;
     void refresh(code);
