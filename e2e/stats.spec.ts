@@ -71,11 +71,11 @@ test('the leaderboard loads on scroll, marks your row, sorts by a column, and op
   const you = board.locator('.leaderboard-you');
   await expect(you).toBeVisible();
 
-  const fastest = board.getByRole('button', { name: 'Fastest win' });
-  await fastest.click();
-  await expect(board.locator('th', { has: fastest })).toHaveAttribute('aria-sort', 'ascending');
-  await fastest.click();
-  await expect(board.locator('th', { has: fastest })).toHaveAttribute('aria-sort', 'descending');
+  const fastest = board.locator('th', { hasText: 'Fastest win' });
+  await fastest.getByRole('button').click();
+  await expect(fastest).toHaveAttribute('aria-sort', 'ascending');
+  await fastest.getByRole('button').click();
+  await expect(fastest).toHaveAttribute('aria-sort', 'descending');
 
   await you.locator('.leaderboard-name').click();
   await expect(page).toHaveURL(/person=[0-9a-f]+/);
