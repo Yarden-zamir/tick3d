@@ -36,7 +36,7 @@ export const COLUMNS = [
   {
     key: 'fastestWin',
     label: 'Fastest win',
-    tip: 'The fewest moves of a won game, both players together',
+    tip: 'The fewest moves of a game won with a line, both players together. A win on time does not count.',
     value: (row) => row.fastestWin,
     show: (row) => (row.fastestWin === null ? '–' : `${row.fastestWin} moves`),
     lowFirst: true,

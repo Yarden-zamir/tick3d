@@ -673,7 +673,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     won: count(),
     drawn: count(),
     lost: count(),
-    fastestWin: { ...nullable(count()), description: 'The fewest moves of a won game. null without a win.' },
+    fastestWin: { ...nullable(count()), description: 'The fewest moves of a game won with a line. A win on time does not count. null without such a win.' },
     avgMoves: { type: 'number', minimum: 0, description: 'The mean number of moves of a game.' },
     bestStreak: count('The longest run of won games.'),
     lastPlayed: { type: 'integer', minimum: 0, description: 'When the last game ended, in epoch milliseconds.' },

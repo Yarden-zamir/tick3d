@@ -1113,7 +1113,7 @@ export type LeaderboardRow = {
   won: number;
   drawn: number;
   lost: number;
-  // The fewest moves of a won game. null without a win.
+  // The fewest moves of a game won with a line. A win on time does not count. null without such a win.
   fastestWin: number | null;
   avgMoves: number;
   bestStreak: number;

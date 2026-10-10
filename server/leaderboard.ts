@@ -28,15 +28,15 @@ export type LeaderRow = RowOf<typeof LEADER>;
 // Revisit this when a call takes more than about 1 s.
 const LEADERBOARD = `WITH g AS (${FILTERED_GAMES}),
   seats AS (
-    SELECT finished_at, len(moves) AS moves, winner, 'X' AS seat, player_x AS token FROM g WHERE player_x IS DISTINCT FROM player_o
+    SELECT finished_at, len(moves) AS moves, winner, ending, 'X' AS seat, player_x AS token FROM g WHERE player_x IS DISTINCT FROM player_o
     UNION ALL
-    SELECT finished_at, len(moves) AS moves, winner, 'O' AS seat, player_o AS token FROM g WHERE player_x IS DISTINCT FROM player_o
+    SELECT finished_at, len(moves) AS moves, winner, ending, 'O' AS seat, player_o AS token FROM g WHERE player_x IS DISTINCT FROM player_o
   ),
   played AS (
     -- A seat can hold the account token itself, which has no player_tokens row.
     SELECT coalesce($account || lpad(pt.github_id::VARCHAR, 16, '0'), token) AS owner,
       coalesce(pt.github_id, CASE WHEN starts_with(token, $account) THEN substr(token, length($account) + 1)::BIGINT END) AS github_id,
-      finished_at, moves,
+      finished_at, moves, ending,
       coalesce(winner = seat, false) AS won, winner IS NULL AS drawn
     FROM seats LEFT JOIN player_tokens pt USING (token)
     WHERE token IS NOT NULL AND token <> $computer
@@ -48,7 +48,8 @@ const LEADERBOARD = `WITH g AS (${FILTERED_GAMES}),
   totals AS (
     SELECT owner, any_value(github_id) AS github_id, count(*)::INTEGER AS games, count(*) FILTER (won)::INTEGER AS won,
       count(*) FILTER (drawn)::INTEGER AS drawn, count(*) FILTER (NOT won AND NOT drawn)::INTEGER AS lost,
-      min(moves) FILTER (won)::INTEGER AS fastest_win, avg(moves) AS avg_moves, epoch_ms(max(finished_at)) AS last_played
+      -- A win on time can come after any number of moves, so only a won line counts as a fast win.
+      min(moves) FILTER (won AND ending = 'won')::INTEGER AS fastest_win, avg(moves) AS avg_moves, epoch_ms(max(finished_at)) AS last_played
     FROM shown GROUP BY owner
   )
 SELECT owner, u.login, u.avatar, games, won, drawn, lost, fastest_win, avg_moves, best_streak, last_played
