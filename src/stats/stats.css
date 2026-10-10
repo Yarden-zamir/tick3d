@@ -316,6 +316,7 @@
 .leaderboard th,
 .leaderboard td {
   white-space: nowrap;
+  vertical-align: middle;
 }
 
 .leaderboard .leaderboard-player {
