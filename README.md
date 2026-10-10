@@ -22,7 +22,7 @@ The ad (15 s) and the tutorial "How to win" (40 s) play here without sound. Clic
 ## Features
 
 - Play against the computer, a friend on the same device, a friend online, or a device on the same Wi-Fi (Nearby).
-- Three computer levels: easy, medium and hard. "Advanced: computer player" in the panel tunes each level.
+- Three computer levels: easy, medium and hard. "Advanced: computer player" in the panel tunes each level. A game is tuned when the computer made at least one move with changed settings, also if the settings changed back later. The end card, My games, the records and the stats show it.
 - Two views: a 3D tower that you turn with a drag, and a flat view with four layouts.
 - Play by coordinates on the keypad, with the board or the marks hidden.
 - Time limits per game, per move, or both. A player who runs out loses.
