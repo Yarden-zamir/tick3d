@@ -3068,7 +3068,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   border: var(--border) solid var(--line);
   border-radius: 14px;
   background:
-    radial-gradient(circle at 15% 50%, rgb(255 225 77 / 0.35), transparent 55%),
+    radial-gradient(circle at 15% 50%, rgb(150 120 255 / 0.55), transparent 55%),
     linear-gradient(120deg, var(--unlock-bg), #2c2166);
   box-shadow: 4px 4px 0 var(--shadow);
   color: #ffffff;

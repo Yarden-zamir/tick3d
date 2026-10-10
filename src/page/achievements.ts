@@ -19,7 +19,7 @@ const ICONS: Record<AchievementId, string> = {
   'board-hidden': '<path d="M2.5 9.5c2.5 4 5.5 5.5 9.5 5.5s7-1.5 9.5-5.5M6 13.5 4.5 16.5M12 15v3.5M18 13.5l1.5 3"/>',
   'coordinates-hidden': '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4.5" height="7" rx="1.5"/><rect x="16.5" y="14" width="4.5" height="7" rx="1.5"/>',
   'timed-win': '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5M9.5 2.5h5M12 2.5V6M18.5 6.5 20 5"/>',
-  'streak-3': '<path d="M3 19h18M7 19V6h10v13M7 15h10"/>',
+  'streak-3': '<path d="M2.5 18c3 2 16 2 19 0M6.5 18 7.5 4.5h9l1 13.5"/><path d="M7.1 13h9.8v2.5H6.9Z" fill="currentColor"/>',
   'streak-5':
     '<path d="M12 2.5c1 3.5 5.5 5.5 5.5 11a5.5 5.5 0 0 1-11 0c0-2.5 1.5-4 2.5-5 .5 2 1.5 3 2.5 3 0-3-1-6 .5-9Z"/><path d="M12 21a2.5 2.5 0 0 1-2.5-2.5c0-1.5 1.5-2.5 2.5-4 1 1.5 2.5 2.5 2.5 4A2.5 2.5 0 0 1 12 21Z" fill="currentColor"/>',
   'online-win': '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9Z"/>',
@@ -27,7 +27,8 @@ const ICONS: Record<AchievementId, string> = {
   'full-cube': '<path d="M12 2.5 20.5 7 12 11.5 3.5 7Z" fill="currentColor"/><path d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7ZM12 11.5v10"/>',
   'games-10':
     '<path d="M8 2.5l2.5 6.5M16 2.5 13.5 9"/><circle cx="12" cy="15" r="6"/><path d="M12 12l.9 1.9 2.1.3-1.5 1.4.4 2.1-1.9-1-1.9 1 .4-2.1-1.5-1.4 2.1-.3Z" fill="currentColor" stroke-width="1"/>',
-  'games-100': '<path d="M5 20v-6.5a7 7 0 0 1 14 0V20M5 16h4.5v4M19 16h-4.5v4M9 12.5h6M6 7.5C7 4 9.5 2.5 12 2.5S17 4 18 7.5"/>',
+  'games-100':
+    '<path d="M5 21v-7a7 7 0 0 1 14 0v7M9 21v-5.5h6V21"/><path d="M5.5 9.5C6 4.5 9 2.5 12 2.5s6 2 6.5 7c-2.5-2-10.5-2-13 0Z" fill="currentColor"/>',
 };
 const LOCK = '<rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>';
 
@@ -198,7 +199,7 @@ export function showUnlocks(box: HTMLElement, unlocked: readonly AchievementId[]
     const { name, description, tier } = achievementOf(id);
     buttons.forEach((button, at) => button.setAttribute('aria-pressed', String(at === index)));
     text.dataset.tier = tier;
-    kicker.textContent = unlocked.length === 1 ? 'Achievement unlocked' : `Achievement unlocked · ${index + 1} of ${unlocked.length}`;
+    kicker.textContent = unlocked.length === 1 ? 'Achievement unlocked' : `Unlocked · ${index + 1} of ${unlocked.length}`;
     title.textContent = name;
     detail.textContent = description;
     // A new animation for each name.
