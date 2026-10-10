@@ -28,6 +28,7 @@ import {
 } from '../protocol.ts';
 import { PlayoffError, type PlayoffRequest, applyPlayoff } from '../practice/playoff.ts';
 import { CURRENT_FORMAT, type SessionDoc, defaultFixedSeats } from './format.ts';
+import type { Tuning } from '../tuning.ts';
 
 // A code that a client can test, for a refusal that needs a specific reaction.
 // already-played: the move is in the game already, so an earlier copy of the request counted.
@@ -118,7 +119,7 @@ export function createDoc({ name, mode, clock = NO_LIMIT, seats, computer }: New
   return {
     format: CURRENT_FORMAT,
     mode,
-    computer: computer ?? null,
+    computer: computer === undefined ? null : { ...computer, tuned: [] },
     name: validName,
     games: [emptyRecord(clock)],
     seats,
@@ -165,6 +166,14 @@ export function move(doc: SessionDoc, identity: Identity, request: MoveRequest, 
   // A move ends an undo request: the move to take back is not the last one any more.
   const next = replaceCurrent(doc, result.game);
   return next.seatRequest?.kind === 'undo' ? { ...next, seatRequest: null } : next;
+}
+
+// Notes that the computer moved in game `game` with changed advanced settings. The note stays when the move is
+// taken back: a tuned computer took part in the game. The newest settings of the game replace older ones.
+export function noteTunedMove(doc: SessionDoc, game: number, tuning: Tuning): SessionDoc {
+  if (doc.computer === null) throw new Error('only a computer game has a tuned computer');
+  const tuned = [...doc.computer.tuned.filter((entry) => entry.game !== game), { game, tuning }];
+  return { ...doc, computer: { ...doc.computer, tuned } };
 }
 
 // Takes back moves in a game on one device. With another device, an undo is a request (see seat).

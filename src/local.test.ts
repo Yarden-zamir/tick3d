@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { openDeviceDb } from './device-db.ts';
 import { createLocalBackend } from './local.ts';
 import type { Code, PlayerToken } from './protocol.ts';
+import { DEFAULT_TUNING } from './tuning.ts';
 
 const token = 'aaaaaaaa-0000-4000-8000-000000000001' as PlayerToken;
 const clock = { perMove: null, perGame: null };
@@ -46,6 +47,26 @@ describe('createLocalBackend', () => {
     const left = (await local.list()).map((entry) => entry.code).sort();
     expect(left).toEqual([playedOld, emptyFresh, kept].sort());
     expect(left).not.toContain(emptyOld);
+  });
+
+  it('remembers a game in which the computer moved with changed settings, also after a reload', async () => {
+    const { db, local } = await setup();
+    const tuned = { ...DEFAULT_TUNING, strongCellBonus: 7 };
+    // The player sits at O, so the computer plays X and moves first.
+    const view = await local.create({ mode: 'computer', name: 'Computer game', clock, human: 'O', difficulty: 'easy' });
+    await local.computerMove(view.code, { game: 0, moveCount: 0, cell: 0 }, tuned);
+    await local.move(view.code, { game: 0, moveCount: 1, cell: 1 });
+    // A later move with the default settings does not clear the mark: a tuned computer took part.
+    await local.computerMove(view.code, { game: 0, moveCount: 2, cell: 2 }, null);
+    expect(await local.tuningOf(view.code, 0)).toEqual(tuned);
+    expect(await createLocalBackend(db, token, () => null).tuningOf(view.code, 0)).toEqual(tuned);
+  });
+
+  it('reports no tuning for a game that the computer played with the default settings', async () => {
+    const { local } = await setup();
+    const view = await local.create({ mode: 'computer', name: 'Computer game', clock, human: 'O', difficulty: 'easy' });
+    await local.computerMove(view.code, { game: 0, moveCount: 0, cell: 0 }, null);
+    expect(await local.tuningOf(view.code, 0)).toBeNull();
   });
 
   it('finds one session by its code', async () => {

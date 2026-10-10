@@ -21,6 +21,7 @@ import {
 import { nameOf } from './names.ts';
 import * as core from './session/core.ts';
 import { CURRENT_FORMAT, type SessionDoc, parseDoc } from './session/format.ts';
+import type { Tuning } from './tuning.ts';
 
 type LocalMode = 'computer' | 'friend' | 'nearby';
 
@@ -161,9 +162,17 @@ export function createLocalBackend(
 
     load: (code: Code) => change(code, (doc) => doc),
     move: (code: Code, request: MoveRequest) => change(code, (doc) => core.move(doc, identity(), request, epochNow())),
-    // The page plays the computer's moves through this, with the computer's token added.
-    computerMove: (code: Code, request: MoveRequest) =>
-      change(code, (doc) => core.move(doc, identity(true), request, epochNow())),
+    // The page plays the computer's moves through this, with the computer's token added. `tuning` is the changed
+    // advanced settings that chose the move, or null for the default settings.
+    computerMove: (code: Code, request: MoveRequest, tuning: Tuning | null) =>
+      change(code, (doc) => {
+        const next = core.move(doc, identity(true), request, epochNow());
+        return tuning === null ? next : core.noteTunedMove(next, request.game, tuning);
+      }),
+    // The changed settings of the last tuned computer move in game `game`, or null when the computer played every
+    // move of it with the default settings.
+    tuningOf: async (code: Code, game: number): Promise<Tuning | null> =>
+      (await read(code)).parsed.computer?.tuned.find((entry) => entry.game === game)?.tuning ?? null,
     newGame: (code: Code) => change(code, (doc) => core.newGame(doc, identity())),
     update: (code: Code, changes: SessionUpdate) => change(code, (doc) => core.update(doc, identity(), changes)),
     lock: (code: Code) => change(code, (doc) => core.lock(doc, identity())),
