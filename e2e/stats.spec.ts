@@ -52,3 +52,38 @@ test('the stats API refuses an unknown filter', async ({ request }) => {
   expect((await request.get('/api/stats?mode=online&level=hard')).status()).toBe(400);
   expect((await request.get('/api/stats?scope=mine')).status()).toBe(400);
 });
+
+test('the leaderboard loads on scroll, marks your row, sorts by a column, and opens a player', async ({ open }) => {
+  const { page } = await open({ settings: { mode: 'computer' } });
+  // A medium game: no other test views this filter, so no cached answer from before the upload hides it.
+  const stored = await page.evaluate(async ({ moves, token }) => {
+    const now = Date.now();
+    const game = { moves, times: moves.map((_, i) => now - 60_000 + i * 1_000), clock: { perMove: null, perGame: null }, timedOut: false };
+    const result = { id: `e2e-board-${crypto.randomUUID()}`, mode: 'computer', game, you: 'X', difficulty: 'medium', finishedAt: now };
+    const response = await fetch('/api/results', { method: 'POST', headers: { 'content-type': 'application/json', 'x-player': token }, body: JSON.stringify({ results: [result] }) });
+    return ((await response.json()) as { stored: number }).stored;
+  }, { moves: X_WINS, token: await playerToken(page) });
+  expect(stored).toBe(1);
+
+  await page.goto('/stats?mode=computer&level=medium');
+  const board = page.locator('.stats-card', { has: page.getByRole('heading', { name: 'Leaderboard' }) });
+  await board.scrollIntoViewIfNeeded();
+  const you = board.locator('.leaderboard-you');
+  await expect(you).toBeVisible();
+
+  const fastest = board.getByRole('button', { name: 'Fastest win' });
+  await fastest.click();
+  await expect(board.locator('th', { has: fastest })).toHaveAttribute('aria-sort', 'ascending');
+  await fastest.click();
+  await expect(board.locator('th', { has: fastest })).toHaveAttribute('aria-sort', 'descending');
+
+  await you.locator('.leaderboard-name').click();
+  await expect(page).toHaveURL(/person=[0-9a-f]+/);
+  await expect(page.locator('#stats-person')).toBeVisible();
+});
+
+test('the leaderboard API takes the range, mode and level filters only', async ({ request }) => {
+  expect((await request.get('/api/leaderboard?range=30d&mode=computer&level=hard')).status()).toBe(200);
+  expect((await request.get('/api/leaderboard?scope=mine')).status()).toBe(400);
+  expect((await request.get('/api/leaderboard?person=0123456789abcdef')).status()).toBe(400);
+});
