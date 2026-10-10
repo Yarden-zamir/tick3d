@@ -388,7 +388,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     case 'GET /api/me/games':
     case 'GET /api/me/history':
     case 'DELETE /api/me/history':
-    case 'GET /api/me/records': {
+    case 'GET /api/me/records':
+    case 'GET /api/me/achievements': {
       const token = requirePlayer(req);
       const user = auth?.user(req);
       // Every visit with a login links this browser to the account, so a new device joins at once.
@@ -402,6 +403,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         return send(res, 200, await store.history(token, offset));
       }
       if (match.route === 'GET /api/me/records') return send(res, 200, { records: await store.records(token) });
+      if (match.route === 'GET /api/me/achievements') return send(res, 200, { achievements: await store.achievements(token) });
       return send(res, 200, await me(token, user));
     }
     // A cross-site form cannot send the X-Player header, so another site cannot delete a player's data.

@@ -2840,6 +2840,195 @@ body[data-turn='O'] .status[data-state='playing'] {
   white-space: nowrap;
 }
 
+/* Achievements in My games (src/page/achievements.ts). One list with three looks by data-view:
+   grid (badges), list (rows with progress bars) and chips. A locked achievement has a dashed border. */
+.achievements-summary {
+  margin-left: 0.4rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.achievements {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.achievements li {
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.achievements li.locked {
+  border-style: dashed;
+}
+
+.achievements li > div {
+  display: grid;
+  min-width: 0;
+}
+
+.achievements small {
+  color: var(--muted);
+}
+
+.achievement-mark {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 2px solid var(--line);
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--on-color);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.achievements li.locked .achievement-mark {
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.achievements li.locked b {
+  color: var(--muted);
+}
+
+.achievements progress {
+  height: 0.6rem;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  overflow: hidden;
+  appearance: none;
+}
+
+.achievements progress::-webkit-progress-bar {
+  background: var(--surface);
+}
+
+.achievements progress::-webkit-progress-value {
+  background: var(--win);
+}
+
+.achievements progress::-moz-progress-bar {
+  background: var(--win);
+}
+
+.achievement-count {
+  font-size: 0.8rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* List: the badge, the name and the description, and a progress bar under them for a counted goal. */
+.achievements[data-view='list'] li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  column-gap: 0.6rem;
+  row-gap: 0.25rem;
+  padding: 0.4rem 0.6rem;
+}
+
+.achievements[data-view='list'] .achievement-mark {
+  grid-row: span 2;
+}
+
+.achievements[data-view='list'] progress {
+  grid-column: 2;
+  width: 100%;
+}
+
+/* Grid: badges in columns, with the description in small type. */
+.achievements[data-view='grid'] {
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+}
+
+.achievements[data-view='grid'] li {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  gap: 0.3rem;
+  padding: 0.6rem 0.4rem;
+  text-align: center;
+}
+
+.achievements[data-view='grid'] li.unlocked {
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+.achievements[data-view='grid'] .achievement-mark {
+  width: 3rem;
+  height: 3rem;
+  font-size: 1.1rem;
+}
+
+.achievements[data-view='grid'] small {
+  font-size: 0.75rem;
+}
+
+.achievements[data-view='grid'] progress {
+  width: 100%;
+}
+
+/* Chips: one short pill per achievement. The description shows on hover (title). */
+.achievements[data-view='chips'] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.achievements[data-view='chips'] li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.6rem 0.15rem 0.15rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.achievements[data-view='chips'] li.unlocked {
+  background: var(--win);
+  color: var(--on-color);
+}
+
+.achievements[data-view='chips'] .achievement-mark {
+  width: 1.6rem;
+  height: 1.6rem;
+  font-size: 0.7rem;
+}
+
+.achievements[data-view='chips'] small,
+.achievements[data-view='chips'] progress {
+  display: none;
+}
+
+.achievements[data-view='chips'] .achievement-count {
+  color: var(--muted);
+}
+
+.achievements[data-view='chips'] li.unlocked .achievement-count {
+  color: inherit;
+}
+
+/* The achievements that the game of the end card unlocked. */
+.end-card-achievements {
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--win);
+  color: var(--on-color);
+  font-weight: 800;
+  text-align: center;
+}
+
 /* A player who closed an async game: dimmed, but the game goes on. */
 .tally.away {
   opacity: 0.6;

@@ -13,6 +13,7 @@ import { type Code, type DeviceGameId, type GameId, type Metrics, type PlayerTok
 import { PLAYOFF_COUNTDOWN_MS } from '../src/practice/playoff.ts';
 import type { PracticeRun } from '../src/practice/practice.ts';
 import { SessionError } from '../src/session/core.ts';
+import type { AchievementId, AchievementProgress } from '../src/achievements.ts';
 import { DELETED_NAME } from '../src/deletions.ts';
 import { DELETED_MESSAGE, REMOVED_MESSAGE, REPORTS_KEPT_MS, DELETION_NOTICES_KEPT_MS, type Store, openStore } from './store.ts';
 
@@ -522,6 +523,43 @@ describe('survival records on the server', () => {
       'hard|game:none|move:none|board:false|history:false|tuned': 9,
     });
     expect(await store.records(carol)).toEqual({});
+  });
+});
+
+describe('achievements', () => {
+  const countOf = (progress: readonly AchievementProgress[], id: AchievementId) => progress.find((entry) => entry.id === id)?.count;
+
+  it('counts online games by seat, for each player', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    const mine = await store.achievements(alice);
+    expect(mine.find((entry) => entry.id === 'online-win')).toMatchObject({ count: 1, unlockedBy: `${code}-1` });
+    const theirs = await store.achievements(bob);
+    expect(countOf(theirs, 'first-win')).toBe(0);
+    expect(countOf(theirs, 'games-10')).toBe(1);
+  });
+
+  it('counts a Nearby game once for the guest', async () => {
+    store = await openStore(':memory:');
+    const nearby = { mode: 'nearby', difficulty: null, game: finishedGame(X_WINS) } as const;
+    await store.addResults(alice, [result('abababab-1111-4000-8000-000000000001', { ...nearby, you: 'X', publicId: deviceGameId('NEARBY23'), guest: bob, metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } })]);
+    await store.addResults(bob, [result('abababab-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: ms(2_034), metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } })]);
+    expect(countOf(await store.achievements(bob), 'games-10')).toBe(1);
+    expect(countOf(await store.achievements(alice), 'nearby-win')).toBe(1);
+  });
+
+  it('adds a new game of a linked device at once, and keeps a cleared game', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addResults(alice, [result('acacacac-1111-4000-8000-000000000001', { difficulty: 'easy' })]);
+    expect(countOf(await store.achievements(alicePhone), 'beat-hard')).toBe(0);
+    await store.addResults(alicePhone, [result('acacacac-1111-4000-8000-000000000002', { finishedAt: ms(3_000) })]);
+    await store.clearHistory(alice);
+    const progress = await store.achievements(alice);
+    expect(countOf(progress, 'beat-easy')).toBe(1);
+    expect(countOf(progress, 'beat-hard')).toBe(1);
+    expect(countOf(progress, 'streak-3')).toBe(2);
   });
 });
 

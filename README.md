@@ -31,6 +31,7 @@
 - Your game as a song: the Song button on the end card and on a game link. A long press shares the song as a WAV file, with your voice on the moves that your voice placed.
 - An end card with the result, to share or save as an image.
 - Survival records: the longest game against each computer level and setup.
+- Achievements: 16 goals such as a first win, a win in 7 moves or 5 wins in a row (`src/achievements.ts`). Past games count too. My games lists them, and the end card names a new one.
 - Twelve themes.
 - The same header on every page, with My games, Info, kitshn and GitHub (`src/header/`).
 - The kitshn button lists the production site and the open pull request previews. A stacked pull request shows inside its parent.

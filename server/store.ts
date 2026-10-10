@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, randomInt } from 'node:crypto';
 import { type DuckDBValue, DuckDBInstance, listValue } from '@duckdb/node-api';
+import { type AchievementGame, type AchievementProgress, achievementProgress } from '../src/achievements.ts';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { NO_LIMIT, type TimeControl } from '../src/clock.ts';
 import { type EpochMs, MAX_EPOCH_MS, epochNow, toEpochMs } from '../src/epoch.ts';
@@ -429,6 +430,10 @@ export async function openStore(
     return { code, doc: parseDoc(stored), version: row.version, stale: format !== CURRENT_FORMAT };
   }
 
+  // The achievements of each player, by their sorted tokens. A new or deleted result clears it all.
+  // Limit: a clear drops every player's entry. Revisit this if achievement requests take more than about 100 ms.
+  const achievementCache = new Map<string, AchievementProgress[]>();
+
   type NewResult = {
     id: string;
     token: string;
@@ -463,6 +468,7 @@ export async function openStore(
       },
       { id: text },
     );
+    achievementCache.clear();
     return inserted.length > 0;
   }
 
@@ -773,6 +779,7 @@ export async function openStore(
   // Limit: the session query reads every session document, like myGames. Revisit it at the same size.
   // `token` is a device token, or the account token of a maintainer request (deleteDataOf).
   async function deleteFor(token: PlayerToken): Promise<DeletedData> {
+    achievementCache.clear();
     const identity = await identityOf(token);
     const ids = listValue([...identity]);
     const ownPersons = new Set(await Promise.all([...identity].map((owner) => personId(owner))));
@@ -1297,6 +1304,35 @@ export async function openStore(
           records = addLoss(records, { difficulty, clock: game.clock, ...options, tuned }, game.moves.length).records;
         }
         return records;
+      }),
+
+    // The achievements of this player over every finished game on all their linked devices.
+    // A cleared game still counts: an achievement stays once the player earned it.
+    achievements: (token: PlayerToken): Promise<AchievementProgress[]> =>
+      serialized(async () => {
+        const identity = [...(await identityOf(token))].toSorted();
+        const key = identity.join(' ');
+        const cached = achievementCache.get(key);
+        if (cached !== undefined) return cached;
+        const tokens = listValue(identity);
+        // A Nearby guest counts the host's copy of the game, as in the history.
+        const found = await rows(
+          `FROM results SELECT results.public_id, results.doc::JSON AS doc, epoch_ms(results.finished_at) AS finished,
+             coalesce(list_contains($tokens, ${SEAT_X}), false) AS mine_x,
+             coalesce(list_contains($tokens, ${SEAT_O}), false) AS mine_o
+           WHERE (list_contains($tokens, ${SEAT_X}) OR list_contains($tokens, ${SEAT_O})) AND NOT ${HOST_HAS_GAME}`,
+          { tokens },
+          { public_id: nullable(gameId), doc: json, finished: epoch, mine_x: bool, mine_o: bool },
+        );
+        const games = found.map((row): AchievementGame => {
+          const { mode, game, difficulty, options, tuned } = readStored(row.doc);
+          // A friend game holds this player on both seats.
+          const you: Player | null = row.mine_x && row.mine_o ? null : row.mine_x ? 'X' : 'O';
+          return { id: row.public_id, mode, game, you, difficulty, options, tuned, finishedAt: row.finished };
+        });
+        const progress = achievementProgress(games);
+        achievementCache.set(key, progress);
+        return progress;
       }),
 
     // Hides every finished game of this player from their history, on all linked devices.
