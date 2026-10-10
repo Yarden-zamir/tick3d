@@ -20,8 +20,8 @@ const css = ({ r, g, b, a }: Rgba) => `rgb(${Math.round(r * 255)} ${Math.round(g
 export type Word = { text: string; at: number; badge?: Badge; note?: string };
 // A plain word: `--surface` letters with a thick `--line` outline and a hard shadow. A sticker: the "3d" of
 // the wordmark, a `--line` box in a token color with `--on-color` letters, tilted by `tilt` degrees (-5 as in the
-// wordmark). A look with `pulse` bumps on every beat.
-export type Look = { y: number; size: number; sticker?: Token; tilt?: number; pulse?: boolean };
+// wordmark).
+export type Look = { y: number; size: number; sticker?: Token; tilt?: number };
 
 // The beat of the 136 BPM grid: a bump of 1 on every beat (4 sixteenths), back to about 0 by the next one.
 export const BEAT_PULSE = 0.06;
@@ -82,16 +82,13 @@ export function wordWidth(ctx: CanvasRenderingContext2D, text: string, look: Loo
   return look.sticker === undefined ? width : width + look.size * 0.28;
 }
 
-// `leave`: the sixteenth where the word starts to shrink and fade out, over 1 sixteenth. `x`: the centre, 0 by default.
-export function wordAt(ctx: CanvasRenderingContext2D, frame: number, word: Word, look: Look, theme: Theme, leave?: number, x = 0): void {
+// A word group that drops in on its sixteenth, centred on x 0.
+export function wordAt(ctx: CanvasRenderingContext2D, frame: number, word: Word, look: Look, theme: Theme): void {
   const p = dropIn(frame, word.at);
-  const out = leave === undefined ? 0 : Math.min(1, Math.max(0, since(frame, leave)));
-  if (p <= 0 || out >= 1) return;
+  if (p <= 0) return;
   ctx.save();
-  ctx.globalAlpha = 1 - out;
-  ctx.translate(x, look.y - (1 - p) * 160);
-  const beat = look.pulse === true ? 1 + BEAT_PULSE * beatBump(frame) : 1;
-  ctx.scale((1 + (1 - p) * 0.5) * (1 - 0.25 * out) * beat, (1 + (1 - p) * 0.5) * (1 - 0.25 * out) * beat);
+  ctx.translate(0, look.y - (1 - p) * 160);
+  ctx.scale(1 + (1 - p) * 0.5, 1 + (1 - p) * 0.5);
   if (look.sticker === undefined) plainWord(ctx, word.text, look.size, theme);
   else sticker(ctx, word.text, look.size, look.sticker, theme, '-0.03em', look.tilt);
   ctx.restore();

@@ -23,7 +23,7 @@ const stillsOnly = draft || values.stills === true;
 
 // The base cut renders into out/, a variant into out/variants/<name>/. The variant goes to the render browser as
 // VIDEO_VARIANT (the timeline reads it) and as an input prop (Spot.tsx checks that both agree).
-const out = VARIANT === 'classic' ? '../out/' : `../out/variants/${VARIANT}/`;
+const out = VARIANT === 'spot' ? '../out/' : `../out/variants/${VARIANT}/`;
 const stills = draft ? `${out}draft/` : `${out}stills/`;
 await render({
   name: VARIANT,

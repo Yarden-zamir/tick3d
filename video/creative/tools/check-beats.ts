@@ -108,4 +108,4 @@ function checkTimeline(beats: Beats, name: string): void {
 checkTimeline(beats, 'beats.json');
 for (const file of variantFiles) checkTimeline(parseBeats(withVariant(beatsJson, JSON.parse(readFileSync(new URL(file, variantsDir), 'utf8')))), `variants/${file}`);
 
-process.stdout.write(`beats.json and every variant ok: ${beats.moves.length} legal moves, ${beats.game.winner} wins on line ${beats.game.line.join('-')}, ${variantFiles.length} variants\n`);
+process.stdout.write(`beats.json and every variant ok: ${beats.moves.length} legal moves, ${beats.game.winner} wins on line ${beats.game.line.join('-')}, ${variantFiles.length} variant${variantFiles.length === 1 ? '' : 's'}\n`);

@@ -1,22 +1,15 @@
 // The on-screen text of the spot: the lines of beats.json, in the lettering of src/lettering.ts.
-import { SPOT_SIXTEENTHS, type TextStyle } from '../creative/beats.ts';
+import { type Beats, SPOT_SIXTEENTHS } from '../creative/beats.ts';
 import { BEAT_PULSE, type BadgeArt, type Look, type Word, beatBump, endCard, onSquare, sticker, wordAt } from './lettering.ts';
 import { BEATS, frameOf, since } from './timeline.ts';
 import type { Theme } from './themes.ts';
+
+type TextStyle = Beats['text'][number]['style'];
 
 // The look of each word group of a line, by the style of the line ('end-card' draws with endCard).
 const LOOKS: Readonly<Record<Exclude<TextStyle, 'end-card' | 'list'>, readonly Look[]>> = {
   center: [{ y: -80, size: 132 }, { y: 100, size: 120, sticker: 'x' }],
   top: [{ y: -496, size: 100 }, { y: -398, size: 90, sticker: 'x' }],
-
-  // One sticker at a time in the free space above the tower. When the next card slams in, the card before it
-  // shrinks and fades out over 1 sixteenth.
-  cards: [
-    { y: -466, size: 88, sticker: 'x', tilt: -5, pulse: true },
-    { y: -466, size: 88, sticker: 'o', tilt: 4, pulse: true },
-    { y: -466, size: 88, sticker: 'x', tilt: -3, pulse: true },
-    { y: -466, size: 88, sticker: 'o', tilt: 5, pulse: true },
-  ],
 };
 
 // The 'list' style: a ticker that never stops. Each card enters the bottom row on its sixteenth and rises one row
@@ -63,14 +56,12 @@ export function drawHud(ctx: CanvasRenderingContext2D, frame: number, theme: The
         return;
       }
       const looks = LOOKS[line.style];
-      // The cards cycle through their looks; the other styles have one look per word group.
-      const cards = line.style === 'cards';
-      if (!cards && looks.length !== line.words.length) {
+      if (looks.length !== line.words.length) {
         throw new Error(`text line ${index + 1} has ${line.words.length} word groups, and the '${line.style}' style has ${looks.length}`);
       }
       line.words.forEach((word, i) => {
-        const look = looks[cards ? i % looks.length : i];
-        if (look !== undefined) wordAt(ctx, frame, word, look, theme, cards ? (line.words[i + 1]?.at ?? line.until - 1) : undefined);
+        const look = looks[i];
+        if (look !== undefined) wordAt(ctx, frame, word, look, theme);
       });
     });
   });

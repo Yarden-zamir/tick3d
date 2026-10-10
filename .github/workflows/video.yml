@@ -1,10 +1,10 @@
 name: video
 
-# Checks the video code on every pull request that touches it. Renders the 15 s spot of video/ (issue #119), every
-# variant in both crops, and the 40 s tutorial "How to win" in both crops, by hand, on a push to main that touches
-# the video, and on a tag. Pull request previews are rendered on a Mac and published with
+# Checks the video code on every pull request that touches it. Renders the 15 s spot (issue #119), every variant
+# in both crops, and the tutorial "How to win" at both paces (40 s and 27.5 s) in both crops, by hand, on a push to
+# main that touches the video, and on a tag. Pull request previews are rendered on a Mac and published with
 # video/scripts/publish.sh, because a CI render round takes about 5 minutes (maintainer decision on #119). A tag
-# such as video-v1 also attaches the classic files to a GitHub Release. No secrets.
+# such as video-v1 also attaches the spot files to a GitHub Release. No secrets.
 # A new variant in video/creative/variants/ goes into the matrix below and into publish.sh.
 on:
   workflow_dispatch:
@@ -50,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [classic, hook, hook-list]
+        variant: [spot, classic]
         crop: [landscape, portrait]
     env:
       VIDEO_VARIANT: ${{ matrix.variant }}
@@ -78,7 +78,7 @@ jobs:
         working-directory: video
         run: |
           case "${{ matrix.crop }}" in landscape) size=1920x1080 ;; portrait) size=1080x1920 ;; esac
-          dir=out; [ "${{ matrix.variant }}" = classic ] || dir=out/variants/${{ matrix.variant }}
+          dir=out; [ "${{ matrix.variant }}" = spot ] || dir=out/variants/${{ matrix.variant }}
           mkdir -p render/stills
           cp "$dir"/tick3d-15s-${{ matrix.crop }}.mp4 "$dir"/soundtrack.wav "$dir"/beats.txt render/
           cp "$dir"/stills/${{ matrix.crop }}-bar-*.png render/stills/
@@ -94,8 +94,8 @@ jobs:
           path: video/render/
           if-no-files-found: error
 
-  # The tutorial "How to win" (video/src/tutorial/), one job per crop: the MP4, the soundtrack and one still per
-  # section. It lasts 40.0 s (the check allows 0.1 s either way); the hard limit is 45.0 s.
+  # The tutorial "How to win" (video/src/tutorial/), one job per pace and crop: the MP4, the soundtrack and one
+  # still per section. The long pace lasts 40.0 s, the short one 27.5 s; the check allows 0.1 s either way.
   tutorial:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
@@ -103,7 +103,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        pace: [long, short]
         crop: [landscape, portrait]
+    env:
+      TUTORIAL_PACE: ${{ matrix.pace }}
+      # The folder and the file names of a pace (scripts/tutorial.ts), and its length in seconds.
+      CUT: ${{ matrix.pace == 'long' && 'tutorial' || 'tutorial-short' }}
+      SECONDS_WANTED: ${{ matrix.pace == 'long' && '40.0' || '27.5' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -118,26 +124,26 @@ jobs:
         with:
           path: video/node_modules/.remotion
           key: chrome-headless-shell-${{ runner.os }}-${{ hashFiles('video/package-lock.json') }}
-      - name: Render the tutorial, ${{ matrix.crop }}
+      - name: Render the tutorial, ${{ matrix.pace }}, ${{ matrix.crop }}
         working-directory: video
         run: npm run tutorial -- --crop ${{ matrix.crop }}
       - name: Check the length and the size of the MP4
-        working-directory: video/out/tutorial
+        working-directory: video/out/${{ env.CUT }}
         run: |
           case "${{ matrix.crop }}" in landscape) size=1920x1080 ;; portrait) size=1080x1920 ;; esac
-          file=tick3d-tutorial-${{ matrix.crop }}.mp4
+          file=tick3d-$CUT-${{ matrix.crop }}.mp4
           got=$(npx remotion ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$file")
           seconds=$(npx remotion ffprobe -v error -show_entries format=duration -of csv=p=0 "$file")
           echo "$file: $got, $seconds s"
           [ "$got" = "$size" ] || { echo "$file is $got, not $size" >&2; exit 1; }
-          awk -v s="$seconds" 'BEGIN { exit !(s >= 39.9 && s <= 40.1 && s <= 45.0) }' || { echo "$file lasts $seconds s, not 40.0 s (at most 45.0 s)" >&2; exit 1; }
+          awk -v s="$seconds" -v w="$SECONDS_WANTED" 'BEGIN { exit !(s >= w - 0.1 && s <= w + 0.1) }' || { echo "$file lasts $seconds s, not $SECONDS_WANTED s" >&2; exit 1; }
       - uses: actions/upload-artifact@v7
         with:
-          name: tick3d-tutorial-${{ matrix.crop }}
+          name: tick3d-${{ env.CUT }}-${{ matrix.crop }}
           path: |
-            video/out/tutorial/tick3d-tutorial-${{ matrix.crop }}.mp4
-            video/out/tutorial/soundtrack.wav
-            video/out/tutorial/stills/${{ matrix.crop }}-*.png
+            video/out/${{ env.CUT }}/tick3d-${{ env.CUT }}-${{ matrix.crop }}.mp4
+            video/out/${{ env.CUT }}/soundtrack.wav
+            video/out/${{ env.CUT }}/stills/${{ matrix.crop }}-*.png
           if-no-files-found: error
 
   release:
@@ -148,7 +154,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v7
         with:
-          pattern: tick3d-video-classic-*
+          pattern: tick3d-video-spot-*
           path: renders
       - uses: softprops/action-gh-release@v3.0.3
         with:

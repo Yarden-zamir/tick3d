@@ -1,6 +1,7 @@
 // The plan of the tutorial "How to win": its sections, what each one shows, and when, on the beat grid of
 // src/grid.ts (sixteenths of the 136 BPM song). The numbers on screen come from the game code (lines.ts).
-// creative/tutorial.md explains the plan.
+// It comes at two paces: 'long' (40 s, slow enough to read every label) and 'short' (27.5 s). TUTORIAL_PACE picks
+// one; scripts/tutorial.ts passes it into the render browser. creative/tutorial.md explains the plan.
 import { LINES, type Line, linesThrough, toCoords } from '../../../src/game.ts';
 import { SIXTEENTH } from '../../../src/song.ts';
 import { FPS, frameOf } from '../grid.ts';
@@ -8,11 +9,8 @@ import type { Word } from '../lettering.ts';
 import { ELEVATION, HOME_AZIMUTH, HOME_DISTANCE } from '../rig.ts';
 import { type Kind, MOST_LINES, STRONG_CELLS, keeps, linesOf } from './lines.ts';
 
-// Slow enough to read every label and follow every example (maintainer feedback on #119). The limit is 45 s.
-export const DURATION_SECONDS = 40;
-export const DURATION_FRAMES = DURATION_SECONDS * FPS;
-// The end of the tutorial in sixteenths: 362.7, so the final chord rings for a little over 1 s.
-export const END = DURATION_SECONDS / SIXTEENTH;
+export const PACES = ['long', 'short'] as const;
+export type Pace = (typeof PACES)[number];
 
 // Where the camera stands: a point on an orbit around the centre of the tower. `zoom` and `lift` frame the
 // picture in the centre square (rig.ts): a lift below 0 moves the tower down, under the label.
@@ -62,26 +60,6 @@ export type Section = {
 
 const view = (azimuth: number, elevation: number, distance = HOME_DISTANCE, zoom = 0.86, lift = -0.08): View => ({ azimuth, elevation, distance, zoom, lift });
 
-// A section for a kind of line, 1.5 bars long: the label at the start and its count 6 sixteenths later, an example
-// line from the start, one cell per eighth note, and halfway the lines of the kind that this section shows (all of
-// them by default).
-const KIND_LENGTH = 24;
-function kindSection(name: string, of: Kind, start: number, text: string, line: Line, where: View, lines = linesOf(of)): Section {
-  return {
-    name,
-    start,
-    end: start + KIND_LENGTH,
-    view: where,
-    arrive: 'lead',
-    labels: [{ at: start, text, stickerAt: start + 6, sticker: `+${lines.length}` }],
-    counter: true,
-    events: [
-      { kind: 'line', at: start, gap: 2, line },
-      { kind: 'set', at: start + KIND_LENGTH / 2, of, lines },
-    ],
-  };
-}
-
 // The space diagonals in pairs that cross in one vertical plane through the cube: the plane of corners 0 and 63
 // (row = column), and the plane of corners 3 and 60 (row + column = 3). Each pair reads as an X from square on.
 const spacePair = (onPlane: (row: number, column: number) => boolean) =>
@@ -90,123 +68,185 @@ const spacePair = (onPlane: (row: number, column: number) => boolean) =>
 // A cell on 4 lines, on the front edge of the top layer.
 const OTHER_CELL = 61;
 
-export const SECTIONS: readonly Section[] = [
-  {
+// The timing of a pace, in sixteenths. Each section starts where the one before it ends; its events and labels
+// count from its start. A count (the sticker of a label) comes `count` after its label.
+type Timing = {
+  seconds: number;
+  // A kind of line: the section length, one example cell per `cellGap`, and the set of lines at `set`.
+  kind: { length: number; cellGap: number; count: number; set: number };
+  // "4 in a row / wins.", then "Rows" at `label` with its set.
+  rows: { length: number; label: number; count: number };
+  all: { length: number; count: number };
+  // Corner 63 and its 7 lines, one per `gap`, then core cell 42 at `second`.
+  strong: { length: number; gap: number; second: number; count: number };
+  other: { length: number; gap: number; count: number };
+  take: { length: number; count: number; jingle: number };
+};
+
+const TIMINGS: Readonly<Record<Pace, Timing>> = {
+  // Slow enough to read every label and to follow every example (maintainer feedback on #119).
+  long: {
+    seconds: 40,
+    kind: { length: 24, cellGap: 2, count: 6, set: 12 },
+    rows: { length: 40, label: 20, count: 4 },
+    all: { length: 24, count: 6 },
+    strong: { length: 40, gap: 2, second: 20, count: 6 },
+    other: { length: 24, gap: 4, count: 6 },
+    take: { length: 24, count: 10, jingle: 12 },
+  },
+  // One bar for each kind of line.
+  short: {
+    seconds: 27.5,
+    kind: { length: 16, cellGap: 1, count: 8, set: 8 },
+    rows: { length: 32, label: 16, count: 0 },
+    all: { length: 16, count: 2 },
+    strong: { length: 16, gap: 1, second: 8, count: 2 },
+    other: { length: 16, gap: 2, count: 2 },
+    take: { length: 16, count: 8, jingle: 8 },
+  },
+};
+
+// The sections of a pace, back to back from 0. The rising and the space diagonals are the hard kinds, so each gets
+// 2 sections, each with its own example and half of the set, seen square on.
+function sectionsOf(t: Timing, end: number): Section[] {
+  const sections: Section[] = [];
+  const add = (length: number, make: (start: number) => Omit<Section, 'start' | 'end'>) => {
+    const start = sections.at(-1)?.end ?? 0;
+    sections.push({ ...make(start), start, end: start + length });
+  };
+  const kind = (name: string, of: Kind, text: string, line: Line, where: View, lines = linesOf(of)) =>
+    add(t.kind.length, (start) => ({
+      name,
+      view: where,
+      arrive: 'lead',
+      labels: [{ at: start, text, stickerAt: start + t.kind.count, sticker: `+${lines.length}` }],
+      counter: true,
+      events: [
+        { kind: 'line', at: start, gap: t.kind.cellGap, line },
+        { kind: 'set', at: start + t.kind.set, of, lines },
+      ],
+    }));
+
+  add(16, () => ({
     name: 'title',
-    start: 0,
-    end: 16,
     view: view(HOME_AZIMUTH, ELEVATION),
     arrive: 'lead',
     labels: [{ at: 0, text: 'How to', stickerAt: 4, sticker: 'win' }],
     counter: false,
     events: [0, 1, 2, 3].map((layer) => ({ kind: 'layer-pulse', at: layer * 4, layer })),
-  },
-  {
+  }));
+  add(t.rows.length, (start) => ({
     name: 'rows',
-    start: 16,
-    end: 56,
     view: view(12, 32),
     arrive: 'lead',
     labels: [
-      { at: 16, text: '4 in a row', stickerAt: 24, sticker: 'wins.' },
-      { at: 36, text: 'Rows', stickerAt: 40, sticker: `+${linesOf('row').length}` },
+      { at: start, text: '4 in a row', stickerAt: start + 8, sticker: 'wins.' },
+      { at: start + t.rows.label, text: 'Rows', stickerAt: start + t.rows.label + t.rows.count, sticker: `+${linesOf('row').length}` },
     ],
     counter: true,
     events: [
-      { kind: 'line', at: 16, gap: 2, line: [60, 61, 62, 63] },
-      { kind: 'jingle', at: 24 },
-      { kind: 'set', at: 40, of: 'row', lines: linesOf('row') },
+      { kind: 'line', at: start, gap: 2, line: [60, 61, 62, 63] },
+      { kind: 'jingle', at: start + 8 },
+      { kind: 'set', at: start + t.rows.label + t.rows.count, of: 'row', lines: linesOf('row') },
     ],
-  },
-  kindSection('columns', 'column', 56, 'Columns', [51, 55, 59, 63], view(68, 32)),
-  kindSection('pillars', 'pillar', 80, 'Pillars: the 3D twist', [14, 30, 46, 62], view(22, 9)),
-  kindSection('flat', 'flat-diagonal', 104, 'Flat diagonals', [48, 53, 58, 63], view(30, 62)),
-  // The rising diagonals take 3 bars: the 8 on the planes that face the front, then the 8 on the side planes,
-  // each seen square on.
-  kindSection('rising-front', 'rising-diagonal', 128, 'Rising diagonals', [12, 29, 46, 63], view(0, 12), linesOf('rising-diagonal').filter((line) => keeps(line, 'row'))),
-  kindSection('rising-side', 'rising-diagonal', 152, 'Rising diagonals', [3, 23, 43, 63], view(90, 12), linesOf('rising-diagonal').filter((line) => keeps(line, 'column'))),
-  // The space diagonals take 3 bars: one crossing pair each.
-  kindSection('corners-1', 'space-diagonal', 176, 'Corner to corner', [0, 21, 42, 63], view(-45, 14), spacePair((row, column) => row === column)),
-  kindSection('corners-2', 'space-diagonal', 200, 'Corner to corner', [3, 22, 41, 60], view(45, 14), spacePair((row, column) => row + column === 3)),
-  {
+  }));
+  kind('columns', 'column', 'Columns', [51, 55, 59, 63], view(68, 32));
+  kind('pillars', 'pillar', 'Pillars: the 3D twist', [14, 30, 46, 62], view(22, 9));
+  kind('flat', 'flat-diagonal', 'Flat diagonals', [48, 53, 58, 63], view(30, 62));
+  kind('rising-front', 'rising-diagonal', 'Rising diagonals', [12, 29, 46, 63], view(0, 12), linesOf('rising-diagonal').filter((line) => keeps(line, 'row')));
+  kind('rising-side', 'rising-diagonal', 'Rising diagonals', [3, 23, 43, 63], view(90, 12), linesOf('rising-diagonal').filter((line) => keeps(line, 'column')));
+  kind('corners-1', 'space-diagonal', 'Corner to corner', [0, 21, 42, 63], view(-45, 14), spacePair((row, column) => row === column));
+  kind('corners-2', 'space-diagonal', 'Corner to corner', [3, 22, 41, 60], view(45, 14), spacePair((row, column) => row + column === 3));
+  add(t.all.length, (start) => ({
     name: 'all',
-    start: 224,
-    end: 248,
     view: view(HOME_AZIMUTH, ELEVATION),
     arrive: 'lead',
-    labels: [{ at: 224, text: `${LINES.length} ways`, stickerAt: 230, sticker: 'to win.' }],
+    labels: [{ at: start, text: `${LINES.length} ways`, stickerAt: start + t.all.count, sticker: 'to win.' }],
     counter: false,
-    events: [{ kind: 'all', at: 224 }],
-  },
-  {
+    events: [{ kind: 'all', at: start }],
+  }));
+  add(t.strong.length, (start) => ({
     name: 'strong',
-    start: 248,
-    end: 288,
     view: view(38, 20),
     arrive: 'lead',
-    labels: [{ at: 248, text: 'Corners and the core', stickerAt: 254, sticker: `${MOST_LINES} lines each` }],
+    labels: [{ at: start, text: 'Corners and the core', stickerAt: start + t.strong.count, sticker: `${MOST_LINES} lines each` }],
     counter: false,
     events: [
-      { kind: 'through', at: 248, gap: 2, cell: 63 },
-      { kind: 'through', at: 268, gap: 2, cell: 42 },
+      { kind: 'through', at: start, gap: t.strong.gap, cell: 63 },
+      { kind: 'through', at: start + t.strong.second, gap: t.strong.gap, cell: 42 },
     ],
-  },
-  {
+  }));
+  add(t.other.length, (start) => ({
     name: 'other',
-    start: 288,
-    end: 312,
     view: view(20, 26),
     arrive: 'lead',
-    labels: [{ at: 288, text: 'Every other cell', stickerAt: 294, sticker: `${linesThrough(OTHER_CELL).length} lines` }],
+    labels: [{ at: start, text: 'Every other cell', stickerAt: start + t.other.count, sticker: `${linesThrough(OTHER_CELL).length} lines` }],
     counter: false,
-    events: [{ kind: 'through', at: 288, gap: 4, cell: OTHER_CELL }],
-  },
-  {
+    events: [{ kind: 'through', at: start, gap: t.other.gap, cell: OTHER_CELL }],
+  }));
+  add(t.take.length, (start) => ({
     name: 'take',
-    start: 312,
-    end: 336,
     view: view(HOME_AZIMUTH, 22),
     arrive: 'lead',
-    labels: [{ at: 312, text: `The ${STRONG_CELLS.length} strong cells`, stickerAt: 322, sticker: 'Take them.' }],
+    labels: [{ at: start, text: `The ${STRONG_CELLS.length} strong cells`, stickerAt: start + t.take.count, sticker: 'Take them.' }],
     counter: false,
     events: [
-      { kind: 'strong', at: 312 },
-      { kind: 'jingle', at: 324 },
+      { kind: 'strong', at: start },
+      { kind: 'jingle', at: start + t.take.jingle },
     ],
-  },
-  {
+  }));
+  // The end card of the spot (the 'settle' camera): the tower shrinks into the top half of the square. As in the
+  // spot, the suffix slides out 4 sixteenths after the wordmark. The call to action comes on the beat after the
+  // suffix settles, both badges on the beat after it (App Store first), and the "soon" note one beat later
+  // (lettering.ts), so every part shows for at least 1 s before the end.
+  const card = sections.at(-1)?.end ?? 0;
+  add(end - card, (start) => ({
     name: 'end-card',
-    start: 336,
-    end: END,
-    // The end card of the spot (the 'settle' camera): the tower shrinks into the top half of the square.
     view: { azimuth: HOME_AZIMUTH, elevation: ELEVATION, distance: HOME_DISTANCE, zoom: 0.58, lift: 0.46 },
     arrive: 'land',
     labels: [],
     counter: false,
     events: [
-      // As in the spot: the suffix slides out 4 sixteenths after the wordmark. The call to action comes on the
-      // beat after the suffix settles, both badges on the beat after it (App Store first), and the "soon" note one
-      // beat later (lettering.ts), so every part shows for at least 1 s before the end.
       {
         kind: 'end-card',
-        at: 336,
+        at: start,
         words: [
-          { text: 'tick3d', at: 336 },
-          { text: '.yarden-zamir.com', at: 340 },
-          { text: 'Play in your browser.', at: 344 },
-          { text: 'App Store', at: 348, badge: 'app-store', note: 'soon' },
-          { text: 'Google Play', at: 348, badge: 'google-play' },
+          { text: 'tick3d', at: start },
+          { text: '.yarden-zamir.com', at: start + 4 },
+          { text: 'Play in your browser.', at: start + 8 },
+          { text: 'App Store', at: start + 12, badge: 'app-store', note: 'soon' },
+          { text: 'Google Play', at: start + 12, badge: 'google-play' },
         ],
       },
-      ...[0, 1, 2, 3].map((layer) => ({ kind: 'layer-pulse' as const, at: 336 + layer * 4, layer })),
-      { kind: 'final-chord', at: 352 },
+      ...[0, 1, 2, 3].map((layer) => ({ kind: 'layer-pulse' as const, at: start + layer * 4, layer })),
+      { kind: 'final-chord', at: start + 16 },
     ],
-  },
-];
+  }));
+  return sections;
+}
+
+export type Plan = { pace: Pace; seconds: number; frames: number; end: number; sections: readonly Section[] };
+
+// The plan of a pace. `end` is the end of the tutorial in sixteenths, so the final chord rings for a little over 1 s.
+export function planOf(pace: Pace): Plan {
+  const t = TIMINGS[pace];
+  const end = t.seconds / SIXTEENTH;
+  return { pace, seconds: t.seconds, frames: t.seconds * FPS, end, sections: sectionsOf(t, end) };
+}
+
+const isPace = (name: string): name is Pace => (PACES as readonly string[]).includes(name);
+const requested = globalThis.process?.env?.['TUTORIAL_PACE'] ?? 'long';
+if (!isPace(requested)) throw new Error(`TUTORIAL_PACE=${requested} is not one of ${PACES.join(', ')}`);
+const PLAN = planOf(requested);
+export const PACE = PLAN.pace;
+export const DURATION_SECONDS = PLAN.seconds;
+export const DURATION_FRAMES = PLAN.frames;
+export const END = PLAN.end;
+export const SECTIONS = PLAN.sections;
 
 // The section of a frame.
-export function sectionAt(frame: number): Section {
-  const section = SECTIONS.findLast((entry) => frame >= frameOf(entry.start));
+export function sectionAt(frame: number, sections: readonly Section[] = SECTIONS): Section {
+  const section = sections.findLast((entry) => frame >= frameOf(entry.start));
   if (section === undefined) throw new RangeError(`no section at frame ${frame}`);
   return section;
 }
@@ -214,8 +254,8 @@ export function sectionAt(frame: number): Section {
 type EventOf<K extends TutorialEvent['kind']> = Extract<TutorialEvent, { kind: K }>;
 
 // Every event of a kind, with its section.
-export function eventsOf<K extends TutorialEvent['kind']>(kind: K): { event: EventOf<K>; section: Section }[] {
-  return SECTIONS.flatMap((section) => section.events.filter((event): event is EventOf<K> => event.kind === kind).map((event) => ({ event, section })));
+export function eventsOf<K extends TutorialEvent['kind']>(kind: K, sections: readonly Section[] = SECTIONS): { event: EventOf<K>; section: Section }[] {
+  return sections.flatMap((section) => section.events.filter((event): event is EventOf<K> => event.kind === kind).map((event) => ({ event, section })));
 }
 
 // The frame of the still of a section: 2 sixteenths before its end, when everything of it shows.

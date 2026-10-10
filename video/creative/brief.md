@@ -12,7 +12,7 @@ Tic-tac-toe, four in a row, in a 4×4×4 cube.
 
 ## Supporting points (each one is true in the code)
 
-1. **76 ways to win.** `LINES` in `src/game.ts` has 76 lines. The spot does not say it (maintainer feedback on #119).
+1. **76 ways to win.** `LINES` in `src/game.ts` has 76 lines. The tutorial says it; the spot does not (maintainer feedback on #119).
 2. **Every cell has its own sound, and a game becomes a song.** `src/sound-sets.ts` (13 sets) and `songOf` in `src/song.ts` (136 BPM). README: "Your game as a song".
 3. **Twelve themes.** The `[data-theme]` blocks in `src/style.css`.
 
@@ -27,8 +27,9 @@ Loud, flat and quick, like the UI: thick black lines, hard shadows, flat color. 
 - Every frame drawn by three.js. Only the game's own sound code makes the audio.
 - The game on screen is the seeded self-play of `src/ai.ts`. Every move is legal, and the win is a line in `LINES`.
 
-## The 3 lines of the base cut (the variants in `script.md` add or swap one)
+## The lines of the spot (`classic` in `script.md` swaps the first and the third)
 
-1. "4 in a row. In 3D."
-2. "Every cell has a note." (supporting point 2)
-3. "tick3d.yarden-zamir.com" (the "tick3d" part is the wordmark), with "Play in your browser." under it, then the official App Store (with "soon") and Google Play badges. On iOS the game runs in the browser and installs to the home screen: there is no App Store app yet.
+1. "Tic-tac-toe? Too easy." (the cold open)
+2. "4 in a row. In 3D."
+3. The feature list: 12 cards (supporting points 2 and 3, and the ways to play).
+4. "tick3d.yarden-zamir.com" (the "tick3d" part is the wordmark), with "Play in your browser." under it, then the official App Store (with "soon") and Google Play badges. On iOS the game runs in the browser and installs to the home screen: there is no App Store app yet.

@@ -1,6 +1,9 @@
 # Tutorial: "How to win"
 
-A 40 s video that shows which lines win and why. It goes slowly on purpose: every label stays long enough to read, and every example draws one cell per eighth note (maintainer feedback on #119). The plan is `video/src/tutorial/plan.ts`. This page explains it.
+A video that shows which lines win and why, at two paces. The plan is `video/src/tutorial/plan.ts`. This page explains it.
+
+- `long`, 40 s (the default): slow on purpose, so every label stays long enough to read and every example draws one cell per eighth note (maintainer feedback on #119). The table below shows this pace.
+- `short`, 27.5 s: one bar for each kind of line, one example cell per s16, each count 8 s16 after its label, and one bar for each of the last four sections. `TUTORIAL_PACE=short` picks it.
 
 Times are sixteenths (s16) of the 136 BPM grid of `src/song.ts`, and seconds. One s16 is 0.1103 s. One bar is 16 s16.
 
@@ -53,4 +56,4 @@ Each kind of line gets 1.5 bars, so a section can start on a half bar. The risin
 cd video && npm run tutorial
 ```
 
-This writes `out/tutorial/tick3d-tutorial-landscape.mp4`, `out/tutorial/tick3d-tutorial-portrait.mp4`, `out/tutorial/soundtrack.wav` and one still per section in `out/tutorial/stills/`. Add `--draft` for half-size stills only, or `--crop landscape` for one crop.
+This writes `out/tutorial/tick3d-tutorial-landscape.mp4`, `out/tutorial/tick3d-tutorial-portrait.mp4`, `out/tutorial/soundtrack.wav` and one still per section in `out/tutorial/stills/`. With `TUTORIAL_PACE=short`, the files go to `out/tutorial-short/` and are named `tick3d-tutorial-short-…`. Add `--draft` for half-size stills only, or `--crop landscape` for one crop.

@@ -7,7 +7,7 @@ import { BEATS, VARIANT } from '../src/timeline.ts';
 import { mixdown } from './mixdown.ts';
 
 // The base cut writes to out/, a variant to out/variants/<name>/ (scripts/render.ts does the same).
-const out = new URL(VARIANT === 'classic' ? '../out/' : `../out/variants/${VARIANT}/`, import.meta.url);
+const out = new URL(VARIANT === 'spot' ? '../out/' : `../out/variants/${VARIANT}/`, import.meta.url);
 const pub = new URL('../public/', import.meta.url);
 
 const sounds = spotSounds();

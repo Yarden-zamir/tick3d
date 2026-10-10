@@ -49,8 +49,8 @@
     {
       "bar": 1,
       "start": 0,
-      "scene": "The four layers slam in, top layer first, one per beat.",
-      "theme": "light",
+      "scene": "Cold open in the Mono theme: \"Tic-tac-toe? Too easy.\" while the four layers slam in, top layer first, one per beat.",
+      "theme": "mono",
       "soundSet": "classic",
       "camera": "slam",
       "events": [
@@ -195,6 +195,20 @@
   ],
   "text": [
     {
+      "style": "top",
+      "words": [
+        {
+          "text": "Tic-tac-toe?",
+          "at": 0
+        },
+        {
+          "text": "Too easy.",
+          "at": 8
+        }
+      ],
+      "until": 16
+    },
+    {
       "style": "center",
       "words": [
         {
@@ -209,18 +223,58 @@
       "until": 32
     },
     {
-      "style": "top",
+      "style": "list",
       "words": [
         {
-          "text": "Every cell",
-          "at": 48
+          "text": "Vs computer.",
+          "at": 32
         },
         {
-          "text": "has a note.",
+          "text": "Play online.",
+          "at": 37
+        },
+        {
+          "text": "Play nearby.",
+          "at": 42
+        },
+        {
+          "text": "Vs your AI agent.",
+          "at": 47
+        },
+        {
+          "text": "13 sound sets.",
           "at": 52
+        },
+        {
+          "text": "Ear trainer.",
+          "at": 57
+        },
+        {
+          "text": "Play by voice.",
+          "at": 62
+        },
+        {
+          "text": "Share your win.",
+          "at": 67
+        },
+        {
+          "text": "Your game is a song.",
+          "at": 72
+        },
+        {
+          "text": "12 themes.",
+          "at": 77
+        },
+        {
+          "text": "Time limits.",
+          "at": 82
+        },
+        {
+          "text": "Works offline.",
+          "at": 87
         }
       ],
-      "until": 62
+      "until": 96
     },
     {
       "style": "end-card",

@@ -82,7 +82,7 @@ export function cameraAt(frame: number, bar: Bar): Shot {
       // the game, so the four cells read as one rising line while they light. Once the beam is joined, the
       // camera drops onto the line, 1 cell beside it, and races its glow up to corner 63 with a roll. The ride
       // stops short of the corner and looks at it, so the last frame shows the lit corner and its X, and the cut to
-      // the close-up of corner 63 in bar 6 is a match cut (review 2, polish item 2).
+      // the close-up of corner 63 in bar 6 is a match cut.
       const beam = eventsOf('beam')[0];
       const rideFrom = beam === undefined ? bar.start : beam.at + beam.line.length;
       const k = since(frame, rideFrom) / (bar.start + SIXTEENTHS_PER_BAR - rideFrom);

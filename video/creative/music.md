@@ -10,7 +10,7 @@ This page follows the maintainer audio rule on #119 ([comment](https://github.co
 - The spot has a move or a hit on almost every eighth note of bars 1 to 6. A second track under it would mask the move sounds, and the rule says that they stay audible.
 - The only gap is bar 7 after the replay (s16 106 to 112). The end card text fills it on screen, and bar 8 has the four Classic layer notes.
 
-**Trigger to revisit:** a review scores Rhythm or Hook below 4 because the sound is thin. Then fill in the hand-off below, and a person runs Suno.
+**Trigger to revisit:** a maintainer finds the sound thin. Then fill in the hand-off below, and a person runs Suno.
 
 ## Timing
 

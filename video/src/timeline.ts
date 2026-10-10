@@ -11,15 +11,14 @@ import { toEpochMs } from '../../src/epoch.ts';
 // The move times of the game. The spot never reads them, and a fixed time keeps Date.now() out.
 const NO_TIME = toEpochMs(0);
 
-import hook from '../creative/variants/hook.json' with { type: 'json' };
-import hookList from '../creative/variants/hook-list.json' with { type: 'json' };
+import classic from '../creative/variants/classic.json' with { type: 'json' };
 
-// The variants of the spot: VIDEO_VARIANT picks an overlay of video/creative/variants/. Unset, or 'classic', is
-// the approved cut. scripts/render.ts passes the variable into the render browser.
-export const VARIANTS = { classic: undefined, hook, 'hook-list': hookList } as const;
+// The variants of the spot: VIDEO_VARIANT picks an overlay of video/creative/variants/. Unset, or 'spot', is
+// the cut of beats.json. scripts/render.ts passes the variable into the render browser.
+export const VARIANTS = { spot: undefined, classic } as const;
 export type VariantName = keyof typeof VARIANTS;
 const isVariantName = (name: string): name is VariantName => Object.hasOwn(VARIANTS, name);
-const requested = globalThis.process?.env?.['VIDEO_VARIANT'] ?? 'classic';
+const requested = globalThis.process?.env?.['VIDEO_VARIANT'] ?? 'spot';
 if (!isVariantName(requested)) throw new Error(`VIDEO_VARIANT=${requested} is not one of ${Object.keys(VARIANTS).join(', ')}`);
 export const VARIANT: VariantName = requested;
 const overlay = VARIANTS[VARIANT];

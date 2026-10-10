@@ -56,12 +56,11 @@ type TimedMove = { move: number; player: Player; cell: number; at: number };
 // One on-screen line. Each word group slams in at its own sixteenth. The line leaves at `until`. The style places it:
 // - 'center': two word groups across the middle, the second one a sticker (src/hud.ts LOOKS);
 // - 'top': two word groups above the tower, the second one a sticker;
-// - 'cards': feature cards in the sticker style of the wordmark above the tower, one at a time;
 // - 'list': feature cards above the tower that scroll up as a list, two at a time;
 // - 'end-card': the wordmark, the URL suffix, a call to action, then official store badges (words with a
 //   `badge`). It is the last line, and it stays to the end of the spot.
-const TEXT_STYLES = ['center', 'top', 'cards', 'list', 'end-card'] as const;
-export type TextStyle = (typeof TEXT_STYLES)[number];
+const TEXT_STYLES = ['center', 'top', 'list', 'end-card'] as const;
+type TextStyle = (typeof TEXT_STYLES)[number];
 // An official store badge on the end card (video/public/badges/). Its `text` names it and is not drawn; an optional
 // `note`, such as "soon", is a small sticker next to it.
 const BADGES = ['app-store', 'google-play'] as const;
