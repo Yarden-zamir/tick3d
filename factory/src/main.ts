@@ -15,6 +15,11 @@ import { createHierarchy } from './ui/hierarchy.ts';
 import { createInspector } from './ui/inspector.ts';
 import { createWalker } from './walk.ts';
 import { type BeltMode, buildBelts } from './world/belts.ts';
+import { buildLandscape } from './world/landscape.ts';
+import { buildPipes } from './world/pipes.ts';
+import { buildPower } from './world/power.ts';
+import { buildDeliveries } from './world/deliveries.ts';
+import { createRouter } from './world/routes.ts';
 import { createEffects } from './world/effects.ts';
 import { METHOD_COLORS, buildMachines } from './world/machines.ts';
 import { createStage } from './world/stage.ts';
@@ -47,11 +52,35 @@ async function start(): Promise<void> {
 
   // World.
   const viewport = $<HTMLDivElement>('#viewport');
-  const stage = createStage(viewport, extent, layout.bounds);
+  // Strips kept free of trees: the river with the railway on its bank, and the highway from the west.
+  const firstRowSouth = Math.max(...[...layout.plots.values()].filter((plot) => plot.minZ === layout.bounds.minZ).map((plot) => plot.maxZ));
+  const clearings = [
+    { minX: -Infinity, maxX: Infinity, minZ: layout.bounds.maxZ + 10, maxZ: layout.bounds.maxZ + 54 },
+    { minX: -Infinity, maxX: layout.bounds.minX, minZ: firstRowSouth + 3, maxZ: firstRowSouth + 18 },
+  ];
+  const stage = createStage(viewport, extent, layout.bounds, clearings);
   const machines = buildMachines(model, layout);
   stage.scene.add(machines.group);
-  const belts = buildBelts(model, layout, machines.hubs, stage.time);
+  const router = createRouter(layout, machines.hubs);
+  const belts = buildBelts(model, layout, router, stage.time);
   stage.scene.add(belts.group);
+  const pipes = buildPipes(model, layout, router, stage.time);
+  stage.scene.add(pipes.group);
+  const landscape = buildLandscape(layout, router, belts.roads, extent, stage.time);
+  stage.scene.add(landscape.group);
+  const power = buildPower(model, layout, machines.ceilings, landscape);
+  stage.scene.add(power.group);
+  const deliveries = buildDeliveries(model, layout, landscape);
+  stage.scene.add(deliveries.group);
+  for (const { text, at, color } of landscape.labels) {
+    const div = document.createElement('div');
+    div.className = 'zlabel';
+    div.style.setProperty('--c', color);
+    div.textContent = text;
+    const label = new CSS2DObject(div);
+    label.position.copy(at);
+    stage.scene.add(label);
+  }
   const effects = createEffects(stage.scene);
   stage.sun.target.position.set(0, 0, 0);
 
@@ -61,11 +90,12 @@ async function start(): Promise<void> {
   const walkTarget = $<HTMLDivElement>('#walk-target');
   const walkZone = $<HTMLDivElement>('#walk-zone');
   const orbit = { camera: new THREE.Vector3(), target: new THREE.Vector3() };
+  const walkBoxes = [...machines.bounds.values(), ...machines.solids, ...landscape.solids];
   const walker = createWalker({
     camera: stage.camera,
     canvas: stage.renderer.domElement,
-    boxes: () => machines.bounds.values(),
-    posts: [...machines.posts, ...stage.trees],
+    boxes: () => walkBoxes,
+    posts: [...machines.posts, ...landscape.posts, ...power.posts, ...stage.trees],
     limit: extent * 1.3,
     onChange(active) {
       walkHud.hidden = !active;
@@ -112,7 +142,7 @@ async function start(): Promise<void> {
   const consolePanel = createConsole($('#bottom'), (selection) => select(selection, true));
   const log = consolePanel.log;
   const hierarchy = createHierarchy($('#tree'), $<HTMLInputElement>('#search'), [...document.querySelectorAll<HTMLElement>('#left .tab')], index, (selection) => select(selection, false), (selection) => select(selection, true));
-  const inspector = createInspector($('#inspector'), () => index, () => layout.places, (selection) => select(selection, true));
+  const inspector = createInspector($('#inspector'), () => index, () => layout.places, (selection) => select(selection, true), () => power.sources);
   $('#repo-chip').innerHTML = `<b>${model.meta.repo}</b> · ${model.meta.branch} @ <b>${model.meta.commit}</b> · ${model.meta.files} files · ${model.meta.lines.toLocaleString()} lines · ${belts.counts.edges} belts`;
   $('#repo-chip').title = `${model.meta.subject}\nScanned ${new Date(model.meta.scannedAt).toLocaleString()}`;
 
@@ -375,7 +405,7 @@ async function start(): Promise<void> {
       roof.lift += (goal - roof.lift) * Math.min(1, dt * 3.5);
       roof.group.position.y = roof.lift * 16;
       roof.truss.opacity = 1 - roof.lift;
-      roof.panel.opacity = 0.16 * (1 - roof.lift);
+      roof.panel.opacity = 0.35 * (1 - roof.lift);
       roof.group.visible = roof.lift < 0.98;
     }
   }
@@ -422,7 +452,7 @@ async function start(): Promise<void> {
       if (previous) {
         const from = machines.tops.get(previous);
         const to = machines.tops.get(step.at);
-        const route = belts.routeBetween(previous, step.at);
+        const route = belts.routeBetween(previous, step.at) ?? pipes.routeBetween(previous, step.at);
         const points = route ?? (from && to ? effects.arc(from, to) : []);
         let length = 0;
         for (let p = 1; p < points.length; p += 1) length += points[p - 1]?.distanceTo(points[p] ?? new THREE.Vector3()) ?? 0;
@@ -431,6 +461,7 @@ async function start(): Promise<void> {
       }
       activity.set(step.at, 2);
       ping(step.at, '#ffd23f', 1.2);
+      deliverFor(scenario.id, step.at);
       if (state.follow) select({ type: 'entity', id: step.at }, false);
       log('scenario', `${n + 1}. ${step.say}  \`${entity.kind === 'route' || entity.kind === 'job' ? entity.label : entity.id}\``, clock.stamp, { type: 'entity', id: step.at });
       await wait(1.5);
@@ -440,6 +471,15 @@ async function start(): Promise<void> {
     log('scenario', `■ Done: ${scenario.title}`, clock.stamp);
     await wait(2.5);
     if (token === scenarioToken) scenarioCard.hidden = true;
+  }
+  // Some steps send something out of the factory, each in its own way.
+  function deliverFor(scenario: string, at: string): void {
+    if (scenario === 'push-main' && at === 'stage:site' && deliveries.train('prod')) log('scenario', '🚂 The deploy train leaves for the server with the build, api and site images (prod).', clock.stamp);
+    if (scenario === 'pr-preview' && at === 'stage:build' && deliveries.train('preview')) log('scenario', '🚂 A preview train leaves with the images for pr-<n>.', clock.stamp);
+    if (at === 'job:ios.yml#app' && deliveries.ship('ios')) log('scenario', '🚢 The iOS build sails for TestFlight.', clock.stamp);
+    if (at === 'job:android.yml#bundle' && deliveries.ship('android')) log('scenario', '🚢 The Android bundle sails for Google Play.', clock.stamp);
+    if (at === 'src/ai-worker.ts') deliveries.message();
+    if (at === 'src/nearby/peer.ts') deliveries.radio(8);
   }
   function stopScenario(): void {
     scenarioToken += 1;
@@ -476,8 +516,20 @@ async function start(): Promise<void> {
     }
   }
 
+  // A zone's steam engines run while one of its jobs is busy.
+  const zoneBusy = (zone: ZoneId): boolean => {
+    for (const id of activity.keys()) {
+      const entity = index.byId.get(id);
+      if (entity?.zone === zone && (entity.kind === 'job' || entity.kind === 'workflow')) return true;
+    }
+    return false;
+  };
+
   // API traffic: players' requests arrive at the docks through the site container's Caddy.
   let trafficIn = 1;
+  let truckIn = 6;
+  // How hard requests drive the water wheel: up with each request, slowly down again.
+  let apiFlow = 0;
   const gateway = 'service:compose.yml#site';
   function traffic(dt: number): void {
     trafficIn -= dt * (0.35 + clock.daylight * 1.1);
@@ -489,7 +541,11 @@ async function start(): Promise<void> {
     if (!route || !start || !end) return;
     const method = String(route.data?.method ?? 'GET');
     const color = METHOD_COLORS[method] ?? '#ffffff';
-    void effects.packet(effects.arc(start, end, 10), color, 2.2).then(() => {
+    // A request the client code makes rides its pneumatic tube; the rest (docs, sign-in redirects,
+    // admin calls) come straight in through the gateway.
+    const arrival = pipes.sendCapsule(route.id, color) ?? effects.packet(effects.arc(start, end, 10), color, 2.2);
+    void arrival.then(() => {
+      apiFlow = Math.min(1, apiFlow + 0.2);
       activity.set(route.id, 1);
       ping(route.id, color, 0.7);
       log('traffic', `${statusFor(route)} ${method} \`${samplePath(String(route.data?.path ?? ''))}\``, clock.stamp, { type: 'entity', id: route.id });
@@ -790,6 +846,17 @@ async function start(): Promise<void> {
         }
       }
       belts.update(dt);
+      pipes.update(dt);
+      apiFlow = Math.max(0, apiFlow - dt * 0.15);
+      landscape.update(dt, apiFlow);
+      power.update(dt, { players: clock.daylight, water: apiFlow, busy: zoneBusy });
+      deliveries.update(dt, clock.daylight);
+      truckIn -= dt;
+      if (truckIn <= 0) {
+        truckIn = 25 + Math.random() * 20;
+        const dep = deliveries.truck();
+        if (dep) log('traffic', `🚚 A truck from the npm registry brings \`${dep.label}@${String(dep.data?.version ?? '')}\` to the Raw Materials Dock.`, clock.stamp, { type: 'entity', id: dep.id });
+      }
     }
     const goalLight = state.light === 'day' ? 1 : state.light === 'night' ? 0 : clock.daylight;
     shownLight += (goalLight - shownLight) * Math.min(1, real * 2);
@@ -850,7 +917,7 @@ async function start(): Promise<void> {
     stage.controls.target.set(tx, ty, tz);
     stage.controls.update();
   };
-  Object.assign(window, { factory: { model, layout, index, select, runScenario, ZONE_ORDER, snap, view, stage, frameSelection, walker, toggleWalk } });
+  Object.assign(window, { factory: { model, layout, index, select, runScenario, ZONE_ORDER, snap, view, stage, frameSelection, walker, toggleWalk, activity, power, pipes, landscape, deliveries } });
 }
 
 start().catch((error: unknown) => {

@@ -6,16 +6,16 @@
 // Items travel the whole path, so a moving item is one real import (or package, COPY, job dependency…).
 
 import * as THREE from 'three';
-import type { Edge, FactoryModel, ZoneId } from '../../scan/model.ts';
-import { CELL, GAP_X, GAP_Z, type Layout, type Plot } from '../layout.ts';
+import type { Edge, FactoryModel } from '../../scan/model.ts';
+import type { Layout } from '../layout.ts';
 import { EDGES, ZONES } from '../lore.ts';
+import { type LaneClass, type P2, type Router, near, offsetPath, simplify } from './routes.ts';
 
 const BELT_Y = 0.3;
 const BELT_T = 0.16;
 const ITEM_Y = BELT_Y + BELT_T / 2 + 0.15;
 const ROAD_W = 3.4;
 
-type LaneClass = 'aisle' | 'road';
 const LANE: Record<LaneClass, { offset: number; width: number }> = {
   aisle: { offset: 0.34, width: 0.5 },
   road: { offset: 0.6, width: 0.82 },
@@ -70,19 +70,29 @@ export interface BeltFilter {
   typeOnly: boolean;
 }
 
+/** A paved stretch of road: along an axis at a fixed coordinate, from lo to hi. */
+export interface RoadRun {
+  axis: 'x' | 'z';
+  fixed: number;
+  lo: number;
+  hi: number;
+}
+
+/** Edges that travel some other way than on a belt: as fluid in pipes, or by tube or cable car. */
+export function onBelt(edge: Edge, kindOf: (id: string) => string | undefined): boolean {
+  if (edge.kind === 'calls' || edge.kind === 'message' || edge.kind === 'stores') return false;
+  if (edge.kind === 'serves' && kindOf(edge.to) === 'volume') return false;
+  return kindOf(edge.from) !== 'style';
+}
+
 export interface Belts {
   group: THREE.Group;
+  roads: RoadRun[];
   /** The belt route between two entities, when an edge joins them, in travel order a → b. */
   routeBetween(a: string, b: string): THREE.Vector3[] | undefined;
   setFilter(filter: BeltFilter): void;
   update(dt: number): void;
   counts: { belts: number; items: number; edges: number };
-}
-
-type P2 = { x: number; z: number };
-interface Part {
-  cls: LaneClass;
-  points: P2[];
 }
 
 function hash(value: number): number {
@@ -110,50 +120,6 @@ function sample(path: Path, distance: number, out: THREE.Vector3): THREE.Vector3
   const start = lengths[index - 1] ?? 0;
   const span = (lengths[index] ?? 0) - start;
   return out.copy(a).lerp(b, span > 0 ? (distance - start) / span : 0);
-}
-
-const near = (a: number, b: number): boolean => Math.abs(a - b) < 1e-3;
-
-/** Drops repeated points and the middle of straight runs, so every remaining point is a turn. */
-function simplify(points: P2[]): P2[] {
-  const out: P2[] = [];
-  for (const point of points) {
-    const last = out[out.length - 1];
-    if (last && near(last.x, point.x) && near(last.z, point.z)) continue;
-    const before = out[out.length - 2];
-    if (before && last && ((near(before.x, last.x) && near(last.x, point.x)) || (near(before.z, last.z) && near(last.z, point.z)))) {
-      const forward = (last.x - before.x) * (point.x - last.x) + (last.z - before.z) * (point.z - last.z) > 0;
-      if (forward) out.pop();
-    }
-    out.push(point);
-  }
-  return out;
-}
-
-const direction = (a: P2, b: P2): P2 => ({ x: Math.sign(b.x - a.x), z: Math.sign(b.z - a.z) });
-/** Keep right: the lane offset for travel along d. */
-const keepRight = (d: P2, offset: number): P2 => ({ x: -d.z * offset, z: d.x * offset });
-
-/** The lane points of one part: each corner moves right by the lane offset of both its legs. */
-function offsetPart(points: P2[], offset: number): P2[] {
-  const out: P2[] = [];
-  const count = points.length;
-  for (let index = 0; index < count; index += 1) {
-    const point = points[index] as P2;
-    const before = index > 0 ? direction(points[index - 1] as P2, point) : null;
-    const after = index < count - 1 ? direction(point, points[index + 1] as P2) : null;
-    if (before && after && near(before.x, -after.x) && near(before.z, -after.z)) {
-      // A U-turn: leave on one lane, come back on the other.
-      const a = keepRight(before, offset);
-      const b = keepRight(after, offset);
-      out.push({ x: point.x + a.x, z: point.z + a.z }, { x: point.x + b.x, z: point.z + b.z });
-      continue;
-    }
-    const a = before ? keepRight(before, offset) : { x: 0, z: 0 };
-    const b = after ? keepRight(after, offset) : { x: 0, z: 0 };
-    out.push({ x: point.x + a.x + b.x, z: point.z + a.z + b.z });
-  }
-  return out;
 }
 
 const beltMaterial = (time: { value: number }): THREE.MeshStandardMaterial => {
@@ -194,73 +160,14 @@ const beltMaterial = (time: { value: number }): THREE.MeshStandardMaterial => {
   return material;
 };
 
-export function buildBelts(model: FactoryModel, layout: Layout, hubs: Map<ZoneId, THREE.Vector3>, time: { value: number }): Belts {
+export function buildBelts(model: FactoryModel, layout: Layout, router: Router, time: { value: number }): Belts {
   const group = new THREE.Group();
   const edges: Edge[] = [];
   const paths: Path[] = [];
   const lanes = new Map<string, Lane>();
   const roads = new Map<string, { axis: 'x' | 'z'; fixed: number; spans: [number, number][] }>();
 
-  // Rows of plots (north to south), the road south of each, and the gaps that cross each row.
-  const rowOf = new Map<ZoneId, number>();
-  const rowRoad: number[] = [];
-  const rowGaps: number[][] = [];
-  const byRow = new Map<number, Plot[]>();
-  for (const plot of layout.plots.values()) {
-    const key = Math.round(plot.minZ * 100);
-    byRow.set(key, [...(byRow.get(key) ?? []), plot]);
-  }
-  [...byRow.keys()]
-    .sort((a, b) => a - b)
-    .forEach((key, row) => {
-      const plots = (byRow.get(key) ?? []).sort((a, b) => a.minX - b.minX);
-      for (const plot of plots) rowOf.set(plot.zone, row);
-      rowRoad.push(Math.max(...plots.map((plot) => plot.maxZ)) + GAP_Z / 2);
-      const first = plots[0];
-      const last = plots[plots.length - 1];
-      const gaps = first && last ? [first.minX - GAP_X / 2, last.maxX + GAP_X / 2] : [];
-      for (let index = 1; index < plots.length; index += 1) {
-        const a = plots[index - 1];
-        const b = plots[index];
-        if (a && b) gaps.push((a.maxX + b.minX) / 2);
-      }
-      rowGaps.push(gaps);
-    });
-
-  const bestGap = (row: number, from: number, to: number): number => {
-    let best = from;
-    let cost = Infinity;
-    for (const gap of rowGaps[row] ?? []) {
-      const value = Math.abs(from - gap) + Math.abs(gap - to);
-      if (value < cost) {
-        cost = value;
-        best = gap;
-      }
-    }
-    return best;
-  };
-
-  /** Hub to hub over the roads: out to the road south of the row, through gaps, in from the south. */
-  const roadRoute = (a: ZoneId, b: ZoneId, hubA: P2, hubB: P2): P2[] => {
-    const rowA = rowOf.get(a) ?? 0;
-    const rowB = rowOf.get(b) ?? 0;
-    const points: P2[] = [hubA, { x: hubA.x, z: rowRoad[rowA] ?? hubA.z }];
-    let x = hubA.x;
-    if (rowB > rowA) {
-      for (let row = rowA + 1; row <= rowB; row += 1) {
-        x = bestGap(row, x, hubB.x);
-        points.push({ x, z: rowRoad[row - 1] ?? 0 }, { x, z: rowRoad[row] ?? 0 });
-      }
-    } else {
-      for (let row = rowA; row > rowB; row -= 1) {
-        x = bestGap(row, x, hubB.x);
-        points.push({ x, z: rowRoad[row] ?? 0 }, { x, z: rowRoad[row - 1] ?? 0 });
-      }
-    }
-    points.push({ x: hubB.x, z: rowRoad[rowB] ?? hubB.z }, hubB);
-    return points;
-  };
-
+  const kindOf = (id: string): string | undefined => layout.places.get(id)?.entity.kind;
   const skip = (id: string): boolean => {
     const place = layout.places.get(id);
     return !place || place.entity.kind === 'test';
@@ -292,38 +199,16 @@ export function buildBelts(model: FactoryModel, layout: Layout, hubs: Map<ZoneId
     roads.set(key, road);
   };
 
-  const half = CELL / 2;
   model.edges.forEach((edge) => {
-    if (skip(edge.from) || skip(edge.to)) return;
-    const from = layout.places.get(edge.from);
-    const to = layout.places.get(edge.to);
-    if (!from || !to) return;
+    if (skip(edge.from) || skip(edge.to) || !onBelt(edge, kindOf)) return;
+    const parts = router.route(edge.from, edge.to);
+    if (!parts) return;
     const index = edges.length;
     edges.push(edge);
-    // Down into the aisle below the machine, along it, then up the aisle east of the target.
-    const toAisle = (x: number, z: number, aisleX: number): P2[] => [
-      { x, z },
-      { x, z: z + half },
-      { x: aisleX, z: z + half },
-    ];
-    let parts: Part[];
-    if (from.entity.zone === to.entity.zone) {
-      parts = [{ cls: 'aisle', points: [...toAisle(from.x, from.z, to.x + half), { x: to.x + half, z: to.z }, { x: to.x, z: to.z }] }];
-    } else {
-      const hubA = hubs.get(from.entity.zone);
-      const hubB = hubs.get(to.entity.zone);
-      if (!hubA || !hubB) return;
-      parts = [
-        { cls: 'aisle', points: [...toAisle(from.x, from.z, hubA.x), { x: hubA.x, z: hubA.z }] },
-        { cls: 'road', points: roadRoute(from.entity.zone, to.entity.zone, hubA, hubB) },
-        // From the hub along the walkway, then up the aisle east of the target.
-        { cls: 'aisle', points: [{ x: hubB.x, z: hubB.z }, { x: to.x + half, z: hubB.z }, { x: to.x + half, z: to.z }, { x: to.x, z: to.z }] },
-      ];
-    }
     const all: THREE.Vector3[] = [];
     for (const part of parts) {
       const centre = simplify(part.points);
-      const lane = offsetPart(centre, LANE[part.cls].offset);
+      const lane = offsetPath(centre, LANE[part.cls].offset);
       for (let p = 1; p < lane.length; p += 1) {
         const a = lane[p - 1];
         const b = lane[p];
@@ -357,6 +242,7 @@ export function buildBelts(model: FactoryModel, layout: Layout, hubs: Map<ZoneId
     return out;
   };
   const roadRuns = [...roads.values()].flatMap((road) => unite(road.spans).map(([lo, hi]) => ({ road, lo, hi })));
+  const roadList: RoadRun[] = roadRuns.map(({ road, lo, hi }) => ({ axis: road.axis, fixed: road.fixed, lo, hi }));
   const pavement = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.95 }), roadRuns.length * 2);
   pavement.receiveShadow = true;
   const curb = new THREE.Color('#8b8a84');
@@ -499,6 +385,7 @@ export function buildBelts(model: FactoryModel, layout: Layout, hubs: Map<ZoneId
 
   return {
     group,
+    roads: roadList,
     counts,
     setFilter,
     routeBetween(a, b) {

@@ -241,6 +241,17 @@ export const KINDS: Record<EntityKind, { name: string; machine: string; meaning:
   hub: { name: 'Zone hub', machine: 'Hub', meaning: 'Where the zone’s belts meet the paved roads to the other zones.' },
 };
 
+/** How a file talks beyond its imports (data.channels from the scan), and what that looks like. */
+export const CHANNELS: Record<string, { name: string; meaning: string }> = {
+  fetch: { name: 'HTTP calls', meaning: 'Calls the API: each request is a capsule in the pneumatic tubes to a loading dock.' },
+  'event-stream': { name: 'Event stream', meaning: 'Listens to an EventSource: the glass event-stream pipe flows back into this machine.' },
+  worker: { name: 'Web Worker', meaning: 'Starts a Web Worker: the cable car carries its messages to the AI Lab’s own thread.' },
+  webrtc: { name: 'WebRTC', meaning: 'Opens a peer connection, device to device: the radio masts in Nearby.' },
+  broadcast: { name: 'BroadcastChannel', meaning: 'Talks to the other tabs of the same browser: the pigeons that circle this machine.' },
+  indexeddb: { name: 'IndexedDB', meaning: 'Keeps data on the device: the storage racks of the Client Depot.' },
+  'service-worker': { name: 'Service worker', meaning: 'Works with the service worker that keeps the site running offline.' },
+};
+
 export const EDGES: Record<EdgeKind, { name: string; color: string; meaning: string }> = {
   import: { name: 'Import', color: '#d9d9d9', meaning: 'Code travels from the imported file to the importer.' },
   package: { name: 'Package', color: '#b5835a', meaning: 'An npm package feeds the file that imports it.' },
@@ -249,6 +260,8 @@ export const EDGES: Record<EdgeKind, { name: string; color: string; meaning: str
   stage: { name: 'Docker COPY', color: '#2496ed', meaning: 'A file or stage is copied into a Docker stage.' },
   serves: { name: 'Serves', color: '#58a6ff', meaning: 'A stage runs as a service, a service depends on another, or mounts a volume.' },
   entry: { name: 'Entry', color: '#ff9f43', meaning: 'An HTML page loads its script or style.' },
+  calls: { name: 'HTTP call', color: '#ffd23f', meaning: 'Client code calls an API route. Requests ride pneumatic tubes to the route’s loading dock; the event stream is a glass pipe that flows back.' },
+  message: { name: 'Worker message', color: '#c084fc', meaning: 'A page posts messages to a Web Worker. Cable-car cabins carry them to the AI Lab’s own thread.' },
 };
 
 export interface ScenarioStep {

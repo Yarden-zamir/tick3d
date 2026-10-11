@@ -159,7 +159,7 @@ function buildHills(radius: number): THREE.Mesh {
 }
 
 /** Trees around the site, in loose groves: round leafy ones and tall conifers. */
-function buildTrees(bounds: Bounds, reach: number): { group: THREE.Group; trunks: Stage['trees'] } {
+function buildTrees(bounds: Bounds, reach: number, clearings: Bounds[]): { group: THREE.Group; trunks: Stage['trees'] } {
   const group = new THREE.Group();
   const keepOut = { minX: bounds.minX - 14, maxX: bounds.maxX + 14, minZ: bounds.minZ - 14, maxZ: bounds.maxZ + 14 };
   const spots: { x: number; z: number; s: number; conifer: boolean }[] = [];
@@ -169,6 +169,7 @@ function buildTrees(bounds: Bounds, reach: number): { group: THREE.Group; trunks
     const x = cx + (hash(index * 2.1) * 2 - 1) * reach;
     const z = cz + (hash(index * 3.7 + 1) * 2 - 1) * reach;
     if (x > keepOut.minX && x < keepOut.maxX && z > keepOut.minZ && z < keepOut.maxZ) continue;
+    if (clearings.some((area) => x > area.minX && x < area.maxX && z > area.minZ && z < area.maxZ)) continue;
     if (Math.hypot(x - cx, z - cz) > reach) continue;
     // Groves: keep a tree only where a coarse noise says so.
     const grove = Math.sin(x * 0.021 + 1.3) * Math.cos(z * 0.017 - 0.7) + Math.sin((x + z) * 0.009) * 0.6;
@@ -231,7 +232,8 @@ function buildClouds(extent: number): { group: THREE.Group; material: THREE.Mesh
   return { group, material };
 }
 
-export function createStage(host: HTMLElement, extent: number, bounds: Bounds): Stage {
+/** clearings: strips kept free of trees (the river, the railway, the highway). */
+export function createStage(host: HTMLElement, extent: number, bounds: Bounds, clearings: Bounds[] = []): Stage {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.shadowMap.enabled = true;
@@ -284,7 +286,7 @@ export function createStage(host: HTMLElement, extent: number, bounds: Bounds): 
   scene.add(ground);
 
   scene.add(buildHills(extent * 1.7));
-  const trees = buildTrees(bounds, extent * 1.25);
+  const trees = buildTrees(bounds, extent * 1.25, clearings);
   scene.add(trees.group);
   const clouds = buildClouds(extent);
   scene.add(clouds.group);

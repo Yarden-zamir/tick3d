@@ -4,6 +4,8 @@
 import { EDGES, KINDS, ZONES, ZONE_ORDER } from '../lore.ts';
 import { KIND_ICONS, type Selection, el } from '../model.ts';
 import { BELT_COLORS } from '../world/belts.ts';
+import { FLUIDS } from '../world/pipes.ts';
+import { SOURCES } from '../world/power.ts';
 
 export type Category = 'scenario' | 'schedule' | 'traffic';
 
@@ -101,6 +103,23 @@ export function createConsole(root: HTMLElement, onSelect: (selection: Selection
     el('div', { className: 'item' }, el('span', { className: 'swatch', style: { background: '#c9c5b9' } }), el('b', { text: 'Road' }), el('span', { text: 'Paved roads carry the belts between zone hubs, through the gaps between the plots.' })),
     el('h4', { text: 'Items on the belts' }),
     ...Object.values(EDGES).map((info) => el('div', { className: 'item' }, el('span', { className: 'swatch', style: { background: info.color } }), el('b', { text: info.name }), el('span', { text: info.meaning }))),
+    el('h4', { text: 'Pipes: what flows' }),
+    ...Object.values(FLUIDS).map((info) => el('div', { className: 'item' }, el('span', { className: 'swatch', style: { background: info.color } }), el('b', { text: info.name }), el('span', { text: info.meaning }))),
+    el('h4', { text: 'Power: what runs the code' }),
+    ...Object.values(SOURCES).map((info) => el('div', { className: 'item' }, el('span', { className: 'swatch', style: { background: info.color } }), el('b', { text: info.name }), el('span', { text: info.meaning }))),
+    el('div', { className: 'item' }, el('b', { text: 'Line shafts' }), el('span', { text: 'Under each roof, a turning shaft carries the zone’s power to its machines. A zone with no shaft runs no code: its files are stored, shipped or read.' })),
+    el('h4', { text: 'Deliveries: in and out' }),
+    ...[
+      ['🌐', 'The river', 'The internet. Everything that leaves the factory crosses it.'],
+      ['🚪', 'Caddy gate', 'The sluice gate where the canal leaves the river: Caddy lets /api traffic through to the Node server, whose wheel the water turns.'],
+      ['🚚', 'Trucks', 'npm packages, from the registry gate in the west to the Raw Materials Dock.'],
+      ['🚂', 'Train', 'Docker images (build, api, site) leave the container port for the server: a green flag is prod, a purple flag a PR preview.'],
+      ['🚢', 'Ships', 'The apps sail for the stores: Android to Google Play, iOS to TestFlight.'],
+      ['🚡', 'Cable car', 'Messages between the page (computer.ts) and the Web Worker on its own thread.'],
+      ['📡', 'Radio pulses', 'WebRTC between the Nearby masts: device to device, no server in between.'],
+      ['🕊', 'Pigeons', 'A BroadcastChannel: messages to the other tabs of the same browser.'],
+      ['🛸', 'Drones', 'Playwright e2e specs that fly to the deployed preview.'],
+    ].map(([icon, name, meaning]) => el('div', { className: 'item' }, el('span', { text: icon ?? '' }), el('b', { text: name ?? '' }), el('span', { text: meaning ?? '' }))),
     el('h4', { text: 'Dock doors and runners' }),
     el('div', { className: 'item' }, el('b', { text: 'Doors' }), el('span', { text: 'GET green · POST blue · PUT/PATCH amber · DELETE red. A white plate: accepts Idempotency-Key.' })),
     el('div', { className: 'item' }, el('b', { text: 'Press columns' }), el('span', { text: 'ubuntu orange · macos silver · reusable workflow purple.' })),

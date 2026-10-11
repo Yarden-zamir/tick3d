@@ -4,9 +4,12 @@
 
 import type { Edge, Entity, ZoneId } from '../../scan/model.ts';
 import type { Place } from '../layout.ts';
-import { EDGES, KINDS, ZONES } from '../lore.ts';
+import { CHANNELS, EDGES, KINDS, ZONES } from '../lore.ts';
 import { KIND_ICONS, type ModelIndex, type Selection, el, formatBytes, formatNumber } from '../model.ts';
 import { METHOD_COLORS } from '../world/machines.ts';
+import { FLUIDS, fluidOf } from '../world/pipes.ts';
+import { SOURCES, type Source } from '../world/power.ts';
+import { STYLES } from '../world/styles.ts';
 
 type Child = Node | string | null | undefined | false;
 
@@ -88,7 +91,13 @@ export interface Inspector {
   show(selection: Selection): void;
 }
 
-export function createInspector(container: HTMLElement, getIndex: () => ModelIndex, places: () => Map<string, Place>, onSelect: (selection: Selection) => void): Inspector {
+export function createInspector(
+  container: HTMLElement,
+  getIndex: () => ModelIndex,
+  places: () => Map<string, Place>,
+  onSelect: (selection: Selection) => void,
+  power: () => Map<ZoneId, { source: Source; detail: string }[]>,
+): Inspector {
   const link = (id: string, text?: string): HTMLElement => {
     const entity = getIndex().byId.get(id);
     const anchor = el('a', { className: 'link', text: text ?? entity?.label ?? id, title: id });
@@ -100,6 +109,13 @@ export function createInspector(container: HTMLElement, getIndex: () => ModelInd
     anchor.addEventListener('click', () => onSelect({ type: 'zone', zone }));
     return anchor;
   };
+
+  function travelsBy(edge: Edge): string {
+    const index = getIndex();
+    if (edge.kind === 'message') return 'cable car';
+    const fluid = fluidOf(edge, (id) => index.byId.get(id)?.kind);
+    return fluid ? FLUIDS[fluid].name.toLowerCase() : 'belt';
+  }
 
   function edgeList(edges: Edge[], side: 'from' | 'to'): HTMLElement {
     const index = getIndex();
@@ -114,7 +130,8 @@ export function createInspector(container: HTMLElement, getIndex: () => ModelInd
           { className: 'ln' },
           el('span', { className: 'swatch', style: { background: ZONES[other.zone].color } }),
           link(other.id, other.kind === 'route' || other.kind === 'job' || other.kind === 'dep' || other.kind === 'table' || other.kind === 'service' || other.kind === 'stage' ? other.label : other.id),
-          el('span', { className: 'badge', style: { color: EDGES[edge.kind].color }, text: EDGES[edge.kind].name }),
+          el('span', { className: 'badge', style: { color: EDGES[edge.kind].color }, text: EDGES[edge.kind].name, title: edge.via ?? '' }),
+          el('span', { className: 'badge dim', text: travelsBy(edge) }),
           edge.typeOnly ? el('span', { className: 'badge', text: 'type', title: 'A type-only import: no runtime code travels' }) : null,
         ),
       );
@@ -240,6 +257,20 @@ export function createInspector(container: HTMLElement, getIndex: () => ModelInd
         el('div', { className: 'prop' }, el('span', { text: 'Zone' }), el('span', {}, zoneLink(entity.zone))),
       ]),
     );
+    const channels = Array.isArray(entity.data?.channels) ? (entity.data.channels as string[]) : [];
+    if (channels.length) {
+      parts.push(
+        component(
+          'Runtime channels',
+          '📡',
+          [
+            el('p', { className: 'text dim', text: 'How this file talks beyond its imports, and how the factory shows it.' }),
+            ...channels.map((name) => el('div', { className: 'prop' }, el('span', { text: CHANNELS[name]?.name ?? name }), el('span', { className: 'text', text: CHANNELS[name]?.meaning ?? '' }))),
+          ],
+          channels.length,
+        ),
+      );
+    }
     const inputs = index.inputs.get(entity.id) ?? [];
     const outputs = index.outputs.get(entity.id) ?? [];
     if (inputs.length) parts.push(component('Inputs', '⬅', [el('p', { className: 'text dim', text: 'What flows into this machine.' }), edgeList(inputs, 'from')], inputs.length));
@@ -293,6 +324,14 @@ export function createInspector(container: HTMLElement, getIndex: () => ModelInd
         prop('Lines', formatNumber(lines)),
       ]),
       component('How it works', '📖', [...zone.story.map((text) => el('p', { className: 'text', text })), el('ul', { className: 'facts' }, ...zone.facts.map((fact) => el('li', { text: fact })))]),
+      component('Building', '🏛', [prop('Style', STYLES[zoneId].name), el('p', { className: 'text', text: STYLES[zoneId].meaning })]),
+      component(
+        'Power',
+        '⚡',
+        (power().get(zoneId) ?? []).length
+          ? (power().get(zoneId) ?? []).map(({ source, detail }) => el('div', {}, prop('Source', el('b', { style: { color: SOURCES[source].color }, text: SOURCES[source].name })), el('p', { className: 'text', text: `${SOURCES[source].meaning} ${detail}` })))
+          : [el('p', { className: 'text dim', text: 'No power: nothing here runs. The files are stored, shipped or read, not executed.' })],
+      ),
       biggest.length === 0 ? '' : component('Biggest machines', '🏭', [el('div', { className: 'links' }, ...biggest.map((entity) => el('div', { className: 'ln' }, link(entity.id, entity.id), el('span', { className: 'badge', text: `${formatNumber(entity.lines ?? 0)} lines` }))))]),
       component(
         'Road traffic',

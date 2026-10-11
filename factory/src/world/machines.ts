@@ -7,8 +7,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Entity, FactoryModel, ZoneId } from '../../scan/model.ts';
 import { CELL, type Layout, type Place, type Plot } from '../layout.ts';
 import { ZONES } from '../lore.ts';
+import { BOX, C, CONE, CYL, CYL8, Merger, SPHERE } from './kit.ts';
+import { STYLES } from './styles.ts';
 
-const C = (hex: string): THREE.Color => new THREE.Color(hex);
 const DARK = C('#2a2f35');
 const METAL = C('#6f7782');
 const STEEL = C('#a3abb5');
@@ -30,11 +31,6 @@ const TRIGGER_COLORS: Record<string, string> = {
 const RUNNER_COLORS = { macos: '#d4d8de', ubuntu: '#e95420', reusable: '#8a63d2' };
 const STAGE_COLORS: Record<string, string> = { build: '#f2a03d', api: '#4d7cfe', site: '#3ddc84' };
 
-const BOX = new THREE.BoxGeometry(1, 1, 1);
-const CYL = new THREE.CylinderGeometry(0.5, 0.5, 1, 20);
-const CYL8 = new THREE.CylinderGeometry(0.5, 0.5, 1, 8);
-const CONE = new THREE.ConeGeometry(0.5, 1, 20);
-const SPHERE = new THREE.SphereGeometry(0.5, 20, 14);
 
 const tmpMatrix = new THREE.Matrix4();
 const tmpQuat = new THREE.Quaternion();
@@ -42,40 +38,6 @@ const tmpEuler = new THREE.Euler();
 const tmpPos = new THREE.Vector3();
 const tmpScale = new THREE.Vector3();
 const tmpColor = new THREE.Color();
-
-class Merger {
-  private parts: THREE.BufferGeometry[] = [];
-
-  add(template: THREE.BufferGeometry, color: THREE.Color, x: number, y: number, z: number, sx: number, sy: number, sz: number, rx = 0, ry = 0, rz = 0): void {
-    const geometry = template.clone();
-    tmpMatrix.compose(tmpPos.set(x, y, z), tmpQuat.setFromEuler(tmpEuler.set(rx, ry, rz)), tmpScale.set(sx, sy, sz));
-    geometry.applyMatrix4(tmpMatrix);
-    const count = geometry.getAttribute('position').count;
-    const colors = new Float32Array(count * 3);
-    for (let index = 0; index < count; index += 1) colors.set([color.r, color.g, color.b], index * 3);
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    this.parts.push(geometry);
-  }
-
-  /** A box that stands on y0 and rises by h. */
-  block(color: THREE.Color, x: number, y0: number, z: number, w: number, h: number, d: number, ry = 0): void {
-    this.add(BOX, color, x, y0 + h / 2, z, w, h, d, 0, ry, 0);
-  }
-
-  cylinder(color: THREE.Color, x: number, y0: number, z: number, r: number, h: number, low = false): void {
-    this.add(low ? CYL8 : CYL, color, x, y0 + h / 2, z, r * 2, h, r * 2);
-  }
-
-  build(material: THREE.Material): THREE.Mesh | undefined {
-    if (this.parts.length === 0) return undefined;
-    const geometry = mergeGeometries(this.parts, false);
-    for (const part of this.parts) part.dispose();
-    this.parts = [];
-    if (!geometry) return undefined;
-    geometry.computeBoundingSphere();
-    return new THREE.Mesh(geometry, material);
-  }
-}
 
 type LampMode = 'status' | 'night' | 'fixed' | 'test';
 
@@ -132,6 +94,10 @@ export interface Machines {
   slabs: THREE.Mesh[];
   /** Round solid things a walker bumps into: roof columns, lamp and sign posts, hubs. */
   posts: Post[];
+  /** Walls and other boxes a walker bumps into. */
+  solids: THREE.Box3[];
+  /** The roof height of each zone (above its tallest machine). */
+  ceilings: Map<ZoneId, number>;
   roofs: Map<ZoneId, { group: THREE.Group; panel: THREE.MeshStandardMaterial; truss: THREE.MeshStandardMaterial; lift: number }>;
   materials: THREE.Material[];
   update(dt: number, time: number, activity: Map<string, number>, night: number): void;
@@ -185,6 +151,8 @@ export function buildMachines(model: FactoryModel, layout: Layout): Machines {
   const tops = new Map<string, THREE.Vector3>();
   const hubs = new Map<ZoneId, THREE.Vector3>();
   const posts: Post[] = [];
+  const solids: THREE.Box3[] = [];
+  const ceilings = new Map<ZoneId, number>();
   const lamps: { lamp: Lamp; matrix: THREE.Matrix4 }[] = [];
   const gears: Spinner[] = [];
   const fans: Spinner[] = [];
@@ -214,58 +182,41 @@ export function buildMachines(model: FactoryModel, layout: Layout): Machines {
     const cx = (plot.minX + plot.maxX) / 2;
     const cz = (plot.minZ + plot.maxZ) / 2;
 
-    // The foundation: a concrete slab with a painted zone border.
+    // The pick slab: a click on the floor selects the zone.
     const slab = new THREE.Mesh(BOX, new THREE.MeshBasicMaterial());
     slab.position.set(cx, -0.1, cz);
     slab.scale.set(width, 0.24, depth);
     slab.updateMatrixWorld();
     slab.userData.zone = plot.zone;
     slabs.push(slab);
-    m.block(CONCRETE, cx, -0.2, cz, width, 0.22, depth);
-    const edge = 0.35;
-    m.block(zoneColor, cx, 0.02, plot.minZ + edge / 2, width, 0.04, edge);
-    m.block(zoneColor, cx, 0.02, plot.maxZ - edge / 2, width, 0.04, edge);
-    m.block(zoneColor, plot.minX + edge / 2, 0.02, cz, edge, 0.04, depth);
-    m.block(zoneColor, plot.maxX - edge / 2, 0.02, cz, edge, 0.04, depth);
     // Painted walkway between the cells and the front strip.
     const front = plot.hub.z;
     m.block(C('#545a62'), cx, 0.005, front, width - 1.4, 0.02, 2.2);
     for (let x = plot.minX + 1.2; x < plot.maxX - 1.2; x += 2.4) m.block(HAZARD, x, 0.02, front - 1.25, 1.1, 0.02, 0.18);
 
-    // Steel columns that hold the roof, at the corners and along the long sides.
+    // The zone's building, in a style that says what the zone does (styles.ts). Its roof lifts away
+    // when you look inside (main.ts animates it).
     let tallest = 0;
     for (const entity of plot.entities) tallest = Math.max(tallest, layout.places.get(entity.id)?.h ?? 0);
     const roofY = Math.max(6.5, tallest + 2.6);
-    const columns: [number, number][] = [];
-    const roofDepth = plot.rows * CELL + 3;
-    const roofZ0 = plot.minZ + 1.5;
-    for (let x = plot.minX + 1; x <= plot.maxX - 0.9; x += Math.max(CELL * 2, (width - 2) / Math.max(1, Math.round((width - 2) / (CELL * 2))))) {
-      columns.push([x, roofZ0], [x, roofZ0 + roofDepth]);
-    }
-    for (const [x, z] of columns) {
-      m.block(DARK, x, 0, z, 0.5, 0.3, 0.5);
-      m.block(zoneColor.clone().lerp(METAL, 0.55), x, 0.3, z, 0.32, roofY - 0.3, 0.32);
-      posts.push({ x, z, r: 0.3, h: roofY });
-    }
-
-    // The roof lifts away when you enter the zone (main.ts animates it).
+    ceilings.set(plot.zone, roofY);
+    const roofParts = new Merger();
+    const glassParts = new Merger();
+    STYLES[plot.zone].build({ plot, zone: zoneColor, roofY, m, lit, roof: roofParts, glass: glassParts, posts, solids });
     const roof = new THREE.Group();
-    const truss = new THREE.MeshStandardMaterial({ color: zoneColor.clone().lerp(STEEL, 0.5), vertexColors: true, roughness: 0.5, metalness: 0.6, transparent: true, opacity: 1 });
-    const panel = new THREE.MeshStandardMaterial({ color: zoneColor.clone().lerp(C('#ffffff'), 0.25), roughness: 0.3, metalness: 0.1, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide });
-    const beams = new Merger();
-    const white = C('#ffffff');
-    for (let x = plot.minX + 1; x <= plot.maxX - 0.9; x += CELL) beams.block(white, x, roofY, roofZ0 + roofDepth / 2, 0.22, 0.32, roofDepth);
-    beams.block(white, cx, roofY + 0.1, roofZ0, width - 1.6, 0.26, 0.26);
-    beams.block(white, cx, roofY + 0.1, roofZ0 + roofDepth, width - 1.6, 0.26, 0.26);
-    for (let z = roofZ0 + CELL; z < roofZ0 + roofDepth; z += CELL) beams.block(white, cx, roofY + 0.32, z, width - 1.6, 0.14, 0.14);
-    const beamMesh = beams.build(truss);
-    // The beams carry white vertex colors; the material carries the zone tint.
-    if (beamMesh) roof.add(beamMesh);
-    const glass = new THREE.Mesh(new THREE.PlaneGeometry(width - 1.6, roofDepth), panel);
-    glass.rotation.x = -Math.PI / 2;
-    glass.position.set(cx, roofY + 0.36, roofZ0 + roofDepth / 2);
-    glass.renderOrder = 2;
-    roof.add(glass);
+    const truss = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.15, transparent: true, opacity: 1, side: THREE.DoubleSide });
+    const panel = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide });
+    const roofMesh = roofParts.build(truss);
+    if (roofMesh) {
+      roofMesh.castShadow = true;
+      roofMesh.receiveShadow = true;
+      roof.add(roofMesh);
+    }
+    const glassMesh = glassParts.build(panel);
+    if (glassMesh) {
+      glassMesh.renderOrder = 2;
+      roof.add(glassMesh);
+    }
     group.add(roof);
     roofs.set(plot.zone, { group: roof, panel, truss, lift: 0 });
     materials.push(truss, panel);
@@ -663,6 +614,8 @@ export function buildMachines(model: FactoryModel, layout: Layout): Machines {
     pickIds,
     slabs,
     posts,
+    solids,
+    ceilings,
     roofs,
     materials,
     update(dt, time, activity, night) {

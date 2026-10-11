@@ -509,6 +509,78 @@ function scanCompose(path: string, entities: Entity[], edges: Edge[], files: Set
   }
 }
 
+// Runtime channels: how a file talks beyond its imports. Each one becomes a fact on the file
+// (data.channels), and where both ends are known, an edge: client code → the API route it calls,
+// a page → the Web Worker it starts.
+const CHANNELS: [string, RegExp][] = [
+  ['fetch', /\bfetch\(/],
+  ['event-stream', /new EventSource\(/],
+  ['worker', /new Worker\(/],
+  ['webrtc', /new RTCPeerConnection\(/],
+  ['broadcast', /new BroadcastChannel\(/],
+  ['indexeddb', /\bindexedDB\b/],
+  ['service-worker', /navigator\.serviceWorker/],
+];
+
+/** A client path as written (`/me/blocks/${person}?x=1`) in the shape of a route path: `/me/blocks/X`. */
+function clientPath(written: string): string {
+  return (
+    written
+      .replace(/\/\$\{[^}]+\}/g, '/X')
+      // A template part that does not start a segment adds a query or a suffix: drop it.
+      .replace(/\$\{[^}]+\}/g, '')
+      .split('?')[0] ?? ''
+  );
+}
+
+function routePattern(path: string): RegExp {
+  return new RegExp(`^${path.replace(/[.*+?^$()|[\]\\]/g, '\\$&').replace(/\{[^}]+\}/g, '[^/]+')}$`);
+}
+
+function scanChannels(texts: Map<string, string>, entities: Entity[], edges: Edge[], files: Set<string>): void {
+  const routes = entities.filter((entity) => entity.kind === 'route');
+  const findRoute = (method: string, path: string): Entity | undefined =>
+    routes.find((route) => route.data?.method === method && routePattern(String(route.data.path)).test(path));
+  const byId = new Map(entities.map((entity) => [entity.id, entity]));
+  for (const [path, text] of texts) {
+    const entity = byId.get(path);
+    if (!entity || !/^src\/.*\.ts$/.test(path) || entity.kind === 'test') continue;
+    const channels = CHANNELS.filter(([, pattern]) => pattern.test(text)).map(([name]) => name);
+    if (channels.length) entity.data = { ...entity.data, channels };
+
+    // HTTP calls: a helper `call(method, path)` adds /api; a second helper may add a prefix too.
+    const prefix = /call\(method, `([^`$]*)\$\{path\}`/.exec(text)?.[1];
+    const calls: { method: string; path: string; via: string; stream?: boolean }[] = [];
+    for (const match of text.matchAll(/\b(call|request)\('(GET|POST|PUT|PATCH|DELETE)', (?:'([^']*)'|`([^`]*)`)/g)) {
+      const [, helper = '', method = '', plain, template] = match;
+      const written = plain ?? template ?? '';
+      const base = helper === 'request' ? (prefix ?? '') : '';
+      calls.push({ method, path: `/api${base}${clientPath(written)}`, via: `${helper}('${method}', '${written}')` });
+    }
+    for (const match of text.matchAll(/fetch\((?:'([^']*)'|`([^`]*)`)/g)) {
+      const written = match[1] ?? match[2] ?? '';
+      if (written.startsWith('/api/')) calls.push({ method: 'GET', path: clientPath(written), via: `fetch('${written}')` });
+    }
+    for (const match of text.matchAll(/new EventSource\((?:'([^']*)'|`([^`]*)`)/g)) {
+      const written = match[1] ?? match[2] ?? '';
+      calls.push({ method: 'GET', path: clientPath(written), via: `new EventSource('${written}')`, stream: true });
+    }
+    const seen = new Set<string>();
+    for (const call of calls) {
+      const route = findRoute(call.method, call.path);
+      if (!route || seen.has(route.id)) continue;
+      seen.add(route.id);
+      edges.push({ from: path, to: route.id, kind: 'calls', via: call.via, ...(call.stream ? { stream: true } : {}) });
+    }
+
+    // Web Workers: new Worker(new URL('./file.ts', import.meta.url)).
+    for (const match of text.matchAll(/new Worker\(new URL\('([^']+)', import\.meta\.url\)/g)) {
+      const target = posix.normalize(posix.join(posix.dirname(path), match[1] ?? ''));
+      if (files.has(target)) edges.push({ from: path, to: target, kind: 'message', via: 'postMessage' });
+    }
+  }
+}
+
 export function scanRepo(): FactoryModel {
   const paths = git(['ls-files']).split('\n').filter(Boolean);
   const files = new Set(paths);
@@ -595,6 +667,7 @@ export function scanRepo(): FactoryModel {
     if (entity?.kind === 'workflow') scanWorkflow(path, texts.get(path) ?? '', entity, entities, edges);
   }
   scanDocker(entities, edges, files);
+  scanChannels(texts, entities, edges, files);
   for (const path of ['compose.yml', 'compose.lan.yml']) if (files.has(path)) scanCompose(path, entities, edges, files);
 
   // Edges must join two known entities.

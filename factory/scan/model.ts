@@ -67,7 +67,9 @@ export type EdgeKind =
   | 'serves' // a stage becomes a compose service, or a service depends on another
   | 'stores' // the store writes a table
   | 'package' // an npm package feeds a file
-  | 'entry'; // an HTML page loads its script
+  | 'entry' // an HTML page loads its script
+  | 'calls' // client code calls an API route over HTTP (or listens to its event stream)
+  | 'message'; // a page posts messages to a Web Worker
 
 export interface Edge {
   from: string;
@@ -75,6 +77,9 @@ export interface Edge {
   kind: EdgeKind;
   /** A type-only import moves no runtime code. */
   typeOnly?: boolean;
+  /** For calls: the HTTP method and the path as the client writes it; stream for an EventSource. */
+  via?: string;
+  stream?: boolean;
 }
 
 export interface FactoryModel {
