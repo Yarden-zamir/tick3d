@@ -1,10 +1,15 @@
 name: ios
 
 # Builds the iOS app: a Capacitor shell that loads the production site, like the Android app (android.yml).
-# The page is the same everywhere, so a site deploy reaches the app with no app build. This workflow runs
-# only for a new shell: a tag such as ios-v1.2.0, or by hand. It never runs on a pull request.
+# The page is the same everywhere, so a site deploy reaches the app with no app build. The macOS `app` job
+# runs only for a new shell: a tag such as ios-v1.2.0, or by hand. It never runs on a pull request.
 # The Xcode project is generated here on every run from apple/capacitor.config.json, so the repository
 # keeps no native code.
+#
+# The `lint` job runs on every pull request that touches the iOS shell. It needs no macOS runner, no
+# Xcode and no signing: actionlint checks this file's own syntax, and generating the Capacitor project
+# with Node alone (no `xcodebuild`, no CocoaPods) catches a bad apple/capacitor.config.json or a broken
+# install in well under a minute, so most mistakes surface on the pull request, before the real build.
 #
 # The App Store account is set by repository settings, not by code:
 # - variables APPLE_TEAM_ID and IOS_BUNDLE_ID;
@@ -21,6 +26,8 @@ on:
         default: false
   push:
     tags: ['ios-v*']
+  pull_request:
+    paths: ['apple/**', '.github/workflows/ios.yml']
 
 # contents: write makes the GitHub release of a tag.
 permissions:
@@ -31,7 +38,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Cheap and automatic: runs on every pull request that touches the iOS shell, so a broken config or a
+  # workflow mistake shows up on the PR, with no macOS minutes and no simulator or device build.
+  lint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: apple/package-lock.json
+
+      - name: actionlint
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint .github/workflows/ios.yml
+
+      # The same generation step as the app job, minus Xcode: cap add/sync only write files with Node,
+      # so this catches an invalid apple/capacitor.config.json or a package that fails to install.
+      - name: Generate the Capacitor iOS project
+        working-directory: apple
+        run: |
+          npm ci --no-audit --no-fund
+          npx cap add ios --packagemanager SPM
+          npx cap sync ios
+          test -f ios/App/App/Info.plist
+          test -f ios/App/App/AppDelegate.swift
+
   app:
+    if: github.event_name != 'pull_request'
     runs-on: macos-15
     timeout-minutes: 45
     env:
