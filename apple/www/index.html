@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>tick3d</title>
+    <!-- The iOS app shows this page only when the site cannot load: the first start without a network.
+         After one start online, the service worker of the site keeps the game for offline play. -->
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #e4e7ff;
+        color: #111;
+        font: 600 1.1rem/1.4 system-ui, sans-serif;
+        text-align: center;
+      }
+      main {
+        max-width: 20rem;
+        padding: 1.5rem;
+        border: 3px solid #111;
+        border-radius: 12px;
+        background: #ffe14d;
+        box-shadow: 6px 6px 0 #111;
+      }
+      button {
+        margin-top: 1rem;
+        padding: 0.6rem 1.2rem;
+        border: 3px solid #111;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 3px 3px 0 #111;
+        font: inherit;
+        font-weight: 800;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>tick3d</h1>
+      <p>Connect to the internet once to download the game. After that, it plays offline too.</p>
+      <button type="button" onclick="location.replace('https://tick3d.yarden-zamir.com/')">Try again</button>
+    </main>
+  </body>
+</html>
