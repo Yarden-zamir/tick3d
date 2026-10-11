@@ -1,0 +1,13 @@
+{
+  "name": "tick3d-apple",
+  "private": true,
+  "type": "module",
+  "description": "Capacitor, which builds the iOS app around the production site, and its icon tool. Dependabot updates them.",
+  "license": "MIT",
+  "devDependencies": {
+    "@capacitor/assets": "3.0.5",
+    "@capacitor/cli": "8.5.3",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/ios": "8.5.3"
+  }
+}

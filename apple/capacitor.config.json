@@ -1,0 +1,16 @@
+{
+  "appId": "set.by.the.ios.workflow",
+  "appName": "tick3d",
+  "webDir": "www",
+  "appendUserAgent": "tick3dApp/ios",
+  "backgroundColor": "#e4e7ff",
+  "server": {
+    "url": "https://tick3d.yarden-zamir.com",
+    "errorPath": "index.html"
+  },
+  "ios": {
+    "limitsNavigationsToAppBoundDomains": true,
+    "contentInset": "never",
+    "scrollEnabled": true
+  }
+}
