@@ -329,3 +329,19 @@ kbd { background: #474747; border: 1px solid #222; border-bottom-width: 2px; bor
   :root { --left: 0px; --right: 0px; }
   #left, #right, .splitter.v { display: none; }
 }
+
+/* Walk mode: a crosshair, what it points at, the zone underfoot and the controls. */
+#walk-hud { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+#walk-hud .crosshair { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; transform: translate(-50%, -50%); }
+#walk-hud .crosshair::before,
+#walk-hud .crosshair::after { content: ''; position: absolute; background: rgba(255, 255, 255, 0.9); box-shadow: 0 0 2px #000; }
+#walk-hud .crosshair::before { left: 8px; top: 0; width: 2px; height: 18px; }
+#walk-hud .crosshair::after { left: 0; top: 8px; width: 18px; height: 2px; }
+#walk-target { position: absolute; left: 50%; top: calc(50% + 18px); transform: translateX(-50%); color: #fff; font-family: 'JetBrains Mono', monospace; font-size: 12px; text-shadow: 0 1px 3px #000, 0 0 2px #000; white-space: nowrap; }
+#walk-zone { left: 8px; top: 8px; font-weight: 600; border-left: 3px solid #5d9a3c; }
+#walk-help { left: 50%; bottom: 8px; transform: translateX(-50%); font-size: 12px; white-space: nowrap; }
+#walk-help kbd { font-size: 11px; }
+#walk-paused { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 6px; background: rgba(0, 0, 0, 0.35); color: #fff; font-size: 16px; text-shadow: 0 1px 3px #000; }
+#walk-paused[hidden] { display: none; }
+#walk-paused span { font-size: 12px; color: #ddd; }
+body.walking #clock { bottom: 44px; }

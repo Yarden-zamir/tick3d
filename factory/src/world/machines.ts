@@ -114,6 +114,13 @@ interface Drone {
   phase: number;
 }
 
+export interface Post {
+  x: number;
+  z: number;
+  r: number;
+  h: number;
+}
+
 export interface Machines {
   group: THREE.Group;
   bounds: Map<string, THREE.Box3>;
@@ -123,6 +130,8 @@ export interface Machines {
   pick: THREE.InstancedMesh;
   pickIds: string[];
   slabs: THREE.Mesh[];
+  /** Round solid things a walker bumps into: roof columns, lamp and sign posts, hubs. */
+  posts: Post[];
   roofs: Map<ZoneId, { group: THREE.Group; panel: THREE.MeshStandardMaterial; truss: THREE.MeshStandardMaterial; lift: number }>;
   materials: THREE.Material[];
   update(dt: number, time: number, activity: Map<string, number>, night: number): void;
@@ -175,6 +184,7 @@ export function buildMachines(model: FactoryModel, layout: Layout): Machines {
   const bounds = new Map<string, THREE.Box3>();
   const tops = new Map<string, THREE.Vector3>();
   const hubs = new Map<ZoneId, THREE.Vector3>();
+  const posts: Post[] = [];
   const lamps: { lamp: Lamp; matrix: THREE.Matrix4 }[] = [];
   const gears: Spinner[] = [];
   const fans: Spinner[] = [];
@@ -235,6 +245,7 @@ export function buildMachines(model: FactoryModel, layout: Layout): Machines {
     for (const [x, z] of columns) {
       m.block(DARK, x, 0, z, 0.5, 0.3, 0.5);
       m.block(zoneColor.clone().lerp(METAL, 0.55), x, 0.3, z, 0.32, roofY - 0.3, 0.32);
+      posts.push({ x, z, r: 0.3, h: roofY });
     }
 
     // The roof lifts away when you enter the zone (main.ts animates it).
@@ -262,6 +273,7 @@ export function buildMachines(model: FactoryModel, layout: Layout): Machines {
     // Lamp posts at the four corners: they light up at night.
     for (const [x, z] of [[plot.minX + 0.8, plot.minZ + 0.8], [plot.maxX - 0.8, plot.minZ + 0.8], [plot.minX + 0.8, plot.maxZ - 0.8], [plot.maxX - 0.8, plot.maxZ - 0.8]] as const) {
       m.block(DARK, x, 0, z, 0.18, 4.2, 0.18);
+      posts.push({ x, z, r: 0.15, h: 4.2 });
       m.block(DARK, x, 4.1, z, 0.5, 0.14, 0.5);
       lamp(`zone:${plot.zone}`, x, 3.95, z, '#ffd9a0', 'night', 1.6);
     }
@@ -272,6 +284,7 @@ export function buildMachines(model: FactoryModel, layout: Layout): Machines {
     const signH = 2.7;
     m.block(DARK, plot.sign.x - signW / 2 + 0.4, 0, plot.sign.z, 0.22, 1.4 + signH, 0.22);
     m.block(DARK, plot.sign.x + signW / 2 - 0.4, 0, plot.sign.z, 0.22, 1.4 + signH, 0.22);
+    for (let x = plot.sign.x - signW / 2 + 0.4; x <= plot.sign.x + signW / 2 - 0.3; x += 0.6) posts.push({ x, z: plot.sign.z, r: 0.2, h: 1.4 + signH });
     const face = new THREE.MeshStandardMaterial({ map: signTexture(plot, model), roughness: 0.6, emissive: C('#ffffff'), emissiveIntensity: 0.05 });
     face.emissiveMap = face.map;
     const backing = new THREE.MeshStandardMaterial({ color: DARK, roughness: 0.7 });
@@ -287,6 +300,7 @@ export function buildMachines(model: FactoryModel, layout: Layout): Machines {
     const hub = new THREE.Vector3(plot.hub.x, 0, plot.hub.z);
     hubs.set(plot.zone, hub);
     m.cylinder(DARK, hub.x, 0, hub.z, 1.25, 0.35, true);
+    posts.push({ x: hub.x, z: hub.z, r: 1.25, h: 1.4 });
     m.cylinder(zoneColor, hub.x, 0.35, hub.z, 1.0, 0.45, true);
     m.cylinder(METAL, hub.x, 0.8, hub.z, 0.45, 0.6);
     rings.push({ id: `zone:${plot.zone}`, x: hub.x, y: 1.0, z: hub.z, axis: 'y', scale: 1, speed: 0.8, angle: 0 });
@@ -648,6 +662,7 @@ export function buildMachines(model: FactoryModel, layout: Layout): Machines {
     pick,
     pickIds,
     slabs,
+    posts,
     roofs,
     materials,
     update(dt, time, activity, night) {

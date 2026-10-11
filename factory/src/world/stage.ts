@@ -27,6 +27,8 @@ export interface Stage {
   resize(): void;
   /** Uniforms that animate with time: belts and the clouds share them. */
   time: { value: number };
+  /** Tree trunks, for the walker to bump into. */
+  trees: { x: number; z: number; r: number; h: number }[];
 }
 
 export interface Bounds {
@@ -157,7 +159,7 @@ function buildHills(radius: number): THREE.Mesh {
 }
 
 /** Trees around the site, in loose groves: round leafy ones and tall conifers. */
-function buildTrees(bounds: Bounds, reach: number): THREE.Group {
+function buildTrees(bounds: Bounds, reach: number): { group: THREE.Group; trunks: Stage['trees'] } {
   const group = new THREE.Group();
   const keepOut = { minX: bounds.minX - 14, maxX: bounds.maxX + 14, minZ: bounds.minZ - 14, maxZ: bounds.maxZ + 14 };
   const spots: { x: number; z: number; s: number; conifer: boolean }[] = [];
@@ -202,7 +204,7 @@ function buildTrees(bounds: Bounds, reach: number): THREE.Group {
     mesh.receiveShadow = true;
     group.add(mesh);
   }
-  return group;
+  return { group, trunks: spots.map((spot) => ({ x: spot.x, z: spot.z, r: (spot.conifer ? 0.5 : 0.35) * spot.s, h: 6 * spot.s })) };
 }
 
 /** Puffy low-poly clouds high above the site. */
@@ -282,7 +284,8 @@ export function createStage(host: HTMLElement, extent: number, bounds: Bounds): 
   scene.add(ground);
 
   scene.add(buildHills(extent * 1.7));
-  scene.add(buildTrees(bounds, extent * 1.25));
+  const trees = buildTrees(bounds, extent * 1.25);
+  scene.add(trees.group);
   const clouds = buildClouds(extent);
   scene.add(clouds.group);
 
@@ -347,6 +350,7 @@ export function createStage(host: HTMLElement, extent: number, bounds: Bounds): 
     ground,
     bloom,
     time,
+    trees: trees.trunks,
     setDaylight,
     resize,
     render() {

@@ -17,6 +17,7 @@
             <button class="tool" data-tool="top" title="Top view (T)">⊤</button>
             <button class="tool" data-tool="home" title="Overview (H)">⌂</button>
             <button class="tool" data-tool="frame" title="Frame selected (F)">⛶</button>
+            <button class="tool" data-tool="walk" title="Walk in first person (P)">🚶</button>
           </div>
           <div class="chip" id="repo-chip" title="The commit the scanner read">…</div>
         </div>
@@ -82,6 +83,13 @@
           <div id="clock" class="overlay-card"><span id="clock-day">Mon</span> <span id="clock-time" class="mono">06:00</span><div id="clock-next" class="dim"></div></div>
           <div id="scenario-card" class="overlay-card" hidden></div>
           <div id="tooltip" hidden></div>
+          <div id="walk-hud" hidden>
+            <div class="crosshair"></div>
+            <div id="walk-target"></div>
+            <div id="walk-zone" class="overlay-card"></div>
+            <div id="walk-help" class="overlay-card"><kbd>WASD</kbd> walk · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · <kbd>Click</kbd>/<kbd>E</kbd> select · <kbd>Esc</kbd> leave</div>
+            <div id="walk-paused" hidden><b>Click to keep walking</b><span>Esc to leave walk mode</span></div>
+          </div>
           <div id="loading"><div class="spinner"></div><div id="loading-text">Scanning the repository…</div></div>
         </div>
         <div class="splitter h" data-split="bottom"></div>
@@ -123,6 +131,7 @@
           <div><kbd>F</kbd> frame selected · <kbd>H</kbd> overview · <kbd>T</kbd> top view</div>
           <div><kbd>Space</kbd> play / pause · <kbd>.</kbd> step · <kbd>R</kbd> run scenario</div>
           <div><kbd>L</kbd> labels · <kbd>B</kbd> cycle belts · <kbd>Esc</kbd> deselect</div>
+          <div><kbd>P</kbd> walk the factory floor in first person</div>
           <div><kbd>Ctrl F</kbd> search the hierarchy · <kbd>?</kbd> this help</div>
         </div>
         <p class="dim">Click a zone floor to enter it: its roof lifts. Pick a scenario at the top right and press Run to watch a request travel through the real code path.</p>

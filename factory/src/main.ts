@@ -13,6 +13,7 @@ import { createAxisGizmo } from './ui/axis-gizmo.ts';
 import { createConsole } from './ui/console.ts';
 import { createHierarchy } from './ui/hierarchy.ts';
 import { createInspector } from './ui/inspector.ts';
+import { createWalker } from './walk.ts';
 import { type BeltMode, buildBelts } from './world/belts.ts';
 import { createEffects } from './world/effects.ts';
 import { METHOD_COLORS, buildMachines } from './world/machines.ts';
@@ -53,6 +54,41 @@ async function start(): Promise<void> {
   stage.scene.add(belts.group);
   const effects = createEffects(stage.scene);
   stage.sun.target.position.set(0, 0, 0);
+
+  // Walk mode: first person on the factory floor. The orbit view comes back on leaving.
+  const walkHud = $<HTMLDivElement>('#walk-hud');
+  const walkPaused = $<HTMLDivElement>('#walk-paused');
+  const walkTarget = $<HTMLDivElement>('#walk-target');
+  const walkZone = $<HTMLDivElement>('#walk-zone');
+  const orbit = { camera: new THREE.Vector3(), target: new THREE.Vector3() };
+  const walker = createWalker({
+    camera: stage.camera,
+    canvas: stage.renderer.domElement,
+    boxes: () => machines.bounds.values(),
+    posts: [...machines.posts, ...stage.trees],
+    limit: extent * 1.3,
+    onChange(active) {
+      walkHud.hidden = !active;
+      walkPaused.hidden = true;
+      document.body.classList.toggle('walking', active);
+      for (const tool of document.querySelectorAll<HTMLButtonElement>('.tool')) {
+        if (tool.dataset.tool === 'walk') tool.classList.toggle('active', active);
+        if (tool.dataset.tool === 'orbit') tool.classList.toggle('active', !active);
+      }
+      stage.controls.enabled = !active;
+      $<HTMLDivElement>('#tooltip').hidden = true;
+      if (!active) {
+        stage.camera.position.copy(orbit.camera);
+        stage.controls.target.copy(orbit.target);
+        stage.controls.update();
+        state.hover = null;
+        effects.hover(null);
+      }
+    },
+    onLockChange(locked) {
+      walkPaused.hidden = !walker.active || locked;
+    },
+  });
 
   // State.
   const state = {
@@ -111,6 +147,8 @@ async function start(): Promise<void> {
   // Camera moves.
   const fly = { from: new THREE.Vector3(), to: new THREE.Vector3(), targetFrom: new THREE.Vector3(), targetTo: new THREE.Vector3(), t: 1, seconds: 1 };
   function flyTo(target: THREE.Vector3, distance: number, direction?: THREE.Vector3, seconds = 1.1): void {
+    // In walk mode the camera belongs to the walker.
+    if (walker.active) return;
     const dir = direction?.clone().normalize() ?? stage.camera.position.clone().sub(stage.controls.target).normalize();
     if (!direction && dir.y < 0.35) {
       dir.y = 0.55;
@@ -125,6 +163,50 @@ async function start(): Promise<void> {
   }
   function home(): void {
     flyTo(new THREE.Vector3(0, 0, 8), extent * 0.72, new THREE.Vector3(0, 0.8, 0.6));
+  }
+  /** Walk in front of the zone the orbit camera looks at, facing into it. */
+  function toggleWalk(): void {
+    if (walker.active) {
+      walker.exit();
+      return;
+    }
+    fly.t = 1;
+    orbit.camera.copy(stage.camera.position);
+    orbit.target.copy(stage.controls.target);
+    const target = stage.controls.target;
+    let nearest: { zone: ZoneId; x: number; z: number } | null = null;
+    let best = Infinity;
+    for (const plot of layout.plots.values()) {
+      const distance = Math.hypot((plot.minX + plot.maxX) / 2 - target.x, (plot.minZ + plot.maxZ) / 2 - target.z);
+      if (distance < best) {
+        best = distance;
+        nearest = { zone: plot.zone, x: plot.hub.x + 3, z: plot.maxZ + 3 };
+      }
+    }
+    walker.enter(new THREE.Vector3(nearest?.x ?? 0, 0, nearest?.z ?? 0), 0);
+    if (nearest) log('scenario', `Walking in front of the ${ZONES[nearest.zone].title}. WASD to walk, the mouse to look, Esc to leave.`, clock.stamp);
+  }
+  // The crosshair names what it points at, and the HUD names the zone underfoot.
+  let walkTick = 0;
+  function updateWalkHud(dt: number): void {
+    walkTick += dt;
+    if (walkTick < 0.1) return;
+    walkTick = 0;
+    const picked = pickNdc(0, 0);
+    if (picked?.type === 'entity') {
+      const entity = index.byId.get(picked.id);
+      state.hover = picked.id;
+      effects.hover(machines.bounds.get(picked.id) ?? null);
+      walkTarget.textContent = entity ? `${entity.kind === 'route' || entity.kind === 'job' ? entity.label : entity.id} · ${KINDS[entity.kind].machine}` : '';
+    } else {
+      state.hover = null;
+      effects.hover(null);
+      walkTarget.textContent = '';
+    }
+    const at = walker.position;
+    const plot = [...layout.plots.values()].find((item) => at.x >= item.minX && at.x <= item.maxX && at.z >= item.minZ && at.z <= item.maxZ);
+    walkZone.textContent = plot ? `${ZONES[plot.zone].icon} ${ZONES[plot.zone].title}` : '🌳 Outside';
+    walkZone.style.borderLeftColor = plot ? ZONES[plot.zone].color : '#5d9a3c';
   }
   function frameSelection(selection: Selection): void {
     if (!selection) return home();
@@ -181,7 +263,10 @@ async function start(): Promise<void> {
   const tooltip = $<HTMLDivElement>('#tooltip');
   function pickAt(event: PointerEvent | MouseEvent): Selection {
     const rect = stage.renderer.domElement.getBoundingClientRect();
-    pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+    return pickNdc(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+  }
+  function pickNdc(x: number, y: number): Selection {
+    pointer.set(x, y);
     raycaster.setFromCamera(pointer, stage.camera);
     const hit = raycaster.intersectObject(machines.pick, false)[0];
     if (hit && hit.instanceId !== undefined) {
@@ -199,9 +284,16 @@ async function start(): Promise<void> {
   });
   canvas.addEventListener('pointerup', (event) => {
     if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 5 || event.button !== 0) return;
+    // Walking: a click picks what the crosshair is on (the first click only locks the mouse).
+    if (walker.active) {
+      if (walker.locked) select(pickNdc(0, 0), false);
+      return;
+    }
     select(pickAt(event), false);
   });
-  canvas.addEventListener('dblclick', (event) => select(pickAt(event), true));
+  canvas.addEventListener('dblclick', (event) => {
+    if (!walker.active) select(pickAt(event), true);
+  });
   let hoverQueued: PointerEvent | null = null;
   canvas.addEventListener('pointermove', (event) => {
     hoverQueued = event;
@@ -213,6 +305,7 @@ async function start(): Promise<void> {
     tooltip.hidden = true;
   });
   function updateHover(): void {
+    if (walker.active) return;
     if (!hoverQueued) return;
     const event = hoverQueued;
     hoverQueued = null;
@@ -250,10 +343,10 @@ async function start(): Promise<void> {
       label.visible = false;
       if (!state.labels) continue;
       const distance = camera.distanceTo(label.position);
-      if (distance < 48) near.push([distance, label, id]);
+      if (distance < (walker.active ? 16 : 48)) near.push([distance, label, id]);
     }
     near.sort((a, b) => a[0] - b[0]);
-    for (const [, label] of near.slice(0, 70)) label.visible = true;
+    for (const [, label] of near.slice(0, walker.active ? 24 : 70)) label.visible = true;
     const pinned = state.selection?.type === 'entity' ? state.selection.id : null;
     for (const id of [pinned, state.hover]) {
       const label = id ? labels.get(id) : undefined;
@@ -263,7 +356,7 @@ async function start(): Promise<void> {
       const plot = layout.plots.get(zone);
       if (!plot) continue;
       const center = new THREE.Vector3((plot.minX + plot.maxX) / 2, 0, (plot.minZ + plot.maxZ) / 2);
-      label.visible = camera.distanceTo(center) > 55;
+      label.visible = !walker.active && camera.distanceTo(center) > 55;
     }
   }
 
@@ -276,7 +369,9 @@ async function start(): Promise<void> {
       const plot = layout.plots.get(zone);
       if (!plot) continue;
       const inside = target.x > plot.minX - 4 && target.x < plot.maxX + 4 && target.z > plot.minZ - 4 && target.z < plot.maxZ + 4;
-      const goal = state.roofs === 'off' ? 1 : state.roofs === 'on' ? 0 : zone === selectedZone || (inside && distance < 90) ? 1 : 0;
+      // While walking, the roofs stay on overhead (unless they are switched off).
+      const auto = walker.active ? 0 : zone === selectedZone || (inside && distance < 90) ? 1 : 0;
+      const goal = state.roofs === 'off' ? 1 : state.roofs === 'on' ? 0 : auto;
       roof.lift += (goal - roof.lift) * Math.min(1, dt * 3.5);
       roof.group.position.y = roof.lift * 16;
       roof.truss.opacity = 1 - roof.lift;
@@ -454,6 +549,7 @@ async function start(): Promise<void> {
       if (tool.dataset.tool === 'home') home();
       if (tool.dataset.tool === 'frame') frameSelection(state.selection);
       if (tool.dataset.tool === 'top') topView();
+      if (tool.dataset.tool === 'walk') toggleWalk();
     });
   }
   function topView(): void {
@@ -496,6 +592,8 @@ async function start(): Promise<void> {
 
   // Keyboard.
   window.addEventListener('keydown', (event) => {
+    // The walker already used this key (Esc, Space, the arrows).
+    if (event.defaultPrevented) return;
     const typing = event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
       event.preventDefault();
@@ -506,7 +604,16 @@ async function start(): Promise<void> {
       if (event.key === 'Escape') (event.target as HTMLElement).blur();
       return;
     }
+    if (walker.active && 'fFhHtT'.includes(event.key)) return;
     switch (event.key) {
+      case 'p':
+      case 'P':
+        toggleWalk();
+        break;
+      case 'e':
+      case 'E':
+        if (walker.active) select(pickNdc(0, 0), false);
+        break;
       case ' ':
         event.preventDefault();
         setPlaying(!state.playing);
@@ -589,7 +696,7 @@ async function start(): Promise<void> {
     try {
       sessionStorage.setItem(
         SAVED,
-        JSON.stringify({ camera: stage.camera.position.toArray(), target: stage.controls.target.toArray(), selection: state.selection }),
+        JSON.stringify({ camera: (walker.active ? orbit.camera : stage.camera.position).toArray(), target: stage.controls.target.toArray(), selection: state.selection }),
       );
     } catch {
       // No storage: nothing to restore.
@@ -690,14 +797,19 @@ async function start(): Promise<void> {
     machines.update(dt, stage.time.value, activity, 1 - shownLight);
     effects.update(dt, stage.camera);
 
-    if (fly.t < 1) {
-      fly.t = Math.min(1, fly.t + real / fly.seconds);
-      const ease = 1 - Math.pow(1 - fly.t, 3);
-      stage.camera.position.lerpVectors(fly.from, fly.to, ease);
-      stage.controls.target.lerpVectors(fly.targetFrom, fly.targetTo, ease);
-      if (fly.t >= 1) saveView();
+    if (walker.active) {
+      walker.update(real);
+      updateWalkHud(real);
+    } else {
+      if (fly.t < 1) {
+        fly.t = Math.min(1, fly.t + real / fly.seconds);
+        const ease = 1 - Math.pow(1 - fly.t, 3);
+        stage.camera.position.lerpVectors(fly.from, fly.to, ease);
+        stage.controls.target.lerpVectors(fly.targetFrom, fly.targetTo, ease);
+        if (fly.t >= 1) saveView();
+      }
+      stage.controls.update(real);
     }
-    stage.controls.update(real);
     updateRoofs(real);
     updateHover();
     labelTick += real;
@@ -709,7 +821,7 @@ async function start(): Promise<void> {
       const next = clock.next(crons);
       clockNext.textContent = next ? `next: ${String(next.cron.workflow.data?.name ?? next.cron.workflow.label)} in ${Math.floor(next.inMinutes / 60)}h ${Math.floor(next.inMinutes % 60)}m` : '';
       const polar = stage.controls.getPolarAngle();
-      viewName.textContent = polar < 0.05 ? '◤ Top' : '◤ Persp';
+      viewName.textContent = walker.active ? '◤ Walk' : polar < 0.05 ? '◤ Top' : '◤ Persp';
     }
     axisGizmo.draw();
     stage.render();
@@ -738,7 +850,7 @@ async function start(): Promise<void> {
     stage.controls.target.set(tx, ty, tz);
     stage.controls.update();
   };
-  Object.assign(window, { factory: { model, layout, index, select, runScenario, ZONE_ORDER, snap, view, stage, frameSelection } });
+  Object.assign(window, { factory: { model, layout, index, select, runScenario, ZONE_ORDER, snap, view, stage, frameSelection, walker, toggleWalk } });
 }
 
 start().catch((error: unknown) => {

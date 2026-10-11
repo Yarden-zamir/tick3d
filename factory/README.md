@@ -1,7 +1,7 @@
 # tick3d Factory
 
-The tick3d repository as an automated 3D factory, in a Unity-style editor. Local only: `/factory/`
-is in the repository's `.gitignore`, and nothing here is committed or deployed.
+The tick3d repository as an automated 3D factory, in a Unity-style editor. A separate npm project:
+the site, the API and the Docker image don't include it, and nothing here is deployed.
 
 ```sh
 cd factory
@@ -16,3 +16,6 @@ npm run dev        # scans the repo, then serves http://localhost:5199
 - `src/layout.ts` places zones and machines; `src/world/` draws them; `src/ui/` is the editor.
 - Dev endpoints: `/__factory` (a fresh scan), `/__source?path=` (a tracked file, for the Inspector),
   `/__snapshot` (`factory.snap()` in the browser console saves a frame to `.snapshots/`).
+- Walk mode (`P` or the 🚶 tool): first person on the factory floor. The mouse looks around, WASD
+  walks, Shift runs, Space jumps, a click or `E` selects what the crosshair is on, and Esc leaves.
+  `src/walk.ts` handles the movement and collisions with machines, posts and trees.
