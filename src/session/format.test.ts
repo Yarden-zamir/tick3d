@@ -33,6 +33,7 @@ describe('parseDoc', () => {
       playoff: null,
       seatRequest: null,
       fixedSeats: false,
+      watcherChat: true,
       flipped: [false],
     });
   });

@@ -43,25 +43,12 @@ test('hide history shows only the last move, and every mark when the game ends',
   await expect(marks(page)).toHaveCount(X_WINS.length);
 });
 
-test('a lock holds through a reload and ends with the game; the local end card has no code', async ({ open }) => {
+test('a game on one device has no lock; the local end card has no code', async ({ open }) => {
   const { page } = await open(friend);
   await cell(page, 0).click();
-  await page.locator('#lock').click();
-  await expect(page.locator('#lock')).toContainText('Locked');
-  await page.reload();
-  await expect(page.locator('#lock')).toContainText('Locked');
-  // Every match setting and the view wait for the end of the game.
-  for (const control of [
-    page.getByRole('button', { name: 'Flat' }),
-    page.getByRole('button', { name: 'Computer', exact: true }),
-    page.getByRole('button', { name: 'Hide board', exact: true }),
-    page.locator('[data-limit="perMove"] [data-limit-on]'),
-    page.locator('#new-game'),
-    page.locator('#undo'),
-  ]) {
-    await expect(control).toBeDisabled();
-  }
-  // Leaving stays possible: Home asks first, as in any game with moves.
+  // The lock is a promise between two people, so a game on one device does not show it.
+  await expect(page.locator('#lock')).toBeHidden();
+  // Home asks first, as in any game with moves.
   await page.locator('#home-link').click();
   await expect(page.locator('#home-confirm')).toHaveAttribute('open');
   await page.locator('#home-confirm-stay').click();
@@ -70,8 +57,6 @@ test('a lock holds through a reload and ends with the game; the local end card h
   await expect(page.getByRole('button', { name: 'Sound', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await play(page, X_WINS.slice(1));
   await expect(status(page)).toHaveAttribute('data-state', 'won');
-  await expect(page.getByRole('button', { name: 'Flat' })).toBeEnabled();
-  await expect(page.locator('#lock')).not.toContainText('Locked');
   await expect(page.locator('#end-card')).toHaveAttribute('open');
   await expect(page.locator('#end-card-image')).toHaveAttribute('alt', /^Player X wins! /);
   await expect(page.locator('#end-card-code-option')).toBeHidden();
@@ -144,15 +129,16 @@ test('time limits: range check, presets, and a change during a game starts with 
   await expect(summary).toContainText('3 min per player + 5 s per move');
 });
 
-test('the lock shows its tooltip on hover and on a long press, and a short tap still locks', async ({ browser, baseURL }) => {
+test('the seat lock shows its tooltip on a long press, and a short tap still changes it', async ({ browser, baseURL }) => {
   if (baseURL === undefined) throw new Error('the config sets no baseURL');
   const context = await browser.newContext({ baseURL, hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
   await context.addInitScript((key) => {
-    if (localStorage.getItem(key) === null) localStorage.setItem(key, JSON.stringify({ mode: 'friend' }));
+    if (localStorage.getItem(key) === null) localStorage.setItem(key, JSON.stringify({ mode: 'computer' }));
   }, STORAGE_KEYS.settings);
   const page = await context.newPage();
   await page.goto('/');
-  const lock = page.locator('#lock');
+  // Against the computer, the seats stay by default: you start every game.
+  const lock = page.locator('[data-show-mode="computer"] [data-seat-lock]');
   const tip = page.getByRole('tooltip');
   await expect(lock).toBeEnabled();
   await lock.scrollIntoViewIfNeeded();
@@ -163,21 +149,21 @@ test('the lock shows its tooltip on hover and on a long press, and a short tap s
   // A long press shows the tooltip and does not lock.
   const cdp = await context.newCDPSession(page);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
-  await expect(tip).toContainText('no setting changes');
+  await expect(tip).toContainText('Keep seats');
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await expect(lock).toHaveAttribute('aria-describedby', 'tip');
-  await expect(lock).toHaveAttribute('aria-pressed', 'false');
-
-  // A short tap locks.
-  await page.touchscreen.tap(point.x, point.y);
   await expect(lock).toHaveAttribute('aria-pressed', 'true');
+
+  // A short tap changes it.
+  await page.touchscreen.tap(point.x, point.y);
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
   await context.close();
 });
 
 test('icon buttons show their tooltip on hover', async ({ open }) => {
   const { page } = await open(friend);
-  await page.locator('#lock').hover();
-  await expect(page.getByRole('tooltip')).toContainText('Lock: no setting changes');
+  await page.locator('#sound').hover();
+  await expect(page.getByRole('tooltip')).toContainText('Sound on or off');
   // The hover scrolls the button into view, and a scroll hides the tooltip. The scroll event can come
   // after the hover, so the pointer leaves and hovers again until the tooltip stays.
   await expect(async () => {

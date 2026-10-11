@@ -4,14 +4,16 @@
 
 3D tic-tac-toe on a 4×4×4 cube, at [tick3d.yarden-zamir.com](https://tick3d.yarden-zamir.com).
 
-![A game against the computer in the tower view](docs/screenshots/tower.png)
 
+[![The 15 s tick3d ad. Click to download the MP4 with sound.](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-readme.webp)](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-landscape.mp4)
 ## Rules
 
 - Two players take turns. X moves first.
 - Four marks in a straight line win. The cube has 76 lines.
 - In an online or Nearby session, X and O swap for each new game, so the first move alternates. Against the computer you start every game unless you unlock the seats.
 - A full cube with no line is a draw.
+
+[![The tutorial "How to win": which lines win and why. Click to download the MP4 with sound.](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-readme.webp)](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-landscape.mp4)
 
 ## Features
 
@@ -102,7 +104,8 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Join a friend (code and New code) | no | no | yes | no | no |
 | Players (seats, watchers and seat controls) | no | no | yes (grey until a game starts) | yes (grey until a game starts) | no |
 | Time limit | yes | yes | yes | yes | no |
-| Hide board, history and coordinates, Lock | yes | yes | yes (off until a game starts) | yes (off until a game starts) | no |
+| Hide board, history and coordinates | yes | yes | yes (off until a game starts) | yes (off until a game starts) | no |
+| Lock (rules of the live game, for both players) | no | no | yes (off until a game starts) | yes (off until a game starts) | no |
 | Score, New game, the session games in My games | yes | yes | yes (grey until a game starts) | yes (grey until a game starts) | yes (no session games) |
 | Undo (during a game) | yes | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
 | Result card (after a game) | yes | yes | in a game | in a game | no |
@@ -203,6 +206,35 @@ docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr-17.
 - Keep the image tag equal to the `@playwright/test` version in `package.json`.
 - After a run in the Playwright image, run `npm ci` again before you use `node:26-alpine`.
 - The `e2e` workflow runs the suite after each successful pull request preview deploy. It starts when the preview answers its health check 3 times in a row.
+
+## Video
+
+`video/` holds a 15 s ad and a "How to win" tutorial, made in code: three.js draws every frame, Remotion renders it, and the sound comes from the game's own sound code. The creative (brief, script, timeline, music notes and the tutorial plan) is in [video/creative/](video/creative/).
+
+**The ad** (15 s): [landscape MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-landscape.mp4) · [portrait MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-portrait.mp4) · [stills](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-stills.png)
+
+**The tutorial "How to win"** (40 s): [landscape MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-landscape.mp4) · [portrait MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-portrait.mp4) · [stills](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-stills.png). The short cut (27.5 s): [landscape MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial-short/tick3d-tutorial-short-a89435f-landscape.mp4) · [portrait MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial-short/tick3d-tutorial-short-a89435f-portrait.mp4) · [stills](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial-short/tick3d-tutorial-short-a89435f-stills.png).
+
+The files are the render of commit a89435f on the `pr-assets` branch. A new render goes to a new folder (`video/scripts/publish.sh`); update these links when one replaces them.
+
+```sh
+docker run --rm -v "$PWD":/app -w /app/video node:26 sh -c 'npm ci && npm run check && npm run video'
+```
+
+- `npm run video` writes `video/out/tick3d-15s-landscape.mp4` (1920×1080), `video/out/tick3d-15s-portrait.mp4` (1080×1920), one still per bar in `video/out/stills/` and the soundtrack in `video/out/soundtrack.wav`.
+- `npm run tutorial` renders the tutorial that shows which lines win and why, in both crops, into `video/out/tutorial/` (40 s). `TUTORIAL_PACE=short npm run tutorial` renders the 27.5 s cut into `video/out/tutorial-short/`. The plan is in [video/creative/tutorial.md](video/creative/tutorial.md).
+- The render needs the system libraries of Chrome Headless Shell, so use `node:26`, not the Alpine image.
+- `VIDEO_VARIANT=<name> npm run video` renders a variant of the spot into `video/out/variants/<name>/`. A variant is a small overlay on `beats.json` in `video/creative/variants/<name>.json` that changes the themes, the sound sets and the camera of bars, and the on-screen text, never the game or the events. The takes: `spot` (the default cut: a Mono cold open, "Tic-tac-toe? / Too easy.", then the feature list) and `classic` (the first approved cut, with "Every cell / has a note.").
+- `video/scripts/publish.sh` renders every take and both tutorial paces on the Mac, and publishes the previews to the `pr-assets` branch in `issue-119/renders/<sha7>/<take>/`: a GIF, a stills sheet per crop and both MP4s, named `tick3d-<take>-<sha7>-landscape.mp4` and so on. Each commit gets its own folder, so a comment that links a render keeps showing it, and each file has its own name, so downloads never overwrite each other. It needs ImageMagick and ffmpeg, and a committed, pushed HEAD.
+- The `video` workflow checks the video code on every pull request that touches it. It renders every variant and the tutorial in both crops, one job each, only on a manual run, on a push to `main` that touches `video/`, and on a tag, and uploads one artifact per job. A tag `video-v*` also attaches the classic files to a GitHub Release.
+
+**Fast iteration.** On macOS, the render uses WebGL on the GPU, one browser tab per core for the MP4, and one tab per still. On an M1 Max (10 cores), the draft stills of all 8 bars in both crops take 6 s. A full variant (`VIDEO_VARIANT=hook npm run video`: both MP4s and all stills) takes 25 s. The first render also downloads Chrome Headless Shell. On a Linux host without a GPU, WebGL runs on the CPU, and a full variant takes about 20 minutes. There, do not render MP4s: check an edit with half-size draft stills of the bars that changed, and publish from a Mac.
+
+```sh
+docker run --rm -v "$PWD":/app -w /app/video node:26 node scripts/render.ts --draft --bars 2,5
+```
+
+The drafts land in `video/out/draft/` (or `video/out/variants/<name>/draft/` with `VIDEO_VARIANT`). Locally, run only `npm run check` in `video/` and `node video/creative/tools/check-beats.ts`; the required `check` workflow runs the full gate on every push.
 
 ## Deploy
 

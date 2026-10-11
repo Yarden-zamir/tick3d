@@ -1,0 +1,68 @@
+{
+  "name": "classic",
+  "differs": "The first approved cut: bar 1 in the Light theme with no text, and \"Every cell / has a note.\" in bar 4 in place of the feature list.",
+  "text": [
+    {
+      "style": "center",
+      "words": [
+        {
+          "text": "4 in a row.",
+          "at": 16
+        },
+        {
+          "text": "In 3D.",
+          "at": 24
+        }
+      ],
+      "until": 32
+    },
+    {
+      "style": "top",
+      "words": [
+        {
+          "text": "Every cell",
+          "at": 48
+        },
+        {
+          "text": "has a note.",
+          "at": 52
+        }
+      ],
+      "until": 62
+    },
+    {
+      "style": "end-card",
+      "words": [
+        {
+          "text": "tick3d",
+          "at": 96
+        },
+        {
+          "text": ".yarden-zamir.com",
+          "at": 100
+        },
+        {
+          "text": "Play in your browser.",
+          "at": 112
+        },
+        {
+          "text": "App Store",
+          "at": 116,
+          "badge": "app-store",
+          "note": "soon"
+        },
+        {
+          "text": "Google Play",
+          "at": 116,
+          "badge": "google-play"
+        }
+      ],
+      "until": 128
+    }
+  ],
+  "bars": {
+    "1": {
+      "theme": "light"
+    }
+  }
+}

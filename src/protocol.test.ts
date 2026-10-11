@@ -59,6 +59,7 @@ describe('parseSessionView', () => {
     locked: false,
     clock: { perMove: 30, perGame: 300 },
     fixedSeats: false,
+    watcherChat: true,
     flipped: [false],
     now: 30,
     version: 2,
@@ -165,6 +166,7 @@ describe('parseSessionUpdate', () => {
     expect(parseSessionUpdate({ hideCoordinates: true })).toEqual({ hideCoordinates: true });
     expect(parseSessionUpdate({ clock: { perMove: 30, perGame: null } })).toEqual({ clock: { perMove: 30, perGame: null } });
     expect(parseSessionUpdate({ fixedSeats: true })).toEqual({ fixedSeats: true });
+    expect(parseSessionUpdate({ watcherChat: false })).toEqual({ watcherChat: false });
   });
 
   it.each([{}, { name: '' }, { hideBoard: 'true' }, { hideCoordinates: 1 }, { fixedSeats: 'on' }, { locked: true }, { clock: { perMove: 2, perGame: null } }, null])('rejects %j', (input) => {

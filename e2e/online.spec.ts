@@ -113,8 +113,12 @@ test('hide options and the lock belong to the session', async ({ open }) => {
   await bob.locator('#lock').click();
   await expect(alice.locator('#lock')).toContainText('Locked');
   await expectToast(alice, 'locked for both players');
-  for (const control of [hideBoard(alice), alice.getByRole('button', { name: 'Tower' }), alice.getByRole('button', { name: 'Computer' }), alice.locator('#join-code'), hideHistory(bob)]) {
+  for (const control of [hideBoard(alice), hideHistory(bob)]) {
     await expect(control).toBeDisabled();
+  }
+  // The lock holds the rules, not the screen or the way out: the view, the mode and Join stay open.
+  for (const control of [alice.getByRole('button', { name: 'Tower' }), alice.getByRole('button', { name: 'Computer' }), alice.locator('#join-code')]) {
+    await expect(control).toBeEnabled();
   }
   // A watcher sees the lock, but keeps its own settings, so the lock never traps a watcher.
   await expect(carol.locator('#lock')).toContainText('Locked');

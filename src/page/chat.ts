@@ -1,6 +1,6 @@
 // The chat with the other player in a game with another device.
 import { other } from '../game.ts';
-import { type ChatMessage, type SessionView, normalizeChat } from '../protocol.ts';
+import { type ChatMessage, type SessionView, isChatEvent, normalizeChat } from '../protocol.ts';
 import { sounds } from '../sound.ts';
 import { chatEl, chatInput, chatSend, chatLog, chatNoticeFrom, chatNoticeText, chatNotice, chatForm } from './dom.ts';
 import { type Sender, chatGroups } from './chat-log.ts';
@@ -25,7 +25,7 @@ const baseTitle = document.title;
 function senderOf(session: SessionView, message: ChatMessage): Sender {
   const id = authorOf(session, message);
   const mine = id === null ? message.from === session.you : id === ownPerson(session);
-  const seat = id === null ? message.from : (['X', 'O'] as const).find((entry) => session.people[entry] === id);
+  const seat = id === null ? (message.from === 'watcher' ? undefined : message.from) : (['X', 'O'] as const).find((entry) => session.people[entry] === id);
   const watcher = session.watchers.find((entry) => entry.person !== null && entry.person === id);
   // An author who left the game shows with the generated name of the person id.
   const person =
@@ -34,6 +34,9 @@ function senderOf(session: SessionView, message: ChatMessage): Sender {
       : shownPerson(id, watcher === undefined ? { player: null, name: nameOf(id ?? message.from) } : { player: watcher.player, name: watcher.player?.login ?? watcher.name });
   return { label: mine ? 'You' : person.name, person, id, mine };
 }
+
+// A player writes. A watcher writes while the players allow it.
+const canChat = (session: SessionView): boolean => session.you !== null || (session.youWatcher !== null && session.watcherChat);
 
 // The log key of the closed chat: a game on this device, or no game yet.
 const CLOSED = 'closed';
@@ -51,16 +54,16 @@ export function renderChat(): void {
     chatLog.replaceChildren();
     return;
   }
-  const canWrite = page.session.you !== null;
+  const canWrite = canChat(page.session);
   chatInput.disabled = !canWrite;
   chatSend.disabled = !canWrite || chatSending;
   const you = page.session.you;
-  chatInput.placeholder = you === null ? 'Only the two players can chat' : `Message ${playerName(other(you))}`;
+  chatInput.placeholder = you !== null ? `Message ${playerName(other(you))}` : canWrite ? 'Message the players' : 'Only the players can chat';
 
   const session = page.session;
   const messages = visibleChat(session);
   // A block changes the shown names, so the key holds the shown sender of every message.
-  const shown = `${session.code}:${messages.map((message) => `${message.id}:${senderOf(session, message).label}`).join(',')}`;
+  const shown = `${session.code}:${messages.map((entry) => `${entry.id}:${isChatEvent(entry) ? 'event' : senderOf(session, entry).label}`).join(',')}`;
   if (shown === chatShown) return;
   chatShown = shown;
   if (messages.length === 0) {
@@ -107,7 +110,7 @@ export function setupChat(): void {
   chatNotice.addEventListener('click', () => {
     hideChatNotice();
     chatEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    if (page.session?.you != null) chatInput.focus({ preventScroll: true });
+    if (page.session !== undefined && canChat(page.session)) chatInput.focus({ preventScroll: true });
   });
 
   document.addEventListener('visibilitychange', () => {
@@ -119,7 +122,7 @@ export function setupChat(): void {
   chatForm.addEventListener('submit', (event) => {
     event.preventDefault();
     if (page.session === undefined || !shared() || chatSending) return;
-    if (page.session.you === null) return reject(undefined, 'spectator');
+    if (!canChat(page.session)) return reject(undefined, 'spectator');
     const text = normalizeChat(chatInput.value);
     if (text === undefined) {
       sounds.invalid();

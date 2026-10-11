@@ -53,7 +53,7 @@ import {
   myGamesSession,
   myGamesSessionBox,
 } from './dom.ts';
-import { showError, reject } from './feedback.ts';
+import { showError } from './feedback.ts';
 import { openGameView } from './game-view.ts';
 import { startReview } from './controls.ts';
 import { openCard } from './end-card.ts';
@@ -61,7 +61,7 @@ import { render, resultText } from './render.ts';
 import { loadBlocks, renderBlockedList } from './safety.ts';
 import { deleteSentResults, flushResults, forgetRecords, syncRecords } from './results.ts';
 import { openDeviceSession, joinSession, refresh } from './sessions.ts';
-import { ownName, page, current, saveAccount, settingsLocked } from './state.ts';
+import { ownName, page, current, saveAccount } from './state.ts';
 
 function tallyBox(label: string, tally: Tally): HTMLElement {
   const box = document.createElement('div');
@@ -144,7 +144,6 @@ const MODE_NAMES: Record<SessionMode, string> = { computer: 'Computer', friend: 
 const OUTCOME_NAMES: Record<Outcome, string> = { won: 'Won', lost: 'Lost', drawn: 'Draw', played: 'Played' };
 
 function viewGame(id: GameId): void {
-  if (settingsLocked()) return reject(undefined, 'locked');
   void openGameView(id).catch(showError);
 }
 
@@ -270,10 +269,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
         listItem(entry.name, `${entry.mode === 'computer' ? 'Computer' : 'Friend'} · ${gameCount(entry.games)} · ${ago(entry.updatedAt)}`, [
           {
             label: 'Open',
-            run: () => {
-              if (settingsLocked()) return reject(undefined, 'locked');
-              void openDeviceSession(entry.code).catch(showError);
-            },
+            run: () => void openDeviceSession(entry.code).catch(showError),
           },
         ]),
       ),
@@ -299,7 +295,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
         listItem(
           summary.name,
           `${opponentText(summary)} · ${gameCount(summary.games)} · ${ago(summary.updatedAt)}`,
-          [{ label: 'Continue', run: () => (settingsLocked() ? reject(undefined, 'locked') : void joinSession(summary.code, 'play')) }],
+          [{ label: 'Continue', run: () => void joinSession(summary.code, 'play') }],
           summary.yourTurn ? 'Your turn' : undefined,
           opponentOf(summary),
         ),

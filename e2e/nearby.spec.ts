@@ -44,11 +44,11 @@ test('host and guest connect with text codes, play a game and chat, and both see
   await expect(host.locator('.tally.O')).toContainText(guestName);
   await expect(host.locator('#chat-log')).toContainText(guestName);
 
-  // The guest locks: the lock holds the settings of both devices until the game ends.
+  // The guest locks: the lock holds the rules of both devices until the game ends. The view stays free.
   await guest.locator('#lock').click();
   await expect(host.locator('#lock')).toContainText('Locked');
-  await expect(host.getByRole('button', { name: 'Flat' })).toBeDisabled();
   await expect(host.getByRole('button', { name: 'Hide board', exact: true })).toBeDisabled();
+  await expect(host.getByRole('button', { name: 'Flat' })).toBeEnabled();
 
   // The host finishes the game: X on 0, 16, 32, 48, O on 1, 2, 3.
   for (const [page, index] of [[host, 16], [guest, 2], [host, 32], [guest, 3], [host, 48]] as const) {

@@ -623,6 +623,22 @@ describe('online game metrics', () => {
 });
 
 describe('stats', () => {
+  it('lists levels and modes in their fixed order, not by count or name', async () => {
+    store = await openStore(':memory:');
+    await store.addResults(bob, [
+      result('aaaaaaaa-2222-4000-8000-000000000001', { difficulty: 'hard' }),
+      result('aaaaaaaa-2222-4000-8000-000000000002', { difficulty: 'hard' }),
+      result('aaaaaaaa-2222-4000-8000-000000000003', { difficulty: 'medium' }),
+      result('aaaaaaaa-2222-4000-8000-000000000004', { difficulty: 'easy' }),
+      result('aaaaaaaa-2222-4000-8000-000000000005', { mode: 'friend', you: null, difficulty: null }),
+    ]);
+    const stats = await store.stats();
+    expect(stats.levels.map((row) => row.level)).toEqual(['easy', 'medium', 'hard']);
+    expect(stats.byMode.map((row) => row.key)).toEqual(['computer', 'friend']);
+    const mine = await store.stats({ ...ALL_STATS, scope: 'mine' }, bob);
+    expect(mine.personal?.results.map((row) => row.level)).toEqual(['easy', 'medium', 'hard']);
+  });
+
   it('counts games, levels, moves and metrics, with no names, no page faults and no tokens', async () => {
     const code = await session();
     await playMoves(code, X_WINS);
@@ -1082,7 +1098,7 @@ describe('report and block', () => {
     // The seats rotate with the new game: Bob plays X now, and the message keeps its author.
     const rotated = await store.newGame(code, alice);
     expect(rotated.people.X).toBe(bobId);
-    expect(rotated.chat).toMatchObject([{ text: 'hello', by: bobId }]);
+    expect(rotated.chat).toMatchObject([{ text: 'hello', by: bobId }, { event: { kind: 'new-game', swapped: true } }]);
   });
 
   it('keeps blocks per player until an unblock, and refuses a block of yourself', async () => {
@@ -1217,7 +1233,7 @@ describe('delete my data', () => {
     expect(view.you).toBe('O');
     expect(view.players.X).toBeNull();
     expect(view.chat).toMatchObject([{ text: DELETED_MESSAGE }, { text: 'thanks', by: await personId(bob) }]);
-    expect(view.chat[0]?.by).toBeUndefined();
+    expect(view.chat[0]).not.toHaveProperty('by');
     expect((await store.history(bob, 0)).games.map((game) => game.id)).toEqual(expect.arrayContaining([online, nearby]));
     expect((await store.game(online)).names.X).toBeNull();
     expect(await store.customName(bob)).toBe('Bob B');

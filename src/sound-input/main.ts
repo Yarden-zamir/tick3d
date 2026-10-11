@@ -125,7 +125,7 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 function showBoard(): void {
   boardEl.className = `${boardClass(gameSettings.view, gameSettings.layout)} voice-board`;
   applyCamera(board, gameSettings.view, gameSettings.spin);
-  showSegmented(viewControls, gameSettings, false);
+  showSegmented(viewControls, gameSettings);
 }
 
 // Scrolls the layer into view when part of it is out of view: out of the window, or out of a board that

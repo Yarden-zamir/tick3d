@@ -11,8 +11,8 @@ const guest = 'bbbbbbbb-0000-4000-8000-000000000002' as PlayerToken;
 // A Nearby session of the host with a guest, and one chat line from each.
 async function nearbyDoc() {
   const doc = core.createDoc({ name: 'Nearby', mode: 'nearby', seats: { X: host, O: guest } });
-  const said = core.chat(doc, new Set([host]), 'hello', ms(1), await personId(host));
-  return core.chat(said, new Set([guest]), 'hi', ms(2), await personId(guest));
+  const said = core.chat(doc, new Set([host]), 'hello', ms(1), await personId(host), []);
+  return core.chat(said, new Set([guest]), 'hi', ms(2), await personId(guest), []);
 }
 
 async function cachedView() {
@@ -34,7 +34,7 @@ describe('deletion notices', () => {
     const deleted = new Set([await personId(guest)]);
     const scrubbed = scrubView(view, deleted);
     expect(scrubbed).toMatchObject({ names: { X: nameOf(host), O: DELETED_NAME }, players: { X: null, O: null }, people: { X: view.people.X, O: null } });
-    expect(scrubbed?.chat.map((message) => message.text)).toEqual(['hello']);
+    expect(scrubbed?.chat).toMatchObject([{ text: 'hello' }]);
     // The scrubbed copy still reads back as a view, so the cache keeps it.
     expect(parseSessionView(JSON.parse(JSON.stringify(scrubbed)))).toEqual(scrubbed);
     expect(JSON.stringify(scrubbed)).not.toContain('guesty');
@@ -45,7 +45,7 @@ describe('deletion notices', () => {
     const doc = await nearbyDoc();
     const scrubbed = await scrubDoc(doc, new Set([await personId(guest)]));
     expect(scrubbed?.seats).toEqual({ X: host, O: null });
-    expect(scrubbed?.chat.map((message) => message.text)).toEqual(['hello']);
+    expect(scrubbed?.chat).toMatchObject([{ text: 'hello' }]);
     expect(await scrubDoc(doc, new Set())).toBeUndefined();
   });
 

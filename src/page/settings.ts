@@ -2,16 +2,17 @@
 import { type Difficulty, DIFFICULTIES } from '../ai.ts';
 import { type TimeControl, NO_LIMIT, parseClock } from '../clock.ts';
 import type { Player } from '../game.ts';
-import { LAYOUTS, type MATCH_OPTIONS, THEMES, VIEWS } from '../protocol.ts';
+import { LAYOUTS, type MATCH_OPTIONS, SESSION_MODES, THEMES, VIEWS } from '../protocol.ts';
 import { SOUND_SET_IDS, type SoundSetId } from '../sound-sets.ts';
 import { STORAGE_KEYS } from '../storage-keys.ts';
 
-export const MODES = ['computer', 'friend', 'online', 'nearby'] as const;
+export const MODES = SESSION_MODES;
 export const PLAYERS = ['X', 'O'] as const;
 export type Mode = (typeof MODES)[number];
 type View = (typeof VIEWS)[number];
 type Layout = (typeof LAYOUTS)[number];
 type Theme = (typeof THEMES)[number];
+// A soft hyphen (\u00AD) marks where a long one-word name breaks on a small theme tile.
 export const THEME_NAMES: Record<Theme, string> = {
   light: 'Light',
   dark: 'Dark',
@@ -19,9 +20,9 @@ export const THEME_NAMES: Record<Theme, string> = {
   candy: 'Candy',
   mint: 'Mint',
   retro: 'Retro',
-  midnight: 'Midnight',
-  synthwave: 'Synthwave',
-  bloodmoon: 'Bloodmoon',
+  midnight: 'Mid\u00ADnight',
+  synthwave: 'Synth\u00ADwave',
+  bloodmoon: 'Blood\u00ADmoon',
   coffee: 'Dark coffee',
   batman: 'Batman',
   mono: 'Mono',

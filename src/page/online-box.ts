@@ -21,9 +21,9 @@ import {
   onlineQrImage,
   sessionNameInput,
 } from './dom.ts';
-import { showToast, reject, showProblem } from './feedback.ts';
+import { showToast, showProblem } from './feedback.ts';
 import { BUSY_TEXT, joinSession, createSession, withBusy, applyView } from './sessions.ts';
-import { page, settingsLocked } from './state.ts';
+import { page } from './state.ts';
 
 // A LAN host (a laptop that runs the server for the local network) says so in the online box.
 export async function checkLanHost(): Promise<void> {
@@ -93,7 +93,6 @@ function setQrIntent(intent: LinkIntent): void {
 export function setupOnlineBox(): void {
   joinForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    if (settingsLocked()) return reject(undefined, 'locked');
     const code = normalizeCode(joinCodeInput.value);
     if (code === undefined) {
       showProblem('A code has 4 letters or digits.');
@@ -105,10 +104,7 @@ export function setupOnlineBox(): void {
     void joinSession(code, 'play');
   });
 
-  newCodeButton.addEventListener('click', () => {
-    if (settingsLocked()) return reject(undefined, 'locked');
-    void createSession();
-  });
+  newCodeButton.addEventListener('click', () => void createSession());
 
   shareButton.addEventListener('click', () => void shareLink('play'));
   shareWatchButton.insertAdjacentHTML('afterbegin', EYE_ICON);

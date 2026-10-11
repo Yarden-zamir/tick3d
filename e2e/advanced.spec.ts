@@ -48,7 +48,4 @@ test('advanced computer settings: validate, persist, play, reset, and lock', asy
   await expect(advanced).toBeHidden();
   await page.getByRole('button', { name: 'Computer' }).click();
   await expect(advanced).toBeVisible();
-  await page.locator('#lock').click();
-  await expect(page.locator('#lock')).toContainText('Locked');
-  await expect(advanced.locator('input').first()).toBeDisabled();
 });

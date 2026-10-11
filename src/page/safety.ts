@@ -7,7 +7,7 @@
 import type { Person } from '../avatar.ts';
 import { nameOf } from '../names.ts';
 import { api, OnlineError } from '../online.ts';
-import { type BlockedPerson, type ChatMessage, type PersonId, REPORT_REASONS, type SessionView, parseBlocks } from '../protocol.ts';
+import { type BlockedPerson, type ChatEntry, type PersonId, REPORT_REASONS, type SessionView, parseBlocks } from '../protocol.ts';
 import { BLOCK_ICON, FLAG_ICON } from '../icons.ts';
 import { STORAGE_KEYS } from '../storage-keys.ts';
 import {
@@ -64,7 +64,7 @@ let reported: string[] = readStored(
 const isBlocked = (person: PersonId | null): boolean => person !== null && blocked.some((entry) => entry.person === person);
 
 // The messages that this screen shows: none from a blocked person, and none that this device reported.
-export const visibleChat = (view: SessionView): ChatMessage[] =>
+export const visibleChat = (view: SessionView): ChatEntry[] =>
   visibleMessages(view, new Set(blocked.map((entry) => entry.person)), new Set(reported));
 
 // A blocked person shows with a generated name and picture, made from the person id.

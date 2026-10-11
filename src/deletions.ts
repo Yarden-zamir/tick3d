@@ -5,7 +5,7 @@ import { type EpochMs, isEpochMs } from './epoch.ts';
 import { isRecord, isUnknownArray } from './guards.ts';
 import type { SessionDoc } from './session/format.ts';
 import type { Player } from './game.ts';
-import { type PersonId, type ResultUpload, type SessionView, parsePersonId, personId } from './protocol.ts';
+import { type ChatEntry, type PersonId, type ResultUpload, type SessionView, isChatEvent, parsePersonId, personId } from './protocol.ts';
 
 // The name that stands for a player who deleted their data. The avatar of the name is a generated one, the same for all.
 export const DELETED_NAME = 'Deleted player';
@@ -14,12 +14,14 @@ const SEATS = ['X', 'O'] as const satisfies readonly Player[];
 
 type Deleted = ReadonlySet<PersonId>;
 const isGone = (deleted: Deleted, person: PersonId | null | undefined) => person !== null && person !== undefined && deleted.has(person);
+// An event has no writer, so it stays.
+const isWrittenBy = (deleted: Deleted, entry: ChatEntry) => !isChatEvent(entry) && isGone(deleted, entry.by);
 
 // A cached view without the deleted people: their name, account and person id go, and so do their
 // chat lines. undefined when the view holds none of them.
 export function scrubView(view: SessionView, deleted: Deleted): SessionView | undefined {
   const seats = SEATS.filter((seat) => isGone(deleted, view.people[seat]));
-  const chat = view.chat.filter((message) => !isGone(deleted, message.by));
+  const chat = view.chat.filter((entry) => !isWrittenBy(deleted, entry));
   const watchers = view.watchers.map((watcher) => (isGone(deleted, watcher.person) ? { ...watcher, name: DELETED_NAME, player: null, person: null } : watcher));
   if (seats.length === 0 && chat.length === view.chat.length && !view.watchers.some((watcher) => isGone(deleted, watcher.person))) return undefined;
   const names = { ...view.names };
@@ -39,7 +41,7 @@ export async function scrubDoc(doc: SessionDoc, deleted: Deleted): Promise<Sessi
   const gone = async (token: string | null) => token !== null && deleted.has(await personId(token));
   const seats = { X: (await gone(doc.seats.X)) ? null : doc.seats.X, O: (await gone(doc.seats.O)) ? null : doc.seats.O };
   const freed = seats.X !== doc.seats.X || seats.O !== doc.seats.O;
-  const chat = doc.chat.filter((message) => !isGone(deleted, message.by));
+  const chat = doc.chat.filter((entry) => !isWrittenBy(deleted, entry));
   const request = doc.seatRequest !== null && (freed || (await gone(doc.seatRequest.watcher)));
   if (!freed && !request && chat.length === doc.chat.length) return undefined;
   return { ...doc, seats, chat, seatRequest: request ? null : doc.seatRequest };

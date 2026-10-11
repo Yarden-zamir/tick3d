@@ -82,15 +82,15 @@
         <button type="button" class="btn train-reset" id="reset">Reset progress</button>
       </section>
     </main>
-    <dialog class="end-card my-games" id="previews" aria-labelledby="previews-title">
-      <div class="my-games-head">
+    <dialog class="modal end-card my-games" id="previews" aria-labelledby="previews-title">
+      <div class="modal-head">
         <h2 id="previews-title">Previews</h2>
         <button type="button" class="btn btn-small btn-icon" id="previews-close" aria-label="Close"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
       <p class="my-games-note" id="previews-note"></p>
       <ul class="my-games-list previews-list" id="previews-list"></ul>
     </dialog>
-    <div class="info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
+    <div class="modal info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
       <h2 id="info-title">How the ear training works</h2>
       <p>Each cell of the board has its own sound. The sound has three parts: one for the layer, one for the row and one for the column. Hear a cell and find its place.</p>
       <ul>
@@ -105,15 +105,15 @@
       <button type="button" class="btn btn-small info-close" popovertarget="info-panel" popovertargetaction="hide">Close</button>
     </div>
     <!-- The sound set menu of the game page (index.html). It is outside .train, so the .train button style does not apply. -->
-    <div popover id="sound-sets" class="sound-sets" role="dialog" aria-labelledby="sound-sets-title">
-      <div class="sound-sets-head">
+    <div popover id="sound-sets" class="modal sound-sets" role="dialog" aria-labelledby="sound-sets-title">
+      <div class="modal-head">
         <h2 id="sound-sets-title">Sound set</h2>
         <button type="button" class="btn btn-small btn-icon" popovertarget="sound-sets" popovertargetaction="hide" aria-label="Close the sound sets"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
       <p class="sound-sets-note">The game uses the same set. The play button of a set plays four moves of it. Classic does not name cells, so the trainer uses Cells.</p>
       <div id="sound-set-list"></div>
     </div>
-    <dialog class="end-card home-confirm" id="reset-confirm" aria-labelledby="reset-confirm-text">
+    <dialog class="modal end-card home-confirm" id="reset-confirm" aria-labelledby="reset-confirm-text">
       <p id="reset-confirm-text">Reset your ear training? Every sound starts as new again.</p>
       <div class="end-card-actions">
         <button type="button" class="btn btn-primary" id="reset-yes">Reset</button>

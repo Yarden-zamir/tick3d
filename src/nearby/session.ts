@@ -120,7 +120,7 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
         case 'lock':
           return (doc) => core.lock(doc, identity);
         case 'chat':
-          return (doc) => core.chat(doc, identity, fields.text, now, guest.token === undefined ? null : (persons.get(guest.token) ?? null));
+          return (doc) => core.chat(doc, identity, fields.text, now, guest.token === undefined ? null : (persons.get(guest.token) ?? null), audience(doc).watchers);
         case 'seat': {
           const action = parseSeatAction(args);
           if (action === undefined) throw new RpcError(400, 'The seat change is not valid.');

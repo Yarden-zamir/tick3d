@@ -284,7 +284,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
       await expect(page.locator(selector), selector).toBeVisible();
       await expect(page.locator(selector), selector).toHaveAttribute('data-pending', '');
     }
-    for (const id of ['#new-game', '#undo', '#share', '#share-qr', '#players [data-seat-lock]']) await expect(page.locator(id), id).toBeDisabled();
+    for (const id of ['#new-game', '#undo', '#share', '#share-qr', '#players [data-seat-lock]', '#watcher-chat']) await expect(page.locator(id), id).toBeDisabled();
     await expect(page.locator('#players-list li')).toHaveCount(2);
     await page.mouse.move(0, 0);
     const before = await modeLayout(page, PENDING);
