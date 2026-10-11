@@ -190,8 +190,8 @@ jobs:
             DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic TARGETED_DEVICE_FAMILY=1 \
             MARKETING_VERSION='${{ steps.version.outputs.name }}' CURRENT_PROJECT_VERSION='${{ steps.version.outputs.code }}' \
             "${auth[@]}" archive | tail -n 40
-          destination=export
-          [[ "$UPLOAD" == true ]] && destination=upload
+          destination="export"
+          [[ "$UPLOAD" == true ]] && destination="upload"
           plutil -create xml1 "$BUILD_DIR/export.plist"
           plutil -insert method -string app-store-connect "$BUILD_DIR/export.plist"
           plutil -insert destination -string "$destination" "$BUILD_DIR/export.plist"
