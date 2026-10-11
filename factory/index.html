@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>tick3d Factory</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="toolbar">
+        <div class="tb-left">
+          <div class="brand"><span class="brand-cube">◆</span> tick3d <span class="brand-sub">Factory</span></div>
+          <div class="tb-group" role="group" aria-label="Tools">
+            <button class="tool active" data-tool="orbit" title="Orbit (left drag) · Pan (right drag) · Zoom (wheel)">✥</button>
+            <button class="tool" data-tool="top" title="Top view (T)">⊤</button>
+            <button class="tool" data-tool="home" title="Overview (H)">⌂</button>
+            <button class="tool" data-tool="frame" title="Frame selected (F)">⛶</button>
+          </div>
+          <div class="chip" id="repo-chip" title="The commit the scanner read">…</div>
+        </div>
+        <div class="tb-center">
+          <div class="play-group" role="group" aria-label="Simulation">
+            <button id="play" class="play active" title="Play / Pause (Space)">▶</button>
+            <button id="pause" class="play" title="Pause (Space)">❚❚</button>
+            <button id="step" class="play" title="Step one second (.)">▶❚</button>
+          </div>
+          <select id="speed" title="Simulation speed">
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+            <option value="8">8×</option>
+          </select>
+        </div>
+        <div class="tb-right">
+          <select id="scenario" title="A scenario plays a real path through the code"></select>
+          <button id="run" class="accent" title="Run the scenario (R)">Run ▸</button>
+          <button id="stop" title="Stop the scenario">■</button>
+          <button id="rescan" title="Scan the repository again">⟳ Rescan</button>
+          <button id="help-button" title="Help (?)">?</button>
+        </div>
+      </header>
+
+      <aside id="left" class="panel">
+        <nav class="tabs">
+          <button class="tab active" data-tab="hierarchy">☰ Hierarchy</button>
+          <button class="tab" data-tab="project">📁 Project</button>
+        </nav>
+        <div class="panel-bar"><input id="search" type="search" placeholder="Search  (Ctrl+F)" autocomplete="off" /></div>
+        <div id="tree" class="tree" tabindex="0"></div>
+      </aside>
+      <div class="splitter v" data-split="left"></div>
+
+      <main id="center">
+        <nav class="tabs">
+          <button class="tab active">#&nbsp; Scene</button>
+          <span class="tab-spacer"></span>
+        </nav>
+        <div id="scene-bar" class="panel-bar">
+          <select id="shading" title="Draw mode"><option value="shaded">Shaded</option><option value="wire">Wireframe</option></select>
+          <label class="toggle" title="Machine labels (L)"><input type="checkbox" id="opt-labels" checked /> Labels</label>
+          <label class="field" title="Which belts to draw (B)">Belts
+            <select id="opt-belts"><option value="all">All</option><option value="selected">Selected</option><option value="off">Off</option></select>
+          </label>
+          <label class="toggle" title="Type-only imports: blueprint belts that carry no runtime code"><input type="checkbox" id="opt-types" checked /> Type imports</label>
+          <label class="field" title="Roofs lift when you enter a zone">Roofs
+            <select id="opt-roofs"><option value="auto">Auto</option><option value="off">Off</option><option value="on">On</option></select>
+          </label>
+          <label class="field">Light
+            <select id="opt-light"><option value="cycle">Day cycle</option><option value="day">Day</option><option value="night">Night</option></select>
+          </label>
+          <label class="toggle" title="The camera follows a running scenario"><input type="checkbox" id="opt-follow" checked /> Follow</label>
+          <label class="toggle"><input type="checkbox" id="opt-gizmos" checked /> Gizmos</label>
+          <span class="bar-spacer"></span>
+          <span id="fps" class="mono dim">– fps</span>
+        </div>
+        <div id="viewport">
+          <canvas id="axis-gizmo" width="220" height="220" title="Click an axis to look along it"></canvas>
+          <div id="view-name">Persp</div>
+          <div id="clock" class="overlay-card"><span id="clock-day">Mon</span> <span id="clock-time" class="mono">06:00</span><div id="clock-next" class="dim"></div></div>
+          <div id="scenario-card" class="overlay-card" hidden></div>
+          <div id="tooltip" hidden></div>
+          <div id="loading"><div class="spinner"></div><div id="loading-text">Scanning the repository…</div></div>
+        </div>
+        <div class="splitter h" data-split="bottom"></div>
+        <section id="bottom" class="panel">
+          <nav class="tabs">
+            <button class="tab active" data-btab="console">≡ Console</button>
+            <button class="tab" data-btab="legend">◈ Legend</button>
+          </nav>
+          <div id="console-bar" class="panel-bar">
+            <button id="console-clear">Clear</button>
+            <label class="toggle"><input type="checkbox" id="console-collapse" /> Collapse</label>
+            <span class="bar-spacer"></span>
+            <input id="console-search" type="search" placeholder="Filter" />
+            <button class="count on" data-cat="scenario" title="Scenario steps">🛈 <span>0</span></button>
+            <button class="count on" data-cat="schedule" title="Cron schedules">⏰ <span>0</span></button>
+            <button class="count" data-cat="traffic" title="API traffic">⇄ <span>0</span></button>
+          </div>
+          <div id="console" class="console"></div>
+          <div id="legend" class="legend" hidden></div>
+        </section>
+      </main>
+      <div class="splitter v" data-split="right"></div>
+
+      <aside id="right" class="panel">
+        <nav class="tabs">
+          <button class="tab active">ⓘ Inspector</button>
+        </nav>
+        <div id="inspector" class="inspector"></div>
+      </aside>
+    </div>
+
+    <div id="help" hidden>
+      <div class="help-card">
+        <h2>◆ The tick3d Factory</h2>
+        <p>This repository, built as an automated factory. Every machine is a real tracked file, every belt a real import, and every dock a real API route. The scanner reads the checkout on each start.</p>
+        <div class="help-grid">
+          <div><kbd>Left drag</kbd> orbit · <kbd>Right drag</kbd> pan · <kbd>Wheel</kbd> zoom</div>
+          <div><kbd>Click</kbd> select · <kbd>Double-click</kbd> fly to it</div>
+          <div><kbd>F</kbd> frame selected · <kbd>H</kbd> overview · <kbd>T</kbd> top view</div>
+          <div><kbd>Space</kbd> play / pause · <kbd>.</kbd> step · <kbd>R</kbd> run scenario</div>
+          <div><kbd>L</kbd> labels · <kbd>B</kbd> cycle belts · <kbd>Esc</kbd> deselect</div>
+          <div><kbd>Ctrl F</kbd> search the hierarchy · <kbd>?</kbd> this help</div>
+        </div>
+        <p class="dim">Click a zone floor to enter it: its roof lifts. Pick a scenario at the top right and press Run to watch a request travel through the real code path.</p>
+        <button id="help-close" class="accent">Enter the factory ▸</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

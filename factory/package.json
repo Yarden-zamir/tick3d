@@ -1,0 +1,24 @@
+{
+  "name": "tick3d-factory",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "The tick3d repository as an automated 3D factory. Local only, not committed.",
+  "scripts": {
+    "scan": "node scan/scan.ts",
+    "predev": "npm run scan",
+    "dev": "vite",
+    "prebuild": "npm run scan",
+    "build": "tsc && vite build",
+    "check": "tsc"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "@types/three": "0.186.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.4"
+  }
+}
