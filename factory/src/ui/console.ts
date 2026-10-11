@@ -3,6 +3,7 @@
 
 import { EDGES, KINDS, ZONES, ZONE_ORDER } from '../lore.ts';
 import { KIND_ICONS, type Selection, el } from '../model.ts';
+import { BELT_COLORS } from '../world/belts.ts';
 
 export type Category = 'scenario' | 'schedule' | 'traffic';
 
@@ -93,9 +94,13 @@ export function createConsole(root: HTMLElement, onSelect: (selection: Selection
       .filter(([kind]) => kind !== 'hub')
       .map(([kind, info]) => el('div', { className: 'item' }, el('span', { text: KIND_ICONS[kind as keyof typeof KIND_ICONS] }), el('b', { text: `${info.machine}` }), el('span', { text: `${info.name}. ${info.meaning}` }))),
     el('h4', { text: 'Belts' }),
+    el('div', { className: 'item' }, el('span', { className: 'swatch', style: { background: BELT_COLORS.normal } }), el('b', { text: 'Belt' }), el('span', { text: 'Belts keep right, so each aisle or road has one lane per direction. The arrows show which way the items flow.' })),
+    el('div', { className: 'item' }, el('span', { className: 'swatch', style: { background: BELT_COLORS.out } }), el('b', { text: 'Outgoing' }), el('span', { text: 'With a machine selected: the belts that carry its output to the machines that import it.' })),
+    el('div', { className: 'item' }, el('span', { className: 'swatch', style: { background: BELT_COLORS.in } }), el('b', { text: 'Incoming' }), el('span', { text: 'With a machine selected: the belts that bring in what it imports.' })),
+    el('div', { className: 'item' }, el('span', { className: 'swatch', style: { background: BELT_COLORS.type } }), el('b', { text: 'Blueprint' }), el('span', { text: 'A type-only import: it shapes the code but carries no runtime item.' })),
+    el('div', { className: 'item' }, el('span', { className: 'swatch', style: { background: '#c9c5b9' } }), el('b', { text: 'Road' }), el('span', { text: 'Paved roads carry the belts between zone hubs, through the gaps between the plots.' })),
+    el('h4', { text: 'Items on the belts' }),
     ...Object.values(EDGES).map((info) => el('div', { className: 'item' }, el('span', { className: 'swatch', style: { background: info.color } }), el('b', { text: info.name }), el('span', { text: info.meaning }))),
-    el('div', { className: 'item' }, el('span', { className: 'swatch', style: { background: '#3f6fb8' } }), el('b', { text: 'Blueprint' }), el('span', { text: 'A type-only import: it shapes the code but carries no runtime item.' })),
-    el('div', { className: 'item' }, el('span', { className: 'swatch', style: { background: '#d9a520' } }), el('b', { text: 'Trunk line' }), el('span', { text: 'Overhead belts between zone hubs. Wider means more imports between the two zones.' })),
     el('h4', { text: 'Dock doors and runners' }),
     el('div', { className: 'item' }, el('b', { text: 'Doors' }), el('span', { text: 'GET green · POST blue · PUT/PATCH amber · DELETE red. A white plate: accepts Idempotency-Key.' })),
     el('div', { className: 'item' }, el('b', { text: 'Press columns' }), el('span', { text: 'ubuntu orange · macos silver · reusable workflow purple.' })),

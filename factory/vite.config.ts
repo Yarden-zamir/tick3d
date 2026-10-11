@@ -16,7 +16,7 @@ function repository(): Plugin {
     configureServer(server) {
       server.middlewares.use('/__factory', (_req, res) => {
         try {
-          const json = execFileSync(process.execPath, [join(FACTORY, 'scan/scan.ts'), '--stdout'], { cwd: FACTORY, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+          const json = execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings=ExperimentalWarning', join(FACTORY, 'scan/scan.ts'), '--stdout'], { cwd: FACTORY, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
           res.setHeader('Content-Type', 'application/json');
           res.setHeader('Cache-Control', 'no-store');
           res.end(json);

@@ -238,7 +238,7 @@ export const KINDS: Record<EntityKind, { name: string; machine: string; meaning:
   stage: { name: 'Docker stage', machine: 'Container', meaning: 'A FROM … AS stage of the Dockerfile.' },
   service: { name: 'Compose service', machine: 'Container crane', meaning: 'A service of compose.yml or compose.lan.yml.' },
   dep: { name: 'npm package', machine: 'Barrel / crate', meaning: 'A dependency in a package.json. Barrels are runtime, crates are dev.' },
-  hub: { name: 'Zone hub', machine: 'Hub', meaning: 'Where the zone’s belts join the overhead trunk lines.' },
+  hub: { name: 'Zone hub', machine: 'Hub', meaning: 'Where the zone’s belts meet the paved roads to the other zones.' },
 };
 
 export const EDGES: Record<EdgeKind, { name: string; color: string; meaning: string }> = {

@@ -46,7 +46,7 @@ async function start(): Promise<void> {
 
   // World.
   const viewport = $<HTMLDivElement>('#viewport');
-  const stage = createStage(viewport, extent);
+  const stage = createStage(viewport, extent, layout.bounds);
   const machines = buildMachines(model, layout);
   stage.scene.add(machines.group);
   const belts = buildBelts(model, layout, machines.hubs, stage.time);
@@ -64,7 +64,7 @@ async function start(): Promise<void> {
     typeOnly: true,
     labels: true,
     roofs: 'auto' as 'auto' | 'off' | 'on',
-    light: 'cycle' as 'cycle' | 'day' | 'night',
+    light: 'day' as 'cycle' | 'day' | 'night',
     follow: true,
   };
   const activity = new Map<string, number>();
@@ -636,7 +636,7 @@ async function start(): Promise<void> {
   const clockTime = $('#clock-time');
   const clockNext = $('#clock-next');
   const fps = $('#fps');
-  let shownLight = clock.daylight;
+  let shownLight = state.light === 'day' ? 1 : state.light === 'night' ? 0 : clock.daylight;
 
   // A hidden window gets no animation frames; a timer keeps the simulation going at a low rate.
   let lastFrame = 0;

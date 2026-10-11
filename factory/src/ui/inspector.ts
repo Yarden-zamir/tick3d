@@ -295,7 +295,7 @@ export function createInspector(container: HTMLElement, getIndex: () => ModelInd
       component('How it works', '📖', [...zone.story.map((text) => el('p', { className: 'text', text })), el('ul', { className: 'facts' }, ...zone.facts.map((fact) => el('li', { text: fact })))]),
       biggest.length === 0 ? '' : component('Biggest machines', '🏭', [el('div', { className: 'links' }, ...biggest.map((entity) => el('div', { className: 'ln' }, link(entity.id, entity.id), el('span', { className: 'badge', text: `${formatNumber(entity.lines ?? 0)} lines` }))))]),
       component(
-        'Trunk lines',
+        'Road traffic',
         '⇄',
         [
           el('p', { className: 'text dim', text: 'Belts to and from other zones, by count.' }),

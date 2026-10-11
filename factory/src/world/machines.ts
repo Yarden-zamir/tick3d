@@ -283,7 +283,7 @@ export function buildMachines(model: FactoryModel, layout: Layout): Machines {
     group.add(sign);
     materials.push(face);
 
-    // The hub: where this zone's belts meet the overhead trunk lines.
+    // The hub: where this zone's belts meet the roads to the other zones.
     const hub = new THREE.Vector3(plot.hub.x, 0, plot.hub.z);
     hubs.set(plot.zone, hub);
     m.cylinder(DARK, hub.x, 0, hub.z, 1.25, 0.35, true);

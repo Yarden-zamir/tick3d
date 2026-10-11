@@ -1,6 +1,6 @@
 // Where everything stands. Each zone is a concrete plot with a grid of cells, one machine per cell.
 // Plots line up in rows (lore.ts gives the row of each zone), with wide roads between them for the
-// overhead trunk belts. Unit tests stand inside the cell of the file they test.
+// belt roads. Unit tests stand inside the cell of the file they test.
 
 import type { Entity, FactoryModel, ZoneId } from '../scan/model.ts';
 import { ZONES, ZONE_ORDER } from './lore.ts';
@@ -8,8 +8,8 @@ import { ZONES, ZONE_ORDER } from './lore.ts';
 export const CELL = 5;
 const MARGIN = 3;
 const FRONT = 6; // the strip in front of the cells: the hub and the zone sign
-const GAP_X = 16;
-const GAP_Z = 20;
+export const GAP_X = 16;
+export const GAP_Z = 20;
 
 export interface Plot {
   zone: ZoneId;

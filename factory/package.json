@@ -5,7 +5,7 @@
   "type": "module",
   "description": "The tick3d repository as an automated 3D factory. Local only, not committed.",
   "scripts": {
-    "scan": "node scan/scan.ts",
+    "scan": "node --experimental-strip-types --no-warnings=ExperimentalWarning scan/scan.ts",
     "predev": "npm run scan",
     "dev": "vite",
     "prebuild": "npm run scan",
