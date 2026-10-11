@@ -1,0 +1,320 @@
+/* The Tesseract experiment page. It uses the theme tokens, the cells and the buttons of style.css. */
+.tess {
+  display: grid;
+  gap: 1.2rem;
+  max-width: 80rem;
+  margin: 0 auto;
+  padding: max(1rem, env(safe-area-inset-top)) 1rem 3rem;
+}
+
+.tess-head {
+  /* .brand of style.css places the header in the grid of the game page. Here it spans the top row. */
+  grid-area: auto;
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 64rem) {
+  .tess {
+    grid-template-columns: minmax(0, 1fr) 21rem;
+    align-items: start;
+  }
+}
+
+.tess-play,
+.tess-controls {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem;
+  border: var(--border) solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 6px 6px 0 var(--shadow);
+}
+
+/* ---- The map of the four cubes ---- */
+
+.tess-map {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.tess-mini {
+  display: grid;
+  justify-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.35rem 0.25rem 0.45rem;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  box-shadow: 2px 2px 0 var(--shadow);
+  color: var(--ink);
+  cursor: pointer;
+  transition: translate 0.08s, box-shadow 0.08s, background 0.15s;
+}
+
+.tess-mini:hover {
+  translate: -1px -1px;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+.tess-mini[aria-pressed='true'] {
+  border-width: 3px;
+  background: var(--slab);
+  color: var(--on-color);
+}
+
+.tess-mini.has-last .tess-mini-label::after {
+  content: ' •';
+}
+
+.tess-mini.has-win {
+  outline: 3px solid var(--win);
+  outline-offset: 2px;
+}
+
+.tess-mini-label {
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* The four layers of a cube, two by two, as in the full-size cube below. */
+.tess-mini-layers {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 0.2rem;
+  --dot: clamp(4px, 1.6vw, 9px);
+}
+
+.tess-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(4, var(--dot));
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.tess-dot {
+  width: var(--dot);
+  height: var(--dot);
+  border-radius: 50%;
+  background: var(--surface-2);
+}
+
+.tess-dot.peer {
+  background: var(--peer);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.tess-dot.aim {
+  background: var(--ink);
+}
+
+.tess-dot.x {
+  background: var(--x);
+}
+
+.tess-dot.o {
+  background: var(--o);
+}
+
+.tess-dot.threat-x {
+  box-shadow: 0 0 0 2px var(--x);
+}
+
+.tess-dot.threat-o {
+  box-shadow: 0 0 0 2px var(--o);
+}
+
+.tess-dot.threat-x.threat-o {
+  box-shadow: 0 0 0 1px var(--x), 0 0 0 3px var(--o);
+}
+
+.tess-dot.last {
+  outline: 1px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.tess-dot.win {
+  background: var(--win);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+/* ---- The selected cube ---- */
+
+.tess-cube {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: center;
+  min-width: 0;
+}
+
+.tess-cube-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.2rem 1rem;
+  width: 100%;
+}
+
+.tess-cube-head h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+
+.tess-coords {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* Four layers fit two by two on a 360px phone: 8 cells, their gaps and the borders of the card. */
+.tess-board.board.flat {
+  --cell: clamp(22px, 6.9vw, 46px);
+  gap: 0.8rem;
+}
+
+.tess-board .cell.threat-x,
+.tess-board .cell.threat-o {
+  border-style: dashed;
+}
+
+.tess-board .cell.threat-x {
+  border-color: var(--x);
+}
+
+.tess-board .cell.threat-o {
+  border-color: var(--o);
+}
+
+.tess-board .cell.threat-x.threat-o {
+  border-color: var(--line);
+  background: linear-gradient(135deg, var(--x) 0 50%, var(--o) 50%);
+}
+
+.tess-board .cell.aim {
+  outline: 3px solid var(--ink);
+  outline-offset: 1px;
+}
+
+/* ---- Controls ---- */
+
+.tess-controls .segmented {
+  flex-wrap: wrap;
+}
+
+.tess-controls .segmented[hidden] {
+  display: none;
+}
+
+.tess-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+}
+
+.tess-type {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.tess-type label {
+  flex: 1 1 100%;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.tess-type input {
+  flex: 1 1 6rem;
+  min-width: 0;
+  min-height: 2.1rem;
+  padding: 0.2rem 0.6rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.tess-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.tess-actions .btn {
+  flex: 1;
+}
+
+.tess-keys {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* ---- The 4D view ---- */
+
+.tess-view {
+  width: min(100%, 16rem);
+}
+
+.tess-4d {
+  display: grid;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.tess-4d[hidden] {
+  display: none;
+}
+
+/* The canvas takes its size from the page; src/tesseract/view4d.ts matches its pixels to it. */
+.tess-canvas {
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: 70vh;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  /* A drag on the canvas turns the view instead of scrolling the page. */
+  touch-action: none;
+  cursor: grab;
+}
+
+.tess-canvas:active {
+  cursor: grabbing;
+}
+
+.tess-4d-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.8rem;
+}
+
+.tess-turn {
+  display: flex;
+  flex: 1 1 10rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.tess-turn input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--ink);
+}

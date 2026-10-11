@@ -11,6 +11,7 @@ const INFO = {
   stats: 'About these stats',
   training: 'How the ear training works',
   input: 'How the Voice room works',
+  tesseract: 'How the tesseract works',
   privacy: 'About this page',
 } as const satisfies Record<PageName, string>;
 

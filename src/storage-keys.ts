@@ -9,6 +9,8 @@ export const STORAGE_KEYS = {
   tuning: 'tick3d.tuning',
   name: 'tick3d.name',
   soundTraining: 'tick3d.sound-training',
+  // The game in progress on the Tesseract experiment page (src/tesseract/main.ts).
+  tesseract: 'tick3d.tesseract',
   // The last block list from the server, so a game without a network still hides blocked people.
   blocks: 'tick3d.blocks',
   // The chat messages that this device reported, as "<code>:<id>". They stay hidden here.
