@@ -1,10 +1,12 @@
 # App icon
 
-The app icon comes from one SVG master in `candidates/`. Every icon file is a render of that master.
+The app icon is Tom's art in `master.png`: two stacked 2×2 boards with an X and an O. Every icon file comes from that file. The maintainers chose it over the candidates below in [Icon agent: an icon engineer with a critique team that proposes the app icon for approval](https://github.com/Yarden-zamir/tick3d/issues/137).
+
+The art exists only at 512 px with a transparent background. A trace to SVG looked worse than the scaled-up PNG, so the Apple 1024 px icon is scaled up and a little soft. Replace `master.png` when a larger or vector original exists.
 
 ## Candidates
 
-Each candidate is a square of 1024 × 1024 with an opaque background. Except for 14-tab-tile, the artwork stays inside the Android safe zone, so one file serves as the plain icon, the maskable icon and the Apple icon.
+The candidates stay here, so that a later round does not repeat them. Each candidate is a square of 1024 × 1024 with an opaque background. Except for 14-tab-tile, the artwork stays inside the Android safe zone, so one file serves as the plain icon, the maskable icon and the Apple icon.
 
 | Candidate | Idea |
 | --- | --- |
@@ -36,4 +38,4 @@ The sheet shows each candidate at several sizes, inside the Android and iOS mask
 
 ## Export
 
-After a maintainer picks a candidate, run `uv run branding/icon/icon.py export <candidate>`. It writes the web and PWA icons in `public/`, the Play icon and `apple/icon.png`, and checks the size and the opaque colour mode of each file.
+Run `uv run branding/icon/icon.py export`. It writes the web and PWA icons in `public/`, the Play icon and `apple/icon.png` from `master.png`. Each file puts the art on the page colour, so no file has transparency. The iOS and Play icons get a margin, because those stores round the corners. The maskable icon keeps the art inside the Android safe zone. The script checks the size and the colour mode of each file, and the safe zone of the maskable icon.

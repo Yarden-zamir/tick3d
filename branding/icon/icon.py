@@ -1,12 +1,12 @@
 # /// script
-# requires-python = ">=3.12"
-# dependencies = ["pillow==12.3.0", "resvg-py==0.5.0"]
+# requires-python = ">=3.12,<3.14"  # pyoxipng 9.1.1 has no wheel for Python 3.14 yet.
+# dependencies = ["pillow==12.3.0", "pyoxipng==9.1.1", "resvg-py==0.5.0"]
 # ///
-"""Checks the icon candidates, draws the contact sheet, and exports the chosen icon.
+"""Checks the icon candidates, draws the contact sheet, and exports the shipped icon from master.png.
 
 Usage:
   uv run branding/icon/icon.py sheet <output.png> [name ...]   checks the candidates (all, or the named ones) and draws one contact sheet
-  uv run branding/icon/icon.py export <name>        writes every icon file from candidates/<name>.svg
+  uv run branding/icon/icon.py export                          writes every icon file from master.png
 """
 
 import io
@@ -15,12 +15,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import oxipng
 import resvg_py
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[2]
 CANDIDATES = Path(__file__).parent / "candidates"
-# The current icon has no SVG. The sheet shows its PNG files as candidate 0.
+# The sheet shows the shipped PNG files as candidate 0.
 CURRENT = ROOT / "public/android-chrome-512x512.png"
 CURRENT_MASKABLE = ROOT / "public/maskable-icon-512x512.png"
 # Android crops a maskable icon to any shape that contains the circle of 40% radius (80% diameter).
@@ -207,43 +208,63 @@ def sheet(output: Path, names: list[str]) -> None:
         print(name, result, "safe" if result.safe else "NOT SAFE")
 
 
-# Every icon file, by path from the repository root, and its size. All are opaque RGB.
+# The shipped art: Tom's 512 px PNG with a transparent background. No larger or vector original exists.
+# A trace to SVG was tried, and it looked worse than this scaled-up PNG. So the Apple 1024 px icon is scaled up and a little soft.
+# Replace this file when a larger or vector original of the art exists.
+MASTER = Path(__file__).parent / "master.png"
+# The page colour of the game (--page in src/style.css). It fills the transparent parts and the margins.
+PAGE = (0xE4, 0xE7, 0xFF)
+
+# Every icon file, by path from the repository root: its size, and the share of the width that the artwork takes.
+# The rest is the page colour. All files are opaque RGB.
+# The iOS and Play icons get a margin, because those stores round the corners of the square.
+# The maskable icon keeps the artwork inside the Android safe zone.
 EXPORTS = {
-    "public/favicon-16x16.png": 16,
-    "public/favicon-32x32.png": 32,
-    "public/apple-touch-icon.png": 180,
-    "public/android-chrome-192x192.png": 192,
-    "public/android-chrome-512x512.png": 512,
-    "public/maskable-icon-512x512.png": 512,
-    "android/store/en-US/images/icon.png": 512,
-    "apple/icon.png": 1024,
+    "public/favicon-16x16.png": (16, 1.0),
+    "public/favicon-32x32.png": (32, 1.0),
+    "public/android-chrome-192x192.png": (192, 1.0),
+    "public/android-chrome-512x512.png": (512, 1.0),
+    "public/apple-touch-icon.png": (180, 0.8),
+    "android/store/en-US/images/icon.png": (512, 0.8),
+    "apple/icon.png": (1024, 0.8),
+    "public/maskable-icon-512x512.png": (512, 0.62),
 }
+MASKABLE = "public/maskable-icon-512x512.png"
 
 
-def export(name: str) -> None:
-    source = CANDIDATES / f"{name}.svg"
-    if not source.is_file():
-        raise SystemExit(f"No candidate {source}")
-    result = check(Candidate(name, source, source))
-    if not (result.opaque and result.safe):
-        raise SystemExit(f"{name} fails the checks: {result}")
-    for path, size in EXPORTS.items():
-        image = render_svg(source, size).convert("RGB")
-        image.save(ROOT / path, optimize=True)
-    render_svg(source, 48).convert("RGB").save(ROOT / "public/favicon.ico", sizes=[(16, 16), (32, 32), (48, 48)])
-    for path, size in EXPORTS.items():
+def layout(size: int, scale: float) -> Image.Image:
+    art = Image.open(MASTER).convert("RGBA")
+    side = round(size * scale)
+    art = art.resize((side, side), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (size, size), PAGE + (255,))
+    offset = (size - side) // 2
+    canvas.alpha_composite(art, (offset, offset))
+    return canvas.convert("RGB")
+
+
+def export() -> None:
+    for path, (size, scale) in EXPORTS.items():
+        layout(size, scale).save(ROOT / path)
+        # The same compression as the earlier icons: oxipng level 4, metadata stripped. The pixels do not change.
+        oxipng.optimize(ROOT / path, level=4, strip=oxipng.StripChunks.safe())
+    layout(48, 1.0).save(ROOT / "public/favicon.ico", sizes=[(16, 16), (32, 32), (48, 48)])
+    for path, (size, _) in EXPORTS.items():
         written = Image.open(ROOT / path)
         if written.size != (size, size) or written.mode != "RGB":
             raise SystemExit(f"{path} is {written.size} {written.mode}, not {size} × {size} RGB")
-    print(f"Exported {name} to {len(EXPORTS) + 1} files")
+    maskable = ROOT / MASKABLE
+    result = check(Candidate("maskable", maskable, maskable))
+    if not result.safe:
+        raise SystemExit(f"{MASKABLE} leaves the Android safe zone: {result}")
+    print(f"Exported {MASTER.name} to {len(EXPORTS) + 1} files")
 
 
 def main() -> None:
     match sys.argv[1:]:
         case ["sheet", output, *names]:
             sheet(Path(output), names)
-        case ["export", name]:
-            export(name)
+        case ["export"]:
+            export()
         case _:
             raise SystemExit(__doc__)
 
