@@ -31,7 +31,8 @@ const $ = <T extends HTMLElement>(selector: string): T => {
 };
 
 async function loadModel(): Promise<FactoryModel> {
-  for (const url of ['/__factory', '/factory.json']) {
+  // Only the dev server has /__factory (a fresh scan). A build, such as a pull request preview, reads factory.json.
+  for (const url of import.meta.env.DEV ? ['/__factory', 'factory.json'] : ['factory.json']) {
     try {
       const response = await fetch(url, { cache: 'no-store' });
       if (response.ok) return (await response.json()) as FactoryModel;

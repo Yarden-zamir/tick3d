@@ -60,6 +60,8 @@ function repository(): Plugin {
 
 export default defineConfig({
   plugins: [repository()],
+  // Relative asset addresses, so the build also works under /toys/factory/ in a pull request preview.
+  base: './',
   server: { port: 5199 },
   build: { target: 'es2023', chunkSizeWarningLimit: 2000 },
 });

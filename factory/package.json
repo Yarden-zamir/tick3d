@@ -10,7 +10,8 @@
     "dev": "vite",
     "prebuild": "npm run scan",
     "build": "tsc && vite build",
-    "check": "tsc"
+    "check": "tsc",
+    "toy": "npm run build"
   },
   "dependencies": {
     "three": "0.186.1"
