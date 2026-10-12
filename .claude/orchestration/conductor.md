@@ -65,7 +65,7 @@ Send a comment to the agent that owns the issue (from the ledger). If no agent o
    - If a pull request covers part of it, stack the new work on that pull request (RULES.md rule 10), or wait for it to merge.
    - Write what you found in the issue comment where you start the work.
 1. Pick a short name and a title, for example `Reel` · `Video build agent`. Do not reuse the name of an active agent.
-2. Keep at most 4 agents active. If 4 are active, mark the work `queued` in the ledger, comment "Queued" on the issue, and start it when an agent finishes.
+2. Keep at most 6 agents active. If 6 are active, mark the work `queued` in the ledger, comment "Queued" on the issue, and start it when an agent finishes.
 3. Call `t3_thread_launch`:
    - `title`: `<Name>: <short task>`
    - `workspaceStrategy`: `{"type":"worktree","baseRef":"main","branch":"<type>/<topic>","startFromOrigin":true}`. For a stacked change, use the parent branch as `baseRef` and `startFromOrigin:false`.
