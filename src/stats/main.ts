@@ -4,6 +4,8 @@
 import '../style.css';
 import { PRESETS, type PracticeMode, type PresetId } from '../practice/practice.ts';
 import './stats.css';
+import { achievementItems } from '../achievement-list.ts';
+import type { Achievements } from '../achievements.ts';
 import { DIFFICULTIES } from '../ai.ts';
 import { describeClock } from '../clock.ts';
 import { element } from '../element.ts';
@@ -368,6 +370,15 @@ function personalCards(personal: NonNullable<Stats['personal']>, own: boolean): 
   );
 }
 
+// The achievements of Mine or of the person, with their rarity. "Hide my stats" hides them with the rest.
+function achievementsCard({ achievements, rarity }: Achievements, own: boolean): void {
+  const unlocked = achievements.filter((entry) => entry.unlockedAt !== null).length;
+  const box = card(own ? 'Your achievements' : 'Achievements', true, `${unlocked} of ${achievements.length} unlocked. The share shows how many players unlocked each one.`);
+  const list = el('ul', 'achievements');
+  list.append(...achievementItems(achievements, rarity, () => false));
+  box.append(list);
+}
+
 // The games per number of moves, from the shortest to the longest game.
 function lengthColumns(lengths: number[]): { label: string; value: number }[] {
   const first = lengths.findIndex((count) => count > 0);
@@ -419,6 +430,7 @@ function draw(stats: Stats): void {
     'Win rate',
   );
   if (stats.personal !== null) personalCards(stats.personal, stats.person === null);
+  if (stats.achievements !== null) achievementsCard(stats.achievements, stats.person === null);
 
   const days = stats.perDay.length;
   columns(card('Games per day', true, `The last ${days} days, UTC.`), stats.perDay.map((day) => ({ label: day.day.slice(5), value: day.games })), 'var(--o)', 'games', 'Games per day');

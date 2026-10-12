@@ -168,7 +168,7 @@ const SIDED_GAMES = 5000;
 // `tokens`: the tokens of one player for the Mine scope and a person filter, else null.
 // The caller runs one call at a time on the connection (the store queue), so one temporary table is enough.
 // The practice part comes from server/practice.ts.
-export async function computeStats(rows: Rows, now: EpochMs, filter: StatsFilter, tokens: readonly string[] | null): Promise<Omit<Stats, 'practice' | 'person'>> {
+export async function computeStats(rows: Rows, now: EpochMs, filter: StatsFilter, tokens: readonly string[] | null): Promise<Omit<Stats, 'practice' | 'person' | 'achievements'>> {
   const scoped = filter.scope === 'mine' || filter.person !== null;
   if (scoped !== (tokens !== null)) throw new Error('Mine and a person filter need the tokens of the player, and only they take them');
   await rows(`CREATE OR REPLACE TEMP TABLE ${GAMES_TABLE} AS ${FILTERED_GAMES}`, filterValues(filter, tokens, now), {});
@@ -182,7 +182,7 @@ export async function computeStats(rows: Rows, now: EpochMs, filter: StatsFilter
 // A query without bound values.
 type Query = <S extends Shape>(sql: string, shape: S) => Promise<RowOf<S>[]>;
 
-async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, now: EpochMs): Promise<Omit<Stats, 'practice' | 'person'>> {
+async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, now: EpochMs): Promise<Omit<Stats, 'practice' | 'person' | 'achievements'>> {
   const q: Query = (sql, shape) => rows(sql, {}, shape);
 
   const [totals] = await q(`${GAMES}, seats AS (SELECT unnest([player_x, player_o]) AS token FROM g)

@@ -37,6 +37,21 @@ USER node
 ENV DB_PATH=/data/tick3d.duckdb
 CMD ["node", "server/main.ts"]
 
+# Toys (container/build-toys.sh), served at /toys/. Only a pull request preview (pr-<n>) builds them: production,
+# manual deploys and LAN hosts serve no toys. A toy reads the whole committed tree from .git, because .dockerignore
+# keeps out files that it can need, such as *.md.
+FROM node:26-alpine AS toys
+RUN apk add --no-cache git && git config --global safe.directory '*'
+WORKDIR /tick3d
+COPY container/build-toys.sh /usr/local/bin/build-toys.sh
+ARG KITSHN_ENVIRONMENT
+RUN --mount=type=bind,from=git,target=/tick3d/.git \
+  case "$KITSHN_ENVIRONMENT" in \
+    pr-*) git archive HEAD | tar -x && sh /usr/local/bin/build-toys.sh /toys ;; \
+    *) mkdir /toys ;; \
+  esac
+
 FROM caddy:2.11-alpine AS site
 COPY container/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /app/dist /srv
+COPY --from=toys /toys /srv/toys
