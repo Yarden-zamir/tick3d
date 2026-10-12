@@ -6,6 +6,7 @@ import { avatarImage } from '../avatar.ts';
 import { changeBlock, isBlocked } from '../blocks.ts';
 import { api } from '../online.ts';
 import type { PersonId, StatsPerson } from '../protocol.ts';
+import { FLAG_ICON } from '../icons.ts';
 import { openSafetyDialog } from '../safety-dialog.ts';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
@@ -49,8 +50,12 @@ export function playerCard(box: HTMLElement, id: PersonId, person: StatsPerson, 
   const showBlocked = () => {
     status.textContent = isBlocked(id) ? 'You blocked this player. Their name stays hidden in your games, and they are off your leaderboard.' : '';
   };
-  const button = el('button', 'btn btn-small player-card-safety', 'Report or block');
+  // An icon, so the name keeps the width of the card.
+  const button = el('button', 'btn btn-small btn-icon player-card-safety');
   button.type = 'button';
+  button.innerHTML = FLAG_ICON;
+  button.setAttribute('aria-label', 'Report or block');
+  button.dataset.tip = 'Report or block';
   button.addEventListener('click', () =>
     openSafetyDialog({
       title: person.name,
