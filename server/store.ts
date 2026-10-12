@@ -455,6 +455,11 @@ export async function openStore(
   });
   const db = await instance.connect();
   for (const statement of SCHEMA) await db.run(statement);
+  // DuckDB 1.5.6 cannot replay ALTER ... DROP NOT NULL on `reports` (its id defaults to nextval) from the
+  // write-ahead log. SCHEMA runs that ALTER on every start, so a crash before the next checkpoint leaves a file
+  // that does not open. A checkpoint right after SCHEMA keeps those statements out of the log.
+  // Revisit when a DuckDB release replays it, or when SCHEMA no longer runs ALTER statements on each start.
+  await db.run('CHECKPOINT');
 
   // DuckDB calls are async, so two requests could interleave a read and a write. A queue runs
   // store operations one at a time, which keeps each read-check-write atomic in this process.

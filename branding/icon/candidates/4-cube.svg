@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#15122b"/>
+  <g transform="translate(512 512) scale(0.96) translate(-512 -512)">
+  <polygon points="530.0,220.0 860.0,385.0 860.0,715.0 530.0,880.0 200.0,715.0 200.0,385.0" fill="#000000" stroke="#000000" stroke-width="18" stroke-linejoin="round"/>
+  <polygon points="500.0,190.0 830.0,355.0 500.0,520.0 170.0,355.0" fill="#ffe14d" stroke="#000000" stroke-width="18" stroke-linejoin="round"/>
+  <polygon points="170.0,355.0 500.0,520.0 500.0,850.0 170.0,685.0" fill="#ffd000" stroke="#000000" stroke-width="18" stroke-linejoin="round"/>
+  <polygon points="500.0,520.0 830.0,355.0 830.0,685.0 500.0,850.0" fill="#e6b800" stroke="#000000" stroke-width="18" stroke-linejoin="round"/>
+  <line x1="582.5" y1="231.2" x2="252.5" y2="396.2" stroke="#000000" stroke-width="9.9"/>
+  <line x1="417.5" y1="231.2" x2="747.5" y2="396.2" stroke="#000000" stroke-width="9.9"/>
+  <line x1="665.0" y1="272.5" x2="335.0" y2="437.5" stroke="#000000" stroke-width="9.9"/>
+  <line x1="335.0" y1="272.5" x2="665.0" y2="437.5" stroke="#000000" stroke-width="9.9"/>
+  <line x1="747.5" y1="313.8" x2="417.5" y2="478.8" stroke="#000000" stroke-width="9.9"/>
+  <line x1="252.5" y1="313.8" x2="582.5" y2="478.8" stroke="#000000" stroke-width="9.9"/>
+  <line x1="252.5" y1="396.2" x2="252.5" y2="726.2" stroke="#000000" stroke-width="9.9"/>
+  <line x1="170.0" y1="437.5" x2="500.0" y2="602.5" stroke="#000000" stroke-width="9.9"/>
+  <line x1="335.0" y1="437.5" x2="335.0" y2="767.5" stroke="#000000" stroke-width="9.9"/>
+  <line x1="170.0" y1="520.0" x2="500.0" y2="685.0" stroke="#000000" stroke-width="9.9"/>
+  <line x1="417.5" y1="478.8" x2="417.5" y2="808.8" stroke="#000000" stroke-width="9.9"/>
+  <line x1="170.0" y1="602.5" x2="500.0" y2="767.5" stroke="#000000" stroke-width="9.9"/>
+  <line x1="582.5" y1="478.8" x2="582.5" y2="808.8" stroke="#000000" stroke-width="9.9"/>
+  <line x1="500.0" y1="602.5" x2="830.0" y2="437.5" stroke="#000000" stroke-width="9.9"/>
+  <line x1="665.0" y1="437.5" x2="665.0" y2="767.5" stroke="#000000" stroke-width="9.9"/>
+  <line x1="500.0" y1="685.0" x2="830.0" y2="520.0" stroke="#000000" stroke-width="9.9"/>
+  <line x1="747.5" y1="396.2" x2="747.5" y2="726.2" stroke="#000000" stroke-width="9.9"/>
+  <line x1="500.0" y1="767.5" x2="830.0" y2="602.5" stroke="#000000" stroke-width="9.9"/>
+  <path d="M544.5,272.5H620.5M582.5,253.5V291.5" stroke="#000000" stroke-width="54" stroke-linecap="round" fill="none"/>
+  <path d="M544.5,272.5H620.5M582.5,253.5V291.5" stroke="#ff5277" stroke-width="26" stroke-linecap="round" fill="none"/>
+  <path d="M544.5,355.0H620.5M582.5,336.0V374.0" stroke="#000000" stroke-width="54" stroke-linecap="round" fill="none"/>
+  <path d="M544.5,355.0H620.5M582.5,336.0V374.0" stroke="#ff5277" stroke-width="26" stroke-linecap="round" fill="none"/>
+  <ellipse cx="335.0" cy="313.8" rx="38.0" ry="19.0" stroke="#000000" stroke-width="48" fill="none"/>
+  <ellipse cx="335.0" cy="313.8" rx="38.0" ry="19.0" stroke="#00b3ff" stroke-width="20" fill="none"/>
+  </g>
+</svg>

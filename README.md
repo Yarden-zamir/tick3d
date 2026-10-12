@@ -243,6 +243,33 @@ docker run --rm -v "$PWD":/app -w /app/video node:26 node scripts/render.ts --dr
 
 The drafts land in `video/out/draft/` (or `video/out/variants/<name>/draft/` with `VIDEO_VARIANT`). Locally, run only `npm run check` in `video/` and `node video/creative/tools/check-beats.ts`; the required `check` workflow runs the full gate on every push.
 
+## Store images
+
+The `store-images` workflow makes every store image and the ads from code, and opens a pull request with them. It runs by hand, and on a push to `main` that changes the page (`src/`, the HTML files or `store-images/`). Playwright renders each scene of [store.spec.ts](store-images/store.spec.ts) once per target of [targets.json](store-images/targets.json). [convert.py](store-images/convert.py) then writes the files below, and fails the run on a missing image or a size that the store does not accept. `store.spec.ts` fixes the clock, the player names and the random numbers of the page, so two renders of one commit match. As a margin, `convert.py` keeps the committed file of each image where at most 1.5% of the pixels changed (`NOISE_SHARE`). With no real change left, the workflow opens no pull request. `tick3d-agents[bot]` opens the pull request, so its checks run.
+
+| Files | What | Who uploads them |
+| --- | --- | --- |
+| `android/store/en-US/images/{phone,sevenInch,tenInch}Screenshots/<target>-<n>.jpg` | Play phone (1080×1920), 7-inch tablet (1080×1920) and 10-inch tablet (2560×1440, landscape) screenshots | `play-listing.yml` (fastlane supply) |
+| `android/store/en-US/images/featureGraphic.jpg` | Play feature graphic (1024×500) | `play-listing.yml` |
+| `apple/store/screenshots/en-US/iphone-6.9-<n>.jpg` | iPhone 6.9-inch display (1320×2868) | the App Store listing sync ([#139](https://github.com/Yarden-zamir/tick3d/issues/139), fastlane deliver layout) |
+| `apple/store/screenshots/en-US/iphone-6.3-<n>.jpg` | iPhone 6.3-inch display (1206×2622), the size that App Store Connect requires | the same |
+| `marketing/ads/{square,portrait,story,link}.png` | Ads: 1080×1080, 1080×1350, 1080×1920 and 1200×628 | nobody: post them by hand |
+| `public/screenshots/*.webp` | The screenshots of the web manifest | the site deploy |
+
+The scenes read production and never write to it. Only the online scene plays on a local Docker Compose build, because an online game needs writes. To render on your own computer:
+
+```sh
+docker compose -f compose.lan.yml up --detach --build --wait
+docker run --rm --network host --ipc=host -v "$PWD":/app -v /tmp/shots:/tmp/shots -w /app -e SHOTS_DIR=/tmp/shots -e LOCAL_URL=http://localhost:8080 mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'npm ci && npx playwright test -c store-images/playwright.config.ts'
+uv run store-images/convert.py /tmp/shots
+```
+
+- To add a scene, add a test to `store.spec.ts` that calls `shot(page, '<n>-<name>')`, and add the name and its caption to [scenes.json](store-images/scenes.json). The order of `scenes.json` is the order in the stores. Play takes at most 8 screenshots of each type.
+- The phone and iPhone shots get their scene caption above them ([caption.html](store-images/caption.html)). `[word]` in a caption marks the highlighted word. Keep captions short, with no ranking or price words ("Best", "#1", "New") and no call to action ("Download now"): Google Play does not allow them.
+- To add a target, add a line to `targets.json`: `size` is the output size in pixels, `scale` is the device pixel ratio, `caption` adds the scene captions, and `out` is the folder. `size` / `scale` must be whole CSS pixels. Keep `caption` false for Play tablet targets: Play asks for no added text on large-screen shots. Set `platform` to `ios` for an App Store target: the page then hides what the App Store does not allow, as in the iOS app. Add a new Apple size to `APPLE_SIZES` in `convert.py` only after you check it on the [App Store Connect screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications).
+- The feature graphic and the ads come from [art.html](store-images/art.html). `art.spec.ts` renders it at the feature graphic size and at each ad size. The maintainers picked this style from three on [pull request 149](https://github.com/Yarden-zamir/tick3d/pull/149); git history keeps the other two.
+- No Chromebook screenshots: the Play API, and so fastlane supply, has no Chromebook image type. Add a target when it gets one.
+
 ## Deploy
 
 See [kitshn.md](kitshn.md). A push to `main` deploys production.
@@ -255,7 +282,7 @@ The iOS app wraps the production site the same way, with [Capacitor](https://cap
 - A pull request that touches `apple/` or `ios.yml` runs the workflow's `lint` job: `actionlint` on the workflow itself, and the same Capacitor project generation as the real build, with no Xcode and no macOS runner. It catches a bad `apple/capacitor.config.json` or a broken install in well under a minute, before a change reaches the 45-minute macOS build.
 - The app adds `tick3dApp/ios` to the user agent. The page then sets `<html data-platform="ios">` (`src/platform.ts`) and hides what the App Store does not allow: the GitHub link and the previews button (`data-hide-in="ios"`), and the GitHub login (App Store rule 4.8). `e2e/ios.spec.ts` checks this on every preview.
 - `WKAppBoundDomains` lets the web view run the service worker, so the game plays offline after one start online. Without a network at the first start, the app shows `apple/www/index.html`.
-- `apple/icon.png` (1024 × 1024, no transparency) is the App Store icon. Without it, the workflow scales up the Play icon.
+- `apple/icon.png` (1024 × 1024, no transparency) is the App Store icon. `uv run branding/icon/icon.py export` writes it with the other icon files. Without it, the workflow scales up the Play icon.
 
 ## License
 
