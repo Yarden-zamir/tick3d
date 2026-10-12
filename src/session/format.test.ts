@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_TUNING } from '../tuning.ts';
 import { CURRENT_FORMAT, FormatError, type Upgrade, parseDoc } from './format.ts';
 
 const formatOne: unknown = JSON.parse(readFileSync(new URL('./fixtures/format-1.json', import.meta.url), 'utf8'));
@@ -58,6 +59,17 @@ describe('parseDoc', () => {
     expect(() => parseDoc({ name: 'Old', games: [{ moves: [] }], flipped: [true, false] })).toThrow(FormatError);
     const computer = { difficulty: 'easy', seat: 'O' };
     expect(parseDoc({ name: 'Old', mode: 'computer', computer, games: [{ moves: [] }], seats: {} }).fixedSeats).toBe(true);
+  });
+
+  it('reads the tuned games of a computer game, and none from a document before them', () => {
+    const computer = { difficulty: 'easy', seat: 'O' };
+    const old = parseDoc({ name: 'Old', mode: 'computer', computer, games: [{ moves: [] }], seats: {} });
+    expect(old.computer?.tuned).toEqual([]);
+    const tuning = { ...DEFAULT_TUNING, strongCellBonus: 7 };
+    const tuned = parseDoc({ name: 'New', mode: 'computer', computer: { ...computer, tuned: [{ game: 0, tuning }] }, games: [{ moves: [] }], seats: {} });
+    expect(tuned.computer?.tuned).toEqual([{ game: 0, tuning }]);
+    const broken = { ...computer, tuned: [{ game: 0, tuning: { ...tuning, strongCellBonus: 99 } }] };
+    expect(() => parseDoc({ name: 'Bad', mode: 'computer', computer: broken, games: [{ moves: [] }], seats: {} })).toThrow(FormatError);
   });
 
   it('runs the upgrade steps in order up to the current format', () => {

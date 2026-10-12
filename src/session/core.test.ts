@@ -5,6 +5,7 @@ import { nameOf } from '../names.ts';
 import { CHAT_KEEP, CHAT_MAX_LENGTH, type Code, isChatEvent, personId, seatIn } from '../protocol.ts';
 import * as core from './core.ts';
 import type { SessionDoc } from './format.ts';
+import { DEFAULT_TUNING } from '../tuning.ts';
 
 const ALICE = 'aaaaaaaa-0000-4000-8000-000000000001';
 const BOB = 'bbbbbbbb-0000-4000-8000-000000000002';
@@ -512,7 +513,7 @@ describe('seat rotation', () => {
     // Unlocked, the computer moves with its seat. On one device a player can give up a game: the next game rotates too.
     const next = core.newGame(core.update(played, alice, { fixedSeats: false }), alice);
     expect(next.seats).toEqual({ X: core.COMPUTER_TOKEN, O: ALICE });
-    expect(next.computer).toEqual({ difficulty: 'easy', seat: 'X' });
+    expect(next.computer).toMatchObject({ difficulty: 'easy', seat: 'X' });
     expect(view(next, alice).you).toBe('O');
   });
 
@@ -556,5 +557,24 @@ describe('seat rotation', () => {
       { kind: 'seat', action: 'swap' },
       { kind: 'seat', action: 'give' },
     ]);
+  });
+});
+
+describe('noteTunedMove', () => {
+  const computerDoc = () => core.createDoc({ name: 'Computer game', mode: 'computer', seats: { X: ALICE, O: core.COMPUTER_TOKEN }, computer: { difficulty: 'easy', seat: 'O' } });
+
+  it('keeps one entry per game, with the newest changed settings', () => {
+    const first = { ...DEFAULT_TUNING, strongCellBonus: 7 };
+    const second = { ...DEFAULT_TUNING, strongCellBonus: 9 };
+    const doc = core.noteTunedMove(core.noteTunedMove(core.noteTunedMove(computerDoc(), 0, first), 0, second), 1, first);
+    expect(doc.computer?.tuned).toEqual([
+      { game: 0, tuning: second },
+      { game: 1, tuning: first },
+    ]);
+  });
+
+  it('starts a computer game with no tuned game, and refuses another mode', () => {
+    expect(computerDoc().computer?.tuned).toEqual([]);
+    expect(() => core.noteTunedMove(onlineDoc(), 0, DEFAULT_TUNING)).toThrow();
   });
 });

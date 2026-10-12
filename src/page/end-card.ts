@@ -2,9 +2,7 @@
 import { type CardInput, cardCellBox, cardFilename, drawCard, shareImage, saveImage } from '../card.ts';
 import { formatClock, describeClock } from '../clock.ts';
 import { type Game, other, winnerOf } from '../game.ts';
-import { isTunedFor } from '../tuning.ts';
 import { sounds } from '../sound.ts';
-import { computerTuning } from './advanced.ts';
 import {
   cardDialog,
   myGamesDialog,
@@ -26,11 +24,11 @@ import {
   cardCloseButton,
   showCardButton,
 } from './dom.ts';
-import { showToast } from './feedback.ts';
+import { showError, showToast } from './feedback.ts';
 import { previewsDialog } from '../header/previews.ts';
 import { type GameId, onlineGameId } from '../protocol.ts';
 import { nearbyKind, shareGameLink } from './nearby.ts';
-import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnlineMetrics, hostLinkOf, setHostLink } from './results.ts';
+import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnlineMetrics, hostLinkOf, setHostLink, gameTuning } from './results.ts';
 import { setUrlGame, startNewGame } from './sessions.ts';
 import { playerName, seatNow } from './render.ts';
 import { settings } from './settings.ts';
@@ -40,7 +38,9 @@ import { voiceClips } from './voice.ts';
 import { type Session, me, page, isLive, matchOptions } from './state.ts';
 
 const CARD_DELAY_MS = 1400;
-let card: { index: number; canvas: HTMLCanvasElement; gameId: GameId | undefined } | undefined;
+// The survival record of the last game that the computer won. The card waits for it, to show a new record.
+let survival: Promise<void> = Promise.resolve();
+let card: { index: number; canvas: HTMLCanvasElement; gameId: GameId | undefined; tuned: boolean } | undefined;
 
 // Plays the sound for the last move of the live game, and the result if the move ended it.
 export function announce(game: Game): void {
@@ -62,7 +62,10 @@ export function finish(game: Game): void {
   }
   const index = page.games.length - 1;
   if (page.session !== undefined) void linkGame(page.session, game, index);
-  if (page.session?.mode === 'computer' && winner !== null && mine !== null && winner !== mine) noteSurvival(page.session, game, index);
+  if (page.session?.mode === 'computer' && winner !== null && mine !== null && winner !== mine) {
+    // A failed record shows its error, and the card still opens.
+    survival = noteSurvival(page.session, game, index).catch(showError);
+  }
   setTimeout(() => {
     // Show the card only if that game is still the finished live game and nothing else is open.
     if (page.games.length - 1 !== index || isLive() || page.review !== undefined) return;
@@ -116,7 +119,7 @@ function celebrate(): void {
   confettiTimer = setTimeout(() => burstEl.replaceChildren(), CONFETTI_MS);
 }
 
-function cardInput(game: Game, index: number, gameId: GameId | undefined): CardInput {
+function cardInput(game: Game, index: number, gameId: GameId | undefined, tuned: boolean): CardInput {
   // The seats can rotate between games: `winner` is the seat now of the player who won game `index`.
   const result = winnerOf(game.status);
   const winner = result === null ? null : seatNow(index, result);
@@ -129,7 +132,7 @@ function cardInput(game: Game, index: number, gameId: GameId | undefined): CardI
       : game.status.kind === 'timeout' && winner !== null
         ? `${playerName(other(winner))} ran out of time after ${game.moves.length} moves`
         : 'The cube is full. Nobody got four in a row.';
-  const level = `${settings.difficulty.charAt(0).toUpperCase()}${settings.difficulty.slice(1)}${isTunedFor(computerTuning(), settings.difficulty) ? ' (tuned)' : ''}`;
+  const level = `${settings.difficulty.charAt(0).toUpperCase()}${settings.difficulty.slice(1)}${tuned ? ' (tuned)' : ''}`;
   const matchup =
     page.session?.mode === 'computer'
       ? `vs Computer · ${level} · You played ${seatNow(index, page.session.you ?? settings.human)}`
@@ -168,9 +171,11 @@ export async function openCard(index: number): Promise<void> {
   // "Include my voice" is off each time the card opens. A redraw of the open card keeps the choice.
   if (!cardDialog.open) cardVoice.checked = false;
   const gameId = page.session === undefined ? undefined : await gameIdOf(page.session, index);
-  const input = cardInput(game, index, gameId);
+  const tuned = page.session !== undefined && (await gameTuning(page.session, index)) !== null;
+  await survival;
+  const input = cardInput(game, index, gameId, tuned);
   const canvas = await drawCard(input);
-  card = { index, canvas, gameId };
+  card = { index, canvas, gameId, tuned };
   cardImage.src = canvas.toDataURL('image/png');
   // A title such as "You win!" ends with its own mark.
   const titleText = input.title.endsWith('!') ? input.title : `${input.title}.`;
@@ -198,7 +203,7 @@ export function setupEndCard(): void {
     if (card === undefined) return undefined;
     const game = page.games[card.index];
     if (game === undefined) return undefined;
-    const input = cardInput(game, card.index, card.gameId);
+    const input = cardInput(game, card.index, card.gameId, card.tuned);
     // The board behind the card shows the same game only when the card is of the newest game.
     const onBoard = card.index === page.games.length - 1 && page.review === undefined;
     const light = (cell: number | undefined) => {
@@ -210,10 +215,10 @@ export function setupEndCard(): void {
   cardDialog.addEventListener('close', song.stop);
   cardShareButton.addEventListener('click', () => {
     if (card === undefined) return;
-    const { canvas, index, gameId } = card;
+    const { canvas, index, gameId, tuned } = card;
     const game = page.games[index];
     if (game === undefined) return;
-    const input = cardInput(game, index, gameId);
+    const input = cardInput(game, index, gameId, tuned);
     const isOnline = page.session?.mode === 'online';
     const gameLink = gameId === undefined ? undefined : `${location.origin}/?game=${gameId}`;
     const url = cardLink.checked ? (gameLink ?? (isOnline ? location.href : location.origin)) : undefined;
