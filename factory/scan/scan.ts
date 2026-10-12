@@ -7,7 +7,7 @@
 // at /__factory, so the Rescan button picks up a change without a restart.
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Edge, Entity, EntityKind, FactoryModel, ZoneId } from './model.ts';
@@ -582,7 +582,8 @@ function scanChannels(texts: Map<string, string>, entities: Entity[], edges: Edg
 }
 
 export function scanRepo(): FactoryModel {
-  const paths = git(['ls-files']).split('\n').filter(Boolean);
+  // A tracked file that is deleted on disk (normal while editing) is left out, so the scan does not crash.
+  const paths = git(['ls-files']).split('\n').filter((path) => path !== '' && existsSync(join(REPO_ROOT, path)));
   const files = new Set(paths);
   const entities: Entity[] = [];
   const edges: Edge[] = [];
