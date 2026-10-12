@@ -35,6 +35,8 @@ jobs:
           bundler-cache: true
           working-directory: android
 
+      # supply reads every folder in android/store/ as a language, so keep only locale folders there.
+      # A tool folder there (the store-images generator once) fails the upload with "Invalid request".
       # supply looks up one release of a track even for a listing-only upload, so this names the
       # internal track, which holds one release after the first upload.
       # Limit: two releases on the internal track (a draft next to a completed one) stop this step.

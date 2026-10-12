@@ -151,7 +151,7 @@ jobs:
           notes=$(android/release-notes.sh "${{ github.ref_name }}")
           printf '%s\n' "$notes" | tee "$RUNNER_TEMP/release-notes.txt" >> "$GITHUB_STEP_SUMMARY"
           # fastlane supply reads the notes of a version code from a metadata folder. It reads every
-          # folder there as a language, so the notes get their own folder, apart from android/store/screenshots.
+          # folder there as a language, so the notes get their own folder with only en-US in it.
           mkdir -p "$RUNNER_TEMP/store/en-US/changelogs"
           cp "$RUNNER_TEMP/release-notes.txt" "$RUNNER_TEMP/store/en-US/changelogs/${{ steps.version.outputs.code }}.txt"
 

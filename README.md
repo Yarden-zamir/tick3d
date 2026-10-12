@@ -240,7 +240,7 @@ The drafts land in `video/out/draft/` (or `video/out/variants/<name>/draft/` wit
 
 ## Store images
 
-The `store-images` workflow makes every store image and the ads from code, and opens a pull request with them. It runs by hand, and on a push to `main` that changes the page (`src/`, the HTML files or `android/store/screenshots/`). Playwright renders each scene of [store.spec.ts](android/store/screenshots/store.spec.ts) once per target of [targets.json](android/store/screenshots/targets.json). [convert.py](android/store/screenshots/convert.py) then writes the files below, and fails the run on a missing image or a size that the store does not accept.
+The `store-images` workflow makes every store image and the ads from code, and opens a pull request with them. It runs by hand, and on a push to `main` that changes the page (`src/`, the HTML files or `store-images/`). Playwright renders each scene of [store.spec.ts](store-images/store.spec.ts) once per target of [targets.json](store-images/targets.json). [convert.py](store-images/convert.py) then writes the files below, and fails the run on a missing image or a size that the store does not accept.
 
 | Files | What | Who uploads them |
 | --- | --- | --- |
@@ -255,14 +255,14 @@ The scenes read production and never write to it. Only the online scene plays on
 
 ```sh
 docker compose -f compose.lan.yml up --detach --build --wait
-docker run --rm --network host --ipc=host -v "$PWD":/app -v /tmp/shots:/tmp/shots -w /app -e SHOTS_DIR=/tmp/shots -e LOCAL_URL=http://localhost:8080 mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'npm ci && npx playwright test -c android/store/screenshots/playwright.config.ts'
-uv run android/store/screenshots/convert.py /tmp/shots
+docker run --rm --network host --ipc=host -v "$PWD":/app -v /tmp/shots:/tmp/shots -w /app -e SHOTS_DIR=/tmp/shots -e LOCAL_URL=http://localhost:8080 mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'npm ci && npx playwright test -c store-images/playwright.config.ts'
+uv run store-images/convert.py /tmp/shots
 ```
 
-- To add a scene, add a test to `store.spec.ts` that calls `shot(page, '<n>-<name>')`, and add the name and its caption to [scenes.json](android/store/screenshots/scenes.json). The order of `scenes.json` is the order in the stores. Play takes at most 8 screenshots of each type.
-- The phone and iPhone shots get their scene caption above them ([caption.html](android/store/screenshots/caption.html)). `[word]` in a caption marks the highlighted word. Keep captions short, with no ranking or price words ("Best", "#1", "New") and no call to action ("Download now"): Google Play does not allow them.
+- To add a scene, add a test to `store.spec.ts` that calls `shot(page, '<n>-<name>')`, and add the name and its caption to [scenes.json](store-images/scenes.json). The order of `scenes.json` is the order in the stores. Play takes at most 8 screenshots of each type.
+- The phone and iPhone shots get their scene caption above them ([caption.html](store-images/caption.html)). `[word]` in a caption marks the highlighted word. Keep captions short, with no ranking or price words ("Best", "#1", "New") and no call to action ("Download now"): Google Play does not allow them.
 - To add a target, add a line to `targets.json`: `size` is the output size in pixels, `scale` is the device pixel ratio, `caption` adds the scene captions, and `out` is the folder. `size` / `scale` must be whole CSS pixels. Keep `caption` false for Play tablet targets: Play asks for no added text on large-screen shots. Set `platform` to `ios` for an App Store target: the page then hides what the App Store does not allow, as in the iOS app. Add a new Apple size to `APPLE_SIZES` in `convert.py` only after you check it on the [App Store Connect screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications).
-- The feature graphic and the ads come from [art.html](android/store/screenshots/art.html). `art.spec.ts` renders it at the feature graphic size and at each ad size. The maintainers picked this style from three on [pull request 149](https://github.com/Yarden-zamir/tick3d/pull/149); git history keeps the other two.
+- The feature graphic and the ads come from [art.html](store-images/art.html). `art.spec.ts` renders it at the feature graphic size and at each ad size. The maintainers picked this style from three on [pull request 149](https://github.com/Yarden-zamir/tick3d/pull/149); git history keeps the other two.
 - No Chromebook screenshots: the Play API, and so fastlane supply, has no Chromebook image type. Add a target when it gets one.
 
 ## Deploy
