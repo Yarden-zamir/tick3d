@@ -1,4 +1,5 @@
 // Contract between the page and the online API. Both sides import this file.
+import type { Achievements } from './achievements.ts';
 import { DIFFICULTIES, type Difficulty } from './ai.ts';
 import { NO_LIMIT, type TimeControl, parseClock } from './clock.ts';
 import { type EpochMs, isEpochMs } from './epoch.ts';
@@ -1017,6 +1018,8 @@ export type Stats = {
   personal: PersonalStats | null;
   // The sound practice room: runs and leaderboards (server/practice.ts).
   practice: PracticeStats;
+  // For Mine and the person filter: every achievement and its rarity. The filters do not change it. null for Everyone.
+  achievements: Achievements | null;
 };
 
 // A game result from the side of one player. A friend game has no side.

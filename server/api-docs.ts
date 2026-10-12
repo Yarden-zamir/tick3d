@@ -3,8 +3,10 @@
 // To add a route, add one entry to ROUTES and one case to the switch in server/main.ts.
 // The type checker refuses a case without an entry, and a switch without a case for an entry.
 // server/api-docs.test.ts runs every example through the real parsers in src/protocol.ts.
+import { ACHIEVEMENT_IDS, achievementProgress, rarityOf } from '../src/achievements.ts';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { LIMIT_RANGE } from '../src/clock.ts';
+import { toEpochMs } from '../src/epoch.ts';
 import { CELL_COUNT } from '../src/game.ts';
 import { DEVICE_KINDS } from '../src/nearby/device.ts';
 import { HELLO_NAME_MAX_LENGTH, MAX_CODE_LENGTH } from '../src/nearby/signal.ts';
@@ -37,6 +39,7 @@ import {
   THEMES,
   VIEWS,
   WATCHER_ID_LENGTH,
+  parseGameId,
 } from '../src/protocol.ts';
 import { EMPTY_SESSION_TTL_MS, ERROR_CODES, SEAT_REQUEST_MS } from '../src/session/core.ts';
 
@@ -61,7 +64,7 @@ export const DATA_DELETES_PER_HOUR = 10;
 // The tables that Delete my data (deleteData in server/store.ts) changes, with the rows it deleted and
 // the rows it kept without the player. chat_messages counts the messages inside the session documents.
 // The other tables hold no player data: events, and moderation_log (kept for moderation).
-export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'practice_runs', 'reports', 'player_tokens', 'users'] as const;
+export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'practice_runs', 'reports', 'player_tokens', 'users'] as const;
 export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number; anonymised: number }>;
 // The previews list on production is at most this old. server/previews.ts enforces it.
 // Only production calls GitHub, without a token: 60 calls per hour, 5 of them kept in reserve, so 55.
@@ -139,6 +142,7 @@ export type SchemaName =
   | 'HistoryPage'
   | 'Hidden'
   | 'Records'
+  | 'Achievements'
   | 'Metrics'
   | 'MetricsResponse'
   | 'ClientEvent'
@@ -500,6 +504,24 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       description: 'The most moves before the computer won, per setup. A key looks like "hard|game:none|move:none|board:false|history:false".',
     },
   }),
+  Achievements: object('Your achievements, every one once, in the order of src/achievements.ts. The page holds their names and goals.', {
+    achievements: list(
+      'One entry per achievement.',
+      object('How far you are with one achievement.', {
+        id: strings(ACHIEVEMENT_IDS),
+        count: count('Games that count toward the goal, or the longest run for a streak. It stops at the goal.'),
+        unlockedAt: { type: ['integer', 'null'], minimum: 0, description: 'When the game that reached the goal finished, in epoch ms. null until then.' },
+        unlockedBy: { ...nullable(ref('GameId')), description: 'The game that reached the goal. null until then, and for an old game without a link.' },
+      }),
+    ),
+    rarity: object('How rare each achievement is, as in Steam. It is at most 10 minutes old.', {
+      players: count('Every player with a finished game: an account with its devices, or a device without an account.'),
+      unlocked: object(
+        'How many of those players unlocked each achievement, by achievement id.',
+        Object.fromEntries(ACHIEVEMENT_IDS.map((id) => [id, count()])),
+      ),
+    }),
+  }),
   Metrics: object('What one device saw during one game, for the stats page. Every field is required.', {
     device: strings(DEVICE_KINDS),
     view: strings(VIEWS),
@@ -583,6 +605,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       runs: list('Runs, people and the average round time per mode and preset.'),
       best: list('The best 5 people per mode and preset.', ref('PracticeLeader')),
     }),
+    achievements: { ...nullable(ref('Achievements')), description: 'Your achievements for scope mine, or those of the person of a person filter, with their rarity. The other filters do not change them. null for everyone.' },
   }),
   NearbyAnnounce: object(
     'An open Nearby game. The offer code holds the device name and kind of the host.',
@@ -787,6 +810,20 @@ const X_WINS = [0, 1, 16, 2, 32, 3, 48];
 
 const zeroCount = () => ({ key: 'online', count: 0 });
 // The stats of a new server, shortened to one day.
+// The achievements after one win in 7 moves against the computer on Hard.
+const ACHIEVEMENTS_EXAMPLE = achievementProgress([
+  {
+    id: parseGameId('Q7MZ4KTB') ?? null,
+    mode: 'computer',
+    game: { ...game(X_WINS), times: game(X_WINS).times.map(toEpochMs) },
+    you: 'X',
+    difficulty: 'hard',
+    options: { hideBoard: false, hideHistory: false, hideCoordinates: false },
+    tuned: false,
+    finishedAt: toEpochMs(T0 + 70_000),
+  },
+]);
+
 const STATS_EXAMPLE = {
   generatedAt: T0,
   totals: { games: 0, moves: 0, players: 0, accounts: 0, sessions: 0, gamesLast7Days: 0 },
@@ -821,6 +858,7 @@ const STATS_EXAMPLE = {
   lengths: Array<number>(CELL_COUNT + 1).fill(0),
   openingWinsX: Array<number>(CELL_COUNT).fill(0),
   personal: null,
+  achievements: null,
   practice: { runs: [{ mode: 'targets', preset: 'normal', runs: 1, players: 1, avgRoundMs: 2450 }], best: [] },
 };
 
@@ -1245,6 +1283,39 @@ export const ROUTES = {
       description: 'The most moves before the computer won, per setup.',
       schema: 'Records',
       example: { records: { 'hard|game:none|move:none|board:false|history:false': 23 } },
+    },
+    errors: [BAD_PLAYER],
+    examplePlayer: AGENT_A,
+  },
+  'GET /api/me/achievements': {
+    operationId: 'myAchievements',
+    tag: 'Account',
+    summary: 'Your achievements over every finished game.',
+    description: 'Every finished game counts, also games from before achievements and games that left your history. A Nearby game counts once.',
+    player: 'required',
+    response: {
+      status: 200,
+      description: 'Every achievement with your progress, and the rarity. In this example you are the only player, after one win in 7 moves against the computer on Hard.',
+      schema: 'Achievements',
+      example: {
+        achievements: ACHIEVEMENTS_EXAMPLE,
+        rarity: rarityOf([ACHIEVEMENTS_EXAMPLE]),
+      },
+    },
+    errors: [BAD_PLAYER],
+    examplePlayer: AGENT_A,
+  },
+  'DELETE /api/me/achievements': {
+    operationId: 'resetAchievements',
+    tag: 'Account',
+    summary: 'Reset your achievements.',
+    description: 'From now on, only games that finish after the reset count for your achievements, on every device of your account. Clear history does not change them.',
+    player: 'required',
+    response: {
+      status: 200,
+      description: 'Your achievements after the reset: none unlocked, and the rarity.',
+      schema: 'Achievements',
+      example: { achievements: achievementProgress([]), rarity: rarityOf([ACHIEVEMENTS_EXAMPLE]) },
     },
     errors: [BAD_PLAYER],
     examplePlayer: AGENT_A,

@@ -1,0 +1,77 @@
+// The achievements list in the style of Steam, for My games and the stats page, and the badge of one achievement.
+import { ACHIEVEMENT_ICONS, LOCK_ICON, iconSvg } from './achievement-icons.ts';
+import { type AchievementId, type AchievementProgress, type AchievementRarity, achievementOf, rarityLabel } from './achievements.ts';
+
+// The badge of one achievement: the icon on a tile in the color of its tier.
+export function badge<K extends 'span' | 'button'>(tag: K, id: AchievementId): HTMLElementTagNameMap[K] {
+  const tile = document.createElement(tag);
+  tile.className = 'achievement-icon';
+  tile.dataset.tier = achievementOf(id).tier;
+  tile.innerHTML = iconSvg(ACHIEVEMENT_ICONS[id]);
+  return tile;
+}
+
+const unlockedDate = (time: number) => new Date(time).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+
+function achievementItem(entry: AchievementProgress, rarity: AchievementRarity | null, isNew: boolean): HTMLLIElement {
+  const { name, description, goal } = achievementOf(entry.id);
+  const item = document.createElement('li');
+  item.className = 'achievement';
+  item.dataset.state = entry.unlockedAt === null ? 'locked' : 'unlocked';
+  item.dataset.tier = achievementOf(entry.id).tier;
+  const tile = badge('span', entry.id);
+  if (entry.unlockedAt === null) tile.insertAdjacentHTML('beforeend', `<span class="achievement-lock">${iconSvg(LOCK_ICON)}</span>`);
+  const text = document.createElement('div');
+  text.className = 'achievement-text';
+  const title = document.createElement('b');
+  title.textContent = name;
+  const detail = document.createElement('small');
+  detail.textContent = description;
+  text.append(title, detail);
+  // A goal of more than one game shows how far the player is, until it unlocks.
+  if (goal > 1 && entry.unlockedAt === null) {
+    const bar = document.createElement('progress');
+    bar.max = goal;
+    bar.value = entry.count;
+    bar.setAttribute('aria-label', `${name}: ${entry.count} of ${goal}`);
+    const count = document.createElement('span');
+    count.className = 'achievement-count';
+    count.textContent = `${entry.count} / ${goal}`;
+    const row = document.createElement('span');
+    row.className = 'achievement-progress';
+    row.append(bar, count);
+    text.append(row);
+  }
+  const rare = rarity === null ? null : rarityLabel(rarity, entry.id);
+  if (rare !== null) {
+    const share = document.createElement('span');
+    share.className = 'achievement-rarity';
+    share.textContent = `${rare} of players`;
+    text.append(share);
+  }
+  item.append(tile, text);
+  if (entry.unlockedAt !== null) {
+    const when = document.createElement('span');
+    when.className = 'achievement-when';
+    when.textContent = isNew ? 'New!' : `Unlocked ${unlockedDate(entry.unlockedAt)}`;
+    if (isNew) when.dataset.new = '';
+    item.append(when);
+  }
+  return item;
+}
+
+// As in Steam: the unlocked achievements first, newest on top, then the locked ones, closest to the goal first.
+function steamOrder(progress: readonly AchievementProgress[]): AchievementProgress[] {
+  const share = (entry: AchievementProgress) => entry.count / achievementOf(entry.id).goal;
+  return progress.toSorted((a, b) => {
+    if (a.unlockedAt !== null && b.unlockedAt !== null) return b.unlockedAt - a.unlockedAt;
+    if (a.unlockedAt !== null) return -1;
+    if (b.unlockedAt !== null) return 1;
+    return share(b) - share(a);
+  });
+}
+
+// The rows of the achievements list, in the order of steamOrder. `isNew` marks the unlocks of this visit.
+export function achievementItems(progress: readonly AchievementProgress[], rarity: AchievementRarity | null, isNew: (id: AchievementId) => boolean): HTMLLIElement[] {
+  return steamOrder(progress).map((entry) => achievementItem(entry, rarity, isNew(entry.id)));
+}

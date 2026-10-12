@@ -13,6 +13,7 @@ import {
   cardLink,
   cardCodeOption,
   cardImage,
+  cardAchievements,
   cardNewGameButton,
   newGameButton,
   cardShareButton,
@@ -24,12 +25,13 @@ import {
   cardCloseButton,
   showCardButton,
 } from './dom.ts';
+import { noteAchievements, showUnlocks, unlockLabel, unlockedBy } from './achievements.ts';
 import { showError, showToast } from './feedback.ts';
 import { previewsDialog } from '../header/previews.ts';
 import { type GameId, onlineGameId } from '../protocol.ts';
 import { nearbyKind, shareGameLink } from './nearby.ts';
 import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnlineMetrics, hostLinkOf, setHostLink, gameTuning } from './results.ts';
-import { setUrlGame, startNewGame } from './sessions.ts';
+import { changesSent, setUrlGame, startNewGame } from './sessions.ts';
 import { playerName, seatNow } from './render.ts';
 import { settings } from './settings.ts';
 import { songControl } from './song-control.ts';
@@ -84,6 +86,17 @@ async function linkGame(open: Session, game: Game, index: number): Promise<void>
   const id = (open.mode === 'nearby' ? hostLinkOf(open.code, index) : undefined) ?? own;
   // The player can move on while the result saves. Only the same finished game gets the link.
   if (id !== undefined && showsFinished(open, index)) setUrlGame(id);
+  // A watcher earns nothing.
+  if (id === undefined || (open.mode !== 'friend' && open.you === null)) return;
+  // Our own last move shows before the server stores it, and playMove sends it right after this call.
+  // One microtask lets that send start. Then wait for its answer, so the server counts the game.
+  await Promise.resolve();
+  await changesSent();
+  const unlocked = await noteAchievements(open.code, index, id);
+  if (unlocked.length === 0) return;
+  // The open card of this game shows the news. Else a toast tells it.
+  if (card?.index === index && cardDialog.open) await openCard(index);
+  else showToast(`${unlockLabel(unlocked)}.`);
 }
 
 const showsFinished = (open: Session, index: number) => page.session?.code === open.code && page.games.length - 1 === index && !isLive();
@@ -146,6 +159,7 @@ function cardInput(game: Game, index: number, gameId: GameId | undefined, tuned:
   const duration = first > 0 && last > first ? ` · Game time ${formatClock(last - first)}` : '';
   const onlineCode = page.session?.mode === 'online' ? page.session.code : undefined;
   const news = page.session === undefined ? undefined : recordNews.get(`${page.session.code}:${index}`);
+  const unlocked = page.session === undefined ? undefined : unlockedBy(page.session.code, index);
   // The link of this game, else the session, else the site.
   const link = gameId ? `${location.host}/?game=${gameId}` : onlineCode ? `${location.host}/?code=${onlineCode}` : location.host;
   return {
@@ -159,6 +173,7 @@ function cardInput(game: Game, index: number, gameId: GameId | undefined, tuned:
       .filter((part) => part !== '')
       .join(' · '),
     ...(news === undefined ? {} : { record: news }),
+    ...(unlocked === undefined ? {} : { unlocked }),
   };
 }
 
@@ -179,7 +194,13 @@ export async function openCard(index: number): Promise<void> {
   cardImage.src = canvas.toDataURL('image/png');
   // A title such as "You win!" ends with its own mark.
   const titleText = input.title.endsWith('!') ? input.title : `${input.title}.`;
-  cardImage.alt = `${titleText} ${input.subtitle}.${input.record ? ` New record: ${input.record.moves} moves.` : ''}`;
+  cardImage.alt = `${titleText} ${input.subtitle}.${input.record ? ` New record: ${input.record.moves} moves.` : ''}${input.unlocked ? ` ${unlockLabel(input.unlocked)}.` : ''}`;
+  const { unlocked } = input;
+  cardAchievements.hidden = unlocked === undefined;
+  // A redraw of the open card, for example for an include option, does not play the unlock again.
+  const shown = unlocked === undefined ? '' : `${page.session?.code}:${index}`;
+  if (unlocked !== undefined && (!cardDialog.open || cardAchievements.dataset.shown !== shown)) showUnlocks(cardAchievements, unlocked);
+  cardAchievements.dataset.shown = shown;
   // Only the newest game can start the next one. A card of an older game has no New game button.
   cardNewGameButton.hidden = index !== page.games.length - 1;
   cardNewGameButton.disabled = newGameButton.disabled;
