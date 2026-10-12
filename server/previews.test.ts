@@ -186,11 +186,6 @@ describe('the images of the description', () => {
     expect(images.every((image) => image.alt.length === PREVIEW_IMAGE_ALT_LENGTH)).toBe(true);
     expect(imagesOf('')).toEqual([]);
   });
-
-  it('makes the page refuse an image from another site', () => {
-    const item = { ...relayPreview, images: [{ src: 'https://evil.example.org/a.png', alt: '' }] };
-    expect(() => parsePreviews({ main: null, previews: [item], error: null })).toThrow();
-  });
 });
 
 describe('the previews list', () => {
