@@ -240,7 +240,7 @@ The drafts land in `video/out/draft/` (or `video/out/variants/<name>/draft/` wit
 
 ## Store images
 
-The `store-images` workflow makes every store image and the ads from code, and opens a pull request with them. It runs by hand, and on a push to `main` that changes the page (`src/`, the HTML files or `store-images/`). Playwright renders each scene of [store.spec.ts](store-images/store.spec.ts) once per target of [targets.json](store-images/targets.json). [convert.py](store-images/convert.py) then writes the files below, and fails the run on a missing image or a size that the store does not accept.
+The `store-images` workflow makes every store image and the ads from code, and opens a pull request with them. It runs by hand, and on a push to `main` that changes the page (`src/`, the HTML files or `store-images/`). Playwright renders each scene of [store.spec.ts](store-images/store.spec.ts) once per target of [targets.json](store-images/targets.json). [convert.py](store-images/convert.py) then writes the files below, and fails the run on a missing image or a size that the store does not accept. Two renders of the same page differ a little: text edges move, and some scenes show a random game id or player names. So `convert.py` keeps the committed file of each image where at most 1.5% of the pixels changed (`NOISE_SHARE`). With no real change left, the workflow opens no pull request. `tick3d-agents[bot]` opens the pull request, so its checks run.
 
 | Files | What | Who uploads them |
 | --- | --- | --- |

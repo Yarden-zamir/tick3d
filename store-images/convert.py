@@ -9,13 +9,16 @@ Writes, for each target of targets.json and each scene of scenes.json, <out>/<ta
 (the captioned shot when the target has caption: true), the Play feature graphic,
 the ads in marketing/ads/ and the web manifest shots in public/screenshots/.
 Exits with an error on a missing shot, or on a size that the store does not accept.
+Then puts back the committed file of each image that changed only by render noise (restore_noise).
 """
 
+import io
 import json
+import subprocess
 import sys
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -33,6 +36,14 @@ APPLE_SIZES = {(1320, 2868), (1290, 2796), (1260, 2736), (1206, 2622), (1179, 25
 APPLE_MAX_PER_SIZE = 10
 PLAY_MAX_PER_TYPE = 8
 PLAY_MAX_BYTES = 8 * 1024 * 1024
+# Render noise: two renders of the same page differ. Text edges move by a few levels, and the won game
+# and online scenes show a random game id, player names and session code. On 2026-10-12 the noise reached
+# 0.78% of the pixels of an image (the online scene). A pixel counts as changed when one of its channels
+# moves by more than NOISE_LEVEL, and an image counts as changed when more than NOISE_SHARE of its pixels do.
+# Limit: a real change that is smaller than NOISE_SHARE, for example new words in one small label, stays
+# out of the pull request. Revisit when that happens, or when the scenes stop showing random text.
+NOISE_LEVEL = 32
+NOISE_SHARE = 0.015
 
 
 def play_size_error(folder: str, width: int, height: int) -> str | None:
@@ -75,6 +86,33 @@ def clear(folder: Path) -> None:
         old.unlink()
 
 
+def changed_share(old: Image.Image, new: Image.Image) -> float:
+    """The share of pixels where one channel moves by more than NOISE_LEVEL."""
+    red, green, blue = ImageChops.difference(old, new).split()
+    histogram = ImageChops.lighter(ImageChops.lighter(red, green), blue).histogram()
+    return sum(histogram[NOISE_LEVEL + 1 :]) / (new.width * new.height)
+
+
+def restore_noise(folders: list[Path]) -> None:
+    """Puts back the committed file of each changed image in the folders that differs only by noise."""
+    git = ["git", "-C", str(ROOT)]
+    listed = subprocess.run([*git, "diff", "--name-only", "-z", "--", *map(str, folders)], capture_output=True, text=True, check=True)
+    for name in filter(None, listed.stdout.split("\0")):
+        path = ROOT / name
+        # A deleted file is a real change: a scene or a target left.
+        if not path.is_file():
+            continue
+        committed = subprocess.run([*git, "show", f"HEAD:{name}"], capture_output=True, check=True).stdout
+        old = Image.open(io.BytesIO(committed)).convert("RGB")
+        new = Image.open(path).convert("RGB")
+        if old.size != new.size:
+            continue
+        share = changed_share(old, new)
+        if share <= NOISE_SHARE:
+            path.write_bytes(committed)
+            print(f"{name}: render noise only ({share:.2%} of the pixels), kept the committed file")
+
+
 def main(source: Path) -> None:
     if len(SCENES) > min(PLAY_MAX_PER_TYPE, APPLE_MAX_PER_SIZE):
         raise SystemExit(f"{len(SCENES)} scenes: Play takes at most 8 per type, Apple 10 per size")
@@ -103,6 +141,7 @@ def main(source: Path) -> None:
     clear(ADS)
     for name, size in AD_SIZES.items():
         opened(art / f"{name}.png", size).save(ADS / f"{name}.png", optimize=True)
+    restore_noise([*(ROOT / target["out"] for target in targets), PLAY / "featureGraphic.jpg", ADS, WEB])
 
 
 if __name__ == "__main__":
