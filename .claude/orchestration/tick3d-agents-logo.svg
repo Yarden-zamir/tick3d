@@ -1,0 +1,19 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'>
+<title>tick3d-agents</title>
+<rect width='512' height='512' fill='#fff4c2'/>
+<g stroke='#000' stroke-width='20' stroke-linejoin='round'>
+ <line x1='256' y1='76' x2='256' y2='140'/>
+ <circle cx='256' cy='68' r='28' fill='#ff5277'/>
+ <rect x='56' y='230' width='46' height='96' rx='12' fill='#ffe14d'/>
+ <rect x='410' y='230' width='46' height='96' rx='12' fill='#ffe14d'/>
+ <rect x='112' y='160' width='308' height='292' rx='52' fill='#000'/>
+ <rect x='96' y='156' width='320' height='282' rx='52' fill='#e0b400'/>
+ <rect x='96' y='136' width='320' height='276' rx='52' fill='#ffe14d'/>
+ <rect x='128' y='176' width='256' height='136' rx='30' fill='#fff' stroke-width='16'/>
+ <rect x='162' y='336' width='50' height='44' rx='10' fill='#fff' stroke-width='14'/>
+ <rect x='231' y='336' width='50' height='44' rx='10' fill='#00b3ff' stroke-width='14'/>
+ <rect x='300' y='336' width='50' height='44' rx='10' fill='#fff' stroke-width='14'/>
+</g>
+<g stroke-linecap='round'><path d='M170 218L222 270M222 218L170 270' stroke='#000' stroke-width='40'/><path d='M170 218L222 270M222 218L170 270' stroke='#ff5277' stroke-width='22'/></g>
+<circle cx='316' cy='244' r='28' fill='none' stroke='#000' stroke-width='40'/><circle cx='316' cy='244' r='28' fill='none' stroke='#00b3ff' stroke-width='22'/>
+</svg>
