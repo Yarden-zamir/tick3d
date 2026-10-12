@@ -53,6 +53,7 @@ Send a comment to the agent that owns the issue (from the ledger). If no agent o
   - reads the change, runs what it can, and posts its review as a new signed comment: what the change does, verified problems with `file:line`, and at most 5 questions for the author;
   - calls `watch_pull_request`, so the author's replies wake it, and answers each reply with a new comment;
   - never pushes to the author's branch unless the author asks for it in a comment;
+  - adds one image below the author's text when the description has none (RULES.md rule 12), without changes to the author's wording;
   - reports its recommendation to you: merge, merge after fixes, or wait for answers.
 - A maintainer's pull request merges when the author or the other maintainer approves it. An agent merges it only when a maintainer asks.
 - A pull request that is not draft but is not ready for review (open questions, known gaps, failing checks that the author knows about) moves back to draft with `gh-agent gh pr ready <N> --undo`. Say why in a short comment. Exception: for a pull request by TomCohenDev, do not convert it. Ask him in a comment whether "not a draft" is intentional, and offer to move it to draft.
