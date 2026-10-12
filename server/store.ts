@@ -211,7 +211,7 @@ const SCHEMA = [
   'CREATE SEQUENCE IF NOT EXISTS report_order',
   `CREATE TABLE IF NOT EXISTS reports (
      id BIGINT PRIMARY KEY DEFAULT nextval('report_order'),
-     code VARCHAR NOT NULL,
+     code VARCHAR,
      message INTEGER,
      message_text VARCHAR,
      person VARCHAR,
@@ -234,6 +234,8 @@ const SCHEMA = [
   // Delete my data (deleteData) keeps a report that a player filed, without the link to that player.
   'ALTER TABLE reports ALTER COLUMN reporter DROP NOT NULL',
   'ALTER TABLE reports ALTER COLUMN reporter_person DROP NOT NULL',
+  // A report of a person on the stats page has no session.
+  'ALTER TABLE reports ALTER COLUMN code DROP NOT NULL',
   // Deletion notices: the person id of each player who deleted their data, and the time. Pages read
   // them (deletedSince) and remove that person from their own copies. pruneOld deletes a notice after a year.
   `CREATE TABLE IF NOT EXISTS deleted_people (
@@ -254,7 +256,8 @@ export type GitHubUser = { id: number; login: string; avatar: string };
 // A stored report as a maintainer reads it (GET /api/reports). It holds person ids, never a token.
 export type StoredReport = {
   id: number;
-  code: Code;
+  // Null for a report of a person on the stats page.
+  code: Code | null;
   message: number | null;
   text: string | null;
   person: PersonId | null;
@@ -441,8 +444,8 @@ export async function openStore(
   // The achievements of each player, by their sorted tokens. A new or deleted result clears it all.
   // Limit: a clear drops every player's entry. Revisit this if achievement requests take more than about 100 ms.
   const achievementCache = new Map<string, AchievementProgress[]>();
-  // The rarity of the achievements over every player, at most RARITY_CACHE_MS old.
-  let rarityCache: { at: EpochMs; rarity: AchievementRarity } | undefined;
+  // The rarity of the achievements over every player, and the unlocked count of each owner, at most RARITY_CACHE_MS old.
+  let rarityCache: { at: EpochMs; rarity: AchievementRarity; unlocked: Map<string, number> } | undefined;
 
   // A Nearby guest counts the host's copy of the game, as in the history.
   const ACHIEVEMENT_ROWS = `FROM results SELECT results.public_id, results.doc::JSON AS doc, epoch_ms(results.finished_at) AS finished,
@@ -489,8 +492,9 @@ export async function openStore(
   // Every person with a finished game counts: an account with its devices, or a device without an account.
   // Limit: it reads and replays every result. Revisit this when it takes more than about 1 s, or the results
   // table holds about 100,000 rows: then keep the unlocks of each person in a table.
-  async function rarity(): Promise<AchievementRarity> {
-    if (rarityCache !== undefined && now() - rarityCache.at < RARITY_CACHE_MS) return rarityCache.rarity;
+  // The leaderboard reads the unlocked counts from the same pass.
+  async function everyonesAchievements(): Promise<{ rarity: AchievementRarity; unlocked: Map<string, number> }> {
+    if (rarityCache !== undefined && now() - rarityCache.at < RARITY_CACHE_MS) return rarityCache;
     const found = await rows(`${ACHIEVEMENT_ROWS} WHERE NOT ${HOST_HAS_GAME}`, {}, ACHIEVEMENT_COLUMNS);
     const seats = found.flatMap((row) => [row.token_x, row.token_o]).filter((token): token is string => token !== null && token !== core.COMPUTER_TOKEN);
     const canon = await canonical(seats);
@@ -509,13 +513,14 @@ export async function openStore(
         if (reset === undefined || row.finished > reset) list.push(achievementGame(row, x === owner, o === owner));
       }
     }
-    const fresh = rarityOf([...games.values()].map((list) => achievementProgress(list)));
-    rarityCache = { at: now(), rarity: fresh };
-    return fresh;
+    const progress = new Map([...games].map(([owner, list]) => [owner, achievementProgress(list)] as const));
+    const unlocked = new Map([...progress].map(([owner, entries]) => [owner, entries.filter((entry) => entry.unlockedAt !== null).length] as const));
+    rarityCache = { at: now(), rarity: rarityOf([...progress.values()]), unlocked };
+    return rarityCache;
   }
 
   async function achievementsOf(owner: string, tokens: readonly string[]): Promise<Achievements> {
-    return { achievements: await progressOfTokens(owner, tokens), rarity: await rarity() };
+    return { achievements: await progressOfTokens(owner, tokens), rarity: (await everyonesAchievements()).rarity };
   }
 
   type NewResult = {
@@ -1104,14 +1109,31 @@ export async function openStore(
       }),
 
     // Stores a report of a message or a person of an online session. The session must hold the target now.
+    // A report without a code names a person of the stats page: any person with a finished game or an account.
     report: (token: PlayerToken, request: ReportRequest): Promise<{ id: number }> =>
       serialized(async () => {
+        const reporter = await ownerOf(token);
+        const store = async (code: Code | null, target: { message: number | null; text: string | null; person: PersonId | null; name: string | null }) => {
+          const [stored] = await rows(
+            `INSERT INTO reports (code, message, message_text, person, person_name, reason, note, reporter, reporter_person)
+             VALUES ($code, $message, $text, $person, $name, $reason, $note, $reporter, $reporterPerson) RETURNING id`,
+            { code, ...target, reason: request.reason, note: request.note, reporter, reporterPerson: await personId(reporter) },
+            { id: int },
+          );
+          if (stored === undefined) throw new Error('a report insert returned no id');
+          return { id: stored.id };
+        };
+        if (request.code === null) {
+          const id = request.target.person;
+          const found = await statsPersonOf(id);
+          if (found === undefined) throw new SessionError(404, 'That player has no finished games.');
+          return store(null, { message: null, text: null, person: id, name: found.shown.name });
+        }
         const row = await load(request.code);
         const { watchers } = await audience(row.code, row.doc);
         const everyone = [row.doc.seats.X, row.doc.seats.O, ...watchers.map((watcher) => watcher.token)];
         const person = await personsOf(everyone);
         const name = await namesOf(everyone);
-        const reporter = await ownerOf(token);
         let target: { message: number | null; text: string | null; person: PersonId | null; name: string | null };
         if ('message' in request.target) {
           const id = request.target.message;
@@ -1133,14 +1155,7 @@ export async function openStore(
           if (found === undefined || found === null) throw new SessionError(404, 'That person is not in this game now.');
           target = { message: null, text: null, person: id, name: name(found) };
         }
-        const [stored] = await rows(
-          `INSERT INTO reports (code, message, message_text, person, person_name, reason, note, reporter, reporter_person)
-           VALUES ($code, $message, $text, $person, $name, $reason, $note, $reporter, $reporterPerson) RETURNING id`,
-          { code: row.code, ...target, reason: request.reason, note: request.note, reporter, reporterPerson: await personId(reporter) },
-          { id: int },
-        );
-        if (stored === undefined) throw new Error('a report insert returned no id');
-        return { id: stored.id };
+        return store(row.code, target);
       }),
 
     // The newest reports and moderation actions, for the maintainers.
@@ -1154,7 +1169,7 @@ export async function openStore(
           {},
           {
             id: int,
-            code: codeColumn,
+            code: nullable(codeColumn),
             message: nullable(int),
             text: nullable(text),
             person: nullable(personColumn),
@@ -1534,6 +1549,7 @@ export async function openStore(
         if (cached !== undefined && now() - cached.generatedAt < STATS_CACHE_MS) return { ...cached, you };
         const found = await leaderRows(rows, filter, now());
         const names = await namesOf(found.map((row) => row.owner));
+        const { unlocked } = await everyonesAchievements();
         const fresh = {
           generatedAt: now(),
           rows: await Promise.all(
@@ -1549,6 +1565,7 @@ export async function openStore(
               avgMoves: row.avg_moves,
               bestStreak: row.best_streak,
               lastPlayed: row.last_played,
+              achievements: unlocked.get(row.owner) ?? 0,
             })),
           ),
         };

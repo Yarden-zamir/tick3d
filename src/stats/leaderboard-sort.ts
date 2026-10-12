@@ -50,6 +50,13 @@ export const COLUMNS = [
     lowFirst: true,
   },
   {
+    key: 'achievements',
+    label: 'Achievements',
+    tip: 'Unlocked achievements, over all games: the filters do not change it',
+    value: (row) => row.achievements,
+    show: (row) => whole(row.achievements),
+  },
+  {
     key: 'lastPlayed',
     label: 'Last game',
     tip: 'When the last game ended',

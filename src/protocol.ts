@@ -234,24 +234,29 @@ export function parseBlockRequest(value: unknown): { name: string } | undefined 
 export const REPORT_REASONS = ['spam', 'abuse', 'name', 'other'] as const;
 export type ReportReason = (typeof REPORT_REASONS)[number];
 export const REPORT_NOTE_MAX_LENGTH = 200;
-// A report names one chat message of an online session, or one person in it.
+// A report names one chat message of an online session, or one person in it. A person report from
+// the stats page has no session, so its code is null.
 type ReportTarget = { message: number } | { person: PersonId };
-export type ReportRequest = { code: Code; target: ReportTarget; reason: ReportReason; note: string | null };
+export type ReportRequest = { reason: ReportReason; note: string | null } & (
+  | { code: Code; target: ReportTarget }
+  | { code: null; target: { person: PersonId } }
+);
 
 const isMessageId = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
 
-// The body of POST /api/reports: { code, message | person, reason, note? }. Exactly one target.
+// The body of POST /api/reports: { code?, message | person, reason, note? }. Exactly one target.
+// A message needs a code. A person without a code is a person of the stats page.
 export function parseReportRequest(value: unknown): ReportRequest | undefined {
   if (!isRecord(value) || !hasOnlyKeys(value, ['code', 'message', 'person', 'reason', 'note'])) return undefined;
-  const code = typeof value.code === 'string' ? normalizeCode(value.code) : undefined;
+  const code = value.code === undefined ? null : typeof value.code === 'string' ? normalizeCode(value.code) : undefined;
   const reason = oneOf(REPORT_REASONS, value.reason);
   const note = value.note === undefined || value.note === null ? '' : typeof value.note === 'string' ? value.note.trim() : undefined;
   if (code === undefined || reason === undefined || note === undefined || note.length > REPORT_NOTE_MAX_LENGTH) return undefined;
   if ((value.message === undefined) === (value.person === undefined)) return undefined;
-  const base = { code, reason, note: note === '' ? null : note };
-  if (value.message !== undefined) return isMessageId(value.message) ? { ...base, target: { message: value.message } } : undefined;
+  const base = { reason, note: note === '' ? null : note };
+  if (value.message !== undefined) return code !== null && isMessageId(value.message) ? { ...base, code, target: { message: value.message } } : undefined;
   const person = parsePersonId(value.person);
-  return person === undefined ? undefined : { ...base, target: { person } };
+  return person === undefined ? undefined : { ...base, code, target: { person } };
 }
 
 // ---- Custom names ----
@@ -1121,6 +1126,8 @@ export type LeaderboardRow = {
   avgMoves: number;
   bestStreak: number;
   lastPlayed: EpochMs;
+  // The achievements that the person unlocked, over all their games: the filters do not change it.
+  achievements: number;
 };
 export type Leaderboard = {
   generatedAt: EpochMs;
@@ -1144,7 +1151,7 @@ function parseLeaderboardRow(value: unknown): LeaderboardRow {
   if (!isRecord(value)) throw new Error('invalid leaderboard row');
   const person = parsePersonId(value.person);
   const player = value.player === null ? null : parsePlayerInfo(value.player);
-  const { name, games, won, drawn, lost, fastestWin, avgMoves, bestStreak, lastPlayed } = value;
+  const { name, games, won, drawn, lost, fastestWin, avgMoves, bestStreak, lastPlayed, achievements } = value;
   if (
     person === undefined ||
     player === undefined ||
@@ -1158,11 +1165,12 @@ function parseLeaderboardRow(value: unknown): LeaderboardRow {
     typeof avgMoves !== 'number' ||
     !Number.isFinite(avgMoves) ||
     !isTotal(bestStreak) ||
-    !isEpochMs(lastPlayed)
+    !isEpochMs(lastPlayed) ||
+    !isTotal(achievements)
   ) {
     throw new Error('invalid leaderboard row');
   }
-  return { person, name, player, games, won, drawn, lost, fastestWin, avgMoves, bestStreak, lastPlayed };
+  return { person, name, player, games, won, drawn, lost, fastestWin, avgMoves, bestStreak, lastPlayed, achievements };
 }
 
 // Throws on an answer that is not a leaderboard.

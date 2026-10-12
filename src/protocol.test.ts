@@ -30,6 +30,7 @@ import {
   ALL_STATS,
   parseStatsFilter,
   parsePersonId,
+  parseReportRequest,
   statsQuery,
 } from './protocol.ts';
 
@@ -506,5 +507,17 @@ describe('parsePreviews', () => {
 
   it.each([0, -1, 1.5, '1', 2])('refuses the parent %j', (parent) => {
     expect(() => parsePreviews(answer([preview(2, parent)]))).toThrow();
+  });
+});
+
+describe('parseReportRequest', () => {
+  const person = '0123456789abcdef';
+
+  it('takes a person without a code, for the stats page', () => {
+    expect(parseReportRequest({ person, reason: 'name' })).toEqual({ code: null, target: { person }, reason: 'name', note: null });
+  });
+
+  it('refuses a message without a code', () => {
+    expect(parseReportRequest({ message: 3, reason: 'spam' })).toBeUndefined();
   });
 });

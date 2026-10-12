@@ -705,6 +705,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     avgMoves: { type: 'number', minimum: 0, description: 'The mean number of moves of a game.' },
     bestStreak: count('The longest run of won games.'),
     lastPlayed: { type: 'integer', minimum: 0, description: 'When the last game ended, in epoch milliseconds.' },
+    achievements: count('The achievements that the person unlocked, over all their games. The filters do not change it.'),
   }),
   Leaderboard: object(`The common stats of each player, for the page to sort. The most active ${LEADERBOARD_ROWS} players at most.`, {
     generatedAt: { type: 'integer', minimum: 0, description: 'Server time in epoch milliseconds.' },
@@ -750,15 +751,15 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     ),
   }),
   ReportRequest: object(
-    'A report of one chat message or one person of an online game. Send `message` or `person`, not both.',
+    'A report of one chat message or one person. Send `message` or `person`, not both. A message needs `code`. A person without `code` is a player of the stats page.',
     {
       code: { type: 'string', pattern: `^[${CODE_ALPHABET}${CODE_ALPHABET.toLowerCase()}]{${CODE_LENGTH}}$`, description: 'The session code.' },
       message: { type: 'integer', minimum: 1, description: 'The id of a message in the chat of the session.' },
-      person: { ...person, description: 'The person id of a player or watcher in the session now.' },
+      person: { ...person, description: 'With `code`, the person id of a player or watcher in the session now. Without it, a person with a finished game or an account.' },
       reason: strings(REPORT_REASONS, 'spam, abuse, name (an inappropriate name) or other.'),
       note: { type: 'string', maxLength: REPORT_NOTE_MAX_LENGTH, description: `Optional. At most ${REPORT_NOTE_MAX_LENGTH} characters.` },
     },
-    ['message', 'person', 'note'],
+    ['code', 'message', 'person', 'note'],
   ),
   ReportStored: object('The report is stored for the maintainers.', { id: { type: 'integer', minimum: 1 } }),
   Reports: object('The newest reports and moderation actions. Only the maintainers can read them.', {
@@ -766,7 +767,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       'The newest reports first.',
       object('A report. The text and the name are copies from the time of the report.', {
         id: { type: 'integer', minimum: 1 },
-        code: { type: 'string' },
+        code: { ...nullable({ type: 'string' }), description: 'The session code. null for a report from the stats page.' },
         message: nullable({ type: 'integer' }),
         text: nullable({ type: 'string' }),
         person: nullable(person),
@@ -855,7 +856,7 @@ const zeroCount = () => ({ key: 'online', count: 0 });
 const LEADERBOARD_EXAMPLE = {
   generatedAt: 1_760_000_000_000,
   rows: [
-    { person: OTHER_PERSON, name: 'braveOtter', player: null, games: 12, won: 7, drawn: 1, lost: 4, fastestWin: 9, avgMoves: 17.5, bestStreak: 3, lastPlayed: 1_759_990_000_000 },
+    { person: OTHER_PERSON, name: 'braveOtter', player: null, games: 12, won: 7, drawn: 1, lost: 4, fastestWin: 9, avgMoves: 17.5, bestStreak: 3, lastPlayed: 1_759_990_000_000, achievements: 4 },
   ],
   you: null,
 };
@@ -1745,7 +1746,7 @@ export const ROUTES = {
   'POST /api/reports': {
     operationId: 'report',
     tag: 'Safety',
-    summary: 'Report a chat message or a person of an online game to the maintainers.',
+    summary: 'Report a chat message or a person of an online game, or a player of the stats page, to the maintainers.',
     description: `The server keeps a copy of the message or the name. One address can send ${REPORTS_PER_10_MINUTES} reports per 10 minutes.`,
     player: 'required',
     body: { schema: 'ReportRequest', example: { code: EXAMPLE_CODE, message: 3, reason: 'abuse', note: 'Insults after the game.' } },
@@ -1754,7 +1755,7 @@ export const ROUTES = {
       BAD_PLAYER,
       BAD_BODY,
       NO_GAME,
-      { status: 404, when: 'The message is not in the chat any more, or the person is not in the game now.' },
+      { status: 404, when: 'The message is not in the chat any more, or the person is not in the game now. Without a code: the person has no finished game and no account.' },
       TOO_BIG,
       { status: 429, when: `This address sent ${REPORTS_PER_10_MINUTES} reports in the last 10 minutes.` },
     ],

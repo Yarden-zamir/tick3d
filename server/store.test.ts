@@ -733,6 +733,11 @@ describe('leaderboard', () => {
     const bobId = await personId(bob);
     expect(board.rows.find((found) => found.person === bobId)).toMatchObject({ games: 1, won: 0, lost: 1, fastestWin: null, bestStreak: 0 });
     expect(board.rows.map((found) => found.games)).toEqual([4, 2, 1]);
+    // The count is the unlocked achievements of the person view.
+    const carolView = await store.stats({ ...ALL_STATS, person: carolId });
+    const carolUnlocked = carolView.achievements?.achievements.filter((entry) => entry.unlockedAt !== null).length;
+    expect(carolUnlocked).toBeGreaterThan(0);
+    expect(board.rows.find((found) => found.person === carolId)?.achievements).toBe(carolUnlocked);
 
     // The computer filter keeps the computer games only, and "Hide my stats" takes a person off the board.
     // A new filter has its own cache entry, so the change shows here at once.
@@ -1248,6 +1253,14 @@ describe('report and block', () => {
     noTokens(await store.reports());
     expect(await status(() => store.report(alice, { code, target: { message: 99 }, reason: 'spam', note: null }))).toBe(404);
     expect(await status(async () => store.report(alice, { code, target: { person: await personId(carol) }, reason: 'spam', note: null }))).toBe(404);
+  });
+
+  it('stores a report of a stats page player without a code, and refuses a person without games', async () => {
+    store = await openStore(':memory:');
+    await store.addResults(carol, [result('aaaaaaaa-4444-4000-8000-000000000001')]);
+    await store.report(alice, { code: null, target: { person: await personId(carol) }, reason: 'name', note: null });
+    expect((await store.reports()).reports).toMatchObject([{ code: null, person: await personId(carol), name: nameOf(carol), reporter: await personId(alice) }]);
+    expect(await status(async () => store.report(alice, { code: null, target: { person: await personId(bob) }, reason: 'spam', note: null }))).toBe(404);
   });
 
   it('lets a maintainer hide a message for everyone and clear a custom name, and logs both', async () => {

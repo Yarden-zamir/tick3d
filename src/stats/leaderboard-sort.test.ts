@@ -15,6 +15,7 @@ const row = (name: string, fields: Partial<LeaderboardRow>): LeaderboardRow => (
   avgMoves: 15,
   bestStreak: 2,
   lastPlayed: toEpochMs(1_000),
+  achievements: 0,
   ...fields,
 });
 const names = (rows: LeaderboardRow[]) => rows.map((found) => found.name);

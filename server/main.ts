@@ -475,7 +475,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       allowReport(clientOf(req), Date.now());
       const token = requirePlayer(req);
       const report = parseReportRequest(await readJson(req));
-      if (report === undefined) throw new HttpError(400, 'A report needs a code, one message id or person id, a reason, and a note of at most 200 characters.');
+      if (report === undefined) throw new HttpError(400, 'A report needs one message id with a code or one person id, a reason, and a note of at most 200 characters.');
       return send(res, 201, await store.report(token, report));
     }
     case 'GET /api/reports':
