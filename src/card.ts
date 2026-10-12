@@ -1,4 +1,6 @@
 // The end-of-game card. It is drawn on a canvas, so the picture on screen is the file that is shared.
+import { ACHIEVEMENT_ICONS, TIER_COLORS, iconSvg } from './achievement-icons.ts';
+import { type AchievementId, achievementOf } from './achievements.ts';
 import { type Game, SIZE, toCell, toCoords } from './game.ts';
 import type { RecordNews } from './records.ts';
 
@@ -14,6 +16,8 @@ export type CardInput = {
   footer: string;
   // A survival record against the computer that this game broke.
   record?: RecordNews;
+  // The achievements that this game unlocked.
+  unlocked?: readonly AchievementId[];
 };
 
 const WIDTH = 1080;
@@ -68,7 +72,7 @@ function context(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   return ctx;
 }
 
-type Box = { x: number; y: number; w: number; h: number; fill: string; radius: number; border: number; shadow: number };
+type Box = { x: number; y: number; w: number; h: number; fill: string | CanvasGradient; radius: number; border: number; shadow: number };
 
 // A brutalist block: a hard offset shadow, a flat fill and a thick outline.
 function block(ctx: CanvasRenderingContext2D, t: Theme, { x, y, w, h, fill, radius, border, shadow }: Box): void {
@@ -121,6 +125,51 @@ function recordSticker(ctx: CanvasRenderingContext2D, t: Theme, record: RecordNe
   block(ctx, t, { x: -125, y: -44, w: 250, h: 88, fill: t.o, radius: 12, border: 5, shadow: 7 });
   text(ctx, 'New record', 0, -4, 36, 800, t.onColor, 'center');
   text(ctx, `best was ${record.previous} ${record.previous === 1 ? 'move' : 'moves'}`, 0, 28, 22, 700, t.onColor, 'center');
+  ctx.restore();
+}
+
+// The achievements that the game unlocked: a dark sticker, as the band of the end card, on the right end of the bottom box.
+const UNLOCK_BG = '#17122f';
+const BADGE = 64;
+// More badges than this show as "+N", so the sticker keeps its size.
+const BADGES_SHOWN = 3;
+
+async function iconImage(id: AchievementId): Promise<HTMLImageElement> {
+  const image = new Image();
+  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(iconSvg(ACHIEVEMENT_ICONS[id]))}`;
+  await image.decode();
+  return image;
+}
+
+async function unlockSticker(ctx: CanvasRenderingContext2D, t: Theme, unlocked: readonly AchievementId[]): Promise<void> {
+  const first = unlocked[0];
+  if (first === undefined) throw new Error('an unlock sticker needs an achievement');
+  const shown = unlocked.slice(0, BADGES_SHOWN);
+  const icons = await Promise.all(shown.map(iconImage));
+  ctx.save();
+  // Below the board, which ends at 1128. It sticks out of the bottom box a little, like the record sticker.
+  ctx.translate(WIDTH - 240, 1236);
+  ctx.rotate((-4 * Math.PI) / 180);
+  block(ctx, t, { x: -160, y: -78, w: 320, h: 156, fill: UNLOCK_BG, radius: 16, border: 5, shadow: 9 });
+  const extra = unlocked.length - shown.length;
+  const row = shown.length * BADGE + (shown.length - 1) * 14 + (extra > 0 ? 70 : 0);
+  shown.forEach((id, at) => {
+    const icon = icons[at];
+    if (icon === undefined) throw new Error(`no icon for ${id}`);
+    const colors = TIER_COLORS[achievementOf(id).tier];
+    const x = -row / 2 + at * (BADGE + 14);
+    const y = -64;
+    const fill = ctx.createLinearGradient(x, y, x + BADGE, y + BADGE);
+    fill.addColorStop(0, colors.light);
+    fill.addColorStop(1, colors.deep);
+    // A black outline and shadow, as on the dark band of the page.
+    block(ctx, { ...t, line: '#000000', shadow: '#000000' }, { x, y, w: BADGE, h: BADGE, fill, radius: 12, border: 4, shadow: 4 });
+    ctx.drawImage(icon, x + 11, y + 11, BADGE - 22, BADGE - 22);
+  });
+  if (extra > 0) text(ctx, `+${extra}`, row / 2 - 32, -18, 36, 800, '#ffffff', 'center');
+  const label = unlocked.length === 1 ? achievementOf(first).name : `${unlocked.length} achievements`;
+  text(ctx, 'UNLOCKED', 0, 30, 20, 800, TIER_COLORS[achievementOf(first).tier].light, 'center');
+  fittedText(ctx, label, 0, 64, 30, 800, '#ffffff', 290, 'center');
   ctx.restore();
 }
 
@@ -267,9 +316,12 @@ export async function drawCard(input: CardInput): Promise<HTMLCanvasElement> {
   // Board rows: 490 + 2 slabs of 277 + 84 between them ends at 1128, clear of the box at 1170.
   board(ctx, t, input.game);
   block(ctx, t, { x: 80, y: 1170, w: WIDTH - 160, h: input.footer === '' ? 104 : 140, fill: t.surface, radius: 14, border: 5, shadow: 10 });
-  fittedText(ctx, input.matchup, 110, 1220, 38, 800, t.ink, WIDTH - 220);
-  fittedText(ctx, input.details, 110, 1258, 26, 600, t.muted, WIDTH - 220);
-  if (input.footer !== '') fittedText(ctx, input.footer, 110, 1294, 28, 800, t.ink, WIDTH - 220);
+  // The unlock sticker covers the right end of the bottom box, so the text there stops before it.
+  const textWidth = input.unlocked === undefined ? WIDTH - 220 : WIDTH - 220 - 360;
+  fittedText(ctx, input.matchup, 110, 1220, 38, 800, t.ink, textWidth);
+  fittedText(ctx, input.details, 110, 1258, 26, 600, t.muted, textWidth);
+  if (input.footer !== '') fittedText(ctx, input.footer, 110, 1294, 28, 800, t.ink, textWidth);
+  if (input.unlocked !== undefined) await unlockSticker(ctx, t, input.unlocked);
   return canvas;
 }
 

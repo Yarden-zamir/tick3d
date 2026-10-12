@@ -159,6 +159,7 @@ function cardInput(game: Game, index: number, gameId: GameId | undefined, tuned:
   const duration = first > 0 && last > first ? ` · Game time ${formatClock(last - first)}` : '';
   const onlineCode = page.session?.mode === 'online' ? page.session.code : undefined;
   const news = page.session === undefined ? undefined : recordNews.get(`${page.session.code}:${index}`);
+  const unlocked = page.session === undefined ? undefined : unlockedBy(page.session.code, index);
   // The link of this game, else the session, else the site.
   const link = gameId ? `${location.host}/?game=${gameId}` : onlineCode ? `${location.host}/?code=${onlineCode}` : location.host;
   return {
@@ -172,6 +173,7 @@ function cardInput(game: Game, index: number, gameId: GameId | undefined, tuned:
       .filter((part) => part !== '')
       .join(' · '),
     ...(news === undefined ? {} : { record: news }),
+    ...(unlocked === undefined ? {} : { unlocked }),
   };
 }
 
@@ -192,8 +194,8 @@ export async function openCard(index: number): Promise<void> {
   cardImage.src = canvas.toDataURL('image/png');
   // A title such as "You win!" ends with its own mark.
   const titleText = input.title.endsWith('!') ? input.title : `${input.title}.`;
-  cardImage.alt = `${titleText} ${input.subtitle}.${input.record ? ` New record: ${input.record.moves} moves.` : ''}`;
-  const unlocked = page.session === undefined ? undefined : unlockedBy(page.session.code, index);
+  cardImage.alt = `${titleText} ${input.subtitle}.${input.record ? ` New record: ${input.record.moves} moves.` : ''}${input.unlocked ? ` ${unlockLabel(input.unlocked)}.` : ''}`;
+  const { unlocked } = input;
   cardAchievements.hidden = unlocked === undefined;
   // A redraw of the open card, for example for an include option, does not play the unlock again.
   const shown = unlocked === undefined ? '' : `${page.session?.code}:${index}`;
