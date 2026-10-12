@@ -66,7 +66,7 @@ jobs:
         working-directory: video
       # Remotion downloads Chrome Headless Shell into node_modules/.remotion on the first render.
       - name: Cache Chrome Headless Shell
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: video/node_modules/.remotion
           key: chrome-headless-shell-${{ runner.os }}-${{ hashFiles('video/package-lock.json') }}
@@ -120,7 +120,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
         working-directory: video
       - name: Cache Chrome Headless Shell
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: video/node_modules/.remotion
           key: chrome-headless-shell-${{ runner.os }}-${{ hashFiles('video/package-lock.json') }}
