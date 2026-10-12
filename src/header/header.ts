@@ -9,6 +9,7 @@ import { myGamesHref } from './my-games-link.ts';
 import { setupTooltips } from '../tooltip.ts';
 import { setupClickSound } from '../click-sound.ts';
 import { setupPreviews } from './previews.ts';
+import { markPlatform } from '../platform.ts';
 
 export const homeLink = element('#home-link', HTMLAnchorElement);
 export const accountLink = element('#account-button', HTMLAnchorElement);
@@ -25,6 +26,7 @@ export function showAccount(user: PlayerInfo | null): void {
 
 // The game page wires the account button and the wordmark itself (src/page/my-games.ts and home.ts).
 export function setupGameHeader(): void {
+  markPlatform();
   setupClickSound();
   setupTooltips();
   setupPreviews();
@@ -33,6 +35,7 @@ export function setupGameHeader(): void {
 // A page other than the game: the account button opens My games on the game page, and a login there
 // returns here. Offline, the button shows "My games" without the login.
 export function setupPageHeader(): void {
+  markPlatform();
   setupClickSound();
   setupTooltips();
   setupPreviews();

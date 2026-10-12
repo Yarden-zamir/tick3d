@@ -4,7 +4,6 @@ import { detectDevice } from '../nearby/device.ts';
 import { api } from '../online.ts';
 import { type ClientEvent, type Code, MAX_COUNT, MAX_THINK_MS, type Metrics, type Refusal } from '../protocol.ts';
 import { versionOfScript } from '../release.ts';
-import { computerTuning } from './advanced.ts';
 import { settings } from './settings.ts';
 import { page } from './state.ts';
 
@@ -51,8 +50,9 @@ export function countRefusal(reason: Refusal): void {
   report('refusals', `${BURST_COUNT} refusals in ${BURST_MS / 1000} s, the last one: ${reason}`);
 }
 
-// The metrics of a game that just ended. The caller adds the Nearby part, which needs a wait.
-export function gameMetrics(code: Code, index: number, tuned: boolean): Metrics {
+// The metrics of a game that just ended. The caller adds the tuning of a tuned computer game and the Nearby part,
+// which need a wait.
+export function gameMetrics(code: Code, index: number): Metrics {
   const counted = counters.key === keyOf(code, index) ? counters : fresh('');
   // The server refuses a whole result with a value out of range, so cap each value here.
   const cap = (count: number) => Math.min(count, MAX_COUNT);
@@ -69,7 +69,7 @@ export function gameMetrics(code: Code, index: number, tuned: boolean): Metrics 
     thinkMs: page.computerThinkMs.slice(0, 64).map((ms) => Math.min(ms, MAX_THINK_MS)),
     offline: counted.offline || !navigator.onLine,
     version: APP_VERSION,
-    tuning: tuned ? computerTuning() : null,
+    tuning: null,
     nearby: null,
   };
 }

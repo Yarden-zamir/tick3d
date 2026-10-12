@@ -24,6 +24,7 @@ import { STATS_ICON } from '../icons.ts';
 import { deviceDataKeys } from '../storage-keys.ts';
 import { syncDeletions } from './deletions.ts';
 import { accountLink } from '../header/header.ts';
+import { platform } from '../platform.ts';
 import {
   myGamesDialog,
   accountBox,
@@ -257,7 +258,8 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     text.append('You play as ', name, '.');
     accountBox.append(avatarFor({ player: null, name: ownName() }, ACCOUNT_AVATAR_PIXELS, null), text);
     if (navigator.onLine) accountBox.append(renameControls());
-    if (page.account.loginAvailable && navigator.onLine) {
+    // The iOS app offers no GitHub login: App Store rule 4.8 asks for Sign in with Apple next to it.
+    if (page.account.loginAvailable && navigator.onLine && platform() === 'web') {
       text.append(' Log in with GitHub to use your GitHub name.');
       const login = document.createElement('a');
       login.className = 'btn btn-small btn-primary login-link';

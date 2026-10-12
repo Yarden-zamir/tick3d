@@ -452,6 +452,11 @@ input:disabled {
   gap: 0.6rem;
 }
 
+/* The iOS app hides what the App Store does not allow: links to GitHub and to pull request previews (src/platform.ts). */
+[data-platform='ios'] [data-hide-in~='ios'] {
+  display: none !important;
+}
+
 /* Small buttons in the brutalist style, one height. Info is an icon that opens the Info panel. */
 .repo-link,
 .info-button {
