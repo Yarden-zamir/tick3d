@@ -257,8 +257,6 @@ const SCHEMA = [
   // Delete my data (deleteData) keeps a report that a player filed, without the link to that player.
   'ALTER TABLE reports ALTER COLUMN reporter DROP NOT NULL',
   'ALTER TABLE reports ALTER COLUMN reporter_person DROP NOT NULL',
-  // A report of a person on the stats page has no session.
-  'ALTER TABLE reports ALTER COLUMN code DROP NOT NULL',
   // Deletion notices: the person id of each player who deleted their data, and the time. Pages read
   // them (deletedSince) and remove that person from their own copies. pruneOld deletes a notice after a year.
   `CREATE TABLE IF NOT EXISTS deleted_people (
@@ -266,11 +264,6 @@ const SCHEMA = [
      deleted_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
   ...FIELD_SCHEMA,
-  // MIGRATION: fills seat_people from the results of before the table. Remove it after the deploy (see server/fields.ts).
-  `INSERT OR IGNORE INTO seat_people
-   SELECT DISTINCT left(sha256('${PERSON_ID_PREFIX}' || seat), ${PERSON_ID_LENGTH}), seat
-   FROM (SELECT unnest([player_x, player_o]) AS seat FROM results) WHERE seat IS NOT NULL AND seat <> '${core.COMPUTER_TOKEN}'
-     AND NOT EXISTS (FROM seat_people)`,
 ];
 
 // The token that a seat holds when a logged-in player takes it. The account has a player_tokens row

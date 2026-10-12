@@ -59,7 +59,6 @@ const value = (field: Field, source: string) => {
   return `json_extract(${source}, '${field.path}')::${field.type}`;
 };
 const values = (fields: readonly Field[], source: string) => fields.map((field) => value(field, source));
-const assignments = (fields: readonly Field[], source: string) => fields.map((field) => `${field.column} = ${value(field, source)}`).join(', ');
 
 export const GAME_COLUMN_LIST = GAME_FIELDS.map((field) => field.column).join(', ');
 export const METRIC_COLUMN_LIST = METRIC_COLUMNS.join(', ');
@@ -67,31 +66,19 @@ export const METRIC_COLUMN_LIST = METRIC_COLUMNS.join(', ');
 export const GAME_VALUES = values(GAME_FIELDS, '$doc::JSON').join(', ');
 export const METRIC_VALUES = values(METRIC_FIELDS, '$metrics::JSON').join(', ');
 
-// Schema statements: the columns, then a copy of the fields of the rows from before the columns.
-// Every document has a mode and every metrics object has a device, so a null there marks a row to fill.
-// MIGRATION: the UPDATE statements run once, at the first start after the deploy. Remove them after that
-// deploy, as Yarden asked on pull request #128, and move the columns into the CREATE TABLE statements.
-// The copy takes about 2 ms per old row; production had 490 results and 23 sessions.
 // The seats of a session, as plain columns: My games and a logout find the sessions of a player through them.
 // The values for an INSERT or an UPDATE, from the bound JSON text parameter $doc.
 export const SESSION_SEAT_VALUES = `json_extract_string($doc::JSON, '$.seats.X'), json_extract_string($doc::JSON, '$.seats.O')`;
 export const SESSION_SEAT_SET = `seat_x = json_extract_string($doc::JSON, '$.seats.X'), seat_o = json_extract_string($doc::JSON, '$.seats.O')`;
 
+// Schema statements: the columns and their indexes. Every write fills the columns (GAME_VALUES, METRIC_VALUES,
+// SESSION_SEAT_SET), so a row never lacks them.
 export const FIELD_SCHEMA = [
   ...addColumns('results', GAME_FIELDS),
   ...addColumns('results', METRIC_FIELDS),
   ...addColumns('seat_metrics', METRIC_FIELDS),
   'ALTER TABLE sessions ADD COLUMN IF NOT EXISTS seat_x VARCHAR',
   'ALTER TABLE sessions ADD COLUMN IF NOT EXISTS seat_o VARCHAR',
-  `UPDATE results SET ${assignments(GAME_FIELDS, 'doc::JSON')} WHERE mode IS NULL`,
-  `UPDATE results SET ${assignments(METRIC_FIELDS, 'metrics::JSON')} WHERE metrics IS NOT NULL AND device IS NULL`,
-  `UPDATE seat_metrics SET ${assignments(METRIC_FIELDS, 'metrics::JSON')} WHERE device IS NULL`,
-  // A row from before game links names its uploader (`token`) only: the uploader holds the seat `you`, or
-  // both seats in a friend game. After this, player_x and player_o name every seat.
-  `UPDATE results SET player_x = CASE WHEN you IS DISTINCT FROM 'O' THEN token END, player_o = CASE WHEN you IS DISTINCT FROM 'X' THEN token END
-   WHERE public_id IS NULL AND player_x IS NULL AND player_o IS NULL`,
-  `UPDATE sessions SET seat_x = doc.seats.X::VARCHAR, seat_o = doc.seats.O::VARCHAR
-   WHERE seat_x IS NULL AND seat_o IS NULL AND (doc.seats.X IS NOT NULL OR doc.seats.O IS NOT NULL)`,
   // The games and the sessions of one player are index lookups (seatedRows in server/stats.ts).
   'CREATE INDEX IF NOT EXISTS results_player_x ON results (player_x)',
   'CREATE INDEX IF NOT EXISTS results_player_o ON results (player_o)',
