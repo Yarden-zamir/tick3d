@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>tick3d store art</title>
+    <!--
+      The feature graphic and the ads. art.spec.ts opens this page at the output size, with
+      ?variant=<name>&tower=<png>&win=<png>&online=<png>. A wide page puts the text left of the phones,
+      a tall or square page puts it above them. All lengths use vmin, so one layout fits every size.
+    -->
+    <style>
+      @font-face { font-family: Brand; src: url(../../../src/fonts/bricolage-grotesque-latin.woff2); font-weight: 200 800; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 100vw; height: 100vh; overflow: hidden; }
+      body {
+        --page: #e4e7ff; --dot: #b9bde6; --ink: #000; --line: #000; --tag: #ff5277;
+        font-family: Brand, sans-serif; color: var(--ink);
+        background: var(--page) radial-gradient(var(--dot) 0.35vmin, transparent 0.35vmin) 0 0 / 4vmin 4vmin;
+        display: grid; grid-template-rows: auto 1fr; padding: 7vmin 7vmin 0;
+      }
+      .text { position: relative; z-index: 1; }
+      .mark { margin: 0; font-size: 15vmin; font-weight: 800; letter-spacing: -0.05em; line-height: 1; }
+      .mark span, .tag {
+        display: inline-block; background: var(--tag); color: #000; border: 0.9vmin solid #000; border-radius: 2.4vmin;
+        padding: 0 0.15em; transform: rotate(-4deg); box-shadow: 1.2vmin 1.2vmin 0 #000;
+      }
+      h2 { margin: 0; font-size: 10vmin; font-weight: 800; letter-spacing: -0.03em; line-height: 1.02; }
+      .tag { margin-top: 3vmin; font-size: 7vmin; font-weight: 800; }
+      p { margin: 3.5vmin 0 0; font-size: 4.6vmin; font-weight: 700; line-height: 1.2; }
+      .url { font-size: 3.4vmin; font-weight: 700; margin-top: 2.5vmin; opacity: 0.8; }
+      .phones { position: relative; display: flex; justify-content: center; gap: 4vmin; margin-top: 5vmin; }
+      .phone {
+        width: 46vmin; aspect-ratio: 9 / 16; flex: none; overflow: hidden; background: #000;
+        border: 1.6vmin solid #000; border-radius: 6vmin; box-shadow: 2vmin 2vmin 0 var(--line);
+      }
+      .phone img { display: block; width: 100%; }
+      .phone + .phone { margin-top: 8vmin; }
+      [hidden] { display: none !important; }
+
+      /* Wide: the text on the left, the phones on the right, cut by the bottom edge. */
+      @media (min-aspect-ratio: 4 / 3) {
+        body { grid-template-rows: none; grid-template-columns: 1fr auto; align-items: center; padding: 0 0 0 9vmin; }
+        .phones { margin: 14vmin 6vmin 0 0; align-self: start; }
+        .phone { width: 52vmin; }
+        .mark { font-size: 24vmin; }
+        h2 { font-size: 13vmin; }
+        p { font-size: 6.4vmin; }
+        .url { font-size: 4.6vmin; }
+      }
+
+      /* B: a dare on the brand yellow. */
+      body.dare { --page: #ffe14d; --dot: rgb(0 0 0 / 0.12); }
+      /* C: the Midnight colours of the game, with two phones. */
+      body.midnight { --page: #15122b; --dot: rgb(243 240 255 / 0.14); --ink: #f3f0ff; --line: #ff5277; --tag: #00b3ff; }
+      body.midnight .phone { border-color: #f3f0ff; }
+    </style>
+  </head>
+  <body>
+    <div class="text">
+      <div data-variant="sticker">
+        <h1 class="mark">tick<span>3d</span></h1>
+        <p>Tic-tac-toe in 3D.<br />Four in a row on a 4×4×4 cube.</p>
+      </div>
+      <div data-variant="dare">
+        <h2>Tic-tac-toe?<br />Too easy.</h2>
+        <div class="tag">Try it in 3D.</div>
+        <p>tick3d: four in a row on a 4×4×4 cube.</p>
+      </div>
+      <div data-variant="midnight">
+        <h2>4 in a row.<br />In 3D.</h2>
+        <p>Play a friend online, nearby,<br />or the computer.</p>
+        <p class="url">tick3d.yarden-zamir.com</p>
+      </div>
+    </div>
+    <div class="phones">
+      <div class="phone"><img id="first" alt="" /></div>
+      <div class="phone" id="second-phone"><img id="second" alt="" /></div>
+    </div>
+    <script>
+      // Each variant names its text block and the shots of its phones.
+      const variants = { sticker: ['tower'], dare: ['win'], midnight: ['online', 'win'] };
+      const query = new URLSearchParams(location.search);
+      const variant = query.get('variant') ?? '';
+      const shots = variants[variant];
+      if (shots === undefined) throw new Error(`unknown variant ${variant}`);
+      document.body.className = variant;
+      for (const block of document.querySelectorAll('[data-variant]')) block.hidden = block.dataset.variant !== variant;
+      const [first, second] = shots;
+      document.getElementById('first').src = query.get(first) ?? '';
+      document.getElementById('second-phone').hidden = second === undefined;
+      if (second !== undefined) document.getElementById('second').src = query.get(second) ?? '';
+    </script>
+  </body>
+</html>

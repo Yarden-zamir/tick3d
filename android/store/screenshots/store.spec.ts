@@ -1,4 +1,5 @@
-// The Play store screenshots and the feature graphic. The play-screenshots workflow runs this file.
+// The store screenshots: each scene runs once per target of targets.json (playwright.config.ts).
+// A shot goes to SHOTS_DIR/<target>/<scene>.png. The store-images workflow runs this file.
 // Production keeps no data from it: every API write fails, except in the online scene, which plays
 // on the local Docker Compose build at LOCAL_URL (compose.lan.yml), because an online game needs writes.
 import type { Page } from '@playwright/test';
@@ -13,7 +14,7 @@ async function readOnly(page: Page): Promise<void> {
 }
 // The board animates a placed mark, and fonts and charts load late.
 const settle = (page: Page, ms = 1200) => page.waitForTimeout(ms);
-const shot = (page: Page, name: string) => page.screenshot({ path: `${OUT}/${name}.png` });
+const shot = (page: Page, name: string) => page.screenshot({ path: `${OUT}/${test.info().project.name}/${name}.png` });
 
 test('1 the tower', async ({ open }) => {
   const { page } = await open({ settings: { mode: 'friend' } });
@@ -67,10 +68,13 @@ test('3 an online game with chat', async ({ open }) => {
   await settle(alice.page);
   await alice.page.locator('#chat-input').evaluate((element) => element.scrollIntoView({ block: 'end' }));
   await alice.page.evaluate(() => scrollBy(0, 40));
-  // The new-message banner covers the board. It is not part of the scene.
-  await alice.page.locator('#chat-notice').evaluate((element) => {
-    if (element instanceof HTMLElement) element.hidden = true;
-  });
+  // The new-message banner covers the board, and the local build names its container as a LAN host.
+  // Production shows neither, so they are not part of the scene.
+  for (const selector of ['#chat-notice', '#lan-host']) {
+    await alice.page.locator(selector).evaluate((element) => {
+      if (element instanceof HTMLElement) element.hidden = true;
+    });
+  }
   await settle(alice.page);
   await shot(alice.page, '3-online');
 });
@@ -90,15 +94,4 @@ test('5 the stats', async ({ open }) => {
   await page.evaluate(() => scrollBy(0, -40));
   await settle(page);
   await shot(page, '5-stats');
-});
-
-test('6 the feature graphic', async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 1024, height: 500 }, deviceScaleFactor: 2 });
-  const page = await context.newPage();
-  const tower = new URL(`file://${OUT}/1-tower.png`).href;
-  await page.goto(`${new URL('feature.html', import.meta.url).href}?tower=${encodeURIComponent(tower)}`);
-  await expect(page.locator('#tower')).toHaveJSProperty('complete', true);
-  await settle(page, 500);
-  await page.screenshot({ path: `${OUT}/feature.png` });
-  await context.close();
 });

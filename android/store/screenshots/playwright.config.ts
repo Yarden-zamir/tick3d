@@ -1,20 +1,32 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
+import { TARGETS } from './targets.ts';
 
-// Renders the Play store screenshots (store.spec.ts) at a phone viewport: 360 × 640 at 3× is 1080 × 1920.
-// The play-screenshots workflow runs it and convert.py turns the PNG files into the store formats.
+// Renders the store screenshots (store.spec.ts) once per target in targets.json, then the feature graphic
+// and the ads (art.spec.ts) from those shots. The store-images workflow runs it and convert.py turns the
+// PNG files into the store formats.
 export default defineConfig({
   testDir: '.',
   outputDir: 'test-results',
   timeout: 180_000,
   expect: { timeout: 20_000 },
-  // The feature graphic uses the tower shot, so the tests run in order.
+  // One worker: the online scene makes sessions on the local build, and production keeps its load low.
   workers: 1,
+  // The scenes read production and draw the board in software, so a slow answer can time out once.
+  retries: 1,
   reporter: 'list',
-  use: {
-    baseURL: 'https://tick3d.yarden-zamir.com',
-    viewport: { width: 360, height: 640 },
-    deviceScaleFactor: 3,
-    isMobile: true,
-    hasTouch: true,
-  },
+  use: { baseURL: 'https://tick3d.yarden-zamir.com', isMobile: true, hasTouch: true },
+  projects: [
+    ...TARGETS.map(({ name, platform, size: [width, height], scale }) => ({
+      name,
+      testMatch: 'store.spec.ts',
+      use: {
+        viewport: { width: width / scale, height: height / scale },
+        deviceScaleFactor: scale,
+        // The iOS app adds tick3dApp/ios to the user agent of its web view (apple/capacitor.config.json).
+        ...(platform === 'ios' ? { userAgent: `${devices['iPhone 15 Pro Max'].userAgent} tick3dApp/ios` } : {}),
+      },
+    })),
+    // The art uses the phone shots, so it waits for them.
+    { name: 'art', testMatch: 'art.spec.ts', dependencies: ['play-phone'], use: { isMobile: false, hasTouch: false } },
+  ],
 });
