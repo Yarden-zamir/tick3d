@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>tick3d store screenshot with a caption</title>
+    <!--
+      A store screenshot under its caption. caption.spec.ts opens this page at the target's CSS size and
+      scale, with ?shot=<png>&caption=<text>&style=<name>, so the output keeps the exact store size.
+      [word] in the caption marks the highlighted word. Play allows a caption of at most 20% of the image
+      and no device frame, so the caption band is 17% of the height and the shot sits on a plain card.
+    -->
+    <style>
+      @font-face { font-family: Brand; src: url(../../../src/fonts/bricolage-grotesque-latin.woff2); font-weight: 200 800; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 100vw; height: 100vh; overflow: hidden; }
+      body {
+        font-family: Brand, sans-serif;
+        background: #e4e7ff radial-gradient(#b9bde6 0.35vmin, transparent 0.35vmin) 0 0 / 4vmin 4vmin;
+        display: grid; grid-template-rows: 17vh 1fr; justify-items: center;
+      }
+      h1 {
+        margin: 0; align-self: center; padding: 0 6vw; text-align: center;
+        font-size: 8.4vw; font-weight: 800; letter-spacing: -0.03em; line-height: 1.12; text-wrap: balance;
+      }
+      h1 mark { background: none; color: inherit; }
+      .card {
+        height: calc(83vh - 4vh); aspect-ratio: var(--shot-ratio); overflow: hidden; background: #fff;
+        border: 0.8vw solid #000; border-radius: 4vw; box-shadow: 1.6vw 1.6vw 0 #000;
+      }
+      .card img { display: block; width: 100%; height: 100%; }
+
+      /* Sticker: the highlighted word sits on the pink sticker of the logo. */
+      body.sticker h1 mark {
+        display: inline-block; background: #ff5277; border: 0.6vw solid #000; border-radius: 1.6vw;
+        padding: 0 0.12em; margin: 0 0.12em; transform: rotate(-3deg); box-shadow: 0.8vw 0.8vw 0 #000;
+      }
+      /* Yellow: the brand yellow page, with the highlighted word in pink. */
+      body.yellow { background-color: #ffe14d; background-image: radial-gradient(rgb(0 0 0 / 0.12) 0.35vmin, transparent 0.35vmin); }
+      body.yellow h1 mark { color: #e0244f; }
+    </style>
+  </head>
+  <body>
+    <h1 id="caption"></h1>
+    <div class="card"><img id="shot" alt="" /></div>
+    <script>
+      const query = new URLSearchParams(location.search);
+      const style = query.get('style') ?? '';
+      if (!['sticker', 'yellow'].includes(style)) throw new Error(`unknown style ${style}`);
+      document.body.className = style;
+      // "[word]" becomes <mark>word</mark>. The text goes in as text nodes, never as HTML.
+      const caption = document.getElementById('caption');
+      for (const [index, part] of (query.get('caption') ?? '').replaceAll(']', '[').split('[').entries()) {
+        if (part === '') continue;
+        if (index % 2 === 1) caption.append(Object.assign(document.createElement('mark'), { textContent: part }));
+        else caption.append(part);
+      }
+      const shot = document.getElementById('shot');
+      shot.addEventListener('load', () => document.body.style.setProperty('--shot-ratio', `${shot.naturalWidth} / ${shot.naturalHeight}`));
+      shot.src = query.get('shot') ?? '';
+    </script>
+  </body>
+</html>

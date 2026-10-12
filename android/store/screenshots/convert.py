@@ -5,7 +5,8 @@
 """Turns the PNG files of store.spec.ts and art.spec.ts into the store files, and checks each one.
 
 Usage: uv run android/store/screenshots/convert.py <SHOTS_DIR of the render>
-Writes, for each target of targets.json, <out>/<target>-<n>.jpg, the Play feature graphic,
+Writes, for each target of targets.json and each scene of scenes.json, <out>/<target>-<n>.jpg
+(the captioned shot when the target has caption: true), the Play feature graphic,
 the ads in marketing/ads/ and the web manifest shots in public/screenshots/.
 Exits with an error on a missing shot, or on a size that the store does not accept.
 """
@@ -21,8 +22,11 @@ ROOT = HERE.parents[2]
 PLAY = ROOT / "android/store/en-US/images"
 ADS = ROOT / "marketing/ads"
 WEB = ROOT / "public/screenshots"
-# The listing order. The web manifest (vite.config.ts) shows the first three.
-SCENES = ["1-tower", "2-win", "3-online", "4-voice", "5-stats"]
+# The scenes in the listing order (scenes.json). The web manifest (vite.config.ts) shows the first three.
+SCENES = [scene["name"] for scene in json.loads((HERE / "scenes.json").read_text())]
+# The caption.html style that the store shots of a target with caption: true get. The maintainers pick it
+# on pull request 149.
+CAPTION_STYLE = "sticker"
 WEB_NAMES = {"1-tower": "tower", "2-win": "win", "3-online": "online"}
 AD_SIZES = {"square": (1080, 1080), "portrait": (1080, 1350), "story": (1080, 1920), "link": (1200, 628)}
 FEATURE_SIZE = (1024, 500)
@@ -85,13 +89,15 @@ def main(source: Path) -> None:
         checked_size(target, width, height)
         out = ROOT / target["out"]
         for number, scene in enumerate(SCENES, start=1):
-            image = opened(source / target["name"] / f"{scene}.png", (width, height))
+            raw = opened(source / target["name"] / f"{scene}.png", (width, height))
+            captioned = source / f"captioned-{CAPTION_STYLE}" / target["name"] / f"{scene}.png"
+            image = opened(captioned, (width, height)) if target["caption"] else raw
             file = out / f"{target['name']}-{number}.jpg"
             image.save(file, quality=85, optimize=True, progressive=True)
             if target["platform"] == "android" and file.stat().st_size > PLAY_MAX_BYTES:
                 raise SystemExit(f"{file} is over the Play limit of 8 MB")
             if target["name"] == "play-phone" and scene in WEB_NAMES:
-                small = image.resize((540, 960), Image.Resampling.LANCZOS)
+                small = raw.resize((540, 960), Image.Resampling.LANCZOS)
                 small.save(WEB / f"{WEB_NAMES[scene]}.webp", quality=80, method=6)
 
     art = source / "art"

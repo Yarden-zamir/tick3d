@@ -1,7 +1,7 @@
 [
-  { "name": "play-phone", "platform": "android", "size": [1080, 1920], "scale": 3, "out": "android/store/en-US/images/phoneScreenshots" },
-  { "name": "play-7-inch", "platform": "android", "size": [1080, 1920], "scale": 1.5, "out": "android/store/en-US/images/sevenInchScreenshots" },
-  { "name": "play-10-inch", "platform": "android", "size": [2560, 1440], "scale": 2, "out": "android/store/en-US/images/tenInchScreenshots" },
-  { "name": "iphone-6.9", "platform": "ios", "size": [1320, 2868], "scale": 3, "out": "apple/store/screenshots/en-US" },
-  { "name": "iphone-6.3", "platform": "ios", "size": [1206, 2622], "scale": 3, "out": "apple/store/screenshots/en-US" }
+  { "name": "play-phone", "platform": "android", "size": [1080, 1920], "scale": 3, "caption": true, "out": "android/store/en-US/images/phoneScreenshots" },
+  { "name": "play-7-inch", "platform": "android", "size": [1080, 1920], "scale": 1.5, "caption": false, "out": "android/store/en-US/images/sevenInchScreenshots" },
+  { "name": "play-10-inch", "platform": "android", "size": [2560, 1440], "scale": 2, "caption": false, "out": "android/store/en-US/images/tenInchScreenshots" },
+  { "name": "iphone-6.9", "platform": "ios", "size": [1320, 2868], "scale": 3, "caption": true, "out": "apple/store/screenshots/en-US" },
+  { "name": "iphone-6.3", "platform": "ios", "size": [1206, 2622], "scale": 3, "caption": true, "out": "apple/store/screenshots/en-US" }
 ]

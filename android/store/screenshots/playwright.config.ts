@@ -1,8 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 import { TARGETS } from './targets.ts';
 
-// Renders the store screenshots (store.spec.ts) once per target in targets.json, then the feature graphic
-// and the ads (art.spec.ts) from those shots. The store-images workflow runs it and convert.py turns the
+// Renders the store screenshots (store.spec.ts) once per target in targets.json, then the captioned
+// shots (caption.spec.ts), the feature graphic and the ads (art.spec.ts) from those shots. The store-images workflow runs it and convert.py turns the
 // PNG files into the store formats.
 export default defineConfig({
   testDir: '.',
@@ -28,5 +28,11 @@ export default defineConfig({
     })),
     // The art uses the phone shots, so it waits for them.
     { name: 'art', testMatch: 'art.spec.ts', dependencies: ['play-phone'], use: { isMobile: false, hasTouch: false } },
+    {
+      name: 'captions',
+      testMatch: 'caption.spec.ts',
+      dependencies: TARGETS.filter((target) => target.caption).map((target) => target.name),
+      use: { isMobile: false, hasTouch: false },
+    },
   ],
 });
