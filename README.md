@@ -260,7 +260,7 @@ uv run android/store/screenshots/convert.py /tmp/shots
 
 - To add a scene, add a test to `store.spec.ts` that calls `shot(page, '<n>-<name>')`, and add the name to `SCENES` in `convert.py`. The order of `SCENES` is the order in the stores. Play takes at most 8 screenshots of each type.
 - To add a target, add a line to `targets.json`: `size` is the output size in pixels, `scale` is the device pixel ratio, and `out` is the folder. `size` / `scale` must be whole CSS pixels. Set `platform` to `ios` for an App Store target: the page then hides what the App Store does not allow, as in the iOS app. Add a new Apple size to `APPLE_SIZES` in `convert.py` only after you check it on the [App Store Connect screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications).
-- The feature graphic and the ads come from [art.html](android/store/screenshots/art.html). `art.spec.ts` renders every variant at every size, and `ART_VARIANT` in `convert.py` picks the one that the stores and `marketing/ads/` get.
+- The feature graphic and the ads come from [art.html](android/store/screenshots/art.html). `art.spec.ts` renders it at the feature graphic size and at each ad size. The maintainers picked this style from three on [pull request 149](https://github.com/Yarden-zamir/tick3d/pull/149); git history keeps the other two.
 - No Chromebook screenshots: the Play API, and so fastlane supply, has no Chromebook image type. Add a target when it gets one.
 
 ## Deploy

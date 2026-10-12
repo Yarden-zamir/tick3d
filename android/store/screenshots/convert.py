@@ -24,8 +24,6 @@ WEB = ROOT / "public/screenshots"
 # The listing order. The web manifest (vite.config.ts) shows the first three.
 SCENES = ["1-tower", "2-win", "3-online", "4-voice", "5-stats"]
 WEB_NAMES = {"1-tower": "tower", "2-win": "win", "3-online": "online"}
-# The art.html variant that the maintainers picked for the feature graphic and the ads (issue #133).
-ART_VARIANT = "sticker"
 AD_SIZES = {"square": (1080, 1080), "portrait": (1080, 1350), "story": (1080, 1920), "link": (1200, 628)}
 FEATURE_SIZE = (1024, 500)
 # The Apple sizes, portrait, from https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications
@@ -97,11 +95,11 @@ def main(source: Path) -> None:
                 small.save(WEB / f"{WEB_NAMES[scene]}.webp", quality=80, method=6)
 
     art = source / "art"
-    feature = opened(art / f"{ART_VARIANT}-feature.png", FEATURE_SIZE)
+    feature = opened(art / "feature.png", FEATURE_SIZE)
     feature.save(PLAY / "featureGraphic.jpg", quality=90, optimize=True)
     clear(ADS)
     for name, size in AD_SIZES.items():
-        opened(art / f"{ART_VARIANT}-{name}.png", size).save(ADS / f"{name}.png", optimize=True)
+        opened(art / f"{name}.png", size).save(ADS / f"{name}.png", optimize=True)
 
 
 if __name__ == "__main__":
