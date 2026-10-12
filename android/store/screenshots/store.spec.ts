@@ -159,8 +159,12 @@ test('9 a game against the hard computer', async ({ open }) => {
 });
 
 test('10 a game with a clock', async ({ open }) => {
-  const { page } = await open({ settings: { mode: 'friend', clock: { perMove: 30, perGame: 300 } } });
+  const { page } = await open({ settings: { mode: 'friend' } });
   await readOnly(page);
+  // A limit set before the first move holds for this game: 30 s per move (the default) and 5 min per player.
+  await page.locator('[data-limit="perMove"] [data-limit-on]').check();
+  await page.locator('[data-limit="perGame"] [data-limit-on]').check();
+  await page.locator('[data-limit="perGame"]').getByRole('button', { name: '5m' }).click();
   await play(page, OPENING);
   await settle(page, 2500);
   await page.evaluate(() => scrollTo(0, 0));
