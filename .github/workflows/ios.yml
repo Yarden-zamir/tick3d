@@ -248,7 +248,7 @@ jobs:
 
   # Sends each tagged TestFlight upload to external testers automatically: no Xcode here, only the App Store
   # Connect API (apple/scripts/testflight-distribute.py). Runs only after `app` actually uploaded the build
-  # of an ios-v* tag. A run by hand with "upload" reaches internal testers only.
+  # of an ios-v* tag. A run by hand with "upload" only uploads to TestFlight.
   distribute:
     needs: app
     if: needs.app.outputs.uploaded == 'true' && startsWith(github.ref, 'refs/tags/ios-v')
