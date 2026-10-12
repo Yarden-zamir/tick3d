@@ -99,6 +99,9 @@ When the ledger has no webhook task ID:
    - `schedule`: `{"type":"webhook"}`
    - `bindToCurrentThread`: `true`
    - `prompt`: `tick3d GitHub event from .github/workflows/agents.yml: {{body}}`
-2. Store the URL as a GitHub secret. Use the plain `gh` here, not `gh-agent`, because the app has no permission for secrets. Pass the URL on stdin, never on the command line, and never print it: `gh secret set T3_AGENT_WEBHOOK_URL --repo Yarden-zamir/tick3d`. First check that the URL is not empty.
-3. Write the ledger header with the task ID and this thread's ID.
-4. Report the task ID and the next run state in this thread. Do not post the URL.
+2. Get the URL. This server has no T3 Connect tunnel, so `schedule_task` returns no `webhookUrl`. The webhook still works through the Cloudflare host: the URL is `https://t3-vps.yarden-zamir.com/api/hooks/<task ID, URL-encoded>/<webhook token>`. The token is in the `webhook_token` column of the `scheduled_tasks` table in `/root/.t3/userdata/statev2.sqlite`. Read it with Node's `node:sqlite` in read-only mode.
+3. Write the URL to `_shared/.orchestration/webhook.url` (mode 600). Store it as a GitHub secret. Use the plain `gh` here, not `gh-agent`, because the app has no permission for secrets. Pass the URL on stdin, never on the command line, and never print it: `gh secret set T3_AGENT_WEBHOOK_URL --repo Yarden-zamir/tick3d`. First check that the URL is not empty.
+4. Write the ledger header with the task ID and this thread's ID.
+5. Report the task ID and the last run status in this thread. Do not post the URL.
+
+The workflow sends the Cloudflare Access service token "t3-github-actions" with each call, because `/api/hooks/` sits behind Cloudflare Access. The URL token is the second check.
