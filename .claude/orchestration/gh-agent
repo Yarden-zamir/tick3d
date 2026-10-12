@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Runs a command as the tick3d-agents GitHub App, so that agent comments, pull requests and pushes
+# show as tick3d-agents[bot] and not as a maintainer.
+#
+#   gh-agent gh pr create ...
+#   gh-agent git push -u origin HEAD
+#
+# It mints an installation token from the app key in <container>/_shared/.orchestration/
+# and caches it until 10 minutes before it expires. git push works through the
+# `gh auth git-credential` helper, which reads GH_TOKEN.
+set -euo pipefail
+
+if [[ $# -eq 0 ]]; then
+  echo "usage: gh-agent <command> [args...]" >&2
+  exit 2
+fi
+
+common_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
+dir="${AGENTS_APP_DIR:-$(dirname "$common_dir")/_shared/.orchestration}"
+env_file="$dir/github-app.env"
+key_file="$dir/github-app.private-key.pem"
+cache="$dir/installation-token"
+for file in "$env_file" "$key_file"; do
+  [[ -r "$file" ]] || { echo "gh-agent: missing $file" >&2; exit 1; }
+done
+
+setting() {
+  local value
+  value="$(grep "^$1=" "$env_file" | cut -d= -f2-)"
+  [[ -n "$value" ]] || { echo "gh-agent: $1 is not set in $env_file" >&2; exit 1; }
+  printf '%s' "$value"
+}
+
+b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+
+mint() {
+  local now header payload signature jwt response token expires_at
+  now="$(date +%s)"
+  header="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)"
+  payload="$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $((now - 60)) $((now + 540)) "$(setting AGENTS_APP_CLIENT_ID)" | b64url)"
+  signature="$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -sign "$key_file" -binary | b64url)"
+  jwt="$header.$payload.$signature"
+  response="$(curl --fail-with-body --silent --show-error -X POST \
+    -H "Authorization: Bearer $jwt" -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/app/installations/$(setting AGENTS_APP_INSTALLATION_ID)/access_tokens")"
+  token="$(jq -r '.token // empty' <<<"$response")"
+  expires_at="$(jq -r '.expires_at // empty' <<<"$response")"
+  [[ -n "$token" && -n "$expires_at" ]] || { echo "gh-agent: GitHub returned no token" >&2; exit 1; }
+  # GitHub answers in UTC. GNU date and BSD date parse it differently.
+  expires_at="$(date -u -d "$expires_at" +%s 2>/dev/null || date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$expires_at" +%s)"
+  local tmp
+  tmp="$(mktemp "$dir/.installation-token.XXXXXX")"
+  printf '%s %s\n' "$expires_at" "$token" >"$tmp"
+  mv "$tmp" "$cache"
+}
+
+token=""
+if [[ -r "$cache" ]]; then
+  read -r expires_at cached <"$cache" || true
+  if [[ -n "${cached:-}" && "${expires_at:-0}" -gt $(($(date +%s) + 600)) ]]; then
+    token="$cached"
+  fi
+fi
+if [[ -z "$token" ]]; then
+  mint
+  read -r _ token <"$cache"
+fi
+
+GH_TOKEN="$token" GITHUB_TOKEN="$token" exec "$@"
