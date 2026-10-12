@@ -58,6 +58,10 @@ Send a comment to the agent that owns the issue (from the ledger). If no agent o
 
 ## Starting an agent
 
+0. Before you start work on an issue, check the open pull requests for work that already covers it. Run `gh pr list --repo Yarden-zamir/tick3d --state open --search "<issue number>"`, then scan the titles and changed files of the other open pull requests for the same area. Also check the ledger for an agent on that area.
+   - If a pull request already covers the issue, do not start parallel work. Send the issue to that pull request's agent, or adopt the pull request with a new agent if no one owns it. For a maintainer's own pull request, ask the author first.
+   - If a pull request covers part of it, stack the new work on that pull request (RULES.md rule 10), or wait for it to merge.
+   - Write what you found in the issue comment where you start the work.
 1. Pick a short name and a title, for example `Reel` · `Video build agent`. Do not reuse the name of an active agent.
 2. Keep at most 4 agents active. If 4 are active, mark the work `queued` in the ledger, comment "Queued" on the issue, and start it when an agent finishes.
 3. Call `t3_thread_launch`:
