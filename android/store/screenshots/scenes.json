@@ -1,22 +1,7 @@
 [
-  { "name": "1-tower", "listed": true, "caption": "Tic-tac-toe in [3D]" },
-  { "name": "2-win", "listed": true, "caption": "Win right [through] the cube" },
-  { "name": "3-online", "listed": true, "caption": "Play friends [online], with chat" },
-  { "name": "4-voice", "listed": true, "caption": "Place your mark with your [voice]" },
-  { "name": "5-stats", "listed": true, "caption": "See how [everyone] plays" },
-  { "name": "6-flat", "listed": false, "caption": "Flip to a [flat] view of every layer" },
-  { "name": "7-midnight", "listed": false, "caption": "Easy on the eyes at [night]" },
-  { "name": "8-themes", "listed": false, "caption": "Pick from twelve [themes]" },
-  { "name": "9-computer", "listed": false, "caption": "Take on the [computer], easy to hard" },
-  { "name": "10-clock", "listed": false, "caption": "Race the [clock]" },
-  { "name": "11-blind", "listed": false, "caption": "Play [blind], by coordinates" },
-  { "name": "12-sounds", "listed": false, "caption": "Every cell has its own [sound]" },
-  { "name": "13-ear", "listed": false, "caption": "Train your [ear] to hear the cells" },
-  { "name": "14-targets", "listed": false, "caption": "Hit [targets] with your voice" },
-  { "name": "15-nearby", "listed": false, "caption": "Find players [nearby] on your Wi-Fi" },
-  { "name": "16-qr", "listed": false, "caption": "Invite a friend with a [QR] code" },
-  { "name": "17-watch", "listed": false, "caption": "[Watch] games live" },
-  { "name": "18-replay", "listed": false, "caption": "Replay any game, [move] by move" },
-  { "name": "19-agent", "listed": false, "caption": "Let your own [AI agent] play" },
-  { "name": "20-ends", "listed": false, "caption": "See which [lines] win most" }
+  { "name": "1-tower", "caption": "Tic-tac-toe in [3D]" },
+  { "name": "2-win", "caption": "Win right [through] the cube" },
+  { "name": "3-online", "caption": "Play friends [online], with chat" },
+  { "name": "4-blind", "caption": "Play [blind] by coordinates" },
+  { "name": "5-sounds", "caption": "Every cell has its own [sound]" }
 ]

@@ -22,8 +22,8 @@ ROOT = HERE.parents[2]
 PLAY = ROOT / "android/store/en-US/images"
 ADS = ROOT / "marketing/ads"
 WEB = ROOT / "public/screenshots"
-# The listed scenes in the store order (scenes.json). The web manifest (vite.config.ts) shows the first three.
-SCENES = [scene["name"] for scene in json.loads((HERE / "scenes.json").read_text()) if scene["listed"]]
+# The scenes in the store order (scenes.json). TomCohenDev picked them from 20 on pull request 149. The web manifest (vite.config.ts) shows the first three.
+SCENES = [scene["name"] for scene in json.loads((HERE / "scenes.json").read_text())]
 WEB_NAMES = {"1-tower": "tower", "2-win": "win", "3-online": "online"}
 AD_SIZES = {"square": (1080, 1080), "portrait": (1080, 1350), "story": (1080, 1920), "link": (1200, 628)}
 FEATURE_SIZE = (1024, 500)

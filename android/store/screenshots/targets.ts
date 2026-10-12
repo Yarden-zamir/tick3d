@@ -20,8 +20,6 @@ type Target = {
 type Scene = {
   // The file name of the shot in store.spec.ts, for example 1-tower. The list order is the store order.
   name: string;
-  // The stores get only the listed scenes. The others are candidates that the maintainers pick from.
-  listed: boolean;
   // The caption above the shot. [word] marks the word that caption.html highlights.
   caption: string;
 };
@@ -35,10 +33,10 @@ function checkTarget(value: (typeof targetList)[number]): Target {
   return { name, platform, size: [width, height], scale, caption, out };
 }
 
-function checkScene({ name, listed, caption }: (typeof sceneList)[number]): Scene {
+function checkScene({ name, caption }: (typeof sceneList)[number]): Scene {
   if (name === '' || name.includes('/')) throw new Error(`scene ${name}: the name is not a file name`);
   if (caption.trim() === '') throw new Error(`scene ${name}: no caption`);
-  return { name, listed, caption };
+  return { name, caption };
 }
 
 export const TARGETS: readonly Target[] = targetList.map(checkTarget);
