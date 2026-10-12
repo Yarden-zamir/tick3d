@@ -25,6 +25,10 @@ import {
   NAME_MAX_LENGTH,
   PERSON_ID_LENGTH,
   PREVIEW_DESCRIPTION_LENGTH,
+  PREVIEW_IMAGE_ALT_LENGTH,
+  PREVIEW_IMAGE_SOURCES,
+  PREVIEW_IMAGES,
+  PREVIEW_TOY_LABEL,
   REPORT_NOTE_MAX_LENGTH,
   REPORT_REASONS,
   HISTORY_PAGE_SIZE,
@@ -156,6 +160,7 @@ export type SchemaName =
   | 'NearbyHosts'
   | 'NearbyAnswer'
   | 'Contributor'
+  | 'PreviewImage'
   | 'Preview'
   | 'Previews'
   | 'Playoff'
@@ -699,7 +704,19 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       ...nullable({ type: 'integer', minimum: 1 }),
       description: 'A stacked pull request: the number of the listed pull request whose head branch is the base branch of this one. null when it is top level. An older server sends no such field.',
     },
-  }, ['parent']),
+    toy: {
+      type: 'boolean',
+      description: `The pull request has the label "${PREVIEW_TOY_LABEL}": its preview also serves a toy at /toys/. An older server sends no such field.`,
+    },
+    images: {
+      ...list('The images of the pull request text, in their order. An older server sends no such field.', ref('PreviewImage')),
+      maxItems: PREVIEW_IMAGES,
+    },
+  }, ['parent', 'toy', 'images']),
+  PreviewImage: object('An image of the pull request text, such as a screenshot of the change.', {
+    src: { type: 'string', description: `From GitHub only: ${PREVIEW_IMAGE_SOURCES.join(', ')}` },
+    alt: { type: 'string', maxLength: PREVIEW_IMAGE_ALT_LENGTH, description: 'The text of the image. Empty when the text gives none.' },
+  }),
   BlockRequest: object('A block.', { name: { ...displayName, description: 'The name that you saw, for your list of blocked people.' } }),
   Blocks: object('The people that you blocked, newest first. Their messages and names stay hidden on your devices.', {
     blocked: list(
@@ -875,6 +892,8 @@ const PREVIEWS_EXAMPLE = {
       draft: false,
       contributors: [{ login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', url: 'https://github.com/octocat' }],
       parent: null,
+      toy: false,
+      images: [{ src: 'https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/pr-17/menu-phone-light.png', alt: 'The sound set menu on a phone' }],
     },
     {
       number: 18,
@@ -886,6 +905,8 @@ const PREVIEWS_EXAMPLE = {
       draft: true,
       contributors: [{ login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', url: 'https://github.com/octocat' }],
       parent: 17,
+      toy: false,
+      images: [],
     },
   ],
   error: null,

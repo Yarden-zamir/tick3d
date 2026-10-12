@@ -3686,6 +3686,42 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--ink);
 }
 
+/* A toy (the label Toys): a dev toy, not part of the game. Its own color and a dashed edge set it apart. */
+.previews-list .preview.toy {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--toggle-on) 25%, var(--surface));
+}
+
+.badge-toy {
+  background: var(--toggle-on);
+}
+
+/* The images of the description: a row that scrolls sideways and snaps to each image. The next image peeks in,
+   so a phone user sees that the row scrolls. Two classes, so the fixed height wins over `.end-card img`. */
+.previews-list .preview-shots {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 0.3rem;
+}
+
+.preview-shots a {
+  flex: none;
+  scroll-snap-align: start;
+}
+
+.previews-list .preview-shots img {
+  display: block;
+  width: auto;
+  height: 9rem;
+  max-width: 80vw;
+  max-height: none;
+  object-fit: cover;
+  background: var(--surface);
+}
+
 /* Narrow phones: the time takes its own row, so both links stay together on the next row. */
 @media (max-width: 30rem) {
   .preview-foot small {

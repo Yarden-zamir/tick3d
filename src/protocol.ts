@@ -1113,6 +1113,8 @@ export function outcomeOf(winner: Player | null, you: Player | null): Outcome {
 
 // GET /api/previews: the open pull requests with a live preview (server/previews.ts).
 export type Contributor = PlayerInfo & { url: string };
+// An image from the pull request description, such as a screenshot of the change.
+export type PreviewImage = { src: string; alt: string };
 export type Preview = {
   number: number;
   title: string;
@@ -1127,11 +1129,34 @@ export type Preview = {
   contributors: Contributor[];
   // A stacked pull request: the number of the listed pull request whose head branch is its base branch. null when it is top level.
   parent: number | null;
+  // The pull request has the label PREVIEW_TOY_LABEL: its preview also serves a toy at /toys/ (container/build-toys.sh).
+  toy: boolean;
+  // The images of the description, in their order, from PREVIEW_IMAGE_SOURCES only. At most PREVIEW_IMAGES.
+  images: PreviewImage[];
 };
 // `main` is the production site, built from the main branch. null on a server without previews.
 // `error` says why the list is empty or old. null when the list is fresh.
 export type Previews = { main: string | null; previews: Preview[]; error: string | null };
 export const PREVIEW_DESCRIPTION_LENGTH = 280;
+export const PREVIEW_TOY_LABEL = 'Toys';
+export const PREVIEW_IMAGES = 8;
+export const PREVIEW_IMAGE_ALT_LENGTH = 200;
+// The page loads description images from GitHub only, so a description cannot make a player's browser call another site.
+export const PREVIEW_IMAGE_SOURCES = [
+  'https://raw.githubusercontent.com/',
+  'https://github.com/user-attachments/assets/',
+  'https://user-images.githubusercontent.com/',
+] as const;
+
+export const isPreviewImageSource = (src: string): boolean => PREVIEW_IMAGE_SOURCES.some((prefix) => src.startsWith(prefix));
+
+function parsePreviewImage(value: unknown): PreviewImage | undefined {
+  if (!isRecord(value)) return undefined;
+  const { src, alt } = value;
+  if (typeof src !== 'string' || !isPreviewImageSource(src)) return undefined;
+  if (typeof alt !== 'string' || alt.length > PREVIEW_IMAGE_ALT_LENGTH) return undefined;
+  return { src, alt };
+}
 
 function parseContributor(value: unknown): Contributor | undefined {
   const info = parsePlayerInfo(value);
@@ -1153,7 +1178,13 @@ function parsePreview(value: unknown): Preview | undefined {
   if (!isEpochMs(updatedAt) || typeof draft !== 'boolean' || !Array.isArray(contributors)) return undefined;
   const people = contributors.map(parseContributor);
   if (!people.every((person) => person !== undefined)) return undefined;
-  return { number, title, description, url, previewUrl, updatedAt, draft, contributors: people, parent };
+  // A production server from before toys and images sends neither field.
+  const toy = value.toy ?? false;
+  const images = value.images ?? [];
+  if (typeof toy !== 'boolean' || !Array.isArray(images) || images.length > PREVIEW_IMAGES) return undefined;
+  const parsedImages = images.map(parsePreviewImage);
+  if (!parsedImages.every((image) => image !== undefined)) return undefined;
+  return { number, title, description, url, previewUrl, updatedAt, draft, contributors: people, parent, toy, images: parsedImages };
 }
 
 export function parsePreviews(value: unknown): Previews {

@@ -91,7 +91,8 @@ export default defineConfig({
         // script only, so the precache ignores it. Else /sound-input?code=… finds no entry and gets index.html.
         ignoreURLParametersMatching: [/./],
         // /.well-known/: Android and a browser get the asset links file, not the app.
-        navigateFallbackDenylist: [/^\/api\//, /^\/\.well-known\//],
+        // /toys/: a pull request preview serves its toys there (container/build-toys.sh), not the app.
+        navigateFallbackDenylist: [/^\/api\//, /^\/\.well-known\//, /^\/toys\//],
       },
     }),
   ],
