@@ -3,7 +3,9 @@ name: store-images
 # Renders the store screenshots of every target in store-images/targets.json, the Play
 # feature graphic and the ads, and opens a pull request with them. The online scene plays on a local
 # Docker Compose build of main, the other scenes read production without writing. convert.py fails the
-# run on a missing image or a size that the store does not accept. A merge then starts play-listing.yml,
+# run on a missing image or a size that the store does not accept, and keeps the committed file of each
+# image that changed only by render noise. With no real change left, the run opens no pull request.
+# tick3d-agents[bot] opens the pull request, so its checks run. A merge then starts play-listing.yml,
 # which uploads the Play images. The Apple images in apple/store/ wait for the App Store listing sync (#139).
 on:
   workflow_dispatch:
@@ -14,9 +16,9 @@ on:
       - '*.html'
       - 'store-images/**'
 
+# The app token of tick3d-agents[bot] pushes the branch and opens the pull request, not this token.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 # A newer push renders the newer page, so it replaces a run that is still waiting.
 concurrency:
@@ -65,16 +67,46 @@ jobs:
       - name: Convert and check
         run: uv run store-images/convert.py "$RUNNER_TEMP/shots"
 
-      # A pull request that GITHUB_TOKEN opens starts no workflows. To run the checks, close and
-      # reopen it, or push to its branch.
+      # The body starts with the agent marker, so agents.yml does not route the pull request, and it shows
+      # up to 8 changed images (RULES.md rule 12), from the branch that the next step pushes.
+      - name: Describe the changes
+        env:
+          BODY: ${{ runner.temp }}/body.md
+          RAW: https://raw.githubusercontent.com/${{ github.repository }}/chore/store-images
+        run: |
+          {
+            echo '<!-- agent -->'
+            echo '🤖 **store-images** · Store image workflow'
+            echo
+            echo 'The store-images workflow rendered the store images from production, and these images changed by more than render noise (store-images/convert.py).'
+            echo 'Look at each image before the merge. The merge uploads the Play images (play-listing.yml).'
+            echo
+            shown=0
+            while read -r status path; do
+              # A deleted image has nothing to show.
+              if [ "$status" = D ] || [ "$shown" -ge 8 ]; then continue; fi
+              case "$path" in
+                *.jpg | *.png | *.webp) echo "<img src=\"$RAW/$path\" width=\"180\" alt=\"$path\">"; shown=$((shown + 1)) ;;
+              esac
+            done < <(git status --porcelain --untracked-files=all -- android/store/en-US/images apple/store marketing/ads public/screenshots)
+          } > "$BODY"
+
+      - id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.AGENTS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AGENTS_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # With no change left after convert.py, this opens no pull request and deletes an old branch.
       - uses: peter-evans/create-pull-request@v8.1.1
         with:
+          token: ${{ steps.app.outputs.token }}
           branch: chore/store-images
           commit-message: 'chore(store): render the store images again'
           title: 'chore(store): render the store images again'
-          body: |
-            The store-images workflow rendered the store screenshots, the feature graphic and the ads from production.
-            Look at each image before the merge. The merge uploads the Play images (play-listing.yml).
+          body-path: ${{ runner.temp }}/body.md
           add-paths: |
             android/store/en-US/images/**
             apple/store/**
