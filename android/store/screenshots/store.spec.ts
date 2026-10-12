@@ -1,4 +1,5 @@
-// The Play store screenshots and the feature graphic. The play-screenshots workflow runs this file.
+// The store screenshots: each scene runs once per target of targets.json (playwright.config.ts).
+// A shot goes to SHOTS_DIR/<target>/<scene>.png. The store-images workflow runs this file.
 // Production keeps no data from it: every API write fails, except in the online scene, which plays
 // on the local Docker Compose build at LOCAL_URL (compose.lan.yml), because an online game needs writes.
 import type { Page } from '@playwright/test';
@@ -13,15 +14,34 @@ async function readOnly(page: Page): Promise<void> {
 }
 // The board animates a placed mark, and fonts and charts load late.
 const settle = (page: Page, ms = 1200) => page.waitForTimeout(ms);
-const shot = (page: Page, name: string) => page.screenshot({ path: `${OUT}/${name}.png` });
+// The new-message banner covers the board, and the local build names its container as a LAN host.
+// Production shows neither, so they are not part of a scene.
+async function hideLocalOnly(page: Page): Promise<void> {
+  for (const selector of ['#chat-notice', '#lan-host']) {
+    await page.locator(selector).evaluate((element) => {
+      if (element instanceof HTMLElement) element.hidden = true;
+    });
+  }
+}
+const shot = (page: Page, name: string) => page.screenshot({ path: `${OUT}/${test.info().project.name}/${name}.png` });
+
+async function play(page: Page, cells: readonly number[]): Promise<void> {
+  for (const index of cells) {
+    await cell(page, index).click();
+    await settle(page, 250);
+  }
+}
+// Scrolls a part of the page into the middle of the screen.
+async function showMiddle(page: Page, selector: string): Promise<void> {
+  await page.locator(selector).first().evaluate((element) => element.scrollIntoView({ block: 'center' }));
+  await settle(page);
+}
+const OPENING = [21, 42, 22, 5, 26];
 
 test('1 the tower', async ({ open }) => {
   const { page } = await open({ settings: { mode: 'friend' } });
   await readOnly(page);
-  for (const index of [21, 42, 22, 5, 26]) {
-    await cell(page, index).click();
-    await settle(page, 300);
-  }
+  await play(page, OPENING);
   await page.evaluate(() => scrollTo(0, 0));
   await settle(page);
   await shot(page, '1-tower');
@@ -67,38 +87,27 @@ test('3 an online game with chat', async ({ open }) => {
   await settle(alice.page);
   await alice.page.locator('#chat-input').evaluate((element) => element.scrollIntoView({ block: 'end' }));
   await alice.page.evaluate(() => scrollBy(0, 40));
-  // The new-message banner covers the board. It is not part of the scene.
-  await alice.page.locator('#chat-notice').evaluate((element) => {
-    if (element instanceof HTMLElement) element.hidden = true;
-  });
+  await hideLocalOnly(alice.page);
   await settle(alice.page);
   await shot(alice.page, '3-online');
 });
 
-test('4 the Voice room', async ({ open }) => {
-  const { page } = await open({ path: '/sound-input' });
+test('4 a blind game on the keypad', async ({ open }) => {
+  const { page } = await open({ settings: { mode: 'friend' } });
   await readOnly(page);
-  await settle(page, 2000);
-  await shot(page, '4-voice');
+  await play(page, [21, 42]);
+  await page.locator('[data-toggle="hideBoard"]').click();
+  for (const digit of ['2', '2', '3']) await page.locator(`[data-digit="${digit}"]`).click();
+  await showMiddle(page, '#coords');
+  await shot(page, '4-blind');
 });
 
-test('5 the stats', async ({ open }) => {
-  const { page } = await open({ path: '/stats' });
+test('5 the sound sets', async ({ open }) => {
+  const { page } = await open({ settings: { mode: 'friend' } });
   await readOnly(page);
-  await expect(page.getByRole('heading', { name: 'Opening moves' })).toBeVisible();
-  await page.getByRole('heading', { name: 'Opening moves' }).evaluate((element) => element.scrollIntoView());
-  await page.evaluate(() => scrollBy(0, -40));
+  await play(page, OPENING);
+  await page.getByRole('button', { name: 'Sound set', exact: true }).click();
+  await expect(page.locator('#sound-sets')).toBeVisible();
   await settle(page);
-  await shot(page, '5-stats');
-});
-
-test('6 the feature graphic', async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 1024, height: 500 }, deviceScaleFactor: 2 });
-  const page = await context.newPage();
-  const tower = new URL(`file://${OUT}/1-tower.png`).href;
-  await page.goto(`${new URL('feature.html', import.meta.url).href}?tower=${encodeURIComponent(tower)}`);
-  await expect(page.locator('#tower')).toHaveJSProperty('complete', true);
-  await settle(page, 500);
-  await page.screenshot({ path: `${OUT}/feature.png` });
-  await context.close();
+  await shot(page, '5-sounds');
 });

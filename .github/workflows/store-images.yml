@@ -1,0 +1,83 @@
+name: store-images
+
+# Renders the store screenshots of every target in android/store/screenshots/targets.json, the Play
+# feature graphic and the ads, and opens a pull request with them. The online scene plays on a local
+# Docker Compose build of main, the other scenes read production without writing. convert.py fails the
+# run on a missing image or a size that the store does not accept. A merge then starts play-listing.yml,
+# which uploads the Play images. The Apple images in apple/store/ wait for the App Store listing sync (#139).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - '*.html'
+      - 'android/store/screenshots/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# A newer push renders the newer page, so it replaces a run that is still waiting.
+concurrency:
+  group: store-images
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      LOCAL_URL: http://localhost:8080
+    steps:
+      - uses: actions/checkout@v7
+
+      # The scenes read production, which kitshn.yml deploys after its check. release.json holds the
+      # commit time of the deployed build (vite.config.ts), so this waits until it is this commit or newer.
+      - name: Wait for production
+        run: |
+          commit_ms=$(( $(git log -1 --format=%ct) * 1000 ))
+          for _ in $(seq 60); do
+            deployed_ms=$(curl -fsS https://tick3d.yarden-zamir.com/release.json | jq -e '.at') || deployed_ms=0
+            if [ "$deployed_ms" -ge "$commit_ms" ]; then exit 0; fi
+            sleep 20
+          done
+          echo "::error::production does not serve this commit after 20 minutes"
+          exit 1
+
+      - name: Start the local build
+        run: docker compose -f compose.lan.yml up --detach --build --wait
+
+      # The image tag must match the @playwright/test version in package.json, as in e2e.yml.
+      - name: Render
+        run: |
+          shots="$RUNNER_TEMP/shots"
+          mkdir -p "$shots"
+          docker run --rm --network host --ipc=host \
+            --volume "$PWD:/app" --volume "$shots:$shots" --workdir /app \
+            --env SHOTS_DIR="$shots" --env LOCAL_URL \
+            mcr.microsoft.com/playwright:v1.63.0-noble \
+            sh -c 'npm ci --no-audit --no-fund && npx playwright test -c android/store/screenshots/playwright.config.ts'
+          sudo chown -R "$(id -u):$(id -g)" .
+
+      - uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Convert and check
+        run: uv run android/store/screenshots/convert.py "$RUNNER_TEMP/shots"
+
+      # A pull request that GITHUB_TOKEN opens starts no workflows. To run the checks, close and
+      # reopen it, or push to its branch.
+      - uses: peter-evans/create-pull-request@v8.1.1
+        with:
+          branch: chore/store-images
+          commit-message: 'chore(store): render the store images again'
+          title: 'chore(store): render the store images again'
+          body: |
+            The store-images workflow rendered the store screenshots, the feature graphic and the ads from production.
+            Look at each image before the merge. The merge uploads the Play images (play-listing.yml).
+          add-paths: |
+            android/store/en-US/images/**
+            apple/store/**
+            marketing/ads/**
+            public/screenshots/**
+          delete-branch: true
