@@ -14,7 +14,7 @@ A maintainer is anyone with the `OWNER`, `MEMBER` or `COLLABORATOR` role on the 
 
 1. The workflow `.github/workflows/agents.yml` sends a webhook to this thread when a maintainer:
    - adds the label `planned` or `needs validation` to an issue (`kind: "label"`);
-   - comments on an issue that has the label `planned`, `needs validation`, `agents: working` or `agents: question` (`kind: "issue-comment"`).
+   - comments on an open issue that has the label `planned`, `needs validation`, `agents: working` or `agents: question` (`kind: "issue-comment"`).
 2. Before the webhook, the workflow already added a 👀 reaction to the comment, or the Lookout comment for a new label. Do not post those again.
 3. Pull request comments do not come to you. They go straight to the owning agent through its PR watch.
 4. Agents report to you with `t3_thread_send` (RULES.md rule 21).
