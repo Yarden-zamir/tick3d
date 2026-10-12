@@ -1,0 +1,35 @@
+# Turns on auto-merge for Dependabot pull requests. GitHub merges one when the required check
+# `check` passes and the branch has no conflicts. Dependabot rebases a conflicting branch by itself,
+# and the merge then follows.
+# The tick3d-agents app turns it on, not github.token: GitHub starts no workflow from a merge made
+# with github.token, so the deploy on main would not run.
+# Dependabot runs see only Dependabot secrets, so AGENTS_APP_CLIENT_ID and AGENTS_APP_PRIVATE_KEY
+# are Dependabot secrets as well.
+name: Dependabot auto-merge
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  automerge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.AGENTS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AGENTS_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+
+      - name: Turn on auto-merge
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --merge "$PR_URL"
