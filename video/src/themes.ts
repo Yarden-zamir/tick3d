@@ -5,7 +5,7 @@ import type { Beats } from '../creative/beats.ts';
 
 export type ThemeId = Beats['bars'][number]['theme'];
 
-const TOKENS = ['page', 'dot', 'surface', 'ink', 'line', 'shadow', 'slab', 'x', 'o', 'win', 'on-color'] as const;
+const TOKENS = ['page', 'dot', 'surface', 'ink', 'line', 'shadow', 'slab', 'x', 'o', 'win', 'on-color', 'toggle-on'] as const;
 export type Token = (typeof TOKENS)[number];
 
 // Channels from 0 to 1, as the browser computes them (sRGB, no conversion).

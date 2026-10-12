@@ -3,7 +3,7 @@
 // Everything in it is a function of the frame number.
 import { DoubleSide, Mesh, Vector3 } from 'three';
 import { Easing, interpolate } from 'remotion';
-import type { Line } from '../../../src/game.ts';
+import { LINES, type Line } from '../../../src/game.ts';
 import { seededRandom } from '../../../src/practice/practice.ts';
 import { SIXTEENTH } from '../../../src/song.ts';
 import { createConfetti } from '../confetti.ts';
@@ -63,6 +63,9 @@ export function createMemoryWorld(width: number, height: number, art: BadgeArt):
   const threats = eventOf('threats');
   const shown = eventsOf('move');
   const placeOf = (move: number) => shown.find((event) => event.move === move)?.at;
+  // Events that only some plans have.
+  const [recall] = eventsOf('recall');
+  const [allLines] = eventsOf('all-lines');
 
   // ---- The shatter: each cell flies away from the centre of the tower, a little off the straight line ----
   const flights = cells.map((_, cell) => {
@@ -100,6 +103,9 @@ export function createMemoryWorld(width: number, height: number, art: BadgeArt):
   ring.renderOrder = 30;
   ring.position.copy(cellBase(meetCell)).add(new Vector3(0, OUTLINE + 0.01, 0));
   scene.add(ring);
+
+  // ---- Every line of the game, thin, for the 'all-lines' flash ----
+  const thinLines = allLines === undefined ? [] : LINES.map((line) => ({ beam: stage.beam({ radius: 0.04, halos: false, renderOrder: 10 }), ends: ends(line, 0.2) }));
 
   // ---- The reveal: the winning beam and the confetti ----
   const winBeam = stage.beam({ renderOrder: 20 });
@@ -171,7 +177,9 @@ export function createMemoryWorld(width: number, height: number, art: BadgeArt):
         // `.board.finished`: the pieces off the winning line fade to 35 %.
         opacity = WIN_LINE.includes(cell) ? 1 : interpolate(revealed, [2, 6], [1, 0.35], clamp);
       } else {
-        const board = onBoard ? fade : 0;
+        // A board mark fades back as a ghost on the recall, one per sixteenth, in the order of the moves.
+        const recalled = onBoard && recall !== undefined ? interpolate(since(frame, recall.at + move), [0, 0.5, 4], [0, 1, TRAIL], clamp) : 0;
+        const board = Math.max(onBoard ? fade : 0, hidden >= SHATTER ? recalled : 0);
         const ghost = at === undefined ? 0 : ghostOf(move, at, frame);
         opacity = Math.max(board, ghost, frame >= frameOf(threats.at) && (onBoard || (at !== undefined && frame >= frameOf(at))) ? rememberedOf(cell, move, frame) : 0);
       }
@@ -209,6 +217,13 @@ export function createMemoryWorld(width: number, height: number, art: BadgeArt):
     ring.visible = !isRevealed && ringAge < 3;
     ring.scale.setScalar((CELL / 2) * (1 + 0.7 * ringAge));
     ringMaterial.opacity = interpolate(ringAge, [0, 3], [1, 0], clamp);
+
+    // The lines flash together, a little apart, and fade over 8 sixteenths.
+    thinLines.forEach(({ beam, ends: [from, to] }, index) => {
+      const t = allLines === undefined ? -1 : since(frame, allLines.at + 0.04 * index);
+      if (t < 0 || t >= 8) beam.hide();
+      else beam.place(from, to, { length: interpolate(t, [0, 1], [0, 1], clamp), opacity: interpolate(t, [0, 1, 8], [0, 0.9, 0], clamp) });
+    });
 
     // The winning beam burns along the line from the first lit cell, then throbs on every beat.
     const fire = since(frame, reveal.at + 1);

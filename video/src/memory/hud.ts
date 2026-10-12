@@ -21,6 +21,9 @@ const BORDER = 6;
 const SHADOW = 8;
 const SLIDE = 3;
 const LABELS = ['Layer', 'Row', 'Column'] as const;
+// The Hide buttons of the game panel (index.html `.toggles`), above the slots, for a mask with `toggle`.
+const TOGGLES = { y: 92, width: 196, height: 72, gap: 16 } as const;
+const HIDE = ['Board', 'History', 'Coordinates'] as const;
 // A pressed key lights for this many sixteenths.
 const PRESS = 1.5;
 
@@ -86,6 +89,20 @@ function pressAt(frame: number): { key: number; age: number } | undefined {
   return { key: press.key, age: since(frame, press.at) };
 }
 
+// Board and History are on. Coordinates switches on at the mask, with a press into its shadow (`.btn:active`).
+function drawToggles(ctx: CanvasRenderingContext2D, frame: number, theme: Theme): void {
+  const rowWidth = 3 * TOGGLES.width + 2 * TOGGLES.gap;
+  const age = since(frame, mask.at);
+  label(ctx, 'Hide', -rowWidth / 2 + 40, TOGGLES.y - TOGGLES.height / 2 - 30, 30, 'ink', theme);
+  HIDE.forEach((name, i) => {
+    const on = i < 2 || age >= 0;
+    const sink = i === 2 ? interpolate(age, [0, 0.3, PRESS], [0, SHADOW, 0], clamp) : 0;
+    const x = -rowWidth / 2 + i * (TOGGLES.width + TOGGLES.gap) + sink;
+    box(ctx, x, TOGGLES.y - TOGGLES.height / 2 + sink, TOGGLES.width, TOGGLES.height, on ? 'toggle-on' : 'surface', theme);
+    label(ctx, name, x + TOGGLES.width / 2, TOGGLES.y + sink + 3, 32, on ? 'on-color' : 'ink', theme);
+  });
+}
+
 function drawKeypad(ctx: CanvasRenderingContext2D, frame: number, theme: Theme): void {
   const shown = interpolate(since(frame, keypad.at), [0, SLIDE], [0, 1], { ...clamp, easing: Easing.out(Easing.back(1.4)) });
   const gone = interpolate(since(frame, keypad.until), [0, 2], [0, 1], { ...clamp, easing: Easing.in(cubic) });
@@ -93,6 +110,7 @@ function drawKeypad(ctx: CanvasRenderingContext2D, frame: number, theme: Theme):
   ctx.save();
   ctx.translate(0, (1 - shown + gone) * 760);
 
+  if (mask.toggle === true) drawToggles(ctx, frame, theme);
   const slots = slotsAt(frame);
   const slotsWidth = 3 * SLOT.width + 2 * SLOT.gap;
   LABELS.forEach((name, i) => {

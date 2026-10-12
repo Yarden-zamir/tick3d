@@ -24,6 +24,6 @@ export function memorySounds(): ScheduledSound[] {
   });
   winVoices(0).forEach((voice, i) => sounds.push({ at: reveal.at + 1 + i, voices: [voice] }));
   sounds.push(...chord(final.at, [48, 52, 55, 60], 1.2));
-  if (sounds.some((sound) => sound.at >= END)) throw new Error(`a sound of the ${PLAN.cut} cut starts after its end`);
+  if (sounds.some((sound) => sound.at >= END)) throw new Error(`a sound of the ${PLAN.id} plan starts after its end`);
   return sounds.sort((a, b) => a.at - b.at);
 }

@@ -2,14 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { SIXTEENTH } from '../../../src/song.ts';
 import { FORMATS, areaOf } from './formats.ts';
 import { FORK_MOVE, MOVES, playerOf } from './game.ts';
-import { CUTS, eventOf, eventsOf as planEvents, planOf, stillsOf, typingOf } from './plan.ts';
+import { PLAN_IDS, eventOf, eventsOf as planEvents, planOf, stillsOf, typingOf } from './plan.ts';
 
 // The limits of issue #130: the length, the number of text lines, and the words of a line.
 const LIMITS = { full: { seconds: 15, lines: 3 }, short: { seconds: 8, lines: 2 } } as const;
 const MAX_WORDS = 6;
 
-describe.each(CUTS)('the %s cut of the smart-memory ad', (cut) => {
-  const plan = planOf(cut);
+describe.each(PLAN_IDS)('the %s plan of the smart-memory ad', (id) => {
+  const plan = planOf(id);
+  const { cut } = plan;
   const end = plan.seconds / SIXTEENTH;
   const eventsOf = <K extends Parameters<typeof planEvents>[0]>(kind: K) => planEvents(kind, plan);
 
@@ -23,17 +24,21 @@ describe.each(CUTS)('the %s cut of the smart-memory ad', (cut) => {
     for (const line of plan.text) expect(line.text.split(' ').length, line.text).toBeLessThanOrEqual(MAX_WORDS);
   });
 
-  it('opens on the hook: the shatter is the first motion, and the first line shows within 2 s', () => {
+  it('opens on the hook: the shatter is the first big motion, and the first line shows within 2 s', () => {
     const shatter = eventOf('shatter', plan);
-    expect(plan.events.every((event) => event.at >= shatter.at)).toBe(true);
-    expect(shatter.at * SIXTEENTH).toBeLessThan(1);
+    // The flash of the lines in variant C is thin light over the standing tower, before the shatter.
+    expect(plan.events.filter((event) => event.kind !== 'all-lines').every((event) => event.at >= shatter.at)).toBe(true);
+    expect(shatter.at * SIXTEENTH).toBeLessThan(2);
     expect((plan.text[0]?.at ?? Infinity) * SIXTEENTH).toBeLessThan(2);
   });
 
-  it('tells the story in order: shatter, Hide coordinates, threats, reveal, end card, final chord', () => {
-    const order = ['shatter', 'mask', 'threats', 'reveal', 'end-card', 'final-chord'] as const;
-    const times = order.map((kind) => eventOf(kind, plan).at);
+  it('tells the story in order: shatter, then Hide coordinates and the threats, reveal, end card, final chord', () => {
+    const times = (['shatter', 'reveal', 'end-card', 'final-chord'] as const).map((kind) => eventOf(kind, plan).at);
     expect(times).toEqual(times.toSorted((a, b) => a - b));
+    for (const kind of ['mask', 'threats'] as const) {
+      expect(eventOf(kind, plan).at).toBeGreaterThanOrEqual(eventOf('shatter', plan).at);
+      expect(eventOf(kind, plan).at).toBeLessThan(eventOf('reveal', plan).at);
+    }
     expect(eventOf('final-chord', plan).at).toBeLessThan(end);
   });
 
@@ -52,7 +57,7 @@ describe.each(CUTS)('the %s cut of the smart-memory ad', (cut) => {
     expect(moves.at(-1)?.at).toBeLessThan(eventOf('reveal', plan).at);
   });
 
-  it('keeps the double threat on screen in the full cut', () => {
+  it('keeps the double threat on screen in a full cut', () => {
     if (cut !== 'full') return;
     expect(plan.firstMove).toBeLessThanOrEqual(FORK_MOVE);
     expect(eventOf('threats', plan).at).toBeLessThan(eventsOf('move').find((event) => event.move === FORK_MOVE)?.at ?? -1);

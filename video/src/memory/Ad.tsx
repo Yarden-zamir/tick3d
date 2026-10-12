@@ -3,20 +3,20 @@ import { Film } from '../Film.tsx';
 import { PLAN } from './plan.ts';
 import { createMemoryWorld } from './world.ts';
 
-// The render passes the cut twice: as MEMORY_CUT for the plan, and as an input prop for this check, so a render
+// The render passes the plan twice: as MEMORY_PLAN for plan.ts, and as an input prop for this check, so a render
 // can never fall back to the full cut in silence.
-function checkCut(): void {
+function checkPlan(): void {
   const props: unknown = getInputProps();
-  const wanted = typeof props === 'object' && props !== null && 'cut' in props ? props.cut : 'full';
-  if (wanted !== PLAN.cut) throw new Error(`the render asked for cut ${String(wanted)}, but the plan loaded ${PLAN.cut}`);
+  const wanted = typeof props === 'object' && props !== null && 'plan' in props ? props.plan : 'full';
+  if (wanted !== PLAN.id) throw new Error(`the render asked for plan ${String(wanted)}, but plan.ts loaded ${PLAN.id}`);
 }
 
-// The smart-memory ad over its soundtrack (scripts/memory.ts writes public/memory-<cut>.wav).
+// The smart-memory ad over its soundtrack (scripts/memory.ts writes public/memory-<plan>.wav).
 export const Ad = () => (
   <Film
-    audio={`memory-${PLAN.cut}.wav`}
+    audio={`memory-${PLAN.id}.wav`}
     create={(width, height, art) => {
-      checkCut();
+      checkPlan();
       return createMemoryWorld(width, height, art);
     }}
   />
