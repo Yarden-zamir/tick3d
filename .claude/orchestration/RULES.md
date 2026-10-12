@@ -18,7 +18,7 @@ A maintainer is anyone with the `OWNER`, `MEMBER` or `COLLABORATOR` role on the 
    - The signature lines, then 1 to 3 sentences on what changed and why.
    - "Try it": the preview steps, only when the change can be seen. The preview is `https://pr-<N>.tick3d.yarden-zamir.com`.
    - "Open questions", only when there are some.
-   - "Screenshots", when rule 12 applies.
+   - "Screenshots": always, with at least one image (rule 12).
    - At most about 15 lines in all. No test logs, file lists or commit hashes. Put long detail in your report to Conductor.
 7. The title is a conventional commit line of at most about 60 characters. It says what the change does, not how. Update the title when the scope changes.
 8. Write a description or comment body to a file made with `mktemp -t <name>-pr<N>`. Never use a shared file name. Before you publish, check that the file is not empty and that it holds your own signature.
@@ -26,7 +26,9 @@ A maintainer is anyone with the `OWNER`, `MEMBER` or `COLLABORATOR` role on the 
 10. When your work depends on another open pull request, branch from its head branch, open yours with `--base <parent head branch>`, and write `Depends on #N`. Then run `gh-agent gh stack link <parent PR> <your PR>`. Run it again when the stack grows.
 11. To update your branch, merge the base in (a normal push), or rebase and push with `--force-with-lease`. Prefer the merge on a shared branch. Never force-push without the lease. GitHub runs no checks while a pull request conflicts. So before you wait for checks, run `gh pr view <N> --json mergeable,mergeStateStatus`. If it says `CONFLICTING` or `DIRTY`, merge the base in first. If a check fails in code that your change does not touch, it is probably flaky: re-run the failed jobs once with `gh-agent gh run rerun <run id> --failed`. If it fails again, treat it as a real failure and find the cause.
 11a. The VPS has 4 CPU cores, and it also runs the live game. Run every heavy command through the shared lock at low priority: `nice -n 19 flock /tmp/tick3d-heavy.lock <command>`. Heavy means `npm ci` or `npm install`, `npm run check`, a full `vitest` run, Playwright or e2e, video renders, screenshot runs and production builds. Only one heavy command runs at a time on the machine. Locally, run only the tests of the files that you touched. Let CI run the full `check` and `e2e` on your pull request.
-12. A pull request that changes the UI shows screenshots in its description: phone (390 px) and desktop, light and dark, before and after where a before exists. Take them from the preview, or from a local build when previews are down. Show only the screens that changed.
+12. Every pull request description shows at least one image, because the preview menu shows the description images in each entry. Host images on GitHub only (rule 13): other hosts do not show in the menu.
+    - A change to the UI shows screenshots: phone (390 px) and desktop, light and dark, before and after where a before exists. Take them from the preview, or from a local build when previews are down. Show only the screens that changed.
+    - A change without UI shows the closest picture: a render, a still, a contact sheet, a small diagram of the flow, or a screenshot of the CI run or the result.
 13. Commit images to the orphan branch `pr-assets`, in the folder `pr-<N>/` (or `issue-<N>/` for issue-only images), never to a feature branch. Keep each image small (PNG, at most about 300 KB). Link them as `https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/pr-<N>/<file>.png`. Give each new render or file a new name that includes the short commit hash, so that links never change under a maintainer.
 
 ## Maintainer input
