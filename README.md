@@ -4,20 +4,16 @@
 
 3D tic-tac-toe on a 4×4×4 cube, at [tick3d.yarden-zamir.com](https://tick3d.yarden-zamir.com).
 
+
 [![The 15 s tick3d ad. Click to download the MP4 with sound.](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-readme.webp)](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-landscape.mp4)
-
-[![The tutorial "How to win": which lines win and why. Click to download the MP4 with sound.](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-readme.webp)](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-landscape.mp4)
-
-The ad (15 s) and the tutorial "How to win" (40 s) play here without sound. Click one to download its MP4 with sound. See [Video](#video) for the portrait cuts and the short tutorial.
-
-![A game against the computer in the tower view](docs/screenshots/tower.png)
-
 ## Rules
 
 - Two players take turns. X moves first.
 - Four marks in a straight line win. The cube has 76 lines.
 - In an online or Nearby session, X and O swap for each new game, so the first move alternates. Against the computer you start every game unless you unlock the seats.
 - A full cube with no line is a draw.
+
+[![The tutorial "How to win": which lines win and why. Click to download the MP4 with sound.](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-readme.webp)](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/tutorial/tick3d-tutorial-a89435f-landscape.mp4)
 
 ## Features
 
@@ -200,6 +196,7 @@ docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:26-alpine npx vite 
 - `npm run check` runs the type check, the linters (`npm run lint`) and the unit tests.
 - `npm run build` runs the type check and the Vite build.
 - `npm run api` starts the API on port 8080 with `./dev.duckdb`.
+- `npm run dev` starts the Vite dev server on port 5173. It sends `/api` calls to `npm run api`, so run both for Online games.
 
 `npm run e2e` runs the Playwright tests in `e2e/` against a deployed site. Set `E2E_BASE_URL` to the site, for example a pull request preview:
 
@@ -245,6 +242,14 @@ The drafts land in `video/out/draft/` (or `video/out/variants/<name>/draft/` wit
 See [kitshn.md](kitshn.md). A push to `main` deploys production.
 
 The paid Android app on Google Play wraps the production site. The `android` workflow builds it from [android/twa-manifest.json](android/twa-manifest.json), and the `play-*` workflows release it, sync the listing and file issues from reviews and crashes.
+
+The iOS app wraps the production site the same way, with [Capacitor](https://capacitorjs.com): a site deploy reaches it with no app build. The `ios` workflow generates the Xcode project from [apple/capacitor.config.json](apple/capacitor.config.json) on every run, so the repository keeps no native code. A tag `ios-v1.2.0` builds, signs and uploads the app to TestFlight, and makes a GitHub release.
+
+- The App Store account comes from repository settings only: the variables `APPLE_TEAM_ID` and `IOS_BUNDLE_ID`, and the secrets `APP_STORE_CONNECT_KEY` (the `.p8` text of an Admin key), `APP_STORE_CONNECT_KEY_ID` and `APP_STORE_CONNECT_ISSUER_ID`. Xcode signs with the key (cloud signing). Without them, the workflow builds for the simulator only.
+- A pull request that touches `apple/` or `ios.yml` runs the workflow's `lint` job: `actionlint` on the workflow itself, and the same Capacitor project generation as the real build, with no Xcode and no macOS runner. It catches a bad `apple/capacitor.config.json` or a broken install in well under a minute, before a change reaches the 45-minute macOS build.
+- The app adds `tick3dApp/ios` to the user agent. The page then sets `<html data-platform="ios">` (`src/platform.ts`) and hides what the App Store does not allow: the GitHub link and the previews button (`data-hide-in="ios"`), and the GitHub login (App Store rule 4.8). `e2e/ios.spec.ts` checks this on every preview.
+- `WKAppBoundDomains` lets the web view run the service worker, so the game plays offline after one start online. Without a network at the first start, the app shows `apple/www/index.html`.
+- `apple/icon.png` (1024 × 1024, no transparency) is the App Store icon. Without it, the workflow scales up the Play icon.
 
 ## License
 

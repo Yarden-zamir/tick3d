@@ -34,3 +34,11 @@ updates:
     groups:
       fastlane:
         patterns: ['*']
+  # The iOS app: Capacitor and its icon tool (apple/package.json).
+  - package-ecosystem: npm
+    directory: /apple
+    schedule:
+      interval: weekly
+    groups:
+      capacitor:
+        patterns: ['*']
