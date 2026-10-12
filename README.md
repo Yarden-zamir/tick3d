@@ -196,6 +196,7 @@ docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:26-alpine npx vite 
 - `npm run check` runs the type check, the linters (`npm run lint`) and the unit tests.
 - `npm run build` runs the type check and the Vite build.
 - `npm run api` starts the API on port 8080 with `./dev.duckdb`.
+- `npm run dev` starts the Vite dev server on port 5173. It sends `/api` calls to `npm run api`, so run both for Online games.
 
 `npm run e2e` runs the Playwright tests in `e2e/` against a deployed site. Set `E2E_BASE_URL` to the site, for example a pull request preview:
 
