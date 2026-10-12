@@ -1,6 +1,14 @@
 import { createHmac, randomBytes, randomInt } from 'node:crypto';
 import { type DuckDBValue, DuckDBInstance, listValue } from '@duckdb/node-api';
-import { type AchievementGame, type AchievementProgress, type AchievementRarity, type Achievements, achievementProgress, rarityOf } from '../src/achievements.ts';
+import {
+  ACHIEVEMENT_IDS,
+  type AchievementGame,
+  type AchievementId,
+  type AchievementProgress,
+  type AchievementRarity,
+  type Achievements,
+  achievementProgress,
+} from '../src/achievements.ts';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { NO_LIMIT, type TimeControl } from '../src/clock.ts';
 import { type EpochMs, MAX_EPOCH_MS, epochNow, toEpochMs } from '../src/epoch.ts';
@@ -71,6 +79,7 @@ import type { PracticeBoard, PracticeMode, PracticeRun, PresetId } from '../src/
 import { DELETED_NAME } from '../src/deletions.ts';
 import type { Release } from '../src/release.ts';
 import { DATA_TABLES, type DeletedData, STATS_CACHE_MS } from './api-docs.ts';
+import { FIELD_SCHEMA, GAME_COLUMN_LIST, GAME_VALUES, METRIC_COLUMN_LIST, METRIC_VALUES } from './fields.ts';
 import { practiceBoard, practiceStats } from './practice.ts';
 import { type Rows, bigId, bool, code as codeColumn, deviceGameId, epoch, gameId, int, json, nullable, oneOf, readRow, text } from './sql.ts';
 import { computeStats, SEAT_O, SEAT_X } from './stats.ts';
@@ -202,6 +211,14 @@ const SCHEMA = [
    )`,
   // "Reset achievements": only games that finished after `reset_at` count for the achievements of `owner`.
   // `owner` is the token of the player, as in private_stats. "Clear history" does not touch it.
+  // The unlocked achievements of each player (owner: a canonical token), for the rarity and the
+  // leaderboard. `signature` names the games that made the row (refreshAchievements fills a row again
+  // when it changes). Never send an owner to a page.
+  `CREATE TABLE IF NOT EXISTS achievement_players (
+     owner VARCHAR PRIMARY KEY,
+     signature VARCHAR NOT NULL,
+     unlocked VARCHAR[] NOT NULL
+   )`,
   `CREATE TABLE IF NOT EXISTS achievement_resets (
      owner VARCHAR PRIMARY KEY,
      reset_at TIMESTAMPTZ NOT NULL
@@ -242,6 +259,7 @@ const SCHEMA = [
      person VARCHAR PRIMARY KEY,
      deleted_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
+  ...FIELD_SCHEMA,
 ];
 
 // The token that a seat holds when a logged-in player takes it. The account has a player_tokens row
@@ -313,8 +331,13 @@ const isFinished = (record: GameRecord) => toGame(record).status.kind !== 'playi
 const isDuplicateKey = (error: unknown) => error instanceof Error && error.message.includes('Duplicate key');
 // A unique id is a few random tries away. Twenty failures mean a bug, not bad luck.
 const MAX_ID_ATTEMPTS = 20;
-// Rarity changes slowly, and each computation replays every game.
-const RARITY_CACHE_MS = 10 * 60_000;
+// The rarity and the leaderboard counts may be this old: each check groups every result by player.
+const ACHIEVEMENTS_CHECK_MS = 60_000;
+// Raise it when a rule in src/achievements.ts changes: every row of achievement_players then fills again.
+// A new or removed achievement changes the signatures by itself.
+const ACHIEVEMENT_RULES_VERSION = 1;
+// Players per replay round of refreshAchievements, so the memory stays small.
+const ACHIEVEMENT_BATCH = 2000;
 
 // What SQL cannot read from a stored game without a replay.
 type Ending = { winner: Player | null; ending: 'won' | 'timeout' | 'draw'; line: LineKind | null };
@@ -370,11 +393,11 @@ function accountOf(login: string | null, avatar: string | null): PlayerInfo | nu
 // The two copies can differ in the time of the last move by some milliseconds, so the match uses the
 // moves and a finish within 10 minutes. Two games of the same two players with the same moves inside
 // 10 minutes then count as one. Revisit this if a result ever carries a shared game id from the host.
-const HOST_HAS_GAME = `(results.metrics.nearby.role::VARCHAR = 'guest' AND EXISTS (
+const HOST_HAS_GAME = `(results.nearby_role = 'guest' AND EXISTS (
   FROM results host SELECT 1
-  WHERE host.doc.mode::VARCHAR = 'nearby' AND host.metrics.nearby.role::VARCHAR = 'host'
+  WHERE host.mode = 'nearby' AND host.nearby_role = 'host'
     AND results.token IN (host.player_x, host.player_o) AND host.token <> results.token
-    AND host.doc.game.moves::INTEGER[] = results.doc.game.moves::INTEGER[]
+    AND host.moves = results.moves
     AND abs(epoch_ms(host.finished_at) - epoch_ms(results.finished_at)) < 600000))`;
 
 // Joins the GitHub account of each seat of a result row: x_login, x_avatar, o_login, o_avatar.
@@ -444,8 +467,8 @@ export async function openStore(
   // The achievements of each player, by their sorted tokens. A new or deleted result clears it all.
   // Limit: a clear drops every player's entry. Revisit this if achievement requests take more than about 100 ms.
   const achievementCache = new Map<string, AchievementProgress[]>();
-  // The rarity of the achievements over every player, and the unlocked count of each owner, at most RARITY_CACHE_MS old.
-  let rarityCache: { at: EpochMs; rarity: AchievementRarity; unlocked: Map<string, number> } | undefined;
+  // When refreshAchievements last brought achievement_players up to date.
+  let achievementsCheckedAt: EpochMs | undefined;
 
   // A Nearby guest counts the host's copy of the game, as in the history.
   const ACHIEVEMENT_ROWS = `FROM results SELECT results.public_id, results.doc::JSON AS doc, epoch_ms(results.finished_at) AS finished,
@@ -489,38 +512,83 @@ export async function openStore(
     return progress;
   }
 
-  // Every person with a finished game counts: an account with its devices, or a device without an account.
-  // Limit: it reads and replays every result. Revisit this when it takes more than about 1 s, or the results
-  // table holds about 100,000 rows: then keep the unlocks of each person in a table.
-  // The leaderboard reads the unlocked counts from the same pass.
-  async function everyonesAchievements(): Promise<{ rarity: AchievementRarity; unlocked: Map<string, number> }> {
-    if (rarityCache !== undefined && now() - rarityCache.at < RARITY_CACHE_MS) return rarityCache;
-    const found = await rows(`${ACHIEVEMENT_ROWS} WHERE NOT ${HOST_HAS_GAME}`, {}, ACHIEVEMENT_COLUMNS);
-    const seats = found.flatMap((row) => [row.token_x, row.token_o]).filter((token): token is string => token !== null && token !== core.COMPUTER_TOKEN);
-    const canon = await canonical(seats);
-    const person = (token: string | null) => (token === null ? undefined : canon.get(token));
-    const resets = await achievementResets();
-    const games = new Map<string, AchievementGame[]>();
-    for (const row of found) {
-      const x = person(row.token_x);
-      const o = person(row.token_o);
-      for (const owner of new Set([x, o])) {
-        if (owner === undefined) continue;
-        const list = games.get(owner) ?? [];
-        games.set(owner, list);
-        // A player who reset still counts as a player, with the games since the reset.
-        const reset = resets.get(owner);
-        if (reset === undefined || row.finished > reset) list.push(achievementGame(row, x === owner, o === owner));
-      }
+  // The counted games of each player (owner: the canonical token of a seat), as in the rarity: an account
+  // with its devices, or a device without an account. A Nearby guest counts the host's copy. `counts` is
+  // false for a game before the player's last "Reset achievements": such a player still counts as a player.
+  const OWNED_GAMES = `seats AS (
+      SELECT results.id, results.finished_at, unnest([${SEAT_X}, ${SEAT_O}]) AS token FROM results WHERE NOT ${HOST_HAS_GAME}),
+    owned AS (
+      SELECT DISTINCT seats.id, seats.finished_at, coalesce($account || lpad(pt.github_id::VARCHAR, 16, '0'), seats.token) AS owner
+      FROM seats LEFT JOIN player_tokens pt USING (token) WHERE seats.token IS NOT NULL AND seats.token <> $computer),
+    counted AS (
+      SELECT owned.*, r.reset_at IS NULL OR owned.finished_at > r.reset_at AS counts FROM owned LEFT JOIN achievement_resets r USING (owner))`;
+  const ownerOfSeat = (seat: string, joined: string) => `coalesce($account || lpad(${joined}.github_id::VARCHAR, 16, '0'), ${seat})`;
+
+  // Brings achievement_players up to date, at most once per ACHIEVEMENTS_CHECK_MS. One SQL pass finds the
+  // players whose games changed (a new game, a deletion, a link to an account, a reset); only their games replay.
+  // Limit: the first call after a deploy replays every game. Production had 490 results then.
+  async function refreshAchievements(): Promise<void> {
+    if (achievementsCheckedAt !== undefined && now() - achievementsCheckedAt < ACHIEVEMENTS_CHECK_MS) return;
+    const params = { account: ACCOUNT_TOKEN_PREFIX, computer: core.COMPUTER_TOKEN };
+    const changed = await rows(
+      `WITH ${OWNED_GAMES},
+        current AS (
+          SELECT owner, md5($rules) || ':' || count(*) FILTER (counts) || ':' || coalesce(bit_xor(hash(id)) FILTER (counts), 0) AS signature
+          FROM counted GROUP BY owner)
+      SELECT owner, current.signature FROM current LEFT JOIN achievement_players p USING (owner)
+      WHERE p.signature IS DISTINCT FROM current.signature`,
+      { ...params, rules: `${ACHIEVEMENT_RULES_VERSION} ${ACHIEVEMENT_IDS.join(' ')}` },
+      { owner: text, signature: text },
+    );
+    await db.run(`DELETE FROM achievement_players WHERE owner NOT IN (WITH ${OWNED_GAMES} SELECT owner FROM owned)`, params);
+    for (let start = 0; start < changed.length; start += ACHIEVEMENT_BATCH) {
+      const batch = changed.slice(start, start + ACHIEVEMENT_BATCH);
+      const found = await rows(
+        `WITH ${OWNED_GAMES}
+        SELECT counted.owner, results.public_id, results.doc::JSON AS doc, epoch_ms(results.finished_at) AS finished,
+          ${ownerOfSeat(SEAT_X, 'px')} AS owner_x, ${ownerOfSeat(SEAT_O, 'po')} AS owner_o
+        FROM counted JOIN results USING (id)
+          LEFT JOIN player_tokens px ON px.token = ${SEAT_X} LEFT JOIN player_tokens po ON po.token = ${SEAT_O}
+        WHERE counted.counts AND list_contains($owners, counted.owner)`,
+        { ...params, owners: listValue(batch.map((row) => row.owner)) },
+        { owner: text, public_id: nullable(gameId), doc: json, finished: epoch, owner_x: nullable(text), owner_o: nullable(text) },
+      );
+      const games = Map.groupBy(found, (row) => row.owner);
+      const unlocked = batch.map(({ owner }) =>
+        achievementProgress((games.get(owner) ?? []).map((row) => achievementGame(row, row.owner_x === owner, row.owner_o === owner)))
+          .filter((entry) => entry.unlockedAt !== null)
+          .map((entry) => entry.id),
+      );
+      await db.run(
+        `INSERT OR REPLACE INTO achievement_players (owner, signature, unlocked)
+         SELECT unnest($owners::VARCHAR[]), unnest($signatures::VARCHAR[]), unnest($unlocked::JSON::VARCHAR[][])`,
+        {
+          owners: listValue(batch.map((row) => row.owner)),
+          signatures: listValue(batch.map((row) => row.signature)),
+          // As JSON text: a list value cannot hold an empty list without a type.
+          unlocked: JSON.stringify(unlocked),
+        },
+      );
     }
-    const progress = new Map([...games].map(([owner, list]) => [owner, achievementProgress(list)] as const));
-    const unlocked = new Map([...progress].map(([owner, entries]) => [owner, entries.filter((entry) => entry.unlockedAt !== null).length] as const));
-    rarityCache = { at: now(), rarity: rarityOf([...progress.values()]), unlocked };
-    return rarityCache;
+    achievementsCheckedAt = now();
+  }
+
+  // How many players unlocked each achievement, out of every player with a finished game.
+  async function everyonesRarity(): Promise<AchievementRarity> {
+    await refreshAchievements();
+    const [total] = await rows('SELECT count(*)::INTEGER AS n FROM achievement_players', {}, { n: int });
+    const counts = await rows(
+      'SELECT id, count(*)::INTEGER AS n FROM (SELECT unnest(unlocked) AS id FROM achievement_players) GROUP BY id',
+      {},
+      { id: oneOf(ACHIEVEMENT_IDS), n: int },
+    );
+    const byId = new Map(counts.map((row) => [row.id, row.n]));
+    const unlocked = Object.fromEntries(ACHIEVEMENT_IDS.map((id) => [id, byId.get(id) ?? 0])) as Record<AchievementId, number>;
+    return { players: total?.n ?? 0, unlocked };
   }
 
   async function achievementsOf(owner: string, tokens: readonly string[]): Promise<Achievements> {
-    return { achievements: await progressOfTokens(owner, tokens), rarity: (await everyonesAchievements()).rarity };
+    return { achievements: await progressOfTokens(owner, tokens), rarity: await everyonesRarity() };
   }
 
   type NewResult = {
@@ -539,8 +607,8 @@ export async function openStore(
   async function insertResult(result: NewResult): Promise<boolean> {
     const { winner, ending, line } = endingOf(result.game);
     const inserted = await rows(
-      `INSERT INTO results (id, token, doc, finished_at, public_id, player_x, player_o, winner, ending, line, metrics)
-       VALUES ($id, $token, $doc::JSON::VARIANT, make_timestamptz($finished * 1000), $publicId, $x, $o, $winner, $ending, $line, $metrics::JSON::VARIANT)
+      `INSERT INTO results (id, token, doc, finished_at, public_id, player_x, player_o, winner, ending, line, metrics, ${GAME_COLUMN_LIST}, ${METRIC_COLUMN_LIST})
+       VALUES ($id, $token, $doc::JSON::VARIANT, make_timestamptz($finished * 1000), $publicId, $x, $o, $winner, $ending, $line, $metrics::JSON::VARIANT, ${GAME_VALUES}, ${METRIC_VALUES})
        ON CONFLICT (id) DO NOTHING RETURNING id`,
       {
         id: result.id,
@@ -860,7 +928,8 @@ export async function openStore(
   //   text. A session that has no player and no move after that goes.
   // - results: a game that the player uploaded goes. An online game with another player stays for
   //   that player, and so does another player's upload: the player's seat becomes null.
-  // - seat_metrics of the player's seats, player_names, the player's own blocks, private_stats, achievement_resets, practice_runs: deleted.
+  // - seat_metrics of the player's seats, player_names, the player's own blocks, private_stats, achievement_resets,
+  //   achievement_players, practice_runs: deleted.
   // - reports: a report about the player stays for moderation. A report that the player filed loses its reporter.
   // - player_tokens and users: the account goes, so no device acts for it any more.
   // Limit: a device of the account that is still logged in links itself again on its next visit,
@@ -926,8 +995,8 @@ export async function openStore(
 
       // The games that this player uploaded, and the online games without another player.
       const deleted = await changedIds(
-        `DELETE FROM results WHERE (list_contains($ids, token) AND doc.mode::VARCHAR IS DISTINCT FROM 'online')
-           OR (doc.mode::VARCHAR = 'online' AND (list_contains($ids, player_x) OR list_contains($ids, player_o))
+        `DELETE FROM results WHERE (list_contains($ids, token) AND mode IS DISTINCT FROM 'online')
+           OR (mode = 'online' AND (list_contains($ids, player_x) OR list_contains($ids, player_o))
              AND coalesce(list_contains($ids, player_x), true) AND coalesce(list_contains($ids, player_o), true))
          RETURNING id`,
         { ids },
@@ -945,6 +1014,7 @@ export async function openStore(
       counts.blocks.deleted = (await changedIds('DELETE FROM blocks WHERE list_contains($ids, owner) RETURNING person AS id', { ids })).length;
       counts.private_stats.deleted = (await changedIds('DELETE FROM private_stats WHERE list_contains($ids, owner) RETURNING owner AS id', { ids })).length;
       counts.achievement_resets.deleted = (await changedIds('DELETE FROM achievement_resets WHERE list_contains($ids, owner) RETURNING owner AS id', { ids })).length;
+      counts.achievement_players.deleted = (await changedIds('DELETE FROM achievement_players WHERE list_contains($ids, owner) RETURNING owner AS id', { ids })).length;
       // A block of this player by another player stays for that player, without the name.
       counts.blocks.anonymised = (
         await changedIds('UPDATE blocks SET name = $name WHERE list_contains($persons, person) AND name <> $name RETURNING owner || person AS id', { persons, name: DELETED_NAME })
@@ -1335,9 +1405,9 @@ export async function openStore(
         // A seat that its player cleared (clearHistory) is not in the history.
         const found = await rows(
           `FROM results ${SEAT_ACCOUNTS}
-           SELECT results.public_id, results.doc.mode::VARCHAR AS mode, results.doc.difficulty::VARCHAR AS difficulty,
+           SELECT results.public_id, results.mode, results.level AS difficulty,
              results.winner, results.ending, CASE WHEN results.ending IS NULL THEN results.doc::JSON END AS old_doc,
-             len(results.doc.game.moves::INTEGER[]) AS moves, epoch_ms(results.finished_at) AS finished,
+             len(results.moves) AS moves, epoch_ms(results.finished_at) AS finished,
              coalesce(list_contains($tokens, ${SEAT_X}), false) AS mine_x,
              coalesce(list_contains($tokens, ${SEAT_O}), false) AS mine_o, ${SEAT_ACCOUNT_COLUMNS},
              ${SEAT_X} AS token_x, ${SEAT_O} AS token_o
@@ -1392,7 +1462,7 @@ export async function openStore(
         // The replay below also reads rows from before game links, which have no winner column.
         const found = await rows(
           `FROM results SELECT doc::JSON AS doc
-           WHERE doc.mode::VARCHAR = 'computer' AND (list_contains($tokens, ${SEAT_X}) OR list_contains($tokens, ${SEAT_O}))`,
+           WHERE mode = 'computer' AND (list_contains($tokens, ${SEAT_X}) OR list_contains($tokens, ${SEAT_O}))`,
           { tokens },
           { doc: json },
         );
@@ -1421,7 +1491,8 @@ export async function openStore(
           { owner: await ownerOf(token), at: now() },
         );
         achievementCache.clear();
-        // The rarity counts this player's unlocks until it is computed again.
+        // The rarity and the leaderboard drop this player's unlocks at the next check.
+        achievementsCheckedAt = undefined;
       }),
 
     // Hides every finished game of this player from their history, on all linked devices.
@@ -1483,7 +1554,7 @@ export async function openStore(
         // The seats rotate between games: the report counts for the seat that this player held in that game.
         const seat = seatIn(row.doc.flipped, index, seatNow);
         const inserted = await rows(
-          `INSERT INTO seat_metrics (public_id, seat, metrics) VALUES ($id, $seat, $metrics::JSON::VARIANT)
+          `INSERT INTO seat_metrics (public_id, seat, metrics, ${METRIC_COLUMN_LIST}) VALUES ($id, $seat, $metrics::JSON::VARIANT, ${METRIC_VALUES})
            ON CONFLICT DO NOTHING RETURNING seat`,
           { id, seat, metrics: JSON.stringify(metrics) },
           { seat: text },
@@ -1547,9 +1618,9 @@ export async function openStore(
         const key = statsQuery(filter);
         const cached = leaderboardCache.get(key);
         if (cached !== undefined && now() - cached.generatedAt < STATS_CACHE_MS) return { ...cached, you };
+        await refreshAchievements();
         const found = await leaderRows(rows, filter, now());
         const names = await namesOf(found.map((row) => row.owner));
-        const { unlocked } = await everyonesAchievements();
         const fresh = {
           generatedAt: now(),
           rows: await Promise.all(
@@ -1565,7 +1636,7 @@ export async function openStore(
               avgMoves: row.avg_moves,
               bestStreak: row.best_streak,
               lastPlayed: row.last_played,
-              achievements: unlocked.get(row.owner) ?? 0,
+              achievements: row.achievements,
             })),
           ),
         };
@@ -1621,7 +1692,7 @@ export async function openStore(
 
         // The online rows of results repeat the session games counted above, so they stay out.
         const resultRows = await rows(
-          "FROM results SELECT doc::JSON AS doc WHERE list_contains($tokens, token) AND doc.mode::VARCHAR <> 'online'",
+          "FROM results SELECT doc::JSON AS doc WHERE list_contains($tokens, token) AND mode <> 'online'",
           { tokens },
           { doc: json },
         );

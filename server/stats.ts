@@ -23,6 +23,7 @@ import {
   type Stats,
   type StatsFilter,
 } from '../src/protocol.ts';
+import { metricsStruct } from './fields.ts';
 import { type RowOf, type Rows, type Shape, bool, epoch, int, nullable, num, oneOf, text } from './sql.ts';
 
 // An ORDER BY term that lists a category in its fixed order, such as DIFFICULTIES or SESSION_MODES, so every
@@ -34,8 +35,8 @@ const HIDE_SETTINGS = ['none', 'board', 'history', 'both'] as const;
 
 // The token of each seat of a result row. A row from before game links has no player columns:
 // its uploader (`token`) holds the seat `doc.you`, or both seats in a friend game.
-export const SEAT_X = `coalesce(results.player_x, CASE WHEN results.public_id IS NULL AND results.doc.you::VARCHAR IS DISTINCT FROM 'O' THEN results.token END)`;
-export const SEAT_O = `coalesce(results.player_o, CASE WHEN results.public_id IS NULL AND results.doc.you::VARCHAR IS DISTINCT FROM 'X' THEN results.token END)`;
+export const SEAT_X = `coalesce(results.player_x, CASE WHEN results.public_id IS NULL AND results.you IS DISTINCT FROM 'O' THEN results.token END)`;
+export const SEAT_O = `coalesce(results.player_o, CASE WHEN results.public_id IS NULL AND results.you IS DISTINCT FROM 'X' THEN results.token END)`;
 
 // One row per finished game that passes the filters, with the fields of its document as columns.
 // Both devices of a Nearby game send a result, so only the host's row counts.
@@ -43,40 +44,40 @@ export const SEAT_O = `coalesce(results.player_o, CASE WHEN results.public_id IS
 // $tokens (the tokens of one player for Mine and a person filter, or null for Everyone). A null parameter filters nothing.
 // `side` is the seat of the player whose results count: theirs for Mine and a person filter (null in a friend game, where
 // you hold both seats), and the player's seat in a computer game for Everyone.
-// computeStats copies these rows once into the temporary table stats_games, because each read of
-// the VARIANT document is slow. Every query then reads the copy through GAMES.
+// The fields come from the plain columns of results (server/fields.ts), not from the document.
+// computeStats copies these rows once into the temporary table stats_games. Every query then reads the copy through GAMES.
 // A row from before game links has no winner, ending or line columns. The game ended with its last
 // move (a win) or on time, so the last mover won. Only a full cube can also be a draw: such an old
 // game counts as a draw, and its winning line has no kind.
 export const FILTERED_GAMES = `FROM results SELECT
     finished_at,
-    doc.mode::VARCHAR AS mode,
-    doc.difficulty::VARCHAR AS level,
-    doc.you::VARCHAR AS you,
-    CASE WHEN doc.mode::VARCHAR = 'computer' THEN (CASE doc.you::VARCHAR WHEN 'X' THEN 'O' ELSE 'X' END) END AS computer,
-    coalesce(doc.tuned::BOOLEAN, false) AS tuned,
-    coalesce(doc.options.hideBoard::BOOLEAN, false) AS hide_board,
-    coalesce(doc.options.hideHistory::BOOLEAN, false) AS hide_history,
-    coalesce(doc.options.hideCoordinates::BOOLEAN, false) AS hide_coordinates,
-    doc.game.moves::INTEGER[] AS moves,
-    doc.game.times::DOUBLE[] AS times,
-    doc.game.clock.perGame::INTEGER AS per_game,
-    doc.game.clock.perMove::INTEGER AS per_move,
-    coalesce(winner, CASE WHEN ending IS NULL AND (len(doc.game.moves::INTEGER[]) < 64 OR coalesce(doc.game.timedOut::BOOLEAN, false))
-      THEN (CASE WHEN len(doc.game.moves::INTEGER[]) % 2 = 1 THEN 'X' ELSE 'O' END) END) AS winner,
-    coalesce(ending, CASE WHEN coalesce(doc.game.timedOut::BOOLEAN, false) THEN 'timeout'
-      WHEN len(doc.game.moves::INTEGER[]) < 64 THEN 'won' ELSE 'draw' END) AS ending,
-    line, ${SEAT_X} AS player_x, ${SEAT_O} AS player_o, metrics, public_id,
+    results.mode,
+    results.level,
+    results.you,
+    CASE WHEN results.mode = 'computer' THEN (CASE results.you WHEN 'X' THEN 'O' ELSE 'X' END) END AS computer,
+    coalesce(results.tuned, false) AS tuned,
+    coalesce(results.hide_board, false) AS hide_board,
+    coalesce(results.hide_history, false) AS hide_history,
+    coalesce(results.hide_coordinates, false) AS hide_coordinates,
+    results.moves,
+    results.times,
+    results.per_game,
+    results.per_move,
+    coalesce(winner, CASE WHEN ending IS NULL AND (len(results.moves) < 64 OR coalesce(results.timed_out, false))
+      THEN (CASE WHEN len(results.moves) % 2 = 1 THEN 'X' ELSE 'O' END) END) AS winner,
+    coalesce(ending, CASE WHEN coalesce(results.timed_out, false) THEN 'timeout'
+      WHEN len(results.moves) < 64 THEN 'won' ELSE 'draw' END) AS ending,
+    line, ${SEAT_X} AS player_x, ${SEAT_O} AS player_o, ${metricsStruct('results')} AS metrics, public_id,
     $tokens::VARCHAR[] IS NOT NULL AS scoped,
     coalesce(list_contains($tokens::VARCHAR[], ${SEAT_X}), false) AS mine_x,
     coalesce(list_contains($tokens::VARCHAR[], ${SEAT_O}), false) AS mine_o,
     coalesce(list_contains($tokens::VARCHAR[], results.token), false) AS mine_upload,
     CASE WHEN scoped THEN (CASE WHEN mine_x AND mine_o THEN NULL WHEN mine_x THEN 'X' WHEN mine_o THEN 'O' END)
       WHEN mode = 'computer' THEN you END AS side
-  WHERE metrics.nearby.role::VARCHAR IS DISTINCT FROM 'guest'
+  WHERE results.nearby_role IS DISTINCT FROM 'guest'
     AND ($since::BIGINT IS NULL OR finished_at >= make_timestamptz($since::BIGINT * 1000))
-    AND ($mode::VARCHAR IS NULL OR doc.mode::VARCHAR = $mode::VARCHAR)
-    AND ($level::VARCHAR IS NULL OR doc.difficulty::VARCHAR = $level::VARCHAR)
+    AND ($mode::VARCHAR IS NULL OR results.mode = $mode::VARCHAR)
+    AND ($level::VARCHAR IS NULL OR results.level = $level::VARCHAR)
     AND ($tokens::VARCHAR[] IS NULL OR list_contains($tokens::VARCHAR[], ${SEAT_X}) OR list_contains($tokens::VARCHAR[], ${SEAT_O}))`;
 const GAMES_TABLE = 'stats_games';
 const GAMES = `WITH g AS (FROM ${GAMES_TABLE})`;
@@ -96,7 +97,7 @@ const STEPS = `${GAMES}, steps AS (
 const METRICS = `${GAMES}, m AS (
   SELECT metrics FROM g WHERE metrics IS NOT NULL AND (NOT scoped OR mine_upload)
   UNION ALL
-  SELECT sm.metrics FROM seat_metrics sm JOIN g USING (public_id)
+  SELECT ${metricsStruct('sm')} AS metrics FROM seat_metrics sm JOIN g USING (public_id)
   WHERE NOT g.scoped OR (sm.seat = 'X' AND g.mine_x) OR (sm.seat = 'O' AND g.mine_o)
 )`;
 
@@ -162,9 +163,9 @@ export function filterValues(filter: StatsFilter, tokens: readonly string[] | nu
 // Limit: the streaks count inside these games only. Revisit this when one player has more games than this.
 const SIDED_GAMES = 5000;
 
-// One read of the stored documents into stats_games, then about 25 small queries over that copy,
+// One read of the game columns into stats_games, then about 25 small queries over that copy,
 // while other requests wait in the store queue. The store keeps an Everyone answer for a minute.
-// Limit: revisit this when a call takes more than about 1 s: then keep the game columns in results itself.
+// Limit: revisit this when a call takes more than about 1 s.
 // `tokens`: the tokens of one player for the Mine scope and a person filter, else null.
 // The caller runs one call at a time on the connection (the store queue), so one temporary table is enough.
 // The practice part comes from server/practice.ts.

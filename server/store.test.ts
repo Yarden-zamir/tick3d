@@ -1284,7 +1284,7 @@ describe('report and block', () => {
 describe('delete my data', () => {
   const ALICE_ACCOUNT = `${ACCOUNT_TOKEN_PREFIX}${String(ALICE_GITHUB.id).padStart(16, '0')}`;
   const aliceTokens = [alice, alicePhone, ALICE_ACCOUNT];
-  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
+  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
 
   // Per group of needles: the rows of each table whose text holds one of them. The store closes for the check and opens again.
   async function rowsHolding(path: string, groups: readonly (readonly string[])[]): Promise<Record<string, number>[]> {
@@ -1343,6 +1343,8 @@ describe('delete my data', () => {
     await store.addPracticeRun(alice, run);
     await store.addPracticeRun(bob, run);
     const aliceIds = await Promise.all(aliceTokens.map((token) => personId(token)));
+    // The leaderboard fills achievement_players, which names Alice's account.
+    await store.leaderboard(ALL_STATS, undefined);
 
     const deleted = await store.deleteData(alicePhone);
     expect(deleted).toEqual({
@@ -1354,6 +1356,7 @@ describe('delete my data', () => {
       blocks: { deleted: 1, anonymised: 1 },
       private_stats: { deleted: 1, anonymised: 0 },
       achievement_resets: { deleted: 1, anonymised: 0 },
+      achievement_players: { deleted: 1, anonymised: 0 },
       practice_runs: { deleted: 1, anonymised: 0 },
       reports: { deleted: 0, anonymised: 1 },
       player_tokens: { deleted: 3, anonymised: 0 },

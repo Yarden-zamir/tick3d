@@ -18,14 +18,16 @@ const LEADER = {
   avg_moves: num,
   best_streak: int,
   last_played: epoch,
+  achievements: int,
 };
 export type LeaderRow = RowOf<typeof LEADER>;
 
 // One row per seat of a person in a game. A friend game holds both seats on one device, so it has no side.
 // `owner` is the canonical token: the account token of a linked device, else the device token.
 // A person who hides their stats (private_stats) stays out.
-// Limit: each call reads every result document. The store caches the answer per filter, like the stats.
-// Revisit this when a call takes more than about 1 s.
+// It reads the plain game columns of results (server/fields.ts), and the unlocks of achievement_players,
+// which the store brings up to date first. The store caches the answer per filter, like the stats.
+// Limit: revisit this when a call takes more than about 1 s.
 const LEADERBOARD = `WITH g AS (${FILTERED_GAMES}),
   seats AS (
     SELECT finished_at, len(moves) AS moves, winner, ending, 'X' AS seat, player_x AS token FROM g WHERE player_x IS DISTINCT FROM player_o
@@ -52,8 +54,9 @@ const LEADERBOARD = `WITH g AS (${FILTERED_GAMES}),
       min(moves) FILTER (won AND ending = 'won')::INTEGER AS fastest_win, avg(moves) AS avg_moves, epoch_ms(max(finished_at)) AS last_played
     FROM shown GROUP BY owner
   )
-SELECT owner, u.login, u.avatar, games, won, drawn, lost, fastest_win, avg_moves, best_streak, last_played
-FROM totals JOIN streaks USING (owner) LEFT JOIN users u USING (github_id)
+SELECT owner, u.login, u.avatar, games, won, drawn, lost, fastest_win, avg_moves, best_streak, last_played,
+  coalesce(len(ap.unlocked), 0)::INTEGER AS achievements
+FROM totals JOIN streaks USING (owner) LEFT JOIN users u USING (github_id) LEFT JOIN achievement_players ap USING (owner)
 ORDER BY games DESC, won DESC, owner
 LIMIT ${LEADERBOARD_ROWS}`;
 
