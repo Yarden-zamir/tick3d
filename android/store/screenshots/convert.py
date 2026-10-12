@@ -22,11 +22,8 @@ ROOT = HERE.parents[2]
 PLAY = ROOT / "android/store/en-US/images"
 ADS = ROOT / "marketing/ads"
 WEB = ROOT / "public/screenshots"
-# The scenes in the listing order (scenes.json). The web manifest (vite.config.ts) shows the first three.
-SCENES = [scene["name"] for scene in json.loads((HERE / "scenes.json").read_text())]
-# The caption.html style that the store shots of a target with caption: true get. The maintainers pick it
-# on pull request 149.
-CAPTION_STYLE = "sticker"
+# The listed scenes in the store order (scenes.json). The web manifest (vite.config.ts) shows the first three.
+SCENES = [scene["name"] for scene in json.loads((HERE / "scenes.json").read_text()) if scene["listed"]]
 WEB_NAMES = {"1-tower": "tower", "2-win": "win", "3-online": "online"}
 AD_SIZES = {"square": (1080, 1080), "portrait": (1080, 1350), "story": (1080, 1920), "link": (1200, 628)}
 FEATURE_SIZE = (1024, 500)
@@ -90,7 +87,7 @@ def main(source: Path) -> None:
         out = ROOT / target["out"]
         for number, scene in enumerate(SCENES, start=1):
             raw = opened(source / target["name"] / f"{scene}.png", (width, height))
-            captioned = source / f"captioned-{CAPTION_STYLE}" / target["name"] / f"{scene}.png"
+            captioned = source / "captioned" / target["name"] / f"{scene}.png"
             image = opened(captioned, (width, height)) if target["caption"] else raw
             file = out / f"{target['name']}-{number}.jpg"
             image.save(file, quality=85, optimize=True, progressive=True)
