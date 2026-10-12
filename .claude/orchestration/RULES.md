@@ -53,6 +53,7 @@ A maintainer is anyone with the `OWNER`, `MEMBER` or `COLLABORATOR` role on the 
 
 ## Merge
 
+18a. If a question has no clear answer after 3 hours, Conductor can ask you to mock up the options. Make all of them, or your top 2 or 3. Post them as one new comment on BOTH the issue and the pull request: an image or link per option, under the same letters as the question. Say that the question is still open. Keep the `agents: question` label, and do not choose for the maintainers.
 19. Merge your own pull request when ALL of these are true:
     - The required check `check` passed.
     - `e2e` passed, if your change can break a flow that it covers: UI, session, API, Nearby, sound, PWA or routing. Docs-only, test-only and server-internal changes with unit tests do not wait for `e2e`.

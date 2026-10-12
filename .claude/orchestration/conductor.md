@@ -73,6 +73,15 @@ Send a comment to the agent that owns the issue (from the ledger). If no agent o
    - `message`: the name and title, the issue link and the task, what you already found, your own thread ID for reports, and this line: "Read `.claude/orchestration/RULES.md` before you start, and follow it."
 4. Add a ledger row for the agent with its thread ID.
 
+## Unanswered questions
+
+The hourly scheduled task "tick3d question sweep" wakes this thread. Its ID is in the ledger header. On each tick:
+1. Find each open maintainer question older than 3 hours, using the "Open questions" column of the ledger. Check that no maintainer gave a clear choice since. A comment that says "let me think" or asks something back is not a choice.
+2. Decide whether mock-ups of the options are cheap. They are cheap when the agent can make them with what the work already has: renders from the video pipeline, screenshots of a preview or a local build, a variant behind a flag, or a quick SVG. They are not cheap when they need paid services, outside accounts, store submissions, or a large build per option.
+3. If they are cheap, send the owning agent "Mock up the options for <question link>." Ask for all options, or for the top 2 or 3 when there are many. The agent posts them as a new comment on BOTH the issue and the pull request. The comment says that the question is still open and that the mock-ups only make the choice easier. The question and the `agents: question` label stay.
+4. Mock up each question only once. Write "mocked up <date>" in the ledger.
+5. If nothing is due, end the turn with one line and change nothing.
+
 ## Context limits
 
 - **Agents.** An agent stops after its pull request merges (RULES.md rule 23). A HANDOFF report means its context is low. Then start a fresh thread with the same name, and tell it to read its handoff file first. Move the PR watch to the new thread: the new agent calls `watch_pull_request`, and you call `unwatch_pull_request` for the old thread.
@@ -104,6 +113,8 @@ Repository facts:
 
 | Issue | Pull request | Agent | Thread ID | Branch | State | Open questions | Notes |
 |---|---|---|---|---|---|---|---|
+
+In "Open questions", write each question's link and the UTC time it was posted, and "mocked up <date>" once the sweep did it. The header also holds the question sweep task ID.
 
 The state is one of `queued`, `validating`, `working`, `question`, `ready`, `merged` or `closed`. Remove a row a few days after it reaches `merged` or `closed`.
 
