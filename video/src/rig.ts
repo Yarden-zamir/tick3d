@@ -40,17 +40,19 @@ export function orbit(target: Vector3, azimuth: number, elevation: number, dista
 
 export const shot = (position: Vector3, target: Vector3, fov = HOME_FOV, up = WORLD_UP.clone()): Shot => ({ position, target, up, fov, zoom: 1, lift: 0 });
 
-// Points `camera` along `view` for a frame of `width` × `height`. Both crops show the same centre square: the
-// field of view of a shot is the one of the square, so a tall frame widens it.
-export function aim(camera: PerspectiveCamera, view: Shot, width: number, height: number): void {
+// Points `camera` along `view` for a frame of `width` × `height`. Every crop shows the same square: the field of
+// view of a shot is the one of the square, so a tall frame widens it. The square is the centre square of the
+// frame, or `area`: its centre height and its side in pixels (the safe area of an ad, src/memory/formats.ts).
+export function aim(camera: PerspectiveCamera, view: Shot, width: number, height: number, area?: { y: number; size: number }): void {
+  const { y, size } = area ?? { y: height / 2, size: Math.min(width, height) };
   camera.position.copy(view.position);
   camera.up.copy(view.up);
   camera.lookAt(view.target);
-  const aspect = width / height;
   const square = (view.fov * Math.PI) / 180;
-  camera.fov = aspect >= 1 ? view.fov : (2 * Math.atan(Math.tan(square / 2) / aspect) * 180) / Math.PI;
-  camera.aspect = aspect;
+  camera.fov = (2 * Math.atan((Math.tan(square / 2) * height) / size) * 180) / Math.PI;
+  camera.aspect = width / height;
   camera.zoom = view.zoom;
-  camera.setViewOffset(width, height, 0, (view.lift * Math.min(width, height)) / 2, width, height);
+  // A view offset down moves the picture up: the square centre to `y`, then the lift of the shot.
+  camera.setViewOffset(width, height, 0, height / 2 - y + (view.lift * size) / 2, width, height);
   camera.updateProjectionMatrix();
 }
