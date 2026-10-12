@@ -403,7 +403,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         return send(res, 200, await store.history(token, offset));
       }
       if (match.route === 'GET /api/me/records') return send(res, 200, { records: await store.records(token) });
-      if (match.route === 'GET /api/me/achievements') return send(res, 200, { achievements: await store.achievements(token) });
+      if (match.route === 'GET /api/me/achievements') return send(res, 200, await store.achievements(token));
       return send(res, 200, await me(token, user));
     }
     // A cross-site form cannot send the X-Player header, so another site cannot delete a player's data.

@@ -1,4 +1,4 @@
-import { type AchievementProgress, parseAchievements } from './achievements.ts';
+import { type Achievements, parseAchievements } from './achievements.ts';
 import type { TimeControl } from './clock.ts';
 import { parseDeletedPeople } from './deletions.ts';
 import type { EpochMs } from './epoch.ts';
@@ -201,7 +201,7 @@ export const api = {
     if (typeof answer !== 'object' || answer === null || !('records' in answer)) throw new Error('invalid answer from /api/me/records');
     return parseRecords(answer.records);
   },
-  async achievements(): Promise<AchievementProgress[]> {
+  async achievements(): Promise<Achievements> {
     const parsed = parseAchievements(await call('GET', '/me/achievements'));
     if (parsed === undefined) throw new Error('invalid answer from /api/me/achievements');
     return parsed;

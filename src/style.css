@@ -2956,6 +2956,13 @@ body[data-turn='O'] .status[data-state='playing'] {
   line-height: 1.3;
 }
 
+/* How rare the achievement is, as in Steam: "12% of players". */
+.achievement-rarity {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .achievement-when {
   align-self: start;
   max-width: 6.5rem;

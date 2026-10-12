@@ -26,7 +26,7 @@ export type AchievementGame = {
 type PlayedGame = AchievementGame & { end: Game; outcome: Outcome };
 
 // count: the goal is a number of games that pass the test.
-// streak: the goal is a run of games in a row that pass the test. A game without a seat of the player does not break a run.
+// streak: the goal is a run of games in a row that pass the test.
 type Rule = {
   id: string;
   name: string;
@@ -106,7 +106,9 @@ export function achievementProgress(games: readonly AchievementGame[]): Achievem
       const end = toGame(game.game);
       if (end.status.kind === 'playing') throw new Error('an achievement game is not finished');
       const winner = end.status.kind === 'draw' ? null : end.status.winner;
-      return { ...game, end, outcome: outcomeOf(winner, game.you) };
+      // The player of a friend game held both seats, so a win of either seat is their win.
+      const outcome = game.you === null ? (winner === null ? 'drawn' : 'won') : outcomeOf(winner, game.you);
+      return { ...game, end, outcome };
     });
   return ACHIEVEMENTS.map((rule) => progressOf(rule, played));
 }
@@ -117,7 +119,6 @@ function progressOf(rule: Achievement, games: readonly PlayedGame[]): Achievemen
   let unlocked: PlayedGame | undefined;
   for (const game of games) {
     if (rule.kind === 'streak') {
-      if (game.you === null) continue;
       run = rule.test(game) ? run + 1 : 0;
       best = Math.max(best, run);
     } else if (rule.test(game)) {
@@ -139,11 +140,33 @@ export function achievementOf(id: AchievementId): Achievement {
   return found;
 }
 
-// The answer of GET /api/me/achievements. Undefined unless it holds every achievement once, in order.
-export function parseAchievements(value: unknown): AchievementProgress[] | undefined {
-  if (!isRecord(value) || !isUnknownArray(value.achievements) || value.achievements.length !== ACHIEVEMENTS.length) return undefined;
+// How rare each achievement is, as in Steam: how many players unlocked it, out of every player with a finished game.
+export type AchievementRarity = { players: number; unlocked: Record<AchievementId, number> };
+
+// The answer of GET /api/me/achievements, and the achievements of a person on the stats page.
+export type Achievements = { achievements: AchievementProgress[]; rarity: AchievementRarity };
+
+// The rarity over the progress of every player, one list per player.
+const emptyCounts = () => Object.fromEntries(ACHIEVEMENT_IDS.map((id) => [id, 0])) as Record<AchievementId, number>;
+
+export function rarityOf(players: readonly (readonly AchievementProgress[])[]): AchievementRarity {
+  const unlocked = emptyCounts();
+  for (const progress of players) for (const entry of progress) if (entry.unlockedAt !== null) unlocked[entry.id] += 1;
+  return { players: players.length, unlocked };
+}
+
+// The share of players who unlocked an achievement, as Steam shows it: "12%", or "<1%" for a few.
+// Null without players.
+export function rarityLabel(rarity: AchievementRarity, id: AchievementId): string | null {
+  if (rarity.players === 0) return null;
+  const percent = (rarity.unlocked[id] / rarity.players) * 100;
+  return percent > 0 && percent < 1 ? '<1%' : `${Math.round(percent)}%`;
+}
+
+function parseProgress(value: unknown): AchievementProgress[] | undefined {
+  if (!isUnknownArray(value) || value.length !== ACHIEVEMENTS.length) return undefined;
   const parsed: AchievementProgress[] = [];
-  for (const [index, item] of value.achievements.entries()) {
+  for (const [index, item] of value.entries()) {
     const rule = ACHIEVEMENTS[index];
     if (rule === undefined || !isRecord(item) || item.id !== rule.id || !isCount(item.count) || item.count > rule.goal) return undefined;
     const { unlockedAt, unlockedBy } = item;
@@ -153,4 +176,25 @@ export function parseAchievements(value: unknown): AchievementProgress[] | undef
     parsed.push({ id: rule.id, count: item.count, unlockedAt, unlockedBy: by });
   }
   return parsed;
+}
+
+function parseRarity(value: unknown): AchievementRarity | undefined {
+  if (!isRecord(value) || !isCount(value.players) || !isRecord(value.unlocked)) return undefined;
+  const { players, unlocked } = value;
+  if (Object.keys(unlocked).length !== ACHIEVEMENT_IDS.length) return undefined;
+  const counted = emptyCounts();
+  for (const id of ACHIEVEMENT_IDS) {
+    const count = unlocked[id];
+    if (!isCount(count) || count > players) return undefined;
+    counted[id] = count;
+  }
+  return { players, unlocked: counted };
+}
+
+// Undefined unless the progress holds every achievement once, in order, and the rarity counts every achievement.
+export function parseAchievements(value: unknown): Achievements | undefined {
+  if (!isRecord(value)) return undefined;
+  const achievements = parseProgress(value.achievements);
+  const rarity = parseRarity(value.rarity);
+  return achievements === undefined || rarity === undefined ? undefined : { achievements, rarity };
 }

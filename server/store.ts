@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomInt } from 'node:crypto';
 import { type DuckDBValue, DuckDBInstance, listValue } from '@duckdb/node-api';
-import { type AchievementGame, type AchievementProgress, achievementProgress } from '../src/achievements.ts';
+import { type AchievementGame, type AchievementProgress, type AchievementRarity, type Achievements, achievementProgress, rarityOf } from '../src/achievements.ts';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { NO_LIMIT, type TimeControl } from '../src/clock.ts';
 import { type EpochMs, MAX_EPOCH_MS, epochNow, toEpochMs } from '../src/epoch.ts';
@@ -304,6 +304,8 @@ const isDuplicateKey = (error: unknown) => error instanceof Error && error.messa
 const MAX_ID_ATTEMPTS = 20;
 // The stats page asks often; the numbers change slowly.
 const STATS_CACHE_MS = 60_000;
+// Rarity changes slowly, and each computation replays every game.
+const RARITY_CACHE_MS = 10 * 60_000;
 
 // What SQL cannot read from a stored game without a replay.
 type Ending = { winner: Player | null; ending: 'won' | 'timeout' | 'draw'; line: LineKind | null };
@@ -433,6 +435,67 @@ export async function openStore(
   // The achievements of each player, by their sorted tokens. A new or deleted result clears it all.
   // Limit: a clear drops every player's entry. Revisit this if achievement requests take more than about 100 ms.
   const achievementCache = new Map<string, AchievementProgress[]>();
+  // The rarity of the achievements over every player, at most RARITY_CACHE_MS old.
+  let rarityCache: { at: EpochMs; rarity: AchievementRarity } | undefined;
+
+  // A Nearby guest counts the host's copy of the game, as in the history.
+  const ACHIEVEMENT_ROWS = `FROM results SELECT results.public_id, results.doc::JSON AS doc, epoch_ms(results.finished_at) AS finished,
+    ${SEAT_X} AS token_x, ${SEAT_O} AS token_o`;
+  const ACHIEVEMENT_COLUMNS = { public_id: nullable(gameId), doc: json, finished: epoch, token_x: nullable(text), token_o: nullable(text) };
+
+  // One finished game as the rules read it, for the player who holds the seats where `mine` is true.
+  function achievementGame(row: { public_id: GameId | null; doc: unknown; finished: EpochMs }, mineX: boolean, mineO: boolean): AchievementGame {
+    if (!mineX && !mineO) throw new Error('an achievement game has no seat of the player');
+    const { mode, game, difficulty, options, tuned } = readStored(row.doc);
+    // A friend game holds this player on both seats.
+    const you: Player | null = mineX && mineO ? null : mineX ? 'X' : 'O';
+    return { id: row.public_id, mode, game, you, difficulty, options, tuned, finishedAt: row.finished };
+  }
+
+  // The achievements of the player with these tokens, over every finished game on all their devices.
+  async function progressOfTokens(tokens: readonly string[]): Promise<AchievementProgress[]> {
+    const key = tokens.toSorted().join(' ');
+    const cached = achievementCache.get(key);
+    if (cached !== undefined) return cached;
+    const found = await rows(
+      `${ACHIEVEMENT_ROWS} WHERE (list_contains($tokens, ${SEAT_X}) OR list_contains($tokens, ${SEAT_O})) AND NOT ${HOST_HAS_GAME}`,
+      { tokens: listValue([...tokens]) },
+      ACHIEVEMENT_COLUMNS,
+    );
+    const own = new Set(tokens);
+    const progress = achievementProgress(found.map((row) => achievementGame(row, row.token_x !== null && own.has(row.token_x), row.token_o !== null && own.has(row.token_o))));
+    achievementCache.set(key, progress);
+    return progress;
+  }
+
+  // Every person with a finished game counts: an account with its devices, or a device without an account.
+  // Limit: it reads and replays every result. Revisit this when it takes more than about 1 s, or the results
+  // table holds about 100,000 rows: then keep the unlocks of each person in a table.
+  async function rarity(): Promise<AchievementRarity> {
+    if (rarityCache !== undefined && now() - rarityCache.at < RARITY_CACHE_MS) return rarityCache.rarity;
+    const found = await rows(`${ACHIEVEMENT_ROWS} WHERE NOT ${HOST_HAS_GAME}`, {}, ACHIEVEMENT_COLUMNS);
+    const seats = found.flatMap((row) => [row.token_x, row.token_o]).filter((token): token is string => token !== null && token !== core.COMPUTER_TOKEN);
+    const canon = await canonical(seats);
+    const person = (token: string | null) => (token === null ? undefined : canon.get(token));
+    const games = new Map<string, AchievementGame[]>();
+    for (const row of found) {
+      const x = person(row.token_x);
+      const o = person(row.token_o);
+      for (const owner of new Set([x, o])) {
+        if (owner === undefined) continue;
+        const list = games.get(owner) ?? [];
+        list.push(achievementGame(row, x === owner, o === owner));
+        games.set(owner, list);
+      }
+    }
+    const fresh = rarityOf([...games.values()].map((list) => achievementProgress(list)));
+    rarityCache = { at: now(), rarity: fresh };
+    return fresh;
+  }
+
+  async function achievementsOf(tokens: readonly string[]): Promise<Achievements> {
+    return { achievements: await progressOfTokens(tokens), rarity: await rarity() };
+  }
 
   type NewResult = {
     id: string;
@@ -1306,34 +1369,9 @@ export async function openStore(
         return records;
       }),
 
-    // The achievements of this player over every finished game on all their linked devices.
+    // The achievements of this player over every finished game on all their linked devices, and their rarity.
     // A cleared game still counts: an achievement stays once the player earned it.
-    achievements: (token: PlayerToken): Promise<AchievementProgress[]> =>
-      serialized(async () => {
-        const identity = [...(await identityOf(token))].toSorted();
-        const key = identity.join(' ');
-        const cached = achievementCache.get(key);
-        if (cached !== undefined) return cached;
-        const tokens = listValue(identity);
-        // A Nearby guest counts the host's copy of the game, as in the history.
-        const found = await rows(
-          `FROM results SELECT results.public_id, results.doc::JSON AS doc, epoch_ms(results.finished_at) AS finished,
-             coalesce(list_contains($tokens, ${SEAT_X}), false) AS mine_x,
-             coalesce(list_contains($tokens, ${SEAT_O}), false) AS mine_o
-           WHERE (list_contains($tokens, ${SEAT_X}) OR list_contains($tokens, ${SEAT_O})) AND NOT ${HOST_HAS_GAME}`,
-          { tokens },
-          { public_id: nullable(gameId), doc: json, finished: epoch, mine_x: bool, mine_o: bool },
-        );
-        const games = found.map((row): AchievementGame => {
-          const { mode, game, difficulty, options, tuned } = readStored(row.doc);
-          // A friend game holds this player on both seats.
-          const you: Player | null = row.mine_x && row.mine_o ? null : row.mine_x ? 'X' : 'O';
-          return { id: row.public_id, mode, game, you, difficulty, options, tuned, finishedAt: row.finished };
-        });
-        const progress = achievementProgress(games);
-        achievementCache.set(key, progress);
-        return progress;
-      }),
+    achievements: (token: PlayerToken): Promise<Achievements> => serialized(async () => achievementsOf([...(await identityOf(token))])),
 
     // Hides every finished game of this player from their history, on all linked devices.
     // The other seat of a shared game keeps it, and the stats and survival records still count it.
@@ -1427,19 +1465,25 @@ export async function openStore(
       serialized(async () => {
         if (filter.scope === 'mine') {
           if (token === null) throw new SessionError(400, 'Your stats need the X-Player header.');
-          return { ...(await computeStats(rows, now(), filter, [...(await identityOf(token))])), person: null, practice: await practiceStats(rows) };
+          const tokens = [...(await identityOf(token))];
+          return { ...(await computeStats(rows, now(), filter, tokens)), person: null, practice: await practiceStats(rows), achievements: await achievementsOf(tokens) };
         }
         if (filter.person !== null) {
           const hidden = await privateOwnerOf(filter.person);
           if (hidden !== undefined && (token === null || (await ownerOf(token)) !== hidden)) throw new SessionError(403, STATS_PRIVATE_MESSAGE);
           const found = await statsPersonOf(filter.person);
           if (found === undefined) throw new SessionError(404, 'This player has no finished games yet.');
-          return { ...(await computeStats(rows, now(), filter, found.tokens)), person: found.shown, practice: await practiceStats(rows) };
+          return {
+            ...(await computeStats(rows, now(), filter, found.tokens)),
+            person: found.shown,
+            practice: await practiceStats(rows),
+            achievements: await achievementsOf(found.tokens),
+          };
         }
         const key = statsQuery(filter);
         const cached = statsCache.get(key);
         if (cached !== undefined && now() - cached.generatedAt < STATS_CACHE_MS) return cached;
-        const fresh = { ...(await computeStats(rows, now(), filter, null)), person: null, practice: await practiceStats(rows) };
+        const fresh = { ...(await computeStats(rows, now(), filter, null)), person: null, practice: await practiceStats(rows), achievements: null };
         statsCache.set(key, fresh);
         return fresh;
       }),

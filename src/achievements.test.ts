@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { type AchievementGame, type AchievementId, type AchievementProgress, ACHIEVEMENTS, achievementProgress, parseAchievements } from './achievements.ts';
+import {
+  type AchievementGame,
+  type AchievementId,
+  type AchievementProgress,
+  type AchievementRarity,
+  ACHIEVEMENTS,
+  achievementProgress,
+  parseAchievements,
+  rarityLabel,
+  rarityOf,
+} from './achievements.ts';
 import { NO_LIMIT } from './clock.ts';
 import { toEpochMs as ms } from './epoch.ts';
 import { type GameId, newGameId } from './protocol.ts';
@@ -78,23 +88,26 @@ describe('achievements', () => {
     expect(unlocked(achievementProgress([game(X_ROW, { mode: 'nearby', difficulty: null })]))).toContain('nearby-win');
   });
 
-  it('counts a draw and every game, also a friend game, but a friend game wins nothing', () => {
+  it('counts a draw and every game, and a friend game with a winner as a win', () => {
     const friend = { mode: 'friend', you: null, difficulty: null } as const;
-    const progress = achievementProgress([game(DRAW, friend), game(X_ROW, friend)]);
-    expect(unlocked(progress)).toEqual(['full-cube']);
+    const progress = achievementProgress([game(DRAW, friend), game(O_ROW, friend)]);
+    expect(unlocked(progress)).toEqual(['first-win', 'full-cube']);
     expect(progressOf(progress, 'games-10')?.count).toBe(2);
+    // A friend game is no win against the computer or a person in another mode.
+    const won = unlocked(achievementProgress([game(X_ROW, friend)]));
+    for (const id of ['beat-hard', 'online-win', 'nearby-win'] as const) expect(won).not.toContain(id);
   });
 
-  it('needs wins in a row for a streak, and a friend game does not break it', () => {
+  it('needs wins in a row for a streak, where a won friend game counts and a drawn one breaks it', () => {
     const friend = { mode: 'friend', you: null, difficulty: null } as const;
     // game() gives each game a later finish time, so the order of the calls is the order of play.
     const twoThenLoss = [game(X_ROW), game(X_ROW), game(O_ROW), game(X_ROW)];
     expect(progressOf(achievementProgress(twoThenLoss), 'streak-3')).toMatchObject({ count: 2, unlockedAt: null });
-    const games = [...twoThenLoss, game(O_ROW, friend), game(X_ROW), game(X_ROW)];
+    const games = [...twoThenLoss, game(O_ROW, friend), game(X_ROW)];
     const third = games.at(-1);
     const progress = achievementProgress(games);
     expect(progressOf(progress, 'streak-3')).toMatchObject({ count: 3, unlockedBy: third?.id });
-    expect(progressOf(progress, 'streak-5')?.count).toBe(3);
+    expect(progressOf(achievementProgress([...games, game(DRAW, friend), game(X_ROW)]), 'streak-5')?.count).toBe(3);
   });
 
   it('orders the games by their finish time', () => {
@@ -109,12 +122,31 @@ describe('achievements', () => {
   });
 });
 
+describe('rarity', () => {
+  it('counts the players who unlocked each achievement', () => {
+    const winner = achievementProgress([game(X_ROW)]);
+    const loser = achievementProgress([game(O_ROW)]);
+    const rarity = rarityOf([winner, loser, achievementProgress([])]);
+    expect(rarity.players).toBe(3);
+    expect(rarity.unlocked['first-win']).toBe(1);
+    expect(rarity.unlocked['games-10']).toBe(0);
+  });
+
+  it('shows a share as Steam does, and nothing without players', () => {
+    const rarity = (unlocked: number, players: number): AchievementRarity => ({ players, unlocked: { ...rarityOf([]).unlocked, 'first-win': unlocked } });
+    expect(rarityLabel(rarity(1, 8), 'first-win')).toBe('13%');
+    expect(rarityLabel(rarity(1, 500), 'first-win')).toBe('<1%');
+    expect(rarityLabel(rarity(0, 500), 'first-win')).toBe('0%');
+    expect(rarityLabel(rarity(0, 0), 'first-win')).toBeNull();
+  });
+});
+
 describe('parseAchievements', () => {
-  const answer = (progress: AchievementProgress[]) => JSON.parse(JSON.stringify({ achievements: progress })) as unknown;
+  const answer = (progress: AchievementProgress[], rarity = rarityOf([progress])) => JSON.parse(JSON.stringify({ achievements: progress, rarity })) as unknown;
 
   it('reads the answer of the server back', () => {
     const progress = achievementProgress([game(X_ROW), game(X_SPACE)]);
-    expect(parseAchievements(answer(progress))).toEqual(progress);
+    expect(parseAchievements(answer(progress))).toEqual({ achievements: progress, rarity: rarityOf([progress]) });
   });
 
   it('refuses a missing achievement, a count over the goal or an unlock without the goal', () => {
@@ -125,5 +157,13 @@ describe('parseAchievements', () => {
     const early = progress.map((p) => (p.id === 'games-10' ? { ...p, unlockedAt: ms(5), unlockedBy: 'ABCDEFGH' as GameId } : p));
     expect(parseAchievements(answer(early))).toBeUndefined();
     expect(parseAchievements(null)).toBeUndefined();
+  });
+
+  it('refuses a rarity with more unlocks than players, or without an achievement', () => {
+    const progress = achievementProgress([game(X_ROW)]);
+    const rarity = rarityOf([progress]);
+    expect(parseAchievements(answer(progress, { ...rarity, players: 0 }))).toBeUndefined();
+    const { 'first-win': _, ...missing } = rarity.unlocked;
+    expect(parseAchievements(answer(progress, { ...rarity, unlocked: missing as AchievementRarity['unlocked'] }))).toBeUndefined();
   });
 });

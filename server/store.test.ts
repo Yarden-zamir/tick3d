@@ -13,7 +13,7 @@ import { type Code, type DeviceGameId, type GameId, type Metrics, type PlayerTok
 import { PLAYOFF_COUNTDOWN_MS } from '../src/practice/playoff.ts';
 import type { PracticeRun } from '../src/practice/practice.ts';
 import { SessionError } from '../src/session/core.ts';
-import type { AchievementId, AchievementProgress } from '../src/achievements.ts';
+import type { AchievementId, Achievements } from '../src/achievements.ts';
 import { DELETED_NAME } from '../src/deletions.ts';
 import { DELETED_MESSAGE, REMOVED_MESSAGE, REPORTS_KEPT_MS, DELETION_NOTICES_KEPT_MS, type Store, openStore } from './store.ts';
 
@@ -527,16 +527,44 @@ describe('survival records on the server', () => {
 });
 
 describe('achievements', () => {
-  const countOf = (progress: readonly AchievementProgress[], id: AchievementId) => progress.find((entry) => entry.id === id)?.count;
+  const countOf = ({ achievements }: Achievements, id: AchievementId) => achievements.find((entry) => entry.id === id)?.count;
 
-  it('counts online games by seat, for each player', async () => {
+  it('counts online games by seat, for each player, and the rarity over both players', async () => {
     const code = await session();
     await playMoves(code, X_WINS);
     const mine = await store.achievements(alice);
-    expect(mine.find((entry) => entry.id === 'online-win')).toMatchObject({ count: 1, unlockedBy: `${code}-1` });
+    expect(mine.achievements.find((entry) => entry.id === 'online-win')).toMatchObject({ count: 1, unlockedBy: `${code}-1` });
     const theirs = await store.achievements(bob);
     expect(countOf(theirs, 'first-win')).toBe(0);
     expect(countOf(theirs, 'games-10')).toBe(1);
+    expect(mine.rarity.players).toBe(2);
+    expect(mine.rarity.unlocked).toMatchObject({ 'first-win': 1, 'online-win': 1, 'games-10': 0 });
+  });
+
+  it('counts a friend game with a winner as a win, and an account with its devices as one player', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    const friend = { mode: 'friend', you: null, difficulty: null } as const;
+    await store.addResults(alice, [result('adadadad-1111-4000-8000-000000000001', friend)]);
+    await store.addResults(alicePhone, [result('adadadad-1111-4000-8000-000000000002', { ...friend, finishedAt: ms(3_000) })]);
+    // Carol played the computer, which is no player.
+    await store.addResults(carol, [result('adadadad-1111-4000-8000-000000000003', { you: 'O' })]);
+    const { achievements, rarity } = await store.achievements(alicePhone);
+    expect(achievements.find((entry) => entry.id === 'first-win')?.unlockedAt).not.toBeNull();
+    expect(rarity.players).toBe(2);
+    expect(rarity.unlocked['first-win']).toBe(1);
+  });
+
+  it('shows the achievements in the stats of Mine and of a person, not of Everyone', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    for (const filter of [{ ...ALL_STATS, scope: 'mine' }, { ...ALL_STATS, person: await personId(alice) }] as const) {
+      const { achievements } = await store.stats(filter, alice);
+      if (achievements === null) throw new Error('the stats have no achievements');
+      expect(countOf(achievements, 'online-win')).toBe(1);
+    }
+    expect((await store.stats()).achievements).toBeNull();
   });
 
   it('counts a Nearby game once for the guest', async () => {
