@@ -63,6 +63,7 @@
 - Hold, right-click, or press the context-menu key (Shift+F10) on a chat message, a player or a watcher. A small menu offers Report and Block.
 - Block hides the person's messages, and shows a generated name and picture in place of theirs. The server keeps the list per player, so it follows a GitHub login. Unblock in My games.
 - Report sends a reason and a short note to the maintainers, and hides that message on your device. Report works in Online games only: the server cannot see a Nearby game.
+- On the stats page, the player card of a person view has Report or block, with the same menu. The leaderboard leaves out the people that you blocked.
 - Each person has a public person id, a hash of the player token. A chat message keeps the person id of its author, so it stays with the author when the seats change. Older messages have none: they show with the player on their seat.
 - The maintainers (GitHub logins Yarden-zamir and TomCohenDev) read the reports with `GET /api/reports`. They can hide a message for everyone or clear a custom name, and the server logs each action.
 
@@ -148,7 +149,7 @@ A mode change moves neither the board nor the Opponent picker:
 - `src/voice/`: the voice engine (pitch, range, sticky cells, tilt, clips) for the game and the Voice room. `src/page/voice.ts`: play by voice in the game.
 - `sound-input.html`, `src/sound-input/`: the Voice room. `src/practice/`: the practice and playoff rules, shared with `server/practice.ts`.
 - `src/main.ts`, `src/page/`, `index.html`, `src/style.css`: the game page, one module per feature in `src/page/`.
-- `src/page/safety.ts`, `src/page/person-mark.ts`: the report and block menu.
+- `src/page/safety.ts`, `src/page/person-mark.ts`: the report and block menu of the game. `src/safety-dialog.ts` and `src/blocks.ts`: the menu and the block list, shared with the stats page.
 - `src/header/`: the header of every page. `src/markup.test.ts` checks that every page has the same header.
 - `stats.html`, `src/stats/`: the stats page. `sound-training.html`, `src/sound-training/`: the ear trainer.
 - `src/pwa.ts`, `vite.config.ts`: the service worker and the manifest.
@@ -179,8 +180,12 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 - `/stats` is public: the game Info panel and My games link to it, and search engines may list it.
 - Filters: Everyone or Mine, the time (7 days, 30 days or all), the mode and the level. The address holds them, for example `/stats?scope=mine&range=30d`. `GET /api/stats` takes the same query and answers 400 for an unknown value.
 - A person filter (`/stats?person=<person id>`) shows the games of one person, with their name and picture. A click on a person's picture in the game opens it large, with a Stats link to this view.
-- "Hide my stats" in My games closes your person view, your achievements included, to everyone but you: `GET /api/stats` then answers 403. Mine still works, and Everyone still counts your games without your name. The setting follows a GitHub login.
-- Everyone shows counts only: no player names and no page faults. Mine (your games on every linked device) adds your win rate over time, streaks, results, survival records and favourite opponents. A person view adds the same, without the opponents.
+- "Hide my stats" in My games closes your person view, your achievements included, to everyone but you: `GET /api/stats` then answers 403. It also takes you off the leaderboard. Mine still works, and Everyone still counts your games without your name. The setting follows a GitHub login.
+- Leaderboard (Everyone only): one row per player with their name, GitHub login and picture, and games, won, drawn, lost, win rate, best streak, fastest win, average moves, achievements and last game. Tap a column to sort; tap it again to turn the order around. It follows the time, mode and level filters, and loads when it scrolls into view. The achievements count covers all games. Friend games and the computer do not count. Players that you blocked are not on your board. `GET /api/leaderboard` gives the same rows.
+- Everyone answers (the stats and the leaderboard) come from a snapshot. A second database connection refreshes it in the background when it is a minute old, or older for a costly refresh, so a visitor and the game never wait for it. With more than 100,000 games, the charts of moves, times, settings and devices show the newest 100,000.
+- Speed: the queries read plain columns that each write copies out of the stored game (`server/fields.ts`), and the games of one player come through indexes on the seat columns. At 1,000,000 players (5,000,000 games) every request of one player answered in under 1.5 s.
+- A tap on a row opens the person view. Its player card shows the unlocked achievements in a row that scrolls, and Report or block.
+- Everyone shows counts only, apart from the leaderboard: no player names and no page faults. Mine (your games on every linked device) adds your win rate over time, streaks, results, survival records and favourite opponents. A person view adds the same, without the opponents.
 - The stats never show a token, a result id or a game id.
 - A finished game sends, besides the game: the device kind, the view, the layout, the theme, input and undo counts, refusals, computer thinking times, the offline flag and the app version.
 - A fault report holds the error message, the file and line, and the app version. It holds no token and no address.

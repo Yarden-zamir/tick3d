@@ -562,29 +562,6 @@
         <button type="button" class="btn" id="avatar-viewer-close">Close</button>
       </div>
     </dialog>
-    <!-- Report and block a person: src/page/safety.ts. -->
-    <dialog class="modal end-card home-confirm safety-menu" id="safety-menu" aria-labelledby="safety-title">
-      <p id="safety-title"></p>
-      <div class="end-card-actions" id="safety-actions">
-        <button type="button" class="btn" id="safety-report">Report</button>
-        <button type="button" class="btn" id="safety-block">Block</button>
-        <button type="button" class="btn" id="safety-cancel">Cancel</button>
-      </div>
-      <form class="safety-report" id="safety-report-form" hidden>
-        <fieldset>
-          <legend>What is wrong?</legend>
-          <label><input type="radio" name="reason" value="spam" required /> Spam</label>
-          <label><input type="radio" name="reason" value="abuse" /> Abuse</label>
-          <label><input type="radio" name="reason" value="name" /> Inappropriate name</label>
-          <label><input type="radio" name="reason" value="other" /> Other</label>
-        </fieldset>
-        <textarea id="safety-note" maxlength="200" rows="2" placeholder="A short note (optional)" aria-label="Note"></textarea>
-        <div class="end-card-actions">
-          <button type="submit" class="btn btn-primary" id="safety-send">Send report</button>
-          <button type="button" class="btn" id="safety-back">Back</button>
-        </div>
-      </form>
-    </dialog>
     <dialog class="modal end-card home-confirm" id="seat-prompt" aria-labelledby="seat-prompt-text">
       <p id="seat-prompt-text"></p>
       <div class="end-card-actions">

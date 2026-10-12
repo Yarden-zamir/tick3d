@@ -23,6 +23,7 @@ import {
   parseSeatAction,
   parseSeatAnswer,
   parseSessionUpdate,
+  parseLeaderboardFilter,
   parseStatsFilter,
 } from '../src/protocol.ts';
 import { asHostId, parseAnnounce, parseAnswerRequest } from '../src/nearby/lobby.ts';
@@ -37,6 +38,7 @@ import {
   NEARBY_CALLS_PER_10_MINUTES,
   NEARBY_GRACE_MS,
   NEARBY_HOSTS_PER_NETWORK,
+  LEADERBOARD_FILTER_ERROR,
   STATS_FILTER_ERROR,
   PRACTICE_RUNS_PER_10_MINUTES,
   REPORTS_PER_10_MINUTES,
@@ -473,7 +475,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       allowReport(clientOf(req), Date.now());
       const token = requirePlayer(req);
       const report = parseReportRequest(await readJson(req));
-      if (report === undefined) throw new HttpError(400, 'A report needs a code, one message id or person id, a reason, and a note of at most 200 characters.');
+      if (report === undefined) throw new HttpError(400, 'A report needs one message id with a code or one person id, a reason, and a note of at most 200 characters.');
       return send(res, 201, await store.report(token, report));
     }
     case 'GET /api/reports':
@@ -557,6 +559,16 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const token = asPlayerToken(header);
       if (header !== undefined && token === undefined) throw new HttpError(400, 'Invalid X-Player header.');
       return send(res, 200, await store.stats(filter, token ?? null));
+    }
+    // Names and results of each player, so the stats page can rank them. It reads the X-Player header
+    // when it is there, to mark the caller.
+    case 'GET /api/leaderboard': {
+      const filter = parseLeaderboardFilter(url.searchParams);
+      if (filter === undefined) throw new HttpError(400, LEADERBOARD_FILTER_ERROR);
+      const header = req.headers['x-player'];
+      const token = asPlayerToken(header);
+      if (header !== undefined && token === undefined) throw new HttpError(400, 'Invalid X-Player header.');
+      return send(res, 200, await store.leaderboard(filter, token));
     }
     // Cached in server/previews.ts, so a flood of requests costs no extra GitHub calls and needs no limiter.
     case 'GET /api/previews':
@@ -695,7 +707,6 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     server.close();
     for (const set of streams.values()) for (const stream of set) stream.res.end();
-    store.close();
-    process.exit(0);
+    void store.close().finally(() => process.exit(0));
   });
 }

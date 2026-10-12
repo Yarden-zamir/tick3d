@@ -100,7 +100,7 @@ describe('sessions', () => {
     await store.join(code, bob);
     await store.move(code, alice, { game: 0, moveCount: 0, cell: 5 });
     await store.chat(code, bob, 'hello');
-    store.close();
+    await store.close();
     store = await openStore(path);
     expect(await store.get(code, bob)).toMatchObject({ you: 'O', games: [{ moves: [5] }], chat: [{ from: 'O', text: 'hello' }] });
   });
@@ -210,7 +210,7 @@ describe('accounts', () => {
     const other = (await store.create(bob, 'Join later')).code;
     await store.linkToken(alice, ALICE_GITHUB);
     await store.linkToken(alicePhone, ALICE_GITHUB);
-    store.close();
+    await store.close();
     // A database from before account seats has no account row.
     const instance = await DuckDBInstance.create(path);
     const db = await instance.connect();
@@ -617,7 +617,7 @@ async function oldStore(): Promise<{ path: string; code: Code }> {
   const { code } = await store.create(alice, 'Old match');
   await store.join(code, bob);
   await playMoves(code, X_WINS);
-  store.close();
+  await store.close();
   const instance = await DuckDBInstance.create(path);
   const db = await instance.connect();
   await db.run("DELETE FROM results WHERE id LIKE 'online:%'");
@@ -706,6 +706,48 @@ describe('online game metrics', () => {
   });
 });
 
+describe('leaderboard', () => {
+  it('counts each person from their side, merges linked devices, and leaves out friend games and hidden people', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addResults(alicePhone, [result('aaaaaaaa-3333-4000-8000-000000000001', { finishedAt: ms(1_000) })]);
+    await store.addResults(carol, [
+      result('aaaaaaaa-3333-4000-8000-000000000002', { finishedAt: ms(1_000), game: finishedGame(X_WINS_LATE) }),
+      result('aaaaaaaa-3333-4000-8000-000000000003', { finishedAt: ms(2_000) }),
+      result('aaaaaaaa-3333-4000-8000-000000000004', { finishedAt: ms(3_000), you: 'O' }),
+      result('aaaaaaaa-3333-4000-8000-000000000005', { finishedAt: ms(4_000), mode: 'friend', you: null, difficulty: null }),
+      // A win on time after 3 moves: it counts as a win, but not as the fastest win.
+      result('aaaaaaaa-3333-4000-8000-000000000006', {
+        finishedAt: ms(5_000),
+        game: { moves: [0, 1, 2], times: [ms(1_000), ms(2_000), ms(3_000)], clock: { perMove: 5, perGame: null }, timedOut: true },
+      }),
+    ]);
+    const board = await store.leaderboard(ALL_STATS, alice);
+    const aliceId = await personId(`account-${String(ALICE_GITHUB.id).padStart(16, '0')}`);
+    expect(board.you).toBe(aliceId);
+    expect(board.rows.find((found) => found.person === aliceId)).toMatchObject({ name: 'alice', player: { login: 'alice' }, games: 2, won: 2, lost: 0, bestStreak: 2 });
+    const carolId = await personId(carol);
+    expect(board.rows.find((found) => found.person === carolId)).toMatchObject({ games: 4, won: 3, lost: 1, fastestWin: X_WINS.length, bestStreak: 2 });
+    const bobId = await personId(bob);
+    expect(board.rows.find((found) => found.person === bobId)).toMatchObject({ games: 1, won: 0, lost: 1, fastestWin: null, bestStreak: 0 });
+    expect(board.rows.map((found) => found.games)).toEqual([4, 2, 1]);
+    // The count is the unlocked achievements of the person view.
+    const carolView = await store.stats({ ...ALL_STATS, person: carolId });
+    const carolUnlocked = carolView.achievements?.achievements.filter((entry) => entry.unlockedAt !== null).length;
+    expect(carolUnlocked).toBeGreaterThan(0);
+    expect(board.rows.find((found) => found.person === carolId)?.achievements).toBe(carolUnlocked);
+
+    // The computer filter keeps the computer games only, and "Hide my stats" takes a person off the board.
+    // A new filter has its own cache entry, so the change shows here at once.
+    await store.setStatsPrivate(carol, true);
+    const computer = await store.leaderboard({ ...ALL_STATS, mode: 'computer' }, undefined);
+    expect(computer.you).toBeNull();
+    expect(computer.rows.map((found) => found.person)).toEqual([aliceId]);
+  });
+});
+
 describe('stats', () => {
   it('lists levels and modes in their fixed order, not by count or name', async () => {
     store = await openStore(':memory:');
@@ -771,14 +813,16 @@ describe('stats', () => {
     ]);
   });
 
-  it('keeps the answer for a minute', async () => {
+  it('keeps the answer for a minute, then answers at once and refreshes in the background', async () => {
     let time = 1_000_000;
     store = await openStore(':memory:', { now: () => ms(time) });
     const first = await store.stats();
     await store.addResults(alice, [result('bbbbbbbb-1111-4000-8000-000000000001')]);
     expect((await store.stats()).totals.games).toBe(first.totals.games);
     time += 60_000;
-    expect((await store.stats()).totals.games).toBe(first.totals.games + 1);
+    // The old answer still comes at once; the refresh that it starts brings the new game.
+    expect((await store.stats()).totals.games).toBe(first.totals.games);
+    await vi.waitFor(async () => expect((await store.stats()).totals.games).toBe(first.totals.games + 1));
   });
 });
 
@@ -876,7 +920,8 @@ describe('stats filters', () => {
     const bobs = await store.stats({ ...all, person: await personId(bob) });
     // Bob: the online game against Alice and his computer loss.
     expect(bobs.totals.games).toBe(2);
-    expect(bobs.person).toEqual({ name: nameOf(bob), player: null });
+    expect(bobs.person).toEqual({ name: nameOf(bob), player: null, you: false });
+    expect((await store.stats({ ...all, person: await personId(bob) }, bob)).person?.you).toBe(true);
     expect(bobs.personal).toMatchObject({ results: expect.arrayContaining([{ mode: 'online', level: null, won: 0, drawn: 0, lost: 1 }]), opponents: [] });
     expect(JSON.stringify(bobs)).not.toContain(bob);
 
@@ -884,7 +929,7 @@ describe('stats filters', () => {
     await store.linkToken(alice, ALICE_GITHUB);
     const alices = await store.stats({ ...all, person: await personId(`account-${String(ALICE_GITHUB.id).padStart(16, '0')}`) });
     expect(alices.totals.games).toBe(4);
-    expect(alices.person).toEqual({ name: 'alice', player: { login: 'alice', avatar: ALICE_GITHUB.avatar } });
+    expect(alices.person).toEqual({ name: 'alice', player: { login: 'alice', avatar: ALICE_GITHUB.avatar }, you: false });
     expect(JSON.stringify(alices)).not.toContain(alice);
   });
 
@@ -1077,7 +1122,7 @@ describe('seat controls for an account without an account row', () => {
     store = await openStore(path, { open: () => open });
     const { code } = await store.create(bob, 'Seat an old account');
     await store.linkToken(alicePhone, ALICE_GITHUB);
-    store.close();
+    await store.close();
     const instance = await DuckDBInstance.create(path);
     const db = await instance.connect();
     await db.run("DELETE FROM player_tokens WHERE token LIKE 'account-%'");
@@ -1213,6 +1258,14 @@ describe('report and block', () => {
     expect(await status(async () => store.report(alice, { code, target: { person: await personId(carol) }, reason: 'spam', note: null }))).toBe(404);
   });
 
+  it('stores a report of a stats page player without a code, and refuses a person without games', async () => {
+    store = await openStore(':memory:');
+    await store.addResults(carol, [result('aaaaaaaa-4444-4000-8000-000000000001')]);
+    await store.report(alice, { code: null, target: { person: await personId(carol) }, reason: 'name', note: null });
+    expect((await store.reports()).reports).toMatchObject([{ code: null, person: await personId(carol), name: nameOf(carol), reporter: await personId(alice) }]);
+    expect(await status(async () => store.report(alice, { code: null, target: { person: await personId(bob) }, reason: 'spam', note: null }))).toBe(404);
+  });
+
   it('lets a maintainer hide a message for everyone and clear a custom name, and logs both', async () => {
     const code = await session();
     await store.chat(code, bob, 'spam spam');
@@ -1233,11 +1286,11 @@ describe('report and block', () => {
 describe('delete my data', () => {
   const ALICE_ACCOUNT = `${ACCOUNT_TOKEN_PREFIX}${String(ALICE_GITHUB.id).padStart(16, '0')}`;
   const aliceTokens = [alice, alicePhone, ALICE_ACCOUNT];
-  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
+  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
 
   // Per group of needles: the rows of each table whose text holds one of them. The store closes for the check and opens again.
   async function rowsHolding(path: string, groups: readonly (readonly string[])[]): Promise<Record<string, number>[]> {
-    store.close();
+    await store.close();
     const instance = await DuckDBInstance.create(path);
     const db = await instance.connect();
     const found: Record<string, number>[] = [];
@@ -1292,6 +1345,8 @@ describe('delete my data', () => {
     await store.addPracticeRun(alice, run);
     await store.addPracticeRun(bob, run);
     const aliceIds = await Promise.all(aliceTokens.map((token) => personId(token)));
+    // The leaderboard fills achievement_players, which names Alice's account.
+    await store.leaderboard(ALL_STATS, undefined);
 
     const deleted = await store.deleteData(alicePhone);
     expect(deleted).toEqual({
@@ -1303,6 +1358,8 @@ describe('delete my data', () => {
       blocks: { deleted: 1, anonymised: 1 },
       private_stats: { deleted: 1, anonymised: 0 },
       achievement_resets: { deleted: 1, anonymised: 0 },
+      achievement_players: { deleted: 1, anonymised: 0 },
+      seat_people: { deleted: 3, anonymised: 0 },
       practice_runs: { deleted: 1, anonymised: 0 },
       reports: { deleted: 0, anonymised: 1 },
       player_tokens: { deleted: 3, anonymised: 0 },

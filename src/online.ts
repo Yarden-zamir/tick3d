@@ -27,6 +27,7 @@ import {
   type SeatAction,
   type SessionUpdate,
   type SessionView,
+  type Leaderboard,
   type StatsFilter,
   type StatsPrivacy,
   parseStatsPrivacy,
@@ -39,6 +40,7 @@ import {
   parsePreviews,
   parsePublicGame,
   parseSessionView,
+  parseLeaderboard,
   statsQuery,
 } from './protocol.ts';
 import { STORAGE_KEYS } from './storage-keys.ts';
@@ -171,7 +173,9 @@ export const api = {
   setStatsPrivacy: async (hidden: boolean) => requireStatsPrivacy(await call('PUT', '/me/stats-privacy', { private: hidden })),
   block: async (person: PersonId, name: string) => parseBlocks(await call('PUT', `/me/blocks/${person}`, { name })),
   unblock: async (person: PersonId) => parseBlocks(await call('DELETE', `/me/blocks/${person}`)),
-  report: (report: { code: Code; reason: ReportReason; note: string } & ({ message: number } | { person: PersonId })) => call('POST', '/reports', report),
+  // A person of the stats page has no session, so the report has no code.
+  report: (report: { reason: ReportReason; note: string } & ({ code: Code; message: number } | { code?: Code; person: PersonId })) =>
+    call('POST', '/reports', report),
   previews: async (): Promise<Previews> => parsePreviews(await call('GET', '/previews')),
   logout: () => call('POST', '/auth/logout'),
   // Login is a full page visit to GitHub and back to `returnTo`, by default this page.
@@ -224,6 +228,9 @@ export const api = {
   event: (event: ClientEvent) => call('POST', '/events', event),
   // The aggregates of the stats page. The page checks the shape (src/stats/main.ts).
   stats: (filter: StatsFilter): Promise<unknown> => call('GET', `/stats${statsQuery(filter)}`),
+  // The common stats of each player (GET /api/leaderboard). It takes the range, mode and level of `filter`.
+  leaderboard: async (filter: StatsFilter): Promise<Leaderboard> =>
+    parseLeaderboard(await call('GET', `/leaderboard${statsQuery({ ...filter, scope: 'everyone', person: null })}`)),
 
   // The Nearby lobby (server/lobby.ts). The server holds an announcement until a guest answers, or for about 25 s.
   announceNearby: async (offer: string, id: HostId | undefined, signal: AbortSignal): Promise<Announced> =>

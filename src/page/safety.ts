@@ -1,32 +1,21 @@
-// Report and block (Google Play's policy for user-generated content). A right-click, a long press, or
-// the context-menu key (Shift+F10) on a chat message or a person opens a small menu.
+// Report and block (the Apple and Google Play rules for user content) on the game page. A right-click, a
+// long press, or the context-menu key (Shift+F10) on a chat message or a person opens the dialog of
+// src/safety-dialog.ts.
 // - Block hides the person's messages, and shows a generated name and picture in place of theirs.
-//   The server keeps the list per player (it follows a GitHub login). This device keeps a copy, so
-//   a game without a network still hides blocked people.
+//   src/blocks.ts keeps the list.
 // - Report sends a reason and a note to the maintainers. A reported message stays hidden on this device.
 import type { Person } from '../avatar.ts';
+import { blockedPeople, changeBlock, isBlocked, loadBlocks, onBlocksChange, readStored, writeStored } from '../blocks.ts';
 import { nameOf } from '../names.ts';
-import { api, OnlineError } from '../online.ts';
-import { type BlockedPerson, type ChatEntry, type PersonId, REPORT_REASONS, type SessionView, parseBlocks } from '../protocol.ts';
-import { BLOCK_ICON, FLAG_ICON } from '../icons.ts';
+import { api } from '../online.ts';
+import type { ChatEntry, PersonId, ReportReason, SessionView } from '../protocol.ts';
+import { openSafetyDialog, safetyDialogOpen } from '../safety-dialog.ts';
 import { STORAGE_KEYS } from '../storage-keys.ts';
-import {
-  myGamesBlocked,
-  myGamesBlockedBox,
-  safetyActions,
-  safetyBack,
-  safetyBlock,
-  safetyCancel,
-  safetyMenu,
-  safetyNote,
-  safetyReport,
-  safetyReportForm,
-  safetyTitle,
-} from './dom.ts';
+import { myGamesBlocked, myGamesBlockedBox } from './dom.ts';
 import { showError, showToast } from './feedback.ts';
 import { type PersonTarget, authorOf, personTarget, visibleMessages } from './person-mark.ts';
 
-export { authorOf };
+export { authorOf, loadBlocks };
 import { render } from './render.ts';
 import { page } from './state.ts';
 
@@ -36,36 +25,15 @@ const MOVE_LIMIT_PX = 10;
 // The reported messages that this device keeps hidden. The chat keeps only its newest messages, so old keys are of no use.
 const REPORTED_KEPT = 200;
 
-function readStored<T>(key: string, parse: (value: unknown) => T, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw === null ? fallback : parse(JSON.parse(raw));
-  } catch {
-    // Storage is blocked or holds a broken value: start empty.
-    return fallback;
-  }
-}
-
-function writeStored(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Storage is blocked: the list lasts for this visit only.
-  }
-}
-
-let blocked: BlockedPerson[] = readStored(STORAGE_KEYS.blocks, (value) => parseBlocks({ blocked: value }), []);
 let reported: string[] = readStored(
   STORAGE_KEYS.reported,
   (value) => (Array.isArray(value) ? value.filter((key): key is string => typeof key === 'string') : []),
   [],
 );
 
-const isBlocked = (person: PersonId | null): boolean => person !== null && blocked.some((entry) => entry.person === person);
-
 // The messages that this screen shows: none from a blocked person, and none that this device reported.
 export const visibleChat = (view: SessionView): ChatEntry[] =>
-  visibleMessages(view, new Set(blocked.map((entry) => entry.person)), new Set(reported));
+  visibleMessages(view, new Set(blockedPeople().map((entry) => entry.person)), new Set(reported));
 
 // A blocked person shows with a generated name and picture, made from the person id.
 export const shownPerson = (person: PersonId | null, shown: Person): Person =>
@@ -77,25 +45,9 @@ export function ownPerson(view: SessionView): PersonId | null {
   return view.watchers.find((watcher) => watcher.id === view.youWatcher)?.person ?? null;
 }
 
-function setBlocked(list: BlockedPerson[]): void {
-  blocked = list;
-  writeStored(STORAGE_KEYS.blocks, list);
-  renderBlockedList();
-  render();
-}
-
-// Reads the block list of this player from the server. Without a network the page keeps its copy.
-export async function loadBlocks(): Promise<void> {
-  if (!navigator.onLine) return;
-  try {
-    setBlocked(await api.blocks());
-  } catch (error) {
-    if (!(error instanceof OnlineError)) throw error;
-  }
-}
-
 // The Blocked people section of My games, with an Unblock button for each.
 export function renderBlockedList(): void {
+  const blocked = blockedPeople();
   myGamesBlockedBox.hidden = blocked.length === 0;
   myGamesBlocked.replaceChildren(
     ...blocked.map((entry) => {
@@ -106,17 +58,16 @@ export function renderBlockedList(): void {
       unblock.type = 'button';
       unblock.className = 'btn btn-small';
       unblock.textContent = 'Unblock';
-      unblock.addEventListener('click', () => void changeBlock(entry.person, entry.name, false));
+      unblock.addEventListener('click', () => void toggleBlock(entry.person, entry.name, false));
       item.append(name, unblock);
       return item;
     }),
   );
 }
 
-async function changeBlock(person: PersonId, name: string, block: boolean): Promise<void> {
+async function toggleBlock(person: PersonId, name: string, block: boolean): Promise<void> {
   try {
-    setBlocked(block ? await api.block(person, name) : await api.unblock(person));
-    showToast(block ? `${name} is blocked. Unblock them in My games.` : `${name} is unblocked.`);
+    showToast(await changeBlock(person, name, block));
   } catch (error) {
     showError(error);
   }
@@ -124,71 +75,41 @@ async function changeBlock(person: PersonId, name: string, block: boolean): Prom
 
 // ---- The menu ----
 
-let open: PersonTarget | undefined;
-
 function openMenu(target: PersonTarget): void {
   const session = page.session;
-  if (session === undefined || safetyMenu.open || target.person === ownPerson(session)) return;
-  open = target;
-  safetyTitle.textContent = target.message === null ? target.name : `A message from ${target.name}`;
-  // The server holds online sessions only, so it cannot check a report from a Nearby game.
-  safetyReport.hidden = session.mode !== 'online';
-  safetyBlock.lastChild?.replaceWith(isBlocked(target.person) ? 'Unblock' : 'Block');
-  safetyActions.hidden = false;
-  safetyReportForm.hidden = true;
-  safetyReportForm.reset();
-  safetyMenu.showModal();
-  (safetyReport.hidden ? safetyBlock : safetyReport).focus();
+  if (session === undefined || safetyDialogOpen() || target.person === ownPerson(session)) return;
+  const { code } = session;
+  openSafetyDialog({
+    title: target.message === null ? target.name : `A message from ${target.name}`,
+    // The server holds online sessions only, so it cannot check a report from a Nearby game.
+    canReport: session.mode === 'online',
+    blocked: isBlocked(target.person),
+    toggleBlock: () => void toggleBlock(target.person, target.name, !isBlocked(target.person)),
+    report: (reason, note) => sendReport(target, code, reason, note),
+  });
 }
 
-async function sendReport(target: PersonTarget, code: SessionView['code']): Promise<void> {
-  const reason = REPORT_REASONS.find((option) => option === new FormData(safetyReportForm).get('reason'));
-  if (reason === undefined) return;
-  const note = safetyNote.value.trim();
+async function sendReport(target: PersonTarget, code: SessionView['code'], reason: ReportReason, note: string): Promise<boolean> {
   const about = target.message === null ? { person: target.person } : { message: target.message };
   try {
     await api.report({ code, reason, note, ...about });
   } catch (error) {
     showError(error);
-    return;
+    return false;
   }
-  safetyMenu.close();
   if (target.message !== null) {
     reported = [...reported, `${code}:${target.message}`].slice(-REPORTED_KEPT);
     writeStored(STORAGE_KEYS.reported, reported);
     render();
   }
   showToast('Thanks. The report went to the maintainers.');
+  return true;
 }
 
 export function setupSafety(): void {
-  safetyReport.insertAdjacentHTML('afterbegin', FLAG_ICON);
-  safetyBlock.insertAdjacentHTML('afterbegin', BLOCK_ICON);
-  safetyCancel.addEventListener('click', () => safetyMenu.close());
-  safetyMenu.addEventListener('click', (event) => {
-    if (event.target === safetyMenu) safetyMenu.close();
-  });
-  safetyReport.addEventListener('click', () => {
-    safetyActions.hidden = true;
-    safetyReportForm.hidden = false;
-    safetyReportForm.querySelector<HTMLInputElement>('input[name="reason"]')?.focus();
-  });
-  safetyBack.addEventListener('click', () => {
-    safetyReportForm.hidden = true;
-    safetyActions.hidden = false;
-    safetyReport.focus();
-  });
-  safetyBlock.addEventListener('click', () => {
-    const target = open;
-    if (target === undefined) return;
-    safetyMenu.close();
-    void changeBlock(target.person, target.name, !isBlocked(target.person));
-  });
-  safetyReportForm.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const target = open;
-    const code = page.session?.code;
-    if (target !== undefined && code !== undefined) void sendReport(target, code);
+  onBlocksChange(() => {
+    renderBlockedList();
+    render();
   });
 
   // A right-click, and on most browsers the context-menu key and Shift+F10 too.
