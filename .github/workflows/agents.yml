@@ -19,9 +19,13 @@ permissions: {}
 jobs:
   route:
     # Every filter is here, so an event that does not matter never starts a runner.
+    # A maintainer is anyone with a role on the repository, or a login in the optional
+    # AGENT_EXTRA_AUTHORS variable (a JSON list). Adding a label already needs triage access.
     if: >-
-      contains(fromJSON(vars.AGENT_MAINTAINERS), github.event.sender.login)
-      && github.event.sender.type != 'Bot'
+      github.event.sender.type != 'Bot'
+      && (github.event_name == 'issues'
+        || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+        || contains(fromJSON(vars.AGENT_EXTRA_AUTHORS || '[]'), github.event.sender.login))
       && !contains(github.event.comment.body, '<!-- agent -->')
       && (
         (github.event_name == 'issues'
