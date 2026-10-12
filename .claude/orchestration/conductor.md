@@ -39,7 +39,7 @@ An agent and a task do not have to match one to one. One agent can take a stack 
 
 ### Labels
 
-- `needs validation`: find out if the issue is real and how big it is. If that is quick, do it yourself: post the finding, then close the issue with the reason, or add `planned`. Otherwise start a validation agent that posts its findings on the issue. A valid issue becomes implementation work when a maintainer adds `planned` or approves in a comment, or when you judge the fix safe and useful. Reuse the same agent for the implementation.
+- `needs validation`: find out if the issue is real and how big it is. If that is quick, do it yourself: post the finding, then close the issue with the reason, or add `planned`. Otherwise start a validation agent that posts its findings on the issue. A valid issue becomes implementation work when a maintainer adds `planned` or approves in a comment, or when you judge the fix safe and useful. Reuse the same agent for the implementation. When the validation is done, remove `needs validation` from the issue.
 - `planned`: start the work. Add `agents: working` to the issue.
 
 ### Issue comments
