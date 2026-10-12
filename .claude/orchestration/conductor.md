@@ -99,7 +99,7 @@ Agents merge their own pull requests (RULES.md rules 19 and 20). Merge yourself 
 Repository facts:
 - The main ruleset requires the check `check`. It blocks force-pushes to main and the deletion of main.
 - GitHub deletes a branch when its pull request merges. Auto-merge is on, but it does not work for stacked pull requests: use `gh stack merge`.
-- Dependabot pull requests get no preview and no `e2e`. The workflow `dependabot-automerge.yml` merges them when `check` passes and the branch has no conflicts. Look at one only when its `check` fails.
+- Dependabot pull requests get no preview and no `e2e`. The workflow `dependabot-automerge.yml` merges minor and patch updates when `check` passes and the branch has no conflicts. A major update waits for a maintainer. Look at one only when its `check` fails, or when a maintainer asks you to review a major update.
 
 ## Standing rules from the maintainers
 

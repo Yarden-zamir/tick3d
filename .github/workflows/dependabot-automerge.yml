@@ -1,8 +1,10 @@
-# Turns on auto-merge for Dependabot pull requests. GitHub merges one when the required check
-# `check` passes and the branch has no conflicts. Dependabot rebases a conflicting branch by itself,
-# and the merge then follows.
-# The tick3d-agents app turns it on, not github.token: GitHub starts no workflow from a merge made
-# with github.token, so the deploy on main would not run.
+# Turns on auto-merge for Dependabot pull requests with only minor or patch updates. GitHub merges
+# one when the required check `check` passes and the branch has no conflicts. Dependabot rebases a
+# conflicting branch by itself, and the merge then follows.
+# A major update, or one whose type is unknown, waits for a maintainer: Dependabot pull requests
+# get no preview and no e2e, so `check` alone may not catch a break in the live game.
+# The tick3d-agents app turns on the merge, not github.token: GitHub starts no workflow from a merge
+# made with github.token, so the deploy on main would not run.
 # Dependabot runs see only Dependabot secrets, so AGENTS_APP_CLIENT_ID and AGENTS_APP_PRIVATE_KEY
 # are Dependabot secrets as well.
 name: Dependabot auto-merge
@@ -18,8 +20,25 @@ jobs:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 3
+    permissions:
+      pull-requests: read
     steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v3
+
+      - name: Major or unknown update waits for a maintainer
+        if: >-
+          steps.meta.outputs.update-type != 'version-update:semver-minor'
+          && steps.meta.outputs.update-type != 'version-update:semver-patch'
+        env:
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+          NAMES: ${{ steps.meta.outputs.dependency-names }}
+        run: echo "No auto-merge for ${NAMES} (update type '${UPDATE_TYPE:-unknown}')." >> "$GITHUB_STEP_SUMMARY"
+
       - id: app
+        if: >-
+          steps.meta.outputs.update-type == 'version-update:semver-minor'
+          || steps.meta.outputs.update-type == 'version-update:semver-patch'
         uses: actions/create-github-app-token@v3
         with:
           client-id: ${{ secrets.AGENTS_APP_CLIENT_ID }}
@@ -29,6 +48,7 @@ jobs:
           permission-workflows: write
 
       - name: Turn on auto-merge
+        if: steps.app.outcome == 'success'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
