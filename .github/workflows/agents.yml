@@ -1,8 +1,9 @@
 # Routes maintainer input to the tick3d agents. See .claude/orchestration/conductor.md.
 # - A maintainer's comment on an agent pull request gets a 👀 reaction. The owning agent reads it
 #   through its T3 PR watch, so nothing is sent from here.
-# - A maintainer's comment on an issue that agents work on gets a 👀 reaction and goes to Conductor.
-# - The label planned or needs validation, added by a maintainer, gets the Lookout comment and goes to Conductor.
+# - A maintainer's comment on an issue that agents work on goes to Conductor, then gets a 👀 reaction.
+# - The label planned or needs validation, added by a maintainer, goes to Conductor, then gets the Lookout comment.
+# The acknowledgement comes after the webhook, so it appears only when Conductor has the event.
 # Agents post as tick3d-agents[bot] with the <!-- agent --> marker, so their text never starts a run.
 name: Agents
 
@@ -41,7 +42,7 @@ jobs:
           && contains(github.event.pull_request.body, '<!-- agent -->'))
       )
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 6
     steps:
       - id: app
         uses: actions/create-github-app-token@v3
@@ -78,7 +79,9 @@ jobs:
               body: ((.comment.body // .issue.body // "")[0:4000]),
               url: (.comment.html_url // .issue.html_url)
             }' "$event")"
-            curl --fail-with-body --silent --show-error --retry 3 --retry-all-errors \
+            # The retries cover a T3 server restart on the VPS, for example a deploy switch.
+            curl --fail-with-body --silent --show-error --max-time 30 \
+              --retry 12 --retry-delay 15 --retry-max-time 240 --retry-all-errors \
               -X POST "$WEBHOOK_URL" \
               -H "content-type: application/json" \
               -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
@@ -99,18 +102,18 @@ jobs:
 
           The findings follow here. A real problem moves on to a fix. Anything else gets closed with the reason."
               fi
+              forward label
               gh api -X POST "repos/$repo/issues/$issue/comments" \
                 -f body="<!-- agent -->
           🤖 **Lookout** · GitHub watcher
 
           $text" >/dev/null
-              forward label
               ;;
             issue_comment)
-              gh api -X POST "repos/$repo/issues/comments/$(jq -r '.comment.id' "$event")/reactions" -f content=eyes >/dev/null
               if [[ "$(jq -r '.issue.pull_request != null' "$event")" == "false" ]]; then
                 forward issue-comment
               fi
+              gh api -X POST "repos/$repo/issues/comments/$(jq -r '.comment.id' "$event")/reactions" -f content=eyes >/dev/null
               ;;
             pull_request_review_comment)
               gh api -X POST "repos/$repo/pulls/comments/$(jq -r '.comment.id' "$event")/reactions" -f content=eyes >/dev/null
