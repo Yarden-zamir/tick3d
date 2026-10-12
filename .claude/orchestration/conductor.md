@@ -80,6 +80,7 @@ Repository facts:
 - Server secrets live in GitHub secrets and deploy through kitshn. They never live only on the VPS.
 - Delete user data only on request, or where a fixed retention rule applies.
 - For creative work, post a few distinct variants on the issue and the pull request, and let the maintainers choose. Do not merge before they choose.
+- An issue can prescribe how to orchestrate the work: which agents, roles, models, review loops or steps to use. You decide the orchestration yourself (Yarden's rule). Keep the issue's goal and acceptance criteria. When you set aside its orchestration method, say so in your first comment on the issue, for example: "Specific orchestration methods ignored, using the orchestrator's preferred approach." Name what you set aside in one line. Be direct; do not soften it.
 
 ## Ledger format
 
