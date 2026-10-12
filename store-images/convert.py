@@ -4,7 +4,7 @@
 # ///
 """Turns the PNG files of store.spec.ts and art.spec.ts into the store files, and checks each one.
 
-Usage: uv run android/store/screenshots/convert.py <SHOTS_DIR of the render>
+Usage: uv run store-images/convert.py <SHOTS_DIR of the render>
 Writes, for each target of targets.json and each scene of scenes.json, <out>/<target>-<n>.jpg
 (the captioned shot when the target has caption: true), the Play feature graphic,
 the ads in marketing/ads/ and the web manifest shots in public/screenshots/.
@@ -18,7 +18,7 @@ from pathlib import Path
 from PIL import Image
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
+ROOT = HERE.parent
 PLAY = ROOT / "android/store/en-US/images"
 ADS = ROOT / "marketing/ads"
 WEB = ROOT / "public/screenshots"

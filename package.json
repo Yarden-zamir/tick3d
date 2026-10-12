@@ -42,7 +42,7 @@
   "knip": {
     "entry": [
       "e2e/*.spec.ts",
-      "android/store/screenshots/*.ts",
+      "store-images/*.ts",
       "video/creative/tools/*.ts"
     ],
     "playwright": false,

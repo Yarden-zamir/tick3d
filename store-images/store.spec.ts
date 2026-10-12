@@ -3,7 +3,7 @@
 // Production keeps no data from it: every API write fails, except in the online scene, which plays
 // on the local Docker Compose build at LOCAL_URL (compose.lan.yml), because an online game needs writes.
 import type { Page } from '@playwright/test';
-import { cell, expect, expectMyMove, status, test } from '../../../e2e/fixtures.ts';
+import { cell, expect, expectMyMove, status, test } from '../e2e/fixtures.ts';
 
 const OUT = process.env.SHOTS_DIR ?? '';
 const LOCAL = process.env.LOCAL_URL ?? '';
