@@ -13,7 +13,7 @@ A maintainer is anyone with the `OWNER`, `MEMBER` or `COLLABORATOR` role on the 
 ## Pull requests
 
 4. Before you write code, check the open pull requests again (`gh pr list --repo Yarden-zamir/tick3d --state open`). Look for any that touch the same issue or the same files. If one overlaps, stop and tell Conductor before you go on. Then, when you start, open a DRAFT pull request at once. An empty first commit is fine (`git commit --allow-empty`). The description says `Closes #<issue>` when the work has an issue.
-5. Right after you open it, call `link_pull_request` and `watch_pull_request` for it. The watch wakes you when a maintainer comments, when a check fails or passes, and when the branch conflicts.
+5. Right after you open it, call `link_pull_request` and `watch_pull_request` for it. The watch wakes you when a maintainer comments, when a check fails or passes, and when the branch conflicts. When you take over or review a pull request that a maintainer opened, add `<!-- agent -->` as the last line of its description, with no other change. The trigger workflow adds the 👀 to a maintainer's comment only on a pull request whose description holds that marker.
 6. Keep the description short and human, like a teammate's note:
    - The signature lines, then 1 to 3 sentences on what changed and why.
    - "Try it": the preview steps, only when the change can be seen. The preview is `https://pr-<N>.tick3d.yarden-zamir.com`.
