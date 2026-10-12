@@ -14,7 +14,8 @@ export default defineConfig({
   // The scenes read production and draw the board in software, so a slow answer can time out once.
   retries: 1,
   reporter: 'list',
-  use: { baseURL: 'https://tick3d.yarden-zamir.com', isMobile: true, hasTouch: true },
+  // A fixed locale and time zone, so dates read the same on every runner (store.spec.ts fixes the clock).
+  use: { baseURL: 'https://tick3d.yarden-zamir.com', isMobile: true, hasTouch: true, locale: 'en-US', timezoneId: 'UTC' },
   projects: [
     ...TARGETS.map(({ name, platform, size: [width, height], scale }) => ({
       name,

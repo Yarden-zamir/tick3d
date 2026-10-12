@@ -36,12 +36,13 @@ APPLE_SIZES = {(1320, 2868), (1290, 2796), (1260, 2736), (1206, 2622), (1179, 25
 APPLE_MAX_PER_SIZE = 10
 PLAY_MAX_PER_TYPE = 8
 PLAY_MAX_BYTES = 8 * 1024 * 1024
-# Render noise: two renders of the same page differ. Text edges move by a few levels, and the won game
-# and online scenes show a random game id, player names and session code. On 2026-10-12 the noise reached
-# 0.78% of the pixels of an image (the online scene). A pixel counts as changed when one of its channels
-# moves by more than NOISE_LEVEL, and an image counts as changed when more than NOISE_SHARE of its pixels do.
-# Limit: a real change that is smaller than NOISE_SHARE, for example new words in one small label, stays
-# out of the pull request. Revisit when that happens, or when the scenes stop showing random text.
+# Render noise: store.spec.ts fixes the clock, the player names and the random numbers of the page, so two
+# renders of one commit match. On 2026-10-12 they differed by 0.00% of the pixels (before that fix: up to
+# 1.27%, the online scene). The limit stays as a margin for software drawing that changes between runs.
+# A pixel counts as changed when one of its channels moves by more than NOISE_LEVEL, and an image counts
+# as changed when more than NOISE_SHARE of its pixels do. Limit: a real change that is smaller than
+# NOISE_SHARE, for example new words in one small label, stays out of the pull request. Revisit when that
+# happens, or when a scene gets new random or time-based text.
 NOISE_LEVEL = 32
 NOISE_SHARE = 0.015
 
