@@ -4,6 +4,8 @@
 # - A maintainer's comment on an open issue that agents work on goes to Conductor, then gets a 👀 reaction.
 #   Comments on closed issues are skipped. To bring agents back, reopen the issue.
 # - The label planned or needs validation, added by a maintainer, goes to Conductor, then gets the Lookout comment.
+# - A maintainer's pull request that opens as ready, or moves from draft to ready, goes to Conductor
+#   for a review, then gets a 👀 reaction. Agent pull requests are skipped: their owner merges them.
 # The acknowledgement comes after the webhook, so it appears only when Conductor has the event.
 # Agents post as tick3d-agents[bot] with the <!-- agent --> marker, so their text never starts a run.
 name: Agents
@@ -15,6 +17,8 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
+  pull_request:
+    types: [opened, reopened, ready_for_review]
 
 permissions: {}
 
@@ -27,6 +31,8 @@ jobs:
       github.event.sender.type != 'Bot'
       && (github.event_name == 'issues'
         || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+        || (github.event_name == 'pull_request'
+          && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
         || contains(fromJSON(vars.AGENT_EXTRA_AUTHORS || '[]'), github.event.sender.login))
       && !contains(github.event.comment.body, '<!-- agent -->')
       && (
@@ -42,6 +48,8 @@ jobs:
             || contains(github.event.issue.labels.*.name, 'agents: question')))
         || (github.event_name == 'pull_request_review_comment'
           && contains(github.event.pull_request.body, '<!-- agent -->'))
+        || (github.event_name == 'pull_request' && !github.event.pull_request.draft
+          && !contains(github.event.pull_request.body, '<!-- agent -->'))
       )
     runs-on: ubuntu-24.04
     timeout-minutes: 6
@@ -70,16 +78,18 @@ jobs:
             : "${CF_ACCESS_CLIENT_ID:?CF_ACCESS_CLIENT_ID is not set}"
             : "${CF_ACCESS_CLIENT_SECRET:?CF_ACCESS_CLIENT_SECRET is not set}"
             local payload
-            payload="$(jq -c --arg kind "$1" '{
+            payload="$(jq -c --arg kind "$1" '(.issue // .pull_request) as $item | {
               kind: $kind,
               repository: .repository.full_name,
-              issue: .issue.number,
-              title: .issue.title,
-              labels: [.issue.labels[].name],
+              issue: $item.number,
+              pull_request: (.pull_request != null or $item.pull_request != null),
+              title: $item.title,
+              labels: [$item.labels[]?.name],
               label: .label.name,
               author: .sender.login,
-              body: ((.comment.body // .issue.body // "")[0:4000]),
-              url: (.comment.html_url // .issue.html_url)
+              item_author: $item.user.login,
+              body: ((.comment.body // $item.body // "")[0:4000]),
+              url: (.comment.html_url // $item.html_url)
             }' "$event")"
             # The retries cover a T3 server restart on the VPS, for example a deploy switch.
             curl --fail-with-body --silent --show-error --max-time 30 \
@@ -116,6 +126,10 @@ jobs:
                 forward issue-comment
               fi
               gh api -X POST "repos/$repo/issues/comments/$(jq -r '.comment.id' "$event")/reactions" -f content=eyes >/dev/null
+              ;;
+            pull_request)
+              forward pr-ready
+              gh api -X POST "repos/$repo/issues/$(jq -r '.pull_request.number' "$event")/reactions" -f content=eyes >/dev/null
               ;;
             pull_request_review_comment)
               gh api -X POST "repos/$repo/pulls/comments/$(jq -r '.comment.id' "$event")/reactions" -f content=eyes >/dev/null

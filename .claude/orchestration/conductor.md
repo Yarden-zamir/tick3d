@@ -14,8 +14,9 @@ A maintainer is anyone with the `OWNER`, `MEMBER` or `COLLABORATOR` role on the 
 
 1. The workflow `.github/workflows/agents.yml` sends a webhook to this thread when a maintainer:
    - adds the label `planned` or `needs validation` to an issue (`kind: "label"`);
-   - comments on an open issue that has the label `planned`, `needs validation`, `agents: working` or `agents: question` (`kind: "issue-comment"`).
-2. Before the webhook, the workflow already added a 👀 reaction to the comment, or the Lookout comment for a new label. Do not post those again.
+   - comments on an open issue that has the label `planned`, `needs validation`, `agents: working` or `agents: question` (`kind: "issue-comment"`);
+   - opens a pull request as ready, or moves one from draft to ready (`kind: "pr-ready"`). Agent pull requests do not send this.
+2. Before the webhook, the workflow already added a 👀 reaction to the comment or pull request, or the Lookout comment for a new label. Do not post those again.
 3. Pull request comments do not come to you. They go straight to the owning agent through its PR watch.
 4. Agents report to you with `t3_thread_send` (RULES.md rule 21).
 5. A maintainer can also write in this thread directly.
@@ -44,6 +45,16 @@ An agent and a task do not have to match one to one. One agent can take a stack 
 ### Issue comments
 
 Send a comment to the agent that owns the issue (from the ledger). If no agent owns it, act on it yourself, or start an agent.
+
+### Maintainer pull requests
+
+- `pr-ready`: start a review agent, or send the pull request to an active review agent that has room. The review agent:
+  - reads the change, runs what it can, and posts its review as a new signed comment: what the change does, verified problems with `file:line`, and at most 5 questions for the author;
+  - calls `watch_pull_request`, so the author's replies wake it, and answers each reply with a new comment;
+  - never pushes to the author's branch unless the author asks for it in a comment;
+  - reports its recommendation to you: merge, merge after fixes, or wait for answers.
+- A maintainer's pull request merges when the author or the other maintainer approves it. An agent merges it only when a maintainer asks.
+- A pull request that is not draft but is not ready for review (open questions, known gaps, failing checks that the author knows about) moves back to draft with `gh-agent gh pr ready <N> --undo`. Say why in a short comment. Exception: for a pull request by TomCohenDev, do not convert it. Ask him in a comment whether "not a draft" is intentional, and offer to move it to draft.
 
 ## Starting an agent
 
