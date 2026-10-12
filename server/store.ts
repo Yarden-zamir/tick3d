@@ -683,7 +683,7 @@ export async function openStore(
   // DuckDB's sha256 finds the token behind the person id, as in clearPersonName.
   // Limit: the device search hashes every seat token of every result. Revisit this when a person filter
   // takes more than about 100 ms: then keep the person id of each seat in a column.
-  async function statsPersonOf(person: PersonId): Promise<{ owner: string; tokens: string[]; shown: StatsPerson } | undefined> {
+  async function statsPersonOf(person: PersonId): Promise<{ owner: string; tokens: string[]; shown: Omit<StatsPerson, 'you'> } | undefined> {
     const [account] = await rows(
       `FROM (SELECT DISTINCT github_id FROM player_tokens) LEFT JOIN users USING (github_id) SELECT github_id, login, avatar
        WHERE left(sha256($prefix || $account || lpad(github_id::VARCHAR, 16, '0')), ${PERSON_ID_LENGTH}) = $person`,
@@ -1526,7 +1526,7 @@ export async function openStore(
           if (found === undefined) throw new SessionError(404, 'This player has no finished games yet.');
           return {
             ...(await computeStats(rows, now(), filter, found.tokens)),
-            person: found.shown,
+            person: { ...found.shown, you: token !== null && (await ownerOf(token)) === found.owner },
             practice: await practiceStats(rows),
             achievements: await achievementsOf(found.owner, found.tokens),
           };

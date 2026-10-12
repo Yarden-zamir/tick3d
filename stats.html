@@ -52,8 +52,8 @@
           </a>
         </div>
       </header>
-      <!-- Whose stats these are, for a person filter: src/stats/main.ts fills it. -->
-      <p class="stats-person" id="stats-person" hidden></p>
+      <!-- The player card of a person filter: src/stats/player-card.ts fills it. -->
+      <section class="stats-person" id="stats-person" aria-label="Player" hidden></section>
       <nav class="stats-filters" id="stats-filters" aria-label="Filters"></nav>
       <p class="stats-note" id="stats-note">Loading…</p>
       <div class="stats-grid" id="stats-grid"></div>
@@ -74,7 +74,7 @@
         <li>The filters go into the address. Share the address to share the view.</li>
         <li>A game counts when it ends. A Nearby game counts once.</li>
         <li>Win rate: wins in your last 20 games. Friend games do not count.</li>
-        <li>Leaderboard: tap a column to sort by it, and tap it again to turn the order around. "Hide my stats" in My games takes you off it.</li>
+        <li>Leaderboard: tap a column to sort by it, and tap it again to turn the order around. Tap a player for their card, with their achievements, and Report or block. Players that you blocked are not on it. "Hide my stats" in My games takes you off it.</li>
         <li>Times and days are in UTC. Everyone numbers refresh once a minute.</li>
         <li>Hover a bar or a cell for its exact number.</li>
       </ul>

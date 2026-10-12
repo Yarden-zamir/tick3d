@@ -247,18 +247,66 @@
 
 /* The filters: one labelled row of toggle buttons per filter. */
 /* The person of a person filter: picture and name. */
+/* The player card of a person view (src/stats/player-card.ts). */
 .stats-person {
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 0.6rem;
+  min-width: 0;
   margin: 0 0 1rem;
-  font-size: 1.3rem;
-  font-weight: 800;
+  padding: 0.9rem 1rem;
+  border: var(--border) solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--shadow);
 }
 
-.stats-person .avatar {
+.stats-person[hidden] {
+  display: none;
+}
+
+.player-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.player-card-head .avatar {
   width: 3rem;
   height: 3rem;
+}
+
+.player-card-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.3rem;
+  overflow-wrap: anywhere;
+}
+
+/* The unlocked achievements scroll sideways in one row. */
+.player-card-achievements {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.2rem 0.2rem 0.5rem;
+  overflow-x: auto;
+  list-style: none;
+  scroll-snap-type: x proximity;
+}
+
+.player-card-achievements li {
+  scroll-snap-align: start;
+}
+
+.player-card-none,
+.player-card-status {
+  margin: 0;
+  color: var(--muted);
+}
+
+.player-card-status:empty {
+  display: none;
 }
 
 .stats-filters {
@@ -359,7 +407,12 @@
   text-decoration: none;
 }
 
-.leaderboard-name:hover span {
+.leaderboard tbody tr:not(.leaderboard-gap) {
+  cursor: pointer;
+}
+
+.leaderboard-name:hover span,
+.leaderboard tbody tr:hover .leaderboard-name span {
   text-decoration: underline;
 }
 

@@ -1042,7 +1042,8 @@ export type PersonalStats = {
 };
 
 // The name and the GitHub account of the person of a person filter: the name that the games show.
-export type StatsPerson = { name: string; player: PlayerInfo | null };
+// `you`: the caller is this person, so the page offers no report and no block.
+export type StatsPerson = { name: string; player: PlayerInfo | null; you: boolean };
 
 // The "Hide my stats" setting (GET and PUT /api/me/stats-privacy). When it is on, a person filter
 // with your person id answers 403 to everyone but you. Everyone totals still count your games.

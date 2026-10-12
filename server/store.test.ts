@@ -918,7 +918,8 @@ describe('stats filters', () => {
     const bobs = await store.stats({ ...all, person: await personId(bob) });
     // Bob: the online game against Alice and his computer loss.
     expect(bobs.totals.games).toBe(2);
-    expect(bobs.person).toEqual({ name: nameOf(bob), player: null });
+    expect(bobs.person).toEqual({ name: nameOf(bob), player: null, you: false });
+    expect((await store.stats({ ...all, person: await personId(bob) }, bob)).person?.you).toBe(true);
     expect(bobs.personal).toMatchObject({ results: expect.arrayContaining([{ mode: 'online', level: null, won: 0, drawn: 0, lost: 1 }]), opponents: [] });
     expect(JSON.stringify(bobs)).not.toContain(bob);
 
@@ -926,7 +927,7 @@ describe('stats filters', () => {
     await store.linkToken(alice, ALICE_GITHUB);
     const alices = await store.stats({ ...all, person: await personId(`account-${String(ALICE_GITHUB.id).padStart(16, '0')}`) });
     expect(alices.totals.games).toBe(4);
-    expect(alices.person).toEqual({ name: 'alice', player: { login: 'alice', avatar: ALICE_GITHUB.avatar } });
+    expect(alices.person).toEqual({ name: 'alice', player: { login: 'alice', avatar: ALICE_GITHUB.avatar }, you: false });
     expect(JSON.stringify(alices)).not.toContain(alice);
   });
 

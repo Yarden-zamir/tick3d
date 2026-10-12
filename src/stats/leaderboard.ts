@@ -1,12 +1,16 @@
 // The leaderboard card of the stats page: the common stats of each player, sorted by any column.
 // It loads when it scrolls into view, so a visit that never reaches it costs the server nothing.
 import { avatarImage } from '../avatar.ts';
+import { isBlocked, onBlocksChange } from '../blocks.ts';
 import { api } from '../online.ts';
 import { type Leaderboard, type LeaderboardRow, type PersonId, type StatsFilter, statsQuery } from '../protocol.ts';
 import { COLUMNS, SHOWN_ROWS, type Sort, defaultSort, sortRows } from './leaderboard-sort.ts';
 
 // The sort lasts while the page is open, also through a change of the filters.
 let sort: Sort = defaultSort('won');
+// Draws the shown board again, so a change of the block list shows at once.
+let redraw: (() => void) | undefined;
+onBlocksChange(() => redraw?.());
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -51,11 +55,16 @@ function render(box: HTMLElement, board: Leaderboard, filter: StatsFilter, open:
   const wrap = el('div', 'stats-table');
   outer.append(wrap);
   box.append(outer);
-  if (board.rows.length === 0) {
+  const rerender = (showAll = all) => render(box, board, filter, open, showAll);
+  redraw = () => {
+    if (box.isConnected) rerender();
+  };
+  // The players that you blocked are not on your board.
+  const rows = board.rows.filter((row) => !isBlocked(row.person));
+  if (rows.length === 0) {
     wrap.append(el('p', 'stats-empty', 'No players yet.'));
     return;
   }
-  const rerender = (showAll = all) => render(box, board, filter, open, showAll);
 
   const table = el('table');
   const head = el('tr');
@@ -82,7 +91,7 @@ function render(box: HTMLElement, board: Leaderboard, filter: StatsFilter, open:
   table.append(el('thead'));
   table.tHead?.append(head);
 
-  const sorted = sortRows(board.rows, sort);
+  const sorted = sortRows(rows, sort);
   const body = el('tbody');
   const line = (row: LeaderboardRow, rank: number) => {
     const tr = el('tr');
@@ -90,7 +99,8 @@ function render(box: HTMLElement, board: Leaderboard, filter: StatsFilter, open:
     const link = el('a', 'leaderboard-name');
     link.href = `${location.pathname}${statsQuery({ ...filter, person: row.person })}`;
     link.append(el('span', 'leaderboard-rank', String(rank)), avatarImage(row, 24), el('span', '', row.name));
-    link.addEventListener('click', (event) => {
+    // A tap anywhere on the row opens the player card. The link keeps a new tab for a modified click.
+    tr.addEventListener('click', (event) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       event.preventDefault();
       open(row.person);

@@ -12,8 +12,9 @@ import { element } from '../element.ts';
 import { CELL_COUNT, SIZE } from '../game.ts';
 import { accountLink, setupPageHeader } from '../header/header.ts';
 import { myGamesHref } from '../header/my-games-link.ts';
-import { avatarImage } from '../avatar.ts';
 import { leaderboardCard } from './leaderboard.ts';
+import { playerCard } from './player-card.ts';
+import { loadBlocks } from '../blocks.ts';
 import { OnlineError, api } from '../online.ts';
 import { releaseLabel } from '../release.ts';
 import {
@@ -37,7 +38,7 @@ const SVG = 'http://www.w3.org/2000/svg';
 const grid = element('#stats-grid', HTMLDivElement);
 const note = element('#stats-note', HTMLParagraphElement);
 const filters = element('#stats-filters', HTMLElement);
-const personHead = element('#stats-person', HTMLParagraphElement);
+const personHead = element('#stats-person', HTMLElement);
 setupPageHeader();
 
 // ---- Small builders ----
@@ -419,7 +420,7 @@ function draw(stats: Stats): void {
   // The leaderboard names players, so it shows in the Everyone view only, not in Mine or for one person.
   if (!mine && stats.person === null) {
     leaderboardCard(
-      card('Leaderboard', true, 'Every player who does not hide their stats, with the filters above. Friend games do not count. Tap a column to sort, or a name for their stats.'),
+      card('Leaderboard', true, 'Every player who does not hide their stats, with the filters above, but not the players that you blocked. Friend games do not count. Tap a column to sort, or a player for their card.'),
       stats.filter,
       (person) => navigate({ ...stats.filter, person }),
     );
@@ -639,11 +640,13 @@ function readFilter(): { filter: StatsFilter; problem: string } {
   return { filter: ALL_STATS, problem: 'The address had an unknown filter, so the page shows all games. ' };
 }
 
-// The picture and the name of the person of a person filter. A blocked person shows as they are: the page has no block list.
-function showPerson(person: Stats['person']): void {
+// The player card of a person filter. A blocked person shows as they are, with a note: the visitor opened them on purpose.
+function showPerson(stats: Stats | null): void {
+  const person = stats?.person ?? null;
+  const id = stats?.filter.person ?? null;
   personHead.hidden = person === null;
-  if (person === null) return personHead.replaceChildren();
-  personHead.replaceChildren(avatarImage(person, 48), `Stats of ${person.name}`);
+  if (person === null || id === null) return personHead.replaceChildren();
+  playerCard(personHead, id, person, stats?.achievements ?? null);
 }
 
 // A newer view replaces a view that still loads.
@@ -664,7 +667,7 @@ async function show(filter: StatsFilter, problem = ''): Promise<void> {
     const stats = parseStats(await api.stats(filter));
     if (id !== request) return;
     grid.replaceChildren();
-    showPerson(stats.person);
+    showPerson(stats);
     draw(stats);
     const scope =
       stats.person !== null
@@ -691,3 +694,5 @@ addEventListener('popstate', () => {
 });
 const { filter, problem } = readFilter();
 void show(filter, problem);
+// The leaderboard leaves out the players that you blocked.
+void loadBlocks();

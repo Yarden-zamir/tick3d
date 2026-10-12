@@ -1,0 +1,83 @@
+// The player card on top of a person view of the stats page: the picture, the name, the unlocked
+// achievements in a row that scrolls, and Report or block (the Apple and Google Play rules for user content).
+import { badge } from '../achievement-list.ts';
+import { type Achievements, achievementOf } from '../achievements.ts';
+import { avatarImage } from '../avatar.ts';
+import { changeBlock, isBlocked } from '../blocks.ts';
+import { api } from '../online.ts';
+import type { PersonId, StatsPerson } from '../protocol.ts';
+import { openSafetyDialog } from '../safety-dialog.ts';
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text) node.textContent = text;
+  return node;
+}
+
+// The unlocked achievements, newest first. Each badge names its achievement in a tooltip.
+function achievementRow(achievements: Achievements | null): HTMLElement {
+  const unlocked = (achievements?.achievements ?? []).filter((entry) => entry.unlockedAt !== null).toSorted((a, b) => (b.unlockedAt ?? 0) - (a.unlockedAt ?? 0));
+  if (unlocked.length === 0) return el('p', 'player-card-none', 'No achievements yet.');
+  const row = el('ul', 'player-card-achievements');
+  row.setAttribute('aria-label', `${unlocked.length} achievements`);
+  for (const entry of unlocked) {
+    const { name, description } = achievementOf(entry.id);
+    const item = el('li');
+    const tile = badge('span', entry.id);
+    tile.tabIndex = 0;
+    tile.setAttribute('role', 'img');
+    tile.setAttribute('aria-label', name);
+    tile.dataset.tip = `${name}: ${description}`;
+    item.append(tile);
+    row.append(item);
+  }
+  return row;
+}
+
+// Fills `box` with the card of `person`, the person of the view.
+export function playerCard(box: HTMLElement, id: PersonId, person: StatsPerson, achievements: Achievements | null): void {
+  const head = el('div', 'player-card-head');
+  const title = el('h2', 'player-card-name', `Stats of ${person.name}`);
+  head.append(avatarImage(person, 48), title);
+  const status = el('p', 'player-card-status');
+  status.setAttribute('role', 'status');
+  box.replaceChildren(head, achievementRow(achievements), status);
+  // Nobody reports or blocks themselves.
+  if (person.you) return;
+
+  const showBlocked = () => {
+    status.textContent = isBlocked(id) ? 'You blocked this player. Their name stays hidden in your games, and they are off your leaderboard.' : '';
+  };
+  const button = el('button', 'btn btn-small player-card-safety', 'Report or block');
+  button.type = 'button';
+  button.addEventListener('click', () =>
+    openSafetyDialog({
+      title: person.name,
+      canReport: true,
+      blocked: isBlocked(id),
+      toggleBlock: () => {
+        changeBlock(id, person.name, !isBlocked(id)).then(
+          (done) => {
+            status.textContent = done;
+          },
+          (error: unknown) => {
+            status.textContent = error instanceof Error ? error.message : String(error);
+          },
+        );
+      },
+      report: async (reason, note) => {
+        try {
+          await api.report({ person: id, reason, note });
+        } catch (error) {
+          status.textContent = `The report did not go out. ${error instanceof Error ? error.message : String(error)}`;
+          return true;
+        }
+        status.textContent = 'Thanks. The report went to the maintainers.';
+        return true;
+      },
+    }),
+  );
+  head.append(button);
+  showBlocked();
+}

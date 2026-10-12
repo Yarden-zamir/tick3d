@@ -602,7 +602,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     offlineGames: count(),
     nearbyMixes: list('Nearby device mixes.', ref('Count')),
     filter: ref('StatsFilter'),
-    person: { ...nullable(object('Whose stats these are.', { name: displayName, player: nullable(ref('PlayerInfo')) })), description: 'The person of a person filter: the name and GitHub account that their games show. null without a person filter.' },
+    person: { ...nullable(object('Whose stats these are.', { name: displayName, player: nullable(ref('PlayerInfo')), you: { type: 'boolean', description: 'The X-Player header names this person.' } })), description: 'The person of a person filter: the name and GitHub account that their games show. null without a person filter.' },
     form: list(`The win rate over time, oldest first: at each game, the share of wins in the ${FORM_WINDOW} games up to it. mine: your games. everyone: the games against the computer, from the player's side.`, object('One game.', { at: { type: 'number' }, rate: { type: 'number', minimum: 0, maximum: 1 } })),
     lengths: list('Games per number of moves. Index n holds the games with n moves.', count()),
     openingWinsX: list('Games that X won, per first move.', count()),
