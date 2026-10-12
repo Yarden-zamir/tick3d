@@ -28,7 +28,7 @@ jobs:
         with:
           service-account-json: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
 
-      - uses: ruby/setup-ruby@v1.327.0
+      - uses: ruby/setup-ruby@v1.328.0
         if: steps.play.outputs.ready == 'true'
         with:
           ruby-version: '4.0'

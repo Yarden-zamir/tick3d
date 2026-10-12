@@ -12,20 +12,23 @@ A maintainer is anyone with the `OWNER`, `MEMBER` or `COLLABORATOR` role on the 
 
 ## Pull requests
 
-4. When you start, open a DRAFT pull request at once. An empty first commit is fine (`git commit --allow-empty`). The description says `Closes #<issue>` when the work has an issue.
+4. Before you write code, check the open pull requests again (`gh pr list --repo Yarden-zamir/tick3d --state open`). Look for any that touch the same issue or the same files. If one overlaps, stop and tell Conductor before you go on. Then, when you start, open a DRAFT pull request at once. An empty first commit is fine (`git commit --allow-empty`). The description says `Closes #<issue>` when the work has an issue.
 5. Right after you open it, call `link_pull_request` and `watch_pull_request` for it. The watch wakes you when a maintainer comments, when a check fails or passes, and when the branch conflicts.
 6. Keep the description short and human, like a teammate's note:
    - The signature lines, then 1 to 3 sentences on what changed and why.
    - "Try it": the preview steps, only when the change can be seen. The preview is `https://pr-<N>.tick3d.yarden-zamir.com`.
    - "Open questions", only when there are some.
-   - "Screenshots", when rule 12 applies.
+   - "Screenshots": always, with at least one image (rule 12).
    - At most about 15 lines in all. No test logs, file lists or commit hashes. Put long detail in your report to Conductor.
 7. The title is a conventional commit line of at most about 60 characters. It says what the change does, not how. Update the title when the scope changes.
 8. Write a description or comment body to a file made with `mktemp -t <name>-pr<N>`. Never use a shared file name. Before you publish, check that the file is not empty and that it holds your own signature.
 9. One agent owns one pull request. Do not push to another agent's branch. Ask Conductor instead.
 10. When your work depends on another open pull request, branch from its head branch, open yours with `--base <parent head branch>`, and write `Depends on #N`. Then run `gh-agent gh stack link <parent PR> <your PR>`. Run it again when the stack grows.
-11. To update your branch, merge the base in (a normal push), or rebase and push with `--force-with-lease`. Prefer the merge on a shared branch. Never force-push without the lease. GitHub runs no checks while a pull request conflicts. So before you wait for checks, run `gh pr view <N> --json mergeable,mergeStateStatus`. If it says `CONFLICTING` or `DIRTY`, merge the base in first.
-12. A pull request that changes the UI shows screenshots in its description: phone (390 px) and desktop, light and dark, before and after where a before exists. Take them from the preview, or from a local build when previews are down. Show only the screens that changed.
+11. To update your branch, merge the base in (a normal push), or rebase and push with `--force-with-lease`. Prefer the merge on a shared branch. Never force-push without the lease. GitHub runs no checks while a pull request conflicts. So before you wait for checks, run `gh pr view <N> --json mergeable,mergeStateStatus`. If it says `CONFLICTING` or `DIRTY`, merge the base in first. If a check fails in code that your change does not touch, it is probably flaky: re-run the failed jobs once with `gh-agent gh run rerun <run id> --failed`. If it fails again, treat it as a real failure and find the cause.
+11a. The VPS has 4 CPU cores, and it also runs the live game. Run every heavy command through the shared lock at low priority: `nice -n 19 flock /tmp/tick3d-heavy.lock <command>`. Heavy means `npm ci` or `npm install`, `npm run check`, a full `vitest` run, Playwright or e2e, video renders, screenshot runs and production builds. Only one heavy command runs at a time on the machine. Locally, run only the tests of the files that you touched. Let CI run the full `check` and `e2e` on your pull request.
+12. Every pull request description shows at least one image, because the preview menu shows the description images in each entry. Host images on GitHub only (rule 13): other hosts do not show in the menu.
+    - A change to the UI shows screenshots: phone (390 px) and desktop, light and dark, before and after where a before exists. Take them from the preview, or from a local build when previews are down. Show only the screens that changed.
+    - A change without UI shows the closest picture: a render, a still, a contact sheet, a small diagram of the flow, or a screenshot of the CI run or the result.
 13. Commit images to the orphan branch `pr-assets`, in the folder `pr-<N>/` (or `issue-<N>/` for issue-only images), never to a feature branch. Keep each image small (PNG, at most about 300 KB). Link them as `https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/pr-<N>/<file>.png`. Give each new render or file a new name that includes the short commit hash, so that links never change under a maintainer.
 
 ## Maintainer input
@@ -37,10 +40,23 @@ A maintainer is anyone with the `OWNER`, `MEMBER` or `COLLABORATOR` role on the 
 
 16. Keep the source issue current. Post a short signed comment at each milestone: a plan change, the first preview or render, ready, and merged. Post previews (storyboards, stills, video links) on BOTH the issue and the pull request. Post each new render as a new comment. Do not edit an old one.
 17. While you work on an issue, it has the label `agents: working`. Remove it when the work merges or stops.
-18. To ask the maintainers a question, post it as a comment on the pull request, or on the issue when there is no pull request yet. Add the label `agents: question` to the pull request and to the issue. When all your questions are answered, remove the label. If Conductor tells you that a question was answered elsewhere, delete your question comment and update the description.
+18. To ask the maintainers a question, post it as a comment on the pull request, or on the issue when there is no pull request yet. Keep it short, so that a maintainer can answer it from a phone:
+    - At most 3 questions in one comment. Ask only what blocks you; decide the rest yourself and say what you chose.
+    - Each question is one bold line that a person can answer without opening the code. No file paths or code names, unless the question is about them.
+    - Give 2 to 4 lettered options of a few words each, and mark the one you recommend with "(recommended)". End with: "Reply with a letter, or write your own."
+    - Add at most one line of context. Put longer detail in a collapsed `<details>` block below the questions.
+    - Add an image when it makes the choice clear and you already have it, or can take it fast, for example a screenshot of the preview or a render you already made (rule 13).
+    Example:
+    ```
+    **1. Show player names on the public leaderboard?**
+    A. Yes, players can hide themselves (recommended) · B. No, show only my own rank
+    Reply with a letter, or write your own.
+    ```
+    Add the label `agents: question` to the pull request and to the issue. When all your questions are answered, remove the label. If Conductor tells you that a question was answered elsewhere, delete your question comment and update the description.
 
 ## Merge
 
+18a. If a question has no clear answer after 3 hours, Conductor can ask you to mock up the options. Make all of them, or your top 2 or 3. Post them as one new comment on BOTH the issue and the pull request: an image or link per option, under the same letters as the question. Say that the question is still open. Keep the `agents: question` label, and do not choose for the maintainers.
 19. Merge your own pull request when ALL of these are true:
     - The required check `check` passed.
     - `e2e` passed, if your change can break a flow that it covers: UI, session, API, Nearby, sound, PWA or routing. Docs-only, test-only and server-internal changes with unit tests do not wait for `e2e`.
@@ -48,6 +64,15 @@ A maintainer is anyone with the `OWNER`, `MEMBER` or `COLLABORATOR` role on the 
     - No maintainer review is in the "changes requested" state.
     - The work is not creative work that needs a maintainer's choice (video, ads, icons, store art). For creative work, make a few distinct variants, post them on the issue and the pull request, and wait.
 20. To merge, run `gh-agent gh pr ready <N>`, then `gh-agent gh pr merge <N> --merge`. Merge a stack with `gh-agent gh stack merge <top PR> --yes --merge`. If GitHub refuses the merge, tell Conductor which pull request and why. After the merge, post the "merged" milestone (rule 16), remove `agents: working`, and report to Conductor.
+
+## Clear comments
+
+24. Write every comment so that a maintainer understands it from a phone, without the rest of the thread:
+    - The first line says the outcome or the state: what changed, what is ready, or what you need.
+    - Name issues and pull requests by link and title, not by number alone.
+    - Use plain words. Leave out logs, file lists and internal names, unless the reader needs them to act.
+25. Your newest comment on an issue or pull request always ends with an "Open questions" section. It lists every question that is still open on that item, as a link to where it was asked, with its letters. When no question is open, write "Open questions: none." A maintainer reads only the newest comment to know what waits on them.
+26. When a later change makes one of your earlier comments wrong (a plan, a link, a status, a decision), edit that comment. Add this line at its top: `> ⚠️ Outdated <YYYY-MM-DD>: <what changed in one line>. See <link to the newer comment>.` Keep the old text below the note, so the thread stays readable. Do not delete the comment.
 
 ## Reports and context
 

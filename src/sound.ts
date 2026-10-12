@@ -322,6 +322,11 @@ export const sounds = {
   tick(urgent: boolean): void {
     tone({ frequency: urgent ? 1400 : 900, duration: 0.05, type: 'square', volume: 0.04 });
   },
+  // An achievement unlocks: a rising chord with a high sparkle on top.
+  achievement(): void {
+    [659.25, 830.61, 987.77, 1318.51].forEach((frequency, i) => tone({ frequency, at: i * 0.07, duration: 0.5, type: 'triangle', volume: 0.12 }));
+    [2637, 3135.96, 3951.07].forEach((frequency, i) => tone({ frequency, at: 0.3 + i * 0.06, duration: 0.25, volume: 0.03 }));
+  },
   click(): void {
     tone({ frequency: 1200, duration: 0.04, volume: 0.05 });
   },

@@ -60,7 +60,7 @@ jobs:
             sh -c 'npm ci --no-audit --no-fund && npx playwright test -c android/store/screenshots/playwright.config.ts'
           sudo chown -R "$(id -u):$(id -g)" .
 
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.0
 
       - name: Convert and check
         run: uv run android/store/screenshots/convert.py "$RUNNER_TEMP/shots"

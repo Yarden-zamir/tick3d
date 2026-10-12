@@ -2,6 +2,7 @@
 import { hasLimit } from '../clock.ts';
 import { type Game, type Player, other } from '../game.ts';
 import { createSearch } from '../move-search.ts';
+import { isTunedFor } from '../tuning.ts';
 import { computerTuning } from './advanced.ts';
 import { showError } from './feedback.ts';
 import { requestUndo } from './players.ts';
@@ -43,14 +44,17 @@ export function scheduleComputer(): void {
     }
     const game = current();
     const startedMs = performance.now();
+    // The settings that choose this move. The game remembers changed ones, so its result counts as tuned.
+    const difficulty = settings.difficulty;
+    const tuning = computerTuning();
     void (async () => {
       try {
-        const cell = await search(game.board, game.turn, settings.difficulty, computerTuning());
+        const cell = await search(game.board, game.turn, difficulty, tuning);
         const thinkMs = Math.round(performance.now() - startedMs);
         // The game can end during the search, for example on time.
         if (stale() || !isComputerTurn()) return;
         const request = { game: page.games.length - 1, moveCount: game.moves.length, cell };
-        const view = await backend.computerMove(code, request);
+        const view = await backend.computerMove(code, request, isTunedFor(tuning, difficulty) ? tuning : null);
         if (stale()) return;
         // A game that this page opened after a reload has no times for the earlier moves. The list then
         // stays shorter than the move count, and the index still matches the computer's move order.

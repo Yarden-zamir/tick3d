@@ -1,6 +1,7 @@
 // The kitshn button and the Previews dialog: the production site and the open pull requests with a live preview.
-// A stacked pull request shows in a nested list inside the card of its parent.
+// A stacked pull request shows in a nested list inside the card of its parent. Toys sit at the bottom (preview-tree.ts).
 import { api, OnlineError } from '../online.ts';
+import type { PreviewImage } from '../protocol.ts';
 import { element } from '../element.ts';
 import { type PreviewNode, previewTree } from './preview-tree.ts';
 
@@ -53,15 +54,35 @@ function badge(text: string, className = 'badge'): HTMLSpanElement {
   return mark;
 }
 
+// The images of the description in a row that scrolls sideways. Each opens in full size.
+function shotsRow(images: readonly PreviewImage[], title: string): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'preview-shots';
+  row.setAttribute('role', 'group');
+  row.setAttribute('aria-label', `Screenshots of ${title}`);
+  for (const image of images) {
+    const anchor = link('', image.src);
+    const picture = document.createElement('img');
+    picture.src = image.src;
+    picture.alt = image.alt;
+    picture.loading = 'lazy';
+    picture.decoding = 'async';
+    anchor.append(picture);
+    row.append(anchor);
+  }
+  return row;
+}
+
 // One card, with the cards of its stacked pull requests nested inside. `here` is the number of this page's preview.
 function previewItem({ preview, children }: PreviewNode, here: number | undefined): HTMLLIElement {
   const item = document.createElement('li');
-  item.className = preview.number === here ? 'preview here' : 'preview';
+  item.className = ['preview', preview.number === here ? 'here' : '', preview.toy ? 'toy' : ''].filter(Boolean).join(' ');
   const head = document.createElement('div');
   head.className = 'preview-head';
   const title = document.createElement('b');
   title.textContent = `${preview.title} #${preview.number}`;
   head.append(title);
+  if (preview.toy) head.append(badge('Toy', 'badge badge-toy'));
   if (preview.parent !== null) head.append(badge(`Depends on #${preview.parent}`, 'badge badge-quiet'));
   if (preview.draft) head.append(badge('Draft'));
   if (preview.number === here) head.append(badge('You are here'));
@@ -71,6 +92,7 @@ function previewItem({ preview, children }: PreviewNode, here: number | undefine
     description.textContent = preview.description;
     item.append(description);
   }
+  if (preview.images.length > 0) item.append(shotsRow(preview.images, preview.title));
   const people = document.createElement('div');
   people.className = 'preview-people';
   for (const person of preview.contributors) {
@@ -87,7 +109,9 @@ function previewItem({ preview, children }: PreviewNode, here: number | undefine
   foot.className = 'preview-foot';
   const updated = document.createElement('small');
   updated.textContent = `Updated ${timeAgo(preview.updatedAt, Date.now())}`;
-  foot.append(updated, link('Open preview', preview.previewUrl), link('Pull request', preview.url));
+  foot.append(updated);
+  if (preview.toy) foot.append(link('Open toy', `${preview.previewUrl}/toys/`));
+  foot.append(link('Open preview', preview.previewUrl), link('Pull request', preview.url));
   item.append(people, foot);
   if (children.length > 0) {
     const stacked = document.createElement('ul');

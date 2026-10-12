@@ -11,7 +11,20 @@
 // "Live" means that https://pr-<n>.<domain>/api/health answers { ok: true } now. That costs no GitHub call.
 import { PREVIEWS_CACHE_MS, PREVIEWS_RELAY_CACHE_MS } from './api-docs.ts';
 import { type EpochMs, isEpochMs } from '../src/epoch.ts';
-import { type Contributor, type PlayerInfo, type Preview, type Previews, PREVIEW_DESCRIPTION_LENGTH, parsePlayerInfo, parsePreviews } from '../src/protocol.ts';
+import {
+  type Contributor,
+  type PlayerInfo,
+  type Preview,
+  type PreviewImage,
+  type Previews,
+  PREVIEW_DESCRIPTION_LENGTH,
+  PREVIEW_IMAGE_ALT_LENGTH,
+  PREVIEW_IMAGES,
+  PREVIEW_TOY_LABEL,
+  isPreviewImageSource,
+  parsePlayerInfo,
+  parsePreviews,
+} from '../src/protocol.ts';
 import { isRecord } from '../src/guards.ts';
 
 // GitHub returns at most this many pull requests in one page, the most recently updated first.
@@ -75,6 +88,7 @@ type Pull = {
   branch: string;
   base: string;
   author: PlayerInfo | undefined;
+  labels: string[];
 };
 
 // One pull request from GET /repos/{repo}/pulls. Returns undefined for an entry that is not as documented.
@@ -89,6 +103,7 @@ export function parsePull(value: unknown): Pull | undefined {
   if (typeof branch !== 'string' || typeof base !== 'string') return undefined;
   const updatedAt = Date.parse(updated);
   if (!isEpochMs(updatedAt)) return undefined;
+  const labels = Array.isArray(value.labels) ? value.labels.flatMap((label) => (isRecord(label) && typeof label.name === 'string' ? [label.name] : [])) : [];
   return {
     number,
     title,
@@ -100,6 +115,7 @@ export function parsePull(value: unknown): Pull | undefined {
     branch,
     base,
     author: accountOf(value.user),
+    labels,
   };
 }
 
@@ -161,12 +177,7 @@ export function mergeContributors(author: PlayerInfo | undefined, commits: reado
 // Limit: it removes the common Markdown only (headings, lists, quotes, code fences, links, bold and code marks).
 // Revisit when a description shows raw Markdown that matters.
 export function summaryOf(body: string): string {
-  let text = body.replaceAll('\r', '');
-  // HTML comments, such as the hints of a pull request template.
-  for (let start = text.indexOf('<!--'); start !== -1; start = text.indexOf('<!--')) {
-    const end = text.indexOf('-->', start);
-    text = text.slice(0, start) + (end === -1 ? '' : text.slice(end + 3));
-  }
+  const text = withoutComments(body);
   const lines: string[] = [];
   let fence = false;
   for (const raw of text.split('\n')) {
@@ -201,6 +212,43 @@ export function summaryOf(body: string): string {
   const cut = plain.slice(0, PREVIEW_DESCRIPTION_LENGTH - 1);
   const space = cut.lastIndexOf(' ');
   return `${space > PREVIEW_DESCRIPTION_LENGTH / 2 ? cut.slice(0, space) : cut}…`;
+}
+
+// The body without HTML comments, such as the hints of a pull request template, and without carriage returns.
+function withoutComments(body: string): string {
+  let text = body.replaceAll('\r', '');
+  for (let start = text.indexOf('<!--'); start !== -1; start = text.indexOf('<!--')) {
+    const end = text.indexOf('-->', start);
+    text = text.slice(0, start) + (end === -1 ? '' : text.slice(end + 3));
+  }
+  return text;
+}
+
+// Markdown images, ![alt](src "title"), and HTML images, <img src="…" alt="…">. A string method cannot find the
+// brackets and the attributes in any order simply, so these two use patterns.
+const MARKDOWN_IMAGE = /!\[([^\]\n]*)\]\(\s*<?([^\s)>]+)>?(?:\s+"[^"]*")?\s*\)/g;
+const HTML_IMAGE = /<img\b[^>]*>/gi;
+const attributeOf = (tag: string, name: string) => new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, 'i').exec(tag)?.slice(2).find((part) => part !== undefined);
+
+// The images of a pull request body, in their order: the screenshots of the change, for the previews list.
+// Only images from PREVIEW_IMAGE_SOURCES, each once, at most PREVIEW_IMAGES.
+// Limit: an image inside a code fence counts too. Revisit when a description shows Markdown examples of images.
+export function imagesOf(body: string): PreviewImage[] {
+  const text = withoutComments(body);
+  const found: { at: number; image: PreviewImage }[] = [];
+  for (const match of text.matchAll(MARKDOWN_IMAGE)) found.push({ at: match.index, image: { src: match[2] ?? '', alt: match[1] ?? '' } });
+  for (const match of text.matchAll(HTML_IMAGE)) {
+    found.push({ at: match.index, image: { src: attributeOf(match[0], 'src') ?? '', alt: attributeOf(match[0], 'alt') ?? '' } });
+  }
+  const seen = new Set<string>();
+  const images: PreviewImage[] = [];
+  for (const { image } of found.sort((a, b) => a.at - b.at)) {
+    if (!isPreviewImageSource(image.src) || seen.has(image.src)) continue;
+    seen.add(image.src);
+    images.push({ src: image.src, alt: image.alt.trim().slice(0, PREVIEW_IMAGE_ALT_LENGTH) });
+    if (images.length === PREVIEW_IMAGES) break;
+  }
+  return images;
 }
 
 function stripLineMarks(line: string): string {
@@ -309,6 +357,8 @@ export function createPreviews(config: PreviewsConfig, fetchImpl: typeof fetch =
           draft: pull.draft,
           contributors: await contributorsOf(pull, fresh),
           parent: parentOf(pull, listed),
+          toy: pull.labels.includes(PREVIEW_TOY_LABEL),
+          images: imagesOf(pull.body),
         }),
       ),
     );
