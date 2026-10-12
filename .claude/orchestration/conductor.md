@@ -76,12 +76,17 @@ Send a comment to the agent that owns the issue (from the ledger). If no agent o
 
 ## Unanswered questions
 
-The hourly scheduled task "tick3d question sweep" wakes this thread. Its ID is in the ledger header. On each tick:
+The hourly scheduled task "tick3d question sweep" wakes this thread. It also settles finished agents (step 5). Its ID is in the ledger header. On each tick:
 1. Find each open maintainer question older than 3 hours, using the "Open questions" column of the ledger. Check that no maintainer gave a clear choice since. A comment that says "let me think" or asks something back is not a choice.
 2. Decide whether mock-ups of the options are cheap. They are cheap when the agent can make them with what the work already has: renders from the video pipeline, screenshots of a preview or a local build, a variant behind a flag, or a quick SVG. They are not cheap when they need paid services, outside accounts, store submissions, or a large build per option.
 3. If they are cheap, send the owning agent "Mock up the options for <question link>." Ask for all options, or for the top 2 or 3 when there are many. The agent posts them as a new comment on BOTH the issue and the pull request. The comment says that the question is still open and that the mock-ups only make the choice easier. The question and the `agents: question` label stay.
 4. Mock up each question only once. Write "mocked up <date>" in the ledger.
-5. If nothing is due, end the turn with one line and change nothing.
+5. Settle finished agents. List the agent threads in this project (`t3_thread_list`, `settled: false`). Settle each one with `t3_thread_organize` action `settle` when ALL are true:
+   - its pull request is merged or closed, or its work ended without one (for example a validation that closed its issue, or a HANDOFF that a fresh agent took over);
+   - it is idle: no run is active and no message is queued;
+   - it has no open question in the ledger.
+   Before you settle it, unwatch its pull request if the watch is still on. Write "settled <date>" in its ledger row. Never settle this Conductor thread here, and never settle an agent that waits for a maintainer's choice.
+6. If nothing is due, end the turn with one line and change nothing.
 
 ## Context limits
 
