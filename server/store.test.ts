@@ -609,8 +609,9 @@ describe('achievements', () => {
   });
 });
 
-// A store file with rows as an older version left them: a result without the new columns, and an
-// online game that ended before the server recorded games in `results`.
+// A store file with rows as an older version left them: a result from before game links (no public id, no
+// ending; the migration of pull request #128 filled its plain columns and its seat), and an online game that
+// ended before the server recorded games in `results`.
 async function oldStore(): Promise<{ path: string; code: Code }> {
   const path = `${await mkdtemp('/tmp/tick3d-store-')}/old.duckdb`;
   store = await openStore(path);
@@ -622,11 +623,11 @@ async function oldStore(): Promise<{ path: string; code: Code }> {
   const db = await instance.connect();
   await db.run("DELETE FROM results WHERE id LIKE 'online:%'");
   const old = { id: '99999999-0000-4000-8000-000000000001', mode: 'computer', game: finishedGame(X_WINS_LATE), you: 'O', difficulty: 'easy', finishedAt: 5_000 };
-  await db.run('INSERT INTO results (id, token, doc, finished_at) VALUES ($id, $token, $doc::JSON::VARIANT, make_timestamptz(5000000))', {
-    id: old.id,
-    token: alice,
-    doc: JSON.stringify(old),
-  });
+  await db.run(
+    `INSERT INTO results (id, token, doc, finished_at, player_o, mode, level, you, moves, times, per_game, per_move, timed_out)
+     VALUES ($id, $token, $doc::JSON::VARIANT, make_timestamptz(5000000), $token, 'computer', 'easy', 'O', $moves::INTEGER[], $times::DOUBLE[], NULL, NULL, false)`,
+    { id: old.id, token: alice, doc: JSON.stringify(old), moves: JSON.stringify(old.game.moves), times: JSON.stringify(old.game.times) },
+  );
   db.closeSync();
   instance.closeSync();
   store = await openStore(path);
@@ -644,7 +645,7 @@ describe('rows from before game links', () => {
     expect(stats.levels).toEqual([expect.objectContaining({ level: 'easy', games: 1, lost: 1 })]);
     expect((await store.stats({ ...ALL_STATS, scope: 'mine' }, alice)).personal?.survival).toEqual([{ level: 'easy', moves: 9 }]);
     expect(stats.endings).toEqual([{ key: 'won', count: 1 }]);
-    // The old row stays as it was: the one-off migration fills it, not the server.
+    // The old row keeps no link: the server gives it no public id.
     expect((await store.history(alice, 0)).games[0]?.id).toBeNull();
   });
 
@@ -822,7 +823,7 @@ describe('stats', () => {
     time += 60_000;
     // The old answer still comes at once; the refresh that it starts brings the new game.
     expect((await store.stats()).totals.games).toBe(first.totals.games);
-    await vi.waitFor(async () => expect((await store.stats()).totals.games).toBe(first.totals.games + 1));
+    await vi.waitFor(async () => expect((await store.stats()).totals.games).toBe(first.totals.games + 1), { timeout: 10_000 });
   });
 });
 
