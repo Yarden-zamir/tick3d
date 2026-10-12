@@ -1,5 +1,6 @@
 // The game of the smart-memory ad (issue #130): the self-play of src/ai.ts with seed 2206, Medium against Medium.
-// X plays cell 30 (keypad 2 4 3) for a double threat, O blocks one threat, and X wins corner to corner. Hard is
+// X plays cell 30 (keypad 2 4 3) for a double threat, O blocks one threat, and X wins on a diagonal that rises
+// through all four layers. Hard is
 // not used: its search stops on a time budget (src/ai.ts hardMove), so its self-play differs between machines.
 // game.test.ts plays the seed again and checks every fact here against the game code.
 import { type Coords, type Game, type Line, replay, toCoords } from '../../../src/game.ts';
@@ -12,7 +13,8 @@ export const MOVES: readonly number[] = [42, 0, 22, 62, 60, 41, 15, 12, 26, 37, 
 // The move that makes the double threat, and the two cells where X then wins.
 export const FORK_MOVE = 10;
 export const THREAT_CELLS: readonly [number, number] = [18, 45];
-// The two lines of the double threat: a column of layer 2 through cell 18, and the corner-to-corner line through 45.
+// The two lines of the double threat: a column of layer 2 through cell 18, and the diagonal of
+// the row-4 face that rises through all four layers, through cell 45.
 export const THREAT_LINES: readonly [Line, Line] = [
   [18, 22, 26, 30],
   [15, 30, 45, 60],

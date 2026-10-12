@@ -160,15 +160,16 @@ function drawThought(ctx: CanvasRenderingContext2D, frame: number, theme: Theme,
   ctx.restore();
 }
 
-// The rows of a text line: greedy, as many words as fit TEXT_WIDTH.
+// The rows of a text line: one row when it fits TEXT_WIDTH, else the two rows of the most even break. A line has
+// at most 6 words (plan.test.ts), and two rows of 3 words always fit at the text sizes of the formats.
 function rowsOf(ctx: CanvasRenderingContext2D, text: string, size: number): string[] {
-  const rows: string[] = [];
-  for (const word of text.split(' ')) {
-    const last = rows.at(-1);
-    if (last !== undefined && wordWidth(ctx, `${last} ${word}`, { y: 0, size }) <= TEXT_WIDTH) rows[rows.length - 1] = `${last} ${word}`;
-    else rows.push(word);
-  }
-  return rows;
+  const words = text.split(' ');
+  const width = (row: readonly string[]) => wordWidth(ctx, row.join(' '), { y: 0, size });
+  if (width(words) <= TEXT_WIDTH) return [text];
+  const breaks = words.slice(1).map((_, i) => [words.slice(0, i + 1), words.slice(i + 1)] as const);
+  const [best] = breaks.toSorted((a, b) => Math.max(width(a[0]), width(a[1])) - Math.max(width(b[0]), width(b[1])));
+  if (best === undefined || Math.max(width(best[0]), width(best[1])) > TEXT_WIDTH) throw new Error(`"${text}" does not fit two rows at ${size}`);
+  return best.map((row) => row.join(' '));
 }
 
 export function drawHud(ctx: CanvasRenderingContext2D, frame: number, theme: Theme, art: BadgeArt, area: Area, height: number, thought: { x: number; y: number; at: number } | undefined): void {

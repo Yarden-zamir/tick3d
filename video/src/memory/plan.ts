@@ -47,6 +47,9 @@ export type Plan = {
 };
 
 const view = (azimuth: number, elevation = ELEVATION, zoom = 0.82, lift = 0.1): View => ({ azimuth, elevation, zoom, lift });
+// While the keypad shows, the tower sits small in the top part of the square, above the keypad.
+const OVER_KEYPAD = { zoom: 0.7, lift: 0.34 } as const;
+const keypadView = (azimuth: number, elevation = ELEVATION, zoom: number = OVER_KEYPAD.zoom): View => view(azimuth, elevation, zoom, OVER_KEYPAD.lift);
 // The end card: the tower small in the middle, the line above it and the address under it.
 const END_VIEW: View = { azimuth: HOME_AZIMUTH + 40, elevation: ELEVATION, zoom: 0.5, lift: 0.08 };
 
@@ -78,9 +81,11 @@ const PLANS: Readonly<Record<Cut, Omit<Plan, 'cut'>>> = {
     ],
     camera: [
       { at: 0, view: view(HOME_AZIMUTH) },
-      { at: 48, view: view(HOME_AZIMUTH + 22) },
-      { at: 60, view: view(HOME_AZIMUTH + 30, ELEVATION + 4, 0.95) },
-      { at: 78, view: view(HOME_AZIMUTH + 34, ELEVATION + 4, 0.95) },
+      { at: 12, view: view(HOME_AZIMUTH + 6) },
+      { at: 17, view: keypadView(HOME_AZIMUTH + 10) },
+      { at: 48, view: keypadView(HOME_AZIMUTH + 22) },
+      { at: 60, view: keypadView(HOME_AZIMUTH + 30, ELEVATION + 4, 0.78) },
+      { at: 78, view: keypadView(HOME_AZIMUTH + 34, ELEVATION + 4, 0.78) },
       { at: 84, view: view(HOME_AZIMUTH + 38, ELEVATION, 0.86, 0) },
       { at: 96, view: view(HOME_AZIMUTH + 40, ELEVATION, 0.86, 0) },
       { at: 100, view: END_VIEW },
@@ -107,7 +112,9 @@ const PLANS: Readonly<Record<Cut, Omit<Plan, 'cut'>>> = {
     ],
     camera: [
       { at: 0, view: view(HOME_AZIMUTH) },
-      { at: 30, view: view(HOME_AZIMUTH + 14, ELEVATION + 4, 0.92) },
+      { at: 10, view: view(HOME_AZIMUTH + 5) },
+      { at: 15, view: keypadView(HOME_AZIMUTH + 8) },
+      { at: 30, view: keypadView(HOME_AZIMUTH + 14, ELEVATION + 4, 0.78) },
       { at: 36, view: view(HOME_AZIMUTH + 18, ELEVATION, 0.86, 0) },
       { at: 48, view: view(HOME_AZIMUTH + 22, ELEVATION, 0.86, 0) },
       { at: 52, view: END_VIEW },

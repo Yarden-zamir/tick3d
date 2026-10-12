@@ -19,7 +19,8 @@ import { MOVES, SEED, THREAT_LINES, WIN_LINE, playerOf } from './game.ts';
 import { drawHud } from './hud.ts';
 import { PLAN, type View, eventOf, eventsOf } from './plan.ts';
 
-// The shatter: the cells fly out over SHATTER sixteenths and fade.
+// The shatter: the cells fly out and shrink over SHATTER sixteenths. They stay solid, and fade only at the end:
+// a see-through slab shows its dark outline through it.
 const SHATTER = 4;
 // The wireframe of the hidden board, and the ghost marks: a flash, a trail, then fainter with each newer move.
 const WIREFRAME = 0.2;
@@ -136,7 +137,8 @@ export function createMemoryWorld(width: number, height: number, art: BadgeArt):
     const isRevealed = revealed >= 0;
     // 0 while the board stands, 1 once it is gone.
     const blown = isRevealed ? 0 : interpolate(hidden, [0, SHATTER], [0, 1], { ...clamp, easing: Easing.out(quad) });
-    const fade = isRevealed ? 1 : interpolate(hidden, [0, SHATTER], [1, 0], clamp);
+    const fade = isRevealed ? 1 : interpolate(hidden, [0.6 * SHATTER, SHATTER], [1, 0], clamp);
+    const shrink = isRevealed ? 1 : 1 - 0.7 * blown;
     // The board snaps back in one frame, with a small swell.
     const swell = isRevealed ? 1 + 0.08 * pulse(revealed) : 1;
 
@@ -146,7 +148,7 @@ export function createMemoryWorld(width: number, height: number, art: BadgeArt):
       const base = cellBase(cell);
       entry.group.position.set(base.x, 0, base.z).addScaledVector(flight.out, flight.reach * blown);
       entry.group.rotation.set(flight.spin.x * blown, flight.spin.y * blown, flight.spin.z * blown);
-      entry.group.scale.setScalar(swell);
+      entry.group.scale.setScalar(swell * shrink);
       entry.group.visible = fade > 0;
       for (const material of entry.materials) {
         material.opacity = fade;
