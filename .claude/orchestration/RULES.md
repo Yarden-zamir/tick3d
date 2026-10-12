@@ -63,6 +63,15 @@ A maintainer is anyone with the `OWNER`, `MEMBER` or `COLLABORATOR` role on the 
     - The work is not creative work that needs a maintainer's choice (video, ads, icons, store art). For creative work, make a few distinct variants, post them on the issue and the pull request, and wait.
 20. To merge, run `gh-agent gh pr ready <N>`, then `gh-agent gh pr merge <N> --merge`. Merge a stack with `gh-agent gh stack merge <top PR> --yes --merge`. If GitHub refuses the merge, tell Conductor which pull request and why. After the merge, post the "merged" milestone (rule 16), remove `agents: working`, and report to Conductor.
 
+## Clear comments
+
+24. Write every comment so that a maintainer understands it from a phone, without the rest of the thread:
+    - The first line says the outcome or the state: what changed, what is ready, or what you need.
+    - Name issues and pull requests by link and title, not by number alone.
+    - Use plain words. Leave out logs, file lists and internal names, unless the reader needs them to act.
+25. Your newest comment on an issue or pull request always ends with an "Open questions" section. It lists every question that is still open on that item, as a link to where it was asked, with its letters. When no question is open, write "Open questions: none." A maintainer reads only the newest comment to know what waits on them.
+26. When a later change makes one of your earlier comments wrong (a plan, a link, a status, a decision), edit that comment. Add this line at its top: `> ⚠️ Outdated <YYYY-MM-DD>: <what changed in one line>. See <link to the newer comment>.` Keep the old text below the note, so the thread stays readable. Do not delete the comment.
+
 ## Reports and context
 
 21. Report to Conductor with `t3_thread_send` to the Conductor thread ID from your first message. Report when you merge, when you need a decision, and when you stop. Keep a report short: a link, the result, and the one thing that Conductor must know or decide.
