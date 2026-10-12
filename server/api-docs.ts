@@ -64,7 +64,7 @@ export const DATA_DELETES_PER_HOUR = 10;
 // The tables that Delete my data (deleteData in server/store.ts) changes, with the rows it deleted and
 // the rows it kept without the player. chat_messages counts the messages inside the session documents.
 // The other tables hold no player data: events, and moderation_log (kept for moderation).
-export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'practice_runs', 'reports', 'player_tokens', 'users'] as const;
+export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'practice_runs', 'reports', 'player_tokens', 'users'] as const;
 export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number; anonymised: number }>;
 // The previews list on production is at most this old. server/previews.ts enforces it.
 // Only production calls GitHub, without a token: 60 calls per hour, 5 of them kept in reserve, so 55.
@@ -1301,6 +1301,21 @@ export const ROUTES = {
         achievements: ACHIEVEMENTS_EXAMPLE,
         rarity: rarityOf([ACHIEVEMENTS_EXAMPLE]),
       },
+    },
+    errors: [BAD_PLAYER],
+    examplePlayer: AGENT_A,
+  },
+  'DELETE /api/me/achievements': {
+    operationId: 'resetAchievements',
+    tag: 'Account',
+    summary: 'Reset your achievements.',
+    description: 'From now on, only games that finish after the reset count for your achievements, on every device of your account. Clear history does not change them.',
+    player: 'required',
+    response: {
+      status: 200,
+      description: 'Your achievements after the reset: none unlocked, and the rarity.',
+      schema: 'Achievements',
+      example: { achievements: achievementProgress([]), rarity: rarityOf([ACHIEVEMENTS_EXAMPLE]) },
     },
     errors: [BAD_PLAYER],
     examplePlayer: AGENT_A,

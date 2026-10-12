@@ -4,7 +4,16 @@ import { type AchievementGame, type AchievementId, type AchievementProgress, typ
 import { api, OnlineError } from '../online.ts';
 import type { Code, GameId } from '../protocol.ts';
 import { sounds } from '../sound.ts';
-import { myGamesAchievements, myGamesAchievementsBar, myGamesAchievementsSummary } from './dom.ts';
+import {
+  myGamesAchievements,
+  myGamesAchievementsBar,
+  myGamesAchievementsSummary,
+  myGamesResetAchievements,
+  resetAchievementsConfirm,
+  resetAchievementsNo,
+  resetAchievementsYes,
+} from './dom.ts';
+import { showError } from './feedback.ts';
 import { page } from './state.ts';
 
 // The progress, and the rarity when the server answered. Without the server, the games on this device count.
@@ -48,14 +57,37 @@ export function showAchievements({ achievements, rarity }: ShownAchievements): v
   myGamesAchievementsBar.max = achievements.length;
   myGamesAchievementsBar.value = unlocked;
   myGamesAchievements.replaceChildren(...achievementItems(achievements, rarity, isNew));
+  // A reset needs the server, and a player without progress has nothing to reset.
+  myGamesResetAchievements.hidden = rarity === null || achievements.every((entry) => entry.count === 0);
 }
 
-// Three looks of the unlock on the end card (see .unlock in src/style.css), for the maintainers to pick one.
-// pop: the band under the picture comes in like a sticker. slide: the band lands on the corner of the picture,
-// then slides down under it. breakout: the first badge is bigger and sticks out over the top of the band.
-// The other looks go before the merge.
-type UnlockView = 'pop' | 'slide' | 'breakout';
-const UNLOCK_VIEW: UnlockView = 'pop';
+// "Reset achievements": from now on, only new games count, on every device. "Clear history" leaves them alone.
+// Limit: offline, the device counts every game on it, also from before the reset. Revisit this if
+// players report old unlocks after a reset.
+async function resetAchievements(): Promise<void> {
+  resetAchievementsYes.disabled = true;
+  try {
+    const answer = await api.resetAchievements();
+    news.clear();
+    resetAchievementsConfirm.close();
+    showAchievements(answer);
+  } finally {
+    resetAchievementsYes.disabled = false;
+  }
+}
+
+export function setupAchievements(): void {
+  myGamesResetAchievements.addEventListener('click', () => {
+    resetAchievementsConfirm.showModal();
+    resetAchievementsNo.focus();
+  });
+  resetAchievementsNo.addEventListener('click', () => resetAchievementsConfirm.close());
+  resetAchievementsYes.addEventListener('click', () => void resetAchievements().catch(showError));
+  resetAchievementsConfirm.addEventListener('click', (event) => {
+    if (event.target === resetAchievementsConfirm) resetAchievementsConfirm.close();
+  });
+}
+
 // The strip shows each unlocked achievement in turn, once, and then stays on the first one.
 const UNLOCK_TURN_MS = 2600;
 // The bits of the burst behind the badges.
@@ -73,7 +105,6 @@ export const unlockLabel = (unlocked: readonly AchievementId[]) =>
 // A tap on a badge shows its name and stops the turns.
 export function showUnlocks(box: HTMLElement, unlocked: readonly AchievementId[]): void {
   clearInterval(unlockTimer);
-  box.dataset.view = UNLOCK_VIEW;
   box.setAttribute('aria-label', unlockLabel(unlocked));
   const medals = document.createElement('div');
   medals.className = 'unlock-medals';

@@ -556,6 +556,24 @@ describe('achievements', () => {
     expect(rarity.unlocked['first-win']).toBe(1);
   });
 
+  it('counts only the games after a reset, on every device, and the player still counts for the rarity', async () => {
+    let time = 10_000;
+    store = await openStore(':memory:', { now: () => ms(time) });
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addResults(alice, [result('aeaeaeae-1111-4000-8000-000000000001', { finishedAt: ms(5_000) })]);
+    await store.addResults(bob, [result('aeaeaeae-1111-4000-8000-000000000002', { finishedAt: ms(5_000) })]);
+    expect(countOf(await store.achievements(alicePhone), 'first-win')).toBe(1);
+    await store.resetAchievements(alicePhone);
+    // The rarity waits RARITY_CACHE_MS before it counts again.
+    time += 11 * 60_000;
+    const reset = await store.achievements(alice);
+    expect(reset.achievements.every((entry) => entry.count === 0)).toBe(true);
+    expect(reset.rarity).toMatchObject({ players: 2, unlocked: { 'first-win': 1 } });
+    await store.addResults(alicePhone, [result('aeaeaeae-1111-4000-8000-000000000003', { finishedAt: ms(time) })]);
+    expect(countOf(await store.achievements(alice), 'first-win')).toBe(1);
+  });
+
   it('shows the achievements in the stats of Mine and of a person, not of Everyone', async () => {
     const code = await session();
     await playMoves(code, X_WINS);
@@ -1215,7 +1233,7 @@ describe('report and block', () => {
 describe('delete my data', () => {
   const ALICE_ACCOUNT = `${ACCOUNT_TOKEN_PREFIX}${String(ALICE_GITHUB.id).padStart(16, '0')}`;
   const aliceTokens = [alice, alicePhone, ALICE_ACCOUNT];
-  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
+  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
 
   // Per group of needles: the rows of each table whose text holds one of them. The store closes for the check and opens again.
   async function rowsHolding(path: string, groups: readonly (readonly string[])[]): Promise<Record<string, number>[]> {
@@ -1268,6 +1286,8 @@ describe('delete my data', () => {
     await store.block(bob, await personId(ALICE_ACCOUNT), 'alice');
     await store.setStatsPrivate(alicePhone, true);
     await store.setStatsPrivate(bob, true);
+    await store.resetAchievements(alice);
+    await store.resetAchievements(bob);
     const run: PracticeRun = { id: 'run-1', mode: 'targets', preset: 'normal', roundMs: Array.from({ length: 10 }, () => 2_000), score: 10 };
     await store.addPracticeRun(alice, run);
     await store.addPracticeRun(bob, run);
@@ -1282,6 +1302,7 @@ describe('delete my data', () => {
       player_names: { deleted: 1, anonymised: 0 },
       blocks: { deleted: 1, anonymised: 1 },
       private_stats: { deleted: 1, anonymised: 0 },
+      achievement_resets: { deleted: 1, anonymised: 0 },
       practice_runs: { deleted: 1, anonymised: 0 },
       reports: { deleted: 0, anonymised: 1 },
       player_tokens: { deleted: 3, anonymised: 0 },

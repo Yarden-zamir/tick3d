@@ -198,6 +198,12 @@ const SCHEMA = [
      owner VARCHAR PRIMARY KEY,
      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
+  // "Reset achievements": only games that finished after `reset_at` count for the achievements of `owner`.
+  // `owner` is the token of the player, as in private_stats. "Clear history" does not touch it.
+  `CREATE TABLE IF NOT EXISTS achievement_resets (
+     owner VARCHAR PRIMARY KEY,
+     reset_at TIMESTAMPTZ NOT NULL
+   )`,
   // Reports of a chat message or a person. The text and the name are copies from the time of the
   // report, because the chat keeps only the newest messages. `reporter` is a token: never send it.
   'CREATE SEQUENCE IF NOT EXISTS report_order',
@@ -452,8 +458,15 @@ export async function openStore(
     return { id: row.public_id, mode, game, you, difficulty, options, tuned, finishedAt: row.finished };
   }
 
-  // The achievements of the player with these tokens, over every finished game on all their devices.
-  async function progressOfTokens(tokens: readonly string[]): Promise<AchievementProgress[]> {
+  // The time of each "Reset achievements", by owner (see achievement_resets).
+  async function achievementResets(): Promise<Map<string, EpochMs>> {
+    const found = await rows('FROM achievement_resets SELECT owner, epoch_ms(reset_at) AS at', {}, { owner: text, at: epoch });
+    return new Map(found.map((row) => [row.owner, row.at]));
+  }
+
+  // The achievements of the player `owner` (a canonical token) with these tokens, over every finished game
+  // on all their devices since their last reset.
+  async function progressOfTokens(owner: string, tokens: readonly string[]): Promise<AchievementProgress[]> {
     const key = tokens.toSorted().join(' ');
     const cached = achievementCache.get(key);
     if (cached !== undefined) return cached;
@@ -462,8 +475,13 @@ export async function openStore(
       { tokens: listValue([...tokens]) },
       ACHIEVEMENT_COLUMNS,
     );
+    const reset = (await achievementResets()).get(owner);
     const own = new Set(tokens);
-    const progress = achievementProgress(found.map((row) => achievementGame(row, row.token_x !== null && own.has(row.token_x), row.token_o !== null && own.has(row.token_o))));
+    const progress = achievementProgress(
+      found
+        .filter((row) => reset === undefined || row.finished > reset)
+        .map((row) => achievementGame(row, row.token_x !== null && own.has(row.token_x), row.token_o !== null && own.has(row.token_o))),
+    );
     achievementCache.set(key, progress);
     return progress;
   }
@@ -477,6 +495,7 @@ export async function openStore(
     const seats = found.flatMap((row) => [row.token_x, row.token_o]).filter((token): token is string => token !== null && token !== core.COMPUTER_TOKEN);
     const canon = await canonical(seats);
     const person = (token: string | null) => (token === null ? undefined : canon.get(token));
+    const resets = await achievementResets();
     const games = new Map<string, AchievementGame[]>();
     for (const row of found) {
       const x = person(row.token_x);
@@ -484,8 +503,10 @@ export async function openStore(
       for (const owner of new Set([x, o])) {
         if (owner === undefined) continue;
         const list = games.get(owner) ?? [];
-        list.push(achievementGame(row, x === owner, o === owner));
         games.set(owner, list);
+        // A player who reset still counts as a player, with the games since the reset.
+        const reset = resets.get(owner);
+        if (reset === undefined || row.finished > reset) list.push(achievementGame(row, x === owner, o === owner));
       }
     }
     const fresh = rarityOf([...games.values()].map((list) => achievementProgress(list)));
@@ -493,8 +514,8 @@ export async function openStore(
     return fresh;
   }
 
-  async function achievementsOf(tokens: readonly string[]): Promise<Achievements> {
-    return { achievements: await progressOfTokens(tokens), rarity: await rarity() };
+  async function achievementsOf(owner: string, tokens: readonly string[]): Promise<Achievements> {
+    return { achievements: await progressOfTokens(owner, tokens), rarity: await rarity() };
   }
 
   type NewResult = {
@@ -657,7 +678,7 @@ export async function openStore(
   // DuckDB's sha256 finds the token behind the person id, as in clearPersonName.
   // Limit: the device search hashes every seat token of every result. Revisit this when a person filter
   // takes more than about 100 ms: then keep the person id of each seat in a column.
-  async function statsPersonOf(person: PersonId): Promise<{ tokens: string[]; shown: StatsPerson } | undefined> {
+  async function statsPersonOf(person: PersonId): Promise<{ owner: string; tokens: string[]; shown: StatsPerson } | undefined> {
     const [account] = await rows(
       `FROM (SELECT DISTINCT github_id FROM player_tokens) LEFT JOIN users USING (github_id) SELECT github_id, login, avatar
        WHERE left(sha256($prefix || $account || lpad(github_id::VARCHAR, 16, '0')), ${PERSON_ID_LENGTH}) = $person`,
@@ -669,7 +690,7 @@ export async function openStore(
       const linked = await rows('FROM player_tokens SELECT token WHERE github_id = $id', { id: account.github_id }, { token: text });
       const player = account.login === null || account.avatar === null ? null : { login: account.login, avatar: account.avatar };
       const name = player?.login ?? (await namesOf([owner]))(owner);
-      return { tokens: [owner, ...linked.map((row) => row.token)], shown: { name, player } };
+      return { owner, tokens: [owner, ...linked.map((row) => row.token)], shown: { name, player } };
     }
     // A device without an account. A linked token stands for its account, so it is not a device person.
     const [device] = await rows(
@@ -681,7 +702,7 @@ export async function openStore(
       { token: text },
     );
     if (device === undefined) return undefined;
-    return { tokens: [device.token], shown: { name: (await namesOf([device.token]))(device.token), player: null } };
+    return { owner: device.token, tokens: [device.token], shown: { name: (await namesOf([device.token]))(device.token), player: null } };
   }
 
   async function isStatsPrivate(owner: string): Promise<boolean> {
@@ -833,7 +854,7 @@ export async function openStore(
   //   text. A session that has no player and no move after that goes.
   // - results: a game that the player uploaded goes. An online game with another player stays for
   //   that player, and so does another player's upload: the player's seat becomes null.
-  // - seat_metrics of the player's seats, player_names, the player's own blocks, private_stats, practice_runs: deleted.
+  // - seat_metrics of the player's seats, player_names, the player's own blocks, private_stats, achievement_resets, practice_runs: deleted.
   // - reports: a report about the player stays for moderation. A report that the player filed loses its reporter.
   // - player_tokens and users: the account goes, so no device acts for it any more.
   // Limit: a device of the account that is still logged in links itself again on its next visit,
@@ -917,6 +938,7 @@ export async function openStore(
       counts.player_names.deleted = (await changedIds('DELETE FROM player_names WHERE list_contains($ids, token) RETURNING token AS id', { ids })).length;
       counts.blocks.deleted = (await changedIds('DELETE FROM blocks WHERE list_contains($ids, owner) RETURNING person AS id', { ids })).length;
       counts.private_stats.deleted = (await changedIds('DELETE FROM private_stats WHERE list_contains($ids, owner) RETURNING owner AS id', { ids })).length;
+      counts.achievement_resets.deleted = (await changedIds('DELETE FROM achievement_resets WHERE list_contains($ids, owner) RETURNING owner AS id', { ids })).length;
       // A block of this player by another player stays for that player, without the name.
       counts.blocks.anonymised = (
         await changedIds('UPDATE blocks SET name = $name WHERE list_contains($persons, person) AND name <> $name RETURNING owner || person AS id', { persons, name: DELETED_NAME })
@@ -1371,7 +1393,20 @@ export async function openStore(
 
     // The achievements of this player over every finished game on all their linked devices, and their rarity.
     // A cleared game still counts: an achievement stays once the player earned it.
-    achievements: (token: PlayerToken): Promise<Achievements> => serialized(async () => achievementsOf([...(await identityOf(token))])),
+    achievements: (token: PlayerToken): Promise<Achievements> => serialized(async () => achievementsOf(await ownerOf(token), [...(await identityOf(token))])),
+
+    // "Reset achievements", on every device of the account: from now on, only new games count.
+    // "Clear history" leaves the achievements alone.
+    resetAchievements: (token: PlayerToken): Promise<void> =>
+      serialized(async () => {
+        await db.run(
+          `INSERT INTO achievement_resets (owner, reset_at) VALUES ($owner, make_timestamptz($at * 1000))
+           ON CONFLICT (owner) DO UPDATE SET reset_at = excluded.reset_at`,
+          { owner: await ownerOf(token), at: now() },
+        );
+        achievementCache.clear();
+        // The rarity counts this player's unlocks until it is computed again.
+      }),
 
     // Hides every finished game of this player from their history, on all linked devices.
     // The other seat of a shared game keeps it, and the stats and survival records still count it.
@@ -1466,7 +1501,7 @@ export async function openStore(
         if (filter.scope === 'mine') {
           if (token === null) throw new SessionError(400, 'Your stats need the X-Player header.');
           const tokens = [...(await identityOf(token))];
-          return { ...(await computeStats(rows, now(), filter, tokens)), person: null, practice: await practiceStats(rows), achievements: await achievementsOf(tokens) };
+          return { ...(await computeStats(rows, now(), filter, tokens)), person: null, practice: await practiceStats(rows), achievements: await achievementsOf(await ownerOf(token), tokens) };
         }
         if (filter.person !== null) {
           const hidden = await privateOwnerOf(filter.person);
@@ -1477,7 +1512,7 @@ export async function openStore(
             ...(await computeStats(rows, now(), filter, found.tokens)),
             person: found.shown,
             practice: await practiceStats(rows),
-            achievements: await achievementsOf(found.tokens),
+            achievements: await achievementsOf(found.owner, found.tokens),
           };
         }
         const key = statsQuery(filter);

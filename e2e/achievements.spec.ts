@@ -30,4 +30,10 @@ test('a won online game unlocks achievements on the end card and in My games', a
   }
   // Bob played one game toward "Play 10 games".
   await expect(bob.locator('#my-games-achievements li', { hasText: 'Regular' })).toContainText('1 / 10');
+  // A reset locks Alice's achievements again. Her history keeps the game.
+  await alice.locator('#my-games-reset-achievements').click();
+  await alice.locator('#reset-achievements-confirm-yes').click();
+  await expect(alice.locator('#my-games-achievements-summary')).toHaveText(`0 of ${ACHIEVEMENTS.length} unlocked`);
+  await expect(alice.locator('#my-games-achievements li[data-state="unlocked"]')).toHaveCount(0);
+  await expect(alice.locator('#my-games-reset-achievements')).toBeHidden();
 });

@@ -463,6 +463,9 @@
         <h3>Achievements <small class="achievements-summary" id="my-games-achievements-summary"></small></h3>
         <progress class="achievements-bar" id="my-games-achievements-bar" aria-labelledby="my-games-achievements-summary" value="0"></progress>
         <ul class="achievements" id="my-games-achievements"></ul>
+        <div class="my-games-history-actions">
+          <button type="button" class="btn btn-small my-games-more" id="my-games-reset-achievements" hidden>Reset achievements</button>
+        </div>
       </section>
       <section>
         <h3>History</h3>
@@ -514,10 +517,18 @@
       </div>
     </dialog>
     <dialog class="modal end-card home-confirm" id="clear-confirm" aria-labelledby="clear-confirm-text">
-      <p id="clear-confirm-text">Clear your match history on every device? Your survival records and your totals stay. Opponents keep their copy of your online games, and the games still count in the site stats.</p>
+      <p id="clear-confirm-text">Clear your match history on every device? Your survival records, your achievements and your totals stay. Opponents keep their copy of your online games, and the games still count in the site stats.</p>
       <div class="end-card-actions">
         <button type="button" class="btn btn-primary" id="clear-confirm-yes">Clear history</button>
         <button type="button" class="btn" id="clear-confirm-no">Keep</button>
+      </div>
+    </dialog>
+    <!-- Reset achievements: src/page/achievements.ts. -->
+    <dialog class="modal end-card home-confirm" id="reset-achievements-confirm" aria-labelledby="reset-achievements-confirm-text">
+      <p id="reset-achievements-confirm-text">Reset your achievements on every device? They all lock again, and only new games count. Your history and your stats stay.</p>
+      <div class="end-card-actions">
+        <button type="button" class="btn btn-primary" id="reset-achievements-confirm-yes">Reset achievements</button>
+        <button type="button" class="btn" id="reset-achievements-confirm-no">Keep</button>
       </div>
     </dialog>
     <!-- Delete my data: src/page/my-games.ts. -->

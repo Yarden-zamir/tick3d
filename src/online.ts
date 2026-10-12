@@ -206,6 +206,12 @@ export const api = {
     if (parsed === undefined) throw new Error('invalid answer from /api/me/achievements');
     return parsed;
   },
+  // From now on, only new games count for the achievements of this player. Answers the achievements after the reset.
+  async resetAchievements(): Promise<Achievements> {
+    const parsed = parseAchievements(await call('DELETE', '/me/achievements'));
+    if (parsed === undefined) throw new Error('invalid answer from DELETE /api/me/achievements');
+    return parsed;
+  },
   // Hides every finished game of this player from their history on the server.
   clearHistory: () => call('DELETE', '/me/history'),
   // Deletes the data of this player on the server, and of the account when this browser is logged in. It logs out.

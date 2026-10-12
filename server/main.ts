@@ -389,7 +389,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     case 'GET /api/me/history':
     case 'DELETE /api/me/history':
     case 'GET /api/me/records':
-    case 'GET /api/me/achievements': {
+    case 'GET /api/me/achievements':
+    case 'DELETE /api/me/achievements': {
       const token = requirePlayer(req);
       const user = auth?.user(req);
       // Every visit with a login links this browser to the account, so a new device joins at once.
@@ -397,6 +398,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       if (match.route === 'GET /api/me/games') return send(res, 200, await store.myGames(token));
       // A cross-site form cannot send the X-Player header, so another site cannot clear a history.
       if (match.route === 'DELETE /api/me/history') return send(res, 200, { hidden: await store.clearHistory(token) });
+      if (match.route === 'DELETE /api/me/achievements') await store.resetAchievements(token);
       if (match.route === 'GET /api/me/history') {
         const offset = Number(url.searchParams.get('offset') ?? '0');
         if (!Number.isInteger(offset) || offset < 0) throw new HttpError(400, 'The offset is not a whole number of games.');

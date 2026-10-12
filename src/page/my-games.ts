@@ -54,7 +54,7 @@ import {
   myGamesSession,
   myGamesSessionBox,
 } from './dom.ts';
-import { currentProgress, showAchievements } from './achievements.ts';
+import { currentProgress, setupAchievements, showAchievements } from './achievements.ts';
 import { showError } from './feedback.ts';
 import { openGameView } from './game-view.ts';
 import { startReview } from './controls.ts';
@@ -329,7 +329,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
 }
 
 // Clears the history on the server (every device of the account) and the uploaded results on this device.
-// The survival records stay: they are a best value per setup, kept apart from the history.
+// The survival records and the achievements stay: they are kept apart from the history.
 async function clearHistory(): Promise<void> {
   clearConfirmYes.disabled = true;
   try {
@@ -340,7 +340,7 @@ async function clearHistory(): Promise<void> {
     clearConfirm.close();
     historyOffset = 0;
     // The dialog covers the toasts, so the list itself says what happened.
-    myGamesHistory.innerHTML = '<li class="empty">History cleared. Your survival records stay.</li>';
+    myGamesHistory.innerHTML = '<li class="empty">History cleared. Your survival records and achievements stay.</li>';
     myGamesMore.hidden = true;
     myGamesClear.hidden = true;
   } finally {
@@ -517,6 +517,7 @@ export async function refreshAccount(): Promise<void> {
 }
 
 export function setupMyGames(): void {
+  setupAchievements();
   // The account button is a link to the My games request (src/header/my-games-link.ts). Here it opens
   // the dialog at once. A modified click opens a new tab, as for any link, and the dialog opens there.
   accountLink.addEventListener('click', (event) => {
