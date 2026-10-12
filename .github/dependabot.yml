@@ -1,8 +1,10 @@
 # Weekly update PRs. Minor and patch updates come grouped, so one PR covers most weeks.
+# Every update gets only the `dependencies` label. Without `labels`, Dependabot adds a label per ecosystem.
 # Dependabot PRs get no deploy secrets: in kitshn.yml they run the check job and skip the preview deploy.
 version: 2
 updates:
   - package-ecosystem: npm
+    labels: [dependencies]
     directory: /
     schedule:
       interval: weekly
@@ -15,22 +17,35 @@ updates:
       # The e2e workflow runs in the Playwright image with the same version tag. Update both together.
       - dependency-name: "@playwright/test"
   - package-ecosystem: github-actions
+    labels: [dependencies]
     directory: /
     schedule:
       interval: weekly
   - package-ecosystem: docker
+    labels: [dependencies]
     directory: /
     schedule:
       interval: weekly
   # The Android app: the Bubblewrap CLI (android/package.json) and fastlane (android/Gemfile).
   - package-ecosystem: npm
+    labels: [dependencies]
     directory: /android
     schedule:
       interval: weekly
   - package-ecosystem: bundler
+    labels: [dependencies]
     directory: /android
     schedule:
       interval: weekly
     groups:
       fastlane:
+        patterns: ['*']
+  # The iOS app: Capacitor and its icon tool (apple/package.json).
+  - package-ecosystem: npm
+    labels: [dependencies]
+    directory: /apple
+    schedule:
+      interval: weekly
+    groups:
+      capacitor:
         patterns: ['*']

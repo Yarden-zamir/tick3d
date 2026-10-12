@@ -37,6 +37,11 @@
   grid-column: 1 / -1;
 }
 
+/* The achievements list of My games (src/achievement-list.ts), in columns on a wide screen. */
+.stats-card .achievements {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+}
+
 .stats-card h2,
 .stats-card h3 {
   margin: 0;

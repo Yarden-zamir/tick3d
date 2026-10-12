@@ -13,6 +13,7 @@ import { NO_LIMIT, type TimeControl, parseClock } from '../clock.ts';
 import { type EpochMs, isEpochMs, toEpochMs } from '../epoch.ts';
 import type { Player } from '../game.ts';
 import { type Playoff, parsePlayoff } from '../practice/playoff.ts';
+import { type Tuning, isTuning, parseTuning } from '../tuning.ts';
 import {
   CHAT_KEEP,
   CONSENT_ACTIONS,
@@ -34,8 +35,9 @@ export type SessionDoc = {
   format: typeof CURRENT_FORMAT;
   // Where the session runs: the server (online), or one device (computer, friend, a Nearby host).
   mode: SessionMode;
-  // The computer's level and seat, in a computer game only.
-  computer: { difficulty: Difficulty; seat: Player } | null;
+  // The computer's level and seat, in a computer game only. `tuned` lists each game in which the computer made at
+  // least one move with changed advanced settings, with the settings of its last such move. Older documents have none.
+  computer: { difficulty: Difficulty; seat: Player; tuned: TunedGame[] } | null;
   name: string;
   games: GameRecord[];
   // Player tokens. Never sent to a page.
@@ -60,6 +62,9 @@ export type SessionDoc = {
   // The live game is always false while it goes on.
   flipped: boolean[];
 };
+
+// A game of a computer session in which the computer moved with changed advanced settings (src/tuning.ts).
+type TunedGame = { game: number; tuning: Tuning };
 
 // `watcher` is the player token of the watcher that takes the other seat (replace), else null.
 // `at` is the time of the request. The request ends SEAT_REQUEST_MS (core.ts) later.
@@ -177,5 +182,17 @@ function readComputer(value: unknown, mode: SessionMode): SessionDoc['computer']
   const difficulty = DIFFICULTIES.find((level) => level === value.difficulty);
   const seat = value.seat === 'X' || value.seat === 'O' ? value.seat : undefined;
   if (difficulty === undefined || seat === undefined) throw new FormatError('the computer settings are invalid');
-  return { difficulty, seat };
+  return { difficulty, seat, tuned: readTuned(value.tuned) };
+}
+
+// A document from before tuned games reads as no tuned game.
+function readTuned(value: unknown): TunedGame[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new FormatError('the tuned games are invalid');
+  return value.map((entry) => {
+    if (!isRecord(entry) || typeof entry.game !== 'number' || !Number.isInteger(entry.game) || entry.game < 0 || !isTuning(entry.tuning)) {
+      throw new FormatError('a tuned game is invalid');
+    }
+    return { game: entry.game, tuning: parseTuning(entry.tuning) };
+  });
 }

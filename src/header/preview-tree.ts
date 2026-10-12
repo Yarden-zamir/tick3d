@@ -1,4 +1,5 @@
 // The previews as a tree: a stacked pull request goes under its parent, in the order of the list.
+// Toys sit at the bottom of the top level, in their own list order.
 import type { Preview } from '../protocol.ts';
 
 export type PreviewNode = { preview: Preview; children: PreviewNode[] };
@@ -11,7 +12,7 @@ export function previewTree(previews: readonly Preview[]): PreviewNode[] {
     if (parent === undefined) roots.push(node);
     else parent.children.push(node);
   }
-  return roots;
+  return [...roots.filter((node) => !node.preview.toy), ...roots.filter((node) => node.preview.toy)];
 }
 
 // The listed parent, or undefined for a top level preview. A preview in a loop of parents is top level, so it never disappears.

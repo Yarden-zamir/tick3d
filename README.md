@@ -18,7 +18,7 @@
 ## Features
 
 - Play against the computer, a friend on the same device, a friend online, or a device on the same Wi-Fi (Nearby).
-- Three computer levels: easy, medium and hard. "Advanced: computer player" in the panel tunes each level.
+- Three computer levels: easy, medium and hard. "Advanced: computer player" in the panel tunes each level. A game is tuned when the computer made at least one move with changed settings, also if the settings changed back later. The end card, My games, the records and the stats show it.
 - Two views: a 3D tower that you turn with a drag, and a flat view with four layouts.
 - Play by coordinates on the keypad, with the board or the marks hidden.
 - Time limits per game, per move, or both. A player who runs out loses.
@@ -31,6 +31,7 @@
 - Your game as a song: the Song button on the end card and on a game link. A long press shares the song as a WAV file, with your voice on the moves that your voice placed.
 - An end card with the result, to share or save as an image.
 - Survival records: the longest game against each computer level and setup.
+- Achievements: 16 goals such as a first win, a win in 7 moves or 5 wins in a row (`src/achievements.ts`). Past games count too, and a friend game with a winner counts as a win. My games and the stats page list them with their rarity ("12% of players"), and the end card and the shared image show a new one. "Clear history" keeps them, and "Reset achievements" in My games starts them over.
 - Twelve themes.
 - The same header on every page, with My games, Info, kitshn and GitHub (`src/header/`).
 - The kitshn button lists the production site and the open pull request previews. A stacked pull request shows inside its parent.
@@ -178,7 +179,7 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 - `/stats` is public: the game Info panel and My games link to it, and search engines may list it.
 - Filters: Everyone or Mine, the time (7 days, 30 days or all), the mode and the level. The address holds them, for example `/stats?scope=mine&range=30d`. `GET /api/stats` takes the same query and answers 400 for an unknown value.
 - A person filter (`/stats?person=<person id>`) shows the games of one person, with their name and picture. A click on a person's picture in the game opens it large, with a Stats link to this view.
-- "Hide my stats" in My games closes your person view to everyone but you: `GET /api/stats` then answers 403. It also takes you off the leaderboard. Mine still works, and Everyone still counts your games without your name. The setting follows a GitHub login.
+- "Hide my stats" in My games closes your person view, your achievements included, to everyone but you: `GET /api/stats` then answers 403. It also takes you off the leaderboard. Mine still works, and Everyone still counts your games without your name. The setting follows a GitHub login.
 - Leaderboard (Everyone only): one row per player with games, won, drawn, lost, win rate, best streak, fastest win, average moves and last game. Tap a column to sort; tap it again to turn the order around. It follows the time, mode and level filters, and loads when it scrolls into view. Friend games and the computer do not count. `GET /api/leaderboard` gives the same rows; the server keeps each answer for a minute.
 - Everyone shows counts only, apart from the leaderboard: no player names and no page faults. Mine (your games on every linked device) adds your win rate over time, streaks, results, survival records and favourite opponents. A person view adds the same, without the opponents.
 - The stats never show a token, a result id or a game id.
@@ -197,6 +198,7 @@ docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:26-alpine npx vite 
 - `npm run check` runs the type check, the linters (`npm run lint`) and the unit tests.
 - `npm run build` runs the type check and the Vite build.
 - `npm run api` starts the API on port 8080 with `./dev.duckdb`.
+- `npm run dev` starts the Vite dev server on port 5173. It sends `/api` calls to `npm run api`, so run both for Online games.
 
 `npm run e2e` runs the Playwright tests in `e2e/` against a deployed site. Set `E2E_BASE_URL` to the site, for example a pull request preview:
 
@@ -242,6 +244,14 @@ The drafts land in `video/out/draft/` (or `video/out/variants/<name>/draft/` wit
 See [kitshn.md](kitshn.md). A push to `main` deploys production.
 
 The paid Android app on Google Play wraps the production site. The `android` workflow builds it from [android/twa-manifest.json](android/twa-manifest.json), and the `play-*` workflows release it, sync the listing and file issues from reviews and crashes.
+
+The iOS app wraps the production site the same way, with [Capacitor](https://capacitorjs.com): a site deploy reaches it with no app build. The `ios` workflow generates the Xcode project from [apple/capacitor.config.json](apple/capacitor.config.json) on every run, so the repository keeps no native code. A tag `ios-v1.2.0` builds, signs and uploads the app to TestFlight, and makes a GitHub release.
+
+- The App Store account comes from repository settings only: the variables `APPLE_TEAM_ID` and `IOS_BUNDLE_ID`, and the secrets `APP_STORE_CONNECT_KEY` (the `.p8` text of an Admin key), `APP_STORE_CONNECT_KEY_ID` and `APP_STORE_CONNECT_ISSUER_ID`. Xcode signs with the key (cloud signing). Without them, the workflow builds for the simulator only.
+- A pull request that touches `apple/` or `ios.yml` runs the workflow's `lint` job: `actionlint` on the workflow itself, and the same Capacitor project generation as the real build, with no Xcode and no macOS runner. It catches a bad `apple/capacitor.config.json` or a broken install in well under a minute, before a change reaches the 45-minute macOS build.
+- The app adds `tick3dApp/ios` to the user agent. The page then sets `<html data-platform="ios">` (`src/platform.ts`) and hides what the App Store does not allow: the GitHub link and the previews button (`data-hide-in="ios"`), and the GitHub login (App Store rule 4.8). `e2e/ios.spec.ts` checks this on every preview.
+- `WKAppBoundDomains` lets the web view run the service worker, so the game plays offline after one start online. Without a network at the first start, the app shows `apple/www/index.html`.
+- `apple/icon.png` (1024 × 1024, no transparency) is the App Store icon. Without it, the workflow scales up the Play icon.
 
 ## License
 

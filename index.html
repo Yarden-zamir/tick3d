@@ -53,12 +53,12 @@
               <path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
             </svg>
           </button>
-          <button type="button" class="repo-link" id="previews-button" aria-haspopup="dialog" aria-label="kitshn: previews of open pull requests" data-tip="Previews of open pull requests">
+          <button type="button" class="repo-link" id="previews-button" data-hide-in="ios" aria-haspopup="dialog" aria-label="kitshn: previews of open pull requests" data-tip="Previews of open pull requests">
             <!-- The KitSHn pot, drawn inline so that it works offline. -->
             <svg viewBox="0 0 14 14" width="18" height="18" fill="currentColor" aria-hidden="true"><rect x="6" y="1.2" width="2" height="1.6" rx="0.5"/><rect x="2.2" y="3.4" width="9.6" height="1.5" rx="0.75"/><rect x="3" y="5.6" width="8" height="6.6" rx="1.6"/><rect x="0.8" y="6.8" width="2.4" height="1.4" rx="0.7"/><rect x="10.8" y="6.8" width="2.4" height="1.4" rx="0.7"/></svg>
             <span>kitshn</span>
           </button>
-          <a class="repo-link" href="https://github.com/Yarden-zamir/tick3d" target="_blank" rel="noopener" aria-label="GitHub" data-tip="The source code on GitHub">
+          <a class="repo-link" href="https://github.com/Yarden-zamir/tick3d" data-hide-in="ios" target="_blank" rel="noopener" aria-label="GitHub" data-tip="The source code on GitHub">
             <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
               <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
             </svg>
@@ -412,6 +412,8 @@
         <img id="end-card-image" alt="" width="1080" height="1350" />
         <span class="song-light" id="end-card-light" hidden></span>
       </div>
+      <!-- The achievements that this game unlocked. src/page/achievements.ts fills it. -->
+      <div class="unlock" id="end-card-achievements" role="group" hidden></div>
       <div class="include-options">
         <label class="include" id="end-card-code-option">
           <input type="checkbox" id="end-card-code" checked />
@@ -455,6 +457,15 @@
       <section id="my-games-session-box">
         <h3 id="my-games-session-title">This session</h3>
         <ol class="my-games-list" id="my-games-session"></ol>
+      </section>
+      <!-- src/page/achievements.ts fills the list when the dialog opens. -->
+      <section>
+        <h3>Achievements <small class="achievements-summary" id="my-games-achievements-summary"></small></h3>
+        <progress class="achievements-bar" id="my-games-achievements-bar" aria-labelledby="my-games-achievements-summary" value="0"></progress>
+        <ul class="achievements" id="my-games-achievements"></ul>
+        <div class="my-games-history-actions">
+          <button type="button" class="btn btn-small my-games-more" id="my-games-reset-achievements" hidden>Reset achievements</button>
+        </div>
       </section>
       <section>
         <h3>History</h3>
@@ -506,10 +517,18 @@
       </div>
     </dialog>
     <dialog class="modal end-card home-confirm" id="clear-confirm" aria-labelledby="clear-confirm-text">
-      <p id="clear-confirm-text">Clear your match history on every device? Your survival records and your totals stay. Opponents keep their copy of your online games, and the games still count in the site stats.</p>
+      <p id="clear-confirm-text">Clear your match history on every device? Your survival records, your achievements and your totals stay. Opponents keep their copy of your online games, and the games still count in the site stats.</p>
       <div class="end-card-actions">
         <button type="button" class="btn btn-primary" id="clear-confirm-yes">Clear history</button>
         <button type="button" class="btn" id="clear-confirm-no">Keep</button>
+      </div>
+    </dialog>
+    <!-- Reset achievements: src/page/achievements.ts. -->
+    <dialog class="modal end-card home-confirm" id="reset-achievements-confirm" aria-labelledby="reset-achievements-confirm-text">
+      <p id="reset-achievements-confirm-text">Reset your achievements on every device? They all lock again, and only new games count. Your history and your stats stay.</p>
+      <div class="end-card-actions">
+        <button type="button" class="btn btn-primary" id="reset-achievements-confirm-yes">Reset achievements</button>
+        <button type="button" class="btn" id="reset-achievements-confirm-no">Keep</button>
       </div>
     </dialog>
     <!-- Delete my data: src/page/my-games.ts. -->

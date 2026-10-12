@@ -1,0 +1,229 @@
+name: ios
+
+# Builds the iOS app: a Capacitor shell that loads the production site, like the Android app (android.yml).
+# The page is the same everywhere, so a site deploy reaches the app with no app build. The macOS `app` job
+# runs only for a new shell: a tag such as ios-v1.2.0, or by hand. It never runs on a pull request.
+# The Xcode project is generated here on every run from apple/capacitor.config.json, so the repository
+# keeps no native code.
+#
+# The `lint` job runs on every pull request that touches the iOS shell. It needs no macOS runner, no
+# Xcode and no signing: actionlint checks this file's own syntax, and generating the Capacitor project
+# with Node alone (no `xcodebuild`, no CocoaPods) catches a bad apple/capacitor.config.json or a broken
+# install in well under a minute, so most mistakes surface on the pull request, before the real build.
+#
+# The App Store account is set by repository settings, not by code:
+# - variables APPLE_TEAM_ID and IOS_BUNDLE_ID;
+# - secrets APP_STORE_CONNECT_KEY (the .p8 text), APP_STORE_CONNECT_KEY_ID and APP_STORE_CONNECT_ISSUER_ID.
+#   An Admin key lets Xcode create the certificate and the profile itself (cloud signing).
+# The secrets have no KITSHN_ prefix: KitSHn forwards every KITSHN_ secret to the server.
+# Without them, the job builds for the simulator only, which checks that the project builds.
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: Upload the build to TestFlight (needs the App Store Connect key and the variables)
+        type: boolean
+        default: false
+  push:
+    tags: ['ios-v*']
+  pull_request:
+    paths: ['apple/**', '.github/workflows/ios.yml']
+
+# contents: write makes the GitHub release of a tag.
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Cheap and automatic: runs on every pull request that touches the iOS shell, so a broken config or a
+  # workflow mistake shows up on the PR, with no macOS minutes and no simulator or device build.
+  lint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: apple/package-lock.json
+
+      - name: actionlint
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint .github/workflows/ios.yml
+
+      # The same generation step as the app job, minus Xcode: cap add/sync only write files with Node,
+      # so this catches an invalid apple/capacitor.config.json or a package that fails to install.
+      - name: Generate the Capacitor iOS project
+        working-directory: apple
+        run: |
+          npm ci --no-audit --no-fund
+          npx cap add ios --packagemanager SPM
+          npx cap sync ios
+          test -f ios/App/App/Info.plist
+          test -f ios/App/App/AppDelegate.swift
+
+  app:
+    if: github.event_name != 'pull_request'
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      BUILD_DIR: ${{ github.workspace }}/build/ios
+      SITE_HOST: tick3d.yarden-zamir.com
+    steps:
+      # The tags and their history let android/changelog.sh find the previous release.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # The App Store takes only builds made with the current Xcode and iOS SDK.
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      # The version code must grow with every upload: the run number of this workflow does.
+      # A tag ios-v1.2.0 names the version 1.2.0. A run by hand gets 0.<run number>.
+      - name: Version
+        id: version
+        run: |
+          code=${{ github.run_number }}
+          if [[ "$GITHUB_REF" == refs/tags/ios-v* ]]; then name="${GITHUB_REF#refs/tags/ios-v}"; else name="0.$code"; fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "Version $name (build $code)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Signing
+        id: signing
+        env:
+          KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          TEAM: ${{ vars.APPLE_TEAM_ID }}
+          BUNDLE: ${{ vars.IOS_BUNDLE_ID }}
+        run: |
+          if [[ -n "$KEY" && -n "$KEY_ID" && -n "$ISSUER" && -n "$TEAM" && -n "$BUNDLE" ]]; then
+            echo "sign=true" >> "$GITHUB_OUTPUT"
+            mkdir -p "$RUNNER_TEMP/keys"
+            printf '%s\n' "$KEY" > "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8"
+          else
+            echo "sign=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No App Store Connect key or no APPLE_TEAM_ID / IOS_BUNDLE_ID. The job builds for the simulator only."
+          fi
+          echo "bundle=${BUNDLE:-com.example.tick3d}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate the Xcode project
+        env:
+          BUNDLE: ${{ steps.signing.outputs.bundle }}
+        run: |
+          mkdir -p "$BUILD_DIR"
+          cp -R apple/package.json apple/package-lock.json apple/www "$BUILD_DIR/"
+          jq --arg id "$BUNDLE" '.appId = $id' apple/capacitor.config.json > "$BUILD_DIR/capacitor.config.json"
+          cd "$BUILD_DIR"
+          npm ci --no-audit --no-fund
+          npx cap add ios --packagemanager SPM
+          npx cap sync ios
+
+      # The icon and the launch screen. apple/icon.png (1024 x 1024, no transparency) wins when it exists.
+      # Without it, the Play icon is scaled up, which is fine for TestFlight but soft on the App Store.
+      - name: Icon and launch screen
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          mkdir -p assets
+          if [[ -f "$GITHUB_WORKSPACE/apple/icon.png" ]]; then
+            cp "$GITHUB_WORKSPACE/apple/icon.png" assets/icon-only.png
+          else
+            echo "::warning::No apple/icon.png. The 512 px Play icon is scaled up to 1024 px."
+            sips --resampleHeightWidth 1024 1024 "$GITHUB_WORKSPACE/android/store/en-US/images/icon.png" --out assets/icon-only.png
+          fi
+          cp assets/icon-only.png assets/logo.png
+          npx capacitor-assets generate --ios --assetPath assets \
+            --iconBackgroundColor '#e4e7ff' --splashBackgroundColor '#e4e7ff' --splashBackgroundColorDark '#e4e7ff'
+
+      # The app-bound domain lets the web view run the site's service worker, so the game plays offline.
+      # The usage texts are for voice play (the microphone) and Nearby (WebRTC on the local network).
+      - name: Info.plist
+        working-directory: ${{ env.BUILD_DIR }}/ios/App/App
+        run: |
+          plist=Info.plist
+          pb() { /usr/libexec/PlistBuddy -c "$1" "$plist"; }
+          pb "Delete :WKAppBoundDomains" 2>/dev/null || true
+          pb "Add :WKAppBoundDomains array"
+          pb "Add :WKAppBoundDomains:0 string $SITE_HOST"
+          pb "Add :NSMicrophoneUsageDescription string tick3d listens to your voice only when you turn on voice play. The sound stays on your device."
+          pb "Add :NSLocalNetworkUsageDescription string tick3d connects to devices on your network for Nearby games."
+          pb "Add :ITSAppUsesNonExemptEncryption bool false"
+          pb "Set :CFBundleDisplayName tick3d"
+          plutil -lint "$plist"
+
+      - name: Build for the simulator
+        if: steps.signing.outputs.sign != 'true'
+        working-directory: ${{ env.BUILD_DIR }}/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build | tail -n 40
+
+      # Xcode signs with the App Store Connect key (cloud signing) and uploads to TestFlight at export.
+      - name: Archive and upload
+        if: steps.signing.outputs.sign == 'true'
+        working-directory: ${{ env.BUILD_DIR }}/ios/App
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          TEAM: ${{ vars.APPLE_TEAM_ID }}
+          UPLOAD: ${{ startsWith(github.ref, 'refs/tags/ios-v') || inputs.upload }}
+        run: |
+          auth=(-allowProvisioningUpdates -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8"
+            -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER")
+          # iPhone only (TARGETED_DEVICE_FAMILY 1): the iPad layout is not tested yet.
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$BUILD_DIR/tick3d.xcarchive" \
+            DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic TARGETED_DEVICE_FAMILY=1 \
+            MARKETING_VERSION='${{ steps.version.outputs.name }}' CURRENT_PROJECT_VERSION='${{ steps.version.outputs.code }}' \
+            "${auth[@]}" archive | tail -n 40
+          destination="export"
+          [[ "$UPLOAD" == true ]] && destination="upload"
+          plutil -create xml1 "$BUILD_DIR/export.plist"
+          plutil -insert method -string app-store-connect "$BUILD_DIR/export.plist"
+          plutil -insert destination -string "$destination" "$BUILD_DIR/export.plist"
+          plutil -insert teamID -string "$TEAM" "$BUILD_DIR/export.plist"
+          plutil -insert signingStyle -string automatic "$BUILD_DIR/export.plist"
+          plutil -insert manageAppVersionAndBuildNumber -bool false "$BUILD_DIR/export.plist"
+          xcodebuild -exportArchive -archivePath "$BUILD_DIR/tick3d.xcarchive" \
+            -exportOptionsPlist "$BUILD_DIR/export.plist" -exportPath "$BUILD_DIR/export" "${auth[@]}" | tail -n 40
+          echo "Export: $destination" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"
+
+      # A tag ios-v1.2.0 makes a GitHub release with the changelog since the previous ios-v tag.
+      - name: Release text
+        id: release
+        if: startsWith(github.ref, 'refs/tags/ios-v')
+        run: |
+          body="$RUNNER_TEMP/release.md"
+          {
+            echo "The iOS app ${{ steps.version.outputs.name }} (build ${{ steps.version.outputs.code }}), uploaded to TestFlight."
+            echo
+            android/changelog.sh 'ios-v*'
+          } > "$body"
+          echo "body=$body" >> "$GITHUB_OUTPUT"
+
+      - name: GitHub release
+        if: startsWith(github.ref, 'refs/tags/ios-v')
+        uses: softprops/action-gh-release@v3.0.3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: iOS ${{ steps.version.outputs.name }}
+          body_path: ${{ steps.release.outputs.body }}
+          make_latest: false

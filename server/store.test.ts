@@ -13,6 +13,7 @@ import { type Code, type DeviceGameId, type GameId, type Metrics, type PlayerTok
 import { PLAYOFF_COUNTDOWN_MS } from '../src/practice/playoff.ts';
 import type { PracticeRun } from '../src/practice/practice.ts';
 import { SessionError } from '../src/session/core.ts';
+import type { AchievementId, Achievements } from '../src/achievements.ts';
 import { DELETED_NAME } from '../src/deletions.ts';
 import { DELETED_MESSAGE, REMOVED_MESSAGE, REPORTS_KEPT_MS, DELETION_NOTICES_KEPT_MS, type Store, openStore } from './store.ts';
 
@@ -522,6 +523,89 @@ describe('survival records on the server', () => {
       'hard|game:none|move:none|board:false|history:false|tuned': 9,
     });
     expect(await store.records(carol)).toEqual({});
+  });
+});
+
+describe('achievements', () => {
+  const countOf = ({ achievements }: Achievements, id: AchievementId) => achievements.find((entry) => entry.id === id)?.count;
+
+  it('counts online games by seat, for each player, and the rarity over both players', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    const mine = await store.achievements(alice);
+    expect(mine.achievements.find((entry) => entry.id === 'online-win')).toMatchObject({ count: 1, unlockedBy: `${code}-1` });
+    const theirs = await store.achievements(bob);
+    expect(countOf(theirs, 'first-win')).toBe(0);
+    expect(countOf(theirs, 'games-10')).toBe(1);
+    expect(mine.rarity.players).toBe(2);
+    expect(mine.rarity.unlocked).toMatchObject({ 'first-win': 1, 'online-win': 1, 'games-10': 0 });
+  });
+
+  it('counts a friend game with a winner as a win, and an account with its devices as one player', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    const friend = { mode: 'friend', you: null, difficulty: null } as const;
+    await store.addResults(alice, [result('adadadad-1111-4000-8000-000000000001', friend)]);
+    await store.addResults(alicePhone, [result('adadadad-1111-4000-8000-000000000002', { ...friend, finishedAt: ms(3_000) })]);
+    // Carol played the computer, which is no player.
+    await store.addResults(carol, [result('adadadad-1111-4000-8000-000000000003', { you: 'O' })]);
+    const { achievements, rarity } = await store.achievements(alicePhone);
+    expect(achievements.find((entry) => entry.id === 'first-win')?.unlockedAt).not.toBeNull();
+    expect(rarity.players).toBe(2);
+    expect(rarity.unlocked['first-win']).toBe(1);
+  });
+
+  it('counts only the games after a reset, on every device, and the player still counts for the rarity', async () => {
+    let time = 10_000;
+    store = await openStore(':memory:', { now: () => ms(time) });
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addResults(alice, [result('aeaeaeae-1111-4000-8000-000000000001', { finishedAt: ms(5_000) })]);
+    await store.addResults(bob, [result('aeaeaeae-1111-4000-8000-000000000002', { finishedAt: ms(5_000) })]);
+    expect(countOf(await store.achievements(alicePhone), 'first-win')).toBe(1);
+    await store.resetAchievements(alicePhone);
+    // The rarity waits RARITY_CACHE_MS before it counts again.
+    time += 11 * 60_000;
+    const reset = await store.achievements(alice);
+    expect(reset.achievements.every((entry) => entry.count === 0)).toBe(true);
+    expect(reset.rarity).toMatchObject({ players: 2, unlocked: { 'first-win': 1 } });
+    await store.addResults(alicePhone, [result('aeaeaeae-1111-4000-8000-000000000003', { finishedAt: ms(time) })]);
+    expect(countOf(await store.achievements(alice), 'first-win')).toBe(1);
+  });
+
+  it('shows the achievements in the stats of Mine and of a person, not of Everyone', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    for (const filter of [{ ...ALL_STATS, scope: 'mine' }, { ...ALL_STATS, person: await personId(alice) }] as const) {
+      const { achievements } = await store.stats(filter, alice);
+      if (achievements === null) throw new Error('the stats have no achievements');
+      expect(countOf(achievements, 'online-win')).toBe(1);
+    }
+    expect((await store.stats()).achievements).toBeNull();
+  });
+
+  it('counts a Nearby game once for the guest', async () => {
+    store = await openStore(':memory:');
+    const nearby = { mode: 'nearby', difficulty: null, game: finishedGame(X_WINS) } as const;
+    await store.addResults(alice, [result('abababab-1111-4000-8000-000000000001', { ...nearby, you: 'X', publicId: deviceGameId('NEARBY23'), guest: bob, metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } })]);
+    await store.addResults(bob, [result('abababab-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: ms(2_034), metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } })]);
+    expect(countOf(await store.achievements(bob), 'games-10')).toBe(1);
+    expect(countOf(await store.achievements(alice), 'nearby-win')).toBe(1);
+  });
+
+  it('adds a new game of a linked device at once, and keeps a cleared game', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addResults(alice, [result('acacacac-1111-4000-8000-000000000001', { difficulty: 'easy' })]);
+    expect(countOf(await store.achievements(alicePhone), 'beat-hard')).toBe(0);
+    await store.addResults(alicePhone, [result('acacacac-1111-4000-8000-000000000002', { finishedAt: ms(3_000) })]);
+    await store.clearHistory(alice);
+    const progress = await store.achievements(alice);
+    expect(countOf(progress, 'beat-easy')).toBe(1);
+    expect(countOf(progress, 'beat-hard')).toBe(1);
+    expect(countOf(progress, 'streak-3')).toBe(2);
   });
 });
 
@@ -1186,7 +1270,7 @@ describe('report and block', () => {
 describe('delete my data', () => {
   const ALICE_ACCOUNT = `${ACCOUNT_TOKEN_PREFIX}${String(ALICE_GITHUB.id).padStart(16, '0')}`;
   const aliceTokens = [alice, alicePhone, ALICE_ACCOUNT];
-  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
+  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
 
   // Per group of needles: the rows of each table whose text holds one of them. The store closes for the check and opens again.
   async function rowsHolding(path: string, groups: readonly (readonly string[])[]): Promise<Record<string, number>[]> {
@@ -1239,6 +1323,8 @@ describe('delete my data', () => {
     await store.block(bob, await personId(ALICE_ACCOUNT), 'alice');
     await store.setStatsPrivate(alicePhone, true);
     await store.setStatsPrivate(bob, true);
+    await store.resetAchievements(alice);
+    await store.resetAchievements(bob);
     const run: PracticeRun = { id: 'run-1', mode: 'targets', preset: 'normal', roundMs: Array.from({ length: 10 }, () => 2_000), score: 10 };
     await store.addPracticeRun(alice, run);
     await store.addPracticeRun(bob, run);
@@ -1253,6 +1339,7 @@ describe('delete my data', () => {
       player_names: { deleted: 1, anonymised: 0 },
       blocks: { deleted: 1, anonymised: 1 },
       private_stats: { deleted: 1, anonymised: 0 },
+      achievement_resets: { deleted: 1, anonymised: 0 },
       practice_runs: { deleted: 1, anonymised: 0 },
       reports: { deleted: 0, anonymised: 1 },
       player_tokens: { deleted: 3, anonymised: 0 },

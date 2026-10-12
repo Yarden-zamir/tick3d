@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { PREVIEW_DESCRIPTION_LENGTH, parsePreviews } from '../src/protocol.ts';
+import { PREVIEW_DESCRIPTION_LENGTH, PREVIEW_IMAGE_ALT_LENGTH, PREVIEW_IMAGES, PREVIEW_TOY_LABEL, parsePreviews } from '../src/protocol.ts';
 import { PREVIEWS_CACHE_MS, PREVIEWS_RELAY_CACHE_MS } from './api-docs.ts';
-import { MAX_COMMITS, MAX_CONTRIBUTORS, MAX_PULLS, commitPeople, createPreviews, mergeContributors, parsePull, previewsConfigFromEnv, summaryOf } from './previews.ts';
+import { MAX_COMMITS, MAX_CONTRIBUTORS, MAX_PULLS, commitPeople, createPreviews, imagesOf, mergeContributors, parsePull, previewsConfigFromEnv, summaryOf } from './previews.ts';
 
 const config = { repo: 'octo/game', domain: 'game.example.com', source: 'github' } as const;
 const avatar = (id: number) => `https://avatars.githubusercontent.com/u/${id}?v=4`;
@@ -19,6 +19,21 @@ const pull = (number: number, fields: Record<string, unknown> = {}) => ({
   base: { label: 'octo:main' },
   ...fields,
 });
+
+// One preview as the page receives it.
+const relayPreview = {
+  number: 5,
+  title: 'Pull 5',
+  description: 'Body of 5.',
+  url: 'https://github.com/octo/game/pull/5',
+  previewUrl: 'https://pr-5.game.example.com',
+  updatedAt: Date.parse('2026-10-05T10:00:00Z'),
+  draft: false,
+  contributors: [{ login: 'alice', avatar: avatar(1), url: 'https://github.com/alice' }],
+  parent: null,
+  toy: false,
+  images: [],
+};
 
 const commit = (author: unknown, message = 'fix: a thing') => ({ author, commit: { message } });
 
@@ -141,6 +156,38 @@ describe('the description', () => {
   });
 });
 
+describe('the images of the description', () => {
+  const shot = (name: string) => `https://raw.githubusercontent.com/octo/game/pr-assets/${name}.png`;
+
+  it('takes Markdown and HTML images in their order, each once', () => {
+    const body = [
+      'Intro.',
+      `![Phone, light](${shot('a')} "a title")`,
+      `<img width="300" alt="Desktop" src="${shot('b')}">`,
+      '![Upload](https://github.com/user-attachments/assets/0f1e2d3c)',
+      `![Again](${shot('a')})`,
+    ].join('\n');
+    expect(imagesOf(body)).toEqual([
+      { src: shot('a'), alt: 'Phone, light' },
+      { src: shot('b'), alt: 'Desktop' },
+      { src: 'https://github.com/user-attachments/assets/0f1e2d3c', alt: 'Upload' },
+    ]);
+  });
+
+  it('leaves out images from other sites and images in HTML comments', () => {
+    const body = `![x](https://evil.example.org/a.png)\n<img src="http://raw.githubusercontent.com/a.png">\n<!-- ![hint](${shot('c')}) -->\n![ok](${shot('d')})`;
+    expect(imagesOf(body)).toEqual([{ src: shot('d'), alt: 'ok' }]);
+  });
+
+  it('keeps at most PREVIEW_IMAGES images and cuts a long text', () => {
+    const body = Array.from({ length: PREVIEW_IMAGES + 3 }, (_, i) => `![${'a'.repeat(PREVIEW_IMAGE_ALT_LENGTH + 5)}](${shot(String(i))})`).join('\n');
+    const images = imagesOf(body);
+    expect(images).toHaveLength(PREVIEW_IMAGES);
+    expect(images.every((image) => image.alt.length === PREVIEW_IMAGE_ALT_LENGTH)).toBe(true);
+    expect(imagesOf('')).toEqual([]);
+  });
+});
+
 describe('the previews list', () => {
   function setup(routes: Record<string, Answer | (() => Answer)>) {
     let time = 1_000_000;
@@ -151,7 +198,14 @@ describe('the previews list', () => {
 
   it('lists only the live previews, with their contributors, in the page shape', async () => {
     const { previews } = setup({
-      [PULLS_URL]: { body: [pull(5, { draft: true }), pull(6), pull(7), { broken: true }] },
+      [PULLS_URL]: {
+        body: [
+          pull(5, { draft: true, labels: [{ name: 'bug' }, { name: PREVIEW_TOY_LABEL }], body: 'Body of 5.\n\n![Phone](https://raw.githubusercontent.com/octo/game/pr-assets/5.png)' }),
+          pull(6),
+          pull(7),
+          { broken: true },
+        ],
+      },
       [commitsUrl(5)]: { body: [commit(user('bob', 2)), commit(user('bob', 2)), commit(user('alice', 1))] },
       [commitsUrl(6)]: { body: [] },
       [healthUrl(5)]: LIVE,
@@ -176,6 +230,8 @@ describe('the previews list', () => {
           { login: 'alice', avatar: avatar(1), url: 'https://github.com/alice' },
         ],
         parent: null,
+        toy: true,
+        images: [{ src: 'https://raw.githubusercontent.com/octo/game/pr-assets/5.png', alt: 'Phone' }],
       },
     ]);
     // The page parser takes what the server sends.
@@ -312,17 +368,7 @@ describe('the previews list', () => {
 
 describe('the previews list on a preview server', () => {
   const PRODUCTION_URL = 'https://game.example.com/api/previews';
-  const preview = {
-    number: 5,
-    title: 'Pull 5',
-    description: 'Body of 5.',
-    url: 'https://github.com/octo/game/pull/5',
-    previewUrl: 'https://pr-5.game.example.com',
-    updatedAt: Date.parse('2026-10-05T10:00:00Z'),
-    draft: false,
-    contributors: [{ login: 'alice', avatar: avatar(1), url: 'https://github.com/alice' }],
-    parent: null,
-  };
+  const preview = relayPreview;
 
   function setup(routes: Record<string, Answer | (() => Answer)>) {
     let time = 1_000_000;
@@ -337,6 +383,11 @@ describe('the previews list on a preview server', () => {
     expect(await previews.list()).toEqual(answer);
     expect(fake.githubCalls()).toEqual([]);
     expect(fake.calls).toEqual([PRODUCTION_URL]);
+  });
+
+  it('reads a list from an older production without toys and images as no toy and no images', () => {
+    const { toy: _toy, images: _images, ...older } = preview;
+    expect(parsePreviews({ main: null, previews: [older], error: null }).previews[0]).toEqual({ ...older, toy: false, images: [] });
   });
 
   it('passes the parent through, and reads a list from an older production without parents as top level', async () => {
