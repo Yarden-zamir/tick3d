@@ -5,7 +5,7 @@
 """Checks the icon candidates, draws the contact sheet, and exports the chosen icon.
 
 Usage:
-  uv run branding/icon/icon.py sheet <output.png>   checks every candidate and draws one contact sheet
+  uv run branding/icon/icon.py sheet <output.png> [name ...]   checks the candidates (all, or the named ones) and draws one contact sheet
   uv run branding/icon/icon.py export <name>        writes every icon file from candidates/<name>.svg
 """
 
@@ -57,7 +57,7 @@ class Candidate:
 
 def candidates() -> list[Candidate]:
     found = [Candidate("0-current", CURRENT, CURRENT_MASKABLE)]
-    found += [Candidate(path.stem, path, path) for path in sorted(CANDIDATES.glob("*.svg"))]
+    found += [Candidate(path.stem, path, path) for path in sorted(CANDIDATES.glob("*.svg"), key=lambda path: int(path.stem.split("-")[0]))]
     return found
 
 
@@ -137,10 +137,13 @@ def safe_zone_overlay(icon: Image.Image) -> Image.Image:
     return tile
 
 
-def sheet(output: Path) -> None:
+def sheet(output: Path, names: list[str]) -> None:
     font = ImageFont.load_default(size=18)
     small_font = ImageFont.load_default(size=14)
-    rows = candidates()
+    rows = [c for c in candidates() if not names or c.name in names]
+    missing = set(names) - {c.name for c in rows}
+    if missing:
+        raise SystemExit(f"No candidates named {sorted(missing)}")
     row_height = 220
     columns = [
         ("512 px", 200),
@@ -237,8 +240,8 @@ def export(name: str) -> None:
 
 def main() -> None:
     match sys.argv[1:]:
-        case ["sheet", output]:
-            sheet(Path(output))
+        case ["sheet", output, *names]:
+            sheet(Path(output), names)
         case ["export", name]:
             export(name)
         case _:

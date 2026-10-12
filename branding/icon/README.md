@@ -4,7 +4,7 @@ The app icon comes from one SVG master in `candidates/`. Every icon file is a re
 
 ## Candidates
 
-Each candidate is a square of 1024 × 1024 with an opaque background. The artwork stays inside the Android safe zone, so one file serves as the plain icon, the maskable icon and the Apple icon.
+Each candidate is a square of 1024 × 1024 with an opaque background. Except for 14-tab-tile, the artwork stays inside the Android safe zone, so one file serves as the plain icon, the maskable icon and the Apple icon.
 
 | Candidate | Idea |
 | --- | --- |
@@ -17,6 +17,12 @@ Each candidate is a square of 1024 × 1024 with an opaque background. The artwor
 | 6-face | A flat 4×4 grid, front view, with a winning diagonal of four X marks. |
 | 7-layers | Four plain plates stacked, with a big X on the top plate. |
 | 8-current-vector | The current icon redrawn as vector, with an opaque background. |
+| 9-classic | The current concept, redrawn: two tilted 2×2 boards, one behind the other. |
+| 10-classic-bold | The same stack with bigger marks, on violet, so it stands out on a light home screen. |
+| 11-classic-4x4 | The same stack with the 4×4 boards of the game and a winning diagonal. |
+| 12-classic-tower | Four thin 2×2 boards, one per layer of the game, with the marks on the top board. |
+| 13-classic-single | One tilted board with the biggest marks, on the dark page colour. |
+| 14-tab-tile | Only for the browser tab (16 and 32 px): a yellow tile with a big X and O. It fills the square, so it is not for the launcher masks. |
 
 ## Checks and contact sheet
 
