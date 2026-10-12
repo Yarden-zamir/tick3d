@@ -11,12 +11,12 @@ name: ios
 # with Node alone (no `xcodebuild`, no CocoaPods) catches a bad apple/capacitor.config.json or a broken
 # install in well under a minute, so most mistakes surface on the pull request, before the real build.
 #
-# The `distribute` job runs after a real upload (never after a simulator-only build) and needs no Xcode
-# either: it calls the App Store Connect API directly (a JWT signed with the same Admin key) to add the
-# new build to the external "Testers" group and submit it for Beta App Review, so every TestFlight upload
-# reaches external testers with no manual step in App Store Connect. The group itself, and its Beta App
-# Review contact information, are a one-time setup in App Store Connect's TestFlight tab; this job never
-# creates or changes either, only looks the group up by name and acts on the newest build.
+# The `distribute` job runs after a real upload of an ios-v* tag (never after a run by hand or a simulator-only
+# build) and needs no Xcode either: it calls the App Store Connect API directly (a JWT signed with the same
+# Admin key) to add the new build to the external "Testers" group and submit it for Beta App Review, so every
+# tagged release reaches external testers with no manual step in App Store Connect. The group itself, and its
+# Beta App Review contact information, are a one-time setup in App Store Connect's TestFlight tab; this job
+# never creates or changes either, only looks the group up by name and acts on the build of its own run.
 #
 # The App Store account is set by repository settings, not by code:
 # - variables APPLE_TEAM_ID and IOS_BUNDLE_ID;
@@ -88,6 +88,8 @@ jobs:
     # with no upload), so `distribute` runs exactly when there is a new TestFlight build to send out.
     outputs:
       uploaded: ${{ steps.archive.outputs.uploaded }}
+      # The build number of this run, so `distribute` sends this build and never an older one.
+      code: ${{ steps.version.outputs.code }}
     steps:
       # The tags and their history let android/changelog.sh find the previous release.
       - uses: actions/checkout@v7
@@ -195,6 +197,8 @@ jobs:
           TEAM: ${{ vars.APPLE_TEAM_ID }}
           UPLOAD: ${{ startsWith(github.ref, 'refs/tags/ios-v') || inputs.upload }}
         run: |
+          # Without pipefail, `| tail` hides a failed archive or upload, and `distribute` then sends nothing new.
+          set -o pipefail
           auth=(-allowProvisioningUpdates -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8"
             -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER")
           # iPhone only (TARGETED_DEVICE_FAMILY 1): the iPad layout is not tested yet.
@@ -242,22 +246,21 @@ jobs:
           body_path: ${{ steps.release.outputs.body }}
           make_latest: false
 
-  # Sends every TestFlight upload to external testers automatically: no Xcode here, only the App Store
-  # Connect API (apple/scripts/testflight-distribute.py). Runs only after `app` actually uploaded a
-  # build (not a simulator build, not a signed export with no upload).
+  # Sends each tagged TestFlight upload to external testers automatically: no Xcode here, only the App Store
+  # Connect API (apple/scripts/testflight-distribute.py). Runs only after `app` actually uploaded the build
+  # of an ios-v* tag. A run by hand with "upload" reaches internal testers only.
   distribute:
     needs: app
-    if: needs.app.outputs.uploaded == 'true'
+    if: needs.app.outputs.uploaded == 'true' && startsWith(github.ref, 'refs/tags/ios-v')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The script waits up to POLL_DEADLINE_MIN (40) for Apple's processing of the build, then fails.
+    timeout-minutes: 50
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
-
-      - run: pip install --quiet -r apple/scripts/requirements.txt
+      - uses: astral-sh/setup-uv@v10.2.0
 
       - name: Add the build to the external testing group and submit it for review
         env:
@@ -265,5 +268,5 @@ jobs:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
           BUNDLE: ${{ vars.IOS_BUNDLE_ID }}
-          GROUP_NAME: Testers
-        run: python3 apple/scripts/testflight-distribute.py
+          BUILD_NUMBER: ${{ needs.app.outputs.code }}
+        run: uv run apple/scripts/testflight-distribute.py
