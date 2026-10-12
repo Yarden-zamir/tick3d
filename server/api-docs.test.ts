@@ -178,7 +178,7 @@ describe('the SessionView schema', () => {
       expect(board.rows).toHaveLength(2);
       expect(schemaErrors('Leaderboard', board)).toBe('');
     } finally {
-      store.close();
+      await store.close();
     }
     // DuckDB writes for each move. A busy CI machine needs more than the default 5 s.
   }, 20_000);
@@ -189,7 +189,7 @@ describe('the SessionView schema', () => {
       expect(mine.personal).not.toBeNull();
       expect(schemaErrors('Stats', mine)).toBe('');
     } finally {
-      store.close();
+      await store.close();
     }
   }, 20_000);
 });

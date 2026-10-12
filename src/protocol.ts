@@ -994,6 +994,9 @@ export type Stats = {
   hide: { setting: 'none' | 'board' | 'history' | 'both'; coordinates: boolean; games: number; computerGames: number; humanWins: number }[];
   timeLimits: { perGame: number | null; perMove: number | null; games: number }[];
   tuned: { tuned: boolean; games: number; humanWins: number }[];
+  // The charts of moves, times, settings and devices of Everyone read the newest `sample` games when there are
+  // more games than that (STATS_SAMPLE in server/stats.ts). Null when they read every game.
+  sample: number | null;
   // From game metrics: device results, and each player of an online game (one report per seat).
   metricsGames: number;
   devices: Count[];

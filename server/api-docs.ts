@@ -69,7 +69,7 @@ export const DATA_DELETES_PER_HOUR = 10;
 // The tables that Delete my data (deleteData in server/store.ts) changes, with the rows it deleted and
 // the rows it kept without the player. chat_messages counts the messages inside the session documents.
 // The other tables hold no player data: events, and moderation_log (kept for moderation).
-export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'practice_runs', 'reports', 'player_tokens', 'users'] as const;
+export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'player_tokens', 'users'] as const;
 export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number; anonymised: number }>;
 // The previews list on production is at most this old. server/previews.ts enforces it.
 // Only production calls GitHub, without a token: 60 calls per hour, 5 of them kept in reserve, so 55.
@@ -565,7 +565,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
   StatsPrivacy: object('"Hide my stats". It follows your GitHub account when you log in.', {
     private: { type: 'boolean', description: 'True: a person filter with your person id answers 403 to everyone but you. Everyone totals still count your games, without your name.' },
   }),
-  Stats: object('The aggregates of the public stats page: counts only, and for scope mine the names of your opponents. The server computes an everyone answer at most once a minute. src/protocol.ts (Stats) has every field.', {
+  Stats: object('The aggregates of the public stats page: counts only, and for scope mine the names of your opponents. An everyone answer comes from a snapshot that the server refreshes in the background, at most once a minute. src/protocol.ts (Stats) has every field.', {
     generatedAt: { type: 'number' },
     totals: { type: 'object', description: 'games, moves, players, accounts, sessions, gamesLast7Days.' },
     perDay: list('The last 60 days, oldest first, UTC.'),
@@ -582,6 +582,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     hide: list('Hide settings in use.'),
     timeLimits: list('Time limits in use.'),
     tuned: list('Tuned computer games.'),
+    sample: { ...nullable(count()), description: 'Everyone only: the charts of moves, times, settings and devices read the newest this many games. null when they read every game.' },
     metricsGames: count(),
     devices: list('Device kinds.', ref('Count')),
     views: list('Views.', ref('Count')),
@@ -892,6 +893,7 @@ const STATS_EXAMPLE = {
   hide: [],
   timeLimits: [],
   tuned: [],
+  sample: null,
   metricsGames: 0,
   devices: [],
   views: [],
@@ -1452,7 +1454,7 @@ export const ROUTES = {
     operationId: 'leaderboard',
     tag: 'Account',
     summary: 'The common stats of each player: games, results, fastest win, best streak.',
-    description: `The query takes the range, mode and level filters of GET /api/stats. Friend games and the computer do not count. A person who hides their stats ("Hide my stats" in My games) is not on it. Answers are at most ${STATS_CACHE_MS / 1000} seconds old.`,
+    description: `The query takes the range, mode and level filters of GET /api/stats. Friend games and the computer do not count. A person who hides their stats ("Hide my stats" in My games) is not on it. An answer comes from a snapshot, which refreshes in the background when it is ${STATS_CACHE_MS / 1000} seconds old or older.`,
     player: 'optional',
     query: {
       range: { description: '7d, 30d or all (the default).', required: false, schema: strings(STATS_RANGES), example: '30d' },

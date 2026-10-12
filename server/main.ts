@@ -707,7 +707,6 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     server.close();
     for (const set of streams.values()) for (const stream of set) stream.res.end();
-    store.close();
-    process.exit(0);
+    void store.close().finally(() => process.exit(0));
   });
 }

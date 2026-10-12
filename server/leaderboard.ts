@@ -4,7 +4,7 @@ import { ACCOUNT_TOKEN_PREFIX, LEADERBOARD_ROWS, type StatsFilter } from '../src
 import type { EpochMs } from '../src/epoch.ts';
 import { COMPUTER_TOKEN } from '../src/session/core.ts';
 import { type RowOf, type Rows, epoch, int, nullable, num, text } from './sql.ts';
-import { FILTERED_GAMES, filterValues } from './stats.ts';
+import { filterValues, filteredGames } from './stats.ts';
 
 const LEADER = {
   owner: text,
@@ -28,7 +28,7 @@ export type LeaderRow = RowOf<typeof LEADER>;
 // It reads the plain game columns of results (server/fields.ts), and the unlocks of achievement_players,
 // which the store brings up to date first. The store caches the answer per filter, like the stats.
 // Limit: revisit this when a call takes more than about 1 s.
-const LEADERBOARD = `WITH g AS (${FILTERED_GAMES}),
+const LEADERBOARD = `WITH g AS (${filteredGames(null)}),
   seats AS (
     SELECT finished_at, len(moves) AS moves, winner, ending, 'X' AS seat, player_x AS token FROM g WHERE player_x IS DISTINCT FROM player_o
     UNION ALL

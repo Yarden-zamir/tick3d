@@ -675,7 +675,9 @@ async function show(filter: StatsFilter, problem = ''): Promise<void> {
         : stats.personal === null
           ? 'all players'
           : 'your games on every device that you logged in with, or on this browser';
-    note.textContent = `${problem}Updated ${new Date(stats.generatedAt).toLocaleString()}. These numbers show ${scope}.`;
+    // With many games, the charts of moves, times, settings and devices read the newest games only (server/stats.ts).
+    const sampled = stats.sample === null ? '' : ` The charts of moves, times, settings and devices show the newest ${stats.sample.toLocaleString()} games.`;
+    note.textContent = `${problem}Updated ${new Date(stats.generatedAt).toLocaleString()}. These numbers show ${scope}.${sampled}`;
   } catch (error) {
     if (id !== request) return;
     grid.replaceChildren();

@@ -100,7 +100,7 @@ describe('sessions', () => {
     await store.join(code, bob);
     await store.move(code, alice, { game: 0, moveCount: 0, cell: 5 });
     await store.chat(code, bob, 'hello');
-    store.close();
+    await store.close();
     store = await openStore(path);
     expect(await store.get(code, bob)).toMatchObject({ you: 'O', games: [{ moves: [5] }], chat: [{ from: 'O', text: 'hello' }] });
   });
@@ -210,7 +210,7 @@ describe('accounts', () => {
     const other = (await store.create(bob, 'Join later')).code;
     await store.linkToken(alice, ALICE_GITHUB);
     await store.linkToken(alicePhone, ALICE_GITHUB);
-    store.close();
+    await store.close();
     // A database from before account seats has no account row.
     const instance = await DuckDBInstance.create(path);
     const db = await instance.connect();
@@ -617,7 +617,7 @@ async function oldStore(): Promise<{ path: string; code: Code }> {
   const { code } = await store.create(alice, 'Old match');
   await store.join(code, bob);
   await playMoves(code, X_WINS);
-  store.close();
+  await store.close();
   const instance = await DuckDBInstance.create(path);
   const db = await instance.connect();
   await db.run("DELETE FROM results WHERE id LIKE 'online:%'");
@@ -813,14 +813,16 @@ describe('stats', () => {
     ]);
   });
 
-  it('keeps the answer for a minute', async () => {
+  it('keeps the answer for a minute, then answers at once and refreshes in the background', async () => {
     let time = 1_000_000;
     store = await openStore(':memory:', { now: () => ms(time) });
     const first = await store.stats();
     await store.addResults(alice, [result('bbbbbbbb-1111-4000-8000-000000000001')]);
     expect((await store.stats()).totals.games).toBe(first.totals.games);
     time += 60_000;
-    expect((await store.stats()).totals.games).toBe(first.totals.games + 1);
+    // The old answer still comes at once; the refresh that it starts brings the new game.
+    expect((await store.stats()).totals.games).toBe(first.totals.games);
+    await vi.waitFor(async () => expect((await store.stats()).totals.games).toBe(first.totals.games + 1));
   });
 });
 
@@ -1120,7 +1122,7 @@ describe('seat controls for an account without an account row', () => {
     store = await openStore(path, { open: () => open });
     const { code } = await store.create(bob, 'Seat an old account');
     await store.linkToken(alicePhone, ALICE_GITHUB);
-    store.close();
+    await store.close();
     const instance = await DuckDBInstance.create(path);
     const db = await instance.connect();
     await db.run("DELETE FROM player_tokens WHERE token LIKE 'account-%'");
@@ -1284,11 +1286,11 @@ describe('report and block', () => {
 describe('delete my data', () => {
   const ALICE_ACCOUNT = `${ACCOUNT_TOKEN_PREFIX}${String(ALICE_GITHUB.id).padStart(16, '0')}`;
   const aliceTokens = [alice, alicePhone, ALICE_ACCOUNT];
-  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
+  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
 
   // Per group of needles: the rows of each table whose text holds one of them. The store closes for the check and opens again.
   async function rowsHolding(path: string, groups: readonly (readonly string[])[]): Promise<Record<string, number>[]> {
-    store.close();
+    await store.close();
     const instance = await DuckDBInstance.create(path);
     const db = await instance.connect();
     const found: Record<string, number>[] = [];
@@ -1357,6 +1359,7 @@ describe('delete my data', () => {
       private_stats: { deleted: 1, anonymised: 0 },
       achievement_resets: { deleted: 1, anonymised: 0 },
       achievement_players: { deleted: 1, anonymised: 0 },
+      seat_people: { deleted: 3, anonymised: 0 },
       practice_runs: { deleted: 1, anonymised: 0 },
       reports: { deleted: 0, anonymised: 1 },
       player_tokens: { deleted: 3, anonymised: 0 },
