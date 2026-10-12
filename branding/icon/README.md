@@ -10,7 +10,7 @@ The candidates stay here, so that a later round does not repeat them. Each candi
 
 | Candidate | Idea |
 | --- | --- |
-| 0-current | The shipped icon: two stacked 2×2 boards. It exists only as PNG files with a transparent background. |
+| 0-current | The shipped icon: two stacked 2×2 boards. The sheet shows the PNG files in `public/`. |
 | 1-tower | Four 4×4 boards, like the game screen, with a line of four X marks down the front corner. |
 | 2-board | One 4×4 board with a winning diagonal of four X marks. |
 | 3-badges | An X tile and an O tile with hard shadows, like the tick3d wordmark badge. |
