@@ -1,7 +1,9 @@
 name: play-feedback
 
 # Daily: turns Play feedback into GitHub issues.
-# - A new review with 1 to 3 stars opens an issue labelled `needs validation`, for the watcher flow.
+# - A new review with 1 to 3 stars opens an issue labelled `needs validation` and sends it to the
+#   Conductor webhook (see .claude/orchestration/conductor.md). An issue opened with github.token
+#   starts no workflow, so agents.yml never sees it: this step sends the webhook itself.
 #   Reviews with 4 or 5 stars go to the run summary only. Replies stay manual in Play Console.
 #   The Play API returns only the reviews with text of the last 7 days, so a daily run sees each one.
 # - A crash or ANR cluster from Android vitals (Play Developer Reporting API) opens an issue labelled `bug`.
@@ -40,7 +42,28 @@ jobs:
         env:
           TOKEN: ${{ steps.play.outputs.token }}
           PACKAGE: ${{ steps.play.outputs.package }}
+          WEBHOOK_URL: ${{ secrets.T3_AGENT_WEBHOOK_URL }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: |
+          # Sends a new review issue to Conductor. A failed send marks the run failed at the end,
+          # but the other reviews still get their issues.
+          failed=0
+          forward() {
+            local url=$1 body_file=$2 title=$3 payload
+            payload=$(jq -n -c --arg repository "$GITHUB_REPOSITORY" --arg title "$title" --arg url "$url" \
+              --rawfile body "$body_file" \
+              '{kind: "play-review", repository: $repository, issue: ($url | split("/") | last | tonumber),
+                pull_request: false, title: $title, labels: ["needs validation"], label: "needs validation",
+                author: "play-feedback", body: $body[0:4000], url: $url}')
+            curl --fail-with-body --silent --show-error --max-time 30 \
+              --retry 12 --retry-delay 15 --retry-max-time 240 --retry-all-errors \
+              -X POST "$WEBHOOK_URL" \
+              -H "content-type: application/json" \
+              -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+              -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+              --data-binary "$payload"
+          }
           reviews=$(curl --silent --fail-with-body --header "Authorization: Bearer $TOKEN" \
             "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/$PACKAGE/reviews?maxResults=100")
           jq --compact-output '.reviews // [] | .[]' <<< "$reviews" | while IFS= read -r review; do
@@ -70,8 +93,14 @@ jobs:
               echo
               echo "Reply in Play Console > Ratings and reviews."
             } > "$body"
-            gh issue create --title "Play review, ${stars} stars: ${text:0:60}" --label "needs validation" --body-file "$body"
+            title="Play review, ${stars} stars: ${text:0:60}"
+            url=$(gh issue create --title "$title" --label "needs validation" --body-file "$body")
+            if [[ -z "$WEBHOOK_URL" ]] || ! forward "$url" "$body" "$title"; then
+              echo "::error::Could not send $url to Conductor. Add the label needs validation again by hand."
+              failed=1
+            fi
           done
+          exit "$failed"
 
       # The Reporting API must be on in the Google Cloud project of the service account, and the
       # account needs "View app information" in Play Console. Until then this step only gives a notice.

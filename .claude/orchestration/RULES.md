@@ -37,7 +37,19 @@ A maintainer is anyone with the `OWNER`, `MEMBER` or `COLLABORATOR` role on the 
 
 16. Keep the source issue current. Post a short signed comment at each milestone: a plan change, the first preview or render, ready, and merged. Post previews (storyboards, stills, video links) on BOTH the issue and the pull request. Post each new render as a new comment. Do not edit an old one.
 17. While you work on an issue, it has the label `agents: working`. Remove it when the work merges or stops.
-18. To ask the maintainers a question, post it as a comment on the pull request, or on the issue when there is no pull request yet. Add the label `agents: question` to the pull request and to the issue. When all your questions are answered, remove the label. If Conductor tells you that a question was answered elsewhere, delete your question comment and update the description.
+18. To ask the maintainers a question, post it as a comment on the pull request, or on the issue when there is no pull request yet. Keep it short, so that a maintainer can answer it from a phone:
+    - At most 3 questions in one comment. Ask only what blocks you; decide the rest yourself and say what you chose.
+    - Each question is one bold line that a person can answer without opening the code. No file paths or code names, unless the question is about them.
+    - Give 2 to 4 lettered options of a few words each, and mark the one you recommend with "(recommended)". End with: "Reply with a letter, or write your own."
+    - Add at most one line of context. Put longer detail in a collapsed `<details>` block below the questions.
+    - Add an image when it makes the choice clear and you already have it, or can take it fast, for example a screenshot of the preview or a render you already made (rule 13).
+    Example:
+    ```
+    **1. Show player names on the public leaderboard?**
+    A. Yes, players can hide themselves (recommended) · B. No, show only my own rank
+    Reply with a letter, or write your own.
+    ```
+    Add the label `agents: question` to the pull request and to the issue. When all your questions are answered, remove the label. If Conductor tells you that a question was answered elsewhere, delete your question comment and update the description.
 
 ## Merge
 
