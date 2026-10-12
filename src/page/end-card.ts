@@ -2,9 +2,7 @@
 import { type CardInput, cardCellBox, cardFilename, drawCard, shareImage, saveImage } from '../card.ts';
 import { formatClock, describeClock } from '../clock.ts';
 import { type Game, other, winnerOf } from '../game.ts';
-import { isTunedFor } from '../tuning.ts';
 import { sounds } from '../sound.ts';
-import { computerTuning } from './advanced.ts';
 import {
   cardDialog,
   myGamesDialog,
@@ -15,6 +13,7 @@ import {
   cardLink,
   cardCodeOption,
   cardImage,
+  cardAchievements,
   cardNewGameButton,
   newGameButton,
   cardShareButton,
@@ -26,12 +25,13 @@ import {
   cardCloseButton,
   showCardButton,
 } from './dom.ts';
-import { showToast } from './feedback.ts';
+import { noteAchievements, showUnlocks, unlockLabel, unlockedBy } from './achievements.ts';
+import { showError, showToast } from './feedback.ts';
 import { previewsDialog } from '../header/previews.ts';
 import { type GameId, onlineGameId } from '../protocol.ts';
 import { nearbyKind, shareGameLink } from './nearby.ts';
-import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnlineMetrics, hostLinkOf, setHostLink } from './results.ts';
-import { setUrlGame, startNewGame } from './sessions.ts';
+import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnlineMetrics, hostLinkOf, setHostLink, gameTuning } from './results.ts';
+import { changesSent, setUrlGame, startNewGame } from './sessions.ts';
 import { playerName, seatNow } from './render.ts';
 import { settings } from './settings.ts';
 import { songControl } from './song-control.ts';
@@ -40,7 +40,9 @@ import { voiceClips } from './voice.ts';
 import { type Session, me, page, isLive, matchOptions } from './state.ts';
 
 const CARD_DELAY_MS = 1400;
-let card: { index: number; canvas: HTMLCanvasElement; gameId: GameId | undefined } | undefined;
+// The survival record of the last game that the computer won. The card waits for it, to show a new record.
+let survival: Promise<void> = Promise.resolve();
+let card: { index: number; canvas: HTMLCanvasElement; gameId: GameId | undefined; tuned: boolean } | undefined;
 
 // Plays the sound for the last move of the live game, and the result if the move ended it.
 export function announce(game: Game): void {
@@ -62,7 +64,10 @@ export function finish(game: Game): void {
   }
   const index = page.games.length - 1;
   if (page.session !== undefined) void linkGame(page.session, game, index);
-  if (page.session?.mode === 'computer' && winner !== null && mine !== null && winner !== mine) noteSurvival(page.session, game, index);
+  if (page.session?.mode === 'computer' && winner !== null && mine !== null && winner !== mine) {
+    // A failed record shows its error, and the card still opens.
+    survival = noteSurvival(page.session, game, index).catch(showError);
+  }
   setTimeout(() => {
     // Show the card only if that game is still the finished live game and nothing else is open.
     if (page.games.length - 1 !== index || isLive() || page.review !== undefined) return;
@@ -81,6 +86,17 @@ async function linkGame(open: Session, game: Game, index: number): Promise<void>
   const id = (open.mode === 'nearby' ? hostLinkOf(open.code, index) : undefined) ?? own;
   // The player can move on while the result saves. Only the same finished game gets the link.
   if (id !== undefined && showsFinished(open, index)) setUrlGame(id);
+  // A watcher earns nothing.
+  if (id === undefined || (open.mode !== 'friend' && open.you === null)) return;
+  // Our own last move shows before the server stores it, and playMove sends it right after this call.
+  // One microtask lets that send start. Then wait for its answer, so the server counts the game.
+  await Promise.resolve();
+  await changesSent();
+  const unlocked = await noteAchievements(open.code, index, id);
+  if (unlocked.length === 0) return;
+  // The open card of this game shows the news. Else a toast tells it.
+  if (card?.index === index && cardDialog.open) await openCard(index);
+  else showToast(`${unlockLabel(unlocked)}.`);
 }
 
 const showsFinished = (open: Session, index: number) => page.session?.code === open.code && page.games.length - 1 === index && !isLive();
@@ -116,7 +132,7 @@ function celebrate(): void {
   confettiTimer = setTimeout(() => burstEl.replaceChildren(), CONFETTI_MS);
 }
 
-function cardInput(game: Game, index: number, gameId: GameId | undefined): CardInput {
+function cardInput(game: Game, index: number, gameId: GameId | undefined, tuned: boolean): CardInput {
   // The seats can rotate between games: `winner` is the seat now of the player who won game `index`.
   const result = winnerOf(game.status);
   const winner = result === null ? null : seatNow(index, result);
@@ -129,7 +145,7 @@ function cardInput(game: Game, index: number, gameId: GameId | undefined): CardI
       : game.status.kind === 'timeout' && winner !== null
         ? `${playerName(other(winner))} ran out of time after ${game.moves.length} moves`
         : 'The cube is full. Nobody got four in a row.';
-  const level = `${settings.difficulty.charAt(0).toUpperCase()}${settings.difficulty.slice(1)}${isTunedFor(computerTuning(), settings.difficulty) ? ' (tuned)' : ''}`;
+  const level = `${settings.difficulty.charAt(0).toUpperCase()}${settings.difficulty.slice(1)}${tuned ? ' (tuned)' : ''}`;
   const matchup =
     page.session?.mode === 'computer'
       ? `vs Computer · ${level} · You played ${seatNow(index, page.session.you ?? settings.human)}`
@@ -143,6 +159,7 @@ function cardInput(game: Game, index: number, gameId: GameId | undefined): CardI
   const duration = first > 0 && last > first ? ` · Game time ${formatClock(last - first)}` : '';
   const onlineCode = page.session?.mode === 'online' ? page.session.code : undefined;
   const news = page.session === undefined ? undefined : recordNews.get(`${page.session.code}:${index}`);
+  const unlocked = page.session === undefined ? undefined : unlockedBy(page.session.code, index);
   // The link of this game, else the session, else the site.
   const link = gameId ? `${location.host}/?game=${gameId}` : onlineCode ? `${location.host}/?code=${onlineCode}` : location.host;
   return {
@@ -156,6 +173,7 @@ function cardInput(game: Game, index: number, gameId: GameId | undefined): CardI
       .filter((part) => part !== '')
       .join(' · '),
     ...(news === undefined ? {} : { record: news }),
+    ...(unlocked === undefined ? {} : { unlocked }),
   };
 }
 
@@ -168,13 +186,21 @@ export async function openCard(index: number): Promise<void> {
   // "Include my voice" is off each time the card opens. A redraw of the open card keeps the choice.
   if (!cardDialog.open) cardVoice.checked = false;
   const gameId = page.session === undefined ? undefined : await gameIdOf(page.session, index);
-  const input = cardInput(game, index, gameId);
+  const tuned = page.session !== undefined && (await gameTuning(page.session, index)) !== null;
+  await survival;
+  const input = cardInput(game, index, gameId, tuned);
   const canvas = await drawCard(input);
-  card = { index, canvas, gameId };
+  card = { index, canvas, gameId, tuned };
   cardImage.src = canvas.toDataURL('image/png');
   // A title such as "You win!" ends with its own mark.
   const titleText = input.title.endsWith('!') ? input.title : `${input.title}.`;
-  cardImage.alt = `${titleText} ${input.subtitle}.${input.record ? ` New record: ${input.record.moves} moves.` : ''}`;
+  cardImage.alt = `${titleText} ${input.subtitle}.${input.record ? ` New record: ${input.record.moves} moves.` : ''}${input.unlocked ? ` ${unlockLabel(input.unlocked)}.` : ''}`;
+  const { unlocked } = input;
+  cardAchievements.hidden = unlocked === undefined;
+  // A redraw of the open card, for example for an include option, does not play the unlock again.
+  const shown = unlocked === undefined ? '' : `${page.session?.code}:${index}`;
+  if (unlocked !== undefined && (!cardDialog.open || cardAchievements.dataset.shown !== shown)) showUnlocks(cardAchievements, unlocked);
+  cardAchievements.dataset.shown = shown;
   // Only the newest game can start the next one. A card of an older game has no New game button.
   cardNewGameButton.hidden = index !== page.games.length - 1;
   cardNewGameButton.disabled = newGameButton.disabled;
@@ -198,7 +224,7 @@ export function setupEndCard(): void {
     if (card === undefined) return undefined;
     const game = page.games[card.index];
     if (game === undefined) return undefined;
-    const input = cardInput(game, card.index, card.gameId);
+    const input = cardInput(game, card.index, card.gameId, card.tuned);
     // The board behind the card shows the same game only when the card is of the newest game.
     const onBoard = card.index === page.games.length - 1 && page.review === undefined;
     const light = (cell: number | undefined) => {
@@ -210,10 +236,10 @@ export function setupEndCard(): void {
   cardDialog.addEventListener('close', song.stop);
   cardShareButton.addEventListener('click', () => {
     if (card === undefined) return;
-    const { canvas, index, gameId } = card;
+    const { canvas, index, gameId, tuned } = card;
     const game = page.games[index];
     if (game === undefined) return;
-    const input = cardInput(game, index, gameId);
+    const input = cardInput(game, index, gameId, tuned);
     const isOnline = page.session?.mode === 'online';
     const gameLink = gameId === undefined ? undefined : `${location.origin}/?game=${gameId}`;
     const url = cardLink.checked ? (gameLink ?? (isOnline ? location.href : location.origin)) : undefined;

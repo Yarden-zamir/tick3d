@@ -4,6 +4,10 @@ dist/
 dev.duckdb*
 e2e/test-results/
 e2e/playwright-report/
+store-images/test-results/
 # The ios workflow's lint job generates this inside apple/, to test with no Xcode. The app job
 # builds outside the repo instead (build/ios), as android.yml does for android/.
 /apple/ios/
+
+# Local agent secrets, linked from _shared/.orchestration
+/.orchestration/

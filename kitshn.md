@@ -43,6 +43,7 @@ before doing so, or Caddy will reject the duplicate site definition.
 
 - Services: `site` (Caddy that serves `dist/` on the KitSHn socket) and `api` (Node, serves `/api/*`). `api` keeps DuckDB at `/data/tick3d.duckdb` on the `sessions` volume. Each environment has its own volume.
 - Environments: `prod` from a push to `main`, and an ephemeral `pr-<number>` for each pull request. A pull request with the label `no-preview` gets no preview.
+- Preview limits: all previews together get at most 2 CPUs and 3 GB, and their image builds get the same in a builder of their own (`limits` in `.kitshn.yaml`). A preview that needs more memory fails, not production.
 - Hostnames: `tick3d.yarden-zamir.com` for prod, `pr-<number>.tick3d.yarden-zamir.com` for previews.
 - Variables: `KITSHN_GITHUB_CLIENT_ID`. Secrets: `KITSHN_GITHUB_CLIENT_SECRET`, `KITSHN_AUTH_SECRET`. Without all three, login is off. With only some, `api` stops at start.
 - Previews use the production login. Only prod calls GitHub for the preview list.

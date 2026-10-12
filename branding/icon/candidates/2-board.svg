@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#6c5ce7"/>
+  <polygon points="512.0,266.0 872.0,446.0 872.0,516.0 512.0,696.0 152.0,516.0 152.0,446.0" fill="#000000" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="152.0,420.0 512.0,600.0 512.0,670.0 152.0,490.0" fill="#e6b800" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="872.0,420.0 512.0,600.0 512.0,670.0 872.0,490.0" fill="#e6b800" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="512.0,240.0 872.0,420.0 512.0,600.0 152.0,420.0" fill="#ffe14d" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="512.0,252.6 576.8,285.0 512.0,317.4 447.2,285.0" fill="#7cff8a" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="422.0,297.6 486.8,330.0 422.0,362.4 357.2,330.0" fill="#ffffff" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="332.0,342.6 396.8,375.0 332.0,407.4 267.2,375.0" fill="#ffffff" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="242.0,387.6 306.8,420.0 242.0,452.4 177.2,420.0" fill="#ffffff" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="602.0,297.6 666.8,330.0 602.0,362.4 537.2,330.0" fill="#ffffff" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="512.0,342.6 576.8,375.0 512.0,407.4 447.2,375.0" fill="#7cff8a" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="422.0,387.6 486.8,420.0 422.0,452.4 357.2,420.0" fill="#ffffff" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="332.0,432.6 396.8,465.0 332.0,497.4 267.2,465.0" fill="#ffffff" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="692.0,342.6 756.8,375.0 692.0,407.4 627.2,375.0" fill="#ffffff" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="602.0,387.6 666.8,420.0 602.0,452.4 537.2,420.0" fill="#ffffff" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="512.0,432.6 576.8,465.0 512.0,497.4 447.2,465.0" fill="#7cff8a" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="422.0,477.6 486.8,510.0 422.0,542.4 357.2,510.0" fill="#ffffff" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="782.0,387.6 846.8,420.0 782.0,452.4 717.2,420.0" fill="#ffffff" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="692.0,432.6 756.8,465.0 692.0,497.4 627.2,465.0" fill="#ffffff" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="602.0,477.6 666.8,510.0 602.0,542.4 537.2,510.0" fill="#ffffff" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <polygon points="512.0,522.6 576.8,555.0 512.0,587.4 447.2,555.0" fill="#7cff8a" stroke="#000000" stroke-width="11.2" stroke-linejoin="round"/>
+  <path d="M474.2,285.0H549.8M512.0,266.1V303.9" stroke="#000000" stroke-width="46.0" stroke-linecap="round" fill="none"/>
+  <path d="M474.2,285.0H549.8M512.0,266.1V303.9" stroke="#ff5277" stroke-width="18.0" stroke-linecap="round" fill="none"/>
+  <path d="M474.2,375.0H549.8M512.0,356.1V393.9" stroke="#000000" stroke-width="46.0" stroke-linecap="round" fill="none"/>
+  <path d="M474.2,375.0H549.8M512.0,356.1V393.9" stroke="#ff5277" stroke-width="18.0" stroke-linecap="round" fill="none"/>
+  <path d="M474.2,465.0H549.8M512.0,446.1V483.9" stroke="#000000" stroke-width="46.0" stroke-linecap="round" fill="none"/>
+  <path d="M474.2,465.0H549.8M512.0,446.1V483.9" stroke="#ff5277" stroke-width="18.0" stroke-linecap="round" fill="none"/>
+  <path d="M474.2,555.0H549.8M512.0,536.1V573.9" stroke="#000000" stroke-width="46.0" stroke-linecap="round" fill="none"/>
+  <path d="M474.2,555.0H549.8M512.0,536.1V573.9" stroke="#ff5277" stroke-width="18.0" stroke-linecap="round" fill="none"/>
+  <ellipse cx="242.0" cy="420.0" rx="37.8" ry="18.9" stroke="#000000" stroke-width="42.4" fill="none"/>
+  <ellipse cx="242.0" cy="420.0" rx="37.8" ry="18.9" stroke="#00b3ff" stroke-width="14.4" fill="none"/>
+  <ellipse cx="782.0" cy="420.0" rx="37.8" ry="18.9" stroke="#000000" stroke-width="42.4" fill="none"/>
+  <ellipse cx="782.0" cy="420.0" rx="37.8" ry="18.9" stroke="#00b3ff" stroke-width="14.4" fill="none"/>
+</svg>

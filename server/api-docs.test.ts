@@ -27,6 +27,7 @@ import {
   parseBlocks,
   parseReportRequest,
 } from '../src/protocol.ts';
+import { parseAchievements } from '../src/achievements.ts';
 import { parseDeletedPeople } from '../src/deletions.ts';
 import { parsePlayoffRequest } from '../src/practice/playoff.ts';
 import { parsePracticeBoard, parsePracticeRun } from '../src/practice/practice.ts';
@@ -57,6 +58,7 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
       : undefined,
   Me: parseMe,
   MyGames: parseMyGames,
+  Achievements: parseAchievements,
   PublicGame: parsePublicGame,
   HistoryPage: parseHistoryPage,
   DeletedPeople: parseDeletedPeople,

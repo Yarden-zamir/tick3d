@@ -6,6 +6,8 @@ import {
   normalizeChat,
   normalizeCode,
   parsePlayerInfo,
+  PREVIEW_IMAGE_ALT_LENGTH,
+  PREVIEW_IMAGES,
   parsePreviews,
   parseResultUpload,
   parseClientEvent,
@@ -482,12 +484,24 @@ describe('parsePreviews', () => {
     draft: false,
     contributors: [],
     parent,
+    toy: false,
+    images: [] as unknown[],
   });
   const answer = (previews: unknown[]) => ({ main: 'https://game.example.com', previews, error: null });
+  const shot = { src: 'https://raw.githubusercontent.com/octo/game/pr-assets/a.png', alt: 'A phone' };
 
-  it('keeps the parent of a stacked pull request through a round trip', () => {
-    const list = answer([preview(1, null), preview(2, 1)]);
+  it('keeps the parent, the toy mark and the images through a round trip', () => {
+    const list = answer([preview(1, null), { ...preview(2, 1), toy: true, images: [shot] }]);
     expect(parsePreviews(JSON.parse(JSON.stringify(parsePreviews(list))))).toEqual(list);
+  });
+
+  it.each([
+    ['a toy mark that is not a boolean', { toy: 'yes' }],
+    ['an image from another site', { images: [{ ...shot, src: 'https://evil.example.org/a.png' }] }],
+    ['an image text over the limit', { images: [{ ...shot, alt: 'a'.repeat(PREVIEW_IMAGE_ALT_LENGTH + 1) }] }],
+    ['more than PREVIEW_IMAGES images', { images: Array.from({ length: PREVIEW_IMAGES + 1 }, () => shot) }],
+  ])('refuses %s', (_, fields) => {
+    expect(() => parsePreviews(answer([{ ...preview(1, null), ...fields }]))).toThrow();
   });
 
   it.each([0, -1, 1.5, '1', 2])('refuses the parent %j', (parent) => {

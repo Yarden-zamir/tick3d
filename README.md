@@ -18,7 +18,7 @@
 ## Features
 
 - Play against the computer, a friend on the same device, a friend online, or a device on the same Wi-Fi (Nearby).
-- Three computer levels: easy, medium and hard. "Advanced: computer player" in the panel tunes each level.
+- Three computer levels: easy, medium and hard. "Advanced: computer player" in the panel tunes each level. A game is tuned when the computer made at least one move with changed settings, also if the settings changed back later. The end card, My games, the records and the stats show it.
 - Two views: a 3D tower that you turn with a drag, and a flat view with four layouts.
 - Play by coordinates on the keypad, with the board or the marks hidden.
 - Time limits per game, per move, or both. A player who runs out loses.
@@ -31,6 +31,7 @@
 - Your game as a song: the Song button on the end card and on a game link. A long press shares the song as a WAV file, with your voice on the moves that your voice placed.
 - An end card with the result, to share or save as an image.
 - Survival records: the longest game against each computer level and setup.
+- Achievements: 16 goals such as a first win, a win in 7 moves or 5 wins in a row (`src/achievements.ts`). Past games count too, and a friend game with a winner counts as a win. My games and the stats page list them with their rarity ("12% of players"), and the end card and the shared image show a new one. "Clear history" keeps them, and "Reset achievements" in My games starts them over.
 - Twelve themes.
 - The same header on every page, with My games, Info, kitshn and GitHub (`src/header/`).
 - The kitshn button lists the production site and the open pull request previews. A stacked pull request shows inside its parent.
@@ -178,7 +179,7 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 - `/stats` is public: the game Info panel and My games link to it, and search engines may list it.
 - Filters: Everyone or Mine, the time (7 days, 30 days or all), the mode and the level. The address holds them, for example `/stats?scope=mine&range=30d`. `GET /api/stats` takes the same query and answers 400 for an unknown value.
 - A person filter (`/stats?person=<person id>`) shows the games of one person, with their name and picture. A click on a person's picture in the game opens it large, with a Stats link to this view.
-- "Hide my stats" in My games closes your person view to everyone but you: `GET /api/stats` then answers 403. Mine still works, and Everyone still counts your games without your name. The setting follows a GitHub login.
+- "Hide my stats" in My games closes your person view, your achievements included, to everyone but you: `GET /api/stats` then answers 403. Mine still works, and Everyone still counts your games without your name. The setting follows a GitHub login.
 - Everyone shows counts only: no player names and no page faults. Mine (your games on every linked device) adds your win rate over time, streaks, results, survival records and favourite opponents. A person view adds the same, without the opponents.
 - The stats never show a token, a result id or a game id.
 - A finished game sends, besides the game: the device kind, the view, the layout, the theme, input and undo counts, refusals, computer thinking times, the offline flag and the app version.
@@ -196,6 +197,7 @@ docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:26-alpine npx vite 
 - `npm run check` runs the type check, the linters (`npm run lint`) and the unit tests.
 - `npm run build` runs the type check and the Vite build.
 - `npm run api` starts the API on port 8080 with `./dev.duckdb`.
+- `npm run dev` starts the Vite dev server on port 5173. It sends `/api` calls to `npm run api`, so run both for Online games.
 
 `npm run e2e` runs the Playwright tests in `e2e/` against a deployed site. Set `E2E_BASE_URL` to the site, for example a pull request preview:
 
@@ -236,6 +238,33 @@ docker run --rm -v "$PWD":/app -w /app/video node:26 node scripts/render.ts --dr
 
 The drafts land in `video/out/draft/` (or `video/out/variants/<name>/draft/` with `VIDEO_VARIANT`). Locally, run only `npm run check` in `video/` and `node video/creative/tools/check-beats.ts`; the required `check` workflow runs the full gate on every push.
 
+## Store images
+
+The `store-images` workflow makes every store image and the ads from code, and opens a pull request with them. It runs by hand, and on a push to `main` that changes the page (`src/`, the HTML files or `store-images/`). Playwright renders each scene of [store.spec.ts](store-images/store.spec.ts) once per target of [targets.json](store-images/targets.json). [convert.py](store-images/convert.py) then writes the files below, and fails the run on a missing image or a size that the store does not accept. `store.spec.ts` fixes the clock, the player names and the random numbers of the page, so two renders of one commit match. As a margin, `convert.py` keeps the committed file of each image where at most 1.5% of the pixels changed (`NOISE_SHARE`). With no real change left, the workflow opens no pull request. `tick3d-agents[bot]` opens the pull request, so its checks run.
+
+| Files | What | Who uploads them |
+| --- | --- | --- |
+| `android/store/en-US/images/{phone,sevenInch,tenInch}Screenshots/<target>-<n>.jpg` | Play phone (1080×1920), 7-inch tablet (1080×1920) and 10-inch tablet (2560×1440, landscape) screenshots | `play-listing.yml` (fastlane supply) |
+| `android/store/en-US/images/featureGraphic.jpg` | Play feature graphic (1024×500) | `play-listing.yml` |
+| `apple/store/screenshots/en-US/iphone-6.9-<n>.jpg` | iPhone 6.9-inch display (1320×2868) | the App Store listing sync ([#139](https://github.com/Yarden-zamir/tick3d/issues/139), fastlane deliver layout) |
+| `apple/store/screenshots/en-US/iphone-6.3-<n>.jpg` | iPhone 6.3-inch display (1206×2622), the size that App Store Connect requires | the same |
+| `marketing/ads/{square,portrait,story,link}.png` | Ads: 1080×1080, 1080×1350, 1080×1920 and 1200×628 | nobody: post them by hand |
+| `public/screenshots/*.webp` | The screenshots of the web manifest | the site deploy |
+
+The scenes read production and never write to it. Only the online scene plays on a local Docker Compose build, because an online game needs writes. To render on your own computer:
+
+```sh
+docker compose -f compose.lan.yml up --detach --build --wait
+docker run --rm --network host --ipc=host -v "$PWD":/app -v /tmp/shots:/tmp/shots -w /app -e SHOTS_DIR=/tmp/shots -e LOCAL_URL=http://localhost:8080 mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'npm ci && npx playwright test -c store-images/playwright.config.ts'
+uv run store-images/convert.py /tmp/shots
+```
+
+- To add a scene, add a test to `store.spec.ts` that calls `shot(page, '<n>-<name>')`, and add the name and its caption to [scenes.json](store-images/scenes.json). The order of `scenes.json` is the order in the stores. Play takes at most 8 screenshots of each type.
+- The phone and iPhone shots get their scene caption above them ([caption.html](store-images/caption.html)). `[word]` in a caption marks the highlighted word. Keep captions short, with no ranking or price words ("Best", "#1", "New") and no call to action ("Download now"): Google Play does not allow them.
+- To add a target, add a line to `targets.json`: `size` is the output size in pixels, `scale` is the device pixel ratio, `caption` adds the scene captions, and `out` is the folder. `size` / `scale` must be whole CSS pixels. Keep `caption` false for Play tablet targets: Play asks for no added text on large-screen shots. Set `platform` to `ios` for an App Store target: the page then hides what the App Store does not allow, as in the iOS app. Add a new Apple size to `APPLE_SIZES` in `convert.py` only after you check it on the [App Store Connect screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications).
+- The feature graphic and the ads come from [art.html](store-images/art.html). `art.spec.ts` renders it at the feature graphic size and at each ad size. The maintainers picked this style from three on [pull request 149](https://github.com/Yarden-zamir/tick3d/pull/149); git history keeps the other two.
+- No Chromebook screenshots: the Play API, and so fastlane supply, has no Chromebook image type. Add a target when it gets one.
+
 ## Deploy
 
 See [kitshn.md](kitshn.md). A push to `main` deploys production.
@@ -248,7 +277,7 @@ The iOS app wraps the production site the same way, with [Capacitor](https://cap
 - A pull request that touches `apple/` or `ios.yml` runs the workflow's `lint` job: `actionlint` on the workflow itself, and the same Capacitor project generation as the real build, with no Xcode and no macOS runner. It catches a bad `apple/capacitor.config.json` or a broken install in well under a minute, before a change reaches the 45-minute macOS build.
 - The app adds `tick3dApp/ios` to the user agent. The page then sets `<html data-platform="ios">` (`src/platform.ts`) and hides what the App Store does not allow: the GitHub link and the previews button (`data-hide-in="ios"`), and the GitHub login (App Store rule 4.8). `e2e/ios.spec.ts` checks this on every preview.
 - `WKAppBoundDomains` lets the web view run the service worker, so the game plays offline after one start online. Without a network at the first start, the app shows `apple/www/index.html`.
-- `apple/icon.png` (1024 × 1024, no transparency) is the App Store icon. Without it, the workflow scales up the Play icon.
+- `apple/icon.png` (1024 × 1024, no transparency) is the App Store icon. `uv run branding/icon/icon.py export` writes it with the other icon files. Without it, the workflow scales up the Play icon.
 - Every real upload also runs the workflow's `distribute` job: `apple/scripts/testflight-distribute.py` calls the App Store Connect API directly (a JWT signed with the same Admin key, no Xcode needed) to add the new build to the external "Testers" group and submit it for Beta App Review, so a build reaches external testers with no manual step. The group itself and its Beta App Review contact information (App Store Connect's TestFlight tab, Test Information) are a one-time setup; the job only looks the group up by name.
 
 ## License
