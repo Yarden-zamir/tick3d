@@ -16,7 +16,7 @@ A maintainer is anyone with the `OWNER`, `MEMBER` or `COLLABORATOR` role on the 
 5. Right after you open it, call `link_pull_request` and `watch_pull_request` for it. The watch wakes you when a maintainer comments, when a check fails or passes, and when the branch conflicts.
 6. Keep the description short and human, like a teammate's note:
    - The signature lines, then 1 to 3 sentences on what changed and why.
-   - "Try it": the preview steps, only when the change can be seen. The preview is `https://pr.<N>.tick3d.yarden-zamir.com`.
+   - "Try it": the preview steps, only when the change can be seen. The preview is `https://pr-<N>.tick3d.yarden-zamir.com`.
    - "Open questions", only when there are some.
    - "Screenshots", when rule 12 applies.
    - At most about 15 lines in all. No test logs, file lists or commit hashes. Put long detail in your report to Conductor.
