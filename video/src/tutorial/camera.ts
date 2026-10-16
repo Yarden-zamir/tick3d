@@ -4,17 +4,19 @@ import { Easing, interpolate } from 'remotion';
 import { since } from '../grid.ts';
 import { TOWER_CENTER } from '../layout.ts';
 import { type Shot, ease, orbit, shot } from '../rig.ts';
-import { SECTIONS, type Section, sectionAt } from './plan.ts';
+import { DRIFT_PER_S16, SECTIONS, type Section, dragShare, sectionAt } from './plan.ts';
 
-// The drift in degrees per sixteenth: a quarter turn takes about 30 s, so the tower never stands still.
-const DRIFT = 0.35;
 // The sixteenths of a turn before a section ('lead') and after its start ('land').
 const LEAD = 4;
 const LAND = 3;
 
 type View = Section['view'];
 
-const viewAt = (section: Section, s16: number): View => ({ ...section.view, azimuth: section.view.azimuth + DRIFT * (s16 - section.start) });
+// The turn of the drags of a section at `s16`, in degrees, with the easing of the finger mark (dragShare).
+const dragTurn = (section: Section, s16: number): number =>
+  section.events.reduce((sum, event) => (event.kind === 'drag' ? sum + event.turn * dragShare(event, s16) : sum), 0);
+
+const viewAt = (section: Section, s16: number): View => ({ ...section.view, azimuth: section.view.azimuth + DRIFT_PER_S16 * (s16 - section.start) + dragTurn(section, s16) });
 
 function blend(a: View, b: View, w: number): View {
   const mix = (from: number, to: number) => interpolate(w, [0, 1], [from, to]);
