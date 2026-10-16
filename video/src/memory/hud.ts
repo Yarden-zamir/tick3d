@@ -19,9 +19,13 @@ const SLOT = { y: 250, width: 170, height: 136, gap: 26 } as const;
 const KEY = { y: 410, width: 112, height: 92, gap: 20, place: 210 } as const;
 const SLIDE = 3;
 const LABELS = ['Layer', 'Row', 'Column'] as const;
-// The Hide buttons of the game panel (index.html `.toggles`), above the slots, for a mask with `toggle`.
-const TOGGLES = { y: 92, width: 196, height: 72, gap: 16 } as const;
-const HIDE = ['Board', 'History', 'Coordinates'] as const;
+// The stepped Hide control of the game panel (index.html `#hide-steps`, src/style.css `.hide-steps`), above the
+// slots, for a mask with `toggle`. Each step hides what the steps before it hide.
+const STEPS = { y: 92, width: 760, height: 76, pad: 8 } as const;
+const HIDE_STEPS = ['Off', 'History', 'Board', 'Coordinates'] as const;
+// The steps of the bar: from History to Board, then to Coordinates at the mask.
+const BOARD_STEP = 2;
+const COORDINATES_STEP = 3;
 // A pressed key lights for this many sixteenths.
 const PRESS = 1.5;
 
@@ -87,17 +91,22 @@ function pressAt(frame: number): { key: number; age: number } | undefined {
   return { key: press.key, age: since(frame, press.at) };
 }
 
-// Board and History are on. Coordinates switches on at the mask, with a press into its shadow (`.btn:active`).
+// The game plays on the step Board (Hide board and Hide history). At the mask, the bar in the toggle color slides
+// on to Coordinates, as the slide pill of the game does (src/page/slide-pill.ts).
 function drawToggles(ctx: CanvasRenderingContext2D, frame: number, theme: Theme): void {
-  const rowWidth = 3 * TOGGLES.width + 2 * TOGGLES.gap;
-  const age = since(frame, mask.at);
-  label(ctx, 'Hide', -rowWidth / 2 + 40, TOGGLES.y - TOGGLES.height / 2 - 30, 30, 'ink', theme);
-  HIDE.forEach((name, i) => {
-    const on = i < 2 || age >= 0;
-    const sink = i === 2 ? interpolate(age, [0, 0.3, PRESS], [0, SHADOW, 0], clamp) : 0;
-    const x = -rowWidth / 2 + i * (TOGGLES.width + TOGGLES.gap) + sink;
-    box(ctx, x, TOGGLES.y - TOGGLES.height / 2 + sink, TOGGLES.width, TOGGLES.height, on ? 'toggle-on' : 'surface', theme);
-    label(ctx, name, x + TOGGLES.width / 2, TOGGLES.y + sink + 3, 32, on ? 'on-color' : 'ink', theme);
+  const left = -STEPS.width / 2;
+  const top = STEPS.y - STEPS.height / 2;
+  const column = (STEPS.width - 2 * STEPS.pad) / HIDE_STEPS.length;
+  label(ctx, 'Hide', left + 40, top - 30, 30, 'ink', theme);
+  box(ctx, left, top, STEPS.width, STEPS.height, 'surface', theme);
+  const last = BOARD_STEP + interpolate(since(frame, mask.at), [0, 1], [0, COORDINATES_STEP - BOARD_STEP], { ...clamp, easing: Easing.out(Easing.back(1.4)) });
+  ctx.beginPath();
+  ctx.roundRect(left + STEPS.pad + column, top + STEPS.pad, column * last, STEPS.height - 2 * STEPS.pad, 10);
+  ctx.fillStyle = css(theme['toggle-on']);
+  ctx.fill();
+  HIDE_STEPS.forEach((name, i) => {
+    const on = i >= 1 && i <= Math.round(last);
+    label(ctx, name, left + STEPS.pad + column * (i + 0.5), STEPS.y + 3, 30, on ? 'on-color' : 'ink', theme, on ? 1 : 0.7);
   });
 }
 
