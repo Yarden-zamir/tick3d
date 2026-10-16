@@ -497,11 +497,12 @@ input:disabled {
   }
 }
 
-/* One column: half a screen of room under the footer. The gear never covers the footer links, and the panel
-   can sit in the middle of the screen at the end of the page. Without the room, a mode change that hides a
-   block (Friend hides Difficulty) shortens the page, and the browser pulls the scroll back by that height. */
+/* The game page in one column: half a screen of room under the footer. The gear never covers the footer links,
+   and the panel can sit in the middle of the screen at the end of the page. Without the room, a mode change
+   that hides a block (Friend hides Difficulty) shortens the page, and the browser pulls the scroll back by that
+   height. The other pages have no gear and no mode change, so they keep a plain footer. */
 @media (width <= 52rem) {
-  .site-footer {
+  .app + .site-footer {
     padding-bottom: max(50dvh, env(safe-area-inset-bottom));
   }
 }
@@ -3126,6 +3127,11 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .slide-pill[data-instant] {
   transition: none;
+}
+
+/* A custom time that the player edits keeps its own light background over the pill, so its dark text reads. */
+.has-pill > .limit-custom:focus-within {
+  background: var(--peer);
 }
 
 /* ---- Press and toggle motion ----

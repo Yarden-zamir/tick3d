@@ -5,6 +5,10 @@ import { element } from '../element.ts';
 // src/page/clocks.ts looks up its own elements with it.
 export { element };
 
+// A page scroll that the page starts itself is smooth, unless the player asks for reduced motion. The CSS rule
+// for reduced motion does not reach a scroll that a script asks for, so the script asks the browser itself.
+export const scrollMotion = (): ScrollBehavior => (matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth');
+
 export const stageEl = element('#stage', HTMLElement);
 export const boardEl = element('#board', HTMLDivElement);
 export const boardHiddenEl = element('#board-hidden', HTMLDivElement);

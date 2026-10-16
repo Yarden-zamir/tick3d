@@ -2,7 +2,7 @@
 import { other } from '../game.ts';
 import { type ChatMessage, type SessionView, isChatEvent, normalizeChat } from '../protocol.ts';
 import { sounds } from '../sound.ts';
-import { chatEl, chatInput, chatSend, chatLog, chatNoticeFrom, chatNoticeText, chatNotice, chatForm } from './dom.ts';
+import { chatEl, chatInput, chatSend, chatLog, chatNoticeFrom, chatNoticeText, chatNotice, chatForm, scrollMotion } from './dom.ts';
 import { type Sender, chatGroups } from './chat-log.ts';
 import { nameOf } from '../names.ts';
 import { authorOf, ownPerson, shownPerson, visibleChat } from './safety.ts';
@@ -105,7 +105,7 @@ function hideChatNotice(): void {
 export function setupChat(): void {
   chatNotice.addEventListener('click', () => {
     hideChatNotice();
-    chatEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    chatEl.scrollIntoView({ behavior: scrollMotion(), block: 'center' });
     if (page.session !== undefined && canChat(page.session)) chatInput.focus({ preventScroll: true });
   });
 

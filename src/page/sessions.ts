@@ -58,7 +58,7 @@ async function playMove(cell: number, via: 'board' | 'keypad'): Promise<void> {
   const result = play(game, cell, nowMs());
   if (!result.ok) {
     // A press on the own last move works as the Undo button, and only when that button can run now.
-    if (result.error === 'occupied' && cell === ownLastCell(game, page.session) && !undoButton.disabled && !undoButton.hidden) return undoMove();
+    if (result.error === 'occupied' && pressUndoes(cell)) return undoMove();
     reject(cell, result.error);
     // A taken cell plays its own sound after the error sound, so the player learns by ear what is there.
     const mark = game.board[cell];
@@ -91,6 +91,13 @@ export function undoMove(): void {
 }
 
 // The cell of the last move that Undo takes back for this device: in a friend game the last move, else the last move of `you`.
+// A press on `cell` works as the Undo button: the cell is the own last move, and Undo can run now.
+// Voice only lets this press through too (src/page/board.ts): it takes back a move, it places none.
+export function pressUndoes(cell: number): boolean {
+  if (page.session === undefined) return false;
+  return cell === ownLastCell(current(), page.session) && !undoButton.disabled && !undoButton.hidden;
+}
+
 function ownLastCell(game: Game, session: Session): number | undefined {
   if (session.mode === 'friend') return game.moves.at(-1);
   if (session.you === null) return undefined;

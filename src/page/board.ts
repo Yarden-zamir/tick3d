@@ -5,7 +5,7 @@ import { setupSpinDrag } from '../board/spin-drag.ts';
 import { toCoords } from '../game.ts';
 import { boardEl, stageEl } from './dom.ts';
 import { refuseTap } from './feedback.ts';
-import { humanMove } from './sessions.ts';
+import { humanMove, pressUndoes } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
 import { tapsLocked } from './state.ts';
 
@@ -43,7 +43,7 @@ export function applyCamera(): void {
 
 export function setupBoard(): void {
   cells.forEach((button, cell) => {
-    button.addEventListener('click', () => (tapsLocked() ? refuseTap() : humanMove(cell, 'board')));
+    button.addEventListener('click', () => (tapsLocked() && !pressUndoes(cell) ? refuseTap() : humanMove(cell, 'board')));
     button.addEventListener('pointerenter', () => highlightColumn(cell));
     button.addEventListener('focus', () => highlightColumn(cell));
     button.addEventListener('pointerleave', () => highlightColumn(undefined));
