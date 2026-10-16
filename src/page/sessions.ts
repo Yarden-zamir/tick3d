@@ -1,7 +1,7 @@
 // Opening, leaving and switching sessions, moves of the player, and answers from a backend.
-import { sameClock, describeClock } from '../clock.ts';
+import { sameClock, describeClock, hasLimit } from '../clock.ts';
 import { checkPlayoffInvite } from './playoff-invite.ts';
-import { play, newGame, type Player, other } from '../game.ts';
+import { type Game, play, newGame, type Player, other } from '../game.ts';
 import { OnlineError, api } from '../online.ts';
 import { type ChatMessage, type Code, type GameId, MATCH_OPTIONS, type SessionView, isChatEvent, parseSessionView, toGame } from '../protocol.ts';
 import { type LinkIntent, withWatch } from '../session-link.ts';
@@ -11,19 +11,20 @@ import { notifyChat } from './chat.ts';
 import { eventText } from './chat-log.ts';
 import { ownPerson, visibleChat } from './safety.ts';
 import { scheduleComputer } from './computer.ts';
-import { burstEl } from './dom.ts';
+import { burstEl, undoButton } from './dom.ts';
 import { announce, finish } from './end-card.ts';
 import { reject, showToast, showError, showProblem } from './feedback.ts';
 import { closeGameView } from './game-view.ts';
 import { countMove, countUndo } from './metrics.ts';
 import { nearbyKind, endNearby, redrawNearby } from './nearby.ts';
-import { seatChangeText } from './players.ts';
+import { requestUndo, seatChangeText } from './players.ts';
 import { render } from './render.ts';
 import { type Mode, settings, saveSettings } from './settings.ts';
 import {
   page,
   clearScreen,
   current,
+  isLive,
   nowMs,
   setCurrent,
   setReview,
@@ -56,6 +57,8 @@ async function playMove(cell: number, via: 'board' | 'keypad'): Promise<void> {
   const game = current();
   const result = play(game, cell, nowMs());
   if (!result.ok) {
+    // A press on the own last move works as the Undo button, and only when that button can run now.
+    if (result.error === 'occupied' && cell === ownLastCell(game, page.session) && !undoButton.disabled && !undoButton.hidden) return undoMove();
     reject(cell, result.error);
     // A taken cell plays its own sound after the error sound, so the player learns by ear what is there.
     const mark = game.board[cell];
@@ -72,6 +75,27 @@ async function playMove(cell: number, via: 'board' | 'keypad'): Promise<void> {
   announce(result.game);
   await withBusy(() => sendShownChange(code, () => backend.move(code, request)));
   scheduleComputer();
+}
+
+// Undo takes back one move in a friend game, and asks the other player in a game with another device.
+// A game against the computer has no undo.
+export function undoMove(): void {
+  if (shared()) return requestUndo();
+  const backend = page.local;
+  if (page.session === undefined || backend === undefined || page.session.mode !== 'friend') return;
+  if (page.busy || page.review || !isLive() || current().moves.length === 0) return;
+  // Undo would hand back time that the clock already counted, so a timed game has no undo.
+  if (hasLimit(current().clock)) return;
+  const { code } = page.session;
+  void withBusy(async () => applyView(await backend.undo(code, 1)));
+}
+
+// The cell of the last move that Undo takes back for this device: in a friend game the last move, else the last move of `you`.
+function ownLastCell(game: Game, session: Session): number | undefined {
+  if (session.mode === 'friend') return game.moves.at(-1);
+  if (session.you === null) return undefined;
+  const index = game.moves.findLastIndex((_, i) => (i % 2 === 0 ? game.first : other(game.first)) === session.you);
+  return index === -1 ? undefined : game.moves[index];
 }
 
 // The address holds `watch=1` only while a watch link shows its session. A new code drops it.

@@ -43,7 +43,7 @@ function tokens(): { next: () => Token; now: () => Token } {
 const switches = tokens();
 export const newSwitch = switches.next;
 
-// A round is one game position that the computer can answer. A new screen, a new game and an undo
+// A round is one game position that the computer can answer. A new screen and a new game
 // start a new round, so a computer move found for the old round is dropped.
 const rounds = tokens();
 export const newRound = (): void => void rounds.next();
@@ -105,9 +105,8 @@ type PageState = {
   // An action waits for its backend. Also before a session is open, such as the first online game.
   busy: boolean;
   // Milliseconds from the search request to its answer, for each computer move of the current game.
-  // Index 0 is the computer's first move. A new game and a session switch empty the list, and an undo
-  // drops the entries of the moves that it takes back. A game that this page did not see from its first
-  // move keeps a shorter list (see src/page/computer.ts).
+  // Index 0 is the computer's first move. A new game and a session switch empty the list.
+  // A game that this page did not see from its first move keeps a shorter list (see src/page/computer.ts).
   computerThinkMs: number[];
   // Session holder time minus local time. Move times come from the server or the Nearby host, so the clocks use its time.
   serverOffset: number;

@@ -139,6 +139,7 @@ function statusText(): string {
 function undoProblemText(): string | undefined {
   const game = current();
   if (!isLive()) return 'The game is over.';
+  if (page.session?.mode === 'computer') return 'A game against the computer has no undo.';
   if (game.moves.length === 0) return 'No move to take back yet.';
   if (hasLimit(game.clock)) return 'A timed game has no undo.';
   if (!shared()) return undefined;

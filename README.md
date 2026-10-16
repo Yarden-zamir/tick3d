@@ -109,7 +109,7 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Hide board, history and coordinates | yes | yes | yes (off until a game starts) | yes (off until a game starts) | no |
 | Lock (rules of the live game, for both players) | no | no | yes (off until a game starts) | yes (off until a game starts) | no |
 | Score, New game, the session games in My games | yes | yes | yes (grey until a game starts) | yes (grey until a game starts) | yes (no session games) |
-| Undo (during a game) | yes | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
+| Undo (during a game) | no (shows disabled) | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
 | Result card (after a game) | yes | yes | in a game | in a game | no |
 | Chat | no (a wide screen keeps its space) | no | yes | yes | no |
 | Report and block (hold or right-click a person) | no | no | yes | Block only | no |

@@ -31,6 +31,16 @@ test('hide board: the keypad places a mark by coordinates', async ({ open }) => 
   await expect(marks(page)).toHaveCount(1);
 });
 
+test('a press on the own last move takes it back, as Undo does; an older move only refuses', async ({ open }) => {
+  const { page } = await open(friend);
+  await play(page, [0, 1]);
+  await cell(page, 0).click();
+  await expectToast(page, 'That cell is taken');
+  await expect(marks(page)).toHaveCount(2);
+  await cell(page, 1).click();
+  await expect(marks(page)).toHaveCount(1);
+});
+
 test('hide history shows only the last move, and every mark when the game ends', async ({ open }) => {
   const { page } = await open(friend);
   const toggle = page.getByRole('button', { name: 'Hide history', exact: true });
