@@ -47,6 +47,11 @@ export function showError(error: unknown): void {
   showProblem(error.message);
 }
 
+// A tap while Voice only is on. It is no refusal of the game rules, so the metrics do not count it.
+export function refuseTap(): void {
+  showProblem('Voice only is on: place by voice, or turn it off in the voice options.');
+}
+
 export function reject(cell: number | undefined, reason: Refusal): void {
   countRefusal(reason);
   showProblem(REFUSAL_TEXT[reason]);

@@ -1,3 +1,4 @@
+import type { Difficulty } from './ai.ts';
 import type { Player } from './game.ts';
 import type { Song, SongNote } from './song.ts';
 import { SOUND_SETS, type SoundSetId, type SoundSet, type Voice, midiHz } from './sound-sets.ts';
@@ -109,6 +110,42 @@ function play(voices: readonly Voice[], scale = 1, delay = 0, ctx: BaseAudioCont
 }
 
 let soundSet: SoundSet = SOUND_SETS.cells;
+
+// The sound of a press on a difficulty: easy is friendly, hard is scary.
+// Easy: a bright, bouncy major arpeggio (C, E, G, C) with a soft sparkle on top.
+// Medium: a steady call, a fifth up, through a soft filter.
+// Hard: a low growl of two sawtooth tones a half step apart that slide down while the filter closes,
+// a rumble of filtered noise under it, and a short tritone stab on top.
+export function difficultyVoices(level: Difficulty): Voice[] {
+  switch (level) {
+    case 'easy':
+      return [
+        ...[523.25, 659.25, 783.99, 1046.5].map((frequency, i): Voice => ({ wave: 'triangle', frequency, at: i * 0.055, decay: 0.22, level: 0.11 })),
+        { wave: 'sine', frequency: 2093, at: 0.2, decay: 0.16, level: 0.03 },
+      ];
+    case 'medium':
+      return [
+        { wave: 'square', frequency: 392, decay: 0.16, level: 0.06, filter: { type: 'lowpass', frequency: 1800 } },
+        { wave: 'triangle', frequency: 587.33, at: 0.1, decay: 0.3, level: 0.09 },
+        { wave: 'sine', frequency: 880, at: 0.1, decay: 0.22, level: 0.025 },
+      ];
+    case 'hard':
+      return [
+        ...[110, 116.54].map((frequency): Voice => ({
+          wave: 'sawtooth',
+          frequency,
+          slideTo: frequency / 2,
+          attack: 0.02,
+          decay: 0.75,
+          level: 0.08,
+          vibrato: { rate: 7, depth: 0.03 },
+          filter: { type: 'lowpass', frequency: 900, to: 160 },
+        })),
+        { wave: 'noise', attack: 0.02, decay: 0.55, level: 0.1, filter: { type: 'lowpass', frequency: 420, to: 110 } },
+        ...[440, 622.25].map((frequency): Voice => ({ wave: 'square', frequency, decay: 0.18, level: 0.035, filter: { type: 'lowpass', frequency: 2400 } })),
+      ];
+  }
+}
 
 export function setSoundSet(id: SoundSetId): void {
   soundSet = SOUND_SETS[id];
@@ -329,6 +366,9 @@ export const sounds = {
   },
   click(): void {
     tone({ frequency: 1200, duration: 0.04, volume: 0.05 });
+  },
+  difficulty(level: Difficulty): void {
+    play(difficultyVoices(level));
   },
   win(): void {
     play(winVoices(0.09));

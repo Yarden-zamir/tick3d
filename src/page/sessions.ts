@@ -19,7 +19,7 @@ import { countMove, countUndo } from './metrics.ts';
 import { nearbyKind, endNearby, redrawNearby } from './nearby.ts';
 import { requestUndo, seatChangeText } from './players.ts';
 import { render } from './render.ts';
-import { type Mode, settings, saveSettings } from './settings.ts';
+import { type Mode, hideLevel, settings, saveSettings } from './settings.ts';
 import {
   page,
   clearScreen,
@@ -136,9 +136,9 @@ export function applyView(view: SessionView): void {
     if (page.session.watcherChat !== previous.watcherChat) showToast(watcherChatText(page.session.watcherChat));
     const seatChange = seatChangeText(previous, page.session);
     if (seatChange !== undefined) showToast(seatChange);
-    for (const option of MATCH_OPTIONS) {
-      if (page.session.options[option] !== previous.options[option]) showToast(eventText({ kind: 'option', option, on: page.session.options[option] }));
-    }
+    // One Hide step can change two options at once, so one toast names the new step.
+    const options = page.session.options;
+    if (MATCH_OPTIONS.some((option) => options[option] !== previous.options[option])) showToast(hideText(hideLevel(options)));
   }
   // A move that is not on screen yet came from the other player or the computer. Our own moves were announced already.
   const isNewMove =
@@ -288,6 +288,20 @@ export function defaultSessionName(mode: Mode = 'online'): string {
   const day = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const kind = mode === 'computer' ? `${settings.difficulty} computer` : mode === 'friend' ? 'friend' : mode === 'nearby' ? 'nearby game' : 'game';
   return mode === 'online' ? `Game of ${day}` : `${kind[0]?.toUpperCase()}${kind.slice(1)} · ${day}`;
+}
+
+// The toast of a Hide change, for each step of the Hide control.
+const HIDE_TEXTS = [
+  'Nothing is hidden for both players.',
+  'The history is hidden for both players.',
+  'The history and the board are hidden for both players.',
+  'The history, the board and the coordinates are hidden for both players.',
+];
+
+function hideText(level: number): string {
+  const text = HIDE_TEXTS[level];
+  if (text === undefined) throw new RangeError(`no hide step ${level}`);
+  return text;
 }
 
 export const seatLockText = (on: boolean): string => eventText({ kind: 'fixed-seats', on });

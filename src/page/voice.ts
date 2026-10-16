@@ -9,13 +9,13 @@ import { type Rail, buildRail, showRailPitch, showRailRange } from '../voice/rai
 import { type HoldFill, type VoiceCells, createVoiceCells } from '../voice/visuals.ts';
 import { withReturn } from '../return-path.ts';
 import { cells } from './board.ts';
-import { coordsPlace, voiceButton, voicePanel, voiceRailEl, voiceRecentre, voiceRoomLink, voiceStateEl } from './dom.ts';
+import { coordsPlace, stageEl, voiceButton, voiceControl, voiceOnlySwitch, voicePanel, voiceRailEl, voiceRecentre, voiceRoomLink, voiceStateEl } from './dom.ts';
 import { showProblem } from './feedback.ts';
 import { renderCoords } from './keypad.ts';
 import { render } from './render.ts';
 import { humanMove } from './sessions.ts';
 import { saveSettings, settings } from './settings.ts';
-import { current, isLive, page } from './state.ts';
+import { canVoice, current, isLive, page, tapsLocked } from './state.ts';
 import { HOLD_MS, type VoiceGate, type VoiceState, holdPlaces, voiceState } from './voice-gate.ts';
 
 const STATE_TEXT: Record<VoiceState, string> = {
@@ -201,9 +201,12 @@ export function syncVoice(): void {
     if (rail !== undefined) showRailPitch(rail, null, null, 0, null);
     aimAt(undefined);
   } else if (!voice.isListening() && !opening) void openVoice(voice);
-  voiceButton.hidden = page.viewing !== undefined || page.session === undefined || page.session.you === null;
+  voiceControl.hidden = !canVoice();
   voiceButton.setAttribute('aria-pressed', String(settings.voice));
-  voicePanel.hidden = !settings.voice || voiceButton.hidden;
+  voicePanel.hidden = !settings.voice || voiceControl.hidden;
+  voiceOnlySwitch.checked = settings.voiceOnly;
+  // Voice only tints the stage, so the player sees why a tap places nothing.
+  stageEl.classList.toggle('voice-only', tapsLocked());
   // With tilt on, a touch screen keeps the space of Recentre tilt (style.css). With tilt off, it keeps none.
   voicePanel.classList.toggle('tilt-on', voice.settings().tilt.on);
   // In a seated online game, the Voice room opens on its playoff for this game.
@@ -236,6 +239,11 @@ export function setupVoice(): void {
     settings.voice = !settings.voice;
     saveSettings();
     // The microphone opens during the tap, so the browser starts its audio.
+    render();
+  });
+  voiceOnlySwitch.addEventListener('change', () => {
+    settings.voiceOnly = voiceOnlySwitch.checked;
+    saveSettings();
     render();
   });
   // A tap: on iOS it also asks for the tilt sensor.

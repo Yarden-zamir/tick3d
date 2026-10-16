@@ -1,5 +1,6 @@
-import { cell, expect, oscillatorMic, status, test } from './fixtures.ts';
+import { cell, expect, openMore, oscillatorMic, status, test } from './fixtures.ts';
 import type { Locator, Page } from '@playwright/test';
+import { toCoords } from '../src/game.ts';
 
 // A control that shows, hides or changes its label with the game state must not move the controls
 // around it. The test records the geometry of each row and compares it across the game states.
@@ -66,6 +67,8 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     // The web font changes the width of each label, so the baseline waits for it.
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
     await expect(page.locator('#undo')).toBeVisible();
+    // Play by voice is a field of the More card. The rows record no top, so the scroll of the press does not count.
+    await openMore(page);
     await page.mouse.move(0, 0);
     const baseline = await geometry(page);
     for (const row of ROWS) expect(baseline[row]?.outside, `${row} children inside the row`).toEqual([]);
@@ -111,6 +114,19 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
   });
 }
 
+// The keypad shows only while the board is hidden. This hides the board (with the history) and types a cell.
+async function hideBoard(page: Page): Promise<void> {
+  await openMore(page);
+  await page.getByRole('button', { name: 'Hide history and board', exact: true }).click();
+  await expect(page.locator('#keypad')).toBeVisible();
+}
+
+async function placeByKeypad(page: Page, index: number): Promise<void> {
+  const { layer, row, column } = toCoords(index);
+  for (const digit of [layer, row, column]) await page.locator(`[data-digit="${digit + 1}"]`).click();
+  await page.locator('#coords-place').click();
+}
+
 // A note or a control that shows late keeps its box while hidden (src/style.css), so the page under it stays.
 // The top on the page (not in the viewport: a click scrolls) and the height of one element, rounded to a pixel.
 async function box(page: Page, selector: string): Promise<{ top: number; height: number }> {
@@ -126,35 +142,44 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     await page.setViewportSize(viewport);
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
     // A limit before the first move applies to this game, so the clocks and their note show.
+    await openMore(page);
     await page.locator('[data-limit="perGame"] [data-limit-on]').check();
     await expect(page.locator('#clock-note')).toBeVisible();
-    const board = await box(page, '#board');
+    // The speaker is part of the keypad, so the board is hidden. Its notice takes the place of the board.
+    await hideBoard(page);
+    const board = await box(page, '#board-hidden');
     // No move yet: the speaker does not show, but it has its box.
     await expect(page.locator('#coords-hear')).toBeHidden();
     expect((await box(page, '#coords-hear')).height).toBeGreaterThan(0);
 
     // The note leaves after the first move of each player.
-    for (const index of X_WINS.slice(0, 2)) await cell(page, index).click();
+    for (const index of X_WINS.slice(0, 2)) await placeByKeypad(page, index);
     await expect(page.locator('#clock-note')).toBeHidden();
     await expect(page.locator('#coords-hear')).toBeVisible();
-    await expect.poll(() => box(page, '#board'), { message: 'the board moved when the note left' }).toEqual(board);
+    await expect.poll(() => box(page, '#board-hidden'), { message: 'the board moved when the note left' }).toEqual(board);
   });
 
-  test(`${name}: the review bar takes the place of the keypad without a change of height`, async ({ open }) => {
+  // The keypad shows only with the board hidden, and a finished game shows the board, so the review bar has the
+  // cell under the board to itself. It opens on a press in My games and may push the page under it down.
+  test(`${name}: the review bar opens under the board without a move of the board`, async ({ open }) => {
     const { page } = await open(friend);
     await page.setViewportSize(viewport);
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
     for (const index of X_WINS) await cell(page, index).click();
     await expect(status(page)).toHaveAttribute('data-state', 'won');
     await page.locator('#end-card-close').click();
-    // The height only: the status in the header changes its text in a review, and it can wrap on a phone.
-    const { height } = await box(page, '.stage-controls');
+    // The board from the top of the stage: the status in the header changes its text in a review, and it can wrap on a phone.
+    const offset = async () => (await box(page, '#board')).top - (await box(page, '#stage')).top;
+    const before = await offset();
 
     await page.locator('#account-button').click();
     await page.locator('#my-games-session li').first().getByRole('button', { name: 'Replay' }).click();
     await expect(page.locator('#review')).toBeVisible();
     await expect(page.locator('#coords')).toBeHidden();
-    await expect.poll(async () => (await box(page, '.stage-controls')).height, { message: 'the review bar changed the height' }).toBe(height);
+    await expect.poll(offset, { message: 'the review bar moved the board' }).toBe(before);
+    const board = await box(page, '#board');
+    const review = await box(page, '#review');
+    expect(review.top, 'the review bar sits under the board').toBeGreaterThanOrEqual(board.top + board.height - 1);
   });
 
   test(`${name}: a review of a timed game keeps the place of the clocks`, async ({ open }) => {
@@ -163,6 +188,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
     // A 5 s move limit ends the game soon after the first move of each player, the shortest timed game.
     const perMove = page.locator('[data-limit="perMove"]');
+    await openMore(page);
     await perMove.locator('[data-limit-on]').check();
     await perMove.locator('[data-limit-value]').fill('5');
     await perMove.locator('[data-limit-value]').press('Tab');
@@ -213,6 +239,21 @@ async function modeLayout(page: Page, selectors: readonly string[] = PANEL_TOP):
   }, selectors);
 }
 
+// On a phone the page keeps the panel in place with a scroll, and a scroll moves by whole pixels while the layout
+// has fractions. A box can then round to the next pixel without a real move, so each value may differ by 1 px.
+// Revisit if a real move of 1 px matters.
+async function expectSameLayout(page: Page, baseline: Record<string, Box>, message: string, selectors?: readonly string[]): Promise<void> {
+  await expect(async () => {
+    const layout = await modeLayout(page, selectors);
+    expect(Object.keys(layout), message).toEqual(Object.keys(baseline));
+    for (const [key, box] of Object.entries(baseline)) {
+      for (const side of ['left', 'top', 'width', 'height'] as const) {
+        expect(Math.abs((layout[key]?.[side] ?? Number.NaN) - box[side]), `${message}: ${key} ${side}`).toBeLessThanOrEqual(1);
+      }
+    }
+  }).toPass({ timeout: 15_000 });
+}
+
 const MODE_STEPS = [
   { mode: 'Friend', ready: (page: Page) => expect(page.locator('#undo')).toBeVisible() },
   // Online creates a game, which opens the chat.
@@ -233,7 +274,8 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     const baseline = await modeLayout(page);
     // Only a wide screen (72rem and wider) has the chat column. A closed chat is invisible there but keeps
     // its box, and boundingBox() returns null for an invisible element, so the test reads the box directly.
-    const chatBox = () => page.locator('#chat').evaluate((element) => { const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height }; });
+    // The height is not part of the column: the chat has no log box until the first message (src/page/chat.ts).
+    const chatBox = () => page.locator('#chat').evaluate((element) => { const { x, y, width } = element.getBoundingClientRect(); return { x, y, width }; });
     const chatColumn = name === 'desktop' ? await chatBox() : null;
     if (name === 'desktop') expect(chatColumn, 'the closed chat column').not.toBeNull();
 
@@ -241,7 +283,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
       await picker.getByRole('button', { name: mode, exact: true }).click();
       await ready(page);
       await page.mouse.move(0, 0);
-      await expect.poll(() => modeLayout(page), { message: `the board or the panel moved: ${mode}` }).toEqual(baseline);
+      await expectSameLayout(page, baseline, `the board or the panel moved: ${mode}`);
       // A wide screen keeps the chat column in every mode, closed or open.
       if (chatColumn !== null) expect(await chatBox(), `the chat column: ${mode}`).toEqual(chatColumn);
     }
@@ -251,7 +293,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     await page.locator('#nearby-host').click();
     await expect(page.locator('#chat')).not.toHaveClass(/closed/);
     await page.mouse.move(0, 0);
-    await expect.poll(() => modeLayout(page), { message: 'the board or the panel moved: Nearby host' }).toEqual(baseline);
+    await expectSameLayout(page, baseline, 'the board or the panel moved: Nearby host');
   });
 }
 
@@ -268,6 +310,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
     await expect(page.locator('#undo')).toBeVisible();
     // A time limit shows the clocks above the board.
+    await openMore(page);
     await page.locator('[data-limit="perGame"] [data-limit-on]').check();
     await expect(page.locator('#clocks')).toBeVisible();
     let answer = () => {};
@@ -293,6 +336,6 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     await expect(page.locator('#online-code')).not.toHaveText('····');
     await expect(page.locator('[data-pending]')).toHaveCount(0);
     await page.mouse.move(0, 0);
-    await expect.poll(() => modeLayout(page, PENDING), { message: 'a control moved when the server answered' }).toEqual(before);
+    await expectSameLayout(page, before, 'a control moved when the server answered', PENDING);
   });
 }

@@ -62,17 +62,13 @@ export function renderChat(): void {
 
   const session = page.session;
   const messages = visibleChat(session);
+  // The log shows from the first chat message on. Before it, the chat is the title and the message field only;
+  // the game events of that time (a new game, a seat change) show in the log once it shows.
+  chatLog.hidden = !messages.some((entry) => !isChatEvent(entry));
   // A block changes the shown names, so the key holds the shown sender of every message.
   const shown = `${session.code}:${messages.map((entry) => `${entry.id}:${isChatEvent(entry) ? 'event' : senderOf(session, entry).label}`).join(',')}`;
   if (shown === chatShown) return;
   chatShown = shown;
-  if (messages.length === 0) {
-    const empty = document.createElement('li');
-    empty.className = 'chat-empty';
-    empty.textContent = canWrite ? 'No messages yet. Say hi.' : 'No messages yet.';
-    chatLog.replaceChildren(empty);
-    return;
-  }
   chatLog.replaceChildren(...chatGroups(messages, (message) => senderOf(session, message)));
   chatLog.scrollTop = chatLog.scrollHeight;
 }

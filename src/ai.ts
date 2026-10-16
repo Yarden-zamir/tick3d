@@ -39,6 +39,16 @@ function findWin(board: Board, player: Player): number | undefined {
   return emptyCells(board).find((cell) => winningLine(board.with(cell, player), cell, player));
 }
 
+// True when a line holds three marks of the opponent and one of `player`: a threat that `player` blocked.
+// The board does not show the order of the marks. So a line that `player` held before the opponent's third mark
+// also counts, and easy then loses its sure first block. Pass the moves of the game to chooseMove if that matters.
+function hasBlocked(board: Board, player: Player): boolean {
+  return LINES.some((line) => {
+    const { mine, theirs } = countLine(board, line, player);
+    return mine === 1 && theirs === 3;
+  });
+}
+
 // Cells that give `player` two winning cells at once. The opponent can block only one of them.
 function forkCells(board: Board, player: Player): number[] {
   return emptyCells(board).filter((cell) => {
@@ -251,7 +261,9 @@ function styledMove(board: Board, player: Player, level: StyledLevel, tuning: Tu
   const feel = feelAt(style, board.length - emptyCells(board).length);
   const opponent = other(player);
   const block = findWin(board, opponent);
-  if (block !== undefined && random() < feel.block) return block;
+  // Easy always blocks the first threat of a game, so no player wins against it without one block.
+  const firstThreat = level === 'easy' && !hasBlocked(board, player);
+  if (block !== undefined && (firstThreat || random() < feel.block)) return block;
   // A missed block means the level did not see the threat, so the choice below ignores it too.
   const blind = block !== undefined;
   const forks = forkCells(board, player);

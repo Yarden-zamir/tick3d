@@ -9,7 +9,8 @@
 import { element } from './dom.ts';
 
 export function setupPanelAnchor(): void {
-  const panel = element('.panel', HTMLElement);
+  // The whole panel column: the game actions and both cards.
+  const panel = element('.panels', HTMLElement);
   const above = [element('.brand', HTMLElement), element('#stage', HTMLElement), element('#chat', HTMLElement)];
   // True when the last press or focus was in the panel: the player looks at the settings, not at the board.
   let inPanel = false;

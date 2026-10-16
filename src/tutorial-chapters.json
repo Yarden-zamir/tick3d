@@ -1,0 +1,96 @@
+{
+  "video": "tick3d-tutorial-basics-ab1c437-web.mp4",
+  "poster": "tick3d-tutorial-basics-ab1c437-poster.jpg",
+  "chapters": [
+    {
+      "start": 0,
+      "frame": 0.882,
+      "headline": "How to play",
+      "text": "Get four of your marks in a straight line to win."
+    },
+    {
+      "start": 1.765,
+      "frame": 4.853,
+      "headline": "Take turns",
+      "text": "X goes first, then O. The frame around the board shows whose turn it is."
+    },
+    {
+      "start": 5.294,
+      "frame": 6.397,
+      "headline": "Place a mark",
+      "text": "Tap an empty cell to put your mark there."
+    },
+    {
+      "start": 7.941,
+      "frame": 9.044,
+      "headline": "Take it back",
+      "text": "Tap your last mark again to take it back. A game against the computer has no undo."
+    },
+    {
+      "start": 10.588,
+      "frame": 11.691,
+      "headline": "Turn the tower",
+      "text": "Drag around the tower to turn it. View, under More, shows a flat board."
+    },
+    {
+      "start": 13.235,
+      "frame": 16.544,
+      "headline": "Rows",
+      "text": "Four across a layer wins: 16 rows."
+    },
+    {
+      "start": 17.647,
+      "frame": 19.632,
+      "headline": "Columns",
+      "text": "Four front to back in a layer: 16 more."
+    },
+    {
+      "start": 20.294,
+      "frame": 22.279,
+      "headline": "Pillars",
+      "text": "Four straight up through the layers: the 3D twist."
+    },
+    {
+      "start": 22.941,
+      "frame": 24.926,
+      "headline": "Flat diagonals",
+      "text": "Corner to corner inside one layer: 8 lines."
+    },
+    {
+      "start": 25.588,
+      "frame": 27.574,
+      "headline": "Rising diagonals",
+      "text": "Diagonals that climb through the layers: 16 lines."
+    },
+    {
+      "start": 30.882,
+      "frame": 32.868,
+      "headline": "Corner to corner",
+      "text": "Through the middle of the cube: 4 lines."
+    },
+    {
+      "start": 36.176,
+      "frame": 37.5,
+      "headline": "76 ways to win",
+      "text": "Every kind of line together."
+    },
+    {
+      "start": 38.824,
+      "frame": 40.588,
+      "headline": "Block it",
+      "text": "Three of theirs in a line? Put your mark on the fourth cell."
+    },
+    {
+      "start": 41.471,
+      "frame": 43.676,
+      "headline": "A draw",
+      "text": "A full cube with no line of four is a draw."
+    },
+    {
+      "start": 45,
+      "frame": 46.875,
+      "headline": "More to find",
+      "text": "Hover or long-press an icon to see what it does. The speaker arrow opens sound sets. More holds the view and play by voice."
+    }
+  ]
+}

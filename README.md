@@ -18,22 +18,28 @@
 ## Features
 
 - Play against the computer, a friend on the same device, a friend online, or a device on the same Wi-Fi (Nearby).
-- Three computer levels: easy, medium and hard. "Advanced: computer player" in the panel tunes each level. A game is tuned when the computer made at least one move with changed settings, also if the settings changed back later. The end card, My games, the records and the stats show it.
+- Three computer levels: easy (the default), medium and hard. Easy always blocks the first winning threat of a game, and later blocks only by chance. "Advanced: computer player" in the More card tunes each level. A game is tuned when the computer made at least one move with changed settings, also if the settings changed back later. The end card, My games, the records and the stats show it.
 - Two views: a 3D tower that you turn with a drag, and a flat view with four layouts.
-- Play by coordinates on the keypad, with the board or the marks hidden.
+- Play by coordinates on the keypad. The keypad shows only while the board is hidden.
+- Hide goes in steps: the history, then the board too, then the coordinates too.
+- After the first two wins in a row against easy, the page moves the player up to medium once, with a short animation (`src/page/level-up.ts`).
+- The edge of the screen takes the color of the player to move, and pulses slowly on your turn.
+- A muted speaker button turns red.
 - Time limits per game, per move, or both. A player who runs out loses.
 - Lock: no setting changes until the game ends.
 - Seat lock: keeps X and O between games. It sits next to "You play" (computer) and in the Players box (online, Nearby). Either player can change it.
 - Sound sets where each cell has its own sound, and an ear trainer at `/sound-training`.
 - One sound rule on every page: a press on a button, switch or menu item clicks at once. A control with its own sound (a move, a refusal, a sample, a song) plays only that sound. Disabled controls stay quiet, and the mute holds.
-- Play by voice: tap the mic, then hold a note on a free cell for 1 second to place your move. On a phone, turn on Tilt in the Voice room settings (off by default): a small tilt nudges the cell up to 3 cells.
+- Play by voice (in the More card): tap the mic, then hold a note on a free cell for 1 second to place your move. On a phone, turn on Tilt in the Voice room settings (off by default): a small tilt nudges the cell up to 3 cells.
+- Voice only: the arrow next to the mic opens the voice options. With Voice only on, a tap on the board or the keypad places nothing while the voice is on, and the board area takes a tint.
 - The Voice room at `/sound-input`: calibrate the mic to your voice, then practice with Free play, Targets, Echo, or a Playoff against the other player of an online game. The page finds the pitch on the device and sends no sound.
 - Your game as a song: the Song button on the end card and on a game link. A long press shares the song as a WAV file, with your voice on the moves that your voice placed.
 - An end card with the result, to share or save as an image.
 - Survival records: the longest game against each computer level and setup.
 - Achievements: 16 goals such as a first win, a win in 7 moves or 5 wins in a row (`src/achievements.ts`). Past games count too, and a friend game with a winner counts as a win. My games and the stats page list them with their rarity ("12% of players"), and the end card and the shared image show a new one. "Clear history" keeps them, and "Reset achievements" in My games starts them over.
 - Twelve themes.
-- The same header on every page, with My games, Info, kitshn and GitHub (`src/header/`).
+- The same header on every page, with My games and Info, and the same footer, with kitshn and GitHub (`src/header/`).
+- Info on the game page shows the tutorial video "How to play" (Basics). The slider under it jumps between the checkpoints of the video, and the headline of each checkpoint shows over the slider while you drag. The checkpoints come from the video plan (`src/tutorial-chapters.json`, written by `video/scripts/tutorial.ts`). The page loads a small web copy of the video from `public/tutorial/` on the first open of Info.
 - The kitshn button lists the production site and the open pull request previews. A stacked pull request shows inside its parent.
 - The browser keeps the settings in `localStorage`, and the page checks each stored value.
 
@@ -55,6 +61,7 @@
 - Either player controls the seats. A change to the other player's seat, and an undo, waits until that player accepts.
 - After each new game, the seats swap unless a player locked them. The score and My games count each game for the player who played it.
 - Chat, the hide options, the lock and the time limit belong to the session, so both players share them.
+- Before the first chat message, the chat shows only its title and the message field. The message log shows from the first message on, with the game events of the session.
 - The server decides a timeout, so a page that closes cannot avoid a loss on time.
 - A session with moves never expires. A player can leave and come back, so a game can run asynchronously.
 
@@ -72,7 +79,7 @@
 ## Play with an AI agent
 
 - An AI agent plays through the HTTP API, with no account and no key.
-- In computer mode, open "Advanced: computer player" and copy the text under "Play with your AI agent". Give it to your agent.
+- In computer mode, open More, then "Advanced: computer player", and copy the text under "Play with your AI agent". Give it to your agent.
 - The text points the agent to `/api/openapi.json`. The agent can play you or another agent.
 
 ## Offline play
@@ -94,6 +101,10 @@
 
 ## Controls per mode
 
+The panel column starts with the game actions: the score, New game, then Undo or the result card and the sound, in two taller slots. Under them are two cards. The settings card holds Opponent, Difficulty, the Online and Nearby boxes, and Players. The second card, More, starts closed on every load and opens on a press. It holds View and Layout, You play, Time limit, Hide and Lock, Theme, Play by voice, the ear trainer and Voice room links, and "Advanced: computer player".
+
+In one column (52rem and narrower) the panel column sits under the board. While the settings card is out of view, a gear at the bottom right of the screen scrolls to it (`src/page/settings-hint.ts`).
+
 The panel shows a control only in the modes where it applies (`data-show-mode` and `data-needs-session` in `index.html`). A finished game from a link shows only the controls for looking at it.
 
 | Control | Computer | Friend | Online | Nearby | Game from a link |
@@ -106,7 +117,7 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Join a friend (code and New code) | no | no | yes | no | no |
 | Players (seats, watchers and seat controls) | no | no | yes (grey until a game starts) | yes (grey until a game starts) | no |
 | Time limit | yes | yes | yes | yes | no |
-| Hide board, history and coordinates | yes | yes | yes (off until a game starts) | yes (off until a game starts) | no |
+| Hide (history, then board, then coordinates) | yes | yes | yes (off until a game starts) | yes (off until a game starts) | no |
 | Lock (rules of the live game, for both players) | no | no | yes (off until a game starts) | yes (off until a game starts) | no |
 | Score, New game, the session games in My games | yes | yes | yes (grey until a game starts) | yes (grey until a game starts) | yes (no session games) |
 | Undo (during a game) | no (shows disabled) | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
@@ -123,7 +134,7 @@ The actions row has fixed slots (`.slot-row` in `src/style.css`), so a control t
 
 A mode change moves neither the board nor the Opponent picker:
 
-- Everything above the picker keeps its box in every mode. Before a game, the score and New game show grey and disabled in their place. The Players box sits under the mode boxes.
+- Everything above the picker keeps its box in every mode, also the game actions above the settings card. Before a game, the score and New game show grey and disabled in their place. The Players box sits under the mode boxes.
 - A wide screen (72rem and wider) keeps the chat column in every mode. Outside a game with another device, that column stays empty.
 - On a phone the chat opens above the panel. If the player works in the panel, the page scrolls by the height of the chat, so the panel stays still (`src/page/panel-anchor.ts`).
 
@@ -150,7 +161,7 @@ A mode change moves neither the board nor the Opponent picker:
 - `sound-input.html`, `src/sound-input/`: the Voice room. `src/practice/`: the practice and playoff rules, shared with `server/practice.ts`.
 - `src/main.ts`, `src/page/`, `index.html`, `src/style.css`: the game page, one module per feature in `src/page/`.
 - `src/page/safety.ts`, `src/page/person-mark.ts`: the report and block menu of the game. `src/safety-dialog.ts` and `src/blocks.ts`: the menu and the block list, shared with the stats page.
-- `src/header/`: the header of every page. `src/markup.test.ts` checks that every page has the same header.
+- `src/header/`: the header and the footer of every page. `src/markup.test.ts` checks that every page has the same header and footer.
 - `stats.html`, `src/stats/`: the stats page. `sound-training.html`, `src/sound-training/`: the ear trainer.
 - `src/pwa.ts`, `vite.config.ts`: the service worker and the manifest.
 - `server/main.ts`: the HTTP API. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login.
@@ -216,7 +227,7 @@ docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr-17.
 
 ## Video
 
-`video/` holds a 15 s ad and a "How to win" tutorial, made in code: three.js draws every frame, Remotion renders it, and the sound comes from the game's own sound code. The creative (brief, script, timeline, music notes and the tutorial plan) is in [video/creative/](video/creative/).
+`video/` holds a 15 s ad and two tutorials, "How to play" (Basics) and "Strong cells", made in code: three.js draws every frame, Remotion renders it, and the sound comes from the game's own sound code. The creative (brief, script, timeline, music notes and the tutorial plan) is in [video/creative/](video/creative/).
 
 **The ad** (15 s): [landscape MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-landscape.mp4) · [portrait MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-portrait.mp4) · [stills](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-stills.png)
 
@@ -229,7 +240,7 @@ docker run --rm -v "$PWD":/app -w /app/video node:26 sh -c 'npm ci && npm run ch
 ```
 
 - `npm run video` writes `video/out/tick3d-15s-landscape.mp4` (1920×1080), `video/out/tick3d-15s-portrait.mp4` (1080×1920), one still per bar in `video/out/stills/` and the soundtrack in `video/out/soundtrack.wav`.
-- `npm run tutorial` renders the tutorial that shows which lines win and why, in both crops, into `video/out/tutorial/` (40 s). `TUTORIAL_PACE=short npm run tutorial` renders the 27.5 s cut into `video/out/tutorial-short/`. The plan is in [video/creative/tutorial.md](video/creative/tutorial.md).
+- `npm run tutorial` renders the Basics tutorial "How to play" (48 s) in both crops into `video/out/tutorial-basics/`, with one still per checkpoint, the web copy and poster for the Info panel, and `src/tutorial-chapters.json`. `TUTORIAL=strong npm run tutorial` renders "Strong cells" (17 s) into `video/out/tutorial-strong/`; the app does not use it yet. `TUTORIAL_PACE=short` renders the short cut of either. The plan is in [video/creative/tutorial.md](video/creative/tutorial.md).
 - The render needs the system libraries of Chrome Headless Shell, so use `node:26`, not the Alpine image.
 - `VIDEO_VARIANT=<name> npm run video` renders a variant of the spot into `video/out/variants/<name>/`. A variant is a small overlay on `beats.json` in `video/creative/variants/<name>.json` that changes the themes, the sound sets and the camera of bars, and the on-screen text, never the game or the events. The takes: `spot` (the default cut: a Mono cold open, "Tic-tac-toe? / Too easy.", then the feature list) and `classic` (the first approved cut, with "Every cell / has a note.").
 - `video/scripts/publish.sh` renders every take and both tutorial paces on the Mac, and publishes the previews to the `pr-assets` branch in `issue-119/renders/<sha7>/<take>/`: a GIF, a stills sheet per crop and both MP4s, named `tick3d-<take>-<sha7>-landscape.mp4` and so on. Each commit gets its own folder, so a comment that links a render keeps showing it, and each file has its own name, so downloads never overwrite each other. It needs ImageMagick and ffmpeg, and a committed, pushed HEAD.

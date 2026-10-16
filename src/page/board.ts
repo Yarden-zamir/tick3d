@@ -4,8 +4,10 @@ import { applyCamera as applyBoardCamera, buildBoard } from '../board/board.ts';
 import { setupSpinDrag } from '../board/spin-drag.ts';
 import { toCoords } from '../game.ts';
 import { boardEl, stageEl } from './dom.ts';
+import { refuseTap } from './feedback.ts';
 import { humanMove } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
+import { tapsLocked } from './state.ts';
 
 const board = buildBoard(boardEl);
 export const cells = board.cells;
@@ -41,7 +43,7 @@ export function applyCamera(): void {
 
 export function setupBoard(): void {
   cells.forEach((button, cell) => {
-    button.addEventListener('click', () => humanMove(cell, 'board'));
+    button.addEventListener('click', () => (tapsLocked() ? refuseTap() : humanMove(cell, 'board')));
     button.addEventListener('pointerenter', () => highlightColumn(cell));
     button.addEventListener('focus', () => highlightColumn(cell));
     button.addEventListener('pointerleave', () => highlightColumn(undefined));

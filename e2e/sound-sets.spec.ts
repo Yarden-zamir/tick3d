@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { DEFAULTS } from '../src/page/settings.ts';
-import { cell, expect, test } from './fixtures.ts';
+import { cell, expect, openMore, test } from './fixtures.ts';
 
 // Runs in the page before the app: every oscillator frequency that the page sets goes into a log.
 function recordOscillators(): void {
@@ -39,7 +39,9 @@ test('the sound set menu picks a set, keeps it after a reload, and the moves use
   await context.addInitScript(recordOscillators);
   await page.reload();
 
+  // Cell 0 is taken, and it is not the last move: a press on the last move would undo it.
   await cell(page, 0).click();
+  await cell(page, 1).click();
   const byDefault = await soundOfTakenCell(page);
 
   await page.getByRole('button', { name: 'Sound set', exact: true }).click();
@@ -72,6 +74,9 @@ test('the keypad plays the typed cell only on Place with Classic', async ({ open
   const { page, context } = await open({ settings: { mode: 'friend', soundSet: 'classic' } });
   await context.addInitScript(recordOscillators);
   await page.reload();
+  // The keypad shows only while the board is hidden.
+  await openMore(page);
+  await page.getByRole('button', { name: 'Hide history and board', exact: true }).click();
   const click = 'sine 1200.00';
   const tap = async (...digits: number[]) => {
     for (const digit of digits) await page.locator(`[data-digit="${digit}"]`).click();

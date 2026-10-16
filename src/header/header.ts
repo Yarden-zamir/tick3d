@@ -1,5 +1,5 @@
-// The header of every page: the wordmark, the account button, Info, kitshn and GitHub.
-// Each page has the same header markup (src/markup.test.ts checks it). The Info button opens the
+// The header of every page: the wordmark, the account button and Info. kitshn and GitHub sit in the
+// footer of every page. Each page has the same header and footer markup (src/markup.test.ts checks it). The Info button opens the
 // #info-panel popover of the page, so each page writes its own Info text, and Info needs no script.
 // The header setup also installs the click sound of every control (src/click-sound.ts).
 import { element } from '../element.ts';

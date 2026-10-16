@@ -185,6 +185,21 @@ export const awaitingSession = () => page.session === undefined && page.viewing 
 // A screen that watches a game with another device: it holds no seat.
 export const isWatching = () => shared() && page.session?.you === null;
 
+// The move is up to this screen, which holds one seat. A friend game holds both seats, so it has no "my turn".
+export const isMyTurn = () =>
+  page.session !== undefined &&
+  page.session.mode !== 'friend' &&
+  page.session.you !== null &&
+  page.viewing === undefined &&
+  !page.thinking &&
+  current().turn === page.session.you;
+
+// Play by voice needs a seat on this screen, so the voice control shows only with one (src/page/voice.ts).
+export const canVoice = () => page.viewing === undefined && page.session !== undefined && page.session.you !== null;
+
+// Voice only: while the voice is on, a tap on the board or the keypad places nothing (src/page/board.ts, keypad.ts).
+export const tapsLocked = () => settings.voice && settings.voiceOnly && canVoice();
+
 // The hide options belong to the session. With another device they apply to both players.
 export function matchOptions(): MatchOptions {
   return page.session?.options ?? { hideBoard: false, hideHistory: false, hideCoordinates: false };
