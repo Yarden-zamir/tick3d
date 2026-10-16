@@ -46,16 +46,18 @@ describe('page markup', () => {
     expect(missingIn(read(GAME), ids)).toEqual([]);
   });
 
-  it('has the same header on every page', () => {
+  it('has the same header and footer on every page', () => {
     const ids = lookedUpIds('./header/');
     expect(ids.length).toBeGreaterThan(5);
     const links = (html: string) => block(html, '<div class="brand-links">', '</div>');
+    const footer = (html: string) => block(html, '<footer class="site-footer">', '</footer>');
     const previews = (html: string) => block(html, '<dialog class="modal end-card my-games" id="previews"', '</dialog>');
     const game = read(GAME);
     for (const page of PAGE_FILES) {
       const html = read(page);
       expect(missingIn(html, [...ids, 'info-panel', 'info-title']), page).toEqual([]);
       expect(links(html), page).toBe(links(game));
+      expect(footer(html), page).toBe(footer(game));
       expect(previews(html), page).toBe(previews(game));
     }
   });

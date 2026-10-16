@@ -1,4 +1,4 @@
-import { cell, expect, expectMyMove, expectToast, hasDeviceGameLink, ownName, status, test } from './fixtures.ts';
+import { cell, expect, expectMyMove, expectToast, hasDeviceGameLink, openMore, ownName, status, test } from './fixtures.ts';
 import type { Page } from '@playwright/test';
 
 const nearby = { settings: { mode: 'nearby' } };
@@ -65,12 +65,14 @@ test('Nearby and the computer mode have no join box, and each mode keeps its own
   const { page } = await open(nearby);
   await expect(page.locator('#nearby-host')).toBeVisible();
   await expect(status(page)).toHaveText('Host a game, or join one.');
+  // More is open, so a hidden control below shows the rule of the mode, not the closed card.
+  await openMore(page);
   for (const id of ['#join', '#advanced']) await expect(page.locator(id), id).toBeHidden();
   // The controls of a game draw grey and disabled in their place before Host or Join.
   for (const id of ['#undo', '#new-game', '#score', '#players']) await expect(page.locator(id), id).toHaveAttribute('data-pending', '');
   for (const id of ['#undo', '#new-game']) await expect(page.locator(id), id).toBeDisabled();
   // The hide options apply to a Nearby game, so they show before it, but stay off until it starts.
-  for (const control of [page.locator('#lock'), page.locator('[data-toggle="hideBoard"]')]) {
+  for (const control of [page.locator('#lock'), page.locator('[data-hide-level="2"]')]) {
     await expect(control).toBeVisible();
     await expect(control).toBeDisabled();
   }

@@ -1,6 +1,6 @@
 import { DEFAULT_TUNING, TUNING_FIELDS, type TuningField } from '../src/tuning.ts';
 import { STORAGE_KEYS } from '../src/storage-keys.ts';
-import { cell, expect, expectToast, test } from './fixtures.ts';
+import { cell, expect, expectToast, openMore, test } from './fixtures.ts';
 
 function tuningField(path: readonly string[]): TuningField {
   const found = TUNING_FIELDS.find((field) => field.path.join('.') === path.join('.'));
@@ -18,6 +18,7 @@ test('advanced computer settings: validate, persist, play, reset, and lock', asy
     page.evaluate((key) => (JSON.parse(localStorage.getItem(key) ?? 'null') as { hard?: { budgetMs?: number } } | null)?.hard?.budgetMs, STORAGE_KEYS.tuning);
   const defaultBudget = String(budget.get(DEFAULT_TUNING));
 
+  await openMore(page);
   await expect(advanced).toBeVisible();
   await expect(advanced).toHaveJSProperty('open', false);
   await advanced.locator('summary').click();
@@ -30,7 +31,9 @@ test('advanced computer settings: validate, persist, play, reset, and lock', asy
   await expectToast(page, `from ${budget.min} to ${budget.max}`);
   await expect(thinkingTime).toHaveValue(String(budget.max));
 
+  // A reload closes More again.
   await page.reload();
+  await openMore(page);
   await advanced.locator('summary').click();
   await expect(thinkingTime).toHaveValue(String(budget.max));
   // A default with many decimals must keep its exact value through the form.

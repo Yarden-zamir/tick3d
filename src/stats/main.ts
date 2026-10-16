@@ -4,13 +4,17 @@
 import '../style.css';
 import { PRESETS, type PracticeMode, type PresetId } from '../practice/practice.ts';
 import './stats.css';
+import { achievementItems } from '../achievement-list.ts';
+import type { Achievements } from '../achievements.ts';
 import { DIFFICULTIES } from '../ai.ts';
 import { describeClock } from '../clock.ts';
 import { element } from '../element.ts';
 import { CELL_COUNT, SIZE } from '../game.ts';
 import { accountLink, setupPageHeader } from '../header/header.ts';
 import { myGamesHref } from '../header/my-games-link.ts';
-import { avatarImage } from '../avatar.ts';
+import { leaderboardCard } from './leaderboard.ts';
+import { playerCard } from './player-card.ts';
+import { loadBlocks } from '../blocks.ts';
 import { OnlineError, api } from '../online.ts';
 import { releaseLabel } from '../release.ts';
 import {
@@ -34,7 +38,7 @@ const SVG = 'http://www.w3.org/2000/svg';
 const grid = element('#stats-grid', HTMLDivElement);
 const note = element('#stats-note', HTMLParagraphElement);
 const filters = element('#stats-filters', HTMLElement);
-const personHead = element('#stats-person', HTMLParagraphElement);
+const personHead = element('#stats-person', HTMLElement);
 setupPageHeader();
 
 // ---- Small builders ----
@@ -368,6 +372,15 @@ function personalCards(personal: NonNullable<Stats['personal']>, own: boolean): 
   );
 }
 
+// The achievements of Mine or of the person, with their rarity. "Hide my stats" hides them with the rest.
+function achievementsCard({ achievements, rarity }: Achievements, own: boolean): void {
+  const unlocked = achievements.filter((entry) => entry.unlockedAt !== null).length;
+  const box = card(own ? 'Your achievements' : 'Achievements', true, `${unlocked} of ${achievements.length} unlocked. The share shows how many players unlocked each one.`);
+  const list = el('ul', 'achievements');
+  list.append(...achievementItems(achievements, rarity, () => false));
+  box.append(list);
+}
+
 // The games per number of moves, from the shortest to the longest game.
 function lengthColumns(lengths: number[]): { label: string; value: number }[] {
   const first = lengths.findIndex((count) => count > 0);
@@ -404,6 +417,14 @@ function hideName(setting: string, coordinates: boolean): string {
 function draw(stats: Stats): void {
   const mine = stats.personal !== null;
   tiles(stats);
+  // The leaderboard names players, so it shows in the Everyone view only, not in Mine or for one person.
+  if (!mine && stats.person === null) {
+    leaderboardCard(
+      card('Leaderboard', true, 'Every player who does not hide their stats, with the filters above, but not the players that you blocked. Friend games do not count. Tap a column to sort, or a player for their card.'),
+      stats.filter,
+      (person) => navigate({ ...stats.filter, person }),
+    );
+  }
   rateLine(
     card(
       'Win rate over time',
@@ -419,6 +440,7 @@ function draw(stats: Stats): void {
     'Win rate',
   );
   if (stats.personal !== null) personalCards(stats.personal, stats.person === null);
+  if (stats.achievements !== null) achievementsCard(stats.achievements, stats.person === null);
 
   const days = stats.perDay.length;
   columns(card('Games per day', true, `The last ${days} days, UTC.`), stats.perDay.map((day) => ({ label: day.day.slice(5), value: day.games })), 'var(--o)', 'games', 'Games per day');
@@ -462,7 +484,7 @@ function draw(stats: Stats): void {
 
   // The practice modes of the Voice room (/sound-input). A practice run has no game mode, level or seat,
   // so these numbers show for Everyone without a mode or level filter, over all time. The Voice room shows its
-  // own leaderboards; this public page shows no names of people.
+  // own leaderboards, so this card shows counts only.
   if (stats.filter.scope === 'everyone' && stats.filter.mode === null && stats.filter.level === null) {
     const practiceName = (mode: PracticeMode, preset: PresetId) => `${mode === 'echo' ? 'Echo' : 'Targets'}, ${PRESETS[preset].name}`;
     const practice = card('Voice room practice', false, 'Practice runs per mode and level, all time. Average: the mean time of one target or echo round.');
@@ -618,11 +640,13 @@ function readFilter(): { filter: StatsFilter; problem: string } {
   return { filter: ALL_STATS, problem: 'The address had an unknown filter, so the page shows all games. ' };
 }
 
-// The picture and the name of the person of a person filter. A blocked person shows as they are: the page has no block list.
-function showPerson(person: Stats['person']): void {
+// The player card of a person filter. A blocked person shows as they are, with a note: the visitor opened them on purpose.
+function showPerson(stats: Stats | null): void {
+  const person = stats?.person ?? null;
+  const id = stats?.filter.person ?? null;
   personHead.hidden = person === null;
-  if (person === null) return personHead.replaceChildren();
-  personHead.replaceChildren(avatarImage(person, 48), `Stats of ${person.name}`);
+  if (person === null || id === null) return personHead.replaceChildren();
+  playerCard(personHead, id, person, stats?.achievements ?? null);
 }
 
 // A newer view replaces a view that still loads.
@@ -643,7 +667,7 @@ async function show(filter: StatsFilter, problem = ''): Promise<void> {
     const stats = parseStats(await api.stats(filter));
     if (id !== request) return;
     grid.replaceChildren();
-    showPerson(stats.person);
+    showPerson(stats);
     draw(stats);
     const scope =
       stats.person !== null
@@ -651,7 +675,9 @@ async function show(filter: StatsFilter, problem = ''): Promise<void> {
         : stats.personal === null
           ? 'all players'
           : 'your games on every device that you logged in with, or on this browser';
-    note.textContent = `${problem}Updated ${new Date(stats.generatedAt).toLocaleString()}. These numbers show ${scope}.`;
+    // With many games, the charts of moves, times, settings and devices read the newest games only (server/stats.ts).
+    const sampled = stats.sample === null ? '' : ` The charts of moves, times, settings and devices show the newest ${stats.sample.toLocaleString()} games.`;
+    note.textContent = `${problem}Updated ${new Date(stats.generatedAt).toLocaleString()}. These numbers show ${scope}.${sampled}`;
   } catch (error) {
     if (id !== request) return;
     grid.replaceChildren();
@@ -670,3 +696,5 @@ addEventListener('popstate', () => {
 });
 const { filter, problem } = readFilter();
 void show(filter, problem);
+// The leaderboard leaves out the players that you blocked.
+void loadBlocks();

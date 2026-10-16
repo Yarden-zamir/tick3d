@@ -2,7 +2,7 @@
 import { epochNow } from '../epoch.ts';
 import type { Game } from '../game.ts';
 import { type RecordNews, type Records, parseRecords, addLoss, mergeRecords } from '../records.ts';
-import { isTunedFor } from '../tuning.ts';
+import type { Tuning } from '../tuning.ts';
 import { token, api, OnlineError } from '../online.ts';
 import {
   type Code,
@@ -16,7 +16,6 @@ import {
   onlineGameId,
   toRecord,
 } from '../protocol.ts';
-import { computerTuning } from './advanced.ts';
 import { showToast } from './feedback.ts';
 import { gameMetrics } from './metrics.ts';
 import { nearbyKind, nearbyMetrics } from './nearby.ts';
@@ -29,6 +28,14 @@ let flushing = false;
 // One id per device, session and game, so a result that is sent twice is stored once.
 const resultIdOf = (code: Code, index: number) => `${token}-${code.toLowerCase()}-${index}`;
 
+// The changed settings of the last tuned computer move in game `index`, or null: then the computer played every
+// move of it with the default settings, or the game is not against the computer.
+export function gameTuning(open: Session, index: number): Promise<Tuning | null> {
+  if (open.mode !== 'computer') return Promise.resolve(null);
+  if (page.local === undefined) throw new Error('a computer game without the device backend');
+  return page.local.tuningOf(open.code, index);
+}
+
 // Keeps a finished computer, friend or Nearby game for upload, and returns the id of its link.
 // Online games are on the server already, and a Nearby watcher played no part: both get undefined.
 export async function recordResult(open: Session, game: Game, index: number): Promise<DeviceGameId | undefined> {
@@ -36,9 +43,9 @@ export async function recordResult(open: Session, game: Game, index: number): Pr
   const you = open.mode === 'friend' ? null : open.you;
   if (open.mode !== 'friend' && you === null) return undefined;
   const id = resultIdOf(open.code, index);
-  const tuned = open.mode === 'computer' && isTunedFor(computerTuning(), settings.difficulty);
   // Read the counts before the first wait: the player can start the next game meanwhile.
-  const metrics = gameMetrics(open.code, index, tuned);
+  const metrics = gameMetrics(open.code, index);
+  const tuning = await gameTuning(open, index);
   const hosting = open.mode === 'nearby' && nearbyKind() === 'hosting';
   const existing = await page.deviceDb.get('results', id);
   // A device version before game links stored results without an id. The server gives those one.
@@ -52,8 +59,8 @@ export async function recordResult(open: Session, game: Game, index: number): Pr
     finishedAt: game.times.at(-1) ?? epochNow(),
     publicId: newGameId(),
     options: open.options,
-    tuned,
-    metrics: { ...metrics, nearby: open.mode === 'nearby' ? await nearbyMetrics() : null },
+    tuned: tuning !== null,
+    metrics: { ...metrics, tuning, nearby: open.mode === 'nearby' ? await nearbyMetrics() : null },
     guest: hosting && you !== null ? await guestOf(open.code) : null,
   };
   await page.deviceDb.put('results', { id, upload, sent: false });
@@ -87,7 +94,7 @@ export const hostLinkOf = (code: Code, index: number) => hostLinks.get(`${code}:
 // online games have no upload queue. Revisit this if the stats page shows few online reports.
 export function sendOnlineMetrics(open: Session, index: number): void {
   if (open.mode !== 'online' || open.you === null) return;
-  const metrics = gameMetrics(open.code, index, false);
+  const metrics = gameMetrics(open.code, index);
   void api.gameMetrics(onlineGameId(open.code, index), metrics).catch((error: unknown) => {
     if (!(error instanceof OnlineError)) throw error;
   });
@@ -173,9 +180,12 @@ export async function syncRecords(): Promise<void> {
 }
 
 // A game that the computer won: the moves it lasted can beat the record of its setup.
-// The hide options count as they are at the end of the game.
-export function noteSurvival(open: Session, game: Game, index: number): void {
-  const { records, news } = addLoss(loadRecords(), { difficulty: settings.difficulty, clock: game.clock, ...open.options, tuned: isTunedFor(computerTuning(), settings.difficulty) }, game.moves.length);
+// The hide options count as they are at the end of the game, a tuned computer as it played (gameTuning).
+export async function noteSurvival(open: Session, game: Game, index: number): Promise<void> {
+  // Read the settings before the wait: the player can change them meanwhile.
+  const { difficulty } = settings;
+  const tuned = (await gameTuning(open, index)) !== null;
+  const { records, news } = addLoss(loadRecords(), { difficulty, clock: game.clock, ...open.options, tuned }, game.moves.length);
   saveRecords(records);
   if (news === undefined) return;
   recordNews.set(`${open.code}:${index}`, news);

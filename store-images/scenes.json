@@ -1,0 +1,7 @@
+[
+  { "name": "1-tower", "caption": "Tic-tac-toe in [3D]" },
+  { "name": "2-win", "caption": "Win right [through] the cube" },
+  { "name": "3-online", "caption": "Play friends [online], with chat" },
+  { "name": "4-blind", "caption": "Play [blind] by coordinates" },
+  { "name": "5-sounds", "caption": "Every cell has its own [sound]" }
+]

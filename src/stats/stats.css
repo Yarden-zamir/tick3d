@@ -37,6 +37,11 @@
   grid-column: 1 / -1;
 }
 
+/* The achievements list of My games (src/achievement-list.ts), in columns on a wide screen. */
+.stats-card .achievements {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+}
+
 .stats-card h2,
 .stats-card h3 {
   margin: 0;
@@ -242,18 +247,66 @@
 
 /* The filters: one labelled row of toggle buttons per filter. */
 /* The person of a person filter: picture and name. */
+/* The player card of a person view (src/stats/player-card.ts). */
 .stats-person {
+  display: grid;
+  gap: 0.6rem;
+  min-width: 0;
+  margin: 0 0 1rem;
+  padding: 0.9rem 1rem;
+  border: var(--border) solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+.stats-person[hidden] {
+  display: none;
+}
+
+.player-card-head {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  margin: 0 0 1rem;
-  font-size: 1.3rem;
-  font-weight: 800;
 }
 
-.stats-person .avatar {
+.player-card-head .avatar {
   width: 3rem;
   height: 3rem;
+}
+
+.player-card-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.3rem;
+  overflow-wrap: anywhere;
+}
+
+/* The unlocked achievements scroll sideways in one row, from border to border of the card. */
+.player-card-achievements {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0 -1rem;
+  padding: 0.2rem 1rem 0.5rem;
+  overflow-x: auto;
+  list-style: none;
+  scroll-padding-inline: 1rem;
+  scroll-snap-type: x proximity;
+}
+
+.player-card-achievements li {
+  scroll-snap-align: start;
+}
+
+.player-card-none,
+.player-card-status {
+  margin: 0;
+  color: var(--muted);
+}
+
+.player-card-status:empty {
+  display: none;
 }
 
 .stats-filters {
@@ -310,4 +363,90 @@
 .stats-grid[aria-busy='true'] > .stats-card:not(.stats-placeholder) {
   opacity: 0.55;
   transition: opacity 0.2s;
+}
+
+/* The leaderboard (src/stats/leaderboard.ts). The player column stays in view while the numbers scroll on a phone. */
+.leaderboard {
+  /* A track that can shrink to nothing: the table scrolls inside the card, and the card keeps the page width. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+}
+
+.leaderboard .stats-table {
+  width: 100%;
+}
+
+.leaderboard th,
+.leaderboard td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.leaderboard .leaderboard-player {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+.leaderboard-rank {
+  min-width: 1.6em;
+  color: var(--muted);
+  font-weight: 400;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.leaderboard tbody tr:not(.leaderboard-gap) {
+  cursor: pointer;
+}
+
+.leaderboard-name:hover span,
+.leaderboard tbody tr:hover .leaderboard-name span {
+  text-decoration: underline;
+}
+
+.leaderboard-name .avatar {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+}
+
+.leaderboard-sort {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.leaderboard th[aria-sort] .leaderboard-sort,
+.leaderboard-sorted {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.leaderboard-you td,
+.leaderboard-you .leaderboard-player {
+  background: color-mix(in srgb, var(--primary) 30%, var(--surface));
+}
+
+.leaderboard-gap td {
+  color: var(--muted);
+  text-align: center;
+}
+
+.leaderboard-more {
+  margin-top: 0.6rem;
 }

@@ -3,8 +3,10 @@
 // To add a route, add one entry to ROUTES and one case to the switch in server/main.ts.
 // The type checker refuses a case without an entry, and a switch without a case for an entry.
 // server/api-docs.test.ts runs every example through the real parsers in src/protocol.ts.
+import { ACHIEVEMENT_IDS, achievementProgress, rarityOf } from '../src/achievements.ts';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { LIMIT_RANGE } from '../src/clock.ts';
+import { toEpochMs } from '../src/epoch.ts';
 import { CELL_COUNT } from '../src/game.ts';
 import { DEVICE_KINDS } from '../src/nearby/device.ts';
 import { HELLO_NAME_MAX_LENGTH, MAX_CODE_LENGTH } from '../src/nearby/signal.ts';
@@ -23,9 +25,14 @@ import {
   NAME_MAX_LENGTH,
   PERSON_ID_LENGTH,
   PREVIEW_DESCRIPTION_LENGTH,
+  PREVIEW_IMAGE_ALT_LENGTH,
+  PREVIEW_IMAGE_SOURCES,
+  PREVIEW_IMAGES,
+  PREVIEW_TOY_LABEL,
   REPORT_NOTE_MAX_LENGTH,
   REPORT_REASONS,
   HISTORY_PAGE_SIZE,
+  LEADERBOARD_ROWS,
   LAYOUTS,
   REFUSALS,
   RELEASE_ROWS,
@@ -37,6 +44,7 @@ import {
   THEMES,
   VIEWS,
   WATCHER_ID_LENGTH,
+  parseGameId,
 } from '../src/protocol.ts';
 import { EMPTY_SESSION_TTL_MS, ERROR_CODES, SEAT_REQUEST_MS } from '../src/session/core.ts';
 
@@ -61,7 +69,7 @@ export const DATA_DELETES_PER_HOUR = 10;
 // The tables that Delete my data (deleteData in server/store.ts) changes, with the rows it deleted and
 // the rows it kept without the player. chat_messages counts the messages inside the session documents.
 // The other tables hold no player data: events, and moderation_log (kept for moderation).
-export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'practice_runs', 'reports', 'player_tokens', 'users'] as const;
+export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'player_tokens', 'users'] as const;
 export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number; anonymised: number }>;
 // The previews list on production is at most this old. server/previews.ts enforces it.
 // Only production calls GitHub, without a token: 60 calls per hour, 5 of them kept in reserve, so 55.
@@ -72,9 +80,13 @@ export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number
 // That is about 45 of 55. Above the budget, production makes no call until the limit resets, and keeps the last list.
 // Revisit with more than about 15 open pull requests or about 25 pushes per hour: then use a GitHub token (5000 per hour).
 export const PREVIEWS_CACHE_MS = 180_000;
+// The stats page and the leaderboard ask often; the numbers change slowly.
+export const STATS_CACHE_MS = 60_000;
 // A preview server keeps production's list for this long. It costs no GitHub call, only a request to production.
 export const PREVIEWS_RELAY_CACHE_MS = 15_000;
 // The 400 answer of GET /api/stats for a query that parseStatsFilter refuses.
+// The 400 answer of GET /api/leaderboard for a query that parseLeaderboardFilter refuses.
+export const LEADERBOARD_FILTER_ERROR = `Unknown leaderboard filter. range: ${STATS_RANGES.join(', ')}. mode: ${SESSION_MODES.join(', ')}. level: ${DIFFICULTIES.join(', ')}, only with the computer mode or no mode. Each key at most once.`;
 export const STATS_FILTER_ERROR = `Unknown stats filter. scope: ${STATS_SCOPES.join(' or ')}. range: ${STATS_RANGES.join(', ')}. mode: ${SESSION_MODES.join(', ')}. level: ${DIFFICULTIES.join(', ')}, only with the computer mode or no mode. person: a person id of ${PERSON_ID_LENGTH} hex characters, not with scope mine. Each key at most once.`;
 
 // ---- Shapes (JSON Schema 2020-12, as OpenAPI 3.1 uses) ----
@@ -139,6 +151,7 @@ export type SchemaName =
   | 'HistoryPage'
   | 'Hidden'
   | 'Records'
+  | 'Achievements'
   | 'Metrics'
   | 'MetricsResponse'
   | 'ClientEvent'
@@ -152,6 +165,7 @@ export type SchemaName =
   | 'NearbyHosts'
   | 'NearbyAnswer'
   | 'Contributor'
+  | 'PreviewImage'
   | 'Preview'
   | 'Previews'
   | 'Playoff'
@@ -160,6 +174,8 @@ export type SchemaName =
   | 'PracticeStored'
   | 'PracticeLeader'
   | 'PracticeBoard'
+  | 'LeaderboardRow'
+  | 'Leaderboard'
   | 'BlockRequest'
   | 'Blocks'
   | 'ReportRequest'
@@ -424,7 +440,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     finishedAt: { type: 'number' },
     publicId: { ...nullable(ref('DeviceGameId')), description: 'The id that the device made, for the game link. Optional.' },
     options: matchOptions('The hide settings at the end of the game. Optional.', true),
-    tuned: { type: 'boolean', description: 'A computer game with changed advanced settings. Optional.' },
+    tuned: { type: 'boolean', description: 'A computer game in which the computer made at least one move with changed advanced settings. Optional.' },
     metrics: { ...nullable(ref('Metrics')), description: 'What the device saw during the game. Optional.' },
     guest: {
       ...nullable({ type: 'string', minLength: 16, maxLength: 64, pattern: '^[a-z0-9-]+$' }),
@@ -459,7 +475,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     game: ref('GameRecord'),
     options: matchOptions('The hide settings at the end of the game.'),
     difficulty: { type: ['string', 'null'], enum: [...DIFFICULTIES, null], description: 'The computer level, in a computer game.' },
-    tuned: { type: 'boolean', description: 'A computer with changed advanced settings.' },
+    tuned: { type: 'boolean', description: 'The computer made at least one move with changed advanced settings.' },
     computer: { ...nullable(ref('Player')), description: 'The seat of the computer, in a computer game.' },
     players: object('The GitHub account behind each seat, or null.', { X: nullable(ref('PlayerInfo')), O: nullable(ref('PlayerInfo')) }),
     names: ref('SeatNames'),
@@ -500,6 +516,24 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       description: 'The most moves before the computer won, per setup. A key looks like "hard|game:none|move:none|board:false|history:false".',
     },
   }),
+  Achievements: object('Your achievements, every one once, in the order of src/achievements.ts. The page holds their names and goals.', {
+    achievements: list(
+      'One entry per achievement.',
+      object('How far you are with one achievement.', {
+        id: strings(ACHIEVEMENT_IDS),
+        count: count('Games that count toward the goal, or the longest run for a streak. It stops at the goal.'),
+        unlockedAt: { type: ['integer', 'null'], minimum: 0, description: 'When the game that reached the goal finished, in epoch ms. null until then.' },
+        unlockedBy: { ...nullable(ref('GameId')), description: 'The game that reached the goal. null until then, and for an old game without a link.' },
+      }),
+    ),
+    rarity: object('How rare each achievement is, as in Steam. It is at most 10 minutes old.', {
+      players: count('Every player with a finished game: an account with its devices, or a device without an account.'),
+      unlocked: object(
+        'How many of those players unlocked each achievement, by achievement id.',
+        Object.fromEntries(ACHIEVEMENT_IDS.map((id) => [id, count()])),
+      ),
+    }),
+  }),
   Metrics: object('What one device saw during one game, for the stats page. Every field is required.', {
     device: strings(DEVICE_KINDS),
     view: strings(VIEWS),
@@ -511,7 +545,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     thinkMs: list('The thinking time of each computer move, in milliseconds.', { type: 'number', minimum: 0 }),
     offline: { type: 'boolean' },
     version: { type: 'string', minLength: 1, maxLength: 64, description: 'The name of the page script file.' },
-    tuning: { type: ['object', 'null'], description: 'The computer settings of a tuned computer game (see src/tuning.ts), else null.' },
+    tuning: { type: ['object', 'null'], description: 'The changed computer settings of the last tuned computer move of the game (see src/tuning.ts), else null.' },
     nearby: nullable(object('A Nearby game.', { role: strings(['host', 'guest']), other: { type: ['string', 'null'], enum: [...DEVICE_KINDS, null] } })),
   }),
   MetricsResponse: object('The metrics result.', { stored: { type: 'boolean', description: 'False when this seat sent metrics for the game before.' } }),
@@ -531,7 +565,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
   StatsPrivacy: object('"Hide my stats". It follows your GitHub account when you log in.', {
     private: { type: 'boolean', description: 'True: a person filter with your person id answers 403 to everyone but you. Everyone totals still count your games, without your name.' },
   }),
-  Stats: object('The aggregates of the public stats page: counts only, and for scope mine the names of your opponents. The server computes an everyone answer at most once a minute. src/protocol.ts (Stats) has every field.', {
+  Stats: object('The aggregates of the public stats page: counts only, and for scope mine the names of your opponents. An everyone answer comes from a snapshot that the server refreshes in the background, at most once a minute. src/protocol.ts (Stats) has every field.', {
     generatedAt: { type: 'number' },
     totals: { type: 'object', description: 'games, moves, players, accounts, sessions, gamesLast7Days.' },
     perDay: list('The last 60 days, oldest first, UTC.'),
@@ -548,6 +582,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     hide: list('Hide settings in use.'),
     timeLimits: list('Time limits in use.'),
     tuned: list('Tuned computer games.'),
+    sample: { ...nullable(count()), description: 'Everyone only: the charts of moves, times, settings and devices read the newest this many games. null when they read every game.' },
     metricsGames: count(),
     devices: list('Device kinds.', ref('Count')),
     views: list('Views.', ref('Count')),
@@ -568,7 +603,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     offlineGames: count(),
     nearbyMixes: list('Nearby device mixes.', ref('Count')),
     filter: ref('StatsFilter'),
-    person: { ...nullable(object('Whose stats these are.', { name: displayName, player: nullable(ref('PlayerInfo')) })), description: 'The person of a person filter: the name and GitHub account that their games show. null without a person filter.' },
+    person: { ...nullable(object('Whose stats these are.', { name: displayName, player: nullable(ref('PlayerInfo')), you: { type: 'boolean', description: 'The X-Player header names this person.' } })), description: 'The person of a person filter: the name and GitHub account that their games show. null without a person filter.' },
     form: list(`The win rate over time, oldest first: at each game, the share of wins in the ${FORM_WINDOW} games up to it. mine: your games. everyone: the games against the computer, from the player's side.`, object('One game.', { at: { type: 'number' }, rate: { type: 'number', minimum: 0, maximum: 1 } })),
     lengths: list('Games per number of moves. Index n holds the games with n moves.', count()),
     openingWinsX: list('Games that X won, per first move.', count()),
@@ -583,6 +618,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       runs: list('Runs, people and the average round time per mode and preset.'),
       best: list('The best 5 people per mode and preset.', ref('PracticeLeader')),
     }),
+    achievements: { ...nullable(ref('Achievements')), description: 'Your achievements for scope mine, or those of the person of a person filter, with their rarity. The other filters do not change them. null for everyone.' },
   }),
   NearbyAnnounce: object(
     'An open Nearby game. The offer code holds the device name and kind of the host.',
@@ -658,6 +694,25 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     top: list('The best people, best first.', ref('PracticeLeader')),
     you: nullable(object('Your best run, on all your linked devices.', { totalMs: count(), score: count() })),
   }),
+  LeaderboardRow: object('The results of one person, from their side of each game.', {
+    person,
+    name: { ...displayName, description: 'The GitHub login, else the custom name, else the generated name.' },
+    player: nullable(ref('PlayerInfo')),
+    games: count(),
+    won: count(),
+    drawn: count(),
+    lost: count(),
+    fastestWin: { ...nullable(count()), description: 'The fewest moves of a game won with a line. A win on time does not count. null without such a win.' },
+    avgMoves: { type: 'number', minimum: 0, description: 'The mean number of moves of a game.' },
+    bestStreak: count('The longest run of won games.'),
+    lastPlayed: { type: 'integer', minimum: 0, description: 'When the last game ended, in epoch milliseconds.' },
+    achievements: count('The achievements that the person unlocked, over all their games. The filters do not change it.'),
+  }),
+  Leaderboard: object(`The common stats of each player, for the page to sort. The most active ${LEADERBOARD_ROWS} players at most.`, {
+    generatedAt: { type: 'integer', minimum: 0, description: 'Server time in epoch milliseconds.' },
+    rows: list('The players, most games first.', ref('LeaderboardRow')),
+    you: { ...nullable(person), description: 'Your person id, when the X-Player header names you. null without the header.' },
+  }),
   Contributor: object('A GitHub account that worked on a pull request.', {
     login: { type: 'string', minLength: 1, maxLength: 39 },
     avatar: { type: 'string', pattern: '^https://avatars\\.githubusercontent\\.com/' },
@@ -676,7 +731,19 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       ...nullable({ type: 'integer', minimum: 1 }),
       description: 'A stacked pull request: the number of the listed pull request whose head branch is the base branch of this one. null when it is top level. An older server sends no such field.',
     },
-  }, ['parent']),
+    toy: {
+      type: 'boolean',
+      description: `The pull request has the label "${PREVIEW_TOY_LABEL}": its preview also serves a toy at /toys/. An older server sends no such field.`,
+    },
+    images: {
+      ...list('The images of the pull request text, in their order. An older server sends no such field.', ref('PreviewImage')),
+      maxItems: PREVIEW_IMAGES,
+    },
+  }, ['parent', 'toy', 'images']),
+  PreviewImage: object('An image of the pull request text, such as a screenshot of the change.', {
+    src: { type: 'string', description: `From GitHub only: ${PREVIEW_IMAGE_SOURCES.join(', ')}` },
+    alt: { type: 'string', maxLength: PREVIEW_IMAGE_ALT_LENGTH, description: 'The text of the image. Empty when the text gives none.' },
+  }),
   BlockRequest: object('A block.', { name: { ...displayName, description: 'The name that you saw, for your list of blocked people.' } }),
   Blocks: object('The people that you blocked, newest first. Their messages and names stay hidden on your devices.', {
     blocked: list(
@@ -685,15 +752,15 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     ),
   }),
   ReportRequest: object(
-    'A report of one chat message or one person of an online game. Send `message` or `person`, not both.',
+    'A report of one chat message or one person. Send `message` or `person`, not both. A message needs `code`. A person without `code` is a player of the stats page.',
     {
       code: { type: 'string', pattern: `^[${CODE_ALPHABET}${CODE_ALPHABET.toLowerCase()}]{${CODE_LENGTH}}$`, description: 'The session code.' },
       message: { type: 'integer', minimum: 1, description: 'The id of a message in the chat of the session.' },
-      person: { ...person, description: 'The person id of a player or watcher in the session now.' },
+      person: { ...person, description: 'With `code`, the person id of a player or watcher in the session now. Without it, a person with a finished game or an account.' },
       reason: strings(REPORT_REASONS, 'spam, abuse, name (an inappropriate name) or other.'),
       note: { type: 'string', maxLength: REPORT_NOTE_MAX_LENGTH, description: `Optional. At most ${REPORT_NOTE_MAX_LENGTH} characters.` },
     },
-    ['message', 'person', 'note'],
+    ['code', 'message', 'person', 'note'],
   ),
   ReportStored: object('The report is stored for the maintainers.', { id: { type: 'integer', minimum: 1 } }),
   Reports: object('The newest reports and moderation actions. Only the maintainers can read them.', {
@@ -701,7 +768,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       'The newest reports first.',
       object('A report. The text and the name are copies from the time of the report.', {
         id: { type: 'integer', minimum: 1 },
-        code: { type: 'string' },
+        code: { ...nullable({ type: 'string' }), description: 'The session code. null for a report from the stats page.' },
         message: nullable({ type: 'integer' }),
         text: nullable({ type: 'string' }),
         person: nullable(person),
@@ -787,6 +854,28 @@ const X_WINS = [0, 1, 16, 2, 32, 3, 48];
 
 const zeroCount = () => ({ key: 'online', count: 0 });
 // The stats of a new server, shortened to one day.
+const LEADERBOARD_EXAMPLE = {
+  generatedAt: 1_760_000_000_000,
+  rows: [
+    { person: OTHER_PERSON, name: 'braveOtter', player: null, games: 12, won: 7, drawn: 1, lost: 4, fastestWin: 9, avgMoves: 17.5, bestStreak: 3, lastPlayed: 1_759_990_000_000, achievements: 4 },
+  ],
+  you: null,
+};
+
+// The achievements after one win in 7 moves against the computer on Hard.
+const ACHIEVEMENTS_EXAMPLE = achievementProgress([
+  {
+    id: parseGameId('Q7MZ4KTB') ?? null,
+    mode: 'computer',
+    game: { ...game(X_WINS), times: game(X_WINS).times.map(toEpochMs) },
+    you: 'X',
+    difficulty: 'hard',
+    options: { hideBoard: false, hideHistory: false, hideCoordinates: false },
+    tuned: false,
+    finishedAt: toEpochMs(T0 + 70_000),
+  },
+]);
+
 const STATS_EXAMPLE = {
   generatedAt: T0,
   totals: { games: 0, moves: 0, players: 0, accounts: 0, sessions: 0, gamesLast7Days: 0 },
@@ -804,6 +893,7 @@ const STATS_EXAMPLE = {
   hide: [],
   timeLimits: [],
   tuned: [],
+  sample: null,
   metricsGames: 0,
   devices: [],
   views: [],
@@ -821,6 +911,7 @@ const STATS_EXAMPLE = {
   lengths: Array<number>(CELL_COUNT + 1).fill(0),
   openingWinsX: Array<number>(CELL_COUNT).fill(0),
   personal: null,
+  achievements: null,
   practice: { runs: [{ mode: 'targets', preset: 'normal', runs: 1, players: 1, avgRoundMs: 2450 }], best: [] },
 };
 
@@ -837,6 +928,8 @@ const PREVIEWS_EXAMPLE = {
       draft: false,
       contributors: [{ login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', url: 'https://github.com/octocat' }],
       parent: null,
+      toy: false,
+      images: [{ src: 'https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/pr-17/menu-phone-light.png', alt: 'The sound set menu on a phone' }],
     },
     {
       number: 18,
@@ -848,6 +941,8 @@ const PREVIEWS_EXAMPLE = {
       draft: true,
       contributors: [{ login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', url: 'https://github.com/octocat' }],
       parent: 17,
+      toy: false,
+      images: [],
     },
   ],
   error: null,
@@ -1249,6 +1344,39 @@ export const ROUTES = {
     errors: [BAD_PLAYER],
     examplePlayer: AGENT_A,
   },
+  'GET /api/me/achievements': {
+    operationId: 'myAchievements',
+    tag: 'Account',
+    summary: 'Your achievements over every finished game.',
+    description: 'Every finished game counts, also games from before achievements and games that left your history. A Nearby game counts once.',
+    player: 'required',
+    response: {
+      status: 200,
+      description: 'Every achievement with your progress, and the rarity. In this example you are the only player, after one win in 7 moves against the computer on Hard.',
+      schema: 'Achievements',
+      example: {
+        achievements: ACHIEVEMENTS_EXAMPLE,
+        rarity: rarityOf([ACHIEVEMENTS_EXAMPLE]),
+      },
+    },
+    errors: [BAD_PLAYER],
+    examplePlayer: AGENT_A,
+  },
+  'DELETE /api/me/achievements': {
+    operationId: 'resetAchievements',
+    tag: 'Account',
+    summary: 'Reset your achievements.',
+    description: 'From now on, only games that finish after the reset count for your achievements, on every device of your account. Clear history does not change them.',
+    player: 'required',
+    response: {
+      status: 200,
+      description: 'Your achievements after the reset: none unlocked, and the rarity.',
+      schema: 'Achievements',
+      example: { achievements: achievementProgress([]), rarity: rarityOf([ACHIEVEMENTS_EXAMPLE]) },
+    },
+    errors: [BAD_PLAYER],
+    examplePlayer: AGENT_A,
+  },
   'POST /api/events': {
     operationId: 'reportFault',
     tag: 'Account',
@@ -1319,6 +1447,24 @@ export const ROUTES = {
       { ...BAD_PLAYER, when: `Scope mine only, or a person filter with an invalid header. ${BAD_PLAYER.when}` },
       { status: 403, when: 'A person filter: that person hides their stats ("Hide my stats" in My games).' },
       { status: 404, when: 'A person filter: no account and no finished game has that person id.' },
+    ],
+    examplePlayer: AGENT_A,
+  },
+  'GET /api/leaderboard': {
+    operationId: 'leaderboard',
+    tag: 'Account',
+    summary: 'The common stats of each player: games, results, fastest win, best streak.',
+    description: `The query takes the range, mode and level filters of GET /api/stats. Friend games and the computer do not count. A person who hides their stats ("Hide my stats" in My games) is not on it. An answer comes from a snapshot, which refreshes in the background when it is ${STATS_CACHE_MS / 1000} seconds old or older.`,
+    player: 'optional',
+    query: {
+      range: { description: '7d, 30d or all (the default).', required: false, schema: strings(STATS_RANGES), example: '30d' },
+      mode: { description: 'One mode. Leave it out for every mode.', required: false, schema: strings(SESSION_MODES), example: 'computer' },
+      level: { description: 'One computer level, only with mode computer or without a mode.', required: false, schema: strings(DIFFICULTIES), example: 'hard' },
+    },
+    response: { status: 200, description: 'One row per player. No token.', schema: 'Leaderboard', example: LEADERBOARD_EXAMPLE },
+    errors: [
+      { status: 400, when: 'A key is unknown or repeated, a value is unknown, or a level comes with a mode other than computer.' },
+      { ...BAD_PLAYER, when: `Only with an invalid header. ${BAD_PLAYER.when}` },
     ],
     examplePlayer: AGENT_A,
   },
@@ -1602,7 +1748,7 @@ export const ROUTES = {
   'POST /api/reports': {
     operationId: 'report',
     tag: 'Safety',
-    summary: 'Report a chat message or a person of an online game to the maintainers.',
+    summary: 'Report a chat message or a person of an online game, or a player of the stats page, to the maintainers.',
     description: `The server keeps a copy of the message or the name. One address can send ${REPORTS_PER_10_MINUTES} reports per 10 minutes.`,
     player: 'required',
     body: { schema: 'ReportRequest', example: { code: EXAMPLE_CODE, message: 3, reason: 'abuse', note: 'Insults after the game.' } },
@@ -1611,7 +1757,7 @@ export const ROUTES = {
       BAD_PLAYER,
       BAD_BODY,
       NO_GAME,
-      { status: 404, when: 'The message is not in the chat any more, or the person is not in the game now.' },
+      { status: 404, when: 'The message is not in the chat any more, or the person is not in the game now. Without a code: the person has no finished game and no account.' },
       TOO_BIG,
       { status: 429, when: `This address sent ${REPORTS_PER_10_MINUTES} reports in the last 10 minutes.` },
     ],

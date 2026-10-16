@@ -18,21 +18,28 @@
 ## Features
 
 - Play against the computer, a friend on the same device, a friend online, or a device on the same Wi-Fi (Nearby).
-- Three computer levels: easy, medium and hard. "Advanced: computer player" in the panel tunes each level.
+- Three computer levels: easy (the default), medium and hard. Easy always blocks the first winning threat of a game, and later blocks only by chance. "Advanced: computer player" in the More card tunes each level. A game is tuned when the computer made at least one move with changed settings, also if the settings changed back later. The end card, My games, the records and the stats show it.
 - Two views: a 3D tower that you turn with a drag, and a flat view with four layouts.
-- Play by coordinates on the keypad, with the board or the marks hidden.
+- Play by coordinates on the keypad. The keypad shows only while the board is hidden.
+- Hide goes in steps: the history, then the board too, then the coordinates too.
+- After the first two wins in a row against easy, the page moves the player up to medium once, with a short animation (`src/page/level-up.ts`).
+- The edge of the screen takes the color of the player to move, and pulses slowly on your turn.
+- A muted speaker button turns red.
 - Time limits per game, per move, or both. A player who runs out loses.
 - Lock: no setting changes until the game ends.
 - Seat lock: keeps X and O between games. It sits next to "You play" (computer) and in the Players box (online, Nearby). Either player can change it.
 - Sound sets where each cell has its own sound, and an ear trainer at `/sound-training`.
 - One sound rule on every page: a press on a button, switch or menu item clicks at once. A control with its own sound (a move, a refusal, a sample, a song) plays only that sound. Disabled controls stay quiet, and the mute holds.
-- Play by voice: tap the mic, then hold a note on a free cell for 1 second to place your move. On a phone, turn on Tilt in the Voice room settings (off by default): a small tilt nudges the cell up to 3 cells.
+- Play by voice (in the More card): tap the mic, then hold a note on a free cell for 1 second to place your move. On a phone, turn on Tilt in the Voice room settings (off by default): a small tilt nudges the cell up to 3 cells.
+- Voice only: the arrow next to the mic opens the voice options. With Voice only on, a tap on the board or the keypad places nothing while the voice is on, and the board area takes a tint.
 - The Voice room at `/sound-input`: calibrate the mic to your voice, then practice with Free play, Targets, Echo, or a Playoff against the other player of an online game. The page finds the pitch on the device and sends no sound.
 - Your game as a song: the Song button on the end card and on a game link. A long press shares the song as a WAV file, with your voice on the moves that your voice placed.
 - An end card with the result, to share or save as an image.
 - Survival records: the longest game against each computer level and setup.
+- Achievements: 16 goals such as a first win, a win in 7 moves or 5 wins in a row (`src/achievements.ts`). Past games count too, and a friend game with a winner counts as a win. My games and the stats page list them with their rarity ("12% of players"), and the end card and the shared image show a new one. "Clear history" keeps them, and "Reset achievements" in My games starts them over.
 - Twelve themes.
-- The same header on every page, with My games, Info, kitshn and GitHub (`src/header/`).
+- The same header on every page, with My games and Info, and the same footer, with kitshn and GitHub (`src/header/`).
+- Info on the game page shows the tutorial video "How to play" (Basics). The slider under it jumps between the checkpoints of the video, and the headline of each checkpoint shows over the slider while you drag. The checkpoints come from the video plan (`src/tutorial-chapters.json`, written by `video/scripts/tutorial.ts`). The page loads a small web copy of the video from `public/tutorial/` on the first open of Info.
 - The kitshn button lists the production site and the open pull request previews. A stacked pull request shows inside its parent.
 - The browser keeps the settings in `localStorage`, and the page checks each stored value.
 
@@ -54,6 +61,7 @@
 - Either player controls the seats. A change to the other player's seat, and an undo, waits until that player accepts.
 - After each new game, the seats swap unless a player locked them. The score and My games count each game for the player who played it.
 - Chat, the hide options, the lock and the time limit belong to the session, so both players share them.
+- Before the first chat message, the chat shows only its title and the message field. The message log shows from the first message on, with the game events of the session.
 - The server decides a timeout, so a page that closes cannot avoid a loss on time.
 - A session with moves never expires. A player can leave and come back, so a game can run asynchronously.
 
@@ -62,6 +70,7 @@
 - Hold, right-click, or press the context-menu key (Shift+F10) on a chat message, a player or a watcher. A small menu offers Report and Block.
 - Block hides the person's messages, and shows a generated name and picture in place of theirs. The server keeps the list per player, so it follows a GitHub login. Unblock in My games.
 - Report sends a reason and a short note to the maintainers, and hides that message on your device. Report works in Online games only: the server cannot see a Nearby game.
+- On the stats page, the player card of a person view has Report or block, with the same menu. The leaderboard leaves out the people that you blocked.
 - Each person has a public person id, a hash of the player token. A chat message keeps the person id of its author, so it stays with the author when the seats change. Older messages have none: they show with the player on their seat.
 - The maintainers (GitHub logins Yarden-zamir and TomCohenDev) read the reports with `GET /api/reports`. They can hide a message for everyone or clear a custom name, and the server logs each action.
 
@@ -70,7 +79,7 @@
 ## Play with an AI agent
 
 - An AI agent plays through the HTTP API, with no account and no key.
-- In computer mode, open "Advanced: computer player" and copy the text under "Play with your AI agent". Give it to your agent.
+- In computer mode, open More, then "Advanced: computer player", and copy the text under "Play with your AI agent". Give it to your agent.
 - The text points the agent to `/api/openapi.json`. The agent can play you or another agent.
 
 ## Offline play
@@ -92,6 +101,10 @@
 
 ## Controls per mode
 
+The panel column starts with the game actions: the score, New game, then Undo or the result card and the sound, in two taller slots. Under them are two cards. The settings card holds Opponent, Difficulty, the Online and Nearby boxes, and Players. The second card, More, starts closed on every load and opens on a press. It holds View and Layout, You play, Time limit, Hide and Lock, Theme, Play by voice, the ear trainer and Voice room links, and "Advanced: computer player".
+
+In one column (52rem and narrower) the panel column sits under the board. While the settings card is out of view, a gear at the bottom right of the screen scrolls to it (`src/page/settings-hint.ts`).
+
 The panel shows a control only in the modes where it applies (`data-show-mode` and `data-needs-session` in `index.html`). A finished game from a link shows only the controls for looking at it.
 
 | Control | Computer | Friend | Online | Nearby | Game from a link |
@@ -104,10 +117,10 @@ The panel shows a control only in the modes where it applies (`data-show-mode` a
 | Join a friend (code and New code) | no | no | yes | no | no |
 | Players (seats, watchers and seat controls) | no | no | yes (grey until a game starts) | yes (grey until a game starts) | no |
 | Time limit | yes | yes | yes | yes | no |
-| Hide board, history and coordinates | yes | yes | yes (off until a game starts) | yes (off until a game starts) | no |
+| Hide (history, then board, then coordinates) | yes | yes | yes (off until a game starts) | yes (off until a game starts) | no |
 | Lock (rules of the live game, for both players) | no | no | yes (off until a game starts) | yes (off until a game starts) | no |
 | Score, New game, the session games in My games | yes | yes | yes (grey until a game starts) | yes (grey until a game starts) | yes (no session games) |
-| Undo (during a game) | yes | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
+| Undo (during a game) | no (shows disabled) | yes | for a player in a game (asks the other player) | for a player in a game (asks the other player) | no |
 | Result card (after a game) | yes | yes | in a game | in a game | no |
 | Chat | no (a wide screen keeps its space) | no | yes | yes | no |
 | Report and block (hold or right-click a person) | no | no | yes | Block only | no |
@@ -121,7 +134,7 @@ The actions row has fixed slots (`.slot-row` in `src/style.css`), so a control t
 
 A mode change moves neither the board nor the Opponent picker:
 
-- Everything above the picker keeps its box in every mode. Before a game, the score and New game show grey and disabled in their place. The Players box sits under the mode boxes.
+- Everything above the picker keeps its box in every mode, also the game actions above the settings card. Before a game, the score and New game show grey and disabled in their place. The Players box sits under the mode boxes.
 - A wide screen (72rem and wider) keeps the chat column in every mode. Outside a game with another device, that column stays empty.
 - On a phone the chat opens above the panel. If the player works in the panel, the page scrolls by the height of the chat, so the panel stays still (`src/page/panel-anchor.ts`).
 
@@ -147,8 +160,8 @@ A mode change moves neither the board nor the Opponent picker:
 - `src/voice/`: the voice engine (pitch, range, sticky cells, tilt, clips) for the game and the Voice room. `src/page/voice.ts`: play by voice in the game.
 - `sound-input.html`, `src/sound-input/`: the Voice room. `src/practice/`: the practice and playoff rules, shared with `server/practice.ts`.
 - `src/main.ts`, `src/page/`, `index.html`, `src/style.css`: the game page, one module per feature in `src/page/`.
-- `src/page/safety.ts`, `src/page/person-mark.ts`: the report and block menu.
-- `src/header/`: the header of every page. `src/markup.test.ts` checks that every page has the same header.
+- `src/page/safety.ts`, `src/page/person-mark.ts`: the report and block menu of the game. `src/safety-dialog.ts` and `src/blocks.ts`: the menu and the block list, shared with the stats page.
+- `src/header/`: the header and the footer of every page. `src/markup.test.ts` checks that every page has the same header and footer.
 - `stats.html`, `src/stats/`: the stats page. `sound-training.html`, `src/sound-training/`: the ear trainer.
 - `src/pwa.ts`, `vite.config.ts`: the service worker and the manifest.
 - `server/main.ts`: the HTTP API. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login.
@@ -178,8 +191,12 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 - `/stats` is public: the game Info panel and My games link to it, and search engines may list it.
 - Filters: Everyone or Mine, the time (7 days, 30 days or all), the mode and the level. The address holds them, for example `/stats?scope=mine&range=30d`. `GET /api/stats` takes the same query and answers 400 for an unknown value.
 - A person filter (`/stats?person=<person id>`) shows the games of one person, with their name and picture. A click on a person's picture in the game opens it large, with a Stats link to this view.
-- "Hide my stats" in My games closes your person view to everyone but you: `GET /api/stats` then answers 403. Mine still works, and Everyone still counts your games without your name. The setting follows a GitHub login.
-- Everyone shows counts only: no player names and no page faults. Mine (your games on every linked device) adds your win rate over time, streaks, results, survival records and favourite opponents. A person view adds the same, without the opponents.
+- "Hide my stats" in My games closes your person view, your achievements included, to everyone but you: `GET /api/stats` then answers 403. It also takes you off the leaderboard. Mine still works, and Everyone still counts your games without your name. The setting follows a GitHub login.
+- Leaderboard (Everyone only): one row per player with their name, GitHub login and picture, and games, won, drawn, lost, win rate, best streak, fastest win, average moves, achievements and last game. Tap a column to sort; tap it again to turn the order around. It follows the time, mode and level filters, and loads when it scrolls into view. The achievements count covers all games. Friend games and the computer do not count. Players that you blocked are not on your board. `GET /api/leaderboard` gives the same rows.
+- Everyone answers (the stats and the leaderboard) come from a snapshot. A second database connection refreshes it in the background when it is a minute old, or older for a costly refresh, so a visitor and the game never wait for it. With more than 100,000 games, the charts of moves, times, settings and devices show the newest 100,000.
+- Speed: the queries read plain columns that each write copies out of the stored game (`server/fields.ts`), and the games of one player come through indexes on the seat columns. At 1,000,000 players (5,000,000 games) every request of one player answered in under 1.5 s.
+- A tap on a row opens the person view. Its player card shows the unlocked achievements in a row that scrolls, and Report or block.
+- Everyone shows counts only, apart from the leaderboard: no player names and no page faults. Mine (your games on every linked device) adds your win rate over time, streaks, results, survival records and favourite opponents. A person view adds the same, without the opponents.
 - The stats never show a token, a result id or a game id.
 - A finished game sends, besides the game: the device kind, the view, the layout, the theme, input and undo counts, refusals, computer thinking times, the offline flag and the app version.
 - A fault report holds the error message, the file and line, and the app version. It holds no token and no address.
@@ -210,7 +227,7 @@ docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr-17.
 
 ## Video
 
-`video/` holds a 15 s ad and a "How to win" tutorial, made in code: three.js draws every frame, Remotion renders it, and the sound comes from the game's own sound code. The creative (brief, script, timeline, music notes and the tutorial plan) is in [video/creative/](video/creative/).
+`video/` holds a 15 s ad and two tutorials, "How to play" (Basics) and "Strong cells", made in code: three.js draws every frame, Remotion renders it, and the sound comes from the game's own sound code. The creative (brief, script, timeline, music notes and the tutorial plan) is in [video/creative/](video/creative/).
 
 **The ad** (15 s): [landscape MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-landscape.mp4) · [portrait MP4](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-portrait.mp4) · [stills](https://raw.githubusercontent.com/Yarden-zamir/tick3d/pr-assets/issue-119/renders/a89435f/spot/tick3d-spot-a89435f-stills.png)
 
@@ -223,7 +240,7 @@ docker run --rm -v "$PWD":/app -w /app/video node:26 sh -c 'npm ci && npm run ch
 ```
 
 - `npm run video` writes `video/out/tick3d-15s-landscape.mp4` (1920×1080), `video/out/tick3d-15s-portrait.mp4` (1080×1920), one still per bar in `video/out/stills/` and the soundtrack in `video/out/soundtrack.wav`.
-- `npm run tutorial` renders the tutorial that shows which lines win and why, in both crops, into `video/out/tutorial/` (40 s). `TUTORIAL_PACE=short npm run tutorial` renders the 27.5 s cut into `video/out/tutorial-short/`. The plan is in [video/creative/tutorial.md](video/creative/tutorial.md).
+- `npm run tutorial` renders the Basics tutorial "How to play" (48 s) in both crops into `video/out/tutorial-basics/`, with one still per checkpoint, the web copy and poster for the Info panel, and `src/tutorial-chapters.json`. `TUTORIAL=strong npm run tutorial` renders "Strong cells" (17 s) into `video/out/tutorial-strong/`; the app does not use it yet. `TUTORIAL_PACE=short` renders the short cut of either. The plan is in [video/creative/tutorial.md](video/creative/tutorial.md).
 - The render needs the system libraries of Chrome Headless Shell, so use `node:26`, not the Alpine image.
 - `VIDEO_VARIANT=<name> npm run video` renders a variant of the spot into `video/out/variants/<name>/`. A variant is a small overlay on `beats.json` in `video/creative/variants/<name>.json` that changes the themes, the sound sets and the camera of bars, and the on-screen text, never the game or the events. The takes: `spot` (the default cut: a Mono cold open, "Tic-tac-toe? / Too easy.", then the feature list) and `classic` (the first approved cut, with "Every cell / has a note.").
 - `video/scripts/publish.sh` renders every take and both tutorial paces on the Mac, and publishes the previews to the `pr-assets` branch in `issue-119/renders/<sha7>/<take>/`: a GIF, a stills sheet per crop and both MP4s, named `tick3d-<take>-<sha7>-landscape.mp4` and so on. Each commit gets its own folder, so a comment that links a render keeps showing it, and each file has its own name, so downloads never overwrite each other. It needs ImageMagick and ffmpeg, and a committed, pushed HEAD.
@@ -237,6 +254,33 @@ docker run --rm -v "$PWD":/app -w /app/video node:26 node scripts/render.ts --dr
 
 The drafts land in `video/out/draft/` (or `video/out/variants/<name>/draft/` with `VIDEO_VARIANT`). Locally, run only `npm run check` in `video/` and `node video/creative/tools/check-beats.ts`; the required `check` workflow runs the full gate on every push.
 
+## Store images
+
+The `store-images` workflow makes every store image and the ads from code, and opens a pull request with them. It runs by hand, and on a push to `main` that changes the page (`src/`, the HTML files or `store-images/`). Playwright renders each scene of [store.spec.ts](store-images/store.spec.ts) once per target of [targets.json](store-images/targets.json). [convert.py](store-images/convert.py) then writes the files below, and fails the run on a missing image or a size that the store does not accept. `store.spec.ts` fixes the clock, the player names and the random numbers of the page, so two renders of one commit match. As a margin, `convert.py` keeps the committed file of each image where at most 1.5% of the pixels changed (`NOISE_SHARE`). With no real change left, the workflow opens no pull request. `tick3d-agents[bot]` opens the pull request, so its checks run.
+
+| Files | What | Who uploads them |
+| --- | --- | --- |
+| `android/store/en-US/images/{phone,sevenInch,tenInch}Screenshots/<target>-<n>.jpg` | Play phone (1080×1920), 7-inch tablet (1080×1920) and 10-inch tablet (2560×1440, landscape) screenshots | `play-listing.yml` (fastlane supply) |
+| `android/store/en-US/images/featureGraphic.jpg` | Play feature graphic (1024×500) | `play-listing.yml` |
+| `apple/store/screenshots/en-US/iphone-6.9-<n>.jpg` | iPhone 6.9-inch display (1320×2868) | the App Store listing sync ([#139](https://github.com/Yarden-zamir/tick3d/issues/139), fastlane deliver layout) |
+| `apple/store/screenshots/en-US/iphone-6.3-<n>.jpg` | iPhone 6.3-inch display (1206×2622), the size that App Store Connect requires | the same |
+| `marketing/ads/{square,portrait,story,link}.png` | Ads: 1080×1080, 1080×1350, 1080×1920 and 1200×628 | nobody: post them by hand |
+| `public/screenshots/*.webp` | The screenshots of the web manifest | the site deploy |
+
+The scenes read production and never write to it. Only the online scene plays on a local Docker Compose build, because an online game needs writes. To render on your own computer:
+
+```sh
+docker compose -f compose.lan.yml up --detach --build --wait
+docker run --rm --network host --ipc=host -v "$PWD":/app -v /tmp/shots:/tmp/shots -w /app -e SHOTS_DIR=/tmp/shots -e LOCAL_URL=http://localhost:8080 mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'npm ci && npx playwright test -c store-images/playwright.config.ts'
+uv run store-images/convert.py /tmp/shots
+```
+
+- To add a scene, add a test to `store.spec.ts` that calls `shot(page, '<n>-<name>')`, and add the name and its caption to [scenes.json](store-images/scenes.json). The order of `scenes.json` is the order in the stores. Play takes at most 8 screenshots of each type.
+- The phone and iPhone shots get their scene caption above them ([caption.html](store-images/caption.html)). `[word]` in a caption marks the highlighted word. Keep captions short, with no ranking or price words ("Best", "#1", "New") and no call to action ("Download now"): Google Play does not allow them.
+- To add a target, add a line to `targets.json`: `size` is the output size in pixels, `scale` is the device pixel ratio, `caption` adds the scene captions, and `out` is the folder. `size` / `scale` must be whole CSS pixels. Keep `caption` false for Play tablet targets: Play asks for no added text on large-screen shots. Set `platform` to `ios` for an App Store target: the page then hides what the App Store does not allow, as in the iOS app. Add a new Apple size to `APPLE_SIZES` in `convert.py` only after you check it on the [App Store Connect screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications).
+- The feature graphic and the ads come from [art.html](store-images/art.html). `art.spec.ts` renders it at the feature graphic size and at each ad size. The maintainers picked this style from three on [pull request 149](https://github.com/Yarden-zamir/tick3d/pull/149); git history keeps the other two.
+- No Chromebook screenshots: the Play API, and so fastlane supply, has no Chromebook image type. Add a target when it gets one.
+
 ## Deploy
 
 See [kitshn.md](kitshn.md). A push to `main` deploys production.
@@ -249,7 +293,7 @@ The iOS app wraps the production site the same way, with [Capacitor](https://cap
 - A pull request that touches `apple/` or `ios.yml` runs the workflow's `lint` job: `actionlint` on the workflow itself, and the same Capacitor project generation as the real build, with no Xcode and no macOS runner. It catches a bad `apple/capacitor.config.json` or a broken install in well under a minute, before a change reaches the 45-minute macOS build.
 - The app adds `tick3dApp/ios` to the user agent. The page then sets `<html data-platform="ios">` (`src/platform.ts`) and hides what the App Store does not allow: the GitHub link and the previews button (`data-hide-in="ios"`), and the GitHub login (App Store rule 4.8). `e2e/ios.spec.ts` checks this on every preview.
 - `WKAppBoundDomains` lets the web view run the service worker, so the game plays offline after one start online. Without a network at the first start, the app shows `apple/www/index.html`.
-- `apple/icon.png` (1024 × 1024, no transparency) is the App Store icon. Without it, the workflow scales up the Play icon.
+- `apple/icon.png` (1024 × 1024, no transparency) is the App Store icon. `uv run branding/icon/icon.py export` writes it with the other icon files. Without it, the workflow scales up the Play icon.
 
 ## License
 

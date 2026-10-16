@@ -98,7 +98,7 @@ describe('Nearby host and guest', () => {
       expect(nearby.people.O).not.toContain(guest);
       expect(nearby.chat).toMatchObject([{ text: 'hi from the phone', by: online.people.X }]);
     } finally {
-      server.close();
+      await server.close();
     }
   });
 

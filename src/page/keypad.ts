@@ -3,10 +3,10 @@ import { toCell, other, toCoords, SIZE } from '../game.ts';
 import { keypadPreviews, sounds } from '../sound.ts';
 import { cells } from './board.ts';
 import { coordsSlots, coordsSlotsEl, coordsTitle, coordsHear, digitButtons, coordsBack, coordsPlace, coordsForm } from './dom.ts';
-import { showProblem } from './feedback.ts';
+import { refuseTap, showProblem } from './feedback.ts';
 import { playerName } from './render.ts';
 import { humanMove } from './sessions.ts';
-import { page, current, matchOptions } from './state.ts';
+import { page, current, matchOptions, tapsLocked } from './state.ts';
 
 // The cell the keypad points at once layer, row and column are all chosen.
 function coordTarget(): number | undefined {
@@ -79,6 +79,7 @@ export function setupKeypad(): void {
 
   coordsForm.addEventListener('submit', (event) => {
     event.preventDefault();
+    if (tapsLocked()) return refuseTap();
     const target = coordTarget();
     if (target === undefined) {
       showProblem('Tap a layer, a row and a column first.');

@@ -3,7 +3,7 @@ import { toEpochMs } from '../epoch.ts';
 import type { Preview } from '../protocol.ts';
 import { type PreviewNode, previewTree } from './preview-tree.ts';
 
-const preview = (number: number, parent: number | null = null): Preview => ({
+const preview = (number: number, parent: number | null = null, toy = false): Preview => ({
   number,
   title: `Pull ${number}`,
   description: '',
@@ -13,6 +13,8 @@ const preview = (number: number, parent: number | null = null): Preview => ({
   draft: false,
   contributors: [],
   parent,
+  toy,
+  images: [],
 });
 
 type Shape = { number: number; children: Shape[] };
@@ -29,6 +31,16 @@ describe('the previews tree', () => {
           { number: 3, children: [] },
         ],
       },
+      { number: 5, children: [] },
+    ]);
+  });
+
+  it('puts the toys at the bottom of the top level, each part in list order, with their stacked pull requests', () => {
+    const tree = previewTree([preview(7, null, true), preview(1), preview(8, 7), preview(5, null, true), preview(2)]);
+    expect(shape(tree)).toEqual([
+      { number: 1, children: [] },
+      { number: 2, children: [] },
+      { number: 7, children: [{ number: 8, children: [] }] },
       { number: 5, children: [] },
     ]);
   });

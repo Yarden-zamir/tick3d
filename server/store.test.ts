@@ -13,6 +13,7 @@ import { type Code, type DeviceGameId, type GameId, type Metrics, type PlayerTok
 import { PLAYOFF_COUNTDOWN_MS } from '../src/practice/playoff.ts';
 import type { PracticeRun } from '../src/practice/practice.ts';
 import { SessionError } from '../src/session/core.ts';
+import type { AchievementId, Achievements } from '../src/achievements.ts';
 import { DELETED_NAME } from '../src/deletions.ts';
 import { DELETED_MESSAGE, REMOVED_MESSAGE, REPORTS_KEPT_MS, DELETION_NOTICES_KEPT_MS, type Store, openStore } from './store.ts';
 
@@ -99,7 +100,7 @@ describe('sessions', () => {
     await store.join(code, bob);
     await store.move(code, alice, { game: 0, moveCount: 0, cell: 5 });
     await store.chat(code, bob, 'hello');
-    store.close();
+    await store.close();
     store = await openStore(path);
     expect(await store.get(code, bob)).toMatchObject({ you: 'O', games: [{ moves: [5] }], chat: [{ from: 'O', text: 'hello' }] });
   });
@@ -209,7 +210,7 @@ describe('accounts', () => {
     const other = (await store.create(bob, 'Join later')).code;
     await store.linkToken(alice, ALICE_GITHUB);
     await store.linkToken(alicePhone, ALICE_GITHUB);
-    store.close();
+    await store.close();
     // A database from before account seats has no account row.
     const instance = await DuckDBInstance.create(path);
     const db = await instance.connect();
@@ -525,24 +526,108 @@ describe('survival records on the server', () => {
   });
 });
 
-// A store file with rows as an older version left them: a result without the new columns, and an
-// online game that ended before the server recorded games in `results`.
+describe('achievements', () => {
+  const countOf = ({ achievements }: Achievements, id: AchievementId) => achievements.find((entry) => entry.id === id)?.count;
+
+  it('counts online games by seat, for each player, and the rarity over both players', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    const mine = await store.achievements(alice);
+    expect(mine.achievements.find((entry) => entry.id === 'online-win')).toMatchObject({ count: 1, unlockedBy: `${code}-1` });
+    const theirs = await store.achievements(bob);
+    expect(countOf(theirs, 'first-win')).toBe(0);
+    expect(countOf(theirs, 'games-10')).toBe(1);
+    expect(mine.rarity.players).toBe(2);
+    expect(mine.rarity.unlocked).toMatchObject({ 'first-win': 1, 'online-win': 1, 'games-10': 0 });
+  });
+
+  it('counts a friend game with a winner as a win, and an account with its devices as one player', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    const friend = { mode: 'friend', you: null, difficulty: null } as const;
+    await store.addResults(alice, [result('adadadad-1111-4000-8000-000000000001', friend)]);
+    await store.addResults(alicePhone, [result('adadadad-1111-4000-8000-000000000002', { ...friend, finishedAt: ms(3_000) })]);
+    // Carol played the computer, which is no player.
+    await store.addResults(carol, [result('adadadad-1111-4000-8000-000000000003', { you: 'O' })]);
+    const { achievements, rarity } = await store.achievements(alicePhone);
+    expect(achievements.find((entry) => entry.id === 'first-win')?.unlockedAt).not.toBeNull();
+    expect(rarity.players).toBe(2);
+    expect(rarity.unlocked['first-win']).toBe(1);
+  });
+
+  it('counts only the games after a reset, on every device, and the player still counts for the rarity', async () => {
+    let time = 10_000;
+    store = await openStore(':memory:', { now: () => ms(time) });
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addResults(alice, [result('aeaeaeae-1111-4000-8000-000000000001', { finishedAt: ms(5_000) })]);
+    await store.addResults(bob, [result('aeaeaeae-1111-4000-8000-000000000002', { finishedAt: ms(5_000) })]);
+    expect(countOf(await store.achievements(alicePhone), 'first-win')).toBe(1);
+    await store.resetAchievements(alicePhone);
+    // The rarity waits RARITY_CACHE_MS before it counts again.
+    time += 11 * 60_000;
+    const reset = await store.achievements(alice);
+    expect(reset.achievements.every((entry) => entry.count === 0)).toBe(true);
+    expect(reset.rarity).toMatchObject({ players: 2, unlocked: { 'first-win': 1 } });
+    await store.addResults(alicePhone, [result('aeaeaeae-1111-4000-8000-000000000003', { finishedAt: ms(time) })]);
+    expect(countOf(await store.achievements(alice), 'first-win')).toBe(1);
+  });
+
+  it('shows the achievements in the stats of Mine and of a person, not of Everyone', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    for (const filter of [{ ...ALL_STATS, scope: 'mine' }, { ...ALL_STATS, person: await personId(alice) }] as const) {
+      const { achievements } = await store.stats(filter, alice);
+      if (achievements === null) throw new Error('the stats have no achievements');
+      expect(countOf(achievements, 'online-win')).toBe(1);
+    }
+    expect((await store.stats()).achievements).toBeNull();
+  });
+
+  it('counts a Nearby game once for the guest', async () => {
+    store = await openStore(':memory:');
+    const nearby = { mode: 'nearby', difficulty: null, game: finishedGame(X_WINS) } as const;
+    await store.addResults(alice, [result('abababab-1111-4000-8000-000000000001', { ...nearby, you: 'X', publicId: deviceGameId('NEARBY23'), guest: bob, metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } })]);
+    await store.addResults(bob, [result('abababab-1111-4000-8000-000000000002', { ...nearby, you: 'O', finishedAt: ms(2_034), metrics: { ...METRICS, nearby: { role: 'guest', other: 'computer' } } })]);
+    expect(countOf(await store.achievements(bob), 'games-10')).toBe(1);
+    expect(countOf(await store.achievements(alice), 'nearby-win')).toBe(1);
+  });
+
+  it('adds a new game of a linked device at once, and keeps a cleared game', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addResults(alice, [result('acacacac-1111-4000-8000-000000000001', { difficulty: 'easy' })]);
+    expect(countOf(await store.achievements(alicePhone), 'beat-hard')).toBe(0);
+    await store.addResults(alicePhone, [result('acacacac-1111-4000-8000-000000000002', { finishedAt: ms(3_000) })]);
+    await store.clearHistory(alice);
+    const progress = await store.achievements(alice);
+    expect(countOf(progress, 'beat-easy')).toBe(1);
+    expect(countOf(progress, 'beat-hard')).toBe(1);
+    expect(countOf(progress, 'streak-3')).toBe(2);
+  });
+});
+
+// A store file with rows as an older version left them: a result from before game links (no public id, no
+// ending; the migration of pull request #128 filled its plain columns and its seat), and an online game that
+// ended before the server recorded games in `results`.
 async function oldStore(): Promise<{ path: string; code: Code }> {
   const path = `${await mkdtemp('/tmp/tick3d-store-')}/old.duckdb`;
   store = await openStore(path);
   const { code } = await store.create(alice, 'Old match');
   await store.join(code, bob);
   await playMoves(code, X_WINS);
-  store.close();
+  await store.close();
   const instance = await DuckDBInstance.create(path);
   const db = await instance.connect();
   await db.run("DELETE FROM results WHERE id LIKE 'online:%'");
   const old = { id: '99999999-0000-4000-8000-000000000001', mode: 'computer', game: finishedGame(X_WINS_LATE), you: 'O', difficulty: 'easy', finishedAt: 5_000 };
-  await db.run('INSERT INTO results (id, token, doc, finished_at) VALUES ($id, $token, $doc::JSON::VARIANT, make_timestamptz(5000000))', {
-    id: old.id,
-    token: alice,
-    doc: JSON.stringify(old),
-  });
+  await db.run(
+    `INSERT INTO results (id, token, doc, finished_at, player_o, mode, level, you, moves, times, per_game, per_move, timed_out)
+     VALUES ($id, $token, $doc::JSON::VARIANT, make_timestamptz(5000000), $token, 'computer', 'easy', 'O', $moves::INTEGER[], $times::DOUBLE[], NULL, NULL, false)`,
+    { id: old.id, token: alice, doc: JSON.stringify(old), moves: JSON.stringify(old.game.moves), times: JSON.stringify(old.game.times) },
+  );
   db.closeSync();
   instance.closeSync();
   store = await openStore(path);
@@ -560,7 +645,7 @@ describe('rows from before game links', () => {
     expect(stats.levels).toEqual([expect.objectContaining({ level: 'easy', games: 1, lost: 1 })]);
     expect((await store.stats({ ...ALL_STATS, scope: 'mine' }, alice)).personal?.survival).toEqual([{ level: 'easy', moves: 9 }]);
     expect(stats.endings).toEqual([{ key: 'won', count: 1 }]);
-    // The old row stays as it was: the one-off migration fills it, not the server.
+    // The old row keeps no link: the server gives it no public id.
     expect((await store.history(alice, 0)).games[0]?.id).toBeNull();
   });
 
@@ -619,6 +704,48 @@ describe('online game metrics', () => {
     expect(stats.metricsGames).toBe(2);
     expect(stats.themes).toEqual(expect.arrayContaining([{ key: 'dark', count: 1 }, { key: 'mono', count: 1 }]));
     expect(stats.input).toEqual({ board: 6, keypad: 2 });
+  });
+});
+
+describe('leaderboard', () => {
+  it('counts each person from their side, merges linked devices, and leaves out friend games and hidden people', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addResults(alicePhone, [result('aaaaaaaa-3333-4000-8000-000000000001', { finishedAt: ms(1_000) })]);
+    await store.addResults(carol, [
+      result('aaaaaaaa-3333-4000-8000-000000000002', { finishedAt: ms(1_000), game: finishedGame(X_WINS_LATE) }),
+      result('aaaaaaaa-3333-4000-8000-000000000003', { finishedAt: ms(2_000) }),
+      result('aaaaaaaa-3333-4000-8000-000000000004', { finishedAt: ms(3_000), you: 'O' }),
+      result('aaaaaaaa-3333-4000-8000-000000000005', { finishedAt: ms(4_000), mode: 'friend', you: null, difficulty: null }),
+      // A win on time after 3 moves: it counts as a win, but not as the fastest win.
+      result('aaaaaaaa-3333-4000-8000-000000000006', {
+        finishedAt: ms(5_000),
+        game: { moves: [0, 1, 2], times: [ms(1_000), ms(2_000), ms(3_000)], clock: { perMove: 5, perGame: null }, timedOut: true },
+      }),
+    ]);
+    const board = await store.leaderboard(ALL_STATS, alice);
+    const aliceId = await personId(`account-${String(ALICE_GITHUB.id).padStart(16, '0')}`);
+    expect(board.you).toBe(aliceId);
+    expect(board.rows.find((found) => found.person === aliceId)).toMatchObject({ name: 'alice', player: { login: 'alice' }, games: 2, won: 2, lost: 0, bestStreak: 2 });
+    const carolId = await personId(carol);
+    expect(board.rows.find((found) => found.person === carolId)).toMatchObject({ games: 4, won: 3, lost: 1, fastestWin: X_WINS.length, bestStreak: 2 });
+    const bobId = await personId(bob);
+    expect(board.rows.find((found) => found.person === bobId)).toMatchObject({ games: 1, won: 0, lost: 1, fastestWin: null, bestStreak: 0 });
+    expect(board.rows.map((found) => found.games)).toEqual([4, 2, 1]);
+    // The count is the unlocked achievements of the person view.
+    const carolView = await store.stats({ ...ALL_STATS, person: carolId });
+    const carolUnlocked = carolView.achievements?.achievements.filter((entry) => entry.unlockedAt !== null).length;
+    expect(carolUnlocked).toBeGreaterThan(0);
+    expect(board.rows.find((found) => found.person === carolId)?.achievements).toBe(carolUnlocked);
+
+    // The computer filter keeps the computer games only, and "Hide my stats" takes a person off the board.
+    // A new filter has its own cache entry, so the change shows here at once.
+    await store.setStatsPrivate(carol, true);
+    const computer = await store.leaderboard({ ...ALL_STATS, mode: 'computer' }, undefined);
+    expect(computer.you).toBeNull();
+    expect(computer.rows.map((found) => found.person)).toEqual([aliceId]);
   });
 });
 
@@ -687,14 +814,16 @@ describe('stats', () => {
     ]);
   });
 
-  it('keeps the answer for a minute', async () => {
+  it('keeps the answer for a minute, then answers at once and refreshes in the background', async () => {
     let time = 1_000_000;
     store = await openStore(':memory:', { now: () => ms(time) });
     const first = await store.stats();
     await store.addResults(alice, [result('bbbbbbbb-1111-4000-8000-000000000001')]);
     expect((await store.stats()).totals.games).toBe(first.totals.games);
     time += 60_000;
-    expect((await store.stats()).totals.games).toBe(first.totals.games + 1);
+    // The old answer still comes at once; the refresh that it starts brings the new game.
+    expect((await store.stats()).totals.games).toBe(first.totals.games);
+    await vi.waitFor(async () => expect((await store.stats()).totals.games).toBe(first.totals.games + 1), { timeout: 10_000 });
   });
 });
 
@@ -792,7 +921,8 @@ describe('stats filters', () => {
     const bobs = await store.stats({ ...all, person: await personId(bob) });
     // Bob: the online game against Alice and his computer loss.
     expect(bobs.totals.games).toBe(2);
-    expect(bobs.person).toEqual({ name: nameOf(bob), player: null });
+    expect(bobs.person).toEqual({ name: nameOf(bob), player: null, you: false });
+    expect((await store.stats({ ...all, person: await personId(bob) }, bob)).person?.you).toBe(true);
     expect(bobs.personal).toMatchObject({ results: expect.arrayContaining([{ mode: 'online', level: null, won: 0, drawn: 0, lost: 1 }]), opponents: [] });
     expect(JSON.stringify(bobs)).not.toContain(bob);
 
@@ -800,7 +930,7 @@ describe('stats filters', () => {
     await store.linkToken(alice, ALICE_GITHUB);
     const alices = await store.stats({ ...all, person: await personId(`account-${String(ALICE_GITHUB.id).padStart(16, '0')}`) });
     expect(alices.totals.games).toBe(4);
-    expect(alices.person).toEqual({ name: 'alice', player: { login: 'alice', avatar: ALICE_GITHUB.avatar } });
+    expect(alices.person).toEqual({ name: 'alice', player: { login: 'alice', avatar: ALICE_GITHUB.avatar }, you: false });
     expect(JSON.stringify(alices)).not.toContain(alice);
   });
 
@@ -993,7 +1123,7 @@ describe('seat controls for an account without an account row', () => {
     store = await openStore(path, { open: () => open });
     const { code } = await store.create(bob, 'Seat an old account');
     await store.linkToken(alicePhone, ALICE_GITHUB);
-    store.close();
+    await store.close();
     const instance = await DuckDBInstance.create(path);
     const db = await instance.connect();
     await db.run("DELETE FROM player_tokens WHERE token LIKE 'account-%'");
@@ -1129,6 +1259,14 @@ describe('report and block', () => {
     expect(await status(async () => store.report(alice, { code, target: { person: await personId(carol) }, reason: 'spam', note: null }))).toBe(404);
   });
 
+  it('stores a report of a stats page player without a code, and refuses a person without games', async () => {
+    store = await openStore(':memory:');
+    await store.addResults(carol, [result('aaaaaaaa-4444-4000-8000-000000000001')]);
+    await store.report(alice, { code: null, target: { person: await personId(carol) }, reason: 'name', note: null });
+    expect((await store.reports()).reports).toMatchObject([{ code: null, person: await personId(carol), name: nameOf(carol), reporter: await personId(alice) }]);
+    expect(await status(async () => store.report(alice, { code: null, target: { person: await personId(bob) }, reason: 'spam', note: null }))).toBe(404);
+  });
+
   it('lets a maintainer hide a message for everyone and clear a custom name, and logs both', async () => {
     const code = await session();
     await store.chat(code, bob, 'spam spam');
@@ -1149,11 +1287,11 @@ describe('report and block', () => {
 describe('delete my data', () => {
   const ALICE_ACCOUNT = `${ACCOUNT_TOKEN_PREFIX}${String(ALICE_GITHUB.id).padStart(16, '0')}`;
   const aliceTokens = [alice, alicePhone, ALICE_ACCOUNT];
-  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
+  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
 
   // Per group of needles: the rows of each table whose text holds one of them. The store closes for the check and opens again.
   async function rowsHolding(path: string, groups: readonly (readonly string[])[]): Promise<Record<string, number>[]> {
-    store.close();
+    await store.close();
     const instance = await DuckDBInstance.create(path);
     const db = await instance.connect();
     const found: Record<string, number>[] = [];
@@ -1202,10 +1340,14 @@ describe('delete my data', () => {
     await store.block(bob, await personId(ALICE_ACCOUNT), 'alice');
     await store.setStatsPrivate(alicePhone, true);
     await store.setStatsPrivate(bob, true);
+    await store.resetAchievements(alice);
+    await store.resetAchievements(bob);
     const run: PracticeRun = { id: 'run-1', mode: 'targets', preset: 'normal', roundMs: Array.from({ length: 10 }, () => 2_000), score: 10 };
     await store.addPracticeRun(alice, run);
     await store.addPracticeRun(bob, run);
     const aliceIds = await Promise.all(aliceTokens.map((token) => personId(token)));
+    // The leaderboard fills achievement_players, which names Alice's account.
+    await store.leaderboard(ALL_STATS, undefined);
 
     const deleted = await store.deleteData(alicePhone);
     expect(deleted).toEqual({
@@ -1216,6 +1358,9 @@ describe('delete my data', () => {
       player_names: { deleted: 1, anonymised: 0 },
       blocks: { deleted: 1, anonymised: 1 },
       private_stats: { deleted: 1, anonymised: 0 },
+      achievement_resets: { deleted: 1, anonymised: 0 },
+      achievement_players: { deleted: 1, anonymised: 0 },
+      seat_people: { deleted: 3, anonymised: 0 },
       practice_runs: { deleted: 1, anonymised: 0 },
       reports: { deleted: 0, anonymised: 1 },
       player_tokens: { deleted: 3, anonymised: 0 },

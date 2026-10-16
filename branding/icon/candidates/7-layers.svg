@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#00b3ff"/>
+  <g transform="translate(512 512) scale(0.9) translate(-512 -512)">
+  <polygon points="144.0,709.0 512.0,893.0 512.0,919.0 144.0,735.0" fill="#e6b800" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="880.0,709.0 512.0,893.0 512.0,919.0 880.0,735.0" fill="#e6b800" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="512.0,525.0 880.0,709.0 512.0,893.0 144.0,709.0" fill="#ffe14d" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="144.0,614.0 512.0,798.0 512.0,824.0 144.0,640.0" fill="#e6b800" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="880.0,614.0 512.0,798.0 512.0,824.0 880.0,640.0" fill="#e6b800" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="512.0,430.0 880.0,614.0 512.0,798.0 144.0,614.0" fill="#ffe14d" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="144.0,519.0 512.0,703.0 512.0,729.0 144.0,545.0" fill="#e6b800" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="880.0,519.0 512.0,703.0 512.0,729.0 880.0,545.0" fill="#e6b800" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="512.0,335.0 880.0,519.0 512.0,703.0 144.0,519.0" fill="#ffe14d" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="144.0,424.0 512.0,608.0 512.0,634.0 144.0,450.0" fill="#e6b800" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="880.0,424.0 512.0,608.0 512.0,634.0 880.0,450.0" fill="#e6b800" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <polygon points="512.0,240.0 880.0,424.0 512.0,608.0 144.0,424.0" fill="#ffe14d" stroke="#000000" stroke-width="16" stroke-linejoin="round"/>
+  <path d="M392.0,424.0H632.0M512.0,364.0V484.0" stroke="#000000" stroke-width="72" stroke-linecap="round" fill="none"/>
+  <path d="M392.0,424.0H632.0M512.0,364.0V484.0" stroke="#ff5277" stroke-width="44" stroke-linecap="round" fill="none"/>
+  </g>
+</svg>

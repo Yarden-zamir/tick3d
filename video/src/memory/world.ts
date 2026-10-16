@@ -11,7 +11,7 @@ import type { Picture } from '../Film.tsx';
 import { frameOf, since } from '../grid.ts';
 import { CELL, OUTLINE, TOWER_CENTER, cellBase, cellCenter } from '../layout.ts';
 import type { BadgeArt } from '../lettering.ts';
-import { HOME_DISTANCE, aim, clamp, cubic, ease, orbit, quad, shot } from '../rig.ts';
+import { HOME_DISTANCE, aim, clamp, cubic, ease, onSquareAt, orbit, quad, shot } from '../rig.ts';
 import { createStage, pulse, squareFrame } from '../stage.ts';
 import { readTheme } from '../themes.ts';
 import { areaOf } from './formats.ts';
@@ -232,14 +232,13 @@ export function createMemoryWorld(width: number, height: number, art: BadgeArt):
     confetti.place(cellCenter(WIN_LINE[3]), since(frame, reveal.at + 2) * SIXTEENTH);
   }
 
-  // The point on screen of the cell of the X move that the keypad just placed, for the thought line.
+  // The point on the text square of the cell of the X move that the keypad just placed, for the thought line.
   function thoughtOf(frame: number): { x: number; y: number; at: number } | undefined {
     const event = shown.findLast((entry) => playerOf(entry.move) === 'X' && frame >= frameOf(entry.at));
     if (event === undefined || since(frame, event.at) > 4) return undefined;
     const cell = MOVES[event.move];
     if (cell === undefined) throw new RangeError(`no move ${event.move}`);
-    const point = cellCenter(cell).project(camera);
-    return { x: ((point.x + 1) / 2) * width, y: ((1 - point.y) / 2) * height, at: event.at };
+    return { ...onSquareAt(camera, cellCenter(cell), width, height, area), at: event.at };
   }
 
   return {

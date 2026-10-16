@@ -39,25 +39,30 @@
               <path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
             </svg>
           </button>
-          <button type="button" class="repo-link" id="previews-button" data-hide-in="ios" aria-haspopup="dialog" aria-label="kitshn: previews of open pull requests" data-tip="Previews of open pull requests">
-            <!-- The KitSHn pot, drawn inline so that it works offline. -->
-            <svg viewBox="0 0 14 14" width="18" height="18" fill="currentColor" aria-hidden="true"><rect x="6" y="1.2" width="2" height="1.6" rx="0.5"/><rect x="2.2" y="3.4" width="9.6" height="1.5" rx="0.75"/><rect x="3" y="5.6" width="8" height="6.6" rx="1.6"/><rect x="0.8" y="6.8" width="2.4" height="1.4" rx="0.7"/><rect x="10.8" y="6.8" width="2.4" height="1.4" rx="0.7"/></svg>
-            <span>kitshn</span>
-          </button>
-          <a class="repo-link" href="https://github.com/Yarden-zamir/tick3d" data-hide-in="ios" target="_blank" rel="noopener" aria-label="GitHub" data-tip="The source code on GitHub">
-            <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
-              <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
-            </svg>
-            <span>GitHub</span>
-          </a>
         </div>
       </header>
-      <!-- Whose stats these are, for a person filter: src/stats/main.ts fills it. -->
-      <p class="stats-person" id="stats-person" hidden></p>
+      <!-- The player card of a person filter: src/stats/player-card.ts fills it. -->
+      <section class="stats-person" id="stats-person" aria-label="Player" hidden></section>
       <nav class="stats-filters" id="stats-filters" aria-label="Filters"></nav>
       <p class="stats-note" id="stats-note">Loading…</p>
       <div class="stats-grid" id="stats-grid"></div>
     </main>
+    <!-- The links about the project sit at the bottom of every page, away from the game. -->
+    <footer class="site-footer">
+      <div class="footer-links">
+        <button type="button" class="repo-link" id="previews-button" data-hide-in="ios" aria-haspopup="dialog" aria-label="kitshn: previews of open pull requests" data-tip="Previews of open pull requests">
+          <!-- The KitSHn pot, drawn inline so that it works offline. -->
+          <svg viewBox="0 0 14 14" width="18" height="18" fill="currentColor" aria-hidden="true"><rect x="6" y="1.2" width="2" height="1.6" rx="0.5"/><rect x="2.2" y="3.4" width="9.6" height="1.5" rx="0.75"/><rect x="3" y="5.6" width="8" height="6.6" rx="1.6"/><rect x="0.8" y="6.8" width="2.4" height="1.4" rx="0.7"/><rect x="10.8" y="6.8" width="2.4" height="1.4" rx="0.7"/></svg>
+          <span>kitshn</span>
+        </button>
+        <a class="repo-link" href="https://github.com/Yarden-zamir/tick3d" data-hide-in="ios" target="_blank" rel="noopener" aria-label="GitHub" data-tip="The source code on GitHub">
+          <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+            <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+          </svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </footer>
     <dialog class="modal end-card my-games" id="previews" aria-labelledby="previews-title">
       <div class="modal-head">
         <h2 id="previews-title">Previews</h2>
@@ -68,13 +73,14 @@
     </dialog>
     <div class="modal info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
       <h2 id="info-title">About these stats</h2>
-      <p>Counts of all games. No names, codes or games, except your opponents in Mine.</p>
+      <p>Counts of all games, and a leaderboard of the players. No codes or games.</p>
       <ul>
         <li>Everyone: the games of all players. Mine: your games on every device that you logged in with, or on this browser.</li>
         <li>The filters go into the address. Share the address to share the view.</li>
         <li>A game counts when it ends. A Nearby game counts once.</li>
         <li>Win rate: wins in your last 20 games. Friend games do not count.</li>
-        <li>Times and days are in UTC. Everyone numbers refresh once a minute.</li>
+        <li>Leaderboard: tap a column to sort by it, and tap it again to turn the order around. Tap a player for their card, with their achievements, and Report or block. Players that you blocked are not on it. "Hide my stats" in My games takes you off it.</li>
+        <li>Times and days are in UTC. Everyone numbers refresh in the background, at most once a minute.</li>
         <li>Hover a bar or a cell for its exact number.</li>
       </ul>
       <button type="button" class="btn btn-small info-close" popovertarget="info-panel" popovertargetaction="hide">Close</button>

@@ -50,8 +50,21 @@ describe('chooseMove', () => {
     expect(chooseMove(board, 'O', 'medium', () => 0.05)).toBe(0);
   });
 
-  it('easy blocks on a good day and misses the block on a bad one', () => {
+  it('easy always blocks the first threat of a game', () => {
+    // X threatens 63. O has not blocked a line of X yet.
     const board = boardWith({ 0: 'X', 21: 'X', 42: 'X', 5: 'O', 9: 'O' });
+    const neverBlocks = { ...DEFAULT_TUNING, easy: { ...DEFAULT_TUNING.easy, fresh: { ...DEFAULT_TUNING.easy.fresh, block: 0 }, tired: { ...DEFAULT_TUNING.easy.tired, block: 0 } } };
+    let roll = 0;
+    const cycling = () => (roll++ % 10) / 10;
+    for (const random of [() => 0, () => 0.5, () => 0.999, Math.random, cycling]) {
+      expect(chooseMove(board, 'O', 'easy', random)).toBe(63);
+      expect(chooseMove(board, 'O', 'easy', random, neverBlocks)).toBe(63);
+    }
+  });
+
+  it('easy blocks on a good day and misses the block on a bad one after its first block', () => {
+    // O blocked the row 4..7 of X before. X threatens 63 again.
+    const board = boardWith({ 0: 'X', 21: 'X', 42: 'X', 4: 'X', 6: 'X', 7: 'X', 5: 'O', 9: 'O', 30: 'O', 51: 'O', 60: 'O' });
     expect(chooseMove(board, 'O', 'easy', () => 0.1)).toBe(63);
     expect(chooseMove(board, 'O', 'easy', () => 0.99)).not.toBe(63);
   });
@@ -60,6 +73,7 @@ describe('chooseMove', () => {
     const marks = { 0: 'X', 21: 'X', 42: 'X', 5: 'O', 9: 'O' } as const;
     const board = boardWith(marks);
     // A roll of 0.9 is above the tired block chance (0.85) and below the fresh one (1).
+    // O has not blocked yet, so a miss here also shows that the sure first block is for easy only.
     expect(chooseMove(board, 'O', 'medium', () => 0.9)).toBe(63);
     const fresh = { ...DEFAULT_TUNING.medium, tireFrom: 60, tireTo: 64 };
     const tired = { ...DEFAULT_TUNING.medium, tireFrom: 0, tireTo: 1 };

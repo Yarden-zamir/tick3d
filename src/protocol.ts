@@ -1,4 +1,5 @@
 // Contract between the page and the online API. Both sides import this file.
+import type { Achievements } from './achievements.ts';
 import { DIFFICULTIES, type Difficulty } from './ai.ts';
 import { NO_LIMIT, type TimeControl, parseClock } from './clock.ts';
 import { type EpochMs, isEpochMs } from './epoch.ts';
@@ -233,24 +234,29 @@ export function parseBlockRequest(value: unknown): { name: string } | undefined 
 export const REPORT_REASONS = ['spam', 'abuse', 'name', 'other'] as const;
 export type ReportReason = (typeof REPORT_REASONS)[number];
 export const REPORT_NOTE_MAX_LENGTH = 200;
-// A report names one chat message of an online session, or one person in it.
+// A report names one chat message of an online session, or one person in it. A person report from
+// the stats page has no session, so its code is null.
 type ReportTarget = { message: number } | { person: PersonId };
-export type ReportRequest = { code: Code; target: ReportTarget; reason: ReportReason; note: string | null };
+export type ReportRequest = { reason: ReportReason; note: string | null } & (
+  | { code: Code; target: ReportTarget }
+  | { code: null; target: { person: PersonId } }
+);
 
 const isMessageId = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
 
-// The body of POST /api/reports: { code, message | person, reason, note? }. Exactly one target.
+// The body of POST /api/reports: { code?, message | person, reason, note? }. Exactly one target.
+// A message needs a code. A person without a code is a person of the stats page.
 export function parseReportRequest(value: unknown): ReportRequest | undefined {
   if (!isRecord(value) || !hasOnlyKeys(value, ['code', 'message', 'person', 'reason', 'note'])) return undefined;
-  const code = typeof value.code === 'string' ? normalizeCode(value.code) : undefined;
+  const code = value.code === undefined ? null : typeof value.code === 'string' ? normalizeCode(value.code) : undefined;
   const reason = oneOf(REPORT_REASONS, value.reason);
   const note = value.note === undefined || value.note === null ? '' : typeof value.note === 'string' ? value.note.trim() : undefined;
   if (code === undefined || reason === undefined || note === undefined || note.length > REPORT_NOTE_MAX_LENGTH) return undefined;
   if ((value.message === undefined) === (value.person === undefined)) return undefined;
-  const base = { code, reason, note: note === '' ? null : note };
-  if (value.message !== undefined) return isMessageId(value.message) ? { ...base, target: { message: value.message } } : undefined;
+  const base = { reason, note: note === '' ? null : note };
+  if (value.message !== undefined) return code !== null && isMessageId(value.message) ? { ...base, code, target: { message: value.message } } : undefined;
   const person = parsePersonId(value.person);
-  return person === undefined ? undefined : { ...base, target: { person } };
+  return person === undefined ? undefined : { ...base, code, target: { person } };
 }
 
 // ---- Custom names ----
@@ -988,6 +994,9 @@ export type Stats = {
   hide: { setting: 'none' | 'board' | 'history' | 'both'; coordinates: boolean; games: number; computerGames: number; humanWins: number }[];
   timeLimits: { perGame: number | null; perMove: number | null; games: number }[];
   tuned: { tuned: boolean; games: number; humanWins: number }[];
+  // The charts of moves, times, settings and devices of Everyone read the newest `sample` games when there are
+  // more games than that (STATS_SAMPLE in server/stats.ts). Null when they read every game.
+  sample: number | null;
   // From game metrics: device results, and each player of an online game (one report per seat).
   metricsGames: number;
   devices: Count[];
@@ -1017,6 +1026,8 @@ export type Stats = {
   personal: PersonalStats | null;
   // The sound practice room: runs and leaderboards (server/practice.ts).
   practice: PracticeStats;
+  // For Mine and the person filter: every achievement and its rarity. The filters do not change it. null for Everyone.
+  achievements: Achievements | null;
 };
 
 // A game result from the side of one player. A friend game has no side.
@@ -1034,7 +1045,8 @@ export type PersonalStats = {
 };
 
 // The name and the GitHub account of the person of a person filter: the name that the games show.
-export type StatsPerson = { name: string; player: PlayerInfo | null };
+// `you`: the caller is this person, so the page offers no report and no block.
+export type StatsPerson = { name: string; player: PlayerInfo | null; you: boolean };
 
 // The "Hide my stats" setting (GET and PUT /api/me/stats-privacy). When it is on, a person filter
 // with your person id answers 403 to everyone but you. Everyone totals still count your games.
@@ -1099,6 +1111,80 @@ export function statsQuery(filter: StatsFilter): string {
   return text === '' ? '' : `?${text}`;
 }
 
+// ---- Leaderboard ----
+
+// GET /api/leaderboard: the common stats of every player, for the page to sort. It takes the range, mode
+// and level of the stats filters. A person who hides their stats is not on it.
+// Friend games have no side, and the computer is no player, so neither counts.
+export type LeaderboardRow = {
+  person: PersonId;
+  // The GitHub login, else the custom name, else the generated name: the name that the games show.
+  name: string;
+  player: PlayerInfo | null;
+  games: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  // The fewest moves of a game won with a line. A win on time does not count. null without such a win.
+  fastestWin: number | null;
+  avgMoves: number;
+  bestStreak: number;
+  lastPlayed: EpochMs;
+  // The achievements that the person unlocked, over all their games: the filters do not change it.
+  achievements: number;
+};
+export type Leaderboard = {
+  generatedAt: EpochMs;
+  // The most active players first, at most LEADERBOARD_ROWS.
+  rows: LeaderboardRow[];
+  // The caller, when the X-Player header names a player. Null without the header.
+  you: PersonId | null;
+};
+export const LEADERBOARD_ROWS = 500;
+
+// The filter of GET /api/leaderboard: the stats filter without a scope and a person.
+export function parseLeaderboardFilter(params: URLSearchParams): StatsFilter | undefined {
+  const filter = parseStatsFilter(params);
+  return filter === undefined || filter.scope !== 'everyone' || filter.person !== null ? undefined : filter;
+}
+
+// A total of a player, such as games or wins. Unlike isCount, it has no cap: an API agent can play many games.
+const isTotal = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+function parseLeaderboardRow(value: unknown): LeaderboardRow {
+  if (!isRecord(value)) throw new Error('invalid leaderboard row');
+  const person = parsePersonId(value.person);
+  const player = value.player === null ? null : parsePlayerInfo(value.player);
+  const { name, games, won, drawn, lost, fastestWin, avgMoves, bestStreak, lastPlayed, achievements } = value;
+  if (
+    person === undefined ||
+    player === undefined ||
+    !isDisplayName(name) ||
+    !isTotal(games) ||
+    !isTotal(won) ||
+    !isTotal(drawn) ||
+    !isTotal(lost) ||
+    won + drawn + lost !== games ||
+    (fastestWin !== null && !isTotal(fastestWin)) ||
+    typeof avgMoves !== 'number' ||
+    !Number.isFinite(avgMoves) ||
+    !isTotal(bestStreak) ||
+    !isEpochMs(lastPlayed) ||
+    !isTotal(achievements)
+  ) {
+    throw new Error('invalid leaderboard row');
+  }
+  return { person, name, player, games, won, drawn, lost, fastestWin, avgMoves, bestStreak, lastPlayed, achievements };
+}
+
+// Throws on an answer that is not a leaderboard.
+export function parseLeaderboard(value: unknown): Leaderboard {
+  if (!isRecord(value) || !isEpochMs(value.generatedAt) || !isUnknownArray(value.rows)) throw new Error('invalid leaderboard');
+  const you = value.you === null ? null : parsePersonId(value.you);
+  if (you === undefined) throw new Error('invalid leaderboard');
+  return { generatedAt: value.generatedAt, rows: value.rows.map(parseLeaderboardRow), you };
+}
+
 export const MOVE_TIME_BUCKETS = ['< 1 s', '1–2 s', '2–5 s', '5–10 s', '10–30 s', '30–60 s', '1–5 min', '5 min +'] as const;
 
 export function outcomeOf(winner: Player | null, you: Player | null): Outcome {
@@ -1110,6 +1196,8 @@ export function outcomeOf(winner: Player | null, you: Player | null): Outcome {
 
 // GET /api/previews: the open pull requests with a live preview (server/previews.ts).
 export type Contributor = PlayerInfo & { url: string };
+// An image from the pull request description, such as a screenshot of the change.
+export type PreviewImage = { src: string; alt: string };
 export type Preview = {
   number: number;
   title: string;
@@ -1124,11 +1212,34 @@ export type Preview = {
   contributors: Contributor[];
   // A stacked pull request: the number of the listed pull request whose head branch is its base branch. null when it is top level.
   parent: number | null;
+  // The pull request has the label PREVIEW_TOY_LABEL: its preview also serves a toy at /toys/ (container/build-toys.sh).
+  toy: boolean;
+  // The images of the description, in their order, from PREVIEW_IMAGE_SOURCES only. At most PREVIEW_IMAGES.
+  images: PreviewImage[];
 };
 // `main` is the production site, built from the main branch. null on a server without previews.
 // `error` says why the list is empty or old. null when the list is fresh.
 export type Previews = { main: string | null; previews: Preview[]; error: string | null };
 export const PREVIEW_DESCRIPTION_LENGTH = 280;
+export const PREVIEW_TOY_LABEL = 'Toys';
+export const PREVIEW_IMAGES = 8;
+export const PREVIEW_IMAGE_ALT_LENGTH = 200;
+// The page loads description images from GitHub only, so a description cannot make a player's browser call another site.
+export const PREVIEW_IMAGE_SOURCES = [
+  'https://raw.githubusercontent.com/',
+  'https://github.com/user-attachments/assets/',
+  'https://user-images.githubusercontent.com/',
+] as const;
+
+export const isPreviewImageSource = (src: string): boolean => PREVIEW_IMAGE_SOURCES.some((prefix) => src.startsWith(prefix));
+
+function parsePreviewImage(value: unknown): PreviewImage | undefined {
+  if (!isRecord(value)) return undefined;
+  const { src, alt } = value;
+  if (typeof src !== 'string' || !isPreviewImageSource(src)) return undefined;
+  if (typeof alt !== 'string' || alt.length > PREVIEW_IMAGE_ALT_LENGTH) return undefined;
+  return { src, alt };
+}
 
 function parseContributor(value: unknown): Contributor | undefined {
   const info = parsePlayerInfo(value);
@@ -1150,7 +1261,13 @@ function parsePreview(value: unknown): Preview | undefined {
   if (!isEpochMs(updatedAt) || typeof draft !== 'boolean' || !Array.isArray(contributors)) return undefined;
   const people = contributors.map(parseContributor);
   if (!people.every((person) => person !== undefined)) return undefined;
-  return { number, title, description, url, previewUrl, updatedAt, draft, contributors: people, parent };
+  // A production server from before toys and images sends neither field.
+  const toy = value.toy ?? false;
+  const images = value.images ?? [];
+  if (typeof toy !== 'boolean' || !Array.isArray(images) || images.length > PREVIEW_IMAGES) return undefined;
+  const parsedImages = images.map(parsePreviewImage);
+  if (!parsedImages.every((image) => image !== undefined)) return undefined;
+  return { number, title, description, url, previewUrl, updatedAt, draft, contributors: people, parent, toy, images: parsedImages };
 }
 
 export function parsePreviews(value: unknown): Previews {

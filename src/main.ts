@@ -34,7 +34,10 @@ import { refresh, setUrlCode, setUrlGame, joinSession, openLocalSession } from '
 import { settings } from './page/settings.ts';
 import { page } from './page/state.ts';
 import { applyTheme, setupTheme } from './page/theme.ts';
+import { setupSettingsHint } from './page/settings-hint.ts';
+import { setupSlidePills } from './page/slide-pill.ts';
 import { setupSoundSets } from './page/sound-set.ts';
+import { setupTutorial } from './page/tutorial.ts';
 import { setupVoice } from './page/voice.ts';
 
 // Every module only declares things on import. These calls add the listeners and build the
@@ -72,6 +75,14 @@ setupSoundSets(soundSetList, (id) => {
 setupKeypad();
 setupChat();
 setupPanelAnchor();
+// The pop of a control that turns on starts with the first press or key of the player (src/style.css
+// data-ready). The first renders turn on the saved choices, and those should not all pop at load.
+for (const type of ['pointerdown', 'keydown'] as const) {
+  addEventListener(type, () => document.documentElement.toggleAttribute('data-ready', true), { once: true, capture: true });
+}
+setupSettingsHint();
+setupSlidePills();
+setupTutorial();
 setupOnlineBox();
 setupPlayers();
 setupSafety();

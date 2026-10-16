@@ -43,7 +43,7 @@ function tokens(): { next: () => Token; now: () => Token } {
 const switches = tokens();
 export const newSwitch = switches.next;
 
-// A round is one game position that the computer can answer. A new screen, a new game and an undo
+// A round is one game position that the computer can answer. A new screen and a new game
 // start a new round, so a computer move found for the old round is dropped.
 const rounds = tokens();
 export const newRound = (): void => void rounds.next();
@@ -105,9 +105,8 @@ type PageState = {
   // An action waits for its backend. Also before a session is open, such as the first online game.
   busy: boolean;
   // Milliseconds from the search request to its answer, for each computer move of the current game.
-  // Index 0 is the computer's first move. A new game and a session switch empty the list, and an undo
-  // drops the entries of the moves that it takes back. A game that this page did not see from its first
-  // move keeps a shorter list (see src/page/computer.ts).
+  // Index 0 is the computer's first move. A new game and a session switch empty the list.
+  // A game that this page did not see from its first move keeps a shorter list (see src/page/computer.ts).
   computerThinkMs: number[];
   // Session holder time minus local time. Move times come from the server or the Nearby host, so the clocks use its time.
   serverOffset: number;
@@ -185,6 +184,21 @@ export const shared = () => page.session?.mode === 'online' || page.session?.mod
 export const awaitingSession = () => page.session === undefined && page.viewing === undefined;
 // A screen that watches a game with another device: it holds no seat.
 export const isWatching = () => shared() && page.session?.you === null;
+
+// The move is up to this screen, which holds one seat. A friend game holds both seats, so it has no "my turn".
+export const isMyTurn = () =>
+  page.session !== undefined &&
+  page.session.mode !== 'friend' &&
+  page.session.you !== null &&
+  page.viewing === undefined &&
+  !page.thinking &&
+  current().turn === page.session.you;
+
+// Play by voice needs a seat on this screen, so the voice control shows only with one (src/page/voice.ts).
+export const canVoice = () => page.viewing === undefined && page.session !== undefined && page.session.you !== null;
+
+// Voice only: while the voice is on, a tap on the board or the keypad places nothing (src/page/board.ts, keypad.ts).
+export const tapsLocked = () => settings.voice && settings.voiceOnly && canVoice();
 
 // The hide options belong to the session. With another device they apply to both players.
 export function matchOptions(): MatchOptions {

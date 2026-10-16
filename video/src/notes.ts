@@ -1,12 +1,13 @@
 // The note helpers of the tutorial and the ads: soft Cells melody notes, triangle chords and the Classic note of
 // a layer, all in C major pentatonic (key.ts) and from the game's sound code.
 import type { ScheduledSound } from '../../src/sound.ts';
+import type { Player } from '../../src/game.ts';
 import { SOUND_SETS, type SoundSet } from '../../src/sound-sets.ts';
 import { SCALE, inKey, landing, midiOf, withoutBell } from './key.ts';
 
-const CELLS = withoutBell(SOUND_SETS.cells);
+export const CELLS = withoutBell(SOUND_SETS.cells);
 // The melody notes play softer than a move: a calm mix (maintainer feedback on #119).
-const LEVEL = 0.55;
+export const LEVEL = 0.55;
 // The chords: C major (C E G) and A minor (A C E), both inside the pentatonic scale.
 export const C_MAJOR = [60, 64, 67] as const;
 export const A_MINOR = [57, 60, 64] as const;
@@ -19,9 +20,9 @@ export function pitchOf(degree: number): number {
   return 60 + 12 * Math.floor(degree / SCALE.length) + step;
 }
 
-// A melody note with the voice of `cell` in `set`, cut to the key.
-export function note(at: number, midi: number, cell: number, set: SoundSet = CELLS, level = LEVEL): ScheduledSound {
-  return { at, note: { kind: 'melody', at: 0, midi, player: 'X', cell, level }, set: inKey(set, midi) };
+// A melody note of `player` with the voice of `cell` in `set`, cut to the key.
+export function note(at: number, midi: number, cell: number, set: SoundSet = CELLS, level = LEVEL, player: Player = 'X'): ScheduledSound {
+  return { at, note: { kind: 'melody', at: 0, midi, player, cell, level }, set: inKey(set, midi) };
 }
 
 // The notes of a chord. A chord note plays a soft triangle; the set only names it.

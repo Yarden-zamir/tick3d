@@ -53,17 +53,6 @@
               <path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
             </svg>
           </button>
-          <button type="button" class="repo-link" id="previews-button" data-hide-in="ios" aria-haspopup="dialog" aria-label="kitshn: previews of open pull requests" data-tip="Previews of open pull requests">
-            <!-- The KitSHn pot, drawn inline so that it works offline. -->
-            <svg viewBox="0 0 14 14" width="18" height="18" fill="currentColor" aria-hidden="true"><rect x="6" y="1.2" width="2" height="1.6" rx="0.5"/><rect x="2.2" y="3.4" width="9.6" height="1.5" rx="0.75"/><rect x="3" y="5.6" width="8" height="6.6" rx="1.6"/><rect x="0.8" y="6.8" width="2.4" height="1.4" rx="0.7"/><rect x="10.8" y="6.8" width="2.4" height="1.4" rx="0.7"/></svg>
-            <span>kitshn</span>
-          </button>
-          <a class="repo-link" href="https://github.com/Yarden-zamir/tick3d" data-hide-in="ios" target="_blank" rel="noopener" aria-label="GitHub" data-tip="The source code on GitHub">
-            <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
-              <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
-            </svg>
-            <span>GitHub</span>
-          </a>
         </div>
       </header>
 
@@ -88,7 +77,7 @@
           <strong>Board hidden</strong>
           <span>Tap the layer, row and column of your move below.</span>
         </div>
-        <!-- The review bar and the keypad take turns in one cell, so the page under them keeps its place (src/style.css .stage-controls). -->
+        <!-- The review bar and the keypad share one cell under the board. The keypad shows only with the board hidden, and a finished game shows the board, so they never show together. -->
         <div class="stage-controls">
           <div class="review" id="review" hidden>
             <span id="review-label"></span>
@@ -119,7 +108,7 @@
               <!-- Tilt fine-tuning: src/page/voice.ts shows this button with tilt on, once the device sends a tilt reading. -->
               <button type="button" class="btn btn-small" id="voice-recentre" hidden data-tip="Take this angle as level">Recentre tilt</button>
             </div>
-            <div class="keypad">
+            <div class="keypad" id="keypad">
               <button type="button" class="btn" data-digit="1">1</button>
               <button type="button" class="btn" data-digit="2">2</button>
               <button type="button" class="btn" data-digit="3">3</button>
@@ -142,269 +131,317 @@
         </form>
       </section>
 
-      <aside class="panel">
-        <!-- The score and the game actions come first. On a phone the panel is under the board, so a new game is one short scroll away.
-             Everything above the Opponent picker keeps its box in every mode, so the picker never moves.
+      <!-- The panel column: the game actions, then two cards, the common settings and More, closed. -->
+      <div class="panels">
+        <!-- The game: the score and the actions, above the settings. On a phone they sit right under the board.
              data-needs-session: before the session comes, the control draws grey and disabled in its place (src/style.css [data-pending]). -->
-        <div class="score" id="score" data-needs-session></div>
+        <div class="game-actions">
+          <div class="score" id="score" data-needs-session></div>
 
-        <!-- Fixed slots (see .slot-row in src/style.css): New game, then Undo during a game or the result card after it in one slot, then the sound control. -->
-        <div class="actions slot-row">
-          <button type="button" class="btn btn-primary" id="new-game" data-needs-session>New game</button>
-          <button type="button" class="btn btn-icon" id="undo" aria-label="Undo" data-show-mode="computer friend online nearby" data-needs-session><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
-          <button type="button" class="btn btn-icon" id="show-card" aria-label="Result card" data-tip="Result card of the last game" hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0V4ZM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 13v3M8 20h8l-1-4H9l-1 4Z"/></svg></button>
-          <!-- One control for the sound: the speaker turns the sound on and off, the caret opens the sound set menu. -->
-          <div class="split-control sound-control" role="group" aria-label="Sound controls">
-            <button type="button" id="sound" aria-label="Sound" data-tip="Sound on or off"></button>
-            <button type="button" id="sound-set" popovertarget="sound-sets" aria-label="Sound set" data-tip="Sound set: the sound of each move"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
-          </div>
-          <!-- Play by voice: a held note places your move. src/page/voice.ts sets the icon and shows the button where this screen has a seat. -->
-          <button type="button" class="btn btn-icon" id="voice" aria-label="Play by voice" aria-pressed="false" data-tip="Play by voice: hold a note to place" hidden></button>
-        </div>
-        <!-- The sound set menu. A popover closes on a tap outside it or on Escape. src/page/sound-set.ts fills the list. -->
-        <div popover id="sound-sets" class="modal sound-sets" role="dialog" aria-labelledby="sound-sets-title">
-          <div class="modal-head">
-            <h2 id="sound-sets-title">Sound set</h2>
-            <button type="button" class="btn btn-small btn-icon" popovertarget="sound-sets" popovertargetaction="hide" aria-label="Close the sound sets"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-          </div>
-          <p class="sound-sets-note">The sound of each move. The play button of a set plays four moves of it.</p>
-          <div id="sound-set-list"></div>
-        </div>
-
-        <div class="field">
-          <span class="label">Opponent</span>
-          <div class="segmented mode-picker" data-setting="mode">
-            <button type="button" data-value="computer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="7" width="14" height="12" rx="3"/><path d="M12 3v4M9.5 12h.01M14.5 12h.01M9.5 16h5"/></svg><span>Computer</span></button>
-            <button type="button" data-value="friend"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9.5" r="2.5"/><path d="M3 20a6 6 0 0 1 12 0M15 20a4 4 0 0 1 6.5-3"/></svg><span>Friend</span></button>
-            <button type="button" data-value="online"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18"/></svg><span>Online</span></button>
-            <button type="button" data-value="nearby"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 9.5a13.5 13.5 0 0 1 19 0M5.5 13a9 9 0 0 1 13 0M8.8 16.4a4.5 4.5 0 0 1 6.4 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor"/></svg><span>Nearby</span></button>
-          </div>
-        </div>
-
-        <div class="field" data-show-mode="computer">
-          <span class="label">Difficulty</span>
-          <div class="segmented" data-setting="difficulty">
-            <button type="button" data-value="easy">Easy</button>
-            <button type="button" data-value="medium">Medium</button>
-            <button type="button" data-value="hard">Hard</button>
-          </div>
-        </div>
-
-        <div class="field" data-show-mode="computer">
-          <div class="field-head">
-            <span class="label">You play</span>
-            <button type="button" class="btn btn-small btn-icon lock" data-seat-lock aria-label="Keep the seats" aria-pressed="false"></button>
-          </div>
-          <div class="segmented" data-setting="human">
-            <button type="button" data-value="X">X · first</button>
-            <button type="button" data-value="O">O · second</button>
-          </div>
-        </div>
-
-        <div class="online" data-show-mode="online">
-          <p class="lan-host" id="lan-host" hidden></p>
-          <div class="online-code" id="online-session" data-needs-session>
-            <div>
-              <span class="label">Game code</span>
-              <b id="online-code">····</b>
+          <!-- Fixed slots (see .slot-row in src/style.css): New game, then Undo during a game or the result card after it in one slot, then the sound control. -->
+          <div class="actions slot-row">
+            <button type="button" class="btn btn-primary" id="new-game" data-needs-session>New game</button>
+            <button type="button" class="btn btn-icon" id="undo" aria-label="Undo" data-show-mode="computer friend online nearby" data-needs-session><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+            <button type="button" class="btn btn-icon" id="show-card" aria-label="Result card" data-tip="Result card of the last game" hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0V4ZM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 13v3M8 20h8l-1-4H9l-1 4Z"/></svg></button>
+            <!-- One control for the sound: the speaker turns the sound on and off, the caret opens the sound set menu. -->
+            <div class="split-control sound-control" role="group" aria-label="Sound controls">
+              <button type="button" id="sound" aria-label="Sound" data-tip="Sound on or off"></button>
+              <button type="button" id="sound-set" popovertarget="sound-sets" aria-label="Sound set" data-tip="Sound set: the sound of each move"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
             </div>
-            <div class="share-buttons">
-              <!-- Link shares the play link. The caret opens the link menu: the play link and the watch-only link. -->
-              <div class="split-control" role="group" aria-label="Share links">
-                <button type="button" id="share" data-tip="Share the link to play">Link</button>
-                <button type="button" id="share-more" popovertarget="share-menu" aria-label="More links" data-tip="Play or watch-only link"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
+          </div>
+          <!-- The sound set menu. A popover closes on a tap outside it or on Escape. src/page/sound-set.ts fills the list. -->
+          <div popover id="sound-sets" class="modal sound-sets" role="dialog" aria-labelledby="sound-sets-title">
+            <div class="modal-head">
+              <h2 id="sound-sets-title">Sound set</h2>
+              <button type="button" class="btn btn-small btn-icon" popovertarget="sound-sets" popovertargetaction="hide" aria-label="Close the sound sets"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            </div>
+            <p class="sound-sets-note">The sound of each move. The play button of a set plays four moves of it.</p>
+            <div id="sound-set-list"></div>
+          </div>
+        </div>
+        <aside class="panel">
+          <div class="field">
+            <span class="label">Opponent</span>
+            <div class="segmented mode-picker" data-setting="mode">
+              <button type="button" data-value="computer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="7" width="14" height="12" rx="3"/><path d="M12 3v4M9.5 12h.01M14.5 12h.01M9.5 16h5"/></svg><span>Computer</span></button>
+              <button type="button" data-value="friend"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9.5" r="2.5"/><path d="M3 20a6 6 0 0 1 12 0M15 20a4 4 0 0 1 6.5-3"/></svg><span>Friend</span></button>
+              <button type="button" data-value="online"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18"/></svg><span>Online</span></button>
+              <button type="button" data-value="nearby"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 9.5a13.5 13.5 0 0 1 19 0M5.5 13a9 9 0 0 1 13 0M8.8 16.4a4.5 4.5 0 0 1 6.4 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor"/></svg><span>Nearby</span></button>
+            </div>
+          </div>
+
+          <div class="field" id="difficulty-field" data-show-mode="computer">
+            <span class="label">Difficulty</span>
+            <div class="segmented" data-setting="difficulty">
+              <button type="button" data-value="easy">Easy</button>
+              <button type="button" data-value="medium">Medium</button>
+              <button type="button" data-value="hard">Hard</button>
+            </div>
+          </div>
+
+          <div class="online" data-show-mode="online">
+            <p class="lan-host" id="lan-host" hidden></p>
+            <div class="online-code" id="online-session" data-needs-session>
+              <div>
+                <span class="label">Game code</span>
+                <b id="online-code">····</b>
               </div>
-              <button type="button" class="btn" id="share-qr" aria-expanded="false" aria-controls="online-qr">QR code</button>
+              <div class="share-buttons">
+                <!-- Link shares the play link. The caret opens the link menu: the play link and the watch-only link. -->
+                <div class="split-control" role="group" aria-label="Share links">
+                  <button type="button" id="share" data-tip="Share the link to play">Link</button>
+                  <button type="button" id="share-more" popovertarget="share-menu" aria-label="More links" data-tip="Play or watch-only link"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
+                </div>
+                <button type="button" class="btn" id="share-qr" aria-expanded="false" aria-controls="online-qr">QR code</button>
+              </div>
             </div>
-          </div>
-          <!-- The link menu. It opens under the caret, and closes on a tap outside it or on Escape. -->
-          <div popover id="share-menu" class="share-menu">
-            <button type="button" class="btn btn-small" id="share-play" autofocus>Play link</button>
-            <button type="button" class="btn btn-small" id="share-watch" data-tip="Opens the game without a seat">Watch-only link</button>
-          </div>
-          <div class="online-qr" id="online-qr" hidden>
-            <div class="segmented" role="group" aria-label="The QR code gives">
-              <button type="button" id="qr-play" aria-pressed="true">Play</button>
-              <button type="button" id="qr-watch" aria-pressed="false">Watch only</button>
+            <!-- The link menu. It opens under the caret, and closes on a tap outside it or on Escape. -->
+            <div popover id="share-menu" class="share-menu">
+              <button type="button" class="btn btn-small" id="share-play" autofocus>Play link</button>
+              <button type="button" class="btn btn-small" id="share-watch" data-tip="Opens the game without a seat">Watch-only link</button>
             </div>
-            <div class="nearby-qr" id="online-qr-image"></div>
-            <span id="online-qr-caption"></span>
+            <div class="online-qr" id="online-qr" hidden>
+              <div class="segmented" role="group" aria-label="The QR code gives">
+                <button type="button" id="qr-play" aria-pressed="true">Play</button>
+                <button type="button" id="qr-watch" aria-pressed="false">Watch only</button>
+              </div>
+              <div class="nearby-qr" id="online-qr-image"></div>
+              <span id="online-qr-caption"></span>
+            </div>
+            <label class="field">
+              <span class="label">Session name</span>
+              <input type="text" id="session-name" maxlength="40" placeholder="Name this session" />
+            </label>
           </div>
-          <label class="field">
-            <span class="label">Session name</span>
-            <input type="text" id="session-name" maxlength="40" placeholder="Name this session" />
-          </label>
-        </div>
 
-        <div class="nearby" data-show-mode="nearby">
-          <p class="nearby-intro">Play with devices on the same Wi-Fi. One device hosts, the others join.</p>
-          <label class="nearby-me">
-            <span class="device-icon" id="nearby-device-icon"></span>
-            <input type="text" id="nearby-name" maxlength="24" placeholder="This device's name" aria-label="This device's name" />
-          </label>
-          <div class="nearby-start" id="nearby-start">
-            <button type="button" class="btn btn-small btn-primary" id="nearby-host">Host</button>
-            <button type="button" class="btn btn-small" id="nearby-join">Join with a code</button>
-          </div>
-          <section class="nearby-lobby" id="nearby-lobby" aria-labelledby="nearby-lobby-title" hidden>
-            <span class="label" id="nearby-lobby-title">Games near you</span>
-            <ul class="nearby-devices nearby-hosts" id="nearby-hosts"></ul>
-            <p class="nearby-note" id="nearby-hosts-empty">Games that devices on the same Wi-Fi host show up here.</p>
-          </section>
-          <p class="nearby-note" id="nearby-offline" hidden>You are offline, so the list of games near you is off. Host and Join with a code still work.</p>
-          <div class="nearby-step" id="nearby-step" hidden>
-            <p class="nearby-step-text" id="nearby-step-text"></p>
-            <div class="nearby-qr" id="nearby-qr" hidden></div>
-            <details class="nearby-text" id="nearby-text" hidden>
-              <summary>Code as text</summary>
-              <textarea id="nearby-code-out" readonly rows="3" aria-label="Code for the other device"></textarea>
-              <button type="button" class="btn btn-small" id="nearby-copy">Copy</button>
+          <div class="nearby" data-show-mode="nearby">
+            <p class="nearby-intro">Play with devices on the same Wi-Fi. One device hosts, the others join.</p>
+            <label class="nearby-me">
+              <span class="device-icon" id="nearby-device-icon"></span>
+              <input type="text" id="nearby-name" maxlength="24" placeholder="This device's name" aria-label="This device's name" />
+            </label>
+            <div class="nearby-start" id="nearby-start">
+              <button type="button" class="btn btn-small btn-primary" id="nearby-host">Host</button>
+              <button type="button" class="btn btn-small" id="nearby-join">Join with a code</button>
+            </div>
+            <section class="nearby-lobby" id="nearby-lobby" aria-labelledby="nearby-lobby-title" hidden>
+              <span class="label" id="nearby-lobby-title">Games near you</span>
+              <ul class="nearby-devices nearby-hosts" id="nearby-hosts"></ul>
+              <p class="nearby-note" id="nearby-hosts-empty">Games that devices on the same Wi-Fi host show up here.</p>
+            </section>
+            <p class="nearby-note" id="nearby-offline" hidden>You are offline, so the list of games near you is off. Host and Join with a code still work.</p>
+            <div class="nearby-step" id="nearby-step" hidden>
+              <p class="nearby-step-text" id="nearby-step-text"></p>
+              <div class="nearby-qr" id="nearby-qr" hidden></div>
+              <details class="nearby-text" id="nearby-text" hidden>
+                <summary>Code as text</summary>
+                <textarea id="nearby-code-out" readonly rows="3" aria-label="Code for the other device"></textarea>
+                <button type="button" class="btn btn-small" id="nearby-copy">Copy</button>
+              </details>
+              <div class="nearby-input" id="nearby-input" hidden>
+                <div class="join-row">
+                  <input type="text" id="nearby-code-in" placeholder="Or paste a code" aria-label="Code from the other device" autocomplete="off" />
+                  <button type="button" class="btn btn-small" id="nearby-use-code">Use</button>
+                </div>
+              </div>
+              <button type="button" class="btn btn-small nearby-cancel" id="nearby-cancel">Cancel</button>
+            </div>
+            <ul class="nearby-devices" id="nearby-devices" hidden></ul>
+            <p class="nearby-note" id="nearby-visible" hidden>Visible to devices on this network.</p>
+            <div class="nearby-actions" id="nearby-actions" hidden>
+              <button type="button" class="btn btn-small" id="nearby-add">Add device</button>
+              <button type="button" class="btn btn-small" id="nearby-stop">End</button>
+            </div>
+            <details class="nearby-laptop">
+              <summary>Laptop host</summary>
+              <p>A laptop can run the full game server for the local network. Others then open its address and play the Online mode, with no codes to scan. See "Host on a laptop" in the README on GitHub.</p>
             </details>
-            <div class="nearby-input" id="nearby-input" hidden>
-              <div class="join-row">
-                <input type="text" id="nearby-code-in" placeholder="Or paste a code" aria-label="Code from the other device" autocomplete="off" />
-                <button type="button" class="btn btn-small" id="nearby-use-code">Use</button>
-              </div>
+          </div>
+
+          <!-- A code from a friend. A ?code= link opens the game in every mode. -->
+          <form class="field join" id="join" data-show-mode="online">
+            <span class="label">Join a friend</span>
+            <div class="join-row">
+              <input type="text" id="join-code" maxlength="4" placeholder="Code" aria-label="Game code" autocapitalize="characters" autocomplete="off" />
+              <button type="submit" class="btn">Join</button>
+              <button type="button" class="btn" id="new-code" aria-label="New code: create an online game" data-tip="Create an online game with a new code">New code</button>
             </div>
-            <button type="button" class="btn btn-small nearby-cancel" id="nearby-cancel">Cancel</button>
-          </div>
-          <ul class="nearby-devices" id="nearby-devices" hidden></ul>
-          <p class="nearby-note" id="nearby-visible" hidden>Visible to devices on this network.</p>
-          <div class="nearby-actions" id="nearby-actions" hidden>
-            <button type="button" class="btn btn-small" id="nearby-add">Add device</button>
-            <button type="button" class="btn btn-small" id="nearby-stop">End</button>
-          </div>
-          <details class="nearby-laptop">
-            <summary>Laptop host</summary>
-            <p>A laptop can run the full game server for the local network. Others then open its address and play the Online mode, with no codes to scan. See "Host on a laptop" in the README on GitHub.</p>
-          </details>
-        </div>
+          </form>
 
-        <!-- A code from a friend. A ?code= link opens the game in every mode. -->
-        <form class="field join" id="join" data-show-mode="online">
-          <span class="label">Join a friend</span>
-          <div class="join-row">
-            <input type="text" id="join-code" maxlength="4" placeholder="Code" aria-label="Game code" autocapitalize="characters" autocomplete="off" />
-            <button type="submit" class="btn">Join</button>
-            <button type="button" class="btn" id="new-code" aria-label="New code: create an online game" data-tip="Create an online game with a new code">New code</button>
-          </div>
-        </form>
-
-        <!-- The Players box of online and Nearby games: seats, watchers and seat controls (src/page/players.ts).
-             It sits under the Opponent picker and the mode boxes, so it never moves the picker when it shows. -->
-        <section class="players" id="players" aria-labelledby="players-title" data-show-mode="online nearby" data-needs-session>
-          <!-- Watcher chat: watchers can write in the chat while it is on. The seat lock: X and O swap after each game unless it is on (src/page/controls.ts). -->
-          <div class="field-head">
-            <span class="label" id="players-title" data-tip="Hold or right-click a player to report or block">Players</span>
-            <span class="field-head-actions">
-              <button type="button" class="btn btn-small btn-icon watcher-chat" id="watcher-chat" aria-label="Watchers can chat" aria-pressed="true"></button>
-              <button type="button" class="btn btn-small btn-icon lock" data-seat-lock aria-label="Keep the seats" aria-pressed="false"></button>
-            </span>
-          </div>
-          <ul class="players-list" id="players-list"></ul>
-          <div class="players-request" id="players-request" aria-live="polite" hidden>
-            <p id="players-request-text"></p>
-            <div class="players-request-actions" id="players-request-actions"></div>
-          </div>
-        </section>
-        <div class="field">
-          <span class="label">View</span>
-          <div class="view-row">
-            <div class="segmented" data-setting="view">
-              <button type="button" data-value="tower">Tower</button>
-              <button type="button" data-value="flat">Flat</button>
+          <!-- The Players box of online and Nearby games: seats, watchers and seat controls (src/page/players.ts).
+               It sits under the Opponent picker and the mode boxes, so it never moves the picker when it shows. -->
+          <section class="players" id="players" aria-labelledby="players-title" data-show-mode="online nearby" data-needs-session>
+            <!-- Watcher chat: watchers can write in the chat while it is on. The seat lock: X and O swap after each game unless it is on (src/page/controls.ts). -->
+            <div class="field-head">
+              <span class="label" id="players-title" data-tip="Hold or right-click a player to report or block">Players</span>
+              <span class="field-head-actions">
+                <button type="button" class="btn btn-small btn-icon watcher-chat" id="watcher-chat" aria-label="Watchers can chat" aria-pressed="true"></button>
+                <button type="button" class="btn btn-small btn-icon lock" data-seat-lock aria-label="Keep the seats" aria-pressed="false"></button>
+              </span>
             </div>
-          </div>
-        </div>
-
-        <div class="field" data-show-view="flat">
-          <span class="label">Layout</span>
-          <div class="segmented" data-setting="layout">
-            <button type="button" data-value="grid">Grid</button>
-            <button type="button" data-value="row">Side by side</button>
-            <button type="button" data-value="column">Top to bottom</button>
-            <button type="button" data-value="steps">Steps</button>
-          </div>
-        </div>
-
-        <div class="field clock-editor" data-show-mode="computer friend online nearby">
-          <span class="label">Time limit</span>
-          <div class="limits">
-            <div class="limit" data-limit="perGame">
-              <label class="limit-switch">
-                <span>Whole game, each player</span>
-                <input type="checkbox" role="switch" data-limit-on />
-              </label>
-              <div class="limit-options" role="group" aria-label="Time per player">
-                <button type="button" data-preset="60">1m</button>
-                <button type="button" data-preset="180">3m</button>
-                <button type="button" data-preset="300">5m</button>
-                <button type="button" data-preset="600">10m</button>
-                <label class="limit-custom">
-                  <input type="number" data-limit-value inputmode="decimal" placeholder="custom" min="0.5" max="120" step="0.5" aria-label="Custom minutes per player" />
-                  <span>min</span>
-                </label>
-              </div>
+            <ul class="players-list" id="players-list"></ul>
+            <div class="players-request" id="players-request" aria-live="polite" hidden>
+              <p id="players-request-text"></p>
+              <div class="players-request-actions" id="players-request-actions"></div>
             </div>
-            <div class="limit" data-limit="perMove">
-              <label class="limit-switch">
-                <span>Each move</span>
-                <input type="checkbox" role="switch" data-limit-on />
-              </label>
-              <div class="limit-options" role="group" aria-label="Time per move">
-                <button type="button" data-preset="10">10s</button>
-                <button type="button" data-preset="30">30s</button>
-                <button type="button" data-preset="60">1m</button>
-                <label class="limit-custom">
-                  <input type="number" data-limit-value inputmode="numeric" placeholder="custom" min="3" max="600" step="1" aria-label="Custom seconds per move" />
-                  <span>sec</span>
-                </label>
-              </div>
-            </div>
-          </div>
-          <p class="clock-summary" id="clock-summary"></p>
-        </div>
-
-        <!-- Before a game with another device starts, the hide options show but stay off (src/page/render.ts). -->
-        <div class="field" data-show-mode="computer friend online nearby">
-          <!-- The lock sits with the match settings that it locks. It is a promise between two people, so only online and Nearby show it. -->
-          <div class="field-head">
-            <span class="label">Hide</span>
-            <button type="button" class="btn btn-small lock" id="lock" data-show-mode="online nearby" aria-pressed="false">Lock</button>
-          </div>
-          <div class="toggles">
-            <button type="button" class="btn" data-toggle="hideBoard" aria-label="Hide board">Board</button>
-            <button type="button" class="btn" data-toggle="hideHistory" aria-label="Hide history">History</button>
-            <button type="button" class="btn" data-toggle="hideCoordinates" aria-label="Hide coordinates">Coordinates</button>
-          </div>
-        </div>
-
-        <div class="field">
-          <span class="label" id="theme-label">Theme</span>
-          <details class="theme-menu" id="theme-menu">
-            <summary aria-describedby="theme-label"><span class="swatch" id="theme-swatch"><span></span></span><span id="theme-name"></span></summary>
-            <!-- src/page/theme.ts fills this from the THEMES list. -->
-            <div class="theme-picker" id="theme-picker" role="group" aria-labelledby="theme-label"></div>
-          </details>
-        </div>
-
-        <a class="train-link" id="train-link" href="/sound-training"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 3-2 4-3 5.5S14 18 12 19.5 8 19 8 17"/><path d="M10 9.5a2 2 0 0 1 4 0c0 1.2-1 1.6-1.5 2.2"/></svg><span>Train your ear</span></a>
-        <a class="train-link" id="voice-room-link" href="/sound-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span>Voice room</span></a>
-
-        <details class="help advanced" id="advanced" data-show-mode="computer" hidden>
-          <summary>Advanced: computer player</summary>
-          <p>Every number behind the computer. Easy and medium tire in a long game: each value moves from fresh to tired between two moves. A changed computer keeps its own records.</p>
-          <div class="tuning" id="tuning"></div>
-          <button type="button" class="btn btn-small tuning-reset" id="tuning-reset">Reset to defaults</button>
-          <section class="agent" aria-labelledby="agent-title">
-            <p class="agent-title" id="agent-title">Play with your AI agent</p>
-            <p>Give this text to an AI agent. It can play you, or play another agent while you watch.</p>
-            <pre class="agent-snippet" id="agent-snippet"></pre>
-            <button type="button" class="btn btn-small tuning-reset" id="agent-copy">Copy</button>
           </section>
+        </aside>
+        <!-- The second card: the settings that a player changes rarely. It starts closed on every load. -->
+        <details class="panel panel-more" id="more">
+          <summary aria-label="More settings"><span>More</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
+          <div class="panel-more-body">
+            <div class="field">
+              <span class="label">View</span>
+              <div class="view-row">
+                <div class="segmented" data-setting="view">
+                  <button type="button" data-value="tower">Tower</button>
+                  <button type="button" data-value="flat">Flat</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="field" data-show-view="flat">
+              <span class="label">Layout</span>
+              <div class="segmented" data-setting="layout">
+                <button type="button" data-value="grid">Grid</button>
+                <button type="button" data-value="row">Side by side</button>
+                <button type="button" data-value="column">Top to bottom</button>
+                <button type="button" data-value="steps">Steps</button>
+              </div>
+            </div>
+
+            <div class="field" data-show-mode="computer">
+              <div class="field-head">
+                <span class="label">You play</span>
+                <button type="button" class="btn btn-small btn-icon lock" data-seat-lock aria-label="Keep the seats" aria-pressed="false"></button>
+              </div>
+              <div class="segmented" data-setting="human">
+                <button type="button" data-value="X">X · first</button>
+                <button type="button" data-value="O">O · second</button>
+              </div>
+            </div>
+
+            <div class="field clock-editor" data-show-mode="computer friend online nearby">
+              <span class="label">Time limit</span>
+              <div class="limits">
+                <div class="limit" data-limit="perGame">
+                  <label class="limit-switch">
+                    <span>Whole game, each player</span>
+                    <input type="checkbox" role="switch" data-limit-on />
+                  </label>
+                  <div class="limit-options" role="group" aria-label="Time per player">
+                    <button type="button" data-preset="60">1m</button>
+                    <button type="button" data-preset="180">3m</button>
+                    <button type="button" data-preset="300">5m</button>
+                    <button type="button" data-preset="600">10m</button>
+                    <label class="limit-custom">
+                      <input type="number" data-limit-value inputmode="decimal" placeholder="custom" min="0.5" max="120" step="0.5" aria-label="Custom minutes per player" />
+                      <span>min</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="limit" data-limit="perMove">
+                  <label class="limit-switch">
+                    <span>Each move</span>
+                    <input type="checkbox" role="switch" data-limit-on />
+                  </label>
+                  <div class="limit-options" role="group" aria-label="Time per move">
+                    <button type="button" data-preset="10">10s</button>
+                    <button type="button" data-preset="30">30s</button>
+                    <button type="button" data-preset="60">1m</button>
+                    <label class="limit-custom">
+                      <input type="number" data-limit-value inputmode="numeric" placeholder="custom" min="3" max="600" step="1" aria-label="Custom seconds per move" />
+                      <span>sec</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <p class="clock-summary" id="clock-summary"></p>
+            </div>
+
+            <!-- Before a game with another device starts, the hide options show but stay off (src/page/render.ts). -->
+            <div class="field" data-show-mode="computer friend online nearby">
+              <!-- The lock sits with the match settings that it locks. It is a promise between two people, so only online and Nearby show it. -->
+              <div class="field-head">
+                <span class="label">Hide</span>
+                <button type="button" class="btn btn-small lock" id="lock" data-show-mode="online nearby" aria-pressed="false">Lock</button>
+              </div>
+              <!-- Each step hides more: the history, then the board too, then the coordinates too (src/page/controls.ts). -->
+              <div class="hide-steps" id="hide-steps" role="group" aria-label="Hide">
+                <button type="button" data-hide-level="0" aria-label="Hide nothing">Off</button>
+                <button type="button" data-hide-level="1" aria-label="Hide history">History</button>
+                <button type="button" data-hide-level="2" aria-label="Hide history and board">Board</button>
+                <button type="button" data-hide-level="3" aria-label="Hide history, board and coordinates">Coordinates</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <span class="label" id="theme-label">Theme</span>
+              <details class="theme-menu" id="theme-menu">
+                <summary aria-describedby="theme-label"><span class="swatch" id="theme-swatch"><span></span></span><span id="theme-name"></span></summary>
+                <!-- src/page/theme.ts fills this from the THEMES list. -->
+                <div class="theme-picker" id="theme-picker" role="group" aria-labelledby="theme-label"></div>
+              </details>
+            </div>
+
+            <!-- Play by voice: a held note places your move. src/page/voice.ts sets the icon and shows this field where this
+                 screen has a seat. The caret opens the voice options. Voice only: while the voice listens, a tap on the
+                 board or the keypad places nothing. -->
+            <div class="field" id="voice-control" hidden>
+              <span class="label">Play by voice</span>
+              <div class="split-control voice-control" role="group" aria-label="Voice controls">
+                <button type="button" id="voice" aria-label="Play by voice" aria-pressed="false" data-tip="Play by voice: hold a note to place"></button>
+                <button type="button" id="voice-options-button" popovertarget="voice-options" aria-label="Voice options" data-tip="Voice options"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
+              </div>
+              <div popover id="voice-options" class="modal sound-sets" role="dialog" aria-labelledby="voice-options-title">
+                <div class="modal-head">
+                  <h2 id="voice-options-title">Voice options</h2>
+                  <button type="button" class="btn btn-small btn-icon" popovertarget="voice-options" popovertargetaction="hide" aria-label="Close the voice options"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+                </div>
+                <label class="limit-switch">
+                  <span>Voice only: taps do not place</span>
+                  <input type="checkbox" role="switch" id="voice-only" />
+                </label>
+              </div>
+            </div>
+
+            <a class="train-link" id="train-link" href="/sound-training"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 3-2 4-3 5.5S14 18 12 19.5 8 19 8 17"/><path d="M10 9.5a2 2 0 0 1 4 0c0 1.2-1 1.6-1.5 2.2"/></svg><span>Train your ear</span></a>
+            <a class="train-link" id="voice-room-link" href="/sound-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span>Voice room</span></a>
+
+            <details class="help advanced" id="advanced" data-show-mode="computer" hidden>
+              <summary>Advanced: computer player</summary>
+              <p>Every number behind the computer. Easy and medium tire in a long game: each value moves from fresh to tired between two moves. A changed computer keeps its own records.</p>
+              <div class="tuning" id="tuning"></div>
+              <button type="button" class="btn btn-small tuning-reset" id="tuning-reset">Reset to defaults</button>
+              <section class="agent" aria-labelledby="agent-title">
+                <p class="agent-title" id="agent-title">Play with your AI agent</p>
+                <p>Give this text to an AI agent. It can play you, or play another agent while you watch.</p>
+                <pre class="agent-snippet" id="agent-snippet"></pre>
+                <button type="button" class="btn btn-small tuning-reset" id="agent-copy">Copy</button>
+              </section>
+            </details>
+          </div>
         </details>
-      </aside>
+      </div>
+      <!-- One column: the settings card sits under the board. This gear shows at the side while the card is out of view (src/page/settings-hint.ts). -->
+      <button type="button" class="settings-hint" id="settings-hint" aria-label="Settings" data-tip="Settings" hidden><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></button>
     </main>
+    <!-- The links about the project sit at the bottom of every page, away from the game. -->
+    <footer class="site-footer">
+      <div class="footer-links">
+        <button type="button" class="repo-link" id="previews-button" data-hide-in="ios" aria-haspopup="dialog" aria-label="kitshn: previews of open pull requests" data-tip="Previews of open pull requests">
+          <!-- The KitSHn pot, drawn inline so that it works offline. -->
+          <svg viewBox="0 0 14 14" width="18" height="18" fill="currentColor" aria-hidden="true"><rect x="6" y="1.2" width="2" height="1.6" rx="0.5"/><rect x="2.2" y="3.4" width="9.6" height="1.5" rx="0.75"/><rect x="3" y="5.6" width="8" height="6.6" rx="1.6"/><rect x="0.8" y="6.8" width="2.4" height="1.4" rx="0.7"/><rect x="10.8" y="6.8" width="2.4" height="1.4" rx="0.7"/></svg>
+          <span>kitshn</span>
+        </button>
+        <a class="repo-link" href="https://github.com/Yarden-zamir/tick3d" data-hide-in="ios" target="_blank" rel="noopener" aria-label="GitHub" data-tip="The source code on GitHub">
+          <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+            <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+          </svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </footer>
     <dialog class="modal end-card" id="end-card" aria-label="Game result">
       <!-- The light shows the cell of the note while the song plays. src/page/end-card.ts places it. -->
       <div class="end-card-picture">
@@ -412,6 +449,8 @@
         <img id="end-card-image" alt="" width="1080" height="1350" />
         <span class="song-light" id="end-card-light" hidden></span>
       </div>
+      <!-- The achievements that this game unlocked. src/page/achievements.ts fills it. -->
+      <div class="unlock" id="end-card-achievements" role="group" hidden></div>
       <div class="include-options">
         <label class="include" id="end-card-code-option">
           <input type="checkbox" id="end-card-code" checked />
@@ -455,6 +494,15 @@
       <section id="my-games-session-box">
         <h3 id="my-games-session-title">This session</h3>
         <ol class="my-games-list" id="my-games-session"></ol>
+      </section>
+      <!-- src/page/achievements.ts fills the list when the dialog opens. -->
+      <section>
+        <h3>Achievements <small class="achievements-summary" id="my-games-achievements-summary"></small></h3>
+        <progress class="achievements-bar" id="my-games-achievements-bar" aria-labelledby="my-games-achievements-summary" value="0"></progress>
+        <ul class="achievements" id="my-games-achievements"></ul>
+        <div class="my-games-history-actions">
+          <button type="button" class="btn btn-small my-games-more" id="my-games-reset-achievements" hidden>Reset achievements</button>
+        </div>
       </section>
       <section>
         <h3>History</h3>
@@ -506,10 +554,18 @@
       </div>
     </dialog>
     <dialog class="modal end-card home-confirm" id="clear-confirm" aria-labelledby="clear-confirm-text">
-      <p id="clear-confirm-text">Clear your match history on every device? Your survival records and your totals stay. Opponents keep their copy of your online games, and the games still count in the site stats.</p>
+      <p id="clear-confirm-text">Clear your match history on every device? Your survival records, your achievements and your totals stay. Opponents keep their copy of your online games, and the games still count in the site stats.</p>
       <div class="end-card-actions">
         <button type="button" class="btn btn-primary" id="clear-confirm-yes">Clear history</button>
         <button type="button" class="btn" id="clear-confirm-no">Keep</button>
+      </div>
+    </dialog>
+    <!-- Reset achievements: src/page/achievements.ts. -->
+    <dialog class="modal end-card home-confirm" id="reset-achievements-confirm" aria-labelledby="reset-achievements-confirm-text">
+      <p id="reset-achievements-confirm-text">Reset your achievements on every device? They all lock again, and only new games count. Your history and your stats stay.</p>
+      <div class="end-card-actions">
+        <button type="button" class="btn btn-primary" id="reset-achievements-confirm-yes">Reset achievements</button>
+        <button type="button" class="btn" id="reset-achievements-confirm-no">Keep</button>
       </div>
     </dialog>
     <!-- Delete my data: src/page/my-games.ts. -->
@@ -543,29 +599,6 @@
         <button type="button" class="btn" id="avatar-viewer-close">Close</button>
       </div>
     </dialog>
-    <!-- Report and block a person: src/page/safety.ts. -->
-    <dialog class="modal end-card home-confirm safety-menu" id="safety-menu" aria-labelledby="safety-title">
-      <p id="safety-title"></p>
-      <div class="end-card-actions" id="safety-actions">
-        <button type="button" class="btn" id="safety-report">Report</button>
-        <button type="button" class="btn" id="safety-block">Block</button>
-        <button type="button" class="btn" id="safety-cancel">Cancel</button>
-      </div>
-      <form class="safety-report" id="safety-report-form" hidden>
-        <fieldset>
-          <legend>What is wrong?</legend>
-          <label><input type="radio" name="reason" value="spam" required /> Spam</label>
-          <label><input type="radio" name="reason" value="abuse" /> Abuse</label>
-          <label><input type="radio" name="reason" value="name" /> Inappropriate name</label>
-          <label><input type="radio" name="reason" value="other" /> Other</label>
-        </fieldset>
-        <textarea id="safety-note" maxlength="200" rows="2" placeholder="A short note (optional)" aria-label="Note"></textarea>
-        <div class="end-card-actions">
-          <button type="submit" class="btn btn-primary" id="safety-send">Send report</button>
-          <button type="button" class="btn" id="safety-back">Back</button>
-        </div>
-      </form>
-    </dialog>
     <dialog class="modal end-card home-confirm" id="seat-prompt" aria-labelledby="seat-prompt-text">
       <p id="seat-prompt-text"></p>
       <div class="end-card-actions">
@@ -584,21 +617,29 @@
       <small>Reply</small>
     </button>
     <div class="modal info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
-      <h2 id="info-title">How to win</h2>
-      <p>Get four marks in a straight line: along a row or column, up through the layers, or diagonally through the cube.</p>
-      <ul>
-        <li>Drag around the tower to turn it.</li>
-        <li>Keypad: tap the layer, row and column, then Place.</li>
-        <li>Every cell has its own sound. The arrow next to the speaker opens the sound sets and their maps.</li>
-        <li>Play by voice: tap the mic, then hold a note on a cell to place. On a phone, turn on Tilt in the Voice room to nudge the cell. Calibrate there too.</li>
-        <li>The Song button plays a finished game as music. Hold it to share.</li>
-        <li>Time limits work like a chess clock. A player who runs out loses.</li>
-        <li>Lock stops setting changes until the game ends.</li>
-        <li>Online: share the code or link. Nearby: devices on the same Wi-Fi.</li>
-        <li>Players: any player manages the seats. A change that affects the other player, and an undo, wait until that player accepts.</li>
-        <li>Hover or long-press an icon to see what it does.</li>
-        <li>Hold or right-click a message or player to report or block.</li>
-      </ul>
+      <h2 id="info-title">How to play</h2>
+      <!-- The tutorial video "How to win" (video/creative/tutorial.md). The slider jumps between its checkpoints,
+           and the checkpoint under the slider shows its headline and text. src/page/tutorial.ts loads the video on the
+           first open, from src/tutorial-chapters.json, which the video render writes. -->
+      <div class="tutorial">
+        <div class="tutorial-video">
+          <video id="tutorial-video" playsinline preload="none"></video>
+          <div class="tutorial-buttons">
+            <button type="button" class="tutorial-play" id="tutorial-play" aria-label="Play the tutorial"></button>
+            <button type="button" class="tutorial-play" id="tutorial-mute" aria-label="Sound of the tutorial" aria-pressed="true"></button>
+          </div>
+        </div>
+        <div class="tutorial-track">
+          <output class="tutorial-bubble" id="tutorial-bubble" for="tutorial-range"></output>
+          <input type="range" id="tutorial-range" min="0" step="any" value="0" aria-label="Tutorial checkpoint" />
+          <div class="tutorial-ticks" id="tutorial-ticks" aria-hidden="true"></div>
+        </div>
+        <div class="tutorial-step" aria-live="polite">
+          <!-- [html-validate-disable-next empty-heading: src/page/tutorial.ts fills it from the checkpoints] -->
+          <h3 id="tutorial-headline"></h3>
+          <p id="tutorial-text"></p>
+        </div>
+      </div>
       <div class="info-actions">
         <a class="btn btn-small" id="info-stats-link" href="/stats"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>Stats of all games</a>
         <a class="btn btn-small" id="info-privacy-link" href="/privacy">Privacy</a>

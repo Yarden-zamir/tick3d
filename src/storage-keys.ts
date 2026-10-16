@@ -15,6 +15,8 @@ export const STORAGE_KEYS = {
   reported: 'tick3d.reported',
   // The server time of the last check of deletion notices (src/page/deletions.ts).
   deletionsChecked: 'tick3d.deletions-checked',
+  // The run of wins against easy, and whether this device moved up to medium once (src/page/level-up.ts).
+  levelUp: 'tick3d.level-up',
 } as const;
 
 // The keys that hold settings, not game data. 'tick3d.voice' is the key of src/voice/settings.ts

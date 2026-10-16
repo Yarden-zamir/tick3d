@@ -23,6 +23,7 @@ import {
   parseSeatAction,
   parseSeatAnswer,
   parseSessionUpdate,
+  parseLeaderboardFilter,
   parseStatsFilter,
 } from '../src/protocol.ts';
 import { asHostId, parseAnnounce, parseAnswerRequest } from '../src/nearby/lobby.ts';
@@ -37,6 +38,7 @@ import {
   NEARBY_CALLS_PER_10_MINUTES,
   NEARBY_GRACE_MS,
   NEARBY_HOSTS_PER_NETWORK,
+  LEADERBOARD_FILTER_ERROR,
   STATS_FILTER_ERROR,
   PRACTICE_RUNS_PER_10_MINUTES,
   REPORTS_PER_10_MINUTES,
@@ -388,7 +390,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     case 'GET /api/me/games':
     case 'GET /api/me/history':
     case 'DELETE /api/me/history':
-    case 'GET /api/me/records': {
+    case 'GET /api/me/records':
+    case 'GET /api/me/achievements':
+    case 'DELETE /api/me/achievements': {
       const token = requirePlayer(req);
       const user = auth?.user(req);
       // Every visit with a login links this browser to the account, so a new device joins at once.
@@ -396,12 +400,17 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       if (match.route === 'GET /api/me/games') return send(res, 200, await store.myGames(token));
       // A cross-site form cannot send the X-Player header, so another site cannot clear a history.
       if (match.route === 'DELETE /api/me/history') return send(res, 200, { hidden: await store.clearHistory(token) });
+      if (match.route === 'DELETE /api/me/achievements') {
+        await store.resetAchievements(token);
+        return send(res, 200, await store.achievements(token));
+      }
       if (match.route === 'GET /api/me/history') {
         const offset = Number(url.searchParams.get('offset') ?? '0');
         if (!Number.isInteger(offset) || offset < 0) throw new HttpError(400, 'The offset is not a whole number of games.');
         return send(res, 200, await store.history(token, offset));
       }
       if (match.route === 'GET /api/me/records') return send(res, 200, { records: await store.records(token) });
+      if (match.route === 'GET /api/me/achievements') return send(res, 200, await store.achievements(token));
       return send(res, 200, await me(token, user));
     }
     // A cross-site form cannot send the X-Player header, so another site cannot delete a player's data.
@@ -466,7 +475,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       allowReport(clientOf(req), Date.now());
       const token = requirePlayer(req);
       const report = parseReportRequest(await readJson(req));
-      if (report === undefined) throw new HttpError(400, 'A report needs a code, one message id or person id, a reason, and a note of at most 200 characters.');
+      if (report === undefined) throw new HttpError(400, 'A report needs one message id with a code or one person id, a reason, and a note of at most 200 characters.');
       return send(res, 201, await store.report(token, report));
     }
     case 'GET /api/reports':
@@ -550,6 +559,16 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const token = asPlayerToken(header);
       if (header !== undefined && token === undefined) throw new HttpError(400, 'Invalid X-Player header.');
       return send(res, 200, await store.stats(filter, token ?? null));
+    }
+    // Names and results of each player, so the stats page can rank them. It reads the X-Player header
+    // when it is there, to mark the caller.
+    case 'GET /api/leaderboard': {
+      const filter = parseLeaderboardFilter(url.searchParams);
+      if (filter === undefined) throw new HttpError(400, LEADERBOARD_FILTER_ERROR);
+      const header = req.headers['x-player'];
+      const token = asPlayerToken(header);
+      if (header !== undefined && token === undefined) throw new HttpError(400, 'Invalid X-Player header.');
+      return send(res, 200, await store.leaderboard(filter, token));
     }
     // Cached in server/previews.ts, so a flood of requests costs no extra GitHub calls and needs no limiter.
     case 'GET /api/previews':
@@ -688,7 +707,6 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     server.close();
     for (const set of streams.values()) for (const stream of set) stream.res.end();
-    store.close();
-    process.exit(0);
+    void store.close().finally(() => process.exit(0));
   });
 }

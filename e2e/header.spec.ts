@@ -4,10 +4,11 @@ import { PAGES, type PageName } from '../src/pages.ts';
 import { expect, test } from './fixtures.ts';
 
 // Every page has the same header (src/header/). Info opens the own text of each page.
+// kitshn and GitHub sit in the footer of every page.
 
 // The heading of the Info panel of each page. A new page in src/pages.ts needs an entry here.
 const INFO = {
-  main: 'How to win',
+  main: 'How to play',
   stats: 'About these stats',
   training: 'How the ear training works',
   input: 'How the Voice room works',
@@ -24,13 +25,17 @@ async function fakeLogin(page: Page): Promise<void> {
 for (const name of keysOf(PAGES)) {
   const { path } = PAGES[name];
   const info = INFO[name];
-  test(`the header of ${path} has the wordmark, the account, Info, kitshn and GitHub`, async ({ page }) => {
+  test(`the header of ${path} has the wordmark, the account and Info, and the footer has kitshn and GitHub`, async ({ page }) => {
     const errors: Error[] = [];
     page.on('pageerror', (error) => errors.push(error));
     await page.goto(path);
-    await expect(page.locator('#home-link')).toHaveAttribute('href', '/');
-    await expect(page.getByRole('link', { name: 'GitHub' })).toHaveAttribute('href', 'https://github.com/Yarden-zamir/tick3d');
-    await expect(page.locator('#account-button')).toBeVisible();
+    const header = page.locator('header.brand');
+    const footer = page.locator('.site-footer');
+    await expect(header.locator('#home-link')).toHaveAttribute('href', '/');
+    await expect(header.locator('#account-button')).toBeVisible();
+    await expect(footer.getByRole('link', { name: 'GitHub' })).toHaveAttribute('href', 'https://github.com/Yarden-zamir/tick3d');
+    await expect(footer.locator('#previews-button')).toBeVisible();
+    for (const name of ['GitHub', 'Previews of open pull requests']) await expect(header.getByRole('link', { name }).or(header.getByRole('button', { name })), name).toHaveCount(0);
 
     const panel = page.locator('#info-panel');
     await expect(panel).toBeHidden();
@@ -40,7 +45,7 @@ for (const name of keysOf(PAGES)) {
     await panel.getByRole('button', { name: 'Close' }).click();
     await expect(panel).toBeHidden();
 
-    await page.getByRole('button', { name: 'Previews of open pull requests' }).click();
+    await footer.getByRole('button', { name: 'Previews of open pull requests' }).click();
     const previews = page.locator('#previews');
     await expect(previews).toHaveAttribute('open');
     await expect(previews.locator('#previews-list')).not.toContainText('Loading');

@@ -3,7 +3,7 @@
 // of the format (formats.ts), origin in its middle, y down.
 import { Easing, interpolate } from 'remotion';
 import { frameOf, since } from '../grid.ts';
-import { type BadgeArt, css, endCard, onSquare, wordAt, wordWidth } from '../lettering.ts';
+import { BORDER, SHADOW, type BadgeArt, css, endCard, onSquare, wordAt, wordWidth } from '../lettering.ts';
 import { clamp, cubic } from '../rig.ts';
 import type { Theme, Token } from '../themes.ts';
 import { type Area, minTextSize } from './formats.ts';
@@ -17,8 +17,6 @@ const TEXT_TOP = -500;
 // The keypad: three slots over four digit keys and Place. It slides up from under the frame.
 const SLOT = { y: 250, width: 170, height: 136, gap: 26 } as const;
 const KEY = { y: 410, width: 112, height: 92, gap: 20, place: 210 } as const;
-const BORDER = 6;
-const SHADOW = 8;
 const SLIDE = 3;
 const LABELS = ['Layer', 'Row', 'Column'] as const;
 // The Hide buttons of the game panel (index.html `.toggles`), above the slots, for a mask with `toggle`.
@@ -155,12 +153,11 @@ function drawKeypad(ctx: CanvasRenderingContext2D, frame: number, theme: Theme):
 
 // The thought line: a `--win` line with a `--line` outline from the top of the slots to the cell, drawn in over
 // 1 sixteenth from the place, gone by 4.
-function drawThought(ctx: CanvasRenderingContext2D, frame: number, theme: Theme, area: Area, width: number, thought: { x: number; y: number; at: number }): void {
+function drawThought(ctx: CanvasRenderingContext2D, frame: number, theme: Theme, thought: { x: number; y: number; at: number }): void {
   const t = since(frame, thought.at);
   const length = interpolate(t, [0, 1], [0, 1], clamp);
   const alpha = interpolate(t, [2.5, 4], [1, 0], clamp);
-  const scale = area.size / 1080;
-  const to = { x: (thought.x - width / 2) / scale, y: (thought.y - area.y) / scale };
+  const to = thought;
   const from = { x: 0, y: SLOT.y - SLOT.height / 2 - 10 };
   const end = { x: from.x + (to.x - from.x) * length, y: from.y + (to.y - from.y) * length };
   ctx.save();
@@ -195,7 +192,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, frame: number, theme: The
   onSquare(
     ctx,
     () => {
-      if (thought !== undefined) drawThought(ctx, frame, theme, area, ctx.canvas.width, thought);
+      if (thought !== undefined) drawThought(ctx, frame, theme, thought);
       drawKeypad(ctx, frame, theme);
       for (const line of PLAN.text) {
         if (frame >= frameOf(line.until)) continue;

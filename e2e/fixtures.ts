@@ -81,6 +81,14 @@ export async function expectToast(page: Page, text: string): Promise<void> {
   await expect.poll(() => toasts(page)).toContainEqual(expect.stringContaining(text));
 }
 
+// Opens the More card of the game page. It starts closed on every load, and its controls are not
+// visible until it opens. A second call keeps it open.
+export async function openMore(page: Page): Promise<void> {
+  const more = page.locator('#more');
+  if ((await more.getAttribute('open')) === null) await more.locator('> summary').click();
+  await expect(more).toHaveAttribute('open');
+}
+
 export const cell = (page: Page, index: number) => page.locator('.cell').nth(index);
 export const marks = (page: Page) => page.locator('.cell.x, .cell.o');
 export const status = (page: Page) => page.locator('#status');

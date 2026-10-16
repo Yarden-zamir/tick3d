@@ -1,4 +1,4 @@
-import { cell, expect, expectMyMove, expectToast, marks, hasDeviceGameLink, ownName, playerToken, readQr, storedSettings, test, toasts } from './fixtures.ts';
+import { cell, expect, expectMyMove, expectToast, marks, hasDeviceGameLink, openMore, ownName, playerToken, readQr, storedSettings, test, toasts } from './fixtures.ts';
 import type { Page } from '@playwright/test';
 
 const nearby = { settings: { mode: 'nearby' } };
@@ -45,9 +45,10 @@ test('host and guest connect with text codes, play a game and chat, and both see
   await expect(host.locator('#chat-log')).toContainText(guestName);
 
   // The guest locks: the lock holds the rules of both devices until the game ends. The view stays free.
+  for (const page of [host, guest]) await openMore(page);
   await guest.locator('#lock').click();
   await expect(host.locator('#lock')).toContainText('Locked');
-  await expect(host.getByRole('button', { name: 'Hide board', exact: true })).toBeDisabled();
+  await expect(host.getByRole('button', { name: 'Hide history and board', exact: true })).toBeDisabled();
   await expect(host.getByRole('button', { name: 'Flat' })).toBeEnabled();
 
   // The host finishes the game: X on 0, 16, 32, 48, O on 1, 2, 3.

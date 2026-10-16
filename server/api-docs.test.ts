@@ -24,9 +24,11 @@ import {
   parseSeatAnswer,
   parseBlockRequest,
   parseStatsPrivacy,
+  parseLeaderboard,
   parseBlocks,
   parseReportRequest,
 } from '../src/protocol.ts';
+import { parseAchievements } from '../src/achievements.ts';
 import { parseDeletedPeople } from '../src/deletions.ts';
 import { parsePlayoffRequest } from '../src/practice/playoff.ts';
 import { parsePracticeBoard, parsePracticeRun } from '../src/practice/practice.ts';
@@ -57,6 +59,7 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
       : undefined,
   Me: parseMe,
   MyGames: parseMyGames,
+  Achievements: parseAchievements,
   PublicGame: parsePublicGame,
   HistoryPage: parseHistoryPage,
   DeletedPeople: parseDeletedPeople,
@@ -70,6 +73,7 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   PlayoffRequest: parsePlayoffRequest,
   PracticeRun: parsePracticeRun,
   PracticeBoard: parsePracticeBoard,
+  Leaderboard: parseLeaderboard,
   SeatAction: parseSeatAction,
   SeatAnswer: parseSeatAnswer,
   // server/main.ts reads `name` and checks it with parseCustomName.
@@ -170,8 +174,11 @@ describe('the SessionView schema', () => {
       expect(schemaErrors('HistoryPage', await store.history(alice, 0))).toBe('');
       expect(schemaErrors('Records', { records: await store.records(alice) })).toBe('');
       expect(schemaErrors('Stats', await store.stats())).toBe('');
+      const board = await store.leaderboard(ALL_STATS, alice);
+      expect(board.rows).toHaveLength(2);
+      expect(schemaErrors('Leaderboard', board)).toBe('');
     } finally {
-      store.close();
+      await store.close();
     }
     // DuckDB writes for each move. A busy CI machine needs more than the default 5 s.
   }, 20_000);
@@ -182,7 +189,7 @@ describe('the SessionView schema', () => {
       expect(mine.personal).not.toBeNull();
       expect(schemaErrors('Stats', mine)).toBe('');
     } finally {
-      store.close();
+      await store.close();
     }
   }, 20_000);
 });

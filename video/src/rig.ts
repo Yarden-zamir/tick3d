@@ -2,6 +2,7 @@
 // framing of a shot in both crops.
 import { type PerspectiveCamera, Vector3 } from 'three';
 import { Easing, interpolate } from 'remotion';
+import { SQUARE } from './lettering.ts';
 
 export type Shot = {
   position: Vector3;
@@ -55,4 +56,13 @@ export function aim(camera: PerspectiveCamera, view: Shot, width: number, height
   // A view offset down moves the picture up: the square centre to `y`, then the lift of the shot.
   camera.setViewOffset(width, height, 0, height / 2 - y + (view.lift * size) / 2, width, height);
   camera.updateProjectionMatrix();
+}
+
+// Where `point` shows with the camera of the frame, in the units of the text square (lettering.ts onSquare): the
+// centre square of the frame, or `area`, as in aim.
+export function onSquareAt(camera: PerspectiveCamera, point: Vector3, width: number, height: number, area?: { y: number; size: number }): { x: number; y: number } {
+  const { y, size } = area ?? { y: height / 2, size: Math.min(width, height) };
+  const projected = point.clone().project(camera);
+  const unit = size / SQUARE;
+  return { x: (projected.x * width) / 2 / unit, y: (height / 2 - (projected.y * height) / 2 - y) / unit };
 }
