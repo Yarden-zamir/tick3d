@@ -78,6 +78,54 @@
   }
 }
 
+/* ---- The trailer ---- */
+
+.trailer {
+  position: relative;
+  margin: 0 0 1.4rem;
+  border: var(--border) solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 5px 5px 0 var(--shadow);
+  background: #000;
+  animation: path-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.trailer video {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: pointer;
+}
+
+.trailer-sound {
+  position: absolute;
+  right: 0.6rem;
+  bottom: 0.6rem;
+  padding: 0.3rem 0.75rem;
+  border: var(--border) solid var(--line);
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--on-color);
+  box-shadow: 3px 3px 0 var(--shadow);
+  font-weight: 800;
+  cursor: pointer;
+  animation: share-nod 4s ease-in-out infinite;
+}
+
+.trailer-sound[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--ink);
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trailer,
+  .trailer-sound {
+    animation: none;
+  }
+}
+
 /* ---- The phone picker ---- */
 
 .testing-hero h2 {
