@@ -3,6 +3,7 @@ import { sameClock, describeClock, hasLimit } from '../clock.ts';
 import { checkPlayoffInvite } from './playoff-invite.ts';
 import { type Game, play, newGame, type Player, other } from '../game.ts';
 import { OnlineError, api } from '../online.ts';
+import { loadNewVersion } from '../pwa.ts';
 import { type ChatMessage, type Code, type GameId, MATCH_OPTIONS, type Metrics, type SessionView, isChatEvent, parseSessionView, toGame } from '../protocol.ts';
 import { type LinkIntent, withWatch } from '../session-link.ts';
 import type { SessionDoc } from '../session/format.ts';
@@ -11,7 +12,7 @@ import { notifyChat } from './chat.ts';
 import { eventText } from './chat-log.ts';
 import { ownPerson, visibleChat } from './safety.ts';
 import { scheduleComputer } from './computer.ts';
-import { burstEl, undoButton } from './dom.ts';
+import { burstEl, scrollMotion, undoButton } from './dom.ts';
 import { announce, finish } from './end-card.ts';
 import { reject, showToast, showError, showProblem } from './feedback.ts';
 import { closeGameView } from './game-view.ts';
@@ -65,9 +66,15 @@ async function playMove(cell: number, via: keyof Metrics['input']): Promise<void
     if (result.error === 'occupied' && mark) setTimeout(() => sounds.place(mark, cell), TAKEN_SOUND_DELAY_MS);
     return;
   }
-  // In a friend game this device plays both seats.
-  if (page.session.mode !== 'friend' && game.turn !== page.session.you) return reject(cell, waitReason);
   const { code, backend } = page.session;
+  // In a friend game this device plays both seats.
+  if (page.session.mode !== 'friend' && game.turn !== page.session.you) {
+    reject(cell, waitReason);
+    // With another device, this screen can miss a change, for example a move or a seat swap while
+    // the phone slept. The refusal sends nothing, so the page reads the game again.
+    if (shared()) void refresh(code);
+    return;
+  }
   const request = { game: page.games.length - 1, moveCount: game.moves.length, cell };
   countMove(via);
   // Show the move at once. The answer replaces it, or a refresh undoes it on an error.
@@ -235,6 +242,8 @@ export async function refresh(code: Code): Promise<void> {
     }
     applyView(view);
   } catch (error) {
+    // An answer that this page cannot read comes from a newer release of the server.
+    if (open.backend === api && !(error instanceof OnlineError)) void loadNewVersion();
     showError(error);
   }
 }
@@ -262,6 +271,9 @@ export async function sendShownChange(code: Code, send: () => Promise<SessionVie
   } catch (error) {
     shownChanges -= 1;
     refreshOwed = false;
+    // The screen goes back to the last answer of the server at once. The refresh can fail too, for example
+    // while a deploy replaces the server. The event stream then loads the session when the server is back.
+    if (page.session?.code === code) page.games = page.session.games.map(toGame);
     await refresh(code);
     wakeSentWaiters();
     throw error;
@@ -411,6 +423,8 @@ export function startNewGame(): void {
   if (settingsLocked()) return reject(undefined, 'locked');
   if (page.session === undefined) return reject(undefined, 'no-session');
   newRound(); // drops a computer move for the game that ends here
+  // New game sits below the board, and on a phone the board is out of view. The top of the page shows the status and the board.
+  window.scrollTo({ top: 0, behavior: scrollMotion() });
   page.computerThinkMs = [];
   setThinking(false);
   const { code, backend } = page.session;

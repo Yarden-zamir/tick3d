@@ -2,7 +2,6 @@
 // src/board/ builds the board and turns it; this file adds what a cell does in the game.
 import { applyCamera as applyBoardCamera, buildBoard } from '../board/board.ts';
 import { setupSpinDrag } from '../board/spin-drag.ts';
-import { toCoords } from '../game.ts';
 import { boardEl, stageEl } from './dom.ts';
 import { refuseTap } from './feedback.ts';
 import { humanMove, pressUndoes } from './sessions.ts';
@@ -29,14 +28,6 @@ export function lightSungCell(cell: number | undefined): void {
   if (cell !== undefined) cellButton(cell).classList.add('sung');
 }
 
-function highlightColumn(cell: number | undefined): void {
-  const target = cell === undefined ? undefined : toCoords(cell);
-  cells.forEach((button, index) => {
-    const { row, column } = toCoords(index);
-    button.classList.toggle('peer', target !== undefined && row === target.row && column === target.column);
-  });
-}
-
 export function applyCamera(): void {
   applyBoardCamera(board, settings.view, settings.spin);
 }
@@ -44,9 +35,6 @@ export function applyCamera(): void {
 export function setupBoard(): void {
   cells.forEach((button, cell) => {
     button.addEventListener('click', () => (tapsLocked() && !pressUndoes(cell) ? refuseTap() : humanMove(cell, 'board')));
-    button.addEventListener('pointerenter', () => highlightColumn(cell));
-    button.addEventListener('focus', () => highlightColumn(cell));
-    button.addEventListener('pointerleave', () => highlightColumn(undefined));
   });
 
   setupSpinDrag(stageEl, {
@@ -56,7 +44,7 @@ export function setupBoard(): void {
       settings.spin = spin;
       applyCamera();
     },
-    started: () => highlightColumn(undefined),
+    started: () => undefined,
     ended: () => {
       applyCamera();
       saveSettings();

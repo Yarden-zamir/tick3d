@@ -64,6 +64,7 @@
 - Before the first chat message, the chat shows only its title and the message field. The message log shows from the first message on, with the game events of the session.
 - The server decides a timeout, so a page that closes cannot avoid a loss on time.
 - A session with moves never expires. A player can leave and come back, so a game can run asynchronously.
+- A page reads the game again when it comes back to the front, and when it refuses a move as not its turn. After a server restart, it opens a new live stream (`subscribe` in `src/online.ts`).
 
 ### Report and block
 
@@ -87,6 +88,7 @@
 - After the first visit, a service worker keeps the page, so the game opens without a network. The game is installable.
 - Computer, friend and Nearby games run on the device and stay in IndexedDB. The device uploads results when it has a network.
 - After a deploy, the page shows "A new version of tick3d is ready" with a Reload button.
+- A game in progress continues through a deploy, with no reload. A page that cannot read an answer of the new server loads the new version by itself, and the online game opens again.
 - Safari deletes the data of a site that you do not open for 7 days, unless you add the game to the home screen.
 
 ## Nearby
@@ -211,6 +213,8 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 - A claim stores the email and the name that the tester types. The page shows the name and the Gravatar picture of each claim, never the email or a full code. `GET /api/testing/claims` gives the emails to the maintainers, to add them to the Google Group.
 - Each code keeps its slot (#1, #2, ...): the order of the secret, with later codes at the end. The page refreshes the list every 20 s and when it comes back into view, and turns a claimed card in its place.
 - One address can claim 5 codes per hour. The browser keeps its codes in localStorage and shows them on the next visit.
+- The 15 s trailer (`public/trailer/`, 3 MB) plays at the top without sound. A tap turns the sound on. With reduced motion, it waits for a tap.
+- The count of free codes is a button: it scrolls to the first free card and makes it pulse.
 
 Run it locally with fake codes:
 

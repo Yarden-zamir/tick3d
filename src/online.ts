@@ -147,6 +147,12 @@ function requireStatsPrivacy(value: unknown): StatsPrivacy {
   return privacy;
 }
 
+// The wait before a new event stream: 1 s, then twice as long after each failure, at most 15 s.
+const STREAM_RETRY_FIRST_MS = 1000;
+const STREAM_RETRY_MAX_MS = 15_000;
+
+const streamRetryMs = (failures: number): number => Math.min(STREAM_RETRY_FIRST_MS * 2 ** failures, STREAM_RETRY_MAX_MS);
+
 export const api = {
   create: (name: string, clock: TimeControl) => request('POST', '', { name, clock }),
   load: (code: Code) => request('GET', `/${code}`),
@@ -252,10 +258,33 @@ export const api = {
 
   // Calls onChange after every change, and after each reconnect in case a change was missed.
   // The token marks this page's seats as present, so the other player sees "here" or "away".
+  // The browser reconnects by itself after a network error, but it stops for good after an error status,
+  // such as the 502 of the proxy while a deploy replaces the API. Then this opens a new stream after a wait.
   subscribe(code: Code, onChange: () => void): () => void {
-    const source = new EventSource(`/api/sessions/${code}/events?player=${encodeURIComponent(token)}`);
-    source.onmessage = () => onChange();
-    source.onopen = () => onChange();
-    return () => source.close();
+    let source: EventSource | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let failures = 0;
+    // Set when the page leaves the session: an error of the closing stream must not open a new one.
+    let stopped = false;
+    const connect = () => {
+      const opened = new EventSource(`/api/sessions/${code}/events?player=${encodeURIComponent(token)}`);
+      source = opened;
+      opened.onmessage = () => onChange();
+      opened.onopen = () => {
+        failures = 0;
+        onChange();
+      };
+      opened.onerror = () => {
+        if (stopped || opened.readyState !== EventSource.CLOSED) return;
+        timer = setTimeout(connect, streamRetryMs(failures));
+        failures += 1;
+      };
+    };
+    connect();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      source?.close();
+    };
   },
 };

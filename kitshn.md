@@ -49,6 +49,7 @@ before doing so, or Caddy will reject the duplicate site definition.
 - Secret `KITSHN_TESTER_CODES`, in the GitHub Environment `prod` only, so previews never get it: the Google Play promo codes of `/testing`, one entry per line or comma. Set it with `gh secret set KITSHN_TESTER_CODES --env prod --repo Yarden-zamir/tick3d < file`. An entry is `CODE` (free) or `CODE=Name` (given out already, to Name). A bad entry stops `api` at start. Only prod reads it. At start, `api` adds the codes that it does not hold yet, and a known code keeps its row.
 - `testing.tick3d.yarden-zamir.com` redirects to `/testing`, on prod only (`Caddyfile.j2`).
 - Previews use the production login. Only prod calls GitHub for the preview list.
+- A deploy keeps open games: for about 12 s the containers restart, and Caddy holds each request until they answer (`lb_try_duration` in `Caddyfile.j2` and `container/Caddyfile`). `api` answers the requests that run before it stops (server/main.ts).
 - DuckDB allows one process. Stop `api` before you query the database by hand, then start it again.
 
 ## Badge

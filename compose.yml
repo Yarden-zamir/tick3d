@@ -36,6 +36,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+      # During start_period, check every second, so a deploy waits less for a healthy service.
+      start_interval: 1s
     restart: unless-stopped
 
   # Online sessions: a Node API with a DuckDB file on the sessions volume. Caddy in `site` proxies /api/* here.
@@ -76,6 +78,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+      # During start_period, check every second, so a deploy waits less for a healthy service.
+      start_interval: 1s
     restart: unless-stopped
 
 volumes:
