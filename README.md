@@ -163,6 +163,7 @@ A mode change moves neither the board nor the Opponent picker:
 - `src/page/safety.ts`, `src/page/person-mark.ts`: the report and block menu of the game. `src/safety-dialog.ts` and `src/blocks.ts`: the menu and the block list, shared with the stats page.
 - `src/header/`: the header and the footer of every page. `src/markup.test.ts` checks that every page has the same header and footer.
 - `stats.html`, `src/stats/`: the stats page. `sound-training.html`, `src/sound-training/`: the ear trainer.
+- `testing.html`, `src/testing/`: the testing page. `server/tester-codes.ts`: the codes from `TESTER_CODES`.
 - `src/pwa.ts`, `vite.config.ts`: the service worker and the manifest.
 - `server/main.ts`: the HTTP API. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login.
 - `server/api-docs.ts`: every API route with its docs. The server finds routes in this list.
@@ -200,6 +201,22 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 - The stats never show a token, a result id or a game id.
 - A finished game sends, besides the game: the device kind, the view, the layout, the theme, input and undo counts, refusals, computer thinking times, the offline flag and the app version.
 - A fault report holds the error message, the file and line, and the app version. It holds no token and no address.
+
+## Testing page
+
+`/testing` holds the steps to join the closed test: Android (Google Group, Play testing, a free Google Play promo code, install) and iPhone (TestFlight). `testing.tick3d.yarden-zamir.com` redirects there on production.
+
+- The codes come from the GitHub secret `KITSHN_TESTER_CODES`, never from git: one entry per line or comma. `CODE` is a free code, and `CODE=Name` is a code that Name has already. A code has 10 to 30 characters from A-Z and 0-9.
+- At start, the API adds the codes that it does not hold yet. A known code keeps its row and its claim. A bad entry stops the start. Only production reads the secret, so a preview shows no codes.
+- A claim stores the email and the name that the tester types. The page shows the name and the Gravatar picture of each claim, never the email or a full code. `GET /api/testing/claims` gives the emails to the maintainers, to add them to the Google Group.
+- Each code keeps its slot (#1, #2, ...): the order of the secret, with later codes at the end. The page refreshes the list every 20 s and when it comes back into view, and turns a claimed card in its place.
+- One address can claim 5 codes per hour. The browser keeps its codes in localStorage and shows them on the next visit.
+
+Run it locally with fake codes:
+
+```sh
+TESTER_CODES="AAAAAAAAAAAAAAAAAAAAAA1=Tom,BBBBBBBBBBBBBBBBBBBBBB2" DB_PATH=/tmp/testing.duckdb node server/main.ts
+```
 
 ## Develop
 

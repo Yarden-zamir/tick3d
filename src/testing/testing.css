@@ -1,0 +1,578 @@
+/* The testing page. It uses the theme tokens of style.css, so it follows the saved theme.
+   The reduced motion rule of style.css turns off every animation and transition here. */
+.testing {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: max(1.25rem, env(safe-area-inset-top)) 1rem 3rem;
+}
+
+.testing-head {
+  margin-bottom: 1.4rem;
+}
+
+.testing a:not(.btn) {
+  color: inherit;
+  text-decoration-thickness: 2px;
+  overflow-wrap: anywhere;
+}
+
+.testing .btn {
+  justify-self: start;
+}
+
+/* ---- The phone picker ---- */
+
+.testing-hero h2 {
+  margin: 0;
+  font-size: clamp(1.6rem, 6vw, 2.3rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+
+.testing-hero p {
+  margin: 0.6rem 0 1rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.phone-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.9rem;
+}
+
+.phone-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 1rem 0.5rem 0.85rem;
+  border: var(--border) solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 5px 5px 0 var(--shadow);
+  font-size: 1.25rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: translate 0.12s, box-shadow 0.12s, background 0.2s, rotate 0.2s;
+}
+
+.phone-choice:hover {
+  translate: -2px -2px;
+  box-shadow: 7px 7px 0 var(--shadow);
+}
+
+.phone-choice:active {
+  translate: 4px 4px;
+  box-shadow: 1px 1px 0 var(--shadow);
+}
+
+.phone-choice[aria-pressed='true'] {
+  background: var(--primary);
+  color: var(--on-color);
+  rotate: -1.5deg;
+}
+
+.phone-choice:nth-child(2)[aria-pressed='true'] {
+  rotate: 1.5deg;
+}
+
+/* ---- A path: the steps for one phone ---- */
+
+.testing-path {
+  margin-top: 1.8rem;
+  scroll-margin-top: 1rem;
+}
+
+/* A path that turns visible slides in. Leaving display: none starts the animation again. */
+.testing-path:not([hidden]) {
+  animation: path-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@keyframes path-in {
+  from {
+    opacity: 0;
+    translate: 0 1.5rem;
+  }
+
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+.path-title {
+  display: inline-block;
+  margin: 0 0 0.9rem;
+  padding: 0.15rem 0.7rem;
+  border: var(--border) solid var(--line);
+  border-radius: 8px;
+  background: var(--toggle-on);
+  color: var(--on-color);
+  box-shadow: 3px 3px 0 var(--shadow);
+  font-size: 1.05rem;
+  font-weight: 800;
+  rotate: -2deg;
+}
+
+.steps {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.step {
+  position: relative;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.9rem 1rem 1rem 3.6rem;
+  border: var(--border) solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--shadow);
+  counter-increment: step;
+}
+
+.step::before {
+  content: counter(step);
+  position: absolute;
+  top: 0.8rem;
+  left: 0.85rem;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: var(--border) solid var(--line);
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--on-color);
+  font-weight: 800;
+}
+
+.step h3 {
+  margin: 0.2rem 0 0;
+  font-size: 1.15rem;
+}
+
+.step p {
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* The code grid needs the full width on a phone. */
+@media (width < 30rem) {
+  .step-codes {
+    padding-left: 1rem;
+  }
+
+  .step-codes::before {
+    position: static;
+  }
+}
+
+/* ---- The iPhone invite ---- */
+
+.invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* A computer shows the invite as a QR code for the iPhone camera. A phone opens the link itself. */
+.invite-qr {
+  display: none;
+  margin: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .invite-qr {
+    display: block;
+    width: 9rem;
+    padding: 0.35rem;
+    border: var(--border) solid var(--line);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 4px 4px 0 var(--shadow);
+    rotate: 2deg;
+  }
+}
+
+.invite-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* ---- Your code ---- */
+
+.my-codes {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.my-codes:empty {
+  display: none;
+}
+
+.my-code {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.8rem 0.9rem 0.9rem;
+  border: var(--border) solid var(--line);
+  border-radius: 12px;
+  background: var(--primary);
+  color: var(--on-color);
+  box-shadow: 5px 5px 0 var(--shadow);
+  animation: pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.my-code-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.my-code-text {
+  padding: 0.5rem 0.6rem;
+  border: 2px dashed var(--on-color);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.65);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: clamp(0.85rem, 3.9vw, 1.35rem);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-align: center;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.my-code-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+/* The buttons keep their own colours on the yellow panel. */
+.my-code .btn {
+  flex: 1 1 8rem;
+  text-align: center;
+}
+
+/* ---- The code cards ---- */
+
+/* The count of free codes, as a small badge over the grid. */
+.step .codes-note {
+  justify-self: start;
+  padding: 0.15rem 0.65rem;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.code-grid {
+  display: grid;
+  /* Compact cards: production has about 60 codes, so a phone shows three per row. */
+  grid-template-columns: repeat(auto-fill, minmax(6.4rem, 1fr));
+  gap: 0.65rem;
+  perspective: 900px;
+}
+
+.code-grid:empty {
+  display: none;
+}
+
+/* The card is a frame that turns. Its two faces carry the look, so the turn shows the back. */
+.code-card {
+  position: relative;
+  height: 5.8rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  transform-style: preserve-3d;
+  transition: transform 0.7s cubic-bezier(0.3, 1.4, 0.5, 1), translate 0.12s;
+  animation: card-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  /* The stagger stops after 24 cards, so a long list does not wait. */
+  animation-delay: calc(min(var(--i, 0), 24) * 30ms);
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+.code-card:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.code-card:not(:disabled):hover {
+  translate: 0 -4px;
+}
+
+.code-card:not(:disabled):hover .code-front {
+  box-shadow: 5px 7px 0 var(--shadow);
+}
+
+.code-card:not(:disabled):active {
+  translate: 0 2px;
+}
+
+.code-card[data-state='taken'],
+.code-card[data-state='mine'] {
+  transform: rotateY(180deg);
+}
+
+.code-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.9rem 0.35rem 0.4rem;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  box-shadow: 3px 3px 0 var(--shadow);
+  backface-visibility: hidden;
+  transition: box-shadow 0.12s;
+}
+
+.code-front {
+  background: var(--surface);
+}
+
+.code-back {
+  transform: rotateY(180deg);
+  background: var(--surface-2);
+}
+
+.code-hint {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1;
+}
+
+.code-dots {
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  line-height: 1;
+}
+
+.code-tap {
+  padding: 0.05rem 0.45rem;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--on-color);
+  font-size: 0.7rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* The fixed slot of the card, the same for every visitor. */
+.code-slot {
+  position: absolute;
+  top: 0.2rem;
+  left: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  opacity: 0.7;
+}
+
+/* A taken card is grey and stamped. Your own card is yellow. */
+.code-card[data-state='taken'] .code-back {
+  color: var(--muted);
+}
+
+.code-card[data-state='taken'] .code-back::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9px;
+  background: repeating-linear-gradient(-45deg, transparent 0 8px, var(--dot) 8px 10px);
+  pointer-events: none;
+}
+
+.code-card[data-state='mine'] .code-back {
+  background: var(--primary);
+  color: var(--on-color);
+}
+
+.code-stamp {
+  padding: 0 0.4rem;
+  border: 2px solid currentColor;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  rotate: -8deg;
+}
+
+.code-card[data-state='taken'] .code-stamp {
+  color: var(--danger);
+}
+
+/* ---- Testers ---- */
+
+/* A tester on a card: a smaller picture and name. */
+.code-back .tester {
+  gap: 0.25rem;
+  font-size: 0.75rem;
+}
+
+.code-back .tester-avatar {
+  width: 1.3rem;
+  height: 1.3rem;
+  border-width: 1.5px;
+  font-size: 0.65rem;
+}
+
+.tester {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  max-width: 100%;
+  font-weight: 700;
+}
+
+.tester-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A letter on a colour from the name, with the Gravatar picture over it when one loads. */
+.tester-avatar {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  overflow: hidden;
+  border: 2px solid var(--line);
+  border-radius: 50%;
+  color: var(--on-color);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.tester-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ---- No codes ---- */
+
+.codes-empty {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.8rem 0.9rem;
+  border: var(--border) dashed var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+/* ---- The burst after a claim ---- */
+
+.claim-burst {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.claim-burst span {
+  position: absolute;
+  width: 9px;
+  height: 14px;
+  margin: -7px 0 0 -4px;
+  border: 2px solid var(--line);
+  border-radius: 2px;
+  background: var(--color);
+  animation: claim-burst 0.9s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+}
+
+@keyframes claim-burst {
+  from {
+    transform: rotate(var(--angle)) translateY(0) rotate(0deg);
+  }
+
+  70% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+    transform: rotate(var(--angle)) translateY(calc(-1 * var(--distance))) rotate(220deg);
+  }
+}
+
+/* ---- The claim dialog ---- */
+
+.claim-form {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.claim-form p {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.claim-warning {
+  padding: 0.6rem 0.75rem;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--danger);
+  color: var(--on-color);
+}
+
+.claim-hint {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.claim-field {
+  display: grid;
+  gap: 0.3rem;
+  font-weight: 700;
+}
+
+.claim-error {
+  color: var(--danger);
+  font-weight: 800;
+}
+
+.claim-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
