@@ -83,7 +83,8 @@ export default defineConfig({
         // woff2: the page font (src/fonts), so the game keeps its look offline.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         // The install dialog loads the screenshots online only, so the offline cache skips them.
-        globIgnores: ['screenshots/**'],
+        // Link previews (og/) are for chat apps and social sites, never for the page.
+        globIgnores: ['screenshots/**', 'og/**'],
         // A page address opens the cached app. API calls always go to the network.
         navigateFallback: 'index.html',
         // The other pages (src/pages.ts) need no entry: the precache serves them from their .html files

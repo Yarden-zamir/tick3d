@@ -30,6 +30,40 @@ const submit = element('#claim-submit', HTMLButtonElement);
 
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
+// ---- Share ----
+
+// Production shares the short address (Caddyfile.j2). Other hosts, such as a preview, share their own page.
+const shareUrl = location.hostname === 'tick3d.yarden-zamir.com' ? 'https://testing.tick3d.yarden-zamir.com' : `${location.origin}/testing`;
+const shareButton = element('#share-page', HTMLButtonElement);
+const shareLabel = element('#share-page-label', HTMLSpanElement);
+
+function showShareResult(text: string): void {
+  shareLabel.textContent = text;
+  shareButton.classList.add('shared');
+  setTimeout(() => {
+    shareLabel.textContent = 'Share with a friend';
+    shareButton.classList.remove('shared');
+  }, 2000);
+}
+
+async function sharePage(): Promise<void> {
+  if (typeof navigator.share === 'function') {
+    try {
+      await navigator.share({ title: 'Test tick3d', text: 'Help test tick3d, a 3D tic-tac-toe game. Android gets a free code, iPhone gets TestFlight.', url: shareUrl });
+      return;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(shareUrl);
+    showShareResult('Link copied!');
+  } catch {
+    showShareResult(shareUrl);
+  }
+}
+shareButton.addEventListener('click', () => void sharePage());
+
 // ---- Storage ----
 
 function readStored(key: string): unknown {

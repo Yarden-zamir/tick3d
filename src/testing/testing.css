@@ -20,6 +20,64 @@
   justify-self: start;
 }
 
+/* ---- The share button ---- */
+
+.share-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  width: 100%;
+  margin-bottom: 1.4rem;
+  padding: 0.95rem 1rem;
+  border: var(--border) solid var(--line);
+  border-radius: 14px;
+  background: var(--primary);
+  color: var(--on-color);
+  box-shadow: 5px 5px 0 var(--shadow);
+  font-size: 1.35rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: translate 0.12s, box-shadow 0.12s;
+}
+
+.share-page:hover {
+  translate: -2px -2px;
+  box-shadow: 7px 7px 0 var(--shadow);
+}
+
+.share-page:active {
+  translate: 4px 4px;
+  box-shadow: 1px 1px 0 var(--shadow);
+}
+
+/* The icon nods now and then, so the button catches the eye without a constant motion. */
+.share-page svg {
+  animation: share-nod 4s ease-in-out infinite;
+}
+
+.share-page.shared svg {
+  animation: share-pop 0.4s ease-out;
+}
+
+@keyframes share-nod {
+  0%, 80%, 100% { rotate: 0deg; scale: 1; }
+  85% { rotate: -14deg; scale: 1.15; }
+  90% { rotate: 12deg; scale: 1.15; }
+  95% { rotate: -6deg; scale: 1.05; }
+}
+
+@keyframes share-pop {
+  50% { scale: 1.4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .share-page svg,
+  .share-page.shared svg {
+    animation: none;
+  }
+}
+
 /* ---- The phone picker ---- */
 
 .testing-hero h2 {
