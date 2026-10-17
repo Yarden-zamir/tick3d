@@ -47,7 +47,8 @@
     ],
     "playwright": false,
     "ignore": [
-      "video/{src,scripts,out}/**"
+      "video/{src,scripts,out}/**",
+      "factory/**"
     ]
   }
 }
