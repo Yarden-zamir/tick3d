@@ -17,6 +17,9 @@ export const STORAGE_KEYS = {
   deletionsChecked: 'tick3d.deletions-checked',
   // The run of wins against easy, and whether this device moved up to medium once (src/page/level-up.ts).
   levelUp: 'tick3d.level-up',
+  // The tester codes that this browser claimed on /testing, and the phone that the visitor picked there.
+  testerCodes: 'tick3d.tester-codes',
+  testerPhone: 'tick3d.tester-phone',
 } as const;
 
 // The keys that hold settings, not game data. 'tick3d.voice' is the key of src/voice/settings.ts

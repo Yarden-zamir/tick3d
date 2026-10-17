@@ -36,6 +36,7 @@ import { PATH_PARAMS, ROUTES, ROUTE_NAMES, type Route, SCHEMAS, type SchemaName,
 import { curlOf, openApi, swaggerHtml } from './api-docs-render.ts';
 import { openStore } from './store.ts';
 import { isRecord } from '../src/guards.ts';
+import { parseClaimRequest, parseClaimedCode, parseTesterCodes } from '../src/testing/codes.ts';
 
 const ORIGIN = 'https://tick3d.example.com';
 const fail = (id: string): never => {
@@ -82,6 +83,9 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   StatsPrivacy: parseStatsPrivacy,
   Blocks: parseBlocks,
   ReportRequest: parseReportRequest,
+  TesterCodes: parseTesterCodes,
+  ClaimRequest: parseClaimRequest,
+  ClaimedCode: parseClaimedCode,
 };
 
 function parses(name: SchemaName, value: unknown): boolean {
@@ -197,7 +201,7 @@ describe('the SessionView schema', () => {
 describe('matchRoute', () => {
   it.each(ROUTE_NAMES)('finds %s', (name) => {
     const { method, path } = splitRoute(name);
-    const values = { code: 'ab3k', id: 'ab3k-2', host: 'q8Zr2Lx0Vb7Nc4Mw', person: '3f9a0c27d84be615', message: '3', login: 'octocat' };
+    const values = { code: 'ab3k', id: 'ab3k-2', host: 'q8Zr2Lx0Vb7Nc4Mw', person: '3f9a0c27d84be615', message: '3', login: 'octocat', codeId: '2' };
     const used = Object.entries(values).filter(([key]) => path.includes(`{${key}}`));
     const concrete = used.reduce((result, [key, value]) => result.replaceAll(`{${key}}`, value), path);
     const params = Object.fromEntries(used);

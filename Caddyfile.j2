@@ -3,3 +3,10 @@
 {{ host("tick3d.yarden-zamir.com") }} {
     reverse_proxy unix//{{ paths.default_socket }}
 }
+{# The short address of the testing page, for production only. host() would give each preview a name
+   such as pr-<number>.tick3d.yarden-zamir.com, so this block names the host itself. #}
+{% if environment == "prod" %}
+testing.tick3d.yarden-zamir.com {
+    redir https://tick3d.yarden-zamir.com/testing 302
+}
+{% endif %}

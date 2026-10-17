@@ -44,6 +44,7 @@ import {
   statsQuery,
 } from './protocol.ts';
 import { STORAGE_KEYS } from './storage-keys.ts';
+import { type ClaimRequest, type ClaimedCode, type TesterCodes, parseClaimedCode, parseTesterCodes } from './testing/codes.ts';
 
 
 // crypto.randomUUID exists only on HTTPS and localhost. A phone on the local network loads the dev
@@ -177,6 +178,17 @@ export const api = {
   report: (report: { reason: ReportReason; note: string } & ({ code: Code; message: number } | { code?: Code; person: PersonId })) =>
     call('POST', '/reports', report),
   previews: async (): Promise<Previews> => parsePreviews(await call('GET', '/previews')),
+  // The promo codes of the Android closed test (/testing).
+  testerCodes: async (): Promise<TesterCodes> => {
+    const codes = parseTesterCodes(await call('GET', '/testing/codes'));
+    if (codes === undefined) throw new Error('invalid answer from /api/testing/codes');
+    return codes;
+  },
+  claimTesterCode: async (id: number, claim: ClaimRequest): Promise<ClaimedCode> => {
+    const claimed = parseClaimedCode(await call('POST', `/testing/codes/${id}/claim`, claim));
+    if (claimed === undefined) throw new Error('invalid answer from /api/testing/codes/{codeId}/claim');
+    return claimed;
+  },
   logout: () => call('POST', '/auth/logout'),
   // Login is a full page visit to GitHub and back to `returnTo`, by default this page.
   loginUrl: (returnTo = location.href) => `/api/auth/login?return=${encodeURIComponent(returnTo)}`,

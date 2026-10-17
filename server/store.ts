@@ -85,6 +85,11 @@ import { practiceBoard, practiceStats } from './practice.ts';
 import { type Rows, bigId, bool, code as codeColumn, deviceGameId, epoch, gameId, int, json, nullable, oneOf, readRow, text } from './sql.ts';
 import { computeStats, inTokens, seatedResults, seatedRows, tokenValues } from './stats.ts';
 import { leaderRows } from './leaderboard.ts';
+import { type ClaimRequest, type ClaimedCode, type TesterCodeEntry, type TesterCodes, hintOf } from '../src/testing/codes.ts';
+import { gravatarOf } from './tester-codes.ts';
+
+// The claims of tester codes with their emails, for the maintainers only (GET /api/testing/claims).
+export type TesterClaims = { claims: { hint: string; name: string; email: string | null; claimedAt: EpochMs }[] };
 
 const { SessionError } = core;
 
@@ -265,6 +270,20 @@ const SCHEMA = [
      deleted_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
   ...FIELD_SCHEMA,
+  // The Google Play promo codes of the Android closed test (/testing, src/testing/codes.ts). TESTER_CODES fills
+  // the table at start (server/tester-codes.ts). A claim stores the email and the name that the tester typed,
+  // and no player token. A code that the maintainer gave out by hand has a name and no email.
+  // Never send a code or an email in the public list. A maintainer deletes a row by hand on an email request.
+  'CREATE SEQUENCE IF NOT EXISTS tester_code_order',
+  `CREATE TABLE IF NOT EXISTS tester_codes (
+     id INTEGER PRIMARY KEY DEFAULT nextval('tester_code_order'),
+     code VARCHAR NOT NULL UNIQUE,
+     name VARCHAR,
+     email VARCHAR,
+     claimed_at TIMESTAMPTZ,
+     added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     CHECK ((claimed_at IS NULL) = (name IS NULL) AND (email IS NULL OR name IS NOT NULL))
+   )`,
 ];
 
 // The token that a seat holds when a logged-in player takes it. The account has a player_tokens row
@@ -1720,6 +1739,62 @@ export async function openStore(
           { version: text },
         );
         return inserted.length > 0;
+      }),
+
+    // Adds the codes that the table does not hold yet. A known code keeps its row and its claim. Returns how many are new.
+    addTesterCodes: (entries: readonly TesterCodeEntry[]): Promise<number> =>
+      serialized(async () => {
+        let added = 0;
+        for (const { code, name } of entries) {
+          const inserted = await rows(
+            `INSERT INTO tester_codes (code, name, claimed_at) VALUES ($code, $name, CASE WHEN $name IS NULL THEN NULL ELSE now() END)
+             ON CONFLICT DO NOTHING RETURNING id`,
+            { code, name },
+            { id: int },
+          );
+          added += inserted.length;
+        }
+        return added;
+      }),
+
+    // The public list: a hint of each code, and the name and Gravatar hash of a claim. Never a code or an email.
+    testerCodes: (): Promise<TesterCodes> =>
+      serialized(async () => {
+        const found = await rows('FROM tester_codes SELECT id, code, name, email ORDER BY id', {}, { id: int, code: text, name: nullable(text), email: nullable(text) });
+        return {
+          codes: found.map(({ id, code, name, email }) => ({
+            id,
+            hint: hintOf(code),
+            claimed: name !== null,
+            name,
+            gravatar: email === null ? null : gravatarOf(email),
+          })),
+        };
+      }),
+
+    // Gives the code to the tester once. 404 for an unknown id, 409 when somebody claimed it already.
+    claimTesterCode: (id: number, { email, name }: ClaimRequest): Promise<ClaimedCode> =>
+      serialized(async () => {
+        const [claimed] = await rows(
+          'UPDATE tester_codes SET claimed_at = now(), name = $name, email = $email WHERE id = $id AND claimed_at IS NULL RETURNING code',
+          { id, name, email },
+          { code: text },
+        );
+        if (claimed !== undefined) return claimed;
+        const [known] = await rows('FROM tester_codes SELECT id WHERE id = $id', { id }, { id: int });
+        if (known === undefined) throw new SessionError(404, 'No tester code has this id.');
+        throw new SessionError(409, 'Somebody else took this code a moment ago. Pick another one.');
+      }),
+
+    // The claims with their emails, oldest first, for the maintainers (they add the emails to the Google Group).
+    testerClaims: (): Promise<TesterClaims> =>
+      serialized(async () => {
+        const found = await rows(
+          'FROM tester_codes SELECT code, name, email, epoch_ms(claimed_at) AS at WHERE claimed_at IS NOT NULL ORDER BY claimed_at, id',
+          {},
+          { code: text, name: text, email: nullable(text), at: epoch },
+        );
+        return { claims: found.map(({ code, name, email, at }) => ({ hint: hintOf(code), name, email, claimedAt: at })) };
       }),
 
     addEvent: (event: ClientEvent): Promise<void> =>

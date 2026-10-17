@@ -43,6 +43,7 @@ import {
   PRACTICE_RUNS_PER_10_MINUTES,
   REPORTS_PER_10_MINUTES,
   ROUTES,
+  TESTER_CLAIMS_PER_HOUR,
   type Route,
   WAIT_MS,
   matchRoute,
@@ -56,6 +57,8 @@ import { parsePlayoffRequest } from '../src/practice/playoff.ts';
 import { parseBoardQuery, parsePracticeRun } from '../src/practice/practice.ts';
 import { openStore } from './store.ts';
 import { createWaiters } from './waiters.ts';
+import { testerCodesFromEnv } from './tester-codes.ts';
+import { TESTER_NAME_MAX_LENGTH, parseClaimRequest } from '../src/testing/codes.ts';
 
 // PORT lets a test run its own server next to another one.
 const PORT = Number(process.env.PORT ?? 8080);
@@ -89,6 +92,9 @@ const allowReport = createLimiter(REPORTS_PER_10_MINUTES, 600_000, 10_000, 'Too 
 // Delete my data per address: a player needs it once, so 10 per hour leaves room for a family on one
 // address and keeps a flood of deletes from holding the store queue. Same limits as allowCreate.
 const allowDataDelete = createLimiter(DATA_DELETES_PER_HOUR, 3_600_000, 10_000, 'Too many data deletions from this address. Try again later.');
+// Claims of tester codes per address: a tester needs one code, so 5 per hour leaves room for a family on one
+// address and keeps one visitor from taking every code. Same limits as allowCreate.
+const allowTesterClaim = createLimiter(TESTER_CLAIMS_PER_HOUR, 3_600_000, 10_000, 'Too many code claims from this address. Try again later.');
 // Each entry holds at most one open request, so `total` also caps the open announce requests.
 const lobby = createLobby({ perNetwork: NEARBY_HOSTS_PER_NETWORK, total: 1000, waitMs: WAIT_MS, graceMs: NEARBY_GRACE_MS });
 
@@ -129,6 +135,10 @@ function openTokens(code: Code): PlayerToken[] {
 }
 
 const store = await openStore(dbPath, { open: openTokens, onChange: notify });
+
+// The tester codes of TESTER_CODES (server/tester-codes.ts). A bad entry stops the start.
+const testerCodes = testerCodesFromEnv(process.env);
+if (testerCodes.length > 0) console.log(`tester codes: ${await store.addTesterCodes(testerCodes)} new of ${testerCodes.length}`);
 
 // The release of this build (src/release.ts). The Docker image holds release.json next to server/.
 // A local API has no build, so it records no release. A bad file stops the start: it is a build fault.
@@ -493,6 +503,22 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       for (const token of await store.clearNameOf(requirePerson(match.params.person), login)) notifyPlayer(token as PlayerToken);
       return send(res, 200, { ok: true });
     }
+
+    case 'GET /api/testing/codes':
+      return send(res, 200, await store.testerCodes());
+    // A cross-site form cannot send the X-Player header, so another site cannot claim a code.
+    case 'POST /api/testing/codes/{codeId}/claim': {
+      allowTesterClaim(clientOf(req), Date.now());
+      requirePlayer(req);
+      const id = Number(match.params.codeId);
+      if (!Number.isSafeInteger(id) || id < 1 || String(id) !== match.params.codeId) throw new HttpError(400, 'A code id is a whole number from 1.');
+      const claim = parseClaimRequest(await readJson(req));
+      if (claim === undefined) throw new HttpError(400, `A claim needs a valid email and a name of 1 to ${TESTER_NAME_MAX_LENGTH} letters, digits, spaces or - _ . '.`);
+      return send(res, 200, await store.claimTesterCode(id, claim));
+    }
+    case 'GET /api/testing/claims':
+      requireMaintainer(req);
+      return send(res, 200, await store.testerClaims());
 
     // An email request for Delete my data: the same deletion, by a maintainer.
     case 'DELETE /api/players/{person}': {

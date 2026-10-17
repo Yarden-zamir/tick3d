@@ -1,0 +1,121 @@
+import type { Page } from '@playwright/test';
+import { PAGES } from '../src/pages.ts';
+import { expect, test } from './fixtures.ts';
+
+// The testing page (/testing) with a fake code list, so the test needs no real codes. A preview has none.
+
+const CODE = 'B9WQ4T7XK2M8RZ5P3N6H1JD';
+type Card = { id: number; hint: string; claimed: boolean; name: string | null; gravatar: string | null };
+
+// Serves the list and the claims. `taken` lists the ids that somebody else claims before this page does.
+async function fakeCodes(page: Page, taken: number[] = []): Promise<void> {
+  const codes: Card[] = [
+    { id: 1, hint: 'K7Q', claimed: true, name: 'Tom', gravatar: null },
+    { id: 2, hint: 'B9W', claimed: false, name: null, gravatar: null },
+    { id: 3, hint: 'M2X', claimed: false, name: null, gravatar: null },
+  ];
+  await page.route('**/api/testing/codes', (route) => route.fulfill({ json: { codes } }));
+  await page.route('**/api/testing/codes/*/claim', async (route) => {
+    const id = Number(route.request().url().split('/').at(-2));
+    const body = route.request().postDataJSON() as { name: string };
+    const card = codes.find((code) => code.id === id);
+    if (card === undefined) return route.fulfill({ status: 404, json: { error: 'No tester code has this id.' } });
+    if (card.claimed || taken.includes(id)) {
+      Object.assign(card, { claimed: true, name: 'Gal' });
+      return route.fulfill({ status: 409, json: { error: 'Somebody else took this code a moment ago. Pick another one.' } });
+    }
+    Object.assign(card, { claimed: true, name: body.name });
+    return route.fulfill({ json: { code: CODE } });
+  });
+}
+
+const card = (page: Page, hint: string) => page.locator('.code-card', { has: page.locator('.code-hint', { hasText: hint }) });
+
+test('the page asks for the phone, and each phone shows its own steps', async ({ open }) => {
+  const { page } = await open({ path: PAGES.testing.path });
+  await expect(page.locator('#android-path')).toBeHidden();
+  await expect(page.locator('#iphone-path')).toBeHidden();
+  await page.getByRole('button', { name: 'iPhone' }).click();
+  await expect(page.locator('#iphone-path')).toBeVisible();
+  await expect(page.locator('#testflight-link')).toHaveAttribute('href', 'https://testflight.apple.com/join/8R7N2ka6');
+  await expect(page.locator('#code-grid')).toBeHidden();
+  // The choice stays for the next visit.
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'iPhone' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('a claim shows the code, and a second claim asks first', async ({ open }) => {
+  const { page } = await open({ path: PAGES.testing.path });
+  await fakeCodes(page);
+  await page.getByRole('button', { name: 'Android' }).click();
+  await expect(card(page, 'K7Q')).toHaveAttribute('data-state', 'taken');
+  await expect(card(page, 'K7Q')).toContainText('Tom');
+
+  await card(page, 'B9W').click();
+  const dialog = page.locator('#claim-dialog');
+  await expect(dialog.locator('#claim-warning')).toBeHidden();
+  await dialog.getByLabel('Google Play email').fill('not an email');
+  await dialog.getByLabel('Your name').fill('Dana');
+  await dialog.getByRole('button', { name: 'Claim the code', exact: true }).click();
+  await expect(dialog.locator('#claim-error')).toBeVisible();
+  await dialog.getByLabel('Google Play email').fill('dana@example.com');
+  await dialog.getByRole('button', { name: 'Claim the code', exact: true }).click();
+
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('.my-code-text')).toHaveText(CODE);
+  await expect(page.getByRole('link', { name: 'Redeem in Play' })).toHaveAttribute('href', `https://play.google.com/redeem?code=${CODE}`);
+  await expect(card(page, 'B9W')).toHaveAttribute('data-state', 'mine');
+
+  await card(page, 'M2X').click();
+  await expect(dialog.locator('#claim-warning')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+  // The browser keeps the code for the next visit.
+  await page.reload();
+  await expect(page.locator('.my-code-text')).toHaveText(CODE);
+});
+
+test('a code that somebody else took first turns taken, with a message', async ({ open }) => {
+  const { page } = await open({ path: PAGES.testing.path });
+  await fakeCodes(page, [2]);
+  await page.getByRole('button', { name: 'Android' }).click();
+  await card(page, 'B9W').click();
+  await page.getByLabel('Google Play email').fill('dana@example.com');
+  await page.getByLabel('Your name').fill('Dana');
+  await page.getByRole('button', { name: 'Claim the code', exact: true }).click();
+  await expect(page.locator('#codes-note')).toHaveText(/Somebody else took this code/);
+  await expect(card(page, 'B9W')).toHaveAttribute('data-state', 'taken');
+  await expect(page.locator('.my-code')).toHaveCount(0);
+});
+
+test('without free codes, the page says whom to ask', async ({ open }) => {
+  const { page } = await open({ path: PAGES.testing.path });
+  await page.route('**/api/testing/codes', (route) => route.fulfill({ json: { codes: [{ id: 1, hint: 'K7Q', claimed: true, name: 'Tom', gravatar: null }] } }));
+  await page.getByRole('button', { name: 'Android' }).click();
+  await expect(page.locator('#codes-empty')).toBeVisible();
+});
+
+test('a refresh turns a card that another tester took in its own slot, without a new grid', async ({ open }) => {
+  const { page } = await open({ path: PAGES.testing.path });
+  const codes: Card[] = Array.from({ length: 30 }, (_, i) => ({ id: i + 1, hint: `C${String(i).padStart(2, '0')}`, claimed: false, name: null, gravatar: null }));
+  await page.route('**/api/testing/codes', (route) => route.fulfill({ json: { codes } }));
+  await page.getByRole('button', { name: 'Android' }).click();
+  const last = page.locator('.code-card[data-slot="30"]');
+  await last.scrollIntoViewIfNeeded();
+  await expect(last).toHaveAttribute('data-state', 'free');
+  await page.evaluate(() => {
+    const card = document.querySelector('.code-card[data-slot="30"]');
+    if (card === null) throw new Error('no card');
+    (window as unknown as { e2eCard: Element }).e2eCard = card;
+  });
+  const scroll = await page.evaluate(() => scrollY);
+
+  Object.assign(codes[29] ?? {}, { claimed: true, name: 'Gal' });
+  await page.evaluate(() => dispatchEvent(new Event('focus')));
+  await expect(last).toHaveAttribute('data-state', 'taken');
+  await expect(last).toContainText('Gal');
+  await expect(last).toContainText('#30');
+  // The same element turned, and the page did not move.
+  expect(await page.evaluate(() => document.querySelector('.code-card[data-slot="30"]') === (window as unknown as { e2eCard: Element }).e2eCard)).toBe(true);
+  expect(await page.evaluate(() => scrollY)).toBe(scroll);
+});

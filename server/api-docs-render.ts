@@ -128,6 +128,7 @@ export function openApi(origin: string): Record<string, unknown> {
       { name: 'Docs', description: 'This document, its web page and the health check.' },
       { name: 'Account', description: 'Routes for the page: GitHub login, stats, offline results and the previews list.' },
       { name: 'Safety', description: 'Report and block people, and the moderation routes of the maintainers.' },
+      { name: 'Testing', description: 'The Google Play promo codes of the Android closed test, for the /testing page.' },
     ],
     paths,
     components: { schemas: SCHEMAS, parameters: { IdempotencyKey: IDEMPOTENCY_KEY } },
