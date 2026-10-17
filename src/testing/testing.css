@@ -222,6 +222,19 @@
   line-height: 1.4;
 }
 
+/* The stop sign of the "Become a tester" step: the Play page there offers the app for money. */
+.step .step-stop {
+  justify-self: start;
+  padding: 0.45rem 0.7rem;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--danger);
+  /* --danger is a light colour in every theme (light red, grey in mono), so dark text reads on it. */
+  color: #111;
+  font-weight: 700;
+  rotate: -1deg;
+}
+
 /* The code grid needs the full width on a phone. */
 @media (width < 30rem) {
   .step-codes {
