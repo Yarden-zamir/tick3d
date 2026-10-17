@@ -28,6 +28,9 @@ export const ACHIEVEMENT_ICONS: Record<AchievementId, string> = {
   'space-diagonal-easy': `${CUBE}<path d="M3.5 20.5l17-17" stroke-dasharray="1.5 3"/>`,
   'space-diagonal-medium': `${CUBE}<path d="M3.5 20.5l17-17" stroke-width="3"/>`,
   'space-diagonal-hard': `${CUBE}<path d="M3.5 20.5l17-17" stroke-width="3"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path d="M12 5.5v1.5M18.5 12H17M7 12H5.5M12 18.5V17"/>`,
+  'space-diagonal-person': `${CUBE}<path d="M3.5 20.5l17-17" stroke-width="3"/><circle cx="18.5" cy="17" r="2"/><path d="M15 23a3.5 3.5 0 0 1 7 0"/>`,
+  'board-hidden-person':
+    '<path d="M2.5 7.5c2.5 4 5.5 5.5 9.5 5.5s7-1.5 9.5-5.5M6 11.5 4.5 14.5M18 11.5l1.5 3"/><path d="M12 22s-4.5-2.6-4.5-5.4a2.3 2.3 0 0 1 4.5-.8 2.3 2.3 0 0 1 4.5.8C16.5 19.4 12 22 12 22Z" fill="currentColor"/>',
   'board-hidden-easy': '<path d="M2.5 12c2.5-2 6-2 8 0M13.5 12c2-2 5.5-2 8 0"/><path d="M3 15.5c2 1 5.5 1 7.5-.5M13.5 15c2 1.5 5.5 1.5 7.5.5"/><path d="M4 7l4 1.5M20 7l-4 1.5"/>',
   'board-hidden-medium': '<path d="M2.5 9.5c2.5 4 5.5 5.5 9.5 5.5s7-1.5 9.5-5.5M6 13.5 4.5 16.5M12 15v3.5M18 13.5l1.5 3"/>',
   'board-hidden-hard': '<path d="M12 9.5 10.8 7l-.6 2.6C7.5 9.8 4.5 8.6 1.8 6.5c.4 3 1.6 5.2 3.6 6.3 1.1-1 2.7-1 3.8.1.8-.9 1.8-1.4 2.8-1.4s2 .5 2.8 1.4c1.1-1.1 2.7-1.1 3.8-.1 2-1.1 3.2-3.3 3.6-6.3-2.7 2.1-5.7 3.3-8.4 3.1L13.2 7Z" fill="currentColor"/><path d="M8.5 16.5c2.2 1.3 4.8 1.3 7 0M6 19.5c3.6 2 8.4 2 12 0"/>',
