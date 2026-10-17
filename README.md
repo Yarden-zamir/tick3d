@@ -87,6 +87,7 @@
 - After the first visit, a service worker keeps the page, so the game opens without a network. The game is installable.
 - Computer, friend and Nearby games run on the device and stay in IndexedDB. The device uploads results when it has a network.
 - After a deploy, the page shows "A new version of tick3d is ready" with a Reload button.
+- A game in progress continues through a deploy, with no reload. A page that cannot read an answer of the new server loads the new version by itself, and the online game opens again.
 - Safari deletes the data of a site that you do not open for 7 days, unless you add the game to the home screen.
 
 ## Nearby

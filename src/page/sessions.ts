@@ -3,6 +3,7 @@ import { sameClock, describeClock, hasLimit } from '../clock.ts';
 import { checkPlayoffInvite } from './playoff-invite.ts';
 import { type Game, play, newGame, type Player, other } from '../game.ts';
 import { OnlineError, api } from '../online.ts';
+import { loadNewVersion } from '../pwa.ts';
 import { type ChatMessage, type Code, type GameId, MATCH_OPTIONS, type Metrics, type SessionView, isChatEvent, parseSessionView, toGame } from '../protocol.ts';
 import { type LinkIntent, withWatch } from '../session-link.ts';
 import type { SessionDoc } from '../session/format.ts';
@@ -235,6 +236,8 @@ export async function refresh(code: Code): Promise<void> {
     }
     applyView(view);
   } catch (error) {
+    // An answer that this page cannot read comes from a newer release of the server.
+    if (open.backend === api && !(error instanceof OnlineError)) void loadNewVersion();
     showError(error);
   }
 }
@@ -262,6 +265,9 @@ export async function sendShownChange(code: Code, send: () => Promise<SessionVie
   } catch (error) {
     shownChanges -= 1;
     refreshOwed = false;
+    // The screen goes back to the last answer of the server at once. The refresh can fail too, for example
+    // while a deploy replaces the server. The event stream then loads the session when the server is back.
+    if (page.session?.code === code) page.games = page.session.games.map(toGame);
     await refresh(code);
     wakeSentWaiters();
     throw error;

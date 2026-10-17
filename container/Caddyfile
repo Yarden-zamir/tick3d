@@ -17,7 +17,11 @@ http:// {
 
 	# Online sessions. Caddy flushes the text/event-stream responses at once, so live updates are not held back.
 	handle /api/* {
-		reverse_proxy api:8080
+		# A restart of `api` (a crash, or a deploy) holds the requests until the new process answers, without a 502.
+		reverse_proxy api:8080 {
+			lb_try_duration 30s
+			lb_try_interval 250ms
+		}
 	}
 
 	# The page. `encode` sits in this block only, so it never buffers the API event streams.

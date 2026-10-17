@@ -729,10 +729,22 @@ server.listen(PORT, () =>
   console.log(`tick3d api on :${PORT}, db ${dbPath}, login ${auth === undefined ? 'off' : 'on'}${lanHost ? `, LAN host ${lanHost.name}` : ''}`),
 );
 
-for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-  process.on(signal, () => {
-    server.close();
-    for (const set of streams.values()) for (const stream of set) stream.res.end();
-    void store.close().finally(() => process.exit(0));
-  });
+// A deploy stops this process with SIGTERM. The requests that run get this long to answer, so a move during
+// a deploy counts and its player sees it. Then the process cuts the connections that still wait: long polls
+// and Nearby announcements. Their clients ask again (src/page/nearby.ts), and Caddy repeats a cut GET by itself.
+const SHUTDOWN_GRACE_MS = 1000;
+
+let stopping = false;
+
+function stop(): void {
+  if (stopping) return;
+  stopping = true;
+  // The pages open a new stream after the retry time of the stream, and the proxies hold it until the next process answers.
+  const open = [...streams.values()].flatMap((set) => [...set]);
+  streams.clear();
+  for (const stream of open) stream.res.end();
+  server.close(() => void store.close().finally(() => process.exit(0)));
+  setTimeout(() => server.closeAllConnections(), SHUTDOWN_GRACE_MS).unref();
 }
+
+for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, stop);
