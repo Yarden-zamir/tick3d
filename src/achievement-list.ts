@@ -1,5 +1,5 @@
 // The achievements list in the style of Steam, for My games and the stats page, and the badge of one achievement.
-import { ACHIEVEMENT_ICONS, LOCK_ICON, iconSvg } from './achievement-icons.ts';
+import { ACHIEVEMENT_ICONS, HIDDEN_ICON, LOCK_ICON, iconSvg } from './achievement-icons.ts';
 import { type AchievementId, type AchievementProgress, type AchievementRarity, achievementOf, rarityLabel } from './achievements.ts';
 
 // The badge of one achievement: the icon on a tile in the color of its tier.
@@ -13,8 +13,28 @@ export function badge<K extends 'span' | 'button'>(tag: K, id: AchievementId): H
 
 const unlockedDate = (time: number) => new Date(time).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 
+// A hidden achievement before its unlock: a question mark, with no name, goal or rarity.
+function hiddenItem(): HTMLLIElement {
+  const item = document.createElement('li');
+  item.className = 'achievement';
+  item.dataset.state = 'hidden';
+  const tile = document.createElement('span');
+  tile.className = 'achievement-icon';
+  tile.innerHTML = iconSvg(HIDDEN_ICON);
+  const text = document.createElement('div');
+  text.className = 'achievement-text';
+  const title = document.createElement('b');
+  title.textContent = 'Hidden achievement';
+  const detail = document.createElement('small');
+  detail.textContent = 'Keep playing to find it.';
+  text.append(title, detail);
+  item.append(tile, text);
+  return item;
+}
+
 function achievementItem(entry: AchievementProgress, rarity: AchievementRarity | null, isNew: boolean): HTMLLIElement {
-  const { name, description, goal } = achievementOf(entry.id);
+  const { name, description, goal, hidden } = achievementOf(entry.id);
+  if (hidden && entry.unlockedAt === null) return hiddenItem();
   const item = document.createElement('li');
   item.className = 'achievement';
   item.dataset.state = entry.unlockedAt === null ? 'locked' : 'unlocked';
@@ -60,9 +80,10 @@ function achievementItem(entry: AchievementProgress, rarity: AchievementRarity |
   return item;
 }
 
-// As in Steam: the unlocked achievements first, newest on top, then the locked ones, closest to the goal first.
+// As in Steam: the unlocked achievements first, newest on top, then the locked ones, closest to the goal first,
+// and the hidden ones last.
 function steamOrder(progress: readonly AchievementProgress[]): AchievementProgress[] {
-  const share = (entry: AchievementProgress) => entry.count / achievementOf(entry.id).goal;
+  const share = (entry: AchievementProgress) => (achievementOf(entry.id).hidden ? -1 : entry.count / achievementOf(entry.id).goal);
   return progress.toSorted((a, b) => {
     if (a.unlockedAt !== null && b.unlockedAt !== null) return b.unlockedAt - a.unlockedAt;
     if (a.unlockedAt !== null) return -1;

@@ -1,6 +1,6 @@
 // The achievements section of My games, and the unlock band of the end card.
 import { achievementItems, badge } from '../achievement-list.ts';
-import { type AchievementGame, type AchievementId, type AchievementProgress, type AchievementRarity, achievementOf, achievementProgress } from '../achievements.ts';
+import { type AchievementGame, type AchievementId, type AchievementProgress, type AchievementRarity, achievementOf, achievementProgress, rarestFirst } from '../achievements.ts';
 import { api, OnlineError } from '../online.ts';
 import type { Code, GameId } from '../protocol.ts';
 import { sounds } from '../sound.ts';
@@ -31,6 +31,10 @@ async function deviceProgress(): Promise<ShownAchievements> {
       options: upload.options,
       tuned: upload.tuned,
       finishedAt: upload.finishedAt,
+      // Limit: the device does not know who the opponent was, so the goals about people need the server.
+      // Revisit this if the device stores a person id with each result.
+      opponent: null,
+      input: upload.metrics?.input ?? null,
     })),
   );
   return { achievements, rarity: null };
@@ -92,6 +96,8 @@ export function setupAchievements(): void {
 const UNLOCK_TURN_MS = 2600;
 // The bits of the burst behind the badges.
 const SPARKS = 14;
+// More badges than this show as "+N", so the name keeps its room on a phone. src/card.ts has the same limit.
+const BADGES_SHOWN = 3;
 let unlockTimer: ReturnType<typeof setInterval> | undefined;
 
 export function unlockedBy(code: Code, index: number): readonly AchievementId[] | undefined {
@@ -100,6 +106,10 @@ export function unlockedBy(code: Code, index: number): readonly AchievementId[] 
 
 export const unlockLabel = (unlocked: readonly AchievementId[]) =>
   `${unlocked.length === 1 ? 'Achievement' : 'Achievements'} unlocked: ${unlocked.map((id) => achievementOf(id).name).join(', ')}`;
+
+// The toast after a closed end card: the names, or only the count when there are many.
+export const unlockToast = (unlocked: readonly AchievementId[]) =>
+  unlocked.length > BADGES_SHOWN ? `${unlocked.length} achievements unlocked.` : `${unlockLabel(unlocked)}.`;
 
 // Fills `box` with the badges of `unlocked`, which pop in one after another, and the name of one of them.
 // A tap on a badge shows its name and stops the turns.
@@ -126,7 +136,7 @@ export function showUnlocks(box: HTMLElement, unlocked: readonly AchievementId[]
   const text = document.createElement('div');
   text.className = 'unlock-text';
   text.append(kicker, title, detail);
-  const buttons = unlocked.map((id, index) => {
+  const buttons = unlocked.slice(0, BADGES_SHOWN).map((id, index) => {
     const button = badge('button', id);
     button.type = 'button';
     button.style.setProperty('--i', String(index));
@@ -138,6 +148,13 @@ export function showUnlocks(box: HTMLElement, unlocked: readonly AchievementId[]
     medals.append(button);
     return button;
   });
+  if (unlocked.length > BADGES_SHOWN) {
+    const more = document.createElement('span');
+    more.className = 'unlock-more';
+    more.textContent = `+${unlocked.length - BADGES_SHOWN}`;
+    more.setAttribute('aria-hidden', 'true');
+    medals.append(more);
+  }
   const show = (index: number) => {
     const id = unlocked[index];
     if (id === undefined) throw new Error(`no unlocked achievement ${index}`);
@@ -166,11 +183,11 @@ export function showUnlocks(box: HTMLElement, unlocked: readonly AchievementId[]
 }
 
 // After a game ends: finds the achievements that the game with link `id` unlocked, and plays the unlock sound.
-// Returns them, or an empty list.
+// Returns them, the rarest first, or an empty list.
 // Limit: a game that the server does not have yet (offline, or an upload that waits) counts only the games
 // on this device. Revisit this if players report a missing or a repeated notice.
 export async function noteAchievements(code: Code, index: number, id: GameId): Promise<readonly AchievementId[]> {
-  const unlocked = (await currentProgress()).achievements.filter((entry) => entry.unlockedBy === id).map((entry) => entry.id);
+  const unlocked = rarestFirst((await currentProgress()).achievements.filter((entry) => entry.unlockedBy === id).map((entry) => entry.id));
   if (unlocked.length === 0) return unlocked;
   news.set(`${code}:${index}`, unlocked);
   sounds.achievement();
