@@ -64,6 +64,7 @@
 - Before the first chat message, the chat shows only its title and the message field. The message log shows from the first message on, with the game events of the session.
 - The server decides a timeout, so a page that closes cannot avoid a loss on time.
 - A session with moves never expires. A player can leave and come back, so a game can run asynchronously.
+- A page reads the game again when it comes back to the front, and when it refuses a move as not its turn. After a server restart, it opens a new live stream (`subscribe` in `src/online.ts`).
 
 ### Report and block
 

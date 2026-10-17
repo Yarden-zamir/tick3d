@@ -110,4 +110,13 @@ describe('api.subscribe', () => {
     vi.advanceTimersByTime(60_000);
     expect(FakeSource.opened).toHaveLength(1);
   });
+
+  it('opens no stream when the closed stream reports its error after the page left', () => {
+    const unsubscribe = api.subscribe(code, () => undefined);
+    const first = last();
+    unsubscribe();
+    first.fail();
+    vi.advanceTimersByTime(60_000);
+    expect(FakeSource.opened).toHaveLength(1);
+  });
 });

@@ -32,7 +32,7 @@ import { render } from './page/render.ts';
 import { flushResults } from './page/results.ts';
 import { refresh, setUrlCode, setUrlGame, joinSession, openLocalSession } from './page/sessions.ts';
 import { settings } from './page/settings.ts';
-import { page } from './page/state.ts';
+import { page, shared } from './page/state.ts';
 import { applyTheme, setupTheme } from './page/theme.ts';
 import { setupSettingsHint } from './page/settings-hint.ts';
 import { setupSlidePills } from './page/slide-pill.ts';
@@ -158,6 +158,17 @@ async function start(): Promise<void> {
     render();
   });
   addEventListener('offline', () => render());
+  // A page that comes back to the front reads its game again. A phone that sleeps can miss changes on
+  // the live stream, and a page from the back-forward cache shows the game from before it left.
+  const reread = () => {
+    if (shared() && page.session !== undefined) void refresh(page.session.code);
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') reread();
+  });
+  addEventListener('pageshow', (event) => {
+    if (event.persisted) reread();
+  });
 
   const linkCode = new URLSearchParams(location.search).get('code');
   const code = linkCode === null ? undefined : normalizeCode(linkCode);

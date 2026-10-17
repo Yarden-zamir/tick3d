@@ -264,6 +264,8 @@ export const api = {
     let source: EventSource | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
+    // Set when the page leaves the session: an error of the closing stream must not open a new one.
+    let stopped = false;
     const connect = () => {
       const opened = new EventSource(`/api/sessions/${code}/events?player=${encodeURIComponent(token)}`);
       source = opened;
@@ -273,13 +275,14 @@ export const api = {
         onChange();
       };
       opened.onerror = () => {
-        if (opened.readyState !== EventSource.CLOSED) return;
+        if (stopped || opened.readyState !== EventSource.CLOSED) return;
         timer = setTimeout(connect, streamRetryMs(failures));
         failures += 1;
       };
     };
     connect();
     return () => {
+      stopped = true;
       clearTimeout(timer);
       source?.close();
     };

@@ -66,9 +66,15 @@ async function playMove(cell: number, via: keyof Metrics['input']): Promise<void
     if (result.error === 'occupied' && mark) setTimeout(() => sounds.place(mark, cell), TAKEN_SOUND_DELAY_MS);
     return;
   }
-  // In a friend game this device plays both seats.
-  if (page.session.mode !== 'friend' && game.turn !== page.session.you) return reject(cell, waitReason);
   const { code, backend } = page.session;
+  // In a friend game this device plays both seats.
+  if (page.session.mode !== 'friend' && game.turn !== page.session.you) {
+    reject(cell, waitReason);
+    // With another device, this screen can miss a change, for example a move or a seat swap while
+    // the phone slept. The refusal sends nothing, so the page reads the game again.
+    if (shared()) void refresh(code);
+    return;
+  }
   const request = { game: page.games.length - 1, moveCount: game.moves.length, cell };
   countMove(via);
   // Show the move at once. The answer replaces it, or a refresh undoes it on an error.
