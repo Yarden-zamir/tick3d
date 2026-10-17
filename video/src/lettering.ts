@@ -246,13 +246,15 @@ export function endCard(ctx: CanvasRenderingContext2D, frame: number, words: rea
   ctx.restore();
 }
 
-// Clears the canvas and runs `draw` in the units of the centre square, with centred text.
-export function onSquare(ctx: CanvasRenderingContext2D, draw: () => void): void {
+// Clears the canvas and runs `draw` in the units of the square, with centred text. The square is the centre
+// square of the frame, or `area`: its centre height and its side in pixels.
+export function onSquare(ctx: CanvasRenderingContext2D, draw: () => void, area?: { y: number; size: number }): void {
   const { width, height } = ctx.canvas;
+  const { y, size } = area ?? { y: height / 2, size: Math.min(width, height) };
   ctx.clearRect(0, 0, width, height);
   ctx.save();
-  ctx.translate(width / 2, height / 2);
-  ctx.scale(Math.min(width, height) / SQUARE, Math.min(width, height) / SQUARE);
+  ctx.translate(width / 2, y);
+  ctx.scale(size / SQUARE, size / SQUARE);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   draw();

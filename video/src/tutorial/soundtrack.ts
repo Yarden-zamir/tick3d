@@ -2,43 +2,10 @@
 // each lit cell and each line that shows, for each mark, tap, undo and drag beat, a soft chord when a set of lines
 // flashes, a line is blocked or the cube is full, the Classic note of each layer, the win jingle and a final chord. No bass, no glass bell (maintainer feedback on #119).
 import { type ScheduledSound, winVoices } from '../../../src/sound.ts';
-import { SOUND_SETS, type SoundSet } from '../../../src/sound-sets.ts';
-import { type Player, linesThrough } from '../../../src/game.ts';
-import { SCALE, inKey, landing, midiOf, withoutBell } from '../key.ts';
+import { linesThrough } from '../../../src/game.ts';
+import { A_MINOR, CELLS, C_MAJOR, LEVEL, chord, layerNote, note, pitchOf } from '../notes.ts';
 import { KINDS, linesOf } from './lines.ts';
 import { SECTIONS } from './plan.ts';
-
-const CELLS = withoutBell(SOUND_SETS.cells);
-// The melody notes play softer than a move: a calm mix (maintainer feedback on #119).
-const LEVEL = 0.55;
-// The chords: C major (C E G) and A minor (A C E), both inside the pentatonic scale.
-const C_MAJOR = [60, 64, 67] as const;
-const A_MINOR = [57, 60, 64] as const;
-const CHORD_SECONDS = 0.8;
-
-// The MIDI note of scale degree `degree` above C4.
-function pitchOf(degree: number): number {
-  const step = SCALE[degree % SCALE.length];
-  if (step === undefined) throw new RangeError(`no degree ${degree}`);
-  return 60 + 12 * Math.floor(degree / SCALE.length) + step;
-}
-
-// A melody note of `player` with the voice of `cell` in `set`, cut to the key.
-function note(at: number, midi: number, cell: number, set: SoundSet = CELLS, level = LEVEL, player: Player = 'X'): ScheduledSound {
-  return { at, note: { kind: 'melody', at: 0, midi, player, cell, level }, set: inKey(set, midi) };
-}
-
-// The notes of a chord. A chord note plays a soft triangle; the set only names it.
-const chord = (at: number, notes: readonly number[], length = CHORD_SECONDS): ScheduledSound[] =>
-  notes.map((midi) => ({ at, note: { kind: 'chord', at: 0, midi, length }, set: CELLS }));
-
-// The Classic note of a layer, as X plays it: C5, D5, E5 or G5.
-function layerNote(at: number, layer: number): ScheduledSound {
-  const [voice] = SOUND_SETS.classic.voices(layer * 16, 'X');
-  const pitch = voice === undefined ? undefined : landing(voice);
-  if (pitch === undefined) throw new Error('Classic has no pitched voice');
-  return note(at, Math.round(midiOf(pitch)), layer * 16, SOUND_SETS.classic, 0.9);
-}
 
 export function tutorialSounds(): ScheduledSound[] {
   const sounds: ScheduledSound[] = [];
