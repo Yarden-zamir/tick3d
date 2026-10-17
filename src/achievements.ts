@@ -1,7 +1,7 @@
 // Achievements: goals that a player reaches over their finished games. The server and the device
 // run the same rules, so past games count, and a device without a network shows its own games.
 // The rules are pure: each one reads one finished game.
-import type { Difficulty } from './ai.ts';
+import { DIFFICULTIES, type Difficulty } from './ai.ts';
 import { hasLimit, remaining } from './clock.ts';
 import { type EpochMs, isEpochMs } from './epoch.ts';
 import { CELL_COUNT, type Game, type Player, emptyCells, lineKind, replay, toCoords, winningLine } from './game.ts';
@@ -27,10 +27,9 @@ export type AchievementGame = {
   input: Metrics['input'] | null;
 };
 
-// How strong the opponent was: a computer level, then a person online or in Nearby.
+// The opponent: a computer level, or a person online or in Nearby.
 // A friend game and a tuned computer have no level, so they count for no ladder.
-const LEVELS = ['easy', 'medium', 'hard', 'person'] as const;
-type Level = (typeof LEVELS)[number];
+type Level = Difficulty | 'person';
 
 // A game with its replayed end, which the rules read.
 type PlayedGame = AchievementGame & {
@@ -61,9 +60,11 @@ type Rule = {
 const won = (game: PlayedGame) => game.outcome === 'won';
 const lost = (game: PlayedGame) => game.outcome === 'lost';
 const wonByLine = (game: PlayedGame) => won(game) && game.end.status.kind === 'won';
-// A game at this level or a stronger one: a ladder step also unlocks with a game of a higher step.
-const atLeast = (level: Level) => (game: PlayedGame) => game.level !== null && LEVELS.indexOf(game.level) >= LEVELS.indexOf(level);
-const wonAtLeast = (level: Level) => (game: PlayedGame) => won(game) && atLeast(level)(game);
+// A computer game at this level or a harder one: a ladder step also unlocks with a game of a higher step.
+// A person never counts for a computer level; the goals for people are their own achievements.
+const atLeast = (level: Difficulty) => (game: PlayedGame) =>
+  game.level !== null && game.level !== 'person' && DIFFICULTIES.indexOf(game.level) >= DIFFICULTIES.indexOf(level);
+const wonAtLeast = (level: Difficulty) => (game: PlayedGame) => won(game) && atLeast(level)(game);
 const againstComputer = (game: PlayedGame) => game.level !== null && game.level !== 'person';
 const againstPerson = (game: PlayedGame) => game.level === 'person';
 
@@ -130,7 +131,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'beat-hard',
     name: 'Machine breaker',
-    description: 'Beat the computer on Hard, or a person.',
+    description: 'Beat the computer on Hard.',
     tier: 'gold',
     hidden: false,
     goal: 1,
@@ -190,12 +191,22 @@ export const ACHIEVEMENTS = [
   {
     id: 'space-diagonal-hard',
     name: 'Core breach',
-    description: 'Win with a diagonal through the cube, against Hard or a person.',
+    description: 'Win with a diagonal through the cube, against Hard.',
     tier: 'gold',
     hidden: false,
     goal: 1,
     kind: 'count',
     test: (game: PlayedGame) => spaceDiagonal(game) && atLeast('hard')(game),
+  },
+  {
+    id: 'space-diagonal-person',
+    name: 'Inside job',
+    description: 'Win with a diagonal through the cube, against a person online or in Nearby.',
+    tier: 'gold',
+    hidden: false,
+    goal: 1,
+    kind: 'count',
+    test: (game: PlayedGame) => spaceDiagonal(game) && againstPerson(game),
   },
   {
     id: 'board-hidden-easy',
@@ -220,12 +231,22 @@ export const ACHIEVEMENTS = [
   {
     id: 'board-hidden-hard',
     name: 'Bat sense',
-    description: 'Win with the board hidden, against Hard or a person.',
+    description: 'Win with the board hidden, against Hard.',
     tier: 'mythic',
     hidden: false,
     goal: 1,
     kind: 'count',
     test: (game: PlayedGame) => wonAtLeast('hard')(game) && game.options.hideBoard,
+  },
+  {
+    id: 'board-hidden-person',
+    name: 'Blind date',
+    description: 'Win with the board hidden, against a person online or in Nearby.',
+    tier: 'gold',
+    hidden: false,
+    goal: 1,
+    kind: 'count',
+    test: (game: PlayedGame) => won(game) && againstPerson(game) && game.options.hideBoard,
   },
   {
     id: 'computer-streak-easy-5',
@@ -368,7 +389,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'o-win-hard',
     name: 'Underdog',
-    description: 'Win as O against Hard or a person.',
+    description: 'Win as O against Hard.',
     tier: 'gold',
     hidden: false,
     goal: 1,
@@ -383,7 +404,7 @@ export const ACHIEVEMENTS = [
     hidden: false,
     goal: 1,
     kind: 'count',
-    test: (game: PlayedGame) => game.you === 'O' && wonAtLeast('person')(game),
+    test: (game: PlayedGame) => game.you === 'O' && won(game) && againstPerson(game),
   },
   {
     id: 'online-win',
@@ -470,12 +491,12 @@ export const ACHIEVEMENTS = [
   {
     id: 'fork',
     name: 'Fork',
-    description: 'Win with two cells to win on at once, against Medium or harder.',
+    description: 'Win with two cells to win on at once, against Medium, Hard or a person.',
     tier: 'silver',
     hidden: false,
     goal: 1,
     kind: 'count',
-    test: (game: PlayedGame) => fork(game) && atLeast('medium')(game),
+    test: (game: PlayedGame) => fork(game) && (atLeast('medium')(game) || againstPerson(game)),
   },
   {
     id: 'full-cube',

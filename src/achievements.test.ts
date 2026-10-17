@@ -74,7 +74,10 @@ describe('achievements', () => {
     expect(hard).toEqual(expect.arrayContaining(['beat-easy', 'beat-medium', 'beat-hard', 'fastest-easy', 'fastest-medium']));
     // The fastest win against Hard is luck, so the top step needs a person.
     expect(hard).not.toContain('fastest-person');
-    expect(unlocks(game(X_ROW, online('ana')))).toEqual(expect.arrayContaining(['beat-hard', 'fastest-person']));
+    // A person counts for no computer level, only for the goals about people.
+    const person = unlocks(game(X_ROW, online('ana')));
+    expect(person).toEqual(expect.arrayContaining(['fastest-person', 'online-win']));
+    for (const id of ['beat-easy', 'beat-hard', 'fastest-easy', 'fastest-medium'] as const) expect(person).not.toContain(id);
   });
 
   it('gives a tuned computer and a friend game no level', () => {
@@ -90,6 +93,8 @@ describe('achievements', () => {
     expect(unlocks(game(X_SPACE, level('medium')))).toEqual(expect.arrayContaining(['space-diagonal-easy', 'space-diagonal-medium']));
     expect(unlocks(game(X_SPACE, level('medium')))).not.toContain('space-diagonal-hard');
     expect(unlocks(game(X_ROW))).not.toContain('space-diagonal-easy');
+    expect(unlocks(game(X_SPACE, online('ana')))).toContain('space-diagonal-person');
+    expect(unlocks(game(X_SPACE, online('ana')))).not.toContain('space-diagonal-hard');
     expect(unlocks(game(X_FORK))).toContain('elevator');
     expect(unlocks(game(X_ROW))).not.toContain('elevator');
   });
@@ -97,6 +102,7 @@ describe('achievements', () => {
   it('knows a fork: two cells to win on, of which the opponent blocked one', () => {
     expect(unlocks(game(X_FORK, level('medium')))).toContain('fork');
     expect(unlocks(game(X_FORK, level('easy')))).not.toContain('fork');
+    expect(unlocks(game(X_FORK, online('ana')))).toContain('fork');
     expect(unlocks(game(X_ROW))).not.toContain('fork');
   });
 
@@ -156,13 +162,19 @@ describe('achievements', () => {
     expect(unlocks(game(O_ROW, { you: 'O', ...level('medium') }))).toContain('o-win-medium');
     expect(unlocks(game(O_ROW, { you: 'O', ...level('medium') }))).not.toContain('o-win-hard');
     expect(unlocks(game(O_ROW, { you: 'O', ...level('easy') }))).not.toContain('o-win-medium');
-    expect(unlocks(game(O_ROW, { you: 'O', ...online('ana') }))).toEqual(expect.arrayContaining(['o-win-medium', 'o-win-hard', 'o-win-person']));
+    expect(unlocks(game(O_ROW, { you: 'O', ...level('hard') }))).toEqual(expect.arrayContaining(['o-win-medium', 'o-win-hard']));
+    expect(unlocks(game(O_ROW, { you: 'O', ...level('hard') }))).not.toContain('o-win-person');
+    const person = unlocks(game(O_ROW, { you: 'O', ...online('ana') }));
+    expect(person).toContain('o-win-person');
+    expect(person).not.toContain('o-win-medium');
   });
 
   it('reads the hide settings and the mode', () => {
     const hidden = { hideBoard: true, hideHistory: false, hideCoordinates: true };
     expect(unlocks(game(X_ROW, { options: hidden }))).toEqual(expect.arrayContaining(['board-hidden-easy', 'board-hidden-hard', 'coordinates-hidden']));
     expect(unlocks(game(X_ROW, { options: hidden, ...level('easy') }))).not.toContain('board-hidden-medium');
+    expect(unlocks(game(X_ROW, { options: hidden, ...online('ana') }))).toContain('board-hidden-person');
+    expect(unlocks(game(X_ROW, { options: hidden, ...online('ana') }))).not.toContain('board-hidden-easy');
     expect(unlocks(game(X_ROW, online('ana')))).toContain('online-win');
     expect(unlocks(game(X_ROW, { mode: 'nearby', difficulty: null }))).toContain('nearby-win');
   });
