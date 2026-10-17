@@ -6,7 +6,7 @@ import { hasLimit, remaining } from './clock.ts';
 import { type EpochMs, isEpochMs } from './epoch.ts';
 import { CELL_COUNT, type Game, type Player, emptyCells, lineKind, replay, toCoords, winningLine } from './game.ts';
 import { isCount, isRecord, isUnknownArray } from './guards.ts';
-import { type GameId, type GameRecord, type MatchOptions, type Outcome, type SessionMode, outcomeOf, parseGameId, toGame } from './protocol.ts';
+import { type GameId, type GameRecord, type MatchOptions, type Metrics, type Outcome, type SessionMode, outcomeOf, parseGameId, toGame } from './protocol.ts';
 
 // One finished game of the player, as the server and the device both hold it.
 export type AchievementGame = {
@@ -23,6 +23,8 @@ export type AchievementGame = {
   // A key of the person in the other seat of an online or Nearby game, the same in each of their games.
   // Only the server knows it: null on the device, and for the computer and a friend game.
   opponent: string | null;
+  // How the player placed their moves, from the metrics of their device. Null without them, as in an online game.
+  input: Metrics['input'] | null;
 };
 
 // How strong the opponent was: a computer level, then a person online or in Nearby.
@@ -39,14 +41,17 @@ type PlayedGame = AchievementGame & {
   rivalry: readonly Outcome[];
 };
 
+// The colors of the badges, from the easiest goals to the rarest. stone is for easy goals, mythic for the rarest.
+const TIERS = ['stone', 'bronze', 'silver', 'gold', 'mythic'] as const;
+
 // count: the goal is a number of games that pass the test.
 // streak: the goal is a run of games in a row that pass the test. Only the games of `among` make or break the run.
 type Rule = {
   id: string;
   name: string;
   description: string;
-  // The color of the badge: how hard the goal is. stone is for easy goals, mythic for the rarest.
-  tier: 'stone' | 'bronze' | 'silver' | 'gold' | 'mythic';
+  // The color of the badge: how hard the goal is.
+  tier: (typeof TIERS)[number];
   // A hidden achievement shows as a question mark until the player unlocks it.
   hidden: boolean;
   goal: number;
@@ -328,7 +333,7 @@ export const ACHIEVEMENTS = [
     hidden: false,
     goal: 1,
     kind: 'count',
-    test: (game: PlayedGame) => wonAtLeast('easy')(game) && limitAtMost(10, 120)(game),
+    test: (game: PlayedGame) => won(game) && game.you !== null && limitAtMost(10, 120)(game),
   },
   {
     id: 'timed-win-bullet',
@@ -338,7 +343,7 @@ export const ACHIEVEMENTS = [
     hidden: false,
     goal: 1,
     kind: 'count',
-    test: (game: PlayedGame) => wonAtLeast('easy')(game) && limitAtMost(5, 60)(game),
+    test: (game: PlayedGame) => won(game) && game.you !== null && limitAtMost(5, 60)(game),
   },
   {
     id: 'won-on-time',
@@ -483,6 +488,25 @@ export const ACHIEVEMENTS = [
     test: (game: PlayedGame) => game.end.status.kind === 'draw',
   },
   {
+    id: 'sound-only',
+    name: 'Echolocation',
+    description: 'Beat the computer on Hard with the board hidden, with every move placed by your voice.',
+    tier: 'mythic',
+    hidden: true,
+    goal: 1,
+    kind: 'count',
+    // Limit: an online game has no metrics in its result, so only a computer game counts. Revisit this when
+    // the online metrics (seat_metrics) reach the rules.
+    test: (game: PlayedGame) =>
+      won(game) &&
+      game.level === 'hard' &&
+      game.options.hideBoard &&
+      game.input !== null &&
+      game.input.board === 0 &&
+      game.input.voice > 0 &&
+      game.input.voice === game.input.keypad,
+  },
+  {
     id: 'nemesis',
     name: 'Nemesis',
     description: 'Lose 3 games in a row to the same person.',
@@ -515,7 +539,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'photo-finish',
     name: 'Photo finish',
-    description: 'Win with less than 1 s left on your clock.',
+    description: 'Win with less than 1 s left on your clock. Not in a friend game.',
     tier: 'gold',
     hidden: true,
     goal: 1,
@@ -589,6 +613,10 @@ function progressOf(rule: Achievement, games: readonly PlayedGame[]): Achievemen
     unlockedBy: unlocked?.id ?? null,
   };
 }
+
+// The rarest tier first, so a strip with room for a few badges shows the best ones. The sort is stable.
+export const rarestFirst = (ids: readonly AchievementId[]): AchievementId[] =>
+  ids.toSorted((a, b) => TIERS.indexOf(achievementOf(b).tier) - TIERS.indexOf(achievementOf(a).tier));
 
 export function achievementOf(id: AchievementId): Achievement {
   const found = ACHIEVEMENTS.find((achievement) => achievement.id === id);

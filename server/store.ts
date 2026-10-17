@@ -69,6 +69,7 @@ import {
   parseResultUpload,
   seatIn,
   statsQuery,
+  parseMetrics,
   toGame,
 } from '../src/protocol.ts';
 import { type Records, addLoss } from '../src/records.ts';
@@ -501,14 +502,18 @@ export async function openStore(
 
   // A Nearby guest counts the host's copy of the game, as in the history. owner_x and owner_o are the
   // canonical tokens of the seats (see ownerOfSeat), which name the opponent.
+  // Limit: the guest's own copy has no host seat, so a guest sees the host as the opponent only after the
+  // host uploads. Revisit this if Nearby guests report missing progress on the goals about people.
   const achievementRows = (source: string) => `FROM ${source} results
       LEFT JOIN player_tokens px ON px.token = results.player_x LEFT JOIN player_tokens po ON po.token = results.player_o
-    SELECT results.public_id, results.doc::JSON AS doc, epoch_ms(results.finished_at) AS finished, results.player_x AS token_x, results.player_o AS token_o,
+    SELECT results.public_id, results.doc::JSON AS doc, results.metrics::JSON AS metrics, epoch_ms(results.finished_at) AS finished,
+      results.player_x AS token_x, results.player_o AS token_o,
       ${ownerOfSeat('results.player_x', 'px')} AS owner_x, ${ownerOfSeat('results.player_o', 'po')} AS owner_o
     WHERE NOT ${HOST_HAS_GAME}`;
   const ACHIEVEMENT_COLUMNS = {
     public_id: nullable(gameId),
     doc: json,
+    metrics: nullable(json),
     finished: epoch,
     token_x: nullable(text),
     token_o: nullable(text),
@@ -518,7 +523,7 @@ export async function openStore(
 
   // One finished game as the rules read it, for the player who holds the seats where `mine` is true.
   // The opponent is the canonical token of the other seat of an online or Nearby game.
-  type AchievementRow = { public_id: GameId | null; doc: unknown; finished: EpochMs; owner_x: string | null; owner_o: string | null };
+  type AchievementRow = { public_id: GameId | null; doc: unknown; metrics: unknown; finished: EpochMs; owner_x: string | null; owner_o: string | null };
   function achievementGame(row: AchievementRow, mineX: boolean, mineO: boolean): AchievementGame {
     if (!mineX && !mineO) throw new Error('an achievement game has no seat of the player');
     const { mode, game, difficulty, options, tuned } = readStored(row.doc);
@@ -526,7 +531,10 @@ export async function openStore(
     const you: Player | null = mineX && mineO ? null : mineX ? 'X' : 'O';
     const theirs = you === 'X' ? row.owner_o : you === 'O' ? row.owner_x : null;
     const opponent = (mode === 'online' || mode === 'nearby') && theirs !== core.COMPUTER_TOKEN ? theirs : null;
-    return { id: row.public_id, mode, game, you, difficulty, options, tuned, finishedAt: row.finished, opponent };
+    // The metrics belong to the device that uploaded the result. In a computer game, that is the player.
+    const metrics = mode === 'computer' && row.metrics !== null ? parseMetrics(row.metrics) : undefined;
+    const input = metrics?.input ?? null;
+    return { id: row.public_id, mode, game, you, difficulty, options, tuned, finishedAt: row.finished, opponent, input };
   }
 
   // The achievements of the player `owner` (a canonical token) with these tokens, over every finished game
@@ -582,13 +590,13 @@ export async function openStore(
     );
     const found = await rows(
       `WITH ${ownedGames(source)}
-      SELECT counted.owner, results.public_id, results.doc::JSON AS doc, epoch_ms(results.finished_at) AS finished,
+      SELECT counted.owner, results.public_id, results.doc::JSON AS doc, results.metrics::JSON AS metrics, epoch_ms(results.finished_at) AS finished,
         ${ownerOfSeat('results.player_x', 'px')} AS owner_x, ${ownerOfSeat('results.player_o', 'po')} AS owner_o
       FROM counted JOIN ${source} results USING (id)
         LEFT JOIN player_tokens px ON px.token = results.player_x LEFT JOIN player_tokens po ON po.token = results.player_o
       WHERE counted.counts AND list_contains($owners, counted.owner)`,
       values,
-      { owner: text, public_id: nullable(gameId), doc: json, finished: epoch, owner_x: nullable(text), owner_o: nullable(text) },
+      { owner: text, public_id: nullable(gameId), doc: json, metrics: nullable(json), finished: epoch, owner_x: nullable(text), owner_o: nullable(text) },
     );
     const games = Map.groupBy(found, (row) => row.owner);
     const unlocked = signatures.map(({ owner }) =>
@@ -1420,6 +1428,15 @@ export async function openStore(
         changedOwners.add(await ownerOf(token));
         changedOwners.add(token);
         changedOwners.add(accountToken(user.id));
+        // The players who met this device now meet the account, so the opponent of their games changes.
+        // An achievement about different people can lock again: two devices of one person count once.
+        const met = await rows(`FROM ${seatedResults(1)} results SELECT results.player_x AS x, results.player_o AS o`, tokenValues([token]), {
+          x: nullable(text),
+          o: nullable(text),
+        });
+        const others = met.flatMap((row) => [row.x, row.o]).filter((seat): seat is string => seat !== null && seat !== token && seat !== core.COMPUTER_TOKEN);
+        for (const owner of (await canonical(others)).values()) changedOwners.add(owner);
+        achievementCache.clear();
         await db.run(
           `INSERT INTO users (github_id, login, avatar) VALUES ($id, $login, $avatar)
            ON CONFLICT (github_id) DO UPDATE SET login = excluded.login, avatar = excluded.avatar, seen_at = now()`,

@@ -167,7 +167,7 @@ function onFrame(frame: VoiceFrame): void {
   const move = current().moves.length;
   // The clip comes before the move: a move that ends the game stops the engine, and the engine has no clip then.
   const clip = takeClip(frame);
-  humanMove(frame.cell, 'keypad');
+  humanMove(frame.cell, 'voice');
   if (clip !== undefined && page.games.at(-1)?.moves.length === move + 1) keepClip(clip, move);
   if (page.games.at(-1)?.moves.length === move + 1) voiceCells?.burst(frame.cell);
 }

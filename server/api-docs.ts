@@ -539,7 +539,11 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     view: strings(VIEWS),
     layout: strings(LAYOUTS),
     theme: strings(THEMES),
-    input: object('Moves of this player by how they were placed.', { board: count(), keypad: count() }),
+    input: object(
+      'Moves of this player by how they were placed.',
+      { board: count(), keypad: count(), voice: count('The keypad moves that the voice placed. A missing value means 0.') },
+      ['voice'],
+    ),
     refused: { type: 'object', additionalProperties: count(), description: `Refused actions by reason: ${REFUSALS.join(', ')}.` },
     undos: count(),
     thinkMs: list('The thinking time of each computer move, in milliseconds.', { type: 'number', minimum: 0 }),
@@ -874,6 +878,7 @@ const ACHIEVEMENTS_EXAMPLE = achievementProgress([
     tuned: false,
     finishedAt: toEpochMs(T0 + 70_000),
     opponent: null,
+    input: null,
   },
 ]);
 
@@ -1283,7 +1288,7 @@ export const ROUTES = {
         view: 'tower',
         layout: 'grid',
         theme: 'light',
-        input: { board: 4, keypad: 0 },
+        input: { board: 4, keypad: 0, voice: 0 },
         refused: { occupied: 1 },
         undos: 0,
         thinkMs: [],

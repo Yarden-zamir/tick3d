@@ -648,8 +648,8 @@ export type Metrics = {
   view: (typeof VIEWS)[number];
   layout: (typeof LAYOUTS)[number];
   theme: (typeof THEMES)[number];
-  // Moves of the player at this device, by how they were placed.
-  input: { board: number; keypad: number };
+  // Moves of the player at this device, by how they were placed. voice counts the keypad moves that the voice placed.
+  input: { board: number; keypad: number; voice: number };
   refused: Partial<Record<Refusal, number>>;
   undos: number;
   // The thinking time of each computer move, in milliseconds.
@@ -693,7 +693,11 @@ export function parseMetrics(value: unknown): Metrics | undefined {
   const layout = oneOf(LAYOUTS, value.layout);
   const theme = oneOf(THEMES, value.theme);
   if (device === undefined || view === undefined || layout === undefined || theme === undefined) return undefined;
-  if (!isRecord(input) || !hasOnlyKeys(input, ['board', 'keypad']) || !isCount(input.board) || !isCount(input.keypad)) return undefined;
+  if (!isRecord(input) || !hasOnlyKeys(input, ['board', 'keypad', 'voice']) || !isCount(input.board) || !isCount(input.keypad)) return undefined;
+  // Limit: a page from before the voice count sends none, and a result that waits on such a device must
+  // still upload, so a missing count is 0. Remove this when no result from before the count can wait anymore.
+  const voice = input.voice ?? 0;
+  if (!isCount(voice) || voice > input.keypad) return undefined;
   if (!isRecord(refused)) return undefined;
   const refusals: Metrics['refused'] = {};
   for (const [key, count] of Object.entries(refused)) {
@@ -718,7 +722,7 @@ export function parseMetrics(value: unknown): Metrics | undefined {
     view,
     layout,
     theme,
-    input: { board: input.board, keypad: input.keypad },
+    input: { board: input.board, keypad: input.keypad, voice },
     refused: refusals,
     undos,
     thinkMs: [...thinkMs],

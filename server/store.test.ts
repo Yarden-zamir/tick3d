@@ -329,7 +329,7 @@ const METRICS: Metrics = {
   view: 'tower',
   layout: 'grid',
   theme: 'dark',
-  input: { board: 3, keypad: 1 },
+  input: { board: 3, keypad: 1, voice: 0 },
   refused: { occupied: 2 },
   undos: 1,
   thinkMs: [120, 300],
@@ -625,6 +625,26 @@ describe('achievements', () => {
     const progress = await store.achievements(alice);
     expect(countOf(progress, 'people-5')).toBe(1);
     expect(countOf(progress, 'revenge')).toBe(1);
+  });
+
+  it('counts the devices of an opponent as one person once they link, also in the rarity', async () => {
+    store = await openStore(':memory:');
+    const BOB_GITHUB = { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' };
+    const bobPhone = 'eeeeeeee-0000-4000-8000-000000000005' as PlayerToken;
+    const nearby = (id: string, guest: PlayerToken, finished: number) =>
+      result(id, { mode: 'nearby', difficulty: null, you: 'X', guest, finishedAt: ms(finished), metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } });
+    await store.addResults(alice, [nearby('a0a0a0a0-1111-4000-8000-000000000001', bob, 2_000), nearby('a0a0a0a0-1111-4000-8000-000000000002', bobPhone, 3_000)]);
+    expect(countOf(await store.achievements(alice), 'people-5')).toBe(2);
+    await store.linkToken(bob, BOB_GITHUB);
+    await store.linkToken(bobPhone, BOB_GITHUB);
+    expect(countOf(await store.achievements(alice), 'people-5')).toBe(1);
+  });
+
+  it('reads the voice moves of a computer game from the metrics of its result', async () => {
+    store = await openStore(':memory:');
+    const hidden = { hideBoard: true, hideHistory: false, hideCoordinates: false };
+    await store.addResults(alice, [result('a1a1a1a1-1111-4000-8000-000000000001', { options: hidden, metrics: { ...METRICS, input: { board: 0, keypad: 4, voice: 4 } } })]);
+    expect(countOf(await store.achievements(alice), 'sound-only')).toBe(1);
   });
 });
 

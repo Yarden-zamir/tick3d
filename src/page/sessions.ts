@@ -3,7 +3,7 @@ import { sameClock, describeClock, hasLimit } from '../clock.ts';
 import { checkPlayoffInvite } from './playoff-invite.ts';
 import { type Game, play, newGame, type Player, other } from '../game.ts';
 import { OnlineError, api } from '../online.ts';
-import { type ChatMessage, type Code, type GameId, MATCH_OPTIONS, type SessionView, isChatEvent, parseSessionView, toGame } from '../protocol.ts';
+import { type ChatMessage, type Code, type GameId, MATCH_OPTIONS, type Metrics, type SessionView, isChatEvent, parseSessionView, toGame } from '../protocol.ts';
 import { type LinkIntent, withWatch } from '../session-link.ts';
 import type { SessionDoc } from '../session/format.ts';
 import { sounds } from '../sound.ts';
@@ -43,13 +43,13 @@ import {
 // The error sound of a refused move lasts about 0.27 s. A taken cell plays its own sound after it.
 const TAKEN_SOUND_DELAY_MS = 320;
 
-export function humanMove(cell: number, via: 'board' | 'keypad'): void {
+export function humanMove(cell: number, via: keyof Metrics['input']): void {
   if (page.viewing) return reject(cell, 'viewing');
   if (page.review) return reject(cell, 'reviewing');
   void playMove(cell, via);
 }
 
-async function playMove(cell: number, via: 'board' | 'keypad'): Promise<void> {
+async function playMove(cell: number, via: keyof Metrics['input']): Promise<void> {
   if (page.session === undefined) return reject(cell, 'no-session');
   if (page.session.you === null) return reject(cell, 'spectator');
   const waitReason = page.session.mode === 'computer' ? 'wait' : 'not-your-turn';

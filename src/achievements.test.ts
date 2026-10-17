@@ -41,6 +41,7 @@ function game(moves: number[], extra: Partial<AchievementGame> = {}): Achievemen
     tuned: false,
     finishedAt: ms(clock),
     opponent: null,
+    input: null,
     ...extra,
   };
 }
@@ -110,6 +111,7 @@ describe('achievements', () => {
     expect(unlocks(timed(null, 120))).not.toContain('timed-win-bullet');
     expect(unlocks(timed(5, null))).toEqual(expect.arrayContaining(['timed-win', 'timed-win-short', 'timed-win-bullet']));
     expect(unlocks(timed(5, null, friend))).not.toContain('timed-win-short');
+    expect(unlocks(timed(5, null, { tuned: true }))).toContain('timed-win-bullet');
   });
 
   it('counts a win on time, but not as a line, and as a flag fall only against a person', () => {
@@ -131,6 +133,23 @@ describe('achievements', () => {
     };
     expect(unlocks(finish(9500))).toContain('photo-finish');
     expect(unlocks(finish(8000))).not.toContain('photo-finish');
+  });
+
+  it('knows a photo finish on the game clock too', () => {
+    const times = [0, 0, 10_000, 10_000, 20_000, 20_000, 29_500].map(ms);
+    const finish = game(X_ROW, { game: { moves: X_ROW, times, clock: { perMove: null, perGame: 30 }, timedOut: false } });
+    expect(unlocks(finish)).toContain('photo-finish');
+  });
+
+  it('knows a Hard win with the board hidden and every move by voice', () => {
+    const hidden = { hideBoard: true, hideHistory: false, hideCoordinates: false };
+    const byVoice = (input: { board: number; keypad: number; voice: number }, extra: Partial<AchievementGame> = {}) =>
+      game(X_ROW, { options: hidden, input, ...extra });
+    expect(unlocks(byVoice({ board: 0, keypad: 4, voice: 4 }))).toContain('sound-only');
+    expect(unlocks(byVoice({ board: 0, keypad: 4, voice: 3 }))).not.toContain('sound-only');
+    expect(unlocks(byVoice({ board: 1, keypad: 3, voice: 3 }))).not.toContain('sound-only');
+    expect(unlocks(byVoice({ board: 0, keypad: 4, voice: 4 }, level('medium')))).not.toContain('sound-only');
+    expect(unlocks(game(X_ROW, { options: hidden }))).not.toContain('sound-only');
   });
 
   it('counts a win as O, who moves second', () => {

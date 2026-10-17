@@ -56,6 +56,8 @@ export const ACHIEVEMENT_ICONS: Record<AchievementId, string> = {
   'elevator': '<rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M12 6.5v11M9.3 9.2 12 6.5l2.7 2.7M9.3 14.8 12 17.5l2.7-2.7"/>',
   'fork': '<path d="M7.5 2.5v6a4.5 4.5 0 0 0 9 0v-6M12 2.5v6M12 13v8.5"/>',
   'full-cube': '<path d="M12 2.5 20.5 7 12 11.5 3.5 7Z" fill="currentColor"/><path d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7ZM12 11.5v10"/>',
+  'sound-only':
+    '<path d="M9 4.5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0Z"/><path d="M5.5 10a6.5 6.5 0 0 0 13 0M12 16.5V20M8.5 21h7"/><path d="M2.5 6.5c-1 2-1 5 0 7M21.5 6.5c1 2 1 5 0 7" stroke-width="1.8"/>',
   'nemesis': '<circle cx="12" cy="13.5" r="7.5"/><path d="M5.8 9.2 3.5 3l5 3.5M18.2 9.2 20.5 3l-5 3.5"/><path d="M7.8 12l3 1.2M16.2 12l-3 1.2M9 17.5c2-1.3 4-1.3 6 0"/>',
   'revenge': '<path d="M19.5 8H8.5a4.5 4.5 0 0 0 0 9H17"/><path d="M15.5 4.5 19.5 8l-4 3.5"/><path d="M14 17l3 0" />',
   'lost-to-easy': `${ROBOT}${EYES}<path d="M9 15.5h6M11 15.5v2.2a1 1 0 0 0 2 0v-2.2"/>`,

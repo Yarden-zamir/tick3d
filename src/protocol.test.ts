@@ -265,7 +265,7 @@ describe('parseMetrics', () => {
     view: 'flat',
     layout: 'steps',
     theme: 'synthwave',
-    input: { board: 10, keypad: 2 },
+    input: { board: 10, keypad: 2, voice: 1 },
     refused: { occupied: 1, 'not-your-turn': 3 },
     undos: 0,
     thinkMs: [12.5, 600],
@@ -279,6 +279,10 @@ describe('parseMetrics', () => {
     expect(parseMetrics(valid)).toEqual(valid);
   });
 
+  it('reads a missing voice count, from a page before the count, as 0', () => {
+    expect(parseMetrics({ ...valid, input: { board: 10, keypad: 2 } })?.input).toEqual({ board: 10, keypad: 2, voice: 0 });
+  });
+
   it.each([
     ['an unknown key', { ...valid, extra: 1 }],
     ['a missing key', { ...valid, undos: undefined }],
@@ -286,7 +290,8 @@ describe('parseMetrics', () => {
     ['a list for the refusals', { ...valid, refused: [1, 2] }],
     ['a think time that is not a number', { ...valid, thinkMs: ['12'] }],
     ['a negative count', { ...valid, input: { board: -1, keypad: 0 } }],
-    ['an extra input key', { ...valid, input: { board: 1, keypad: 0, voice: 1 } }],
+    ['an extra input key', { ...valid, input: { board: 1, keypad: 0, voice: 0, pen: 1 } }],
+    ['more voice moves than keypad moves', { ...valid, input: { board: 1, keypad: 0, voice: 1 } }],
     ['too many think times', { ...valid, thinkMs: Array(65).fill(1) }],
     ['a think time out of range', { ...valid, thinkMs: [1e9] }],
     ['an unknown theme', { ...valid, theme: 'neon' }],
