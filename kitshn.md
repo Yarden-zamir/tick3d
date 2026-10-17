@@ -46,7 +46,7 @@ before doing so, or Caddy will reject the duplicate site definition.
 - Preview limits: all previews together get at most 2 CPUs and 3 GB, and their image builds get the same in a builder of their own (`limits` in `.kitshn.yaml`). A preview that needs more memory fails, not production.
 - Hostnames: `tick3d.yarden-zamir.com` for prod, `pr-<number>.tick3d.yarden-zamir.com` for previews.
 - Variables: `KITSHN_GITHUB_CLIENT_ID`. Secrets: `KITSHN_GITHUB_CLIENT_SECRET`, `KITSHN_AUTH_SECRET`. Without all three, login is off. With only some, `api` stops at start.
-- Secret `KITSHN_TESTER_CODES`: the Google Play promo codes of `/testing`, one entry per line or comma. An entry is `CODE` (free) or `CODE=Name` (given out already, to Name). A bad entry stops `api` at start. Only prod reads it. At start, `api` adds the codes that it does not hold yet, and a known code keeps its row.
+- Secret `KITSHN_TESTER_CODES`, in the GitHub Environment `prod` only, so previews never get it: the Google Play promo codes of `/testing`, one entry per line or comma. Set it with `gh secret set KITSHN_TESTER_CODES --env prod --repo Yarden-zamir/tick3d < file`. An entry is `CODE` (free) or `CODE=Name` (given out already, to Name). A bad entry stops `api` at start. Only prod reads it. At start, `api` adds the codes that it does not hold yet, and a known code keeps its row.
 - `testing.tick3d.yarden-zamir.com` redirects to `/testing`, on prod only (`Caddyfile.j2`).
 - Previews use the production login. Only prod calls GitHub for the preview list.
 - DuckDB allows one process. Stop `api` before you query the database by hand, then start it again.
