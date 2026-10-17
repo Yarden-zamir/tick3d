@@ -65,44 +65,10 @@ function showShareResult(text: string): void {
   }, 2000);
 }
 
-// The 15 s trailer (public/trailer/, 3 MB). The share sheet sends it with the link, so a chat shows the video.
-const TRAILER_URL = '/trailer/tick3d-spot-a89435f-web.mp4';
-// A share needs the press of the player, and the browser forgets that press after about 5 seconds.
-// So the page waits at most this long for the trailer, then shares the link alone.
-// Limit: on a slow connection the first press shares only the link. Revisit if testers report that.
-const TRAILER_WAIT_MS = 3500;
-let trailer: Promise<File | undefined> | undefined;
-
-function loadTrailer(): Promise<File | undefined> {
-  trailer ??= fetch(TRAILER_URL)
-    .then(async (response) => {
-      if (!response.ok) throw new Error(`the trailer answered ${response.status}`);
-      return new File([await response.blob()], 'tick3d-trailer.mp4', { type: 'video/mp4' });
-    })
-    .catch((error: unknown) => {
-      console.warn('no trailer to share', error);
-      // A later press tries again.
-      trailer = undefined;
-      return undefined;
-    });
-  return trailer;
-}
-
-async function trailerFiles(): Promise<File[]> {
-  if (typeof navigator.canShare !== 'function') return [];
-  shareLabel.textContent = 'Getting the trailer…';
-  const file = await Promise.race([loadTrailer(), new Promise<undefined>((resolve) => setTimeout(resolve, TRAILER_WAIT_MS))]);
-  shareLabel.textContent = 'Share with a friend';
-  return file !== undefined && navigator.canShare({ files: [file] }) ? [file] : [];
-}
-
 async function sharePage(): Promise<void> {
   if (typeof navigator.share === 'function') {
-    const text = 'Help test tick3d, a 3D tic-tac-toe game. Android gets a free code, iPhone gets TestFlight.';
-    const files = await trailerFiles();
     try {
-      // Many apps drop the url of a share with a file, so the text carries the link too.
-      await navigator.share(files.length > 0 ? { title: 'Test tick3d', text: `${text} ${shareUrl}`, files } : { title: 'Test tick3d', text, url: shareUrl });
+      await navigator.share({ title: 'Test tick3d', text: 'Help test tick3d, a 3D tic-tac-toe game. Android gets a free code, iPhone gets TestFlight.', url: shareUrl });
       return;
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;

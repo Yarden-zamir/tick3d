@@ -212,7 +212,6 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 - Each code keeps its slot (#1, #2, ...): the order of the secret, with later codes at the end. The page refreshes the list every 20 s and when it comes back into view, and turns a claimed card in its place.
 - One address can claim 5 codes per hour. The browser keeps its codes in localStorage and shows them on the next visit.
 - The 15 s trailer (`public/trailer/`, 3 MB) plays at the top without sound. A tap turns the sound on. With reduced motion, it waits for a tap.
-- Share sends the trailer with the link when the phone can share a file and the trailer loads within 3.5 s. Otherwise it shares the link alone. The link preview of `/testing` and `/` names the trailer as `og:video`.
 - The count of free codes is a button: it scrolls to the first free card and makes it pulse.
 
 Run it locally with fake codes:
