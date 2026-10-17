@@ -57,6 +57,11 @@
         <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" /></svg>
         <span id="share-page-label">Share with a friend</span>
       </button>
+      <!-- The 15 s trailer. It plays without sound on its own, and a tap turns the sound on or off (src/testing/main.ts). -->
+      <figure class="trailer">
+        <video id="trailer" src="/trailer/tick3d-spot-a89435f-web.mp4" poster="/trailer/tick3d-spot-a89435f-poster.jpg" width="1280" height="720" muted loop playsinline></video>
+        <button type="button" class="trailer-sound" id="trailer-sound" aria-pressed="false">Tap for sound</button>
+      </figure>
       <section class="testing-hero" aria-labelledby="testing-title">
         <h2 id="testing-title">Test tick3d before everyone else</h2>
         <p>Thanks for helping! It takes about two minutes. Which phone do you have?</p>
@@ -82,7 +87,8 @@
           </li>
           <li class="step">
             <h3>Become a tester</h3>
-            <p>Tap "Become a tester". Right after you join the group, Play can take a few minutes before this works.</p>
+            <p>Tap "Become a tester", then come back to this page. Right after you join the group, Play can take a few minutes before this works.</p>
+            <p class="step-stop"><b>Do not download yet.</b> Play shows a price until you redeem your free code in the next step.</p>
             <a class="btn" href="https://play.google.com/apps/testing/com.yardenzamir.tick3d" target="_blank" rel="noopener">Become a tester</a>
           </li>
           <li class="step step-codes">
@@ -98,7 +104,7 @@
           </li>
           <li class="step">
             <h3>Install</h3>
-            <p>Open tick3d on Play and install it. The price shows as free after you redeem the code.</p>
+            <p>After you redeem the code, open tick3d on Play. It shows "Install" with no price. If Play still shows a price, redeem your code first.</p>
             <a class="btn btn-primary" href="https://play.google.com/store/apps/details?id=com.yardenzamir.tick3d" target="_blank" rel="noopener">Install from Play</a>
           </li>
         </ol>

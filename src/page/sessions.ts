@@ -12,7 +12,7 @@ import { notifyChat } from './chat.ts';
 import { eventText } from './chat-log.ts';
 import { ownPerson, visibleChat } from './safety.ts';
 import { scheduleComputer } from './computer.ts';
-import { burstEl, undoButton } from './dom.ts';
+import { burstEl, scrollMotion, undoButton } from './dom.ts';
 import { announce, finish } from './end-card.ts';
 import { reject, showToast, showError, showProblem } from './feedback.ts';
 import { closeGameView } from './game-view.ts';
@@ -423,6 +423,8 @@ export function startNewGame(): void {
   if (settingsLocked()) return reject(undefined, 'locked');
   if (page.session === undefined) return reject(undefined, 'no-session');
   newRound(); // drops a computer move for the game that ends here
+  // New game sits below the board, and on a phone the board is out of view. The top of the page shows the status and the board.
+  window.scrollTo({ top: 0, behavior: scrollMotion() });
   page.computerThinkMs = [];
   setThinking(false);
   const { code, backend } = page.session;

@@ -30,6 +30,25 @@ const submit = element('#claim-submit', HTMLButtonElement);
 
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
+// ---- Trailer ----
+
+// Browsers only autoplay a video without sound, so the trailer starts muted. A tap on the video or the badge turns the sound on or off.
+const trailerVideo = element('#trailer', HTMLVideoElement);
+const trailerSound = element('#trailer-sound', HTMLButtonElement);
+
+function toggleTrailerSound(): void {
+  trailerVideo.muted = !trailerVideo.muted;
+  // Turning the sound on restarts the trailer, so the first words are heard.
+  if (!trailerVideo.muted) trailerVideo.currentTime = 0;
+  void trailerVideo.play().catch(() => undefined);
+  trailerSound.setAttribute('aria-pressed', String(!trailerVideo.muted));
+  trailerSound.textContent = trailerVideo.muted ? 'Tap for sound' : 'Sound on';
+}
+trailerVideo.addEventListener('click', toggleTrailerSound);
+trailerSound.addEventListener('click', toggleTrailerSound);
+// The page starts the trailer itself (no autoplay attribute). With reduced motion, it waits for a tap.
+if (!reducedMotion.matches) void trailerVideo.play().catch(() => undefined);
+
 // ---- Share ----
 
 // Production shares the short address (Caddyfile.j2). Other hosts, such as a preview, share their own page.
@@ -285,7 +304,38 @@ function render(): void {
   const free = codes.filter((code) => !code.claimed).length;
   empty.hidden = !codesLoaded || free > 0;
   note.hidden = codesLoaded && codes.length === 0;
-  if (codesLoaded) note.textContent = [`${free} of ${codes.length} codes left.`, notice].filter(Boolean).join(' ');
+  if (codesLoaded) renderNote(free);
+}
+
+// The count of free codes. While a code is free, the count is a button that shows the first free card.
+function renderNote(free: number): void {
+  const count = `${free} of ${codes.length} codes left`;
+  const extra = notice === '' ? [] : [` ${notice}`];
+  if (free === 0) {
+    note.replaceChildren(`${count}.`, ...extra);
+    return;
+  }
+  const jump = document.createElement('button');
+  jump.type = 'button';
+  jump.className = 'codes-jump';
+  jump.textContent = `${count} ↓`;
+  jump.addEventListener('click', showFirstFree);
+  note.replaceChildren(jump, ...extra);
+}
+
+function showFirstFree(): void {
+  const first = codes.find((code) => !code.claimed);
+  if (first === undefined) return;
+  const card = cards.get(first.id);
+  if (card === undefined) throw new Error(`no card for the free code ${first.id}`);
+  card.scrollIntoView({ behavior: reducedMotion.matches ? 'auto' : 'smooth', block: 'center' });
+  card.focus({ preventScroll: true });
+  // Removing the class first lets a second press play the pulse again.
+  card.classList.remove('beckon');
+  void card.offsetWidth;
+  card.classList.add('beckon');
+  // A timer, not animationend: with reduced motion the card only glows, and no animation ends.
+  setTimeout(() => card.classList.remove('beckon'), 1600);
 }
 
 async function loadCodes(): Promise<void> {

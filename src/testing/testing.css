@@ -78,6 +78,54 @@
   }
 }
 
+/* ---- The trailer ---- */
+
+.trailer {
+  position: relative;
+  margin: 0 0 1.4rem;
+  border: var(--border) solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 5px 5px 0 var(--shadow);
+  background: #000;
+  animation: path-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.trailer video {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: pointer;
+}
+
+.trailer-sound {
+  position: absolute;
+  right: 0.6rem;
+  bottom: 0.6rem;
+  padding: 0.3rem 0.75rem;
+  border: var(--border) solid var(--line);
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--on-color);
+  box-shadow: 3px 3px 0 var(--shadow);
+  font-weight: 800;
+  cursor: pointer;
+  animation: share-nod 4s ease-in-out infinite;
+}
+
+.trailer-sound[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--ink);
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trailer,
+  .trailer-sound {
+    animation: none;
+  }
+}
+
 /* ---- The phone picker ---- */
 
 .testing-hero h2 {
@@ -222,6 +270,19 @@
   line-height: 1.4;
 }
 
+/* The stop sign of the "Become a tester" step: the Play page there offers the app for money. */
+.step .step-stop {
+  justify-self: start;
+  padding: 0.45rem 0.7rem;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--danger);
+  /* --danger is a light colour in every theme (light red, grey in mono), so dark text reads on it. */
+  color: #111;
+  font-weight: 700;
+  rotate: -1deg;
+}
+
 /* The code grid needs the full width on a phone. */
 @media (width < 30rem) {
   .step-codes {
@@ -335,6 +396,37 @@
   background: var(--surface-2);
   font-size: 0.92rem;
   font-weight: 800;
+}
+
+/* The count as a button: it scrolls to the first free card (src/testing/main.ts). */
+.codes-jump {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+/* The first free card after a press on the count: it jumps and glows twice. */
+.code-card.beckon .code-front {
+  animation: beckon 0.7s ease-in-out 2;
+}
+
+@keyframes beckon {
+  50% {
+    scale: 1.12;
+    box-shadow: 0 0 0 6px var(--primary), 4px 4px 0 6px var(--shadow);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .code-card.beckon .code-front {
+    animation: none;
+    box-shadow: 0 0 0 6px var(--primary);
+  }
 }
 
 .code-grid {
