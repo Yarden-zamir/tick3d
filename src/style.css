@@ -3361,7 +3361,13 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* Achievements (src/page/achievements.ts), in the style of Steam: a list of rows with a badge, the
-   name and the description, and the unlock date. The badge has the color of the tier of the goal. */
+   name and the description, and the unlock date. The badge has the color of the tier of the goal.
+   TIER_COLORS in src/achievement-icons.ts has the same colors. */
+[data-tier='stone'] {
+  --tier: #d9d2c5;
+  --tier-deep: #8f8676;
+}
+
 [data-tier='bronze'] {
   --tier: #ffb36b;
   --tier-deep: #c7672a;
@@ -3375,6 +3381,11 @@ body[data-turn='O'] .status[data-state='playing'] {
 [data-tier='gold'] {
   --tier: #ffe14d;
   --tier-deep: #ff9d00;
+}
+
+[data-tier='mythic'] {
+  --tier: #e6b8ff;
+  --tier-deep: #6c5ce7;
 }
 
 .achievements-summary {
@@ -3424,6 +3435,39 @@ body[data-turn='O'] .status[data-state='playing'] {
   translate: -100% 0;
   animation: badge-shine 5s ease-in-out infinite;
   pointer-events: none;
+}
+
+/* Stone: matte, with no shine, so an easy goal looks plain. */
+.achievement-icon[data-tier='stone'] {
+  background: linear-gradient(145deg, var(--tier), var(--tier-deep));
+}
+
+.achievement-icon[data-tier='stone']::after {
+  display: none;
+}
+
+/* Mythic: a rainbow foil that turns, and a faster shine. */
+@property --foil-turn {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.achievement-icon[data-tier='mythic'] {
+  background:
+    radial-gradient(circle at 30% 25%, rgb(255 255 255 / 0.7), transparent 45%),
+    conic-gradient(from var(--foil-turn), #ff7ad9, #b98cff, #6be4ff, #7cff8a, #ffe14d, #ff9d6b, #ff7ad9);
+  animation: badge-foil 6s linear infinite;
+}
+
+.achievement-icon[data-tier='mythic']::after {
+  animation-duration: 2.6s;
+}
+
+@keyframes badge-foil {
+  to {
+    --foil-turn: 360deg;
+  }
 }
 
 @keyframes badge-shine {
@@ -3498,11 +3542,27 @@ body[data-turn='O'] .status[data-state='playing'] {
   rotate: 4deg;
 }
 
-/* A locked badge is grey, with a small lock on its corner. */
+/* A locked badge is grey, with a small lock on its corner. A hidden one is a striped question mark. */
+.achievement[data-state='hidden'] .achievement-icon {
+  background: repeating-linear-gradient(45deg, var(--surface-2) 0 6px, var(--surface) 6px 12px);
+  box-shadow: none;
+  color: var(--muted);
+  animation: none;
+}
+
+.achievement[data-state='hidden'] .achievement-icon::after {
+  display: none;
+}
+
+.achievement[data-state='hidden'] .achievement-text b {
+  color: var(--muted);
+}
+
 .achievement[data-state='locked'] .achievement-icon {
   background: var(--surface);
   box-shadow: none;
   color: var(--muted);
+  animation: none;
 }
 
 .achievement[data-state='locked'] .achievement-icon > svg {

@@ -337,7 +337,7 @@ const isDuplicateKey = (error: unknown) => error instanceof Error && error.messa
 const MAX_ID_ATTEMPTS = 20;
 // Raise it when a rule in src/achievements.ts changes: every row of achievement_players then fills again.
 // A new or removed achievement changes the signatures by itself.
-const ACHIEVEMENT_RULES_VERSION = 1;
+const ACHIEVEMENT_RULES_VERSION = 2;
 // The time to live of an Everyone snapshot is at least this many times the cost of its last refresh.
 const SNAPSHOT_COST_FACTOR = 10;
 // Players per replay round of refreshAchievements, so the memory and the list of bound tokens stay small.
@@ -499,18 +499,34 @@ export async function openStore(
   // The rarity from achievement_players, until a refresh changes a row.
   let rarityCache: AchievementRarity | undefined;
 
-  // A Nearby guest counts the host's copy of the game, as in the history.
-  const achievementRows = (source: string) => `FROM ${source} results SELECT results.public_id, results.doc::JSON AS doc,
-    epoch_ms(results.finished_at) AS finished, results.player_x AS token_x, results.player_o AS token_o WHERE NOT ${HOST_HAS_GAME}`;
-  const ACHIEVEMENT_COLUMNS = { public_id: nullable(gameId), doc: json, finished: epoch, token_x: nullable(text), token_o: nullable(text) };
+  // A Nearby guest counts the host's copy of the game, as in the history. owner_x and owner_o are the
+  // canonical tokens of the seats (see ownerOfSeat), which name the opponent.
+  const achievementRows = (source: string) => `FROM ${source} results
+      LEFT JOIN player_tokens px ON px.token = results.player_x LEFT JOIN player_tokens po ON po.token = results.player_o
+    SELECT results.public_id, results.doc::JSON AS doc, epoch_ms(results.finished_at) AS finished, results.player_x AS token_x, results.player_o AS token_o,
+      ${ownerOfSeat('results.player_x', 'px')} AS owner_x, ${ownerOfSeat('results.player_o', 'po')} AS owner_o
+    WHERE NOT ${HOST_HAS_GAME}`;
+  const ACHIEVEMENT_COLUMNS = {
+    public_id: nullable(gameId),
+    doc: json,
+    finished: epoch,
+    token_x: nullable(text),
+    token_o: nullable(text),
+    owner_x: nullable(text),
+    owner_o: nullable(text),
+  };
 
   // One finished game as the rules read it, for the player who holds the seats where `mine` is true.
-  function achievementGame(row: { public_id: GameId | null; doc: unknown; finished: EpochMs }, mineX: boolean, mineO: boolean): AchievementGame {
+  // The opponent is the canonical token of the other seat of an online or Nearby game.
+  type AchievementRow = { public_id: GameId | null; doc: unknown; finished: EpochMs; owner_x: string | null; owner_o: string | null };
+  function achievementGame(row: AchievementRow, mineX: boolean, mineO: boolean): AchievementGame {
     if (!mineX && !mineO) throw new Error('an achievement game has no seat of the player');
     const { mode, game, difficulty, options, tuned } = readStored(row.doc);
     // A friend game holds this player on both seats.
     const you: Player | null = mineX && mineO ? null : mineX ? 'X' : 'O';
-    return { id: row.public_id, mode, game, you, difficulty, options, tuned, finishedAt: row.finished };
+    const theirs = you === 'X' ? row.owner_o : you === 'O' ? row.owner_x : null;
+    const opponent = (mode === 'online' || mode === 'nearby') && theirs !== core.COMPUTER_TOKEN ? theirs : null;
+    return { id: row.public_id, mode, game, you, difficulty, options, tuned, finishedAt: row.finished, opponent };
   }
 
   // The achievements of the player `owner` (a canonical token) with these tokens, over every finished game
@@ -519,7 +535,7 @@ export async function openStore(
     const key = tokens.toSorted().join(' ');
     const cached = achievementCache.get(key);
     if (cached !== undefined) return cached;
-    const found = await rows(achievementRows(seatedResults(tokens.length)), tokenValues(tokens), ACHIEVEMENT_COLUMNS);
+    const found = await rows(achievementRows(seatedResults(tokens.length)), { ...tokenValues(tokens), account: ACCOUNT_TOKEN_PREFIX }, ACHIEVEMENT_COLUMNS);
     const [reset] = await rows('FROM achievement_resets SELECT epoch_ms(reset_at) AS at WHERE owner = $owner', { owner }, { at: epoch });
     const own = new Set(tokens);
     const progress = achievementProgress(

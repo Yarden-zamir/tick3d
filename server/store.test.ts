@@ -605,7 +605,26 @@ describe('achievements', () => {
     const progress = await store.achievements(alice);
     expect(countOf(progress, 'beat-easy')).toBe(1);
     expect(countOf(progress, 'beat-hard')).toBe(1);
-    expect(countOf(progress, 'streak-3')).toBe(2);
+    expect(countOf(progress, 'computer-streak-easy-5')).toBe(2);
+  });
+
+  it('knows the opponent of a Nearby game by their seat, with all their devices as one person', async () => {
+    store = await openStore(':memory:');
+    const BOB_GITHUB = { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' };
+    const bobPhone = 'eeeeeeee-0000-4000-8000-000000000005' as PlayerToken;
+    // O wins along a row: Alice, on X, loses.
+    const O_WINS = [4, 0, 5, 1, 6, 2, 32, 3];
+    await store.linkToken(bob, BOB_GITHUB);
+    await store.linkToken(bobPhone, BOB_GITHUB);
+    const nearby = (id: string, guest: PlayerToken, moves: number[], finished: number) =>
+      result(id, { mode: 'nearby', difficulty: null, you: 'X', guest, game: finishedGame(moves), finishedAt: ms(finished), metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } });
+    await store.addResults(alice, [
+      nearby('afafafaf-1111-4000-8000-000000000001', bob, O_WINS, 2_000),
+      nearby('afafafaf-1111-4000-8000-000000000002', bobPhone, X_WINS, 3_000),
+    ]);
+    const progress = await store.achievements(alice);
+    expect(countOf(progress, 'people-5')).toBe(1);
+    expect(countOf(progress, 'revenge')).toBe(1);
   });
 });
 

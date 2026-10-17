@@ -873,6 +873,7 @@ const ACHIEVEMENTS_EXAMPLE = achievementProgress([
     options: { hideBoard: false, hideHistory: false, hideCoordinates: false },
     tuned: false,
     finishedAt: toEpochMs(T0 + 70_000),
+    opponent: null,
   },
 ]);
 

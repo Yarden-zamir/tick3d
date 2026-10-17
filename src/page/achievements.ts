@@ -31,6 +31,9 @@ async function deviceProgress(): Promise<ShownAchievements> {
       options: upload.options,
       tuned: upload.tuned,
       finishedAt: upload.finishedAt,
+      // Limit: the device does not know who the opponent was, so the goals about people need the server.
+      // Revisit this if the device stores a person id with each result.
+      opponent: null,
     })),
   );
   return { achievements, rarity: null };
