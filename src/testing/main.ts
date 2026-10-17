@@ -285,7 +285,38 @@ function render(): void {
   const free = codes.filter((code) => !code.claimed).length;
   empty.hidden = !codesLoaded || free > 0;
   note.hidden = codesLoaded && codes.length === 0;
-  if (codesLoaded) note.textContent = [`${free} of ${codes.length} codes left.`, notice].filter(Boolean).join(' ');
+  if (codesLoaded) renderNote(free);
+}
+
+// The count of free codes. While a code is free, the count is a button that shows the first free card.
+function renderNote(free: number): void {
+  const count = `${free} of ${codes.length} codes left`;
+  const extra = notice === '' ? [] : [` ${notice}`];
+  if (free === 0) {
+    note.replaceChildren(`${count}.`, ...extra);
+    return;
+  }
+  const jump = document.createElement('button');
+  jump.type = 'button';
+  jump.className = 'codes-jump';
+  jump.textContent = `${count} ↓`;
+  jump.addEventListener('click', showFirstFree);
+  note.replaceChildren(jump, ...extra);
+}
+
+function showFirstFree(): void {
+  const first = codes.find((code) => !code.claimed);
+  if (first === undefined) return;
+  const card = cards.get(first.id);
+  if (card === undefined) throw new Error(`no card for the free code ${first.id}`);
+  card.scrollIntoView({ behavior: reducedMotion.matches ? 'auto' : 'smooth', block: 'center' });
+  card.focus({ preventScroll: true });
+  // Removing the class first lets a second press play the pulse again.
+  card.classList.remove('beckon');
+  void card.offsetWidth;
+  card.classList.add('beckon');
+  // A timer, not animationend: with reduced motion the card only glows, and no animation ends.
+  setTimeout(() => card.classList.remove('beckon'), 1600);
 }
 
 async function loadCodes(): Promise<void> {

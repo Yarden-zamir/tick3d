@@ -350,6 +350,37 @@
   font-weight: 800;
 }
 
+/* The count as a button: it scrolls to the first free card (src/testing/main.ts). */
+.codes-jump {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+/* The first free card after a press on the count: it jumps and glows twice. */
+.code-card.beckon .code-front {
+  animation: beckon 0.7s ease-in-out 2;
+}
+
+@keyframes beckon {
+  50% {
+    scale: 1.12;
+    box-shadow: 0 0 0 6px var(--primary), 4px 4px 0 6px var(--shadow);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .code-card.beckon .code-front {
+    animation: none;
+    box-shadow: 0 0 0 6px var(--primary);
+  }
+}
+
 .code-grid {
   display: grid;
   /* Compact cards: production has about 60 codes, so a phone shows three per row. */
