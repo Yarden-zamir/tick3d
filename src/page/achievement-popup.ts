@@ -1,4 +1,4 @@
-// The popup of the achievements that unlocked away from an end card of this device: an invite on /testing, a
+// The popup of the achievements that unlocked away from an end card of this device: an invite on /share, a
 // game on another device, or the unlocks from before the popup existed. It checks when the page opens and when
 // it comes back to the front. It is no modal: the game stays playable under it, and Close or My games hide it.
 import { badge } from '../achievement-list.ts';

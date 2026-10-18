@@ -1,4 +1,4 @@
-// The Google Play promo codes of the Android closed test (/testing). The server and the page share these shapes.
+// The Google Play promo codes of the Android closed test (/share). The server and the page share these shapes.
 // A code goes to one tester. The public list shows a hint of each code, never the full code, and never an email.
 import { isRecord, isUnknownArray } from '../guards.ts';
 import { type PersonId, parsePersonId } from '../protocol.ts';
@@ -16,7 +16,7 @@ const CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 // without an email (a code that the maintainer gave out by hand).
 export type TesterCode = { id: number; hint: string; claimed: boolean; name: string | null; gravatar: string | null };
 export type TesterCodes = { codes: TesterCode[] };
-// `by` is the person id of the inviter: the `by` value of the invite link (/testing?by=<person id>), or null.
+// `by` is the person id of the inviter: the `by` value of the invite link (/share?by=<person id>), or null.
 export type ClaimRequest = { email: string; name: string; by: PersonId | null };
 export type ClaimedCode = { code: string };
 // One entry of the TESTER_CODES setting: a free code, or a code that `name` holds already.

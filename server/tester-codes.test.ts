@@ -3,7 +3,7 @@ import { DuckDBInstance } from '@duckdb/node-api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toEpochMs as ms } from '../src/epoch.ts';
 import { replay } from '../src/game.ts';
-import { parseClaimRequest, parseTesterCodeEntries, parseTesterCodes } from '../src/testing/codes.ts';
+import { parseClaimRequest, parseTesterCodeEntries, parseTesterCodes } from '../src/share/codes.ts';
 import { type Store, openStore } from './store.ts';
 import { ACCOUNT_TOKEN_PREFIX, type PlayerToken, personId, toRecord } from '../src/protocol.ts';
 import { gravatarOf, testerCodesFromEnv } from './tester-codes.ts';
@@ -190,14 +190,15 @@ describe('invites', () => {
     expect(await unlocked(inviter)).toMatchObject([{ count: 0 }, { count: 0 }, { count: 0 }]);
   });
 
-  it('count an install report once per person, for the first inviter, and no self-invite', async () => {
+  it('count an app open once per device, for the first inviter, and no self-invite', async () => {
     store = await openStore(':memory:');
     const by = await store.person(inviter);
-    expect(await store.addInviteInstall(player, by)).toBe(true);
-    expect(await store.addInviteInstall(player, by)).toBe(false);
-    // A later link of another inviter does not move the install.
-    expect(await store.addInviteInstall(player, await personId(inviterLaptop))).toBe(false);
-    expect(await store.addInviteInstall(inviter, by)).toBe(false);
+    expect(await store.reportAppOpen(player, by)).toBe('device');
+    expect(await store.reportAppOpen(player, by)).toBe('device');
+    // A later link of another inviter does not move the copy.
+    await store.reportAppOpen(player, await personId(inviterLaptop));
+    // The inviter's own app open is a copy, but no invite.
+    expect(await store.reportAppOpen(inviter, by)).toBe('device');
     expect(await unlocked(inviter)).toMatchObject([{ count: 1, unlocked: true }, { count: 1 }, { count: 1 }]);
     expect(await unlocked(inviterLaptop)).toMatchObject([{ count: 0 }, { count: 0 }, { count: 0 }]);
   });
@@ -207,10 +208,80 @@ describe('invites', () => {
     await store.addTesterCodes(parseTesterCodeEntries(codes(2)));
     const by = await store.person(inviter);
     await store.claimTesterCode(1, { ...tester(1), by }, player);
-    await store.addInviteInstall(player, by);
+    await store.reportAppOpen(player, by);
     // Another person opened the app without a code claim.
-    await store.addInviteInstall(inviterLaptop, by);
+    await store.reportAppOpen(inviterLaptop, by);
     expect(await unlocked(inviter)).toMatchObject([{ count: 1 }, { count: 2 }, { count: 2 }]);
+  });
+
+  const ALICE = { id: 301, login: 'alice', avatar: 'https://avatars.githubusercontent.com/u/301?v=4' };
+  const CAROL = { id: 302, login: 'carol', avatar: 'https://avatars.githubusercontent.com/u/302?v=4' };
+  const count = async () => (await unlocked(inviter))[1]?.count;
+
+  it('R1: a claim in the browser before a login and an app open after it count once', async () => {
+    store = await openStore(':memory:');
+    await store.addTesterCodes(parseTesterCodeEntries(codes(1)));
+    const by = await store.person(inviter);
+    const phone = browser(1);
+    await store.claimTesterCode(1, { ...tester(1), by }, phone);
+    await store.linkToken(phone, ALICE);
+    // The app on the same phone shares the storage of Chrome, so the same device token reports.
+    await store.reportAppOpen(phone, by);
+    expect(await count()).toBe(1);
+  });
+
+  it('R2: a device with an invite event never adds a second person, also after a login with another account', async () => {
+    store = await openStore(':memory:');
+    await store.addTesterCodes(parseTesterCodeEntries(codes(1)));
+    const by = await store.person(inviter);
+    const phone = browser(1);
+    await store.linkToken(phone, ALICE);
+    await store.reportAppOpen(phone, by);
+    await store.unlinkToken(phone);
+    await store.linkToken(phone, CAROL);
+    await store.reportAppOpen(phone, by);
+    // A code claim on that device as Carol still names the same device.
+    await store.claimTesterCode(1, { ...tester(2), by }, phone);
+    expect(await count()).toBe(1);
+  });
+
+  it('R3: the owner of the device at its first event keeps the game, not a later account', async () => {
+    const path = `${await mkdtemp('/tmp/tick3d-invites-')}/owner.duckdb`;
+    store = await openStore(path);
+    const by = await store.person(inviter);
+    const phone = browser(1);
+    await store.linkToken(phone, ALICE);
+    await store.reportAppOpen(phone, by);
+    await store.unlinkToken(phone);
+    await store.linkToken(phone, CAROL);
+    await store.reportAppOpen(phone, by);
+    await store.close();
+    const instance = await DuckDBInstance.create(path);
+    const db = await instance.connect();
+    const owners = (await db.runAndReadAll('FROM app_copies SELECT owner')).getRowObjectsJS().map((row) => row.owner);
+    db.closeSync();
+    instance.closeSync();
+    expect(owners).toEqual([`${ACCOUNT_TOKEN_PREFIX}${String(ALICE.id).padStart(16, '0')}`]);
+    store = await openStore(path);
+  });
+
+  it('R4: two devices of one account count once', async () => {
+    store = await openStore(':memory:');
+    await store.addTesterCodes(parseTesterCodeEntries(codes(1)));
+    const by = await store.person(inviter);
+    await store.linkToken(browser(1), ALICE);
+    await store.linkToken(browser(2), ALICE);
+    await store.claimTesterCode(1, { ...tester(1), by }, browser(1));
+    await store.reportAppOpen(browser(2), by);
+    expect(await count()).toBe(1);
+  });
+
+  it('count an inviter without games in the rarity, so an unlock never shows 0% of players', async () => {
+    store = await openStore(':memory:');
+    await store.reportAppOpen(player, await store.person(inviter));
+    const { rarity } = await store.achievements(inviter);
+    expect(rarity.players).toBe(1);
+    expect(rarity.unlocked['invite-1']).toBe(1);
   });
 
   it('count in the rarity of the players with a game', async () => {
@@ -252,5 +323,73 @@ describe('the claims from before the invite links', () => {
     store = await openStore(path);
     expect((await store.testerClaims()).claims.map((claim) => claim.invitedBy)).toEqual([yarden, null]);
     await store.close();
+  });
+});
+
+describe('copies of the Android app', () => {
+  const phone = 'dddddddd-0000-4000-8000-000000000001' as PlayerToken;
+  const phone2 = 'dddddddd-0000-4000-8000-000000000002' as PlayerToken;
+  const ALICE = { id: 401, login: 'alice', avatar: 'https://avatars.githubusercontent.com/u/401?v=4' };
+  const CAROL = { id: 402, login: 'carol', avatar: 'https://avatars.githubusercontent.com/u/402?v=4' };
+  let store: Store;
+  beforeEach(async () => {
+    store = await openStore(':memory:');
+  });
+  afterEach(async () => {
+    await store.close();
+  });
+
+  it('belong to the device until a logged-in account activates them, once', async () => {
+    expect(await store.copyState(phone)).toBe('none');
+    await expect(store.activateCopy(phone, ALICE.id)).rejects.toMatchObject({ status: 404 });
+    expect(await store.reportAppOpen(phone, null)).toBe('device');
+    await store.linkToken(phone, ALICE);
+    expect(await store.copyState(phone)).toBe('device');
+    expect(await store.activateCopy(phone, ALICE.id)).toBe('activated');
+    // The same activation again changes nothing.
+    expect(await store.activateCopy(phone, ALICE.id)).toBe('activated');
+  });
+
+  it('stay with the account that activated them after a login with another account', async () => {
+    await store.linkToken(phone, ALICE);
+    await store.reportAppOpen(phone, null);
+    await store.activateCopy(phone, ALICE.id);
+    await store.unlinkToken(phone);
+    await store.linkToken(phone, CAROL);
+    // Carol gets no copy and no popup, and cannot take Alice's copy.
+    expect(await store.copyState(phone)).toBe('none');
+    await expect(store.activateCopy(phone, CAROL.id)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('count for every device of the account that holds one, and leave a second bought phone free for another account', async () => {
+    const web = 'dddddddd-0000-4000-8000-000000000003' as PlayerToken;
+    await store.linkToken(phone, ALICE);
+    await store.linkToken(phone2, ALICE);
+    await store.linkToken(web, ALICE);
+    await store.reportAppOpen(phone, null);
+    await store.reportAppOpen(phone2, null);
+    await store.activateCopy(phone, ALICE.id);
+    // Alice holds a copy, so every device of Alice reads 'activated', the web too, and shows no popup.
+    expect(await store.copyState(web)).toBe('activated');
+    expect(await store.copyState(phone2)).toBe('activated');
+    // The second phone's own copy stays unactivated: free for another account.
+    await expect(store.activateCopy(phone2, ALICE.id)).rejects.toMatchObject({ status: 409 });
+    await store.unlinkToken(phone2);
+    await store.linkToken(phone2, CAROL);
+    expect(await store.copyState(phone2)).toBe('device');
+    expect(await store.activateCopy(phone2, CAROL.id)).toBe('activated');
+  });
+
+  it('of one account count as one invited person, also on two phones', async () => {
+    const inviter = 'bbbbbbbb-0000-4000-8000-000000000002' as PlayerToken;
+    const by = await store.person(inviter);
+    // The first phone opened before the login, and the account activated it later.
+    await store.reportAppOpen(phone, by);
+    await store.linkToken(phone, ALICE);
+    await store.activateCopy(phone, ALICE.id);
+    // The second phone opened while logged in to the same account.
+    await store.linkToken(phone2, ALICE);
+    await store.reportAppOpen(phone2, by);
+    expect((await store.achievements(inviter)).achievements.find((entry) => entry.id === 'invite-5')?.count).toBe(1);
   });
 });

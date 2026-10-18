@@ -13,14 +13,14 @@ const INFO = {
   training: 'How the ear training works',
   input: 'How the Voice room works',
   privacy: 'About this page',
-  testing: 'How testing works',
+  share: 'How sharing and testing work',
 } as const satisfies Record<PageName, string>;
 
 const USER = { login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4' };
 
 // The server answers that a GitHub user is logged in. The test needs no real login.
 async function fakeLogin(page: Page): Promise<void> {
-  await page.route('**/api/me', (route) => route.fulfill({ json: { loginAvailable: true, user: USER, name: null, person: '0123456789abcdef' } }));
+  await page.route('**/api/me', (route) => route.fulfill({ json: { loginAvailable: true, user: USER, name: null, person: '0123456789abcdef', copy: 'none' } }));
 }
 
 for (const name of keysOf(PAGES)) {
@@ -64,7 +64,7 @@ test('the account button of /stats opens My games on the game page, and a login 
   await expect(page.locator('#account-button')).toHaveAttribute('aria-label', `My games, logged in as ${USER.login}`);
 
   await page.unroute('**/api/me');
-  await page.route('**/api/me', (route) => route.fulfill({ json: { loginAvailable: true, user: null, name: null, person: '0123456789abcdef' } }));
+  await page.route('**/api/me', (route) => route.fulfill({ json: { loginAvailable: true, user: null, name: null, person: '0123456789abcdef', copy: 'none' } }));
   await page.locator('#account-button').click();
   await expect(page).toHaveURL((url) => url.pathname === '/');
   await expect(page.locator('#my-games')).toHaveAttribute('open');

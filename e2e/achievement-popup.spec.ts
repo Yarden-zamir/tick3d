@@ -5,7 +5,7 @@ import { PAGES } from '../src/pages.ts';
 import { STORAGE_KEYS } from '../src/storage-keys.ts';
 import { expect, test } from './fixtures.ts';
 
-// The popup of unlocks that came away from an end card of this device, such as an invite on /testing.
+// The popup of unlocks that came away from an end card of this device, such as an invite on /share.
 // The answer of GET /api/me/achievements is fake, so the test needs no invite on the server.
 
 // The progress with these achievements unlocked, the first one the newest.

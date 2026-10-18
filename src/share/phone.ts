@@ -1,4 +1,4 @@
-// The phone of a visitor of /testing: the Android path has Google Play codes, the iPhone path has TestFlight.
+// The phone of a visitor of /share: the Android path has Google Play codes, the iPhone path has TestFlight.
 export const PHONES = ['android', 'iphone'] as const;
 export type Phone = (typeof PHONES)[number];
 

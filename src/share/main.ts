@@ -1,7 +1,7 @@
-// The testing page (/testing): the steps to join the closed test on Android or iPhone, and the Google Play
-// promo codes of the Android path (src/testing/codes.ts). The page keeps the codes that it claimed in localStorage.
+// The share page (/share): the invite link, the steps to join the closed test on Android or iPhone, and the Google Play
+// promo codes of the Android path (src/share/codes.ts). The page keeps the codes that it claimed in localStorage.
 import '../style.css';
-import './testing.css';
+import './share.css';
 import { element } from '../element.ts';
 import { setupPageHeader } from '../header/header.ts';
 import { renderQr } from '../nearby/qr.ts';
@@ -75,9 +75,9 @@ function showShareResult(text: string): void {
   }, 2000);
 }
 
-// The share sheet gets the link only: a chat app then pastes the link, and its preview (testing.html) tells the rest.
+// The share sheet gets the link only: a chat app then pastes the link, and its preview (share.html) tells the rest.
 async function sharePage(): Promise<void> {
-  const shareUrl = inviteUrl(location, me);
+  const shareUrl = inviteUrl(location.origin, me);
   if (typeof navigator.share === 'function') {
     try {
       await navigator.share({ url: shareUrl });
@@ -131,7 +131,7 @@ let qrShown = false;
 function showPhone(phone: Phone | null): void {
   for (const each of PHONES) {
     choices[each].setAttribute('aria-pressed', String(each === phone));
-    // A path that turns visible plays its entrance animation again (testing.css).
+    // A path that turns visible plays its entrance animation again (share.css).
     paths[each].hidden = each !== phone;
   }
   if (phone === 'android' && !codesLoaded) void loadCodes();

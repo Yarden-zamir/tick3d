@@ -1,22 +1,22 @@
-/* The testing page. It uses the theme tokens of style.css, so it follows the saved theme.
+/* The share page. It uses the theme tokens of style.css, so it follows the saved theme.
    The reduced motion rule of style.css turns off every animation and transition here. */
-.testing {
+.share {
   max-width: 46rem;
   margin: 0 auto;
   padding: max(1.25rem, env(safe-area-inset-top)) 1rem 3rem;
 }
 
-.testing-head {
+.share-head {
   margin-bottom: 1.4rem;
 }
 
-.testing a:not(.btn) {
+.share a:not(.btn) {
   color: inherit;
   text-decoration-thickness: 2px;
   overflow-wrap: anywhere;
 }
 
-.testing .btn {
+.share .btn {
   justify-self: start;
 }
 
@@ -128,7 +128,7 @@
 
 /* ---- The phone picker ---- */
 
-.testing-hero h2 {
+.share-hero h2 {
   margin: 0;
   font-size: clamp(1.6rem, 6vw, 2.3rem);
   font-weight: 800;
@@ -137,7 +137,7 @@
   text-wrap: balance;
 }
 
-.testing-hero p {
+.share-hero p {
   margin: 0.6rem 0 1rem;
   font-size: 1.1rem;
   font-weight: 600;
@@ -187,13 +187,13 @@
 
 /* ---- A path: the steps for one phone ---- */
 
-.testing-path {
+.share-path {
   margin-top: 1.8rem;
   scroll-margin-top: 1rem;
 }
 
 /* A path that turns visible slides in. Leaving display: none starts the animation again. */
-.testing-path:not([hidden]) {
+.share-path:not([hidden]) {
   animation: path-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
 
@@ -398,7 +398,7 @@
   font-weight: 800;
 }
 
-/* The count as a button: it scrolls to the first free card (src/testing/main.ts). */
+/* The count as a button: it scrolls to the first free card (src/share/main.ts). */
 .codes-jump {
   padding: 0;
   border: 0;

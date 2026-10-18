@@ -69,13 +69,14 @@ describe('the tester code routes', () => {
     expect(Number(refused.retryAfter)).toBeGreaterThan(0);
   });
 
-  it('take one install report per person, with a person id in by', async () => {
-    const by = '0123456789abcdef';
-    const report = (body: unknown, who = player) => call('POST', '/invites/installs', { player: who, body, client: '203.0.113.40' });
+  it('take an app open with a person id or null in by, and need a login to activate', async () => {
+    const report = (body: unknown) => call('POST', '/copies', { player, body, client: '203.0.113.40' });
     expect((await report({ by: 'nope' })).status).toBe(400);
-    expect((await call('POST', '/invites/installs', { body: { by }, client: '203.0.113.40' })).status).toBe(400);
-    expect((await report({ by })).body).toEqual({ counted: true });
-    expect((await report({ by })).body).toEqual({ counted: false });
+    expect((await call('POST', '/copies', { body: { by: null }, client: '203.0.113.40' })).status).toBe(400);
+    expect((await report({ by: '0123456789abcdef' })).body).toEqual({ copy: 'device' });
+    expect((await report({ by: null })).body).toEqual({ copy: 'device' });
+    // This server has no GitHub login.
+    expect((await call('POST', '/copies/activate', { player, client: '203.0.113.40' })).status).toBe(404);
   });
 
   it('keep the claims with the emails for the maintainers only', async () => {

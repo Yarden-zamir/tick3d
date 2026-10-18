@@ -1,7 +1,7 @@
-// The Google Play promo codes of the closed test (src/testing/codes.ts), from the TESTER_CODES setting.
+// The Google Play promo codes of the closed test (src/share/codes.ts), from the TESTER_CODES setting.
 // KitSHn fills it from the GitHub secret KITSHN_TESTER_CODES. The repository is public, so codes never go in git.
 import { createHash } from 'node:crypto';
-import { type TesterCodeEntry, parseTesterCodeEntries } from '../src/testing/codes.ts';
+import { type TesterCodeEntry, parseTesterCodeEntries } from '../src/share/codes.ts';
 
 // The KitSHn environment of production, as in server/previews.ts.
 const PRODUCTION_ENVIRONMENT = 'prod';

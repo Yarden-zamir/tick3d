@@ -15,14 +15,14 @@
         }
       } catch {}
     </script>
-    <title>tick3d · testing</title>
+    <title>tick3d · share</title>
     <!-- The link preview in chat apps and on social sites. The image needs an absolute address, so every environment names production. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="tick3d" />
-    <meta property="og:url" content="https://testing.tick3d.yarden-zamir.com" />
+    <meta property="og:url" content="https://tick3d.yarden-zamir.com/share" />
     <meta property="og:title" content="Be a tick3d beta tester" />
     <meta property="og:description" content="A 3D tic-tac-toe game on a 4×4×4 cube. Android testers get a free Google Play code, iPhone testers get a TestFlight invite." />
-    <meta property="og:image" content="https://tick3d.yarden-zamir.com/og/testing.png" />
+    <meta property="og:image" content="https://tick3d.yarden-zamir.com/og/share.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="tick3d: Be a beta tester! Android gets a free Play code, iPhone gets a TestFlight invite." />
@@ -32,10 +32,10 @@
     <link rel="preload" href="/src/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
-    <main class="testing">
-      <header class="brand testing-head">
+    <main class="share">
+      <header class="brand share-head">
         <h1><a href="/" class="home-link" id="home-link" title="Home">tick<span>3d</span></a></h1>
-        <p class="page-title">Testing</p>
+        <p class="page-title">Share</p>
         <div class="brand-links">
           <a class="repo-link account-button" id="account-button" href="/?open=my-games" aria-label="My games" data-tip="My games">
             <!-- [html-validate-disable-next element-required-attributes: the page sets src after login] -->
@@ -52,18 +52,18 @@
           </button>
         </div>
       </header>
-      <!-- Testers pass the page on to friends: the share sheet of the phone, or a copied link (src/testing/main.ts). -->
+      <!-- Testers pass the page on to friends: the share sheet of the phone, or a copied link (src/share/main.ts). -->
       <button type="button" class="share-page" id="share-page">
         <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" /></svg>
         <span id="share-page-label">Share with a friend</span>
       </button>
-      <!-- The 15 s trailer (1.4 MB). It plays without sound once enough of it loaded, and a tap turns the sound on or off (src/testing/main.ts). -->
+      <!-- The 15 s trailer (1.4 MB). It plays without sound once enough of it loaded, and a tap turns the sound on or off (src/share/main.ts). -->
       <figure class="trailer">
         <video id="trailer" src="/trailer/tick3d-spot-a89435f-web2.mp4" poster="/trailer/tick3d-spot-a89435f-poster.jpg" width="1280" height="720" preload="auto" muted loop playsinline></video>
         <button type="button" class="trailer-sound" id="trailer-sound" aria-pressed="false">Tap for sound</button>
       </figure>
-      <section class="testing-hero" aria-labelledby="testing-title">
-        <h2 id="testing-title">Test tick3d before everyone else</h2>
+      <section class="share-hero" aria-labelledby="share-title">
+        <h2 id="share-title">Test tick3d before everyone else</h2>
         <p>Thanks for helping! It takes about two minutes. Which phone do you have?</p>
         <div class="phone-picker" id="phone-picker" role="group" aria-label="Your phone">
           <button type="button" class="phone-choice" id="pick-android" data-phone="android" aria-pressed="false">
@@ -77,7 +77,7 @@
         </div>
       </section>
 
-      <section class="testing-path" id="android-path" aria-labelledby="android-title" hidden>
+      <section class="share-path" id="android-path" aria-labelledby="android-title" hidden>
         <h2 id="android-title" class="path-title">Android</h2>
         <ol class="steps">
           <li class="step">
@@ -110,7 +110,7 @@
         </ol>
       </section>
 
-      <section class="testing-path" id="iphone-path" aria-labelledby="iphone-title" hidden>
+      <section class="share-path" id="iphone-path" aria-labelledby="iphone-title" hidden>
         <h2 id="iphone-title" class="path-title">iPhone</h2>
         <ol class="steps">
           <li class="step">
@@ -181,7 +181,7 @@
       </form>
     </dialog>
     <div class="modal info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
-      <h2 id="info-title">How testing works</h2>
+      <h2 id="info-title">How sharing and testing work</h2>
       <p>tick3d is in a closed test on Google Play and on TestFlight.</p>
       <ul>
         <li>Android: each tester gets one free Google Play code. A card shows only the first letters of its code.</li>
@@ -192,6 +192,6 @@
       </ul>
       <button type="button" class="btn btn-small info-close" popovertarget="info-panel" popovertargetaction="hide">Close</button>
     </div>
-    <script type="module" src="/src/testing/main.ts"></script>
+    <script type="module" src="/src/share/main.ts"></script>
   </body>
 </html>

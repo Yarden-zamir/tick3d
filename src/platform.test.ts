@@ -21,7 +21,7 @@ describe('isAndroidAppReferrer', () => {
     expect(isAndroidAppReferrer('android-app://com.yardenzamir.tick3d/')).toBe(true);
   });
 
-  it.each(['', 'https://tick3d.yarden-zamir.com/testing', 'android-app://com.yardenzamir.tick3d.other', 'android-app://com.android.chrome/'])('reads %o as no app', (referrer) => {
+  it.each(['', 'https://tick3d.yarden-zamir.com/share', 'android-app://com.yardenzamir.tick3d.other', 'android-app://com.android.chrome/'])('reads %o as no app', (referrer) => {
     expect(isAndroidAppReferrer(referrer)).toBe(false);
   });
 });

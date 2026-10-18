@@ -6,13 +6,13 @@ const DANA = '0123456789abcdef' as PersonId;
 const TOM = 'fedcba9876543210' as PersonId;
 
 describe('the invite link', () => {
-  it('names the sharer on the short address in production, and on /testing elsewhere', () => {
-    expect(inviteUrl({ hostname: 'tick3d.yarden-zamir.com', origin: 'https://tick3d.yarden-zamir.com' }, DANA)).toBe(`https://testing.tick3d.yarden-zamir.com/?by=${DANA}`);
-    expect(inviteUrl({ hostname: 'pr-7.tick3d.yarden-zamir.com', origin: 'https://pr-7.tick3d.yarden-zamir.com' }, DANA)).toBe(`https://pr-7.tick3d.yarden-zamir.com/testing?by=${DANA}`);
+  it('names the sharer by person id on the /share page of the host', () => {
+    expect(inviteUrl('https://tick3d.yarden-zamir.com', DANA)).toBe(`https://tick3d.yarden-zamir.com/share?by=${DANA}`);
+    expect(inviteUrl('https://pr-7.tick3d.yarden-zamir.com', DANA)).toBe(`https://pr-7.tick3d.yarden-zamir.com/share?by=${DANA}`);
   });
 
   it('has no by before the page knows the person', () => {
-    expect(inviteUrl({ hostname: 'localhost', origin: 'http://localhost:5180' }, null)).toBe('http://localhost:5180/testing');
+    expect(inviteUrl('http://localhost:5180', null)).toBe('http://localhost:5180/share');
   });
 });
 

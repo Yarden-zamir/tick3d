@@ -17,13 +17,13 @@ export const STORAGE_KEYS = {
   deletionsChecked: 'tick3d.deletions-checked',
   // The run of wins against easy, and whether this device moved up to medium once (src/page/level-up.ts).
   levelUp: 'tick3d.level-up',
-  // The tester codes that this browser claimed on /testing, and the phone that the visitor picked there.
+  // The tester codes that this browser claimed on /share, and the phone that the visitor picked there.
   testerCodes: 'tick3d.tester-codes',
   testerPhone: 'tick3d.tester-phone',
-  // The person id of the first invite link that brought this browser to /testing (src/testing/invite.ts).
+  // The person id of the first invite link that brought this browser to /share (src/share/invite.ts).
   testerInvitedBy: 'tick3d.tester-invited-by',
-  // The inviter whose invite this Android app reported (src/page/invite-install.ts), so it reports once.
-  inviteInstallReported: 'tick3d.invite-install-reported',
+  // When the player said "Not now" to the activation of the Android app copy (src/page/app-copy.ts).
+  activationAskedAt: 'tick3d.activation-asked-at',
   // The achievements that this device showed already, in a popup or on an end card (src/page/achievement-popup.ts).
   achievementsSeen: 'tick3d.achievements-seen',
 } as const;

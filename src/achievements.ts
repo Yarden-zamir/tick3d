@@ -45,7 +45,7 @@ const TIERS = ['stone', 'bronze', 'silver', 'gold', 'mythic'] as const;
 
 // count: the goal is a number of games that pass the test.
 // streak: the goal is a run of games in a row that pass the test. Only the games of `among` make or break the run.
-// invites: the goal is a number of people who got the game through the invite link of the player (/testing): they
+// invites: the goal is a number of people who got the game through the invite link of the player (/share): they
 // claimed a Google Play code, or opened the paid Android app. Only the server knows them (inviteRows in
 // server/store.ts), so this kind reads no game.
 type Rule = {
@@ -588,7 +588,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'invite-1',
     name: 'Plus one',
-    description: 'Bring a friend: they get the game through your invite link on the testing page.',
+    description: 'Bring a friend: they get the game through your invite link.',
     tier: 'bronze',
     hidden: false,
     goal: 1,

@@ -36,7 +36,7 @@
 - Your game as a song: the Song button on the end card and on a game link. A long press shares the song as a WAV file, with your voice on the moves that your voice placed.
 - An end card with the result, to share or save as an image.
 - Survival records: the longest game against each computer level and setup.
-- Achievements: 51 goals such as a first win, a win in 7 moves or 5 wins in a row (`src/achievements.ts`). Some goals are ladders with a step per computer level, where a higher step also unlocks the lower ones. A person never counts for a computer level; themed goals have their own achievement for people. The tier color shows how hard a goal is, from stone to a moving mythic foil. Hidden goals show a question mark until they unlock. The goals about people (different people, a nemesis, a revenge) need the server, which knows each opponent. Past games count too, and a friend game with a winner counts as a win, but friend games count for no ladder. Three goals count invites (1, 5 and 25 people): see the testing page below. My games and the stats page list them with their rarity ("12% of players"), and the end card and the shared image show a new one. An unlock that this device did not show on an end card, such as an invite or a game on another device, pops up in a card at the bottom of the game page when the page opens or comes back to the front (`src/page/achievement-popup.ts`). The card lists the 3 newest, with "+N more" that opens My games. The device keeps the achievements that it showed in localStorage, so each one pops once. "Clear history" keeps them, and "Reset achievements" in My games starts them over.
+- Achievements: 51 goals such as a first win, a win in 7 moves or 5 wins in a row (`src/achievements.ts`). Some goals are ladders with a step per computer level, where a higher step also unlocks the lower ones. A person never counts for a computer level; themed goals have their own achievement for people. The tier color shows how hard a goal is, from stone to a moving mythic foil. Hidden goals show a question mark until they unlock. The goals about people (different people, a nemesis, a revenge) need the server, which knows each opponent. Past games count too, and a friend game with a winner counts as a win, but friend games count for no ladder. Three goals count invites (1, 5 and 25 people): see the share page below. My games and the stats page list them with their rarity ("12% of players"), and the end card and the shared image show a new one. An unlock that this device did not show on an end card, such as an invite or a game on another device, pops up in a card at the bottom of the game page when the page opens or comes back to the front (`src/page/achievement-popup.ts`). The card lists the 3 newest, with "+N more" that opens My games. The device keeps the achievements that it showed in localStorage, so each one pops once. "Clear history" keeps them, and "Reset achievements" in My games starts them over.
 - Twelve themes.
 - The same header on every page, with My games and Info, and the same footer, with kitshn and GitHub (`src/header/`).
 - Info on the game page shows the tutorial video "How to play" (Basics). The slider under it jumps between the checkpoints of the video, and the headline of each checkpoint shows over the slider while you drag. The checkpoints come from the video plan (`src/tutorial-chapters.json`, written by `video/scripts/tutorial.ts`). The page loads a small web copy of the video from `public/tutorial/` on the first open of Info.
@@ -165,7 +165,7 @@ A mode change moves neither the board nor the Opponent picker:
 - `src/page/safety.ts`, `src/page/person-mark.ts`: the report and block menu of the game. `src/safety-dialog.ts` and `src/blocks.ts`: the menu and the block list, shared with the stats page.
 - `src/header/`: the header and the footer of every page. `src/markup.test.ts` checks that every page has the same header and footer.
 - `stats.html`, `src/stats/`: the stats page. `sound-training.html`, `src/sound-training/`: the ear trainer.
-- `testing.html`, `src/testing/`: the testing page. `server/tester-codes.ts`: the codes from `TESTER_CODES`.
+- `share.html`, `src/share/`: the share page. `server/tester-codes.ts`: the codes from `TESTER_CODES`.
 - `src/pwa.ts`, `vite.config.ts`: the service worker and the manifest.
 - `server/main.ts`: the HTTP API. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login.
 - `server/api-docs.ts`: every API route with its docs. The server finds routes in this list.
@@ -205,27 +205,28 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 - A finished game sends, besides the game: the device kind, the view, the layout, the theme, input and undo counts, refusals, computer thinking times, the offline flag and the app version.
 - A fault report holds the error message, the file and line, and the app version. It holds no token and no address.
 
-## Testing page
+## Share page
 
-`/testing` holds the steps to join the closed test: Android (Google Group, Play testing, a free Google Play promo code, install) and iPhone (TestFlight). `testing.tick3d.yarden-zamir.com` redirects there on production, with its query.
+`/share` holds the invite link and the steps to join the closed test: Android (Google Group, Play testing, a free Google Play promo code, install) and iPhone (TestFlight). The page was `/testing` before: `/testing` redirects to `/share` (`container/Caddyfile`), and `testing.tick3d.yarden-zamir.com` redirects there on production (`Caddyfile.j2`), both with the query, so the links sent before the rename keep working.
 
 - The codes come from the GitHub secret `KITSHN_TESTER_CODES` in the Environment `prod`, never from git: one entry per line or comma. `CODE` is a free code, and `CODE=Name` is a code that Name has already. A code has 10 to 30 characters from A-Z and 0-9.
 - At start, the API adds the codes that it does not hold yet. A known code keeps its row and its claim. A bad entry stops the start. Only production reads the secret, so a preview shows no codes.
-- A claim stores the email and the name that the tester types, the person id of the claimer and of the inviter. The page shows the name and the Gravatar picture of each claim, never the email or a full code. `GET /api/testing/claims` gives the emails and the inviters to the maintainers, to add them to the Google Group.
+- A claim stores the email and the name that the tester types, the player token of the claimer and its owner then, and the person id of the inviter. The page shows the name and the Gravatar picture of each claim, never the email or a full code. `GET /api/testing/claims` gives the emails and the inviters to the maintainers, to add them to the Google Group.
 - Each code keeps its slot (#1, #2, ...): the order of the secret, with later codes at the end. The page refreshes the list every 20 s and when it comes back into view, and turns a claimed card in its place.
 - One address can claim 5 codes per hour. The browser keeps its codes in localStorage and shows them on the next visit.
 - The 15 s trailer (`public/trailer/`, 1.4 MB: 1280×720, x264 two-pass at 700 kbit/s with `-tune animation`, AAC 80 kbit/s, faststart) plays at the top without sound, once the browser expects to play it without a stop. A tap turns the sound on. With reduced motion, it waits for a tap. A new encode gets a new file name, so no cache serves the old one.
 - The count of free codes is a button: it scrolls to the first free card and makes it pulse.
-- Share with a friend shares only the invite link, with the person id of the sharer: `https://testing.tick3d.yarden-zamir.com/?by=<person id>` on production, `<origin>/testing?by=<person id>` elsewhere. The redirect of the short address keeps the query (`{?query}` in `Caddyfile.j2`).
+- Share with a friend shares only the invite link `<origin>/share?by=<person id>`, with the public person id of the sharer.
 - The page keeps the first valid `by` in localStorage, and a claim sends it. The server stores it as `invited_by` on the code. An invite from the claimer's own person (a device or the account) counts for nobody.
-- The Android app is a Trusted Web Activity, so it shares the storage of Chrome. When the page runs in the app (its launch referrer is `android-app://<package id>`, `src/platform.ts`) and holds an inviter, it reports the install once (`POST /api/invites/installs`). The app is paid, so an open means a purchase.
-- The invite achievements count the distinct people who claimed a code or opened the app through the invite link, on every device of the inviter. The claims from before the invite links count as invites of Yarden (a one-time migration in `server/store.ts`).
-- iPhone does not count: the iPhone app has its own storage, and TestFlight is free.
+- Copies of the paid Android app (`src/copies.ts`): the app is a Trusted Web Activity, so it shares the storage of Chrome. When the page runs in the app (its launch referrer is `android-app://<package id>`, `src/platform.ts`), it reports each start (`POST /api/copies`) with the inviter that `/share` kept. The first open makes the copy of the device. It belongs to the account that is logged in then, or to the device.
+- An account activates at most one copy, and a copy has at most one account. In the app, a logged-in player whose account holds no copy, on a device whose copy is free, sees "Thank you for buying tick3d! Activate it on your account <login>?". "Not now" asks again at most once a day. `GET /api/me` gives `copy`: `activated` on every browser of an account with a copy, the web too, `device` for a free copy of this device, else `none`. A second bought phone of an account with a copy stays free for another account.
+- The invite achievements count distinct people: the claims and the app opens with that inviter, merged when they share a device or an owner (`server/invite-people.ts`). A claim in the browser, a later login and the app on the same phone count once, and so do two devices of one account. The claims from before the invite links count as invites of Yarden (a one-time migration in `server/store.ts`).
+- iPhone does not count: the iPhone app has its own storage, and TestFlight is free. When the iOS app is paid, it can count an open with an inviter that it sees.
 
 Run it locally with fake codes:
 
 ```sh
-TESTER_CODES="AAAAAAAAAAAAAAAAAAAAAA1=Tom,BBBBBBBBBBBBBBBBBBBBBB2" DB_PATH=/tmp/testing.duckdb node server/main.ts
+TESTER_CODES="AAAAAAAAAAAAAAAAAAAAAA1=Tom,BBBBBBBBBBBBBBBBBBBBBB2" DB_PATH=/tmp/share.duckdb node server/main.ts
 ```
 
 ## Develop
