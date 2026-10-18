@@ -13,13 +13,14 @@ import { CELL_COUNT, SIZE } from '../game.ts';
 import { accountLink, setupPageHeader } from '../header/header.ts';
 import { myGamesHref } from '../header/my-games-link.ts';
 import { leaderboardCard } from './leaderboard.ts';
-import { playerCard } from './player-card.ts';
+import { playerCard, playerCardPlaceholder } from './player-card.ts';
 import { loadBlocks } from '../blocks.ts';
 import { OnlineError, api } from '../online.ts';
 import { releaseLabel } from '../release.ts';
 import {
   ALL_STATS,
   type Count,
+  type PersonId,
   type ReleaseCount,
   FORM_WINDOW,
   MOVE_TIME_BUCKETS,
@@ -640,13 +641,37 @@ function readFilter(): { filter: StatsFilter; problem: string } {
   return { filter: ALL_STATS, problem: 'The address had an unknown filter, so the page shows all games. ' };
 }
 
-// The player card of a person filter. A blocked person shows as they are, with a note: the visitor opened them on purpose.
-function showPerson(stats: Stats | null): void {
-  const person = stats?.person ?? null;
-  const id = stats?.filter.person ?? null;
+// The person of the shown player card. Another range, mode or level keeps the card of the same person.
+let cardOf: PersonId | null = null;
+
+// The player card of a person filter, from its own request: it reads no game, so it shows before the stats.
+// A failed card hides: the stats request shows the reason (private, or no games).
+// A blocked person shows as they are, with a note: the visitor opened them on purpose.
+function showPerson(person: PersonId | null): void {
   personHead.hidden = person === null;
-  if (person === null || id === null) return personHead.replaceChildren();
-  playerCard(personHead, id, person, stats?.achievements ?? null);
+  if (person === cardOf) return;
+  cardOf = person;
+  if (person === null) return personHead.replaceChildren();
+  playerCardPlaceholder(personHead);
+  api.statsCard(person).then(
+    (card) => {
+      if (cardOf === person) playerCard(personHead, person, card);
+    },
+    () => {
+      if (cardOf !== person) return;
+      cardOf = null;
+      personHead.hidden = true;
+      personHead.replaceChildren();
+    },
+  );
+}
+
+// An empty card with grey bars in the shape of a title, a hint and a chart.
+function placeholderCard(wide: boolean): HTMLElement {
+  const box = el('section', wide ? 'stats-card wide stats-placeholder' : 'stats-card stats-placeholder');
+  box.setAttribute('aria-hidden', 'true');
+  box.append(el('span', 'stats-skeleton stats-skeleton-title'), el('span', 'stats-skeleton stats-skeleton-hint'), el('span', 'stats-skeleton stats-skeleton-chart'));
+  return box;
 }
 
 // A newer view replaces a view that still loads.
@@ -656,18 +681,19 @@ async function show(filter: StatsFilter, problem = ''): Promise<void> {
   const id = ++request;
   accountLink.href = myGamesHref(`${location.pathname}${location.search}`);
   renderFilters(filter);
+  // Before the stats request, so the card request is first in the queue of the server.
+  showPerson(filter.person);
   note.textContent = `${problem}Loading…`;
   grid.setAttribute('aria-busy', 'true');
   // The first view reserves room for the cards, so the page does not jump when they come.
   // A later view keeps the old cards, dimmed, until the new ones replace them.
   if (grid.childElementCount === 0) {
-    grid.append(...[true, true, false, false, false, false].map((wide) => el('section', wide ? 'stats-card wide stats-placeholder' : 'stats-card stats-placeholder')));
+    grid.append(...[true, true, false, false, false, false].map(placeholderCard));
   }
   try {
     const stats = parseStats(await api.stats(filter));
     if (id !== request) return;
     grid.replaceChildren();
-    showPerson(stats);
     draw(stats);
     const scope =
       stats.person !== null
@@ -681,7 +707,6 @@ async function show(filter: StatsFilter, problem = ''): Promise<void> {
   } catch (error) {
     if (id !== request) return;
     grid.replaceChildren();
-    showPerson(null);
     // 403 and 404 are answers about the person (private, or no games), not faults.
     const answered = error instanceof OnlineError && (error.status === 403 || error.status === 404);
     note.textContent = answered ? `${problem}${error.message}` : `${problem}The stats did not load. ${error instanceof Error ? error.message : String(error)}`;

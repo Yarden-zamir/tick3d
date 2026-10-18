@@ -613,6 +613,13 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       if (header !== undefined && token === undefined) throw new HttpError(400, 'Invalid X-Player header.');
       return send(res, 200, await store.stats(filter, token ?? null));
     }
+    // The player card of a person view, before the stats of that person. It reads the X-Player header as a person filter does.
+    case 'GET /api/stats/card/{person}': {
+      const header = req.headers['x-player'];
+      const token = asPlayerToken(header);
+      if (header !== undefined && token === undefined) throw new HttpError(400, 'Invalid X-Player header.');
+      return send(res, 200, await store.statsCard(requirePerson(match.params.person), token ?? null));
+    }
     // Names and results of each player, so the stats page can rank them. It reads the X-Player header
     // when it is there, to mark the caller.
     case 'GET /api/leaderboard': {

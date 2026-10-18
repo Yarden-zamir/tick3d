@@ -979,6 +979,20 @@ describe('stats filters', () => {
     const computerId = await personId('computer');
     expect(await status(() => store.stats({ ...all, person: carolId }))).toBe(404);
     expect(await status(() => store.stats({ ...all, person: computerId }))).toBe(404);
+    expect(await status(() => store.statsCard(carolId, null))).toBe(404);
+  });
+
+  it('gives the player card the name and the unlocks of the person view, newest first', async () => {
+    await seeded();
+    const aliceId = await personId(alice);
+    const view = await store.stats({ ...all, person: aliceId });
+    const newestFirst = (view.achievements?.achievements ?? [])
+      .filter((entry) => entry.unlockedAt !== null)
+      .toSorted((a, b) => (b.unlockedAt ?? 0) - (a.unlockedAt ?? 0))
+      .map((entry) => entry.id);
+    expect(newestFirst.length).toBeGreaterThan(1);
+    expect(await store.statsCard(aliceId, null)).toEqual({ person: view.person, unlocked: newestFirst });
+    expect((await store.statsCard(aliceId, alice)).person.you).toBe(true);
   });
 
   it('refuses a person filter to others when the person hides their stats, and keeps Mine and Everyone', async () => {
@@ -989,6 +1003,8 @@ describe('stats filters', () => {
     expect(await store.statsPrivate(bob)).toBe(true);
     expect(await status(() => store.stats({ ...all, person: bobId }))).toBe(403);
     expect(await status(() => store.stats({ ...all, person: bobId }, alice))).toBe(403);
+    expect(await status(() => store.statsCard(bobId, alice))).toBe(403);
+    expect((await store.statsCard(bobId, bob)).person.you).toBe(true);
     // Bob still sees his own stats, by person id and by Mine.
     expect((await store.stats({ ...all, person: bobId }, bob)).totals.games).toBe(2);
     expect((await store.stats({ ...all, scope: 'mine' }, bob)).totals.games).toBe(2);

@@ -3,7 +3,7 @@ import { toEpochMs as ms } from '../src/epoch.ts';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import { parseAnnounce, parseAnnounced, parseAnswerRequest, parseLobbyHosts } from '../src/nearby/lobby.ts';
-import { parseMe, parseMyGames } from '../src/online.ts';
+import { parseMe, parseMyGames, parseStatsCard } from '../src/online.ts';
 import {
   ALL_STATS,
   type PlayerToken,
@@ -76,6 +76,7 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   PracticeRun: parsePracticeRun,
   PracticeBoard: parsePracticeBoard,
   Leaderboard: parseLeaderboard,
+  StatsCard: parseStatsCard,
   SeatAction: parseSeatAction,
   SeatAnswer: parseSeatAnswer,
   // server/main.ts reads `name` and checks it with parseCustomName.
