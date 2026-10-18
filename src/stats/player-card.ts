@@ -1,11 +1,11 @@
 // The player card on top of a person view of the stats page: the picture, the name, the unlocked
 // achievements in a row that scrolls, and Report or block (the Apple and Google Play rules for user content).
 import { badge } from '../achievement-list.ts';
-import { type Achievements, achievementOf } from '../achievements.ts';
+import { type AchievementId, achievementOf } from '../achievements.ts';
 import { avatarImage } from '../avatar.ts';
 import { changeBlock, isBlocked } from '../blocks.ts';
 import { api } from '../online.ts';
-import type { PersonId, StatsPerson } from '../protocol.ts';
+import type { PersonId, StatsCard } from '../protocol.ts';
 import { FLAG_ICON } from '../icons.ts';
 import { openSafetyDialog } from '../safety-dialog.ts';
 
@@ -17,15 +17,14 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text 
 }
 
 // The unlocked achievements, newest first. Each badge names its achievement in a tooltip.
-function achievementRow(achievements: Achievements | null): HTMLElement {
-  const unlocked = (achievements?.achievements ?? []).filter((entry) => entry.unlockedAt !== null).toSorted((a, b) => (b.unlockedAt ?? 0) - (a.unlockedAt ?? 0));
+function achievementRow(unlocked: readonly AchievementId[]): HTMLElement {
   if (unlocked.length === 0) return el('p', 'player-card-none', 'No achievements yet.');
   const row = el('ul', 'player-card-achievements');
   row.setAttribute('aria-label', `${unlocked.length} achievements`);
-  for (const entry of unlocked) {
-    const { name, description } = achievementOf(entry.id);
+  for (const id of unlocked) {
+    const { name, description } = achievementOf(id);
     const item = el('li');
-    const tile = badge('span', entry.id);
+    const tile = badge('span', id);
     tile.tabIndex = 0;
     tile.setAttribute('role', 'img');
     tile.setAttribute('aria-label', name);
@@ -36,14 +35,25 @@ function achievementRow(achievements: Achievements | null): HTMLElement {
   return row;
 }
 
-// Fills `box` with the card of `person`, the person of the view.
-export function playerCard(box: HTMLElement, id: PersonId, person: StatsPerson, achievements: Achievements | null): void {
+// The shape of the card while it loads: a picture, a name and a row of badges.
+export function playerCardPlaceholder(box: HTMLElement): void {
+  const head = el('div', 'player-card-head');
+  head.append(el('span', 'stats-skeleton stats-skeleton-avatar'), el('span', 'stats-skeleton stats-skeleton-title'));
+  const row = el('div', 'player-card-achievements');
+  row.append(...Array.from({ length: 5 }, () => el('span', 'stats-skeleton stats-skeleton-badge')));
+  box.setAttribute('aria-busy', 'true');
+  box.replaceChildren(head, row);
+}
+
+// Fills `box` with the card of `id`, the person of the view.
+export function playerCard(box: HTMLElement, id: PersonId, { person, unlocked }: StatsCard): void {
+  box.removeAttribute('aria-busy');
   const head = el('div', 'player-card-head');
   const title = el('h2', 'player-card-name', `Stats of ${person.name}`);
   head.append(avatarImage(person, 48), title);
   const status = el('p', 'player-card-status');
   status.setAttribute('role', 'status');
-  box.replaceChildren(head, achievementRow(achievements), status);
+  box.replaceChildren(head, achievementRow(unlocked), status);
   // Nobody reports or blocks themselves.
   if (person.you) return;
 

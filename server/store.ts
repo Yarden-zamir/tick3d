@@ -52,6 +52,7 @@ import {
   type Leaderboard,
   type Stats,
   type StatsFilter,
+  type StatsCard,
   type StatsPerson,
   type Tally,
   ALL_STATS,
@@ -357,7 +358,7 @@ const isDuplicateKey = (error: unknown) => error instanceof Error && error.messa
 const MAX_ID_ATTEMPTS = 20;
 // Raise it when a rule in src/achievements.ts changes: every row of achievement_players then fills again.
 // A new or removed achievement changes the signatures by itself.
-const ACHIEVEMENT_RULES_VERSION = 2;
+const ACHIEVEMENT_RULES_VERSION = 3;
 // The time to live of an Everyone snapshot is at least this many times the cost of its last refresh.
 const SNAPSHOT_COST_FACTOR = 10;
 // Players per replay round of refreshAchievements, so the memory and the list of bound tokens stay small.
@@ -621,6 +622,7 @@ export async function openStore(
     const unlocked = signatures.map(({ owner }) =>
       achievementProgress((games.get(owner) ?? []).map((row) => achievementGame(row, row.owner_x === owner, row.owner_o === owner)))
         .filter((entry) => entry.unlockedAt !== null)
+        .toSorted((a, b) => (b.unlockedAt ?? 0) - (a.unlockedAt ?? 0))
         .map((entry) => entry.id),
     );
     await db.run('DELETE FROM achievement_players WHERE list_contains($owners, owner)', { owners: listValue([...owners]) });
@@ -875,6 +877,17 @@ export async function openStore(
     );
     if (device === undefined) return undefined;
     return { owner: device.token, tokens: [device.token], shown: { name: (await namesOf([device.token]))(device.token), player: null } };
+  }
+
+  // The person of a person view, for the caller `token`: 403 when the person hides their stats from the caller,
+  // 404 without an account and a finished game. It runs on the store queue.
+  async function visiblePersonOf(person: PersonId, token: PlayerToken | null): Promise<{ owner: string; tokens: string[]; person: StatsPerson }> {
+    const hidden = await privateOwnerOf(person);
+    const caller = token === null ? null : await ownerOf(token);
+    if (hidden !== undefined && caller !== hidden) throw new SessionError(403, STATS_PRIVATE_MESSAGE);
+    const found = await statsPersonOf(person);
+    if (found === undefined) throw new SessionError(404, 'This player has no finished games yet.');
+    return { owner: found.owner, tokens: found.tokens, person: { ...found.shown, you: caller === found.owner } };
   }
 
   async function isStatsPrivate(owner: string): Promise<boolean> {
@@ -1822,13 +1835,10 @@ export async function openStore(
           return { ...(await computeStats(rows, now(), filter, tokens)), person: null, practice: await practiceStats(rows), achievements: await achievementsOf(await ownerOf(token), tokens) };
         }
         if (filter.person !== null) {
-          const hidden = await privateOwnerOf(filter.person);
-          if (hidden !== undefined && (token === null || (await ownerOf(token)) !== hidden)) throw new SessionError(403, STATS_PRIVATE_MESSAGE);
-          const found = await statsPersonOf(filter.person);
-          if (found === undefined) throw new SessionError(404, 'This player has no finished games yet.');
+          const found = await visiblePersonOf(filter.person, token);
           return {
             ...(await computeStats(rows, now(), filter, found.tokens)),
-            person: { ...found.shown, you: token !== null && (await ownerOf(token)) === found.owner },
+            person: found.person,
             practice: await practiceStats(rows),
             achievements: await achievementsOf(found.owner, found.tokens),
           };
@@ -1836,6 +1846,18 @@ export async function openStore(
         throw new Error('the Everyone stats come from a snapshot');
       });
     },
+
+    // The player card of a person view: the name, and the unlocks of achievement_players, newest first.
+    // It reads no game, so the card shows before the stats of the person. The same 403 and 404 as a person filter.
+    statsCard: (person: PersonId, token: PlayerToken | null): Promise<StatsCard> =>
+      serialized(async () => {
+        const found = await visiblePersonOf(person, token);
+        await refreshAchievements();
+        const [row] = await rows('FROM achievement_players SELECT to_json(unlocked) AS unlocked WHERE owner = $owner', { owner: found.owner }, { unlocked: json });
+        const unlocked = row === undefined ? [] : row.unlocked;
+        if (!Array.isArray(unlocked)) throw new Error('achievement_players holds a row that is not a list');
+        return { person: found.person, unlocked: unlocked.map((id) => oneOf(ACHIEVEMENT_IDS)(id)) };
+      }),
 
     // The leaderboard of a range, mode and level, from a snapshot (see snapshot). `you` is the person of the
     // caller, when the X-Player header names one.

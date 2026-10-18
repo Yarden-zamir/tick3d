@@ -163,6 +163,7 @@ export type SchemaName =
   | 'StatsFilter'
   | 'Stats'
   | 'StatsPrivacy'
+  | 'StatsCard'
   | 'NearbyAnnounce'
   | 'NearbyAnnounced'
   | 'NearbyHost'
@@ -236,6 +237,8 @@ const list = (description: string, items?: Schema): Schema => ({ type: 'array', 
 const count = (description?: string): Schema => ({ type: 'integer', minimum: 0, ...(description === undefined ? {} : { description }) });
 const tally = (description: string, keys: readonly string[]): Schema =>
   object(description, Object.fromEntries(keys.map((key) => [key, ref('Tally')])));
+
+const statsPerson = object('Whose stats these are.', { name: displayName, player: nullable(ref('PlayerInfo')), you: { type: 'boolean', description: 'The X-Player header names this person.' } });
 
 export const SCHEMAS: Record<SchemaName, Schema> = {
   Player: { type: 'string', enum: ['X', 'O'], description: 'A seat. X moves first in every game. The players swap X and O for each new game, unless fixedSeats is true.' },
@@ -616,7 +619,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     offlineGames: count(),
     nearbyMixes: list('Nearby device mixes.', ref('Count')),
     filter: ref('StatsFilter'),
-    person: { ...nullable(object('Whose stats these are.', { name: displayName, player: nullable(ref('PlayerInfo')), you: { type: 'boolean', description: 'The X-Player header names this person.' } })), description: 'The person of a person filter: the name and GitHub account that their games show. null without a person filter.' },
+    person: { ...nullable(statsPerson), description: 'The person of a person filter: the name and GitHub account that their games show. null without a person filter.' },
     form: list(`The win rate over time, oldest first: at each game, the share of wins in the ${FORM_WINDOW} games up to it. mine: your games. everyone: the games against the computer, from the player's side.`, object('One game.', { at: { type: 'number' }, rate: { type: 'number', minimum: 0, maximum: 1 } })),
     lengths: list('Games per number of moves. Index n holds the games with n moves.', count()),
     openingWinsX: list('Games that X won, per first move.', count()),
@@ -720,6 +723,10 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     bestStreak: count('The longest run of won games.'),
     lastPlayed: { type: 'integer', minimum: 0, description: 'When the last game ended, in epoch milliseconds.' },
     achievements: count('The achievements that the person unlocked, over all their games. The filters do not change it.'),
+  }),
+  StatsCard: object('The player card of a person view of the stats page.', {
+    person: statsPerson,
+    unlocked: list('The achievements that the person unlocked, newest first.', strings(ACHIEVEMENT_IDS)),
   }),
   Leaderboard: object(`The common stats of each player, for the page to sort. The most active ${LEADERBOARD_ROWS} players at most.`, {
     generatedAt: { type: 'integer', minimum: 0, description: 'Server time in epoch milliseconds.' },
@@ -1500,6 +1507,21 @@ export const ROUTES = {
       { ...BAD_PLAYER, when: `Scope mine only, or a person filter with an invalid header. ${BAD_PLAYER.when}` },
       { status: 403, when: 'A person filter: that person hides their stats ("Hide my stats" in My games).' },
       { status: 404, when: 'A person filter: no account and no finished game has that person id.' },
+    ],
+    examplePlayer: AGENT_A,
+  },
+  'GET /api/stats/card/{person}': {
+    operationId: 'statsCard',
+    tag: 'Account',
+    summary: 'The player card of a person view at /stats: the name and the unlocked achievements.',
+    description: 'It reads no game, so it answers before GET /api/stats with the same person. It reads the X-Player header as a person filter does: a person who hides their stats still sees their own card.',
+    player: 'optional',
+    response: { status: 200, description: 'The card. No token.', schema: 'StatsCard', example: { person: { name: 'braveOtter', player: null, you: false }, unlocked: [ACHIEVEMENT_IDS[1], ACHIEVEMENT_IDS[0]] } },
+    errors: [
+      { status: 400, when: 'The person id is not valid.' },
+      { ...BAD_PLAYER, when: `Only with an invalid header. ${BAD_PLAYER.when}` },
+      { status: 403, when: 'That person hides their stats ("Hide my stats" in My games).' },
+      { status: 404, when: 'No account and no finished game has that person id.' },
     ],
     examplePlayer: AGENT_A,
   },
