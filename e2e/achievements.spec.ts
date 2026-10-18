@@ -1,5 +1,6 @@
 import { createOnline, expect, joinAsO, playTurns, status, test, xWins } from './fixtures.ts';
 import { ACHIEVEMENTS } from '../src/achievements.ts';
+import { STORAGE_KEYS } from '../src/storage-keys.ts';
 
 // This file creates 1 online session (the server allows 60 per hour for one client address).
 
@@ -32,6 +33,13 @@ test('a won online game unlocks achievements on the end card and in My games', a
   }
   // Bob played one game toward "Play 10 games".
   await expect(bob.locator('#my-games-achievements li', { hasText: 'Regular' })).toContainText('1 / 10');
+  // The end card showed Alice's unlocks, so the achievement popup does not show them again.
+  const checked = alice.waitForResponse((response) => response.url().endsWith('/api/me/achievements'));
+  await alice.reload();
+  await checked;
+  await expect.poll(() => alice.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? '[]') as unknown, STORAGE_KEYS.achievementsSeen)).toHaveLength(unlocked.length);
+  await expect(alice.locator('#achievement-popup')).toBeHidden();
+  await alice.locator('#account-button').click();
   // A reset locks Alice's achievements again. Her history keeps the game.
   await alice.locator('#my-games-reset-achievements').click();
   await alice.locator('#reset-achievements-confirm-yes').click();

@@ -36,6 +36,7 @@ import {
   parseCustomName,
   parseDeviceGameId,
   parseHistoryPage,
+  parsePersonId,
   parsePlayerInfo,
   parsePreviews,
   parsePublicGame,
@@ -45,6 +46,7 @@ import {
 } from './protocol.ts';
 import { STORAGE_KEYS } from './storage-keys.ts';
 import { type ClaimRequest, type ClaimedCode, type TesterCodes, parseClaimedCode, parseTesterCodes } from './testing/codes.ts';
+import { parseInviteInstall } from './testing/invite.ts';
 
 
 // crypto.randomUUID exists only on HTTPS and localhost. A phone on the local network loads the dev
@@ -117,8 +119,9 @@ async function call(method: string, path: string, body?: unknown, signal?: Abort
 const request = async (method: string, path: string, body?: unknown): Promise<SessionView> =>
   parseSessionView(await call(method, `/sessions${path}`, body));
 
-// `name` is the custom name of a player without a GitHub login, or null.
-export type Me = { loginAvailable: boolean; user: PlayerInfo | null; name: string | null };
+// `name` is the custom name of a player without a GitHub login, or null. `person` is the public person id of
+// this player (of the account when logged in). The server always sends it; null means no answer came yet.
+export type Me = { loginAvailable: boolean; user: PlayerInfo | null; name: string | null; person: PersonId | null };
 
 export function parseMe(value: unknown): Me {
   if (typeof value !== 'object' || value === null) throw new Error('invalid answer from /api/me');
@@ -127,10 +130,11 @@ export function parseMe(value: unknown): Me {
   // An older server sends no name.
   const raw = (value as Record<string, unknown>).name;
   const name = raw === undefined || raw === null ? null : parseCustomName(raw);
-  if (typeof loginAvailable !== 'boolean' || info === undefined || name === undefined || (raw !== undefined && raw !== null && raw !== name)) {
+  const person = parsePersonId((value as Record<string, unknown>).person);
+  if (typeof loginAvailable !== 'boolean' || info === undefined || name === undefined || (raw !== undefined && raw !== null && raw !== name) || person === undefined) {
     throw new Error('invalid answer from /api/me');
   }
-  return { loginAvailable, user: info, name };
+  return { loginAvailable, user: info, name, person };
 }
 
 // The page reads "My games" only to display it, so a light shape check is enough here.
@@ -194,6 +198,12 @@ export const api = {
     const claimed = parseClaimedCode(await call('POST', `/testing/codes/${id}/claim`, claim));
     if (claimed === undefined) throw new Error('invalid answer from /api/testing/codes/{codeId}/claim');
     return claimed;
+  },
+  // The Android app opened on a phone that an invite link brought to /testing. Answers whether it counts.
+  reportInviteInstall: async (by: PersonId): Promise<boolean> => {
+    const answer = parseInviteInstall(await call('POST', '/invites/installs', { by }));
+    if (answer === undefined) throw new Error('invalid answer from /api/invites/installs');
+    return answer.counted;
   },
   logout: () => call('POST', '/auth/logout'),
   // Login is a full page visit to GitHub and back to `returnTo`, by default this page.

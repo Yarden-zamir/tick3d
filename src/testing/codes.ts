@@ -1,6 +1,7 @@
 // The Google Play promo codes of the Android closed test (/testing). The server and the page share these shapes.
 // A code goes to one tester. The public list shows a hint of each code, never the full code, and never an email.
 import { isRecord, isUnknownArray } from '../guards.ts';
+import { type PersonId, parsePersonId } from '../protocol.ts';
 
 // Google Play codes have 23 characters. The range leaves room for other code kinds.
 export const CODE_MIN_LENGTH = 10;
@@ -15,7 +16,8 @@ const CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 // without an email (a code that the maintainer gave out by hand).
 export type TesterCode = { id: number; hint: string; claimed: boolean; name: string | null; gravatar: string | null };
 export type TesterCodes = { codes: TesterCode[] };
-export type ClaimRequest = { email: string; name: string };
+// `by` is the person id of the inviter: the `by` value of the invite link (/testing?by=<person id>), or null.
+export type ClaimRequest = { email: string; name: string; by: PersonId | null };
 export type ClaimedCode = { code: string };
 // One entry of the TESTER_CODES setting: a free code, or a code that `name` holds already.
 export type TesterCodeEntry = { code: string; name: string | null };
@@ -49,11 +51,13 @@ function parseEmail(value: unknown): string | undefined {
   return local.length > 0 && labels.length >= 2 && labels.every((label) => label.length > 0) ? email : undefined;
 }
 
+// A missing or null `by` is a claim without an invite. A `by` that is no person id makes the request invalid.
 export function parseClaimRequest(value: unknown): ClaimRequest | undefined {
   if (!isRecord(value)) return undefined;
   const email = parseEmail(value.email);
   const name = parseTesterName(value.name);
-  return email === undefined || name === undefined ? undefined : { email, name };
+  const by = value.by === undefined || value.by === null ? null : parsePersonId(value.by);
+  return email === undefined || name === undefined || by === undefined ? undefined : { email, name, by };
 }
 
 // The TESTER_CODES setting: entries split by commas or new lines. An entry is `CODE` (free) or

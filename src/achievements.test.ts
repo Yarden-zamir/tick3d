@@ -283,3 +283,19 @@ describe('parseAchievements', () => {
     expect(parseAchievements(answer(progress, { ...rarity, unlocked: missing as AchievementRarity['unlocked'] }))).toBeUndefined();
   });
 });
+
+describe('invite achievements', () => {
+  it('unlock at the claim that reaches the goal, in any order, with no game', () => {
+    const invites = [50, 10, 40, 30, 20].map(ms);
+    const progress = achievementProgress([game(X_ROW)], invites);
+    expect(progressOf(progress, 'invite-1')).toEqual({ id: 'invite-1', count: 1, unlockedAt: ms(10), unlockedBy: null });
+    expect(progressOf(progress, 'invite-5')).toEqual({ id: 'invite-5', count: 5, unlockedAt: ms(50), unlockedBy: null });
+    expect(progressOf(progress, 'invite-25')).toEqual({ id: 'invite-25', count: 5, unlockedAt: null, unlockedBy: null });
+    // The answer of the server with invites passes the same checks on the page.
+    expect(parseAchievements(JSON.parse(JSON.stringify({ achievements: progress, rarity: rarityOf([progress]) })))?.achievements).toEqual(progress);
+  });
+
+  it('stay locked without invites, as on a device', () => {
+    expect(unlocks(game(X_ROW)).filter((id) => id.startsWith('invite-'))).toEqual([]);
+  });
+});

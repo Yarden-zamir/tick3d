@@ -54,6 +54,8 @@ describe('the tester code routes', () => {
   it('give a code once, need the X-Player header and a valid body, and limit the claims per address', async () => {
     expect((await call('POST', '/testing/codes/1/claim', { body: { email: 'dana@example.com', name: 'Dana' }, client: '203.0.113.9' })).status).toBe(400);
     expect((await claim(1, '203.0.113.9', { email: 'nope', name: 'Dana' })).status).toBe(400);
+    // An invite needs a person id in `by`.
+    expect((await claim(1, '203.0.113.30', { email: 'dana@example.com', name: 'Dana', by: 'not-a-person' })).status).toBe(400);
     expect((await claim(1, '203.0.113.9', { email: 'dana@example.com', name: 'Dana' })).body).toEqual({ code: CODES[0] });
     expect((await claim(1, '203.0.113.9')).status).toBe(409);
     expect((await claim(99, '203.0.113.9')).status).toBe(404);
@@ -65,6 +67,15 @@ describe('the tester code routes', () => {
     const refused = await claim(2 + TESTER_CLAIMS_PER_HOUR, client);
     expect(refused.status).toBe(429);
     expect(Number(refused.retryAfter)).toBeGreaterThan(0);
+  });
+
+  it('take one install report per person, with a person id in by', async () => {
+    const by = '0123456789abcdef';
+    const report = (body: unknown, who = player) => call('POST', '/invites/installs', { player: who, body, client: '203.0.113.40' });
+    expect((await report({ by: 'nope' })).status).toBe(400);
+    expect((await call('POST', '/invites/installs', { body: { by }, client: '203.0.113.40' })).status).toBe(400);
+    expect((await report({ by })).body).toEqual({ counted: true });
+    expect((await report({ by })).body).toEqual({ counted: false });
   });
 
   it('keep the claims with the emails for the maintainers only', async () => {

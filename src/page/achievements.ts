@@ -13,6 +13,7 @@ import {
   resetAchievementsNo,
   resetAchievementsYes,
 } from './dom.ts';
+import { markSeen } from './achievement-seen.ts';
 import { showError } from './feedback.ts';
 import { page } from './state.ts';
 
@@ -188,6 +189,8 @@ export function showUnlocks(box: HTMLElement, unlocked: readonly AchievementId[]
 // on this device. Revisit this if players report a missing or a repeated notice.
 export async function noteAchievements(code: Code, index: number, id: GameId): Promise<readonly AchievementId[]> {
   const unlocked = rarestFirst((await currentProgress()).achievements.filter((entry) => entry.unlockedBy === id).map((entry) => entry.id));
+  // The end card or a toast shows them, so the achievement popup does not show them again.
+  markSeen(unlocked);
   if (unlocked.length === 0) return unlocked;
   news.set(`${code}:${index}`, unlocked);
   sounds.achievement();

@@ -7,7 +7,9 @@ import { token } from './online.ts';
 import { normalizeCode, parseGameId } from './protocol.ts';
 import { readLinkIntent } from './session-link.ts';
 import { setMuted, setSoundSet } from './sound.ts';
+import { checkUnlocks, setupAchievementPopup } from './page/achievement-popup.ts';
 import { setupAdvanced } from './page/advanced.ts';
+import { reportInviteInstall } from './page/invite-install.ts';
 import { applyCamera, setupBoard } from './page/board.ts';
 import { setupChat } from './page/chat.ts';
 import { setupPanelAnchor } from './page/panel-anchor.ts';
@@ -66,6 +68,7 @@ setupPwa({
 setupClocks();
 setupAdvanced();
 setupEndCard();
+setupAchievementPopup();
 setupTheme();
 setupSoundSets(soundSetList, (id) => {
   setSoundSet(id);
@@ -136,6 +139,10 @@ async function start(): Promise<void> {
   page.local = createLocalBackend(page.deviceDb, token, () => page.account.user);
   const account = refreshAccount();
   void checkLanHost();
+  // The unlocks that this device did not show yet, such as an invite on /testing. A login links this browser first.
+  void account.then(checkUnlocks).catch(showError);
+  // The Android app after an invite link: the inviter gets the invite. A login links this browser first.
+  void account.then(reportInviteInstall).catch(showError);
   // The account button of another page asks to open My games. The dialog opens after the account
   // is known, so it shows the right login.
   const myGamesRequest = readMyGamesRequest(new URL(location.href));

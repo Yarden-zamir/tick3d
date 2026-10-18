@@ -45,6 +45,9 @@ const TIERS = ['stone', 'bronze', 'silver', 'gold', 'mythic'] as const;
 
 // count: the goal is a number of games that pass the test.
 // streak: the goal is a run of games in a row that pass the test. Only the games of `among` make or break the run.
+// invites: the goal is a number of people who got the game through the invite link of the player (/testing): they
+// claimed a Google Play code, or opened the paid Android app. Only the server knows them (inviteRows in
+// server/store.ts), so this kind reads no game.
 type Rule = {
   id: string;
   name: string;
@@ -54,8 +57,11 @@ type Rule = {
   // A hidden achievement shows as a question mark until the player unlocks it.
   hidden: boolean;
   goal: number;
-  test: (game: PlayedGame) => boolean;
-} & ({ kind: 'count' } | { kind: 'streak'; among: (game: PlayedGame) => boolean });
+} & (
+  | { kind: 'count'; test: (game: PlayedGame) => boolean }
+  | { kind: 'streak'; among: (game: PlayedGame) => boolean; test: (game: PlayedGame) => boolean }
+  | { kind: 'invites' }
+);
 
 const won = (game: PlayedGame) => game.outcome === 'won';
 const lost = (game: PlayedGame) => game.outcome === 'lost';
@@ -577,6 +583,35 @@ export const ACHIEVEMENTS = [
     kind: 'count',
     test: (game: PlayedGame) => wonByLine(game) && game.end.moves.length === CELL_COUNT,
   },
+  // Limit: only Android counts (a code claim, or an open of the paid app). The iPhone app has its own storage, and
+  // TestFlight is free, so an iPhone gives no signal of a purchase. Revisit this when the iPhone app is paid.
+  {
+    id: 'invite-1',
+    name: 'Plus one',
+    description: 'Bring a friend: they get the game through your invite link on the testing page.',
+    tier: 'bronze',
+    hidden: false,
+    goal: 1,
+    kind: 'invites',
+  },
+  {
+    id: 'invite-5',
+    name: 'Talent scout',
+    description: 'Bring 5 people who get the game through your invite link.',
+    tier: 'gold',
+    hidden: false,
+    goal: 5,
+    kind: 'invites',
+  },
+  {
+    id: 'invite-25',
+    name: 'Pied piper',
+    description: 'Bring 25 people who get the game through your invite link.',
+    tier: 'mythic',
+    hidden: false,
+    goal: 25,
+    kind: 'invites',
+  },
 ] as const satisfies readonly Rule[];
 
 export type Achievement = (typeof ACHIEVEMENTS)[number];
@@ -589,7 +624,9 @@ export const ACHIEVEMENT_IDS: readonly AchievementId[] = ACHIEVEMENTS.map((achie
 export type AchievementProgress = { id: AchievementId; count: number; unlockedAt: EpochMs | null; unlockedBy: GameId | null };
 
 // The progress of every achievement, in the order of ACHIEVEMENTS. The games can come in any order.
-export function achievementProgress(games: readonly AchievementGame[]): AchievementProgress[] {
+// `invites` holds the time of each person who claimed a tester code through the invite link of the player,
+// in any order. Only the server knows them, so the device passes none.
+export function achievementProgress(games: readonly AchievementGame[], invites: readonly EpochMs[] = []): AchievementProgress[] {
   const rivalries = new Map<string, Outcome[]>();
   const played = games
     .toSorted((a, b) => a.finishedAt - b.finishedAt)
@@ -603,7 +640,13 @@ export function achievementProgress(games: readonly AchievementGame[]): Achievem
       if (game.opponent !== null) rivalries.set(game.opponent, [...rivalry, outcome]);
       return { ...game, end, outcome, level: levelOf(game), rivalry };
     });
-  return ACHIEVEMENTS.map((rule) => progressOf(rule, played));
+  const invited = invites.toSorted((a, b) => a - b);
+  return ACHIEVEMENTS.map((rule) => (rule.kind === 'invites' ? inviteProgress(rule, invited) : progressOf(rule, played)));
+}
+
+// `invited` is sorted, oldest first. The person who reached the goal unlocks it, so no game does.
+function inviteProgress(rule: Extract<Achievement, { kind: 'invites' }>, invited: readonly EpochMs[]): AchievementProgress {
+  return { id: rule.id, count: Math.min(invited.length, rule.goal), unlockedAt: invited[rule.goal - 1] ?? null, unlockedBy: null };
 }
 
 function levelOf({ mode, you, difficulty, tuned }: AchievementGame): Level | null {
@@ -613,7 +656,7 @@ function levelOf({ mode, you, difficulty, tuned }: AchievementGame): Level | nul
   return mode === 'computer' && !tuned ? difficulty : null;
 }
 
-function progressOf(rule: Achievement, games: readonly PlayedGame[]): AchievementProgress {
+function progressOf(rule: Exclude<Achievement, { kind: 'invites' }>, games: readonly PlayedGame[]): AchievementProgress {
   let best = 0;
   let run = 0;
   let unlocked: PlayedGame | undefined;

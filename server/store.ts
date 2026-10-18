@@ -89,7 +89,12 @@ import { type ClaimRequest, type ClaimedCode, type TesterCodeEntry, type TesterC
 import { gravatarOf } from './tester-codes.ts';
 
 // The claims of tester codes with their emails, for the maintainers only (GET /api/testing/claims).
-export type TesterClaims = { claims: { hint: string; name: string; email: string | null; claimedAt: EpochMs }[] };
+// `invitedBy` is the person id of the inviter, or null for a claim without an invite.
+export type TesterClaims = { claims: { hint: string; name: string; email: string | null; claimedAt: EpochMs; invitedBy: PersonId | null }[] };
+
+// The GitHub account of the maintainer Yarden (login Yarden-zamir). Every code that testers claimed before the
+// invite links counts as his invite (the migration 'tester-invites-before-links' in openStore).
+const YARDEN_GITHUB_ID = 8178413;
 
 const { SessionError } = core;
 
@@ -284,6 +289,24 @@ const SCHEMA = [
      added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
      CHECK ((claimed_at IS NULL) = (name IS NULL) AND (email IS NULL OR name IS NOT NULL))
    )`,
+  // The person id of the inviter of a claim (ClaimRequest in src/testing/codes.ts), or null. The claim counts for
+  // the invite achievements of that person (src/achievements.ts). A self-invite stores null.
+  'ALTER TABLE tester_codes ADD COLUMN IF NOT EXISTS invited_by VARCHAR',
+  // The person id of the claimer (of the account when the device is linked), so a claim and an install report of
+  // one person count once (inviteRows). Null for a claim from before this column.
+  'ALTER TABLE tester_codes ADD COLUMN IF NOT EXISTS claimed_by VARCHAR',
+  // A person who opened the Android app after an invite link (POST /api/invites/installs). The app is paid, so an
+  // open means a purchase or a redeemed code. One row per person: the first inviter wins.
+  `CREATE TABLE IF NOT EXISTS invite_installs (
+     person VARCHAR PRIMARY KEY,
+     invited_by VARCHAR NOT NULL,
+     installed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  // The one-time data changes (runOnce in openStore) that ran on this database, by name.
+  `CREATE TABLE IF NOT EXISTS migrations (
+     name VARCHAR PRIMARY KEY,
+     ran_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
 ];
 
 // The token that a seat holds when a logged-in player takes it. The account has a player_tokens row
@@ -474,6 +497,27 @@ export async function openStore(
   // Revisit when a DuckDB release replays it, or when SCHEMA no longer runs ALTER statements on each start.
   await db.run('CHECKPOINT');
 
+  // Runs `task` once per database: the migrations table keeps the name, so a later start skips it.
+  // The task and the name go in one transaction, so a failed task runs again on the next start.
+  async function runOnce(name: string, task: () => Promise<void>): Promise<void> {
+    await db.run('BEGIN TRANSACTION');
+    try {
+      const added = await db.runAndReadAll('INSERT INTO migrations (name) VALUES ($name) ON CONFLICT DO NOTHING RETURNING name', { name });
+      if (added.getRowObjectsJS().length > 0) await task();
+      await db.run('COMMIT');
+    } catch (error) {
+      await db.run('ROLLBACK');
+      throw error;
+    }
+  }
+  // The claims from before the invite links have no inviter. They count as invites of Yarden, once: a later
+  // claim without an invite stays without one.
+  await runOnce('tester-invites-before-links', async () => {
+    await db.run('UPDATE tester_codes SET invited_by = $person WHERE claimed_at IS NOT NULL AND invited_by IS NULL', {
+      person: await personId(accountToken(YARDEN_GITHUB_ID)),
+    });
+  });
+
   // DuckDB calls are async, so two requests could interleave a read and a write. A queue runs
   // store operations one at a time, which keeps each read-check-write atomic in this process.
   // Revisit this if the API ever runs more than one process against the same file.
@@ -556,8 +600,57 @@ export async function openStore(
     return { id: row.public_id, mode, game, you, difficulty, options, tuned, finishedAt: row.finished, opponent, input };
   }
 
+  // Every invite that got the game to a person: a claimed tester code with an inviter, and an install report from
+  // the Android app. `who` tells the invited people apart: their person id, else the email of the claim, else the
+  // code (a code that the maintainer gave out by hand). A claim and an install of one person share the person id.
+  // Limit: a person who logs in between the claim and the first app start has two person ids, so counts twice.
+  // Revisit this if an inviter reports a count that is too high.
+  // Limit: it reads every invite, a few hundred rows at most now. Revisit this past 10,000 rows.
+  const inviteRows = () =>
+    rows(
+      `FROM tester_codes SELECT invited_by, coalesce(claimed_by, lower(email), code) AS who, epoch_ms(claimed_at) AS at
+       WHERE invited_by IS NOT NULL AND claimed_at IS NOT NULL
+       UNION ALL
+       FROM invite_installs SELECT invited_by, person AS who, epoch_ms(installed_at) AS at`,
+      {},
+      { invited_by: personColumn, who: text, at: epoch },
+    );
+  type InviteRow = Awaited<ReturnType<typeof inviteRows>>[number];
+
+  // The person ids of a player: one for each of their tokens. An invite from a device before its login still
+  // counts for the account, and an invite from the account counts on every device.
+  const personsOfTokens = async (tokens: readonly string[]) => new Set(await Promise.all(tokens.map((token) => personId(token))));
+
+  // The invites of a player for achievementProgress: the first time of each person that one of `persons` invited,
+  // after the last "Reset achievements" (`since`). Two codes, or a code and an install, of one person count once.
+  function invitesOf(claims: readonly InviteRow[], persons: ReadonlySet<string>, since: EpochMs | null): EpochMs[] {
+    const first = new Map<string, EpochMs>();
+    for (const claim of claims) {
+      if (!persons.has(claim.invited_by) || (since !== null && claim.at <= since)) continue;
+      const known = first.get(claim.who);
+      if (known === undefined || claim.at < known) first.set(claim.who, claim.at);
+    }
+    return [...first.values()];
+  }
+
+  // The canonical tokens of the players behind these person ids: an account (by any of its tokens) or a device
+  // without an account that held a seat (seat_people). A person without either has no row in achievement_players.
+  async function ownersOfPersons(persons: readonly string[]): Promise<string[]> {
+    if (persons.length === 0) return [];
+    const found = await rows(
+      `SELECT DISTINCT $account || lpad(github_id::VARCHAR, 16, '0') AS owner FROM player_tokens
+       WHERE list_contains($persons, left(sha256($prefix || token), ${PERSON_ID_LENGTH}))
+         OR list_contains($persons, left(sha256($prefix || $account || lpad(github_id::VARCHAR, 16, '0')), ${PERSON_ID_LENGTH}))
+       UNION
+       SELECT token AS owner FROM seat_people WHERE list_contains($persons, person) AND token NOT IN (FROM player_tokens SELECT token)`,
+      { persons: listValue([...persons]), prefix: PERSON_ID_PREFIX, account: ACCOUNT_TOKEN_PREFIX },
+      { owner: text },
+    );
+    return found.map((row) => row.owner);
+  }
+
   // The achievements of the player `owner` (a canonical token) with these tokens, over every finished game
-  // on all their devices since their last reset (see achievement_resets).
+  // on all their devices since their last reset (see achievement_resets), and the invites of these tokens.
   async function progressOfTokens(owner: string, tokens: readonly string[]): Promise<AchievementProgress[]> {
     const key = tokens.toSorted().join(' ');
     const cached = achievementCache.get(key);
@@ -569,6 +662,7 @@ export async function openStore(
       found
         .filter((row) => reset === undefined || row.finished > reset.at)
         .map((row) => achievementGame(row, row.token_x !== null && own.has(row.token_x), row.token_o !== null && own.has(row.token_o))),
+      invitesOf(await inviteRows(), await personsOfTokens(tokens), reset?.at ?? null),
     );
     achievementCache.set(key, progress);
     return progress;
@@ -595,9 +689,9 @@ export async function openStore(
   // games (a device that joined an account) loses its row.
   async function refreshOwners(owners: readonly string[]): Promise<void> {
     const linked = await rows(
-      `FROM player_tokens SELECT token WHERE list_contains($owners, $account || lpad(github_id::VARCHAR, 16, '0'))`,
+      `SELECT token, owner FROM (FROM player_tokens SELECT token, $account || lpad(github_id::VARCHAR, 16, '0') AS owner) WHERE list_contains($owners, owner)`,
       { owners: listValue([...owners]), account: ACCOUNT_TOKEN_PREFIX },
-      { token: text },
+      { token: text, owner: text },
     );
     const tokens = [...new Set([...owners, ...linked.map((row) => row.token)])];
     const source = seatedResults(tokens.length);
@@ -618,10 +712,28 @@ export async function openStore(
       { owner: text, public_id: nullable(gameId), doc: json, metrics: nullable(json), finished: epoch, owner_x: nullable(text), owner_o: nullable(text) },
     );
     const games = Map.groupBy(found, (row) => row.owner);
-    const unlocked = signatures.map(({ owner }) =>
-      achievementProgress((games.get(owner) ?? []).map((row) => achievementGame(row, row.owner_x === owner, row.owner_o === owner)))
-        .filter((entry) => entry.unlockedAt !== null)
-        .map((entry) => entry.id),
+    // The invites, as in progressOfTokens. Most refreshes find no invited claim, and then hash no token.
+    const claims = await inviteRows();
+    const resets =
+      claims.length === 0
+        ? new Map<string, EpochMs>()
+        : new Map(
+            (await rows('FROM achievement_resets SELECT owner, epoch_ms(reset_at) AS at WHERE list_contains($owners, owner)', { owners: listValue([...owners]) }, { owner: text, at: epoch })).map(
+              (row) => [row.owner, row.at],
+            ),
+          );
+    const linkedOf = Map.groupBy(linked, (row) => row.owner);
+    const unlocked = await Promise.all(
+      signatures.map(async ({ owner }) => {
+        const invites =
+          claims.length === 0 ? [] : invitesOf(claims, await personsOfTokens([owner, ...(linkedOf.get(owner) ?? []).map((row) => row.token)]), resets.get(owner) ?? null);
+        return achievementProgress(
+          (games.get(owner) ?? []).map((row) => achievementGame(row, row.owner_x === owner, row.owner_o === owner)),
+          invites,
+        )
+          .filter((entry) => entry.unlockedAt !== null)
+          .map((entry) => entry.id);
+      }),
     );
     await db.run('DELETE FROM achievement_players WHERE list_contains($owners, owner)', { owners: listValue([...owners]) });
     if (signatures.length > 0) {
@@ -1081,6 +1193,8 @@ export async function openStore(
   // - seat_metrics of the player's seats, player_names, the player's own blocks, private_stats, achievement_resets,
   //   achievement_players, seat_people, practice_runs: deleted.
   // - reports: a report about the player stays for moderation. A report that the player filed loses its reporter.
+  // - tester_codes: a code that the player invited or claimed stays with its tester, without the player's person ids.
+  // - invite_installs: the player's install reports, and the reports that name the player as the inviter: deleted.
   // - player_tokens and users: the account goes, so no device acts for it any more.
   // Limit: a device of the account that is still logged in links itself again on its next visit,
   // because its login cookie stays valid. That account then starts empty. Revisit this if the
@@ -1173,6 +1287,19 @@ export async function openStore(
         await changedIds('UPDATE blocks SET name = $name WHERE list_contains($persons, person) AND name <> $name RETURNING owner || person AS id', { persons, name: DELETED_NAME })
       ).length;
       counts.practice_runs.deleted = (await changedIds('DELETE FROM practice_runs WHERE list_contains($ids, token) RETURNING id', { ids })).length;
+      // A code that this player invited or claimed stays with its tester, without the person ids of this player.
+      counts.tester_codes.anonymised = (
+        await changedIds(
+          `UPDATE tester_codes SET invited_by = CASE WHEN list_contains($persons, invited_by) THEN NULL ELSE invited_by END,
+             claimed_by = CASE WHEN list_contains($persons, claimed_by) THEN NULL ELSE claimed_by END
+           WHERE list_contains($persons, invited_by) OR list_contains($persons, claimed_by) RETURNING id::VARCHAR AS id`,
+          { persons },
+        )
+      ).length;
+      // The install reports of this player, and the ones that name this player as the inviter.
+      counts.invite_installs.deleted = (
+        await changedIds('DELETE FROM invite_installs WHERE list_contains($persons, person) OR list_contains($persons, invited_by) RETURNING person AS id', { persons })
+      ).length;
       counts.reports.anonymised = (
         await changedIds(
           `UPDATE reports SET reporter = NULL, reporter_person = NULL
@@ -1204,6 +1331,12 @@ export async function openStore(
 
   // The achievements of every player against their games, once per start.
   checkAllAchievements();
+  // The signature of a row names its games, not its invites, so every inviter gets a fresh row at each start.
+  // That catches a claim that came before a stop and the migration above. Inviters are few.
+  {
+    const invited = [...new Set((await inviteRows()).map((claim) => claim.invited_by))];
+    for (const owner of await ownersOfPersons(invited)) changedOwners.add(owner);
+  }
 
   return {
     // The creator takes seat X, so the creator moves first in the first game.
@@ -1648,6 +1781,9 @@ export async function openStore(
     // A cleared game still counts: an achievement stays once the player earned it.
     achievements: (token: PlayerToken): Promise<Achievements> => serialized(async () => achievementsOf(await ownerOf(token), [...(await identityOf(token))])),
 
+    // The public person id of this player: of the account when the device is linked (GET /api/me).
+    person: (token: PlayerToken): Promise<PersonId> => serialized(async () => personId(await ownerOf(token))),
+
     // "Reset achievements", on every device of the account: from now on, only new games count.
     // "Clear history" leaves the achievements alone.
     resetAchievements: (token: PlayerToken): Promise<void> =>
@@ -1773,28 +1909,60 @@ export async function openStore(
       }),
 
     // Gives the code to the tester once. 404 for an unknown id, 409 when somebody claimed it already.
-    claimTesterCode: (id: number, { email, name }: ClaimRequest): Promise<ClaimedCode> =>
+    // `token` is the player of the claimer. An invite from one of their own persons (a device or the account)
+    // is a self-invite, and counts for nobody.
+    // Limit: the server cannot tell an unknown person id from the id of a device that never played, so it keeps
+    // any well-formed `by`. Revisit this if fake invites show up in GET /api/testing/claims.
+    claimTesterCode: (id: number, { email, name, by }: ClaimRequest, token: PlayerToken): Promise<ClaimedCode> =>
       serialized(async () => {
+        const own = await personsOfTokens([...(await identityOf(token))]);
+        const invitedBy = by !== null && !own.has(by) ? by : null;
+        const claimedBy = await personId(await ownerOf(token));
         const [claimed] = await rows(
-          'UPDATE tester_codes SET claimed_at = now(), name = $name, email = $email WHERE id = $id AND claimed_at IS NULL RETURNING code',
-          { id, name, email },
+          `UPDATE tester_codes SET claimed_at = now(), name = $name, email = $email, invited_by = $invitedBy, claimed_by = $claimedBy
+           WHERE id = $id AND claimed_at IS NULL RETURNING code`,
+          { id, name, email, invitedBy, claimedBy },
           { code: text },
         );
-        if (claimed !== undefined) return claimed;
+        if (claimed !== undefined) {
+          if (invitedBy !== null) {
+            achievementCache.clear();
+            for (const owner of await ownersOfPersons([invitedBy])) changedOwners.add(owner);
+          }
+          return claimed;
+        }
         const [known] = await rows('FROM tester_codes SELECT id WHERE id = $id', { id }, { id: int });
         if (known === undefined) throw new SessionError(404, 'No tester code has this id.');
         throw new SessionError(409, 'Somebody else took this code a moment ago. Pick another one.');
+      }),
+
+    // The Android app of this player opened after an invite link of `by` (POST /api/invites/installs). Returns
+    // whether it counts: false for a self-invite, and for a person with a report already (the first inviter wins).
+    // Limit: the page tells the app by its referrer, which a player can fake for an achievement. That is fine for
+    // a game. Revisit this if invite achievements ever get a prize (Play Integrity is the strong check).
+    addInviteInstall: (token: PlayerToken, by: PersonId): Promise<boolean> =>
+      serialized(async () => {
+        if ((await personsOfTokens([...(await identityOf(token))])).has(by)) return false;
+        const added = await rows(
+          'INSERT INTO invite_installs (person, invited_by) VALUES ($person, $by) ON CONFLICT DO NOTHING RETURNING person',
+          { person: await personId(await ownerOf(token)), by },
+          { person: text },
+        );
+        if (added.length === 0) return false;
+        achievementCache.clear();
+        for (const owner of await ownersOfPersons([by])) changedOwners.add(owner);
+        return true;
       }),
 
     // The claims with their emails, oldest first, for the maintainers (they add the emails to the Google Group).
     testerClaims: (): Promise<TesterClaims> =>
       serialized(async () => {
         const found = await rows(
-          'FROM tester_codes SELECT code, name, email, epoch_ms(claimed_at) AS at WHERE claimed_at IS NOT NULL ORDER BY claimed_at, id',
+          'FROM tester_codes SELECT code, name, email, epoch_ms(claimed_at) AS at, invited_by WHERE claimed_at IS NOT NULL ORDER BY claimed_at, id',
           {},
-          { code: text, name: text, email: nullable(text), at: epoch },
+          { code: text, name: text, email: nullable(text), at: epoch, invited_by: nullable(personColumn) },
         );
-        return { claims: found.map(({ code, name, email, at }) => ({ hint: hintOf(code), name, email, claimedAt: at })) };
+        return { claims: found.map(({ code, name, email, at, invited_by }) => ({ hint: hintOf(code), name, email, claimedAt: at, invitedBy: invited_by })) };
       }),
 
     addEvent: (event: ClientEvent): Promise<void> =>

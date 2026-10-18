@@ -20,6 +20,12 @@ export const STORAGE_KEYS = {
   // The tester codes that this browser claimed on /testing, and the phone that the visitor picked there.
   testerCodes: 'tick3d.tester-codes',
   testerPhone: 'tick3d.tester-phone',
+  // The person id of the first invite link that brought this browser to /testing (src/testing/invite.ts).
+  testerInvitedBy: 'tick3d.tester-invited-by',
+  // The inviter whose invite this Android app reported (src/page/invite-install.ts), so it reports once.
+  inviteInstallReported: 'tick3d.invite-install-reported',
+  // The achievements that this device showed already, in a popup or on an end card (src/page/achievement-popup.ts).
+  achievementsSeen: 'tick3d.achievements-seen',
 } as const;
 
 // The keys that hold settings, not game data. 'tick3d.voice' is the key of src/voice/settings.ts

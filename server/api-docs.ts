@@ -69,11 +69,14 @@ export const REPORTS_PER_10_MINUTES = 20;
 export const DATA_DELETES_PER_HOUR = 10;
 // Claims of tester codes per hour from one address. server/main.ts enforces it.
 export const TESTER_CLAIMS_PER_HOUR = 5;
+// Install reports of the Android app per hour from one address. A phone sends one, so 10 leave room for a family.
+export const INVITE_INSTALLS_PER_HOUR = 10;
 // The tables that Delete my data (deleteData in server/store.ts) changes, with the rows it deleted and
 // the rows it kept without the player. chat_messages counts the messages inside the session documents.
 // The other tables hold no player data: events, and moderation_log (kept for moderation). tester_codes holds
-// the email and the name that a tester typed, without a player token. A maintainer deletes them on an email request.
-export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'player_tokens', 'users'] as const;
+// the email and the name that a tester typed, without a player token: a maintainer deletes them on an email
+// request. Delete my data only removes the person ids of the player from it.
+export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'invite_installs', 'player_tokens', 'users'] as const;
 export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number; anonymised: number }>;
 // The previews list on production is at most this old. server/previews.ts enforces it.
 // Only production calls GitHub, without a token: 60 calls per hour, 5 of them kept in reserve, so 55.
@@ -190,7 +193,9 @@ export type SchemaName =
   | 'TesterCodes'
   | 'ClaimRequest'
   | 'ClaimedCode'
-  | 'TesterClaims';
+  | 'TesterClaims'
+  | 'InviteInstallRequest'
+  | 'InviteInstall';
 
 export const ref = (name: SchemaName): Schema => ({ $ref: `#/components/schemas/${name}` });
 const nullable = (schema: Schema): Schema => ({ oneOf: [schema, { type: 'null' }] });
@@ -416,6 +421,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     loginAvailable: { type: 'boolean' },
     user: nullable(ref('PlayerInfo')),
     name: { ...nullable(displayName), description: 'The name that you chose with PUT /api/me/name, or null.' },
+    person: { ...person, description: 'Your public person id: of the GitHub account when you are logged in, else of your player id. The /testing page puts it in its invite link.' },
   }),
   Tally: object('Game counts.', {
     played: { type: 'integer', minimum: 0 },
@@ -823,7 +829,11 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
   ClaimRequest: object('The tester who claims the code. The maintainers add the email to the Google Group of the test.', {
     email: { type: 'string', minLength: 3, maxLength: EMAIL_MAX_LENGTH, description: 'The email of the Google account on the phone. The server trims spaces.' },
     name: testerName,
-  }),
+    by: {
+      ...nullable(person),
+      description: 'The person id of the inviter, from the invite link /testing?by=<person id>. The claim counts for their invite achievements. Your own person id counts for nobody. Leave it out, or send null, without an invite.',
+    },
+  }, ['by']),
   ClaimedCode: object('The code is yours.', {
     code: { type: 'string', pattern: `^[A-Z0-9]{${CODE_MIN_LENGTH},${CODE_MAX_LENGTH}}$`, description: 'The full Google Play promo code.' },
   }),
@@ -835,8 +845,15 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
         name: testerName,
         email: { ...nullable({ type: 'string' }), description: 'null for a code that the maintainer gave out by hand.' },
         claimedAt: { type: 'number', description: 'Epoch milliseconds.' },
+        invitedBy: { ...nullable(person), description: 'The person id of the inviter, or null without an invite. Every claim from before the invite links counts as an invite of the maintainer Yarden.' },
       }),
     ),
+  }),
+  InviteInstallRequest: object('The inviter of the person whose Android app opened.', {
+    by: { ...person, description: 'The person id of the inviter, from the invite link /testing?by=<person id> that this browser opened first.' },
+  }),
+  InviteInstall: object('Whether the report counts.', {
+    counted: { type: 'boolean', description: 'false for a self-invite, and when this person reported an install already: the first inviter wins.' },
   }),
   Previews: object('The production site and the open pull requests with a live preview, most recently updated first.', {
     main: nullable({ type: 'string', pattern: '^https://', description: 'The production site, built from the main branch. null on a server without previews.' }),
@@ -1560,7 +1577,7 @@ export const ROUTES = {
     summary: 'Your GitHub login state. The page uses it.',
     description: 'A login cookie from the page links your player id to a GitHub account. A client without a page login gets null.',
     player: 'required',
-    response: { status: 200, description: 'Your login state.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith' } },
+    response: { status: 200, description: 'Your login state.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith', person: OTHER_PERSON } },
     errors: [BAD_PLAYER],
     examplePlayer: AGENT_A,
   },
@@ -1596,7 +1613,7 @@ export const ROUTES = {
     description: 'Without a GitHub login, other players see this name in place of your generated name. A GitHub login still goes first.',
     player: 'required',
     body: { schema: 'NameRequest', example: { name: 'Agent Smith' } },
-    response: { status: 200, description: 'Your login state with the new name.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith' } },
+    response: { status: 200, description: 'Your login state with the new name.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith', person: OTHER_PERSON } },
     errors: [BAD_PLAYER, { status: 400, when: 'The name is not valid.' }, { status: 409, when: 'The name is the login of a GitHub account.' }],
     examplePlayer: AGENT_A,
   },
@@ -1605,7 +1622,7 @@ export const ROUTES = {
     tag: 'Account',
     summary: 'Go back to your generated name.',
     player: 'required',
-    response: { status: 200, description: 'Your login state without a custom name.', schema: 'Me', example: { loginAvailable: true, user: null, name: null } },
+    response: { status: 200, description: 'Your login state without a custom name.', schema: 'Me', example: { loginAvailable: true, user: null, name: null, person: OTHER_PERSON } },
     errors: [BAD_PLAYER],
     examplePlayer: AGENT_A,
   },
@@ -1860,19 +1877,30 @@ export const ROUTES = {
     operationId: 'claimTesterCode',
     tag: 'Testing',
     summary: 'Claim one Google Play promo code of the Android closed test.',
-    description: `The answer holds the full code, once. The server stores the email and the name, and no player id. The X-Player header is required, so a form on another site cannot claim. One address can claim ${TESTER_CLAIMS_PER_HOUR} codes per hour.`,
+    description: `The answer holds the full code, once. The server stores the email, the name and the person id of the inviter, and no player id. The X-Player header is required, so a form on another site cannot claim. One address can claim ${TESTER_CLAIMS_PER_HOUR} codes per hour.`,
     player: 'required',
-    body: { schema: 'ClaimRequest', example: { email: 'dana@example.com', name: 'Dana' } },
+    body: { schema: 'ClaimRequest', example: { email: 'dana@example.com', name: 'Dana', by: OTHER_PERSON } },
     response: { status: 200, description: 'The code is yours.', schema: 'ClaimedCode', example: { code: 'B9WQ4T7XK2M8RZ5P3N6H1JD' } },
     errors: [
       BAD_PLAYER,
-      { status: 400, when: `The body needs an email of at most ${EMAIL_MAX_LENGTH} characters and a name of 1 to ${TESTER_NAME_MAX_LENGTH} characters.` },
+      { status: 400, when: `The body needs an email of at most ${EMAIL_MAX_LENGTH} characters and a name of 1 to ${TESTER_NAME_MAX_LENGTH} characters. A \`by\` value must be a person id.` },
       { status: 400, when: 'The id is not a whole number from 1.' },
       { status: 404, when: 'No tester code has this id.' },
       { status: 409, when: 'Somebody claimed this code already.' },
       TOO_BIG,
       { status: 429, when: `This address claimed ${TESTER_CLAIMS_PER_HOUR} codes in the last hour.` },
     ],
+    examplePlayer: AGENT_A,
+  },
+  'POST /api/invites/installs': {
+    operationId: 'reportInviteInstall',
+    tag: 'Testing',
+    summary: 'Report that the Android app opened on a phone that an invite link brought to /testing. The app sends it once.',
+    description: `The Android app is paid, so an open of the app means a purchase or a redeemed code. The report counts for the invite achievements of the inviter, once per person, also when the same person claimed a code through the link. The server keeps your person id and the person id of the inviter. One address can report ${INVITE_INSTALLS_PER_HOUR} times per hour.`,
+    player: 'required',
+    body: { schema: 'InviteInstallRequest', example: { by: OTHER_PERSON } },
+    response: { status: 200, description: 'Stored, or known already.', schema: 'InviteInstall', example: { counted: true } },
+    errors: [BAD_PLAYER, { status: 400, when: 'The body needs a person id in `by`.' }, TOO_BIG, { status: 429, when: `This address reported ${INVITE_INSTALLS_PER_HOUR} installs in the last hour.` }],
     examplePlayer: AGENT_A,
   },
   'GET /api/testing/claims': {
@@ -1885,7 +1913,7 @@ export const ROUTES = {
       status: 200,
       description: 'Every claim, oldest first.',
       schema: 'TesterClaims',
-      example: { claims: [{ hint: 'K7Q', name: 'Tom', email: null, claimedAt: T0 }, { hint: 'M2X', name: 'Dana', email: 'dana@example.com', claimedAt: T0 }] },
+      example: { claims: [{ hint: 'K7Q', name: 'Tom', email: null, claimedAt: T0, invitedBy: null }, { hint: 'M2X', name: 'Dana', email: 'dana@example.com', claimedAt: T0, invitedBy: OTHER_PERSON }] },
     },
     errors: [BAD_PLAYER, MAINTAINER_401, MAINTAINER_403, NO_LOGIN],
     examplePlayer: AGENT_A,
