@@ -24,16 +24,64 @@ export function setMuted(value: boolean): void {
 function audio(): AudioContext | undefined {
   soundRequests++;
   if (muted || typeof AudioContext === 'undefined') return undefined;
-  context ??= new AudioContext();
+  const ctx = wake();
+  if (ctx.state === 'running') return ctx;
   // Browsers start the context suspended until a user gesture. A sound without a gesture (a chat
-  // message or the other player's move before the first tap) is skipped: a suspended context would
-  // queue it and play it late, together with the next sounds.
-  if (context.state === 'suspended') {
-    // Safari before 16.4 has no userActivation, and then plays the sound as before.
-    if (navigator.userActivation && !navigator.userActivation.isActive) return undefined;
-    void context.resume();
+  // message or the other player's move before the first tap) is skipped: a context that does not run
+  // would queue it and play it late, together with the next sounds.
+  // Safari before 16.4 has no userActivation, and then plays the sound as before.
+  if (navigator.userActivation && !navigator.userActivation.isActive) return undefined;
+  return ctx;
+}
+
+// The audio clock at the last check while the context ran.
+let lastClock: { at: number; time: number } | undefined;
+
+// iOS can keep a context 'running' with a stopped clock and no sound after the app was in the back
+// (WebKit bugs 276016 and 283419). Only a new context plays again. Only a gesture checks the clock: a
+// new context starts suspended, so a check without a gesture would drop the next sounds if a browser
+// ever stops an idle clock on purpose.
+function clockStopped(ctx: AudioContext): boolean {
+  if (ctx.state !== 'running') {
+    lastClock = undefined;
+    return false;
   }
+  const before = lastClock;
+  lastClock = { at: performance.now(), time: ctx.currentTime };
+  return before !== undefined && lastClock.at - before.at > 500 && lastClock.time - before.time < 0.05;
+}
+
+// The live context: made on the first call, and again when it closed or (with `checkClock`) its clock
+// stopped. A context that does not run gets a resume: 'suspended' until a gesture, or 'interrupted' on
+// iOS (a call, the lock screen, another app). The DOM types do not know 'interrupted', so the check is
+// "not running".
+function wake(checkClock = false): AudioContext {
+  if (context === undefined || context.state === 'closed' || (checkClock && clockStopped(context))) {
+    if (context !== undefined && context.state !== 'closed') void context.close();
+    context = new AudioContext();
+    lastClock = undefined;
+  }
+  // The promise rejects only for a closed context. On iOS it can also never settle (WebKit bug 281566),
+  // and the next gesture tries again.
+  if (context.state !== 'running') void context.resume();
   return context;
+}
+
+// A tap or a key resumes the context, so the next sound plays even when the tap itself plays none: the
+// first sound can be the other player's move. Coming back to the front resumes it too: iOS leaves it
+// 'interrupted' after a call or the lock screen. The video spot (video/) imports this file outside a page.
+if (typeof document !== 'undefined') {
+  const onGesture = () => {
+    if (!muted && typeof AudioContext !== 'undefined') wake(true);
+  };
+  for (const type of ['pointerup', 'touchend', 'click', 'keydown']) addEventListener(type, onGesture, { capture: true, passive: true });
+  const onFront = () => {
+    if (!muted && context !== undefined) wake();
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') onFront();
+  });
+  addEventListener('pageshow', onFront);
 }
 
 type Tone = { frequency: number; at?: number; duration: number; type?: OscillatorType; volume?: number; slideTo?: number; pan?: number };
