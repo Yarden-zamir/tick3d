@@ -4179,6 +4179,23 @@ body[data-turn='O'] .status[data-state='playing'] {
   text-align: center;
 }
 
+/* The Share button of the game header sits with the header buttons, at the right. */
+.brand > .game-share {
+  margin-left: auto;
+  anchor-name: --game-share;
+}
+
+@media (width < 64rem) {
+  .brand:has(> .status, > .page-title) > .game-share + .game-share-menu + .brand-links {
+    margin-left: 0;
+  }
+}
+
+/* The Share menu: under the Share button, at its right edge, as the link menu below. */
+.share-menu.game-share-menu {
+  position-anchor: --game-share;
+}
+
 /* The link menu: a popover under the caret of Link, at its right edge. It flips above when there is no room below.
    A browser without anchor positioning shows it in the middle of the screen, the default place of a popover. */
 #share-more {
