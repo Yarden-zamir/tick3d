@@ -523,9 +523,9 @@ export async function openStore(
     }
   }
   // The claims from before the invite links have no inviter. They count as invites of Yarden, once: a later
-  // claim without an invite stays without one.
+  // claim without an invite stays without one. The codes that Yarden gave to himself (by hand, so without email) stay without one.
   await runOnce('tester-invites-before-links', async () => {
-    await db.run('UPDATE tester_codes SET invited_by = $person WHERE claimed_at IS NOT NULL AND invited_by IS NULL', {
+    await db.run("UPDATE tester_codes SET invited_by = $person WHERE claimed_at IS NOT NULL AND invited_by IS NULL AND NOT (email IS NULL AND name = 'Yarden')", {
       person: await personId(accountToken(YARDEN_GITHUB_ID)),
     });
   });
@@ -614,28 +614,43 @@ export async function openStore(
 
   // Every invite event: a claimed tester code with an inviter, and a copy of the Android app with an inviter. The keys
   // name the human for peopleOf (server/invite-people.ts): the device token and the owner at the time of the event,
-  // the account that activated a copy, and the email of a claim. A claim from before the token columns has only its
+  // the account that activated a copy, the account that holds the device now, and the email of a claim. So a claim on a
+  // laptop and an app open on a phone count once when both devices log in to one account, also after the events. A claim from before the token columns has only its
   // email, or its code (given out by hand).
   // Limit: one Play purchase installs on every phone of that Google account, so two copies cannot tell two purchases
   // from one. The copies of one account count as one person: by the owner at the open, and by the activation.
   // Limit: it reads every invite, a few hundred rows at most now. Revisit this past 10,000 rows.
   async function inviteEvents(): Promise<(InviteEvent & { invitedBy: PersonId })[]> {
     const found = await rows(
-      `FROM tester_codes SELECT invited_by, claimed_token AS token, claimed_owner AS owner, NULL::VARCHAR AS activated, lower(email) AS email, code,
-         epoch_ms(claimed_at) AS at
+      `FROM tester_codes LEFT JOIN player_tokens linked ON linked.token = claimed_token
+         SELECT invited_by, claimed_token AS token, claimed_owner AS owner, NULL::VARCHAR AS activated,
+           CASE WHEN linked.github_id IS NULL THEN NULL ELSE $account || lpad(linked.github_id::VARCHAR, 16, '0') END AS account,
+           lower(email) AS email, code, epoch_ms(claimed_at) AS at
        WHERE invited_by IS NOT NULL AND claimed_at IS NOT NULL
        UNION ALL
-       FROM app_copies SELECT invited_by, token, owner, CASE WHEN activated_by IS NULL THEN NULL ELSE $account || lpad(activated_by::VARCHAR, 16, '0') END,
-         NULL, NULL, epoch_ms(opened_at)
+       FROM app_copies LEFT JOIN player_tokens linked ON linked.token = app_copies.token
+         SELECT invited_by, app_copies.token, owner, CASE WHEN activated_by IS NULL THEN NULL ELSE $account || lpad(activated_by::VARCHAR, 16, '0') END,
+           CASE WHEN linked.github_id IS NULL THEN NULL ELSE $account || lpad(linked.github_id::VARCHAR, 16, '0') END,
+           NULL, NULL, epoch_ms(opened_at)
        WHERE invited_by IS NOT NULL`,
       { account: ACCOUNT_TOKEN_PREFIX },
-      { invited_by: personColumn, token: nullable(text), owner: nullable(text), activated: nullable(text), email: nullable(text), code: nullable(text), at: epoch },
+      {
+        invited_by: personColumn,
+        token: nullable(text),
+        owner: nullable(text),
+        activated: nullable(text),
+        account: nullable(text),
+        email: nullable(text),
+        code: nullable(text),
+        at: epoch,
+      },
     );
     return found.map((row) => {
       const keys = [
         row.token === null ? [] : [`t:${row.token}`],
         row.owner === null ? [] : [`o:${row.owner}`],
         row.activated === null ? [] : [`o:${row.activated}`],
+        row.account === null ? [] : [`o:${row.account}`],
         row.email === null ? [] : [`e:${row.email}`],
       ].flat();
       if (keys.length === 0 && row.code === null) throw new Error('an invite event names nobody');

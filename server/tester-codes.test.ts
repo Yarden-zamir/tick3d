@@ -265,6 +265,18 @@ describe('invites', () => {
     store = await openStore(path);
   });
 
+  it('R5: a claim on a laptop and an app open on a phone count once when the laptop logs in to the account later', async () => {
+    store = await openStore(':memory:');
+    await store.addTesterCodes(parseTesterCodeEntries(codes(1)));
+    const by = await store.person(inviter);
+    await store.claimTesterCode(1, { ...tester(1), by }, browser(1));
+    await store.linkToken(browser(2), ALICE);
+    await store.reportAppOpen(browser(2), by);
+    expect(await count()).toBe(2);
+    await store.linkToken(browser(1), ALICE);
+    expect(await count()).toBe(1);
+  });
+
   it('R4: two devices of one account count once', async () => {
     store = await openStore(':memory:');
     await store.addTesterCodes(parseTesterCodeEntries(codes(1)));
@@ -310,18 +322,24 @@ describe('the claims from before the invite links', () => {
       id INTEGER PRIMARY KEY DEFAULT nextval('tester_code_order'), code VARCHAR NOT NULL UNIQUE, name VARCHAR, email VARCHAR,
       claimed_at TIMESTAMPTZ, added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       CHECK ((claimed_at IS NULL) = (name IS NULL) AND (email IS NULL OR name IS NOT NULL)))`);
-    await db.run(`INSERT INTO tester_codes (code, name, email, claimed_at) VALUES ('${FREE_A}', 'Dana', 'dana@example.com', now()), ('${FREE_B}', NULL, NULL, NULL)`);
+    // GIVEN: the code that Yarden gave to himself by hand. It is no invite.
+    await db.run(
+      `INSERT INTO tester_codes (code, name, email, claimed_at) VALUES ('${FREE_A}', 'Dana', 'dana@example.com', now()), ('${FREE_B}', NULL, NULL, NULL), ('${GIVEN}', 'Yarden', NULL, now())`,
+    );
     db.closeSync();
     instance.closeSync();
 
     let store = await openStore(path);
     const yarden = await personId(YARDEN);
-    expect((await store.testerClaims()).claims.map((claim) => claim.invitedBy)).toEqual([yarden]);
+    expect((await store.testerClaims()).claims.map((claim) => ({ name: claim.name, invitedBy: claim.invitedBy }))).toEqual([
+      { name: 'Dana', invitedBy: yarden },
+      { name: 'Yarden', invitedBy: null },
+    ]);
     await store.claimTesterCode(2, { email: 'eve@example.com', name: 'Eve', by: null }, player);
     await store.close();
 
     store = await openStore(path);
-    expect((await store.testerClaims()).claims.map((claim) => claim.invitedBy)).toEqual([yarden, null]);
+    expect((await store.testerClaims()).claims.map((claim) => claim.invitedBy)).toEqual([yarden, null, null]);
     await store.close();
   });
 });
