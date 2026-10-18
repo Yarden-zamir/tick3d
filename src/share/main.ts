@@ -42,29 +42,25 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const trailerVideo = element('#trailer', HTMLVideoElement);
 const trailerSound = element('#trailer-sound', HTMLButtonElement);
 
-// The sound choice of the player. The page restarts the trailer itself at the end with this choice: on a phone,
-// the sound went off after the first run with the loop attribute. Revisit if the sound still drops on a loop.
-let trailerWantsSound = false;
-
-// The badge shows the real state of the video, so a browser that mutes the video by itself shows "Tap for sound".
+// The badge shows the real state of the video.
 function showTrailerSound(): void {
   trailerSound.setAttribute('aria-pressed', String(!trailerVideo.muted));
   trailerSound.textContent = trailerVideo.muted ? 'Tap for sound' : 'Sound on';
 }
 
 function toggleTrailerSound(): void {
-  trailerWantsSound = trailerVideo.muted;
-  trailerVideo.muted = !trailerWantsSound;
+  trailerVideo.muted = !trailerVideo.muted;
   // Turning the sound on restarts the trailer, so the first words are heard.
-  if (trailerWantsSound) trailerVideo.currentTime = 0;
+  if (!trailerVideo.muted) trailerVideo.currentTime = 0;
   void trailerVideo.play().catch(() => undefined);
 }
 trailerVideo.addEventListener('click', toggleTrailerSound);
 trailerSound.addEventListener('click', toggleTrailerSound);
 trailerVideo.addEventListener('volumechange', showTrailerSound);
+// The sound plays for one run only: at the end the trailer starts again without sound, and loops so.
 trailerVideo.addEventListener('ended', () => {
+  trailerVideo.muted = true;
   trailerVideo.currentTime = 0;
-  trailerVideo.muted = !trailerWantsSound;
   void trailerVideo.play().catch(() => undefined);
 });
 // The page starts the trailer itself (no autoplay attribute). With reduced motion, it waits for a tap.
