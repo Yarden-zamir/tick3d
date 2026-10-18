@@ -302,7 +302,8 @@ const SCHEMA = [
   // The bought copies of the paid Android app (src/copies.ts): one row per device (`token`) where the app opened
   // (POST /api/copies). `owner` is the account (or the device) that held the device at the first open. `invited_by`
   // is the inviter that /share kept on that device, or null. `activated_by` is the GitHub id of the one account that
-  // activated the copy (POST /api/copies/activate), or null; an account activates at most one copy (activateCopy).
+  // activated the copy (POST /api/copies/activate), or null. An account activates at most one copy, and only a copy
+  // that it held at the first open or that opened without a login (activateCopy).
   // Tokens: never send them to a page.
   `CREATE TABLE IF NOT EXISTS app_copies (
      token VARCHAR PRIMARY KEY,
@@ -843,15 +844,22 @@ export async function openStore(
     return rarityCache;
   }
 
-  // The copy state of this browser (CopyState in src/copies.ts).
+  // The copy state of this browser (CopyState in src/copies.ts). A copy is 'device' for the account that may activate it.
   async function copyStateOf(token: PlayerToken): Promise<CopyState> {
     const [linked] = await rows('FROM player_tokens SELECT github_id WHERE token = $token', { token }, { github_id: bigId });
     if (linked !== undefined) {
       const [held] = await rows('FROM app_copies SELECT token WHERE activated_by = $id', { id: linked.github_id }, { token: text });
       if (held !== undefined) return 'activated';
     }
-    const [copy] = await rows('FROM app_copies SELECT activated_by WHERE token = $token', { token }, { activated_by: nullable(bigId) });
-    return copy !== undefined && copy.activated_by === null ? 'device' : 'none';
+    const [copy] = await rows('FROM app_copies SELECT owner, activated_by WHERE token = $token', { token }, { owner: text, activated_by: nullable(bigId) });
+    if (copy === undefined || copy.activated_by !== null) return 'none';
+    return linked === undefined || mayActivate(copy.owner, token, linked.github_id) ? 'device' : 'none';
+  }
+
+  // The account that held the device at the first open activates the copy. A copy that opened without a login is
+  // free for the first account. So a friend who logs in on the phone of a buyer cannot take the copy.
+  function mayActivate(owner: string, token: PlayerToken, githubId: number | bigint): boolean {
+    return owner === token || owner === accountToken(githubId);
   }
 
   async function achievementsOf(owner: string, tokens: readonly string[]): Promise<Achievements> {
@@ -2028,14 +2036,16 @@ export async function openStore(
       }),
 
     // Activates the copy of this device for the GitHub account `githubId`. The same activation again is fine.
-    // 404 without a copy on this device, 409 when another account holds the copy, or the account holds another copy.
+    // 404 without a copy on this device. 409 when another account holds the copy, when another account held the
+    // device at the first open (mayActivate), or when the account holds another copy.
     activateCopy: (token: PlayerToken, githubId: number): Promise<CopyState> =>
       serialized(async () => {
-        const [copy] = await rows('FROM app_copies SELECT activated_by WHERE token = $token', { token }, { activated_by: nullable(bigId) });
+        const [copy] = await rows('FROM app_copies SELECT owner, activated_by WHERE token = $token', { token }, { owner: text, activated_by: nullable(bigId) });
         if (copy === undefined) throw new SessionError(404, 'This device has no copy of the Android app.');
         const id = BigInt(githubId);
         if (copy.activated_by === id) return copyStateOf(token);
         if (copy.activated_by !== null) throw new SessionError(409, 'Another account activated the copy of this device.');
+        if (!mayActivate(copy.owner, token, id)) throw new SessionError(409, 'The account that was logged in at the first open of the app activates this copy.');
         const [other] = await rows('FROM app_copies SELECT token WHERE activated_by = $id', { id }, { token: text });
         if (other !== undefined) throw new SessionError(409, 'Your account holds a copy already.');
         await db.run('UPDATE app_copies SET activated_by = $id, activated_at = now() WHERE token = $token', { id, token });

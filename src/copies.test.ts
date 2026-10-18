@@ -3,7 +3,7 @@ import { ACTIVATION_ASK_MS, offersActivation, parseAppOpen } from './copies.ts';
 import { toEpochMs as ms } from './epoch.ts';
 
 describe('the activation popup', () => {
-  const ready = { inApp: true, loggedIn: true, copy: 'device', askedAt: null, now: ms(10 * ACTIVATION_ASK_MS) } as const;
+  const ready = { inApp: true, loggedIn: true, copy: 'device', declined: false, askedAt: null, now: ms(10 * ACTIVATION_ASK_MS) } as const;
 
   it('shows in the app, logged in, for a copy of this device that nobody activated', () => {
     expect(offersActivation(ready)).toBe(true);
@@ -14,12 +14,13 @@ describe('the activation popup', () => {
     ['without a login', { loggedIn: false }],
     ['when the account holds a copy', { copy: 'activated' }],
     ['without a copy on this device, or with a copy of another account', { copy: 'none' }],
-    ['less than a day after Not now', { askedAt: ms(10 * ACTIVATION_ASK_MS - 1000) }],
+    ['after Do not activate on this account', { declined: true }],
+    ['less than a day after Escape', { askedAt: ms(10 * ACTIVATION_ASK_MS - 1000) }],
   ] as const)('stays hidden %s', (_, change) => {
     expect(offersActivation({ ...ready, ...change })).toBe(false);
   });
 
-  it('asks again a day after Not now', () => {
+  it('asks again a day after Escape', () => {
     expect(offersActivation({ ...ready, askedAt: ms(9 * ACTIVATION_ASK_MS) })).toBe(true);
   });
 });

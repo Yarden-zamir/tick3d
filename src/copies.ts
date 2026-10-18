@@ -25,12 +25,12 @@ export function parseCopyAnswer(value: unknown): { copy: CopyState } | undefined
   return isRecord(value) && isCopyState(value.copy) ? { copy: value.copy } : undefined;
 }
 
-// "Not now" on the activation popup asks again on a later app open, at most once a day.
+// A popup that the player closed with Escape asks again on a later app open, at most once a day.
 export const ACTIVATION_ASK_MS = 24 * 3_600_000;
 
-// The activation popup shows in the Android app, for a logged-in player whose account holds no copy, on a device
-// whose copy no account activated ('device'), unless the player said "Not now" in the last day.
-export function offersActivation(state: { inApp: boolean; loggedIn: boolean; copy: CopyState; askedAt: EpochMs | null; now: EpochMs }): boolean {
-  if (!state.inApp || !state.loggedIn || state.copy !== 'device') return false;
+// The activation popup shows in the Android app, for a logged-in player whose account may activate the copy of this
+// device ('device'). It stays hidden after "Do not activate the game on this account", and for a day after Escape.
+export function offersActivation(state: { inApp: boolean; loggedIn: boolean; copy: CopyState; declined: boolean; askedAt: EpochMs | null; now: EpochMs }): boolean {
+  if (!state.inApp || !state.loggedIn || state.copy !== 'device' || state.declined) return false;
   return state.askedAt === null || state.now - state.askedAt >= ACTIVATION_ASK_MS;
 }

@@ -237,7 +237,7 @@ const person: Schema = {
 };
 const copyState: Schema = {
   enum: [...COPY_STATES],
-  description: "The paid state of this browser: 'activated' when your account holds a copy of the Android app, 'device' when this device holds a copy that no account activated, else 'none'.",
+  description: "The paid state of this browser: 'activated' when your account holds a copy of the Android app, 'device' when your account may activate the copy of this device (no account activated it, and your account or no account held the device at the first open), else 'none'.",
 };
 const testerName: Schema = { type: 'string', minLength: 1, maxLength: TESTER_NAME_MAX_LENGTH, description: `A display name: 1 to ${TESTER_NAME_MAX_LENGTH} letters, digits, spaces or - _ . '. The server trims spaces.` };
 const signalCode: Schema = { type: 'string', minLength: 1, maxLength: MAX_CODE_LENGTH };
@@ -1912,14 +1912,14 @@ export const ROUTES = {
     operationId: 'activateCopy',
     tag: 'Account',
     summary: 'Activate the copy of this device on your GitHub account.',
-    description: 'Needs the X-Player header and a login cookie. An account holds at most one copy, and a copy belongs to at most one account. The same activation again changes nothing.',
+    description: 'Needs the X-Player header and a login cookie. An account holds at most one copy, and a copy belongs to at most one account. Only the account that held the device at the first open activates the copy, or any account when no account held it. The same activation again changes nothing.',
     player: 'required',
     response: { status: 200, description: 'Activated.', schema: 'CopyAnswer', example: { copy: 'activated' } },
     errors: [
       BAD_PLAYER,
       { status: 401, when: 'The request has no GitHub login.' },
       { status: 404, when: 'This device has no copy, or this server has no GitHub login.' },
-      { status: 409, when: 'Another account activated this copy, or your account holds another copy.' },
+      { status: 409, when: 'Another account activated this copy, another account held the device at the first open, or your account holds another copy.' },
     ],
     examplePlayer: AGENT_A,
   },
