@@ -42,16 +42,31 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const trailerVideo = element('#trailer', HTMLVideoElement);
 const trailerSound = element('#trailer-sound', HTMLButtonElement);
 
-function toggleTrailerSound(): void {
-  trailerVideo.muted = !trailerVideo.muted;
-  // Turning the sound on restarts the trailer, so the first words are heard.
-  if (!trailerVideo.muted) trailerVideo.currentTime = 0;
-  void trailerVideo.play().catch(() => undefined);
+// The sound choice of the player. The page restarts the trailer itself at the end with this choice: on a phone,
+// the sound went off after the first run with the loop attribute. Revisit if the sound still drops on a loop.
+let trailerWantsSound = false;
+
+// The badge shows the real state of the video, so a browser that mutes the video by itself shows "Tap for sound".
+function showTrailerSound(): void {
   trailerSound.setAttribute('aria-pressed', String(!trailerVideo.muted));
   trailerSound.textContent = trailerVideo.muted ? 'Tap for sound' : 'Sound on';
 }
+
+function toggleTrailerSound(): void {
+  trailerWantsSound = trailerVideo.muted;
+  trailerVideo.muted = !trailerWantsSound;
+  // Turning the sound on restarts the trailer, so the first words are heard.
+  if (trailerWantsSound) trailerVideo.currentTime = 0;
+  void trailerVideo.play().catch(() => undefined);
+}
 trailerVideo.addEventListener('click', toggleTrailerSound);
 trailerSound.addEventListener('click', toggleTrailerSound);
+trailerVideo.addEventListener('volumechange', showTrailerSound);
+trailerVideo.addEventListener('ended', () => {
+  trailerVideo.currentTime = 0;
+  trailerVideo.muted = !trailerWantsSound;
+  void trailerVideo.play().catch(() => undefined);
+});
 // The page starts the trailer itself (no autoplay attribute). With reduced motion, it waits for a tap.
 // It starts once the browser expects to play to the end without a stop (canplaythrough), so a slow link shows
 // the poster a little longer instead of a stuttering start. readyState 4 means that moment passed already.
