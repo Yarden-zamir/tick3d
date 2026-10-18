@@ -213,7 +213,7 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 - A claim stores the email and the name that the tester types. The page shows the name and the Gravatar picture of each claim, never the email or a full code. `GET /api/testing/claims` gives the emails to the maintainers, to add them to the Google Group.
 - Each code keeps its slot (#1, #2, ...): the order of the secret, with later codes at the end. The page refreshes the list every 20 s and when it comes back into view, and turns a claimed card in its place.
 - One address can claim 5 codes per hour. The browser keeps its codes in localStorage and shows them on the next visit.
-- The 15 s trailer (`public/trailer/`, 3 MB) plays at the top without sound. A tap turns the sound on. With reduced motion, it waits for a tap.
+- The 15 s trailer (`public/trailer/`, 1.4 MB: 1280×720, x264 two-pass at 700 kbit/s with `-tune animation`, AAC 80 kbit/s, faststart) plays at the top without sound, once the browser expects to play it without a stop. A tap turns the sound on. With reduced motion, it waits for a tap. A new encode gets a new file name, so no cache serves the old one.
 - The count of free codes is a button: it scrolls to the first free card and makes it pulse.
 
 Run it locally with fake codes:

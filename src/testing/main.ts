@@ -47,7 +47,13 @@ function toggleTrailerSound(): void {
 trailerVideo.addEventListener('click', toggleTrailerSound);
 trailerSound.addEventListener('click', toggleTrailerSound);
 // The page starts the trailer itself (no autoplay attribute). With reduced motion, it waits for a tap.
-if (!reducedMotion.matches) void trailerVideo.play().catch(() => undefined);
+// It starts once the browser expects to play to the end without a stop (canplaythrough), so a slow link shows
+// the poster a little longer instead of a stuttering start. readyState 4 means that moment passed already.
+if (!reducedMotion.matches) {
+  const start = () => void trailerVideo.play().catch(() => undefined);
+  if (trailerVideo.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) start();
+  else trailerVideo.addEventListener('canplaythrough', start, { once: true });
+}
 
 // ---- Share ----
 
