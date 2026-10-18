@@ -17,6 +17,29 @@ const CLIP_SECONDS = 3;
 // A longer gap between two frames (a slow device) counts as this much, so one gap does not end a step.
 const MAX_FRAME_MS = 100;
 
+// The Audio Session API of Safari 16.4 and later (https://www.w3.org/TR/audio-session/). The DOM types of
+// TypeScript do not have it yet.
+type AudioSessionType = 'auto' | 'playback' | 'transient' | 'transient-solo' | 'ambient' | 'play-and-record';
+declare global {
+  interface Navigator {
+    readonly audioSession?: { type: AudioSessionType };
+  }
+}
+
+// iOS switches to a call session for the microphone, and can keep the game sound at the low call volume
+// after the microphone stops (WebKit bug 236219). The page asks for the call session itself, and after the
+// stop sets the type that it had before. 'auto' would keep the call session, so it becomes 'ambient': the
+// type that 'auto' gives Web Audio, which follows the silent switch.
+function takeAudioSession(): () => void {
+  const session = navigator.audioSession;
+  if (session === undefined) return () => undefined;
+  const before = session.type;
+  session.type = 'play-and-record';
+  return () => {
+    session.type = before === 'auto' ? 'ambient' : before;
+  };
+}
+
 const hasMicrophone = (): boolean => 'mediaDevices' in navigator && typeof navigator.mediaDevices.getUserMedia === 'function';
 
 export function micError(error: unknown): string {
@@ -42,6 +65,7 @@ export function micError(error: unknown): string {
 // (micError turns it into a message). `onEnded` runs when the device stops by itself (unplugged).
 export async function openMicrophone(onFrame: (frame: Frame) => void, onEnded: () => void): Promise<Microphone> {
   if (!hasMicrophone()) throw new Error('no microphone in this browser');
+  const releaseSession = takeAudioSession();
   const context = new AudioContext();
   let stream: MediaStream;
   try {
@@ -49,6 +73,7 @@ export async function openMicrophone(onFrame: (frame: Frame) => void, onEnded: (
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
   } catch (error) {
     void context.close();
+    releaseSession();
     throw error;
   }
   const analyser = context.createAnalyser();
@@ -68,6 +93,7 @@ export async function openMicrophone(onFrame: (frame: Frame) => void, onEnded: (
     cancelAnimationFrame(frame);
     for (const track of stream.getTracks()) track.stop();
     void context.close();
+    releaseSession();
   };
   for (const track of stream.getTracks()) {
     track.addEventListener('ended', () => {
