@@ -3837,15 +3837,15 @@ body[data-turn='O'] .status[data-state='playing'] {
   bottom: max(1rem, env(safe-area-inset-bottom));
   translate: -50% 0;
   display: grid;
-  gap: 0.5rem;
+  gap: 0.6rem;
   width: min(calc(100vw - 1.5rem), 24rem);
-  padding: 0.6rem 0.7rem 0.7rem;
+  padding: 0.8rem;
   border: var(--border) solid #000000;
   border-radius: 14px;
   background:
     radial-gradient(circle at 12% 20%, rgb(150 120 255 / 0.55), transparent 55%),
     linear-gradient(120deg, #17122f, #2c2166);
-  box-shadow: 5px 5px 0 #000000;
+  box-shadow: 4px 4px 0 #000000;
   color: #ffffff;
 }
 
@@ -3887,31 +3887,36 @@ body[data-turn='O'] .status[data-state='playing'] {
   text-transform: uppercase;
 }
 
-.achievement-popup-head .btn {
+/* The popup is dark in every theme, so its buttons keep black borders. */
+.achievement-popup .btn {
   border-color: #000000;
+}
+
+.achievement-popup-head .btn {
   background: #ffffff;
   color: #000000;
 }
 
 .achievement-popup-list {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.6rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* The badge, its size and the gap to the text as on the unlock band of the end card (.unlock). */
 .achievement-popup-item {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.8rem;
 }
 
 .achievement-popup-item .achievement-icon {
   flex-shrink: 0;
-  width: 2.8rem;
-  height: 2.8rem;
-  padding: 0.4rem;
+  width: 3rem;
+  height: 3rem;
+  padding: 0.45rem;
   border-color: #000000;
   box-shadow: 2px 2px 0 #000000;
 }
@@ -3932,14 +3937,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .achievement-popup-more {
   justify-self: start;
-  padding: 0.3rem 0.7rem;
-  border: 2px solid #000000;
-  border-radius: 8px;
-  background: #ffe14d;
-  box-shadow: 2px 2px 0 #000000;
-  color: #000000;
-  font-weight: 800;
-  cursor: pointer;
 }
 
 /* A player who closed an async game: dimmed, but the game goes on. */
@@ -4179,9 +4176,12 @@ body[data-turn='O'] .status[data-state='playing'] {
   text-align: center;
 }
 
-/* The Share button of the game header sits with the header buttons, at the right. */
+/* The Share button of the game header sits with the header buttons, at the right. The header is the same on
+   every page (src/markup.test.ts), so the button stays outside .brand-links. A negative right margin turns the
+   gap of .brand (1rem) into the gap of .brand-links (0.6rem), so it looks like one more button of the group. */
 .brand > .game-share {
   margin-left: auto;
+  margin-right: calc(0.6rem - 1rem);
   anchor-name: --game-share;
 }
 
