@@ -1,4 +1,4 @@
-import { type Achievements, parseAchievements } from './achievements.ts';
+import { ACHIEVEMENT_IDS, type Achievements, parseAchievements } from './achievements.ts';
 import type { TimeControl } from './clock.ts';
 import { parseDeletedPeople } from './deletions.ts';
 import type { EpochMs } from './epoch.ts';
@@ -28,8 +28,10 @@ import {
   type SessionUpdate,
   type SessionView,
   type Leaderboard,
+  type StatsCard,
   type StatsFilter,
   type StatsPrivacy,
+  isDisplayName,
   parseStatsPrivacy,
   asPlayerToken,
   parseBlocks,
@@ -141,6 +143,17 @@ export function parseMyGames(value: unknown): MyGames {
   return value as MyGames;
 }
 
+export function parseStatsCard(value: unknown): StatsCard {
+  if (typeof value !== 'object' || value === null) throw new Error('invalid answer from /api/stats/card/{person}');
+  const { person, unlocked } = value as Record<string, unknown>;
+  if (typeof person !== 'object' || person === null || !Array.isArray(unlocked)) throw new Error('invalid answer from /api/stats/card/{person}');
+  const { name, player, you } = person as Record<string, unknown>;
+  const info = player === null ? null : parsePlayerInfo(player);
+  const ids = unlocked.map((id: unknown) => ACHIEVEMENT_IDS.find((known) => known === id));
+  if (!isDisplayName(name) || info === undefined || typeof you !== 'boolean' || ids.some((id) => id === undefined)) throw new Error('invalid answer from /api/stats/card/{person}');
+  return { person: { name, player: info, you }, unlocked: ids.filter((id) => id !== undefined) };
+}
+
 function requireStatsPrivacy(value: unknown): StatsPrivacy {
   const privacy = parseStatsPrivacy(value);
   if (privacy === undefined) throw new Error('invalid answer from /api/me/stats-privacy');
@@ -246,6 +259,8 @@ export const api = {
   event: (event: ClientEvent) => call('POST', '/events', event),
   // The aggregates of the stats page. The page checks the shape (src/stats/main.ts).
   stats: (filter: StatsFilter): Promise<unknown> => call('GET', `/stats${statsQuery(filter)}`),
+  // The player card of a person view. It reads no game, so it answers before api.stats.
+  statsCard: async (person: PersonId): Promise<StatsCard> => parseStatsCard(await call('GET', `/stats/card/${person}`)),
   // The common stats of each player (GET /api/leaderboard). It takes the range, mode and level of `filter`.
   leaderboard: async (filter: StatsFilter): Promise<Leaderboard> =>
     parseLeaderboard(await call('GET', `/leaderboard${statsQuery({ ...filter, scope: 'everyone', person: null })}`)),
