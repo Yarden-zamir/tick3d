@@ -530,14 +530,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // A cross-site form cannot send the X-Player header, so another site cannot report for a player.
     case 'POST /api/copies/nonce': {
       allowProofNonce(clientOf(req), Date.now());
-      return send(res, 200, { nonce: playProof.nonce() });
+      return send(res, 200, { nonce: playProof.nonce(requirePlayer(req)) });
     }
     case 'POST /api/copies': {
       allowAppOpen(clientOf(req), Date.now());
       const player = requirePlayer(req);
       const open = parseAppOpen(await readJson(req, 40 * 1024));
       if (open === undefined) throw new HttpError(400, 'An app open report needs the person id of the inviter, or null, in "by".');
-      await playProof.verify(open.proof);
+      await playProof.verify(open.proof, player);
       // A login cookie links this browser first, so the answer and the owner at the first open name the account.
       const user = auth?.user(req);
       if (user !== undefined) await store.linkToken(player, user);

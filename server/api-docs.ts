@@ -1925,9 +1925,11 @@ export const ROUTES = {
     operationId: 'purchaseNonce',
     tag: 'Account',
     summary: 'Get a one-time Play Integrity nonce. Valid for five minutes.',
-    player: 'none',
+    description: 'Bound to the X-Player token. A different player cannot submit its proof.',
+    player: 'required',
     response: { status: 200, description: 'A fresh nonce.', schema: 'PurchaseNonce', example: { nonce: 'one-time-server-nonce' } },
-    errors: [{ status: 429, when: 'Too many checks from this address.' }, { status: 503, when: 'Too many outstanding checks.' }],
+    errors: [BAD_PLAYER, { status: 429, when: 'Too many checks from this address.' }, { status: 503, when: 'Too many outstanding checks.' }],
+    examplePlayer: AGENT_A,
   },
   'POST /api/copies': {
     operationId: 'reportAppOpen',

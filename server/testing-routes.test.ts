@@ -75,8 +75,9 @@ describe('the tester code routes', () => {
     expect((await call('POST', '/copies', { body: { by: null }, client: '203.0.113.40' })).status).toBe(400);
     expect((await report({ by: '0123456789abcdef' })).status).toBe(400);
     expect((await report({ by: null, proof: 'invented' })).status).toBe(503);
-    const first = await call('POST', '/copies/nonce');
-    const second = await call('POST', '/copies/nonce');
+    expect((await call('POST', '/copies/nonce')).status).toBe(400);
+    const first = await call('POST', '/copies/nonce', { player });
+    const second = await call('POST', '/copies/nonce', { player });
     expect(first.status).toBe(200);
     expect(first.body).toMatchObject({ nonce: expect.any(String) });
     expect(first.body).not.toEqual(second.body);

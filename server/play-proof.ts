@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { GoogleAuth } from 'google-auth-library';
 import { isRecord } from '../src/guards.ts';
 import manifest from '../android/twa-manifest.json' with { type: 'json' };
+import type { PlayerToken } from '../src/protocol.ts';
 export class PurchaseProofError extends Error {
   status: 403 | 503;
   constructor(status: 403 | 503, message: string) {
@@ -36,16 +37,16 @@ export function playDecoderFromEnv(env: NodeJS.ProcessEnv): ((token: string) => 
 
 export function createPlayProof(decode: ((token: string) => Promise<unknown>) | undefined, now: () => number = Date.now) {
   // Limit: one API process owns these nonces. Revisit before adding another API process.
-  const pending = new Map<string, number>();
+  const pending = new Map<string, { issued: number; player: PlayerToken }>();
   return {
-    nonce(): string {
-      for (const [nonce, issued] of pending) if (now() - issued >= FRESH_MS) pending.delete(nonce);
+    nonce(player: PlayerToken): string {
+      for (const [nonce, { issued }] of pending) if (now() - issued >= FRESH_MS) pending.delete(nonce);
       if (pending.size >= 10_000) throw new PurchaseProofError(503, 'Too many purchase checks. Try again later.');
       const nonce = randomBytes(32).toString('base64url');
-      pending.set(nonce, now());
+      pending.set(nonce, { issued: now(), player });
       return nonce;
     },
-    async verify(token: string): Promise<void> {
+    async verify(token: string, player: PlayerToken): Promise<void> {
       if (decode === undefined) throw new PurchaseProofError(503, 'Purchase checks are not configured.');
       const result = await decode(token);
       const payload = isRecord(result) ? result.tokenPayloadExternal : undefined;
@@ -53,9 +54,9 @@ export function createPlayProof(decode: ((token: string) => Promise<unknown>) | 
       const app = isRecord(payload) ? payload.appIntegrity : undefined;
       const account = isRecord(payload) ? payload.accountDetails : undefined;
       if (!isRecord(request) || !isRecord(app) || !isRecord(account)) throw new PurchaseProofError(403, 'Google Play did not prove this purchase.');
-      const issued = typeof request.nonce === 'string' ? pending.get(request.nonce) : undefined;
+      const challenge = typeof request.nonce === 'string' ? pending.get(request.nonce) : undefined;
       const timestamp = typeof request.timestampMillis === 'string' ? Number(request.timestampMillis) : NaN;
-      if (issued === undefined || now() - issued >= FRESH_MS || !Number.isSafeInteger(timestamp) || timestamp < issued - 30_000 || timestamp > now() + 30_000 ||
+      if (challenge === undefined || challenge.player !== player || now() - challenge.issued >= FRESH_MS || !Number.isSafeInteger(timestamp) || timestamp < challenge.issued - 30_000 || timestamp > now() + 30_000 ||
         request.requestPackageName !== manifest.packageId || app.packageName !== manifest.packageId ||
         app.appRecognitionVerdict !== 'PLAY_RECOGNIZED' || account.appLicensingVerdict !== 'LICENSED') {
         throw new PurchaseProofError(403, 'Google Play did not prove this purchase. Open the app again.');

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createPlayProof, playDecoderFromEnv } from './play-proof.ts';
+import type { PlayerToken } from '../src/protocol.ts';
+
+const player = 'aaaaaaaa-0000-4000-8000-000000000001' as PlayerToken;
+const otherPlayer = 'bbbbbbbb-0000-4000-8000-000000000002' as PlayerToken;
 
 const packageName = 'com.yardenzamir.tick3d';
 const time = 1_800_000_000_000;
@@ -15,18 +19,26 @@ describe('Play purchase proof', () => {
   it('accepts a licensed app once, also with concurrent submissions', async () => {
     let nonce = '';
     const proof = createPlayProof(async () => verdict(nonce), () => time);
-    nonce = proof.nonce();
-    const results = await Promise.allSettled([proof.verify('token'), proof.verify('token')]);
+    nonce = proof.nonce(player);
+    const results = await Promise.allSettled([proof.verify('token', player), proof.verify('token', player)]);
     expect(results.map((result) => result.status)).toEqual(['fulfilled', 'rejected']);
+  });
+  it('refuses another player without consuming the original player challenge', async () => {
+    let nonce = '';
+    const proof = createPlayProof(async () => verdict(nonce), () => time);
+    nonce = proof.nonce(player);
+    await expect(proof.verify('token', otherPlayer)).rejects.toMatchObject({ status: 403 });
+    await expect(proof.verify('token', player)).resolves.toBeUndefined();
+    await expect(proof.verify('token', player)).rejects.toMatchObject({ status: 403 });
   });
   it('refuses old, invented and expired nonces', async () => {
     let now = time;
     let nonce = 'invented';
     const proof = createPlayProof(async () => verdict(nonce), () => now);
-    await expect(proof.verify('token')).rejects.toMatchObject({ status: 403 });
-    nonce = proof.nonce();
+    await expect(proof.verify('token', player)).rejects.toMatchObject({ status: 403 });
+    nonce = proof.nonce(player);
     now += 300_000;
-    await expect(proof.verify('token')).rejects.toMatchObject({ status: 403 });
+    await expect(proof.verify('token', player)).rejects.toMatchObject({ status: 403 });
   });
   it.each(['license', 'recognition', 'package', 'request package', 'timestamp', 'missing'])('refuses invalid %s', async (field) => {
     let nonce = '';
@@ -40,12 +52,12 @@ describe('Play purchase proof', () => {
       if (field === 'timestamp') payload.requestDetails.timestampMillis = '0';
       return field === 'missing' ? {} : result;
     }, () => time);
-    nonce = proof.nonce();
-    await expect(proof.verify('token')).rejects.toMatchObject({ status: 403 });
+    nonce = proof.nonce(player);
+    await expect(proof.verify('token', player)).rejects.toMatchObject({ status: 403 });
   });
   it('fails closed without credentials and rejects malformed configuration', async () => {
     expect(playDecoderFromEnv({})).toBeUndefined();
     expect(() => playDecoderFromEnv({ PLAY_SERVICE_ACCOUNT_JSON: '{}' })).toThrow();
-    await expect(createPlayProof(undefined).verify('token')).rejects.toMatchObject({ status: 503 });
+    await expect(createPlayProof(undefined).verify('token', player)).rejects.toMatchObject({ status: 503 });
   });
 });
