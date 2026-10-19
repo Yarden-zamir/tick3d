@@ -37,8 +37,8 @@ export async function reportAppOpen(): Promise<void> {
   try {
     hasCopy = await api.reportAppOpen(storedInviter() ?? parsePersonId(new URLSearchParams(referrer ?? '').get('by')) ?? null, proof, store);
   } catch (error) {
-    // No network: the next start reports again.
-    if (error instanceof OnlineError && error.status === undefined) return;
+    // Purchase checks can be unavailable or refused. Keep the last copy state and retry next open.
+    if (error instanceof OnlineError) return;
     throw error;
   }
   page.account = { ...page.account, hasCopy };
