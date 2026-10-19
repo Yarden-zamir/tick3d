@@ -47,7 +47,6 @@ import {
   parseGameId,
 } from '../src/protocol.ts';
 import { EMPTY_SESSION_TTL_MS, ERROR_CODES, SEAT_REQUEST_MS } from '../src/session/core.ts';
-import { COPY_STATES } from '../src/copies.ts';
 import { CODE_MAX_LENGTH, CODE_MIN_LENGTH, EMAIL_MAX_LENGTH, HINT_LENGTH, TESTER_NAME_MAX_LENGTH } from '../src/share/codes.ts';
 
 // Long polls wait at most this long. Proxies keep an idle request open for longer.
@@ -236,9 +235,9 @@ const person: Schema = {
   pattern: `^[0-9a-f]{${PERSON_ID_LENGTH}}$`,
   description: 'A public person id. The same player has the same id in every session, also on every device of a GitHub account. It is not a player id and reveals none.',
 };
-const copyState: Schema = {
-  enum: [...COPY_STATES],
-  description: "The paid state of this browser: 'activated' when your account holds a copy of the Android app, 'device' when your account may activate the copy of this device (no account activated it, and your account or no account held the device at the first open), else 'none'.",
+const hasCopy: Schema = {
+  type: 'boolean',
+  description: 'Whether you hold a copy of the paid Android app: this device holds one, or another device that is logged in to your GitHub account. A copy belongs to the account that logged in last on its device.',
 };
 const testerName: Schema = { type: 'string', minLength: 1, maxLength: TESTER_NAME_MAX_LENGTH, description: `A display name: 1 to ${TESTER_NAME_MAX_LENGTH} letters, digits, spaces or - _ . '. The server trims spaces.` };
 const signalCode: Schema = { type: 'string', minLength: 1, maxLength: MAX_CODE_LENGTH };
@@ -430,7 +429,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     loginAvailable: { type: 'boolean' },
     user: nullable(ref('PlayerInfo')),
     name: { ...nullable(displayName), description: 'The name that you chose with PUT /api/me/name, or null.' },
-    copy: copyState,
+    hasCopy,
     person: { ...person, description: 'Your public person id: of the GitHub account when you are logged in, else of your player id. The /share page and the Share menu of the game put it in the invite link.' },
   }),
   Tally: object('Game counts.', {
@@ -866,7 +865,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
   AppOpen: object('The Android app opened on this device.', {
     by: { ...nullable(person), description: 'The person id of the inviter, from the invite link /share?by=<person id> that this browser opened first, or null.' },
   }),
-  CopyAnswer: object('The paid state of this browser.', { copy: copyState }),
+  CopyAnswer: object('Whether you hold a copy of the paid Android app.', { hasCopy }),
   Previews: object('The production site and the open pull requests with a live preview, most recently updated first.', {
     main: nullable({ type: 'string', pattern: '^https://', description: 'The production site, built from the main branch. null on a server without previews.' }),
     previews: list('The previews.', ref('Preview')),
@@ -1604,7 +1603,7 @@ export const ROUTES = {
     summary: 'Your GitHub login state. The page uses it.',
     description: 'A login cookie from the page links your player id to a GitHub account. A client without a page login gets null.',
     player: 'required',
-    response: { status: 200, description: 'Your login state.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith', copy: 'none', person: OTHER_PERSON } },
+    response: { status: 200, description: 'Your login state.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith', hasCopy: false, person: OTHER_PERSON } },
     errors: [BAD_PLAYER],
     examplePlayer: AGENT_A,
   },
@@ -1640,7 +1639,7 @@ export const ROUTES = {
     description: 'Without a GitHub login, other players see this name in place of your generated name. A GitHub login still goes first.',
     player: 'required',
     body: { schema: 'NameRequest', example: { name: 'Agent Smith' } },
-    response: { status: 200, description: 'Your login state with the new name.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith', copy: 'none', person: OTHER_PERSON } },
+    response: { status: 200, description: 'Your login state with the new name.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith', hasCopy: false, person: OTHER_PERSON } },
     errors: [BAD_PLAYER, { status: 400, when: 'The name is not valid.' }, { status: 409, when: 'The name is the login of a GitHub account.' }],
     examplePlayer: AGENT_A,
   },
@@ -1649,7 +1648,7 @@ export const ROUTES = {
     tag: 'Account',
     summary: 'Go back to your generated name.',
     player: 'required',
-    response: { status: 200, description: 'Your login state without a custom name.', schema: 'Me', example: { loginAvailable: true, user: null, name: null, copy: 'none', person: OTHER_PERSON } },
+    response: { status: 200, description: 'Your login state without a custom name.', schema: 'Me', example: { loginAvailable: true, user: null, name: null, hasCopy: false, person: OTHER_PERSON } },
     errors: [BAD_PLAYER],
     examplePlayer: AGENT_A,
   },
@@ -1923,26 +1922,11 @@ export const ROUTES = {
     operationId: 'reportAppOpen',
     tag: 'Account',
     summary: 'Report that the paid Android app opened on this device. The app sends it on each start.',
-    description: `The app is paid, so the first open makes a copy of this device: it belongs to the account that is logged in then, or to the device. A later login with another account does not move it. With an inviter, the copy counts for the invite achievements of that person, once per person, also when the same person claimed a code through the link. A later open only adds an inviter that the copy lacks. One address can report ${APP_OPENS_PER_HOUR} times per hour.`,
+    description: `The app is paid, so the first open makes a copy of this device. The copy belongs to the account that is logged in on this device now, or to the device without a login. A login with another account moves it. With an inviter, the copy counts for the invite achievements of that person, once per person, also when the same person claimed a code through the link. A later open only adds an inviter that the copy lacks. One address can report ${APP_OPENS_PER_HOUR} times per hour.`,
     player: 'required',
     body: { schema: 'AppOpen', example: { by: OTHER_PERSON } },
-    response: { status: 200, description: 'Stored, or known already. The paid state of this browser.', schema: 'CopyAnswer', example: { copy: 'device' } },
+    response: { status: 200, description: 'Stored, or known already.', schema: 'CopyAnswer', example: { hasCopy: true } },
     errors: [BAD_PLAYER, { status: 400, when: 'The body needs a person id or null in `by`.' }, TOO_BIG, { status: 429, when: `This address reported ${APP_OPENS_PER_HOUR} app opens in the last hour.` }],
-    examplePlayer: AGENT_A,
-  },
-  'POST /api/copies/activate': {
-    operationId: 'activateCopy',
-    tag: 'Account',
-    summary: 'Activate the copy of this device on your GitHub account.',
-    description: 'Needs the X-Player header and a login cookie. An account holds at most one copy, and a copy belongs to at most one account. Only the account that held the device at the first open activates the copy, or any account when no account held it. The same activation again changes nothing.',
-    player: 'required',
-    response: { status: 200, description: 'Activated.', schema: 'CopyAnswer', example: { copy: 'activated' } },
-    errors: [
-      BAD_PLAYER,
-      { status: 401, when: 'The request has no GitHub login.' },
-      { status: 404, when: 'This device has no copy, or this server has no GitHub login.' },
-      { status: 409, when: 'Another account activated this copy, another account held the device at the first open, or your account holds another copy.' },
-    ],
     examplePlayer: AGENT_A,
   },
   'GET /api/testing/claims': {

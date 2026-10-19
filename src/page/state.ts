@@ -149,7 +149,7 @@ export const page: PageState = {
   },
   deviceDb: undefined,
   local: undefined,
-  account: { loginAvailable: false, user: null, name: storedName(), person: null, copy: null },
+  account: { loginAvailable: false, user: null, name: storedName(), person: null, hasCopy: null },
   get thinking() {
     return screen.kind === 'session' && screen.thinking;
   },

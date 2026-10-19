@@ -351,7 +351,7 @@ async function me(token: PlayerToken, user: ReturnType<Auth['user']>) {
     loginAvailable: auth !== undefined,
     user: user === undefined ? null : { login: user.login, avatar: user.avatar },
     name: await store.customName(token),
-    copy: await store.copyState(token),
+    hasCopy: await store.hasCopy(token),
     person: await store.person(token),
   };
 }
@@ -530,18 +530,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const player = requirePlayer(req);
       const open = parseAppOpen(await readJson(req));
       if (open === undefined) throw new HttpError(400, 'An app open report needs the person id of the inviter, or null, in "by".');
-      // A login cookie links this browser first, so the copy belongs to the account that is logged in.
+      // A login cookie links this browser first, so the answer and the owner at the first open name the account.
       const user = auth?.user(req);
       if (user !== undefined) await store.linkToken(player, user);
-      return send(res, 200, { copy: await store.reportAppOpen(player, open.by) });
-    }
-    case 'POST /api/copies/activate': {
-      const player = requirePlayer(req);
-      if (auth === undefined) throw new HttpError(404, 'Login is not available on this server.');
-      const user = auth.user(req);
-      if (user === undefined) throw new HttpError(401, 'Log in with GitHub first.');
-      await store.linkToken(player, user);
-      return send(res, 200, { copy: await store.activateCopy(player, user.id) });
+      return send(res, 200, { hasCopy: await store.reportAppOpen(player, open.by) });
     }
     case 'GET /api/testing/claims':
       requireMaintainer(req);

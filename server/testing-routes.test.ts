@@ -69,14 +69,12 @@ describe('the tester code routes', () => {
     expect(Number(refused.retryAfter)).toBeGreaterThan(0);
   });
 
-  it('take an app open with a person id or null in by, and need a login to activate', async () => {
+  it('take an app open with a person id or null in by', async () => {
     const report = (body: unknown) => call('POST', '/copies', { player, body, client: '203.0.113.40' });
     expect((await report({ by: 'nope' })).status).toBe(400);
     expect((await call('POST', '/copies', { body: { by: null }, client: '203.0.113.40' })).status).toBe(400);
-    expect((await report({ by: '0123456789abcdef' })).body).toEqual({ copy: 'device' });
-    expect((await report({ by: null })).body).toEqual({ copy: 'device' });
-    // This server has no GitHub login.
-    expect((await call('POST', '/copies/activate', { player, client: '203.0.113.40' })).status).toBe(404);
+    expect((await report({ by: '0123456789abcdef' })).body).toEqual({ hasCopy: true });
+    expect((await report({ by: null })).body).toEqual({ hasCopy: true });
   });
 
   it('keep the claims with the emails for the maintainers only', async () => {

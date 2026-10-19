@@ -48,7 +48,7 @@ import {
 } from './protocol.ts';
 import { STORAGE_KEYS } from './storage-keys.ts';
 import { type ClaimRequest, type ClaimedCode, type TesterCodes, parseClaimedCode, parseTesterCodes } from './share/codes.ts';
-import { type CopyState, isCopyState, parseCopyAnswer } from './copies.ts';
+import { parseCopyAnswer } from './copies.ts';
 
 
 // crypto.randomUUID exists only on HTTPS and localhost. A phone on the local network loads the dev
@@ -122,9 +122,9 @@ const request = async (method: string, path: string, body?: unknown): Promise<Se
   parseSessionView(await call(method, `/sessions${path}`, body));
 
 // `name` is the custom name of a player without a GitHub login, or null. `person` is the public person id of
-// this player (of the account when logged in), and `copy` the paid state (src/copies.ts). The server always sends
-// both; null means no answer came yet.
-export type Me = { loginAvailable: boolean; user: PlayerInfo | null; name: string | null; person: PersonId | null; copy: CopyState | null };
+// this player (of the account when logged in), and `hasCopy` whether the player holds a copy of the paid Android app
+// (src/copies.ts). The server always sends both; null means no answer came yet.
+export type Me = { loginAvailable: boolean; user: PlayerInfo | null; name: string | null; person: PersonId | null; hasCopy: boolean | null };
 
 export function parseMe(value: unknown): Me {
   if (typeof value !== 'object' || value === null) throw new Error('invalid answer from /api/me');
@@ -134,18 +134,18 @@ export function parseMe(value: unknown): Me {
   const raw = (value as Record<string, unknown>).name;
   const name = raw === undefined || raw === null ? null : parseCustomName(raw);
   const person = parsePersonId((value as Record<string, unknown>).person);
-  const { copy } = value as Record<string, unknown>;
+  const { hasCopy } = value as Record<string, unknown>;
   if (
     typeof loginAvailable !== 'boolean' ||
     info === undefined ||
     name === undefined ||
     (raw !== undefined && raw !== null && raw !== name) ||
     person === undefined ||
-    !isCopyState(copy)
+    typeof hasCopy !== 'boolean'
   ) {
     throw new Error('invalid answer from /api/me');
   }
-  return { loginAvailable, user: info, name, person, copy };
+  return { loginAvailable, user: info, name, person, hasCopy };
 }
 
 // The page reads "My games" only to display it, so a light shape check is enough here.
@@ -221,17 +221,11 @@ export const api = {
     if (claimed === undefined) throw new Error('invalid answer from /api/testing/codes/{codeId}/claim');
     return claimed;
   },
-  // The paid Android app opened on this device, with the inviter that /share kept. Answers the copy state.
-  reportAppOpen: async (by: PersonId | null): Promise<CopyState> => {
+  // The paid Android app opened on this device, with the inviter that /share kept. Answers whether the player holds a copy.
+  reportAppOpen: async (by: PersonId | null): Promise<boolean> => {
     const answer = parseCopyAnswer(await call('POST', '/copies', { by }));
     if (answer === undefined) throw new Error('invalid answer from /api/copies');
-    return answer.copy;
-  },
-  // Activates the copy of this device on the logged-in account. Answers the copy state.
-  activateCopy: async (): Promise<CopyState> => {
-    const answer = parseCopyAnswer(await call('POST', '/copies/activate'));
-    if (answer === undefined) throw new Error('invalid answer from /api/copies/activate');
-    return answer.copy;
+    return answer.hasCopy;
   },
   logout: () => call('POST', '/auth/logout'),
   // Login is a full page visit to GitHub and back to `returnTo`, by default this page.

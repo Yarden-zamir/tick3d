@@ -1404,9 +1404,8 @@ describe('delete my data', () => {
     // Bob claimed a tester code through Alice's invite link.
     await store.addTesterCodes([{ code: 'AAAAAAAAAAAAAAAAAAAAAA1', name: null }]);
     await store.claimTesterCode(1, { email: 'bob@example.com', name: 'Bob', by: await store.person(alice) }, bob);
-    // Alice's phone opened the Android app, and her account activated it.
+    // Alice's phone opened the Android app.
     await store.reportAppOpen(alicePhone, null);
-    await store.activateCopy(alicePhone, ALICE_GITHUB.id);
     // The leaderboard fills achievement_players, which names Alice's account.
     await store.leaderboard(ALL_STATS, undefined);
 

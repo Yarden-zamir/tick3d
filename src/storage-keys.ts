@@ -22,10 +22,6 @@ export const STORAGE_KEYS = {
   testerPhone: 'tick3d.tester-phone',
   // The person id of the first invite link that brought this browser to /share (src/share/invite.ts).
   testerInvitedBy: 'tick3d.tester-invited-by',
-  // When the player closed the activation popup of the Android app copy with Escape (src/page/app-copy.ts).
-  activationAskedAt: 'tick3d.activation-asked-at',
-  // The GitHub login that said "Do not activate the game on this account" on this device (src/page/app-copy.ts).
-  activationDeclinedBy: 'tick3d.activation-declined-by',
   // The achievements that this device showed already, in a popup or on an end card (src/page/achievement-popup.ts).
   achievementsSeen: 'tick3d.achievements-seen',
 } as const;

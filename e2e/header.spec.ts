@@ -20,7 +20,7 @@ const USER = { login: 'octocat', avatar: 'https://avatars.githubusercontent.com/
 
 // The server answers that a GitHub user is logged in. The test needs no real login.
 async function fakeLogin(page: Page): Promise<void> {
-  await page.route('**/api/me', (route) => route.fulfill({ json: { loginAvailable: true, user: USER, name: null, person: '0123456789abcdef', copy: 'none' } }));
+  await page.route('**/api/me', (route) => route.fulfill({ json: { loginAvailable: true, user: USER, name: null, person: '0123456789abcdef', hasCopy: false } }));
 }
 
 for (const name of keysOf(PAGES)) {
@@ -64,7 +64,7 @@ test('the account button of /stats opens My games on the game page, and a login 
   await expect(page.locator('#account-button')).toHaveAttribute('aria-label', `My games, logged in as ${USER.login}`);
 
   await page.unroute('**/api/me');
-  await page.route('**/api/me', (route) => route.fulfill({ json: { loginAvailable: true, user: null, name: null, person: '0123456789abcdef', copy: 'none' } }));
+  await page.route('**/api/me', (route) => route.fulfill({ json: { loginAvailable: true, user: null, name: null, person: '0123456789abcdef', hasCopy: false } }));
   await page.locator('#account-button').click();
   await expect(page).toHaveURL((url) => url.pathname === '/');
   await expect(page.locator('#my-games')).toHaveAttribute('open');

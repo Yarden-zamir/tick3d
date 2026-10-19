@@ -87,7 +87,6 @@ import { type Rows, bigId, bool, code as codeColumn, deviceGameId, epoch, gameId
 import { computeStats, inTokens, seatedResults, seatedRows, tokenValues } from './stats.ts';
 import { leaderRows } from './leaderboard.ts';
 import { type InviteEvent, peopleOf } from './invite-people.ts';
-import type { CopyState } from '../src/copies.ts';
 import { type ClaimRequest, type ClaimedCode, type TesterCodeEntry, type TesterCodes, hintOf } from '../src/share/codes.ts';
 import { gravatarOf } from './tester-codes.ts';
 
@@ -302,17 +301,13 @@ const SCHEMA = [
   'ALTER TABLE tester_codes ADD COLUMN IF NOT EXISTS claimed_owner VARCHAR',
   // The bought copies of the paid Android app (src/copies.ts): one row per device (`token`) where the app opened
   // (POST /api/copies). `owner` is the account (or the device) that held the device at the first open. `invited_by`
-  // is the inviter that /share kept on that device, or null. `activated_by` is the GitHub id of the one account that
-  // activated the copy (POST /api/copies/activate), or null. An account activates at most one copy, and only a copy
-  // that it held at the first open or that opened without a login (activateCopy).
-  // Tokens: never send them to a page.
+  // is the inviter that /share kept on that device, or null. The account that holds the device now holds the copy
+  // (hasCopyOf), so a copy follows the last login on the app. Tokens: never send them to a page.
   `CREATE TABLE IF NOT EXISTS app_copies (
      token VARCHAR PRIMARY KEY,
      owner VARCHAR NOT NULL,
      invited_by VARCHAR,
-     opened_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-     activated_by BIGINT,
-     activated_at TIMESTAMPTZ
+     opened_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
   // The one-time data changes (runOnce in openStore) that ran on this database, by name.
   `CREATE TABLE IF NOT EXISTS migrations (
@@ -616,22 +611,22 @@ export async function openStore(
 
   // Every invite event: a claimed tester code with an inviter, and a copy of the Android app with an inviter. The keys
   // name the human for peopleOf (server/invite-people.ts): the device token and the owner at the time of the event,
-  // the account that activated a copy, the account that holds the device now, and the email of a claim. So a claim on a
+  // the account that holds the device now, and the email of a claim. So a claim on a
   // laptop and an app open on a phone count once when both devices log in to one account, also after the events. A claim from before the token columns has only its
   // email, or its code (given out by hand).
   // Limit: one Play purchase installs on every phone of that Google account, so two copies cannot tell two purchases
-  // from one. The copies of one account count as one person: by the owner at the open, and by the activation.
+  // from one. The copies of one account count as one person: by the owner at the open, and by the account now.
   // Limit: it reads every invite, a few hundred rows at most now. Revisit this past 10,000 rows.
   async function inviteEvents(): Promise<(InviteEvent & { invitedBy: PersonId })[]> {
     const found = await rows(
       `FROM tester_codes LEFT JOIN player_tokens linked ON linked.token = claimed_token
-         SELECT invited_by, claimed_token AS token, claimed_owner AS owner, NULL::VARCHAR AS activated,
+         SELECT invited_by, claimed_token AS token, claimed_owner AS owner,
            CASE WHEN linked.github_id IS NULL THEN NULL ELSE $account || lpad(linked.github_id::VARCHAR, 16, '0') END AS account,
            lower(email) AS email, code, epoch_ms(claimed_at) AS at
        WHERE invited_by IS NOT NULL AND claimed_at IS NOT NULL
        UNION ALL
        FROM app_copies LEFT JOIN player_tokens linked ON linked.token = app_copies.token
-         SELECT invited_by, app_copies.token, owner, CASE WHEN activated_by IS NULL THEN NULL ELSE $account || lpad(activated_by::VARCHAR, 16, '0') END,
+         SELECT invited_by, app_copies.token, owner,
            CASE WHEN linked.github_id IS NULL THEN NULL ELSE $account || lpad(linked.github_id::VARCHAR, 16, '0') END,
            NULL, NULL, epoch_ms(opened_at)
        WHERE invited_by IS NOT NULL`,
@@ -640,7 +635,6 @@ export async function openStore(
         invited_by: personColumn,
         token: nullable(text),
         owner: nullable(text),
-        activated: nullable(text),
         account: nullable(text),
         email: nullable(text),
         code: nullable(text),
@@ -651,7 +645,6 @@ export async function openStore(
       const keys = [
         row.token === null ? [] : [`t:${row.token}`],
         row.owner === null ? [] : [`o:${row.owner}`],
-        row.activated === null ? [] : [`o:${row.activated}`],
         row.account === null ? [] : [`o:${row.account}`],
         row.email === null ? [] : [`e:${row.email}`],
       ].flat();
@@ -846,22 +839,17 @@ export async function openStore(
     return rarityCache;
   }
 
-  // The copy state of this browser (CopyState in src/copies.ts). A copy is 'device' for the account that may activate it.
-  async function copyStateOf(token: PlayerToken): Promise<CopyState> {
-    const [linked] = await rows('FROM player_tokens SELECT github_id WHERE token = $token', { token }, { github_id: bigId });
-    if (linked !== undefined) {
-      const [held] = await rows('FROM app_copies SELECT token WHERE activated_by = $id', { id: linked.github_id }, { token: text });
-      if (held !== undefined) return 'activated';
-    }
-    const [copy] = await rows('FROM app_copies SELECT owner, activated_by WHERE token = $token', { token }, { owner: text, activated_by: nullable(bigId) });
-    if (copy === undefined || copy.activated_by !== null) return 'none';
-    return linked === undefined || mayActivate(copy.owner, token, linked.github_id) ? 'device' : 'none';
-  }
-
-  // The account that held the device at the first open activates the copy. A copy that opened without a login is
-  // free for the first account. So a friend who logs in on the phone of a buyer cannot take the copy.
-  function mayActivate(owner: string, token: PlayerToken, githubId: number | bigint): boolean {
-    return owner === token || owner === accountToken(githubId);
+  // Whether the player of this browser holds a copy: this device holds one, or another device that is logged in to the
+  // same account. So a copy follows the account that logged in last on that device, and a logout takes it back.
+  async function hasCopyOf(token: PlayerToken): Promise<boolean> {
+    const [copy] = await rows(
+      `FROM app_copies SELECT token
+       WHERE token = $token OR token IN (FROM player_tokens SELECT token WHERE github_id = (FROM player_tokens SELECT github_id WHERE token = $token))
+       LIMIT 1`,
+      { token },
+      { token: text },
+    );
+    return copy !== undefined;
   }
 
   async function achievementsOf(owner: string, tokens: readonly string[]): Promise<Achievements> {
@@ -1279,7 +1267,7 @@ export async function openStore(
   //   achievement_players, seat_people, practice_runs: deleted.
   // - reports: a report about the player stays for moderation. A report that the player filed loses its reporter.
   // - tester_codes: a code that the player invited or claimed stays with its tester, without the player's person id and tokens.
-  // - app_copies: the copies of the player's devices: deleted. Another copy loses its activation by the account, and its inviter.
+  // - app_copies: the copies of the player's devices: deleted. Another copy loses its inviter when it is this player.
   // - player_tokens and users: the account goes, so no device acts for it any more.
   // Limit: a device of the account that is still logged in links itself again on its next visit,
   // because its login cookie stays valid. That account then starts empty. Revisit this if the
@@ -1382,18 +1370,15 @@ export async function openStore(
           { persons, ids },
         )
       ).length;
-      // The copies of this player's devices, or first opened by this player. A copy of another device keeps no link to
-      // this player: no activation by this account, and no invite by this player.
+      // The copies of this player's devices, or first opened by this player. A copy of another device keeps no invite
+      // by this player.
       counts.app_copies.deleted = (
         await changedIds('DELETE FROM app_copies WHERE list_contains($ids, token) OR list_contains($ids, owner) RETURNING token AS id', { ids })
       ).length;
       counts.app_copies.anonymised = (
         await changedIds(
-          `UPDATE app_copies SET invited_by = CASE WHEN list_contains($persons, invited_by) THEN NULL ELSE invited_by END,
-             activated_by = CASE WHEN activated_by = $account THEN NULL ELSE activated_by END,
-             activated_at = CASE WHEN activated_by = $account THEN NULL ELSE activated_at END
-           WHERE list_contains($persons, invited_by) OR activated_by = $account RETURNING token AS id`,
-          { persons, account: linked?.github_id ?? null },
+          'UPDATE app_copies SET invited_by = NULL WHERE list_contains($persons, invited_by) RETURNING token AS id',
+          { persons },
         )
       ).length;
       counts.reports.anonymised = (
@@ -2026,12 +2011,12 @@ export async function openStore(
       }),
 
     // The Android app opened on this device (POST /api/copies), with the inviter that /share kept, or null. The first
-    // open makes the copy of the device, and its owner then (an account or the device) keeps it, so a later login with
-    // another account on the device changes nothing. A later open only adds an inviter that the copy lacks; the
-    // first inviter wins. A self-invite counts for nobody. Answers the copy state of this browser.
+    // open makes the copy of the device. Its owner then (an account or the device) stays for the invite events only:
+    // the copy itself follows the account that holds the device now (hasCopyOf). A later open only adds an inviter
+    // that the copy lacks; the first inviter wins. A self-invite counts for nobody. Answers whether the player holds a copy.
     // Limit: the page tells the app by its referrer, which a player can fake for an achievement. That is fine for
     // a game. Revisit this if a copy or an invite ever gets a prize (Play Integrity is the strong check).
-    reportAppOpen: (token: PlayerToken, by: PersonId | null): Promise<CopyState> =>
+    reportAppOpen: (token: PlayerToken, by: PersonId | null): Promise<boolean> =>
       serialized(async () => {
         const invitedBy = by !== null && !(await personsOfTokens([...(await identityOf(token))])).has(by) ? by : null;
         const changed = await rows(
@@ -2045,30 +2030,10 @@ export async function openStore(
           achievementCache.clear();
           for (const owner of await ownersOfPersons([invitedBy])) changedOwners.add(owner);
         }
-        return copyStateOf(token);
+        return hasCopyOf(token);
       }),
 
-    // Activates the copy of this device for the GitHub account `githubId`. The same activation again is fine.
-    // 404 without a copy on this device. 409 when another account holds the copy, when another account held the
-    // device at the first open (mayActivate), or when the account holds another copy.
-    activateCopy: (token: PlayerToken, githubId: number): Promise<CopyState> =>
-      serialized(async () => {
-        const [copy] = await rows('FROM app_copies SELECT owner, activated_by WHERE token = $token', { token }, { owner: text, activated_by: nullable(bigId) });
-        if (copy === undefined) throw new SessionError(404, 'This device has no copy of the Android app.');
-        const id = BigInt(githubId);
-        if (copy.activated_by === id) return copyStateOf(token);
-        if (copy.activated_by !== null) throw new SessionError(409, 'Another account activated the copy of this device.');
-        if (!mayActivate(copy.owner, token, id)) throw new SessionError(409, 'The account that was logged in at the first open of the app activates this copy.');
-        const [other] = await rows('FROM app_copies SELECT token WHERE activated_by = $id', { id }, { token: text });
-        if (other !== undefined) throw new SessionError(409, 'Your account holds a copy already.');
-        await db.run('UPDATE app_copies SET activated_by = $id, activated_at = now() WHERE token = $token', { id, token });
-        // The activation can join two copies of one person (inviteEvents).
-        achievementCache.clear();
-        changedOwners.add(accountToken(githubId));
-        return copyStateOf(token);
-      }),
-
-    copyState: (token: PlayerToken): Promise<CopyState> => serialized(() => copyStateOf(token)),
+    hasCopy: (token: PlayerToken): Promise<boolean> => serialized(() => hasCopyOf(token)),
 
     // The claims with their emails, oldest first, for the maintainers (they add the emails to the Google Group).
     testerClaims: (): Promise<TesterClaims> =>

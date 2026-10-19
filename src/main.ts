@@ -9,7 +9,7 @@ import { readLinkIntent } from './session-link.ts';
 import { setMuted, setSoundSet } from './sound.ts';
 import { checkUnlocks, setupAchievementPopup } from './page/achievement-popup.ts';
 import { setupAdvanced } from './page/advanced.ts';
-import { reportAppOpen, setupAppCopy } from './page/app-copy.ts';
+import { reportAppOpen } from './page/app-copy.ts';
 import { setupShareMenu } from './page/share-menu.ts';
 import { applyCamera, setupBoard } from './page/board.ts';
 import { setupChat } from './page/chat.ts';
@@ -70,7 +70,6 @@ setupClocks();
 setupAdvanced();
 setupEndCard();
 setupAchievementPopup();
-setupAppCopy();
 setupShareMenu();
 setupTheme();
 setupSoundSets(soundSetList, (id) => {

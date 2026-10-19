@@ -193,12 +193,12 @@ describe('invites', () => {
   it('count an app open once per device, for the first inviter, and no self-invite', async () => {
     store = await openStore(':memory:');
     const by = await store.person(inviter);
-    expect(await store.reportAppOpen(player, by)).toBe('device');
-    expect(await store.reportAppOpen(player, by)).toBe('device');
+    expect(await store.reportAppOpen(player, by)).toBe(true);
+    expect(await store.reportAppOpen(player, by)).toBe(true);
     // A later link of another inviter does not move the copy.
     await store.reportAppOpen(player, await personId(inviterLaptop));
     // The inviter's own app open is a copy, but no invite.
-    expect(await store.reportAppOpen(inviter, by)).toBe('device');
+    expect(await store.reportAppOpen(inviter, by)).toBe(true);
     expect(await unlocked(inviter)).toMatchObject([{ count: 1, unlocked: true }, { count: 1 }, { count: 1 }]);
     expect(await unlocked(inviterLaptop)).toMatchObject([{ count: 0 }, { count: 0 }, { count: 0 }]);
   });
@@ -357,65 +357,44 @@ describe('copies of the Android app', () => {
     await store.close();
   });
 
-  it('belong to the device until a logged-in account activates them, once', async () => {
-    expect(await store.copyState(phone)).toBe('none');
-    await expect(store.activateCopy(phone, ALICE.id)).rejects.toMatchObject({ status: 404 });
-    expect(await store.reportAppOpen(phone, null)).toBe('device');
+  it('belong to the account that is logged in on the device now, or to the device', async () => {
+    expect(await store.hasCopy(phone)).toBe(false);
+    expect(await store.reportAppOpen(phone, null)).toBe(true);
     await store.linkToken(phone, ALICE);
-    expect(await store.copyState(phone)).toBe('device');
-    expect(await store.activateCopy(phone, ALICE.id)).toBe('activated');
-    // The same activation again changes nothing.
-    expect(await store.activateCopy(phone, ALICE.id)).toBe('activated');
-  });
-
-  it('stay with the account that activated them after a login with another account', async () => {
-    await store.linkToken(phone, ALICE);
-    await store.reportAppOpen(phone, null);
-    await store.activateCopy(phone, ALICE.id);
+    expect(await store.hasCopy(phone)).toBe(true);
+    // Carol logs in on the phone of Alice and holds the copy. Alice holds it again after her next login there.
     await store.unlinkToken(phone);
     await store.linkToken(phone, CAROL);
-    // Carol gets no copy and no popup, and cannot take Alice's copy.
-    expect(await store.copyState(phone)).toBe('none');
-    await expect(store.activateCopy(phone, CAROL.id)).rejects.toMatchObject({ status: 409 });
+    const aliceWeb = 'dddddddd-0000-4000-8000-000000000003' as PlayerToken;
+    await store.linkToken(aliceWeb, ALICE);
+    expect(await store.hasCopy(phone)).toBe(true);
+    expect(await store.hasCopy(aliceWeb)).toBe(false);
+    await store.unlinkToken(phone);
+    await store.linkToken(phone, ALICE);
+    expect(await store.hasCopy(aliceWeb)).toBe(true);
+    // After a logout, the device holds the copy, and the account does not.
+    await store.unlinkToken(phone);
+    expect(await store.hasCopy(phone)).toBe(true);
+    expect(await store.hasCopy(aliceWeb)).toBe(false);
   });
 
-  it('count for every device of the account that holds one', async () => {
+  it('count for every device of the account', async () => {
     const web = 'dddddddd-0000-4000-8000-000000000003' as PlayerToken;
-    await store.linkToken(phone, ALICE);
-    await store.linkToken(phone2, ALICE);
     await store.linkToken(web, ALICE);
-    await store.reportAppOpen(phone, null);
-    await store.reportAppOpen(phone2, null);
-    await store.activateCopy(phone, ALICE.id);
-    // Alice holds a copy, so every device of Alice reads 'activated', the web too, and shows no popup.
-    expect(await store.copyState(web)).toBe('activated');
-    expect(await store.copyState(phone2)).toBe('activated');
-    // Alice holds one copy only.
-    await expect(store.activateCopy(phone2, ALICE.id)).rejects.toMatchObject({ status: 409 });
-  });
-
-  it('go to the account that held the phone at the first open, or to the first account after an open without a login', async () => {
+    expect(await store.hasCopy(web)).toBe(false);
     await store.linkToken(phone, ALICE);
     await store.reportAppOpen(phone, null);
-    await store.unlinkToken(phone);
-    await store.linkToken(phone, CAROL);
-    // Carol logs in on the phone of Alice: no popup, and no activation.
-    expect(await store.copyState(phone)).toBe('none');
-    await expect(store.activateCopy(phone, CAROL.id)).rejects.toMatchObject({ status: 409 });
-    // The second phone opened without a login, so the first account that logs in activates it.
-    await store.reportAppOpen(phone2, null);
-    await store.linkToken(phone2, CAROL);
-    expect(await store.copyState(phone2)).toBe('device');
-    expect(await store.activateCopy(phone2, CAROL.id)).toBe('activated');
+    expect(await store.hasCopy(web)).toBe(true);
+    // Another device without a login holds no copy.
+    expect(await store.hasCopy(phone2)).toBe(false);
   });
 
   it('of one account count as one invited person, also on two phones', async () => {
     const inviter = 'bbbbbbbb-0000-4000-8000-000000000002' as PlayerToken;
     const by = await store.person(inviter);
-    // The first phone opened before the login, and the account activated it later.
+    // The first phone opened before the login.
     await store.reportAppOpen(phone, by);
     await store.linkToken(phone, ALICE);
-    await store.activateCopy(phone, ALICE.id);
     // The second phone opened while logged in to the same account.
     await store.linkToken(phone2, ALICE);
     await store.reportAppOpen(phone2, by);
