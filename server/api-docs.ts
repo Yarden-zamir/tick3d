@@ -238,7 +238,7 @@ const person: Schema = {
 };
 const hasCopy: Schema = {
   type: 'boolean',
-  description: 'Whether you hold a copy of the paid Android app: this device holds one, or another device that is logged in to your GitHub account. A copy belongs to the account that logged in last on its device.',
+  description: 'Whether you hold a store-proved copy of the paid Android or iPhone app: this device holds one, or another device that is logged in to your GitHub account. Old unproved copies do not count. A copy belongs to the account that logged in last on its device.',
 };
 const testerName: Schema = { type: 'string', minLength: 1, maxLength: TESTER_NAME_MAX_LENGTH, description: `A display name: 1 to ${TESTER_NAME_MAX_LENGTH} letters, digits, spaces or - _ . '. The server trims spaces.` };
 const signalCode: Schema = { type: 'string', minLength: 1, maxLength: MAX_CODE_LENGTH };
@@ -424,6 +424,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
   ),
   Health: object('The server is up.', {
     ok: { const: true },
+    appStore: nullable({ type: 'string', description: 'The app listing, from APPLE_APP_ID, or null before it is configured.' }),
     lan: nullable(object('A server that a player runs on a local network.', { name: { type: 'string' } })),
   }),
   Me: object('Your login state on the page, and your custom name.', {
@@ -863,13 +864,13 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       }),
     ),
   }),
-  AppOpen: object('The Android app opened on this device.', {
+  AppOpen: object('A store app opened on this device.', {
     store: { type: 'string', enum: ['play', 'apple'], description: 'Which store signed the proof.' },
-    proof: { type: 'string', minLength: 1, maxLength: 32768, description: 'The Play Integrity token from the native launch activity.' },
+    proof: { type: 'string', minLength: 1, maxLength: 32768, description: 'A Play Integrity token or signed Apple AppTransaction from the native app.' },
     by: { ...nullable(person), description: 'The person id of the inviter, from the invite link /share?by=<person id> that this browser opened first, or null.' },
   }),
   PurchaseNonce: object('A one-time purchase challenge.', { nonce: { type: 'string' } }),
-  CopyAnswer: object('Whether you hold a copy of the paid Android app.', { hasCopy }),
+  CopyAnswer: object('Whether you hold a store-proved app copy.', { hasCopy }),
   Previews: object('The production site and the open pull requests with a live preview, most recently updated first.', {
     main: nullable({ type: 'string', pattern: '^https://', description: 'The production site, built from the main branch. null on a server without previews.' }),
     previews: list('The previews.', ref('Preview')),
@@ -1116,12 +1117,12 @@ export const ROUTES = {
     operationId: 'createSession',
     tag: 'Play',
     summary: 'Create a game.',
-    description: `You take seat X, and X moves first. The first other player who joins takes seat O. Share the link /?code=<code>. One address can create ${CREATES_PER_HOUR} sessions per hour.`,
+    description: `Your device or its current account must hold a store-proved copy. Open the paid app online first. Joining stays free. A self-hosted server with LAN_HOST=1 needs no purchase. You take seat X, and X moves first. The first other player who joins takes seat O. Share the link /?code=<code>. One address can create ${CREATES_PER_HOUR} sessions per hour.`,
     player: 'required',
     idempotencyKey: true,
     body: { schema: 'NewSession', example: { name: 'Agent match' } },
     response: { status: 201, description: 'The new session.', schema: 'SessionView', example: view({}) },
-    errors: [BAD_PLAYER, BAD_BODY, TOO_BIG, { status: 429, when: `This address created ${CREATES_PER_HOUR} sessions in the last hour.` }, ...KEY_ERRORS],
+    errors: [BAD_PLAYER, BAD_BODY, TOO_BIG, { status: 403, when: 'The player holds no store-proved copy. Old referrer-only copies do not count.' }, { status: 429, when: `This address created ${CREATES_PER_HOUR} sessions in the last hour.` }, ...KEY_ERRORS],
     examplePlayer: AGENT_A,
   },
   'GET /api/sessions/{code}': {
@@ -1582,7 +1583,7 @@ export const ROUTES = {
     tag: 'Docs',
     summary: 'Check that the server is up.',
     player: 'none',
-    response: { status: 200, description: 'The server is up.', schema: 'Health', example: { ok: true, lan: null } },
+    response: { status: 200, description: 'The server is up.', schema: 'Health', example: { ok: true, lan: null, appStore: null } },
     errors: [],
   },
   'GET /api/docs': {
@@ -1935,7 +1936,7 @@ export const ROUTES = {
   'POST /api/copies': {
     operationId: 'reportAppOpen',
     tag: 'Account',
-    summary: 'Prove a paid Android app open with Play Integrity. The app sends it on each start.',
+    summary: 'Prove a paid app open with Play Integrity or StoreKit. The app sends it on each start.',
     description: `The app is paid, so the first open makes a copy of this device. The copy belongs to the account that is logged in on this device now, or to the device without a login. A login with another account moves it. With an inviter, the copy counts for the invite achievements of that person, once per person, also when the same person claimed a code through the link. A later open only adds an inviter that the copy lacks. One address can report ${APP_OPENS_PER_HOUR} times per hour.`,
     player: 'required',
     body: { schema: 'AppOpen', example: { by: OTHER_PERSON, proof: 'encrypted-play-integrity-token', store: 'play' } },

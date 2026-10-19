@@ -379,7 +379,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
   switch (match.route) {
     case 'GET /api/health':
-      return send(res, 200, { ok: true, lan: lanHost });
+      return send(res, 200, { ok: true, lan: lanHost, appStore: process.env.APPLE_APP_ID ? `https://apps.apple.com/app/id${process.env.APPLE_APP_ID}` : null });
     case 'GET /api/openapi.json':
       return sendText(res, 'application/json', JSON.stringify(openApi(docsOrigin(req)), null, 2));
     case 'GET /api/docs':
@@ -538,7 +538,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       allowAppOpen(clientOf(req), Date.now());
       const player = requirePlayer(req);
       const open = parseAppOpen(await readJson(req, 40 * 1024));
-      if (open === undefined) throw new HttpError(400, 'An app open report needs the person id of the inviter, or null, in "by".');
+      if (open === undefined) throw new HttpError(400, 'An app open needs "store" (play or apple), a proof token, and a person id or null in "by".');
       let purchase: boolean | Awaited<ReturnType<NonNullable<typeof appleProof>>>;
       if (open.store === 'play') {
         purchase = await playProof.verify(open.proof, player);
@@ -647,7 +647,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       allowCreate(clientOf(req), Date.now());
       const body = parseNewSession(await readJson(req));
       if (body === undefined) throw new HttpError(400, 'A new game needs a name of 1 to 40 characters, and a valid clock or none.');
-      return send(res, 201, await store.create(requirePlayer(req), body.name, body.clock));
+      const player = requirePlayer(req);
+      const user = auth?.user(req);
+      if (user !== undefined) await store.linkToken(player, user);
+      // A self-hosted server belongs to its operator. The public server never sets LAN_HOST.
+      if (lanHost === null && !(await store.hasCopy(player))) {
+        throw new HttpError(403, 'Hosting online games needs a proved copy of tick3d. Buy the app on Google Play or the App Store, then open it online. Joining and Nearby stay free.');
+      }
+      return send(res, 201, await store.create(player, body.name, body.clock));
     }
     case 'GET /api/sessions/{code}': {
       const token = asPlayerToken(req.headers['x-player']);

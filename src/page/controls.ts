@@ -9,7 +9,7 @@ import { render } from './render.ts';
 import { leaveSession, createSession, openLocalSession, withBusy, applyView, startNewGame, seatLockText, watcherChatText, undoMove } from './sessions.ts';
 import { LAYOUTS, type MatchOptions, VIEWS } from '../protocol.ts';
 import { settings, oneOf, HIDE_STEPS, MODES, type Mode, PLAYERS, saveSettings } from './settings.ts';
-import { page, settingsLocked, isLive, setReview, shared } from './state.ts';
+import { page, settingsLocked, isLive, setReview, shared, canHostOnline } from './state.ts';
 
 export function startReview(index: number): void {
   const game = page.games[index];
@@ -66,7 +66,7 @@ function openMode(previousMode: Mode): Promise<void> {
   if (previousMode === 'nearby' && nearbyKind() !== 'idle') endNearby();
   leaveSession();
   render();
-  if (settings.mode === 'online') return previousMode === 'online' ? Promise.resolve() : createSession();
+  if (settings.mode === 'online') return previousMode === 'online' || !canHostOnline() ? Promise.resolve() : createSession();
   if (settings.mode === 'nearby') {
     openNearby();
     return Promise.resolve();
@@ -83,7 +83,7 @@ export async function startOnlineGame(): Promise<void> {
   settings.mode = 'online';
   saveSettings();
   // Online mode without a session: its create failed before, as after "New code" offline.
-  await (previousMode === 'online' ? createSession() : openMode(previousMode));
+  await (previousMode === 'online' && canHostOnline() ? createSession() : openMode(previousMode));
 }
 
 export function setupControls(): void {

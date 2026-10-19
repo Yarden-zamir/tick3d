@@ -200,6 +200,12 @@
 
           <div class="online" data-show-mode="online">
             <p class="lan-host" id="lan-host" hidden></p>
+            <div class="hosting-note" id="hosting-note" hidden role="note" aria-label="Host an online game">
+              <strong>Join free. Buy once to host.</strong>
+              <p>Enter a friend's code to play. To start your own online games, get tick3d on <a href="https://play.google.com/store/apps/details?id=com.yardenzamir.tick3d" data-hide-in="ios">Google Play</a><span data-hide-in="ios"> or </span><a id="hosting-app-store" href="https://apps.apple.com/">the App Store</a>, then open the app while online.</p>
+              <p>Already bought it? Open the latest app on this device. Sign in there to host from your other browsers too.</p>
+              <p>Nearby games on the same Wi-Fi stay free.</p>
+            </div>
             <div class="online-code" id="online-session" data-needs-session>
               <div>
                 <span class="label">Game code</span>
@@ -227,7 +233,7 @@
               <div class="nearby-qr" id="online-qr-image"></div>
               <span id="online-qr-caption"></span>
             </div>
-            <label class="field">
+            <label class="field" id="online-name-field">
               <span class="label">Session name</span>
               <input type="text" id="session-name" maxlength="40" placeholder="Name this session" />
             </label>

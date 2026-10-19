@@ -58,6 +58,8 @@ beforeAll(async () => {
     env: {
       ...process.env,
       PORT: String(PORT),
+      // These tests cover moderation on a self-hosted server, not store purchases.
+      LAN_HOST: '1',
       DB_PATH: ':memory:',
       GITHUB_CLIENT_ID: config.clientId,
       GITHUB_CLIENT_SECRET: config.clientSecret,
@@ -204,4 +206,3 @@ describe('delete my data route', () => {
     expect((await call('DELETE', '/accounts/nobody-here', { player: alice, cookie: maintainer })).status).toBe(404);
   });
 });
-

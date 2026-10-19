@@ -122,7 +122,7 @@ const request = async (method: string, path: string, body?: unknown): Promise<Se
   parseSessionView(await call(method, `/sessions${path}`, body));
 
 // `name` is the custom name of a player without a GitHub login, or null. `person` is the public person id of
-// this player (of the account when logged in), and `hasCopy` whether the player holds a copy of the paid Android app
+// this player (of the account when logged in), and `hasCopy` whether the player holds a store-proved app copy
 // (src/copies.ts). The server always sends both; null means no answer came yet.
 export type Me = { loginAvailable: boolean; user: PlayerInfo | null; name: string | null; person: PersonId | null; hasCopy: boolean | null };
 
