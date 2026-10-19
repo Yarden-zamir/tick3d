@@ -47,8 +47,8 @@ test('advanced computer settings: validate, persist, play, reset, and lock', asy
   await expect.poll(storedBudget).toBeUndefined();
   await expect(thinkingTime).toHaveValue(defaultBudget);
 
-  await page.getByRole('button', { name: 'Friend' }).click();
+  await page.locator('.mode-picker [data-value="friend"]').click();
   await expect(advanced).toBeHidden();
-  await page.getByRole('button', { name: 'Computer' }).click();
+  await page.getByRole('button', { name: 'Computer', exact: true }).click();
   await expect(advanced).toBeVisible();
 });

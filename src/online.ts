@@ -268,7 +268,7 @@ export const api = {
   // The Nearby lobby (server/lobby.ts). The server holds an announcement until a guest answers, or for about 25 s.
   announceNearby: async (offer: string, id: HostId | undefined, signal: AbortSignal): Promise<Announced> =>
     parseAnnounced(await call('POST', '/nearby/hosts', { offer, ...(id === undefined ? {} : { id }) }, signal)),
-  nearbyHosts: async (): Promise<LobbyHost[]> => parseLobbyHosts(await call('GET', '/nearby/hosts')),
+  nearbyHosts: async (signal?: AbortSignal): Promise<LobbyHost[]> => parseLobbyHosts(await call('GET', '/nearby/hosts', undefined, signal)),
   answerNearby: (id: HostId, offer: string, answer: string) => call('POST', `/nearby/hosts/${id}/answer`, { answer, offer }),
 
   // Calls onChange after every change, and after each reconnect in case a change was missed.

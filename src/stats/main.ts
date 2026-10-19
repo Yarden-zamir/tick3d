@@ -352,7 +352,7 @@ function tiles(stats: Stats): void {
 // The cards that only Mine and a person filter have. A person filter has no opponents (server/stats.ts).
 function personalCards(personal: NonNullable<Stats['personal']>, own: boolean): void {
   stacked(
-    card(own ? 'Your results' : 'Results', false, 'Won, drawn and lost, per mode and computer level. Friend games have no side, so they do not count.'),
+    card(own ? 'Your results' : 'Results', false, 'Won, drawn and lost, per mode and computer level. Same-screen games have no side, so they do not count.'),
     personal.results.map((row) => ({ label: row.level === null ? modeName(row.mode) : `${modeName(row.mode)} · ${row.level}`, parts: [row.won, row.drawn, row.lost] })),
     [
       { name: 'Won', color: 'var(--win)' },
@@ -395,7 +395,7 @@ const MIN_OPENINGS = 3;
 const openingRates = (stats: Stats) =>
   stats.openings.map((games, cell) => (games < MIN_OPENINGS ? 0 : Math.round(((stats.openingWinsX[cell] ?? 0) / games) * 100)));
 
-const MODE_NAMES: Record<SessionMode, string> = { computer: 'Computer', friend: 'Friend', online: 'Online', nearby: 'Nearby' };
+const MODE_NAMES: Record<SessionMode, string> = { computer: 'Computer', friend: 'Same screen', online: 'Online', nearby: 'Wi-Fi' };
 const ENDING_NAMES: Record<string, string> = {
   axis: 'Line along an axis',
   plane: 'Diagonal in a plane',
@@ -421,7 +421,7 @@ function draw(stats: Stats): void {
   // The leaderboard names players, so it shows in the Everyone view only, not in Mine or for one person.
   if (!mine && stats.person === null) {
     leaderboardCard(
-      card('Leaderboard', true, 'Every player who does not hide their stats, with the filters above, but not the players that you blocked. Friend games do not count. Tap a column to sort, or a player for their card.'),
+      card('Leaderboard', true, 'Every player who does not hide their stats, with the filters above, but not the players that you blocked. Same-screen games do not count. Tap a column to sort, or a player for their card.'),
       stats.filter,
       (person) => navigate({ ...stats.filter, person }),
     );
@@ -431,9 +431,9 @@ function draw(stats: Stats): void {
       'Win rate over time',
       true,
       stats.person !== null
-        ? `The share of wins of ${stats.person.name} in their last ${FORM_WINDOW} games, after each game. Friend games do not count. The dashed lines mark 25%, 50% and 75%.`
+        ? `The share of wins of ${stats.person.name} in their last ${FORM_WINDOW} games, after each game. Same-screen games do not count. The dashed lines mark 25%, 50% and 75%.`
         : mine
-        ? `Your share of wins in your last ${FORM_WINDOW} games, after each game. Friend games do not count. The dashed lines mark 25%, 50% and 75%.`
+        ? `Your share of wins in your last ${FORM_WINDOW} games, after each game. Same-screen games do not count. The dashed lines mark 25%, 50% and 75%.`
         : `The players' share of wins against the computer in the last ${FORM_WINDOW} games, after each game. The dashed lines mark 25%, 50% and 75%.`,
     ),
     stats.form,
@@ -570,7 +570,7 @@ function draw(stats: Stats): void {
   ]);
   table(input, ['Undos', 'Games with an undo'], [[stats.undo.undos, stats.undo.gamesWithUndo]]);
   bars(card('Refused actions'), stats.refusals, 'var(--danger)', (key) => key);
-  bars(card('Nearby device mixes', false, 'The host device and the other player\'s device.'), stats.nearbyMixes, 'var(--o)');
+  bars(card('Wi-Fi device mixes', false, 'The host device and the other player\'s device.'), stats.nearbyMixes, 'var(--o)');
 
 }
 

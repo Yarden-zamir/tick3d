@@ -91,11 +91,17 @@
 - A game in progress continues through a deploy, with no reload. A page that cannot read an answer of the new server loads the new version by itself, and the online game opens again.
 - Safari deletes the data of a site that you do not open for 7 days, unless you add the game to the home screen.
 
-## Nearby
+## Wi-Fi (Nearby)
 
-- Choose Nearby to play with devices on the same Wi-Fi. One device hosts, the others join.
+- Choose **Here** for two people sharing one screen. Its icon follows the device: phone, tablet or computer.
+- Choose **Online** when both devices have internet, even when sitting together. **Wi-Fi** (the Nearby mode in the API and stored data) also works without internet. Both devices must use the same Wi-Fi, and the network must allow devices to communicate.
+- Open the app once on both devices while online so the game and scanner are saved for offline use.
+- Choose **Start a game** on one device and **Scan to join** on the other. Scan inside tick3d, then show the joining device's new QR to the starter. The starter taps **They’ve scanned — scan back** and scans it. Both devices enter the game without changing apps or tabs.
 - Online, the hosted game shows in "Games near you" on the other devices of the same network.
-- Offline, the devices exchange QR codes, or text codes to copy and paste.
+- **Other ways to connect** keeps text codes to copy and paste, and existing camera-app links still work. Camera access is requested only when scanning; images stay on the device. The camera stops after a scan, on cancel, when switching modes, or when the page goes into the background.
+- Under **Other ways to connect**, **Listen for reply** on the starter and **Send reply by sound** on the joining device replace the return scan after the first QR. The optional sound sends the real compressed WebRTC reply in error-corrected packets, tied to the current invite. It is not just the demo jingle: a full reply takes longer, with packet progress shown. Only the receiver requests a microphone, and both controls can stop immediately. QR and text stay available. The decoder and audio worklet are cached for offline use; audio stays on the devices, and voice play pauses during the transfer.
+- If Online is reachable, Wi-Fi shows a nonblocking **Play online instead** suggestion. The list and suggestion depend on an actual server response, not the browser's online flag.
+- Keep the starter's device open. Its screen wake lock is requested again when the app returns to the foreground. If a guest disconnects, the host keeps their game and seat; use **Add device** and **Scan to join** again.
 - The devices talk directly over WebRTC. The host's device holds the session and checks every move with the same rules as the server.
 - To host a full server on a laptop, run `docker compose -f compose.lan.yml up --build`. Others open `http://<that computer's address>:8080` and play Online. Set `LAN_HOST_NAME` for the host name and `LAN_PORT` for another port.
 

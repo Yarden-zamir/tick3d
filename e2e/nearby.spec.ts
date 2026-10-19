@@ -11,9 +11,103 @@ async function signalCode(page: Page): Promise<string> {
 }
 
 async function useCode(page: Page, code: string): Promise<void> {
+  const manual = page.locator('#nearby-manual');
+  if ((await manual.getAttribute('open')) === null) await manual.locator('> summary').click();
   await page.locator('#nearby-code-in').fill(code);
   await page.locator('#nearby-use-code').click();
 }
+
+// Feed a real rendered QR through a canvas camera. The app still reads video frames with jsQR;
+// only the physical camera is replaced, so the whole in-app scan path runs in the browser.
+async function cameraFromQr(page: Page, source: Page): Promise<void> {
+  await expect(source.locator('#nearby-qr svg')).toBeVisible();
+  const image = (await source.locator('#nearby-qr').screenshot()).toString('base64');
+  await page.evaluate(async (image) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 640;
+    const context = canvas.getContext('2d');
+    if (context === null) throw new Error('no canvas context');
+    const qr = new Image();
+    qr.src = `data:image/png;base64,${image}`;
+    await qr.decode();
+    context.fillStyle = 'white';
+    context.fillRect(0, 0, 640, 640);
+    context.drawImage(qr, 50, 50, 540, 540);
+    const stream = canvas.captureStream(10);
+    navigator.mediaDevices.getUserMedia = async () => stream;
+    (window as unknown as { cameraTrack: MediaStreamTrack | undefined }).cameraTrack = stream.getVideoTracks()[0];
+  }, image);
+}
+
+test('two in-app scans connect without the discovery server, camera app, or extra tabs', async ({ open }) => {
+  const { page: host, context: hostContext } = await open(nearby);
+  const { page: guest, context: guestContext } = await open(nearby);
+  for (const context of [hostContext, guestContext]) await context.route('**/api/nearby/**', (route) => route.abort());
+  await host.locator('#nearby-host').click();
+  await expect(host.locator('#nearby-progress')).toHaveText('Step 1 of 2');
+  await cameraFromQr(guest, host);
+  await guest.locator('#nearby-join').click();
+  await expect(guest.locator('#nearby-progress')).toHaveText('Step 2 of 2');
+  await expect(guest.locator('#nearby-step-title')).toContainText('your screen');
+  await expect.poll(() => guest.evaluate(() => (window as unknown as { cameraTrack: MediaStreamTrack }).cameraTrack.readyState)).toBe('ended');
+  await cameraFromQr(host, guest);
+  await host.locator('#nearby-scan').click();
+  await expectToast(guest, 'as O');
+  await expect(host.locator('#nearby-step')).toBeHidden();
+  await expect(guest.locator('#nearby-step')).toBeHidden();
+  await expect.poll(() => host.evaluate(() => (window as unknown as { cameraTrack: MediaStreamTrack }).cameraTrack.readyState)).toBe('ended');
+  expect(hostContext.pages()).toHaveLength(1);
+  expect(guestContext.pages()).toHaveLength(1);
+  await cell(host, 0).click();
+  await expect(marks(guest)).toHaveCount(1);
+});
+
+test('a blocked camera offers retry and text codes, without losing the hosted game', async ({ open }) => {
+  const { page: host } = await open(nearby);
+  const { page: guest } = await open(nearby);
+  await host.locator('#nearby-host').click();
+  await guest.evaluate(() => {
+    navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('blocked', 'NotAllowedError'); };
+  });
+  await guest.locator('#nearby-join').click();
+  await expect(guest.locator('#nearby-camera-status')).toContainText('Camera access is off');
+  await expect(guest.locator('#nearby-camera-retry')).toBeVisible();
+  await useCode(guest, await signalCode(host));
+  await useCode(host, await signalCode(guest));
+  await expectToast(guest, 'as O');
+});
+
+test('an interrupted guest rescans into the same game and seat', async ({ open }) => {
+  const { page: host } = await open(nearby);
+  const { page: guest } = await open(nearby);
+  await guest.evaluate(() => {
+    const Peer = RTCPeerConnection;
+    window.RTCPeerConnection = class extends Peer {
+      constructor(configuration?: RTCConfiguration) {
+        super(configuration);
+        (window as unknown as { testPeer: RTCPeerConnection }).testPeer = this;
+      }
+    };
+    navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('blocked', 'NotAllowedError'); };
+  });
+  await host.locator('#nearby-host').click();
+  await guest.locator('#nearby-join').click();
+  await useCode(guest, await signalCode(host));
+  await useCode(host, await signalCode(guest));
+  await expectToast(guest, 'as O');
+  await cell(host, 0).click();
+  await expect(marks(guest)).toHaveCount(1);
+  await guest.evaluate(() => (window as unknown as { testPeer: RTCPeerConnection }).testPeer.close());
+  await expect(guest.locator('#nearby-reconnect')).toContainText('Your game and seat stay');
+  await expect(marks(host)).toHaveCount(1);
+  await host.locator('#nearby-add').click();
+  await guest.locator('#nearby-join').click();
+  await useCode(guest, await signalCode(host));
+  await useCode(host, await signalCode(guest));
+  await expect(guest.locator('#nearby-devices')).toContainText('You · Plays O');
+  await expect(marks(guest)).toHaveCount(1);
+  await expect(guest.locator('#nearby-reconnect')).toBeHidden();
+});
 
 test('host and guest connect with text codes, play a game and chat, and both see the names', async ({ open }) => {
   const { page: host } = await open(nearby);

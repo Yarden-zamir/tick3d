@@ -2,6 +2,7 @@
 // held note places your move. The engine owns the microphone, the pitch, the range and the sticky cells,
 // so a calibration in the Voice room (/sound-input) applies here too. voice-gate.ts decides when it listens.
 import { toCoords } from '../game.ts';
+import { pairingSoundActive } from '../nearby/sound-audio.ts';
 import { MIC_ICON } from '../icons.ts';
 import { type VoiceClip, type VoiceClips, liveSoundUntil } from '../sound.ts';
 import { type Voice, type VoiceFrame, createVoice } from '../voice/engine.ts';
@@ -87,7 +88,7 @@ function gate(): VoiceGate {
     live: isLive(),
     // In a friend game this screen plays both seats.
     myTurn: session !== undefined && (session.mode === 'friend' || current().turn === session.you),
-    waiting: page.busy || page.thinking || page.review !== undefined,
+    waiting: page.busy || page.thinking || page.review !== undefined || pairingSoundActive(),
     soundUntil: liveSoundUntil(),
     now: performance.now(),
   };

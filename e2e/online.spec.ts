@@ -126,7 +126,7 @@ test('hide options and the lock belong to the session', async ({ open }) => {
     await expect(control).toBeDisabled();
   }
   // The lock holds the rules, not the screen or the way out: the view, the mode and Join stay open.
-  for (const control of [alice.getByRole('button', { name: 'Tower' }), alice.getByRole('button', { name: 'Computer' }), alice.locator('#join-code')]) {
+  for (const control of [alice.getByRole('button', { name: 'Tower' }), alice.getByRole('button', { name: 'Computer', exact: true }), alice.locator('#join-code')]) {
     await expect(control).toBeEnabled();
   }
   // A watcher sees the lock, but keeps its own settings, so the lock never traps a watcher.

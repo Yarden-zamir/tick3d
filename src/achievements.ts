@@ -161,7 +161,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'fastest-person',
     name: 'Seven wonders',
-    description: 'Win in 7 moves against a person online or in Nearby.',
+    description: 'Win in 7 moves against a person online or over Wi-Fi.',
     tier: 'gold',
     hidden: false,
     goal: 1,
@@ -201,7 +201,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'space-diagonal-person',
     name: 'Inside job',
-    description: 'Win with a diagonal through the cube, against a person online or in Nearby.',
+    description: 'Win with a diagonal through the cube, against a person online or over Wi-Fi.',
     tier: 'gold',
     hidden: false,
     goal: 1,
@@ -241,7 +241,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'board-hidden-person',
     name: 'Blind date',
-    description: 'Win with the board hidden, against a person online or in Nearby.',
+    description: 'Win with the board hidden, against a person online or over Wi-Fi.',
     tier: 'gold',
     hidden: false,
     goal: 1,
@@ -317,7 +317,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'streak-3',
     name: 'Hat trick',
-    description: 'Win 3 games in a row against people online or in Nearby.',
+    description: 'Win 3 games in a row against people online or over Wi-Fi.',
     tier: 'silver',
     hidden: false,
     goal: 3,
@@ -328,7 +328,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'streak-5',
     name: 'On fire',
-    description: 'Win 5 games in a row against people online or in Nearby.',
+    description: 'Win 5 games in a row against people online or over Wi-Fi.',
     tier: 'gold',
     hidden: false,
     goal: 5,
@@ -369,7 +369,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'won-on-time',
     name: 'Flag fall',
-    description: 'Beat a person online or in Nearby when their time runs out.',
+    description: 'Beat a person online or over Wi-Fi when their time runs out.',
     tier: 'silver',
     hidden: false,
     goal: 1,
@@ -399,7 +399,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'o-win-person',
     name: 'Counterpunch',
-    description: 'Win as O against a person online or in Nearby.',
+    description: 'Win as O against a person online or over Wi-Fi.',
     tier: 'silver',
     hidden: false,
     goal: 1,
@@ -419,7 +419,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'nearby-win',
     name: 'Face to face',
-    description: 'Beat a person in Nearby.',
+    description: 'Beat a person over Wi-Fi.',
     tier: 'silver',
     hidden: false,
     goal: 1,
@@ -430,7 +430,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'people-5',
     name: 'Social butterfly',
-    description: 'Play against 5 different people online or in Nearby.',
+    description: 'Play against 5 different people online or over Wi-Fi.',
     tier: 'silver',
     hidden: false,
     goal: 5,
@@ -440,7 +440,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'people-20',
     name: 'Crowd favorite',
-    description: 'Play against 20 different people online or in Nearby.',
+    description: 'Play against 20 different people online or over Wi-Fi.',
     tier: 'gold',
     hidden: false,
     goal: 20,

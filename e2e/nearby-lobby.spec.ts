@@ -19,7 +19,7 @@ test('a hosted game shows in the list of another device, which joins it with one
 
   const { page: guest } = await open(nearby);
   const guestName = await ownName(guest);
-  await expect(status(guest)).toHaveText('Host a game, or join one.');
+  await expect(status(guest)).toHaveText('Start a game, or scan to join.');
   await expect(guest.locator('#nearby-lobby')).toBeVisible();
   await expect(listed(guest, name)).toHaveCount(1);
   await expect(listed(guest, name).locator('.device-icon svg')).toHaveCount(1);
@@ -64,7 +64,7 @@ test('a hosted game shows in the list of another device, which joins it with one
 test('Nearby and the computer mode have no join box, and each mode keeps its own controls', async ({ open }) => {
   const { page } = await open(nearby);
   await expect(page.locator('#nearby-host')).toBeVisible();
-  await expect(status(page)).toHaveText('Host a game, or join one.');
+  await expect(status(page)).toHaveText('Start a game, or scan to join.');
   // More is open, so a hidden control below shows the rule of the mode, not the closed card.
   await openMore(page);
   for (const id of ['#join', '#advanced']) await expect(page.locator(id), id).toBeHidden();

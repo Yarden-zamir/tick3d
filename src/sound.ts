@@ -365,7 +365,19 @@ export const previewVoices = (set: SoundSet, cell: number): Voice[] => set.voice
 const WIN_NOTES = [523.25, 659.25, 783.99, 1046.5, 1318.5] as const;
 export const winVoices = (gap: number): Voice[] => WIN_NOTES.map((frequency, i) => ({ wave: 'triangle', frequency, at: i * gap, attack: 0.01, decay: 0.35, level: 0.2 }));
 
+// Sound pairing is explicitly requested, so its short O pickup plays even with game sounds muted.
+// The actual error-corrected data tones follow it; the pickup is not part of the encoded message.
+export function playPairingIntro(ctx: BaseAudioContext): void {
+  play([
+    { wave: 'triangle', frequency: 261.625, decay: 0.13, level: 0.18 },
+    { wave: 'triangle', frequency: 391.995, at: 0.09, decay: 0.12, level: 0.12 },
+  ], 1, 0, ctx);
+}
+
 export const sounds = {
+  pairingConnected(): void {
+    play(winVoices(0.085).slice(0, 4));
+  },
   place(player: Player, cell: number): void {
     play(soundSet.voices(cell, player));
   },
