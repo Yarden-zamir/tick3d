@@ -184,6 +184,10 @@ export function createNearbyHost(local: LocalBackend, code: Code, hostToken: Pla
 
 export type NearbyHost = ReturnType<typeof createNearbyHost>;
 
+// On a busy device, the first call after the channel opens is lost now and then: both ends are open, and
+// the host adds the guest, but the call never arrives (issue 193). The guest sends it again after this wait.
+const FIRST_CALL_WAIT_MS = 3_000;
+
 // A guest's backend: the same calls as the server, answered by the host over the data channel.
 export function createNearbyGuest(channel: Channel, token: PlayerToken, onBye: (reason: string) => void) {
   const rpc = rpcClient(channel);
@@ -201,8 +205,16 @@ export function createNearbyGuest(channel: Channel, token: PlayerToken, onBye: (
   const load = () => view('get', { token });
   return {
     load: (_code: Code) => load(),
-    // The first view, before the guest knows the code of the hosted session.
-    loadHosted: load,
+    // The first view, before the guest knows the code of the hosted session. A get changes nothing, so
+    // a second copy is safe. Revisit if a later call also gets lost: then the channel needs a handshake.
+    loadHosted: async () => {
+      try {
+        return parseSessionView(await rpc.call('get', { token }, FIRST_CALL_WAIT_MS));
+      } catch (error) {
+        if (!(error instanceof RpcError && error.status === 504)) throw error;
+        return load();
+      }
+    },
     join: (_code: Code) => view('join', { token }),
     move: (_code: Code, request: unknown) => view('move', request),
     newGame: (_code: Code) => view('newGame'),
