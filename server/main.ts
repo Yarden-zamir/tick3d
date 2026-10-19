@@ -537,10 +537,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const player = requirePlayer(req);
       const open = parseAppOpen(await readJson(req, 40 * 1024));
       if (open === undefined) throw new HttpError(400, 'An app open report needs the person id of the inviter, or null, in "by".');
-      await playProof.verify(open.proof, player);
+      const licensed = await playProof.verify(open.proof, player);
       // A login cookie links this browser first, so the answer and the owner at the first open name the account.
       const user = auth?.user(req);
       if (user !== undefined) await store.linkToken(player, user);
+      if (!licensed) return send(res, 200, { hasCopy: await store.revokePlayCopy(player) });
       return send(res, 200, { hasCopy: await store.reportAppOpen(player, open.by, true) });
     }
     case 'GET /api/testing/claims':

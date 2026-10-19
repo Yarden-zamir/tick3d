@@ -2033,6 +2033,13 @@ export async function openStore(
         return hasCopyOf(token);
       }),
 
+    // A valid, player-bound negative Play verdict revokes only this device, not its account's other devices.
+    // Limit: Apple refunds are not checked. Revisit when a player reports a refund.
+    revokePlayCopy: (token: PlayerToken): Promise<boolean> => serialized(async () => {
+      await db.run('UPDATE app_copies SET proved = false WHERE token = $token', { token });
+      return hasCopyOf(token);
+    }),
+
     hasCopy: (token: PlayerToken): Promise<boolean> => serialized(() => hasCopyOf(token)),
 
     // The claims with their emails, oldest first, for the maintainers (they add the emails to the Google Group).

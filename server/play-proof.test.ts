@@ -28,7 +28,7 @@ describe('Play purchase proof', () => {
     const proof = createPlayProof(async () => verdict(nonce), () => time);
     nonce = proof.nonce(player);
     await expect(proof.verify('token', otherPlayer)).rejects.toMatchObject({ status: 403 });
-    await expect(proof.verify('token', player)).resolves.toBeUndefined();
+    await expect(proof.verify('token', player)).resolves.toBe(true);
     await expect(proof.verify('token', player)).rejects.toMatchObject({ status: 403 });
   });
   it('refuses old, invented and expired nonces', async () => {
@@ -40,12 +40,11 @@ describe('Play purchase proof', () => {
     now += 300_000;
     await expect(proof.verify('token', player)).rejects.toMatchObject({ status: 403 });
   });
-  it.each(['license', 'recognition', 'package', 'request package', 'timestamp', 'missing'])('refuses invalid %s', async (field) => {
+  it.each(['recognition', 'package', 'request package', 'timestamp', 'missing'])('refuses invalid %s', async (field) => {
     let nonce = '';
     const proof = createPlayProof(async () => {
       const result = verdict(nonce);
       const payload = result.tokenPayloadExternal;
-      if (field === 'license') payload.accountDetails.appLicensingVerdict = 'UNLICENSED';
       if (field === 'recognition') payload.appIntegrity.appRecognitionVerdict = 'UNRECOGNIZED_VERSION';
       if (field === 'package') payload.appIntegrity.packageName = 'other.app';
       if (field === 'request package') payload.requestDetails.requestPackageName = 'other.app';
@@ -54,6 +53,18 @@ describe('Play purchase proof', () => {
     }, () => time);
     nonce = proof.nonce(player);
     await expect(proof.verify('token', player)).rejects.toMatchObject({ status: 403 });
+  });
+  it.each(['UNLICENSED', 'UNEVALUATED'])('returns a verified negative %s verdict only to the nonce owner, once', async (licensing) => {
+    let nonce = '';
+    const proof = createPlayProof(async () => {
+      const result = verdict(nonce);
+      result.tokenPayloadExternal.accountDetails.appLicensingVerdict = licensing;
+      return result;
+    }, () => time);
+    nonce = proof.nonce(player);
+    await expect(proof.verify('negative', otherPlayer)).rejects.toMatchObject({ status: 403 });
+    await expect(proof.verify('negative', player)).resolves.toBe(false);
+    await expect(proof.verify('negative', player)).rejects.toMatchObject({ status: 403 });
   });
   it('fails closed without credentials and rejects malformed configuration', async () => {
     expect(playDecoderFromEnv({})).toBeUndefined();

@@ -46,7 +46,7 @@ export function createPlayProof(decode: ((token: string) => Promise<unknown>) | 
       pending.set(nonce, { issued: now(), player });
       return nonce;
     },
-    async verify(token: string, player: PlayerToken): Promise<void> {
+    async verify(token: string, player: PlayerToken): Promise<boolean> {
       if (decode === undefined) throw new PurchaseProofError(503, 'Purchase checks are not configured.');
       const result = await decode(token);
       const payload = isRecord(result) ? result.tokenPayloadExternal : undefined;
@@ -58,11 +58,12 @@ export function createPlayProof(decode: ((token: string) => Promise<unknown>) | 
       const timestamp = typeof request.timestampMillis === 'string' ? Number(request.timestampMillis) : NaN;
       if (challenge === undefined || challenge.player !== player || now() - challenge.issued >= FRESH_MS || !Number.isSafeInteger(timestamp) || timestamp < challenge.issued - 30_000 || timestamp > now() + 30_000 ||
         request.requestPackageName !== manifest.packageId || app.packageName !== manifest.packageId ||
-        app.appRecognitionVerdict !== 'PLAY_RECOGNIZED' || account.appLicensingVerdict !== 'LICENSED') {
+        app.appRecognitionVerdict !== 'PLAY_RECOGNIZED' || typeof account.appLicensingVerdict !== 'string') {
         throw new PurchaseProofError(403, 'Google Play did not prove this purchase. Open the app again.');
       }
       // No await between the lookup and delete: concurrent submissions cannot use one nonce twice.
       pending.delete(String(request.nonce));
+      return account.appLicensingVerdict === 'LICENSED';
     },
   };
 }
