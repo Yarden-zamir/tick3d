@@ -1,8 +1,9 @@
 // The settings controls, review, new game, undo, lock and sound.
 import { DIFFICULTIES } from '../ai.ts';
 import { onSegmented } from '../board/view-controls.ts';
+import { detectDevice, DEVICE_ICONS } from '../nearby/device.ts';
 import { setMuted, sounds } from '../sound.ts';
-import { reviewEl, newGameButton, undoButton, lockButton, seatLockButtons, soundButton, watcherChatButton } from './dom.ts';
+import { hereMode, hereIcon, hereNote, reviewEl, newGameButton, undoButton, lockButton, seatLockButtons, soundButton, watcherChatButton } from './dom.ts';
 import { reject, showError, showToast } from './feedback.ts';
 import { nearbyKind, endNearby, openNearby } from './nearby.ts';
 import { render } from './render.ts';
@@ -70,6 +71,10 @@ function changeSetting(setting: string, value: string | undefined): void {
 }
 
 export function setupControls(): void {
+  const device = detectDevice();
+  hereIcon.innerHTML = DEVICE_ICONS[device];
+  hereMode.setAttribute('aria-label', `Here — two players on this ${device}`);
+  hereNote.textContent = `Two players. One ${device}.`;
   onSegmented(document, changeSetting);
 
   // Hide goes in steps: each step hides what the steps before it hide (see HIDE_STEPS).

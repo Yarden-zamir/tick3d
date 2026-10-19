@@ -150,7 +150,7 @@ jobs:
             --iconBackgroundColor '#e4e7ff' --splashBackgroundColor '#e4e7ff' --splashBackgroundColorDark '#e4e7ff'
 
       # The app-bound domain lets the web view run the site's service worker, so the game plays offline.
-      # The usage texts are for voice play (the microphone) and Nearby (WebRTC on the local network).
+      # The usage texts are for voice play, QR scanning and WebRTC on the local network.
       - name: Info.plist
         working-directory: ${{ env.BUILD_DIR }}/ios/App/App
         run: |
@@ -159,8 +159,9 @@ jobs:
           pb "Delete :WKAppBoundDomains" 2>/dev/null || true
           pb "Add :WKAppBoundDomains array"
           pb "Add :WKAppBoundDomains:0 string $SITE_HOST"
-          pb "Add :NSMicrophoneUsageDescription string tick3d listens to your voice only when you turn on voice play. The sound stays on your device."
-          pb "Add :NSLocalNetworkUsageDescription string tick3d connects to devices on your network for Nearby games."
+          pb "Add :NSMicrophoneUsageDescription string tick3d uses the microphone only for voice play or when you choose to receive a Wi-Fi reply by sound. Audio stays on your device."
+          pb "Add :NSCameraUsageDescription string tick3d uses the camera only when you scan a code to join a Wi-Fi game. Camera images stay on your device."
+          pb "Add :NSLocalNetworkUsageDescription string tick3d connects to devices on your network for Wi-Fi games."
           pb "Add :ITSAppUsesNonExemptEncryption bool false"
           pb "Set :CFBundleDisplayName tick3d"
           plutil -lint "$plist"

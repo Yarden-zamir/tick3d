@@ -2087,7 +2087,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: block;
   font-size: 2.2rem;
   font-weight: 800;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.1em;
   line-height: 1.1;
 }
 
@@ -3869,6 +3869,18 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 /* ---- Nearby ---- */
 
+.mode-note {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.here-icon {
+  display: inline-flex;
+  flex: none;
+}
+
 .nearby {
   display: grid;
   gap: 0.7rem;
@@ -3886,13 +3898,119 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 .nearby-me {
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 0.5rem;
+  margin-top: 0.6rem;
 }
 
-.nearby-me input {
-  flex: 1;
+.nearby-intro b {
+  display: block;
+}
+
+.nearby-identity summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  list-style: none;
+  cursor: pointer;
+}
+
+.nearby-identity summary::-webkit-details-marker {
+  display: none;
+}
+
+.nearby-identity b {
+  overflow-wrap: anywhere;
+}
+
+.nearby-edit {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-decoration: underline;
+}
+
+.nearby-online {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.7rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.nearby-online p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.nearby-progress {
+  margin: 0 0 0.4rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.nearby-step-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  line-height: 1.15;
+}
+
+.nearby-camera {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.nearby-viewfinder {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: #15122b;
+}
+
+.nearby-viewfinder video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.nearby-viewfinder span {
+  position: absolute;
+  inset: 12%;
+  border: 3px solid #ffe14d;
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.nearby-text > details,
+.nearby-text > .nearby-input {
+  margin-top: 0.6rem;
+}
+
+.nearby-sound {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.6rem;
+}
+
+.nearby-sound-link {
+  justify-self: start;
+  padding: 0.35rem 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
 }
 
 .device-icon {
@@ -3919,6 +4037,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .nearby .btn {
   flex: 1;
+  min-height: 44px;
 }
 
 .nearby-step {
@@ -4006,15 +4125,9 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
-.nearby-laptop summary,
 .nearby-text summary {
   cursor: pointer;
   font-weight: 700;
-}
-
-.nearby-laptop p {
-  margin: 0.4rem 0 0;
-  color: var(--muted);
 }
 
 .lan-host {
@@ -4055,6 +4168,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 .share-buttons {
   display: grid;
   gap: 0.4rem;
+  white-space: nowrap;
 }
 
 .online-qr {

@@ -131,7 +131,7 @@ function openChannel(dc: RTCDataChannel, pc: RTCPeerConnection, signal: AbortSig
     const timer = setTimeout(() => {
       finish();
       pc.close();
-      reject(new Error('The devices did not connect. Check that both are on the same network.'));
+      reject(new Error('The devices did not connect. Use the same Wi-Fi; guest or public Wi-Fi may block devices from talking to each other. Try a different network or a personal hotspot.'));
     }, CONNECT_TIMEOUT_MS);
     const aborted = () => {
       finish();
@@ -249,5 +249,8 @@ export async function answerOffer(
       opened = true;
       return opening;
     });
+  // A player can cancel while their answer is still being delivered or displayed.
+  // Keep that cancellation handled even before the caller starts awaiting the connection.
+  void connected.catch(() => undefined);
   return { code, peer: offer.hello, connected, close };
 }

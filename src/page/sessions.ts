@@ -305,7 +305,7 @@ export async function withBusy(task: () => Promise<void>): Promise<void> {
 
 export function defaultSessionName(mode: Mode = 'online'): string {
   const day = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-  const kind = mode === 'computer' ? `${settings.difficulty} computer` : mode === 'friend' ? 'friend' : mode === 'nearby' ? 'nearby game' : 'game';
+  const kind = mode === 'computer' ? `${settings.difficulty} computer` : mode === 'friend' ? 'same screen' : mode === 'nearby' ? 'Wi-Fi game' : 'game';
   return mode === 'online' ? `Game of ${day}` : `${kind[0]?.toUpperCase()}${kind.slice(1)} · ${day}`;
 }
 

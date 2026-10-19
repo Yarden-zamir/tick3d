@@ -142,7 +142,7 @@ const opponentText = (summary: SessionSummary) => {
 
 const gameCount = (count: number) => `${count} ${count === 1 ? 'game' : 'games'}`;
 
-const MODE_NAMES: Record<SessionMode, string> = { computer: 'Computer', friend: 'Friend', online: 'Online', nearby: 'Nearby' };
+const MODE_NAMES: Record<SessionMode, string> = { computer: 'Computer', friend: 'Same screen', online: 'Online', nearby: 'Wi-Fi' };
 const OUTCOME_NAMES: Record<Outcome, string> = { won: 'Won', lost: 'Lost', drawn: 'Draw', played: 'Played' };
 
 function viewGame(id: GameId): void {
@@ -275,7 +275,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     ...deviceSessions
       .filter((entry) => entry.mode !== 'nearby')
       .map((entry) =>
-        listItem(entry.name, `${entry.mode === 'computer' ? 'Computer' : 'Friend'} · ${gameCount(entry.games)} · ${ago(entry.updatedAt)}`, [
+        listItem(entry.name, `${entry.mode === 'computer' ? 'Computer' : 'Same screen'} · ${gameCount(entry.games)} · ${ago(entry.updatedAt)}`, [
           {
             label: 'Open',
             run: () => void openDeviceSession(entry.code).catch(showError),
@@ -296,8 +296,8 @@ export async function openMyGames(returnTo?: string): Promise<void> {
       tallyBox('All games', mine.total),
       tallyBox('Online', mine.byMode.online),
       tallyBox('Computer', mine.byMode.computer),
-      tallyBox('Nearby', mine.byMode.nearby),
-      tallyBox('Friend', mine.byMode.friend),
+      tallyBox('Wi-Fi', mine.byMode.nearby),
+      tallyBox('Same screen', mine.byMode.friend),
     );
     myGamesOnline.append(
       ...mine.sessions.map((summary) =>

@@ -154,7 +154,7 @@ function cardInput(game: Game, index: number, gameId: GameId | undefined, tuned:
       : page.session?.mode === 'online'
         ? `Online · ${page.session.name}`
         : page.session?.mode === 'nearby'
-          ? `Nearby · ${page.session.name}`
+          ? `Wi-Fi · ${page.session.name}`
           : 'Two players, one screen';
   const first = game.times[0] ?? 0;
   const last = game.times.at(-1) ?? 0;
