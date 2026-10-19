@@ -1,8 +1,6 @@
 name: android
 
-# Builds the Android app (a Trusted Web Activity of the production site) from android/twa-manifest.json
-# with Bubblewrap. It runs by hand or on a tag such as android-v1.2.0, never on a pull request.
-# The Gradle project is generated here on every run, so the repository keeps only twa-manifest.json.
+# Builds the committed Android project. It runs by hand or on an android-v tag.
 # A tag or a run by hand uploads to closed testing (alpha) with release notes (android/release-notes.sh).
 # Every build makes a GitHub release with the bundle. Promotion to other tracks: play-promote.yml.
 #
@@ -34,7 +32,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      BUILD_DIR: ${{ github.workspace }}/build/android
+      BUILD_DIR: ${{ github.workspace }}/android
     steps:
       # The tags and their history let android/release-notes.sh find the previous release.
       - uses: actions/checkout@v7
@@ -55,21 +53,6 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.1.0'
-
-      # The Bubblewrap version lives in android/package-lock.json, so Dependabot updates it.
-      - name: Install Bubblewrap
-        run: |
-          npm ci --prefix android --no-audit --no-fund
-          echo "$GITHUB_WORKSPACE/android/node_modules/.bin" >> "$GITHUB_PATH"
-          mkdir -p ~/.bubblewrap
-          # Bubblewrap accepts an SDK only with a bin/ or tools/ folder at its root, the layout of its own
-          # download. The runner keeps sdkmanager in cmdline-tools/<version>/bin, so a link adds bin/.
-          if [[ ! -e "$ANDROID_HOME/bin" ]]; then
-            sdkbin=$(find "$ANDROID_HOME/cmdline-tools" -maxdepth 3 -name sdkmanager -path '*/bin/*' -printf '%h\n' | head -n 1)
-            [[ -n "$sdkbin" ]] || { echo "::error::No sdkmanager under $ANDROID_HOME/cmdline-tools"; exit 1; }
-            sudo ln -s "$sdkbin" "$ANDROID_HOME/bin"
-          fi
-          jq -n --arg jdk "$JAVA_HOME" --arg sdk "$ANDROID_HOME" '{jdkPath: $jdk, androidSdkPath: $sdk}' > ~/.bubblewrap/config.json
 
       # The version code must grow with every upload: the run number of this workflow does.
       # A tag android-v1.2.0 names the version 1.2.0. A run by hand gets 0.<run number>.
@@ -98,39 +81,25 @@ jobs:
             echo "::notice::No upload key (ANDROID_UPLOAD_* secrets). The bundle is unsigned, and Play does not take it."
           fi
 
-      - name: Generate the Android project
-        env:
-          KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
-        run: |
-          mkdir -p "$BUILD_DIR"
-          jq --argjson code '${{ steps.version.outputs.code }}' --arg name '${{ steps.version.outputs.name }}' --arg alias "${KEY_ALIAS:-upload}" \
-            '.appVersionCode = $code | .appVersionName = $name | .signingKey = {path: "./upload.keystore", alias: $alias}' \
-            android/twa-manifest.json > "$BUILD_DIR/twa-manifest.json"
-          cd "$BUILD_DIR"
-          bubblewrap update --skipVersionUpgrade --manifest=./twa-manifest.json
-          # The Bubblewrap 1.25 template still names JCenter, which only redirects to Maven Central, and a
-          # failed redirect broke a build. Maven Central directly removes that step.
-          # Revisit this when a Bubblewrap update drops jcenter() from its template.
-          grep -q 'jcenter()' build.gradle
-          sed -i 's/jcenter()/mavenCentral()/' build.gradle
-
       - name: Build
         working-directory: ${{ env.BUILD_DIR }}
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
           BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
           BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
         run: |
           if [[ '${{ steps.signing.outputs.sign }}' == true ]]; then
             base64 --decode <<< "$KEYSTORE_B64" > upload.keystore
-            bubblewrap build
-            rm upload.keystore
-            mv app-release-bundle.aab tick3d.aab
-            mv app-release-signed.apk tick3d.apk
+            trap 'rm -f upload.keystore' EXIT
+            ./gradlew bundleRelease assembleRelease -PversionCode='${{ steps.version.outputs.code }}' -PversionName='${{ steps.version.outputs.name }}'
+            cp app/build/outputs/bundle/release/app-release.aab tick3d.aab
+            cp app/build/outputs/apk/release/app-release.apk tick3d.apk
           else
-            bubblewrap build --skipSigning
-            mv app/build/outputs/bundle/release/app-release.aab tick3d-unsigned.aab
-            mv app-release-unsigned-aligned.apk tick3d-unsigned.apk
+            unset KEYSTORE_B64
+            ./gradlew bundleRelease assembleRelease -PversionCode='${{ steps.version.outputs.code }}' -PversionName='${{ steps.version.outputs.name }}'
+            cp app/build/outputs/bundle/release/app-release.aab tick3d-unsigned.aab
+            cp app/build/outputs/apk/release/app-release-unsigned.apk tick3d-unsigned.apk
           fi
 
       - uses: actions/upload-artifact@v7

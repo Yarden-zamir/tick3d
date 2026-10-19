@@ -70,6 +70,8 @@ services:
       # The Google Play promo codes of the /share page, from the KITSHN_TESTER_CODES secret (server/tester-codes.ts).
       # Only prod reads them, so a preview database never holds a real code.
       TESTER_CODES: ${TESTER_CODES:-}
+      # KITSHN_PLAY_SERVICE_ACCOUNT_JSON is separate from the upload signing key.
+      PLAY_SERVICE_ACCOUNT_JSON: ${PLAY_SERVICE_ACCOUNT_JSON:-}
     volumes:
       - sessions:/data
     healthcheck:

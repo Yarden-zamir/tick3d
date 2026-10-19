@@ -222,8 +222,8 @@ export const api = {
     return claimed;
   },
   // The paid Android app opened on this device, with the inviter that /share kept. Answers whether the player holds a copy.
-  reportAppOpen: async (by: PersonId | null): Promise<boolean> => {
-    const answer = parseCopyAnswer(await call('POST', '/copies', { by }));
+  reportAppOpen: async (by: PersonId | null, proof: string): Promise<boolean> => {
+    const answer = parseCopyAnswer(await call('POST', '/copies', { by, proof }));
     if (answer === undefined) throw new Error('invalid answer from /api/copies');
     return answer.hasCopy;
   },
