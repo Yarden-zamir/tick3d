@@ -27,8 +27,8 @@
     "html-validate": "^11.16.2",
     "jsqr": "^1.4.0",
     "knip": "^6.41.0",
-    "oxlint": "^1.87.0",
-    "oxlint-tsgolint": "^7.0.2003",
+    "oxlint": "^1.88.0",
+    "oxlint-tsgolint": "^7.0.2004",
     "pngjs": "^7.0.0",
     "qrcode-generator": "^2.0.4",
     "stylelint": "^17.16.0",
@@ -36,7 +36,7 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vite-plugin-pwa": "^2.0.0",
-    "vitest": "^5.0.3",
+    "vitest": "^5.0.5",
     "workbox-window": "^7.4.1"
   },
   "knip": {
