@@ -62,6 +62,7 @@ import { testerCodesFromEnv } from './tester-codes.ts';
 import { TESTER_NAME_MAX_LENGTH, parseClaimRequest } from '../src/share/codes.ts';
 import { parseAppOpen } from '../src/copies.ts';
 import { PurchaseProofError, createPlayProof, playDecoderFromEnv } from './play-proof.ts';
+import { appleVerifierFromEnv } from './apple-proof.ts';
 
 // PORT lets a test run its own server next to another one.
 const PORT = Number(process.env.PORT ?? 8080);
@@ -102,6 +103,7 @@ const allowTesterClaim = createLimiter(TESTER_CLAIMS_PER_HOUR, 3_600_000, 10_000
 const allowAppOpen = createLimiter(APP_OPENS_PER_HOUR, 3_600_000, 10_000, 'Too many app reports from this address. Try again later.');
 const allowProofNonce = createLimiter(APP_OPENS_PER_HOUR, 3_600_000, 10_000, 'Too many purchase checks from this address.');
 const playProof = createPlayProof(playDecoderFromEnv(process.env));
+const appleProof = appleVerifierFromEnv(process.env);
 // Each entry holds at most one open request, so `total` also caps the open announce requests.
 const lobby = createLobby({ perNetwork: NEARBY_HOSTS_PER_NETWORK, total: 1000, waitMs: WAIT_MS, graceMs: NEARBY_GRACE_MS });
 
@@ -537,12 +539,18 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const player = requirePlayer(req);
       const open = parseAppOpen(await readJson(req, 40 * 1024));
       if (open === undefined) throw new HttpError(400, 'An app open report needs the person id of the inviter, or null, in "by".');
-      const licensed = await playProof.verify(open.proof, player);
+      let purchase: boolean | Awaited<ReturnType<NonNullable<typeof appleProof>>>;
+      if (open.store === 'play') {
+        purchase = await playProof.verify(open.proof, player);
+      } else {
+        if (appleProof === undefined) throw new PurchaseProofError(503, 'Apple purchase checks are not configured.');
+        purchase = await appleProof(open.proof);
+      }
       // A login cookie links this browser first, so the answer and the owner at the first open name the account.
       const user = auth?.user(req);
       if (user !== undefined) await store.linkToken(player, user);
-      if (!licensed) return send(res, 200, { hasCopy: await store.revokePlayCopy(player) });
-      return send(res, 200, { hasCopy: await store.reportAppOpen(player, open.by, true) });
+      if (purchase === false) return send(res, 200, { hasCopy: await store.revokePlayCopy(player) });
+      return send(res, 200, { hasCopy: await store.reportAppOpen(player, open.by, purchase) });
     }
     case 'GET /api/testing/claims':
       requireMaintainer(req);

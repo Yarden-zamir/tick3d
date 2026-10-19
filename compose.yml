@@ -72,6 +72,8 @@ services:
       TESTER_CODES: ${TESTER_CODES:-}
       # KITSHN_PLAY_SERVICE_ACCOUNT_JSON is separate from the upload signing key.
       PLAY_SERVICE_ACCOUNT_JSON: ${PLAY_SERVICE_ACCOUNT_JSON:-}
+      APPLE_BUNDLE_ID: ${APPLE_BUNDLE_ID:-}
+      APPLE_APP_ID: ${APPLE_APP_ID:-}
     volumes:
       - sessions:/data
     healthcheck:
