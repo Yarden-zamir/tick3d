@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CELL_COUNT } from './game.ts';
-import type { Position } from './ai.ts';
+import { type Position, chooseMove } from './ai.ts';
 import {
   answerRequest,
   createSearch,
@@ -174,5 +174,30 @@ describe('createSearch', () => {
     fake.emit('message', { id: fake.sent[0]?.id, cell: 3 });
     await expect(open).resolves.toBe(3);
     expect(fake.terminated()).toBe(0);
+  });
+});
+
+// Issue #169: the flat view and the tower view only draw the same board in another way.
+describe('the view', () => {
+  // A midgame without a forced move, so the level's random choices decide the cell.
+  const midgame: Position = { moves: [0, 21, 42, 5, 63, 10], first: 'X' };
+  const seeded = (seed: number) => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+  it('never reaches the search: a request with view settings gives the same move', () => {
+    for (const difficulty of ['easy', 'medium'] as const) {
+      const plain = parseRequest({ id: 1, ...midgame, difficulty, tuning: DEFAULT_TUNING });
+      const withView = parseRequest({ id: 1, ...midgame, difficulty, tuning: DEFAULT_TUNING, view: 'flat', layout: 'row' });
+      if (plain === undefined || withView === undefined) throw new Error('both requests are valid');
+      expect(withView).toEqual(plain);
+      for (const seed of [1, 2, 3]) expect(chooseMove(withView, difficulty, seeded(seed))).toBe(chooseMove(plain, difficulty, seeded(seed)));
+    }
+  });
+
+  it('the page sends the position, the level and the tuning, and nothing else', () => {
+    const fake = fakeWorker();
+    const search = createSearch(() => fake.worker);
+    const game = { ...midgame, view: 'flat' };
+    void search(game, 'hard', DEFAULT_TUNING);
+    expect(Object.keys(fake.sent[0] ?? {}).sort()).toEqual(['difficulty', 'first', 'id', 'moves', 'tuning']);
   });
 });
