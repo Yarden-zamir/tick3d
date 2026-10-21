@@ -3,7 +3,7 @@
 # dependencies = ["pyjwt==2.15.1", "cryptography==50.0.2"]
 # ///
 """Syncs the App Store listing in apple/store/ to App Store Connect: the app info text, the version text,
-the category, the content rights answer, the age rating answers, the screenshots and (when set) the price.
+the category, the content rights answer, the age rating answers, the screenshots and the price.
 
 Usage: uv run apple/scripts/app-store-listing.py (the app-store-listing workflow).
 Without APPLY=true it only reads App Store Connect and prints the planned changes (a dry run).
@@ -20,7 +20,7 @@ import sys
 import urllib.request
 from collections.abc import Callable
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from asc import api, fail
@@ -33,6 +33,8 @@ LOCALE = "en-US"
 TEXT = STORE / LOCALE
 SCREENSHOTS = STORE / "screenshots" / LOCALE
 CONFIG = STORE / "app-store-connect.json"
+# The price in US dollars of both stores. Play has no API for the price of a paid app; see play-console.md.
+PRICE = Path(__file__).resolve().parents[2] / "store" / "price-usd.txt"
 
 # The file name prefix of each screenshot size, and its App Store Connect display type.
 DISPLAY_TYPES = {"iphone-6.9": "APP_IPHONE_67", "iphone-6.3": "APP_IPHONE_61"}
@@ -42,7 +44,7 @@ LIMITS = {"name": 30, "subtitle": 30, "keywords": 100, "promotional_text": 170, 
 EDITABLE_INFO_STATES = {"PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED"}
 EDITABLE_VERSION_STATES = "PREPARE_FOR_SUBMISSION,DEVELOPER_REJECTED,REJECTED,METADATA_REJECTED,INVALID_BINARY"
 PRICE_TERRITORY = "USA"
-CONFIG_KEYS = {"primaryCategory", "primarySubcategoryOne", "contentRightsDeclaration", "price", "ageRating"}
+CONFIG_KEYS = {"primaryCategory", "primarySubcategoryOne", "contentRightsDeclaration", "ageRating"}
 
 plan: list[tuple[str, Callable[[], None]]] = []
 
@@ -205,11 +207,19 @@ def all_pages(path: str) -> list[dict]:
     return items
 
 
-def plan_price(app_id: str, price: str | None) -> None:
-    if price is None:
-        print("  price: not set in app-store-connect.json, left as it is in App Store Connect")
-        return
-    wanted = Decimal(price)
+def read_price() -> Decimal:
+    text = PRICE.read_text().strip()
+    try:
+        price = Decimal(text)
+    except InvalidOperation:
+        fail(f'{PRICE} must hold a price such as 1.99, not "{text}".')
+        raise
+    if not price.is_finite() or price < 0 or price.as_tuple().exponent < -2:
+        fail(f'{PRICE} must hold a price of at least 0 with at most two decimals, not "{text}".')
+    return price
+
+
+def plan_price(app_id: str, wanted: Decimal) -> None:
     status, schedule = api("GET", f"/v1/apps/{app_id}/appPriceSchedule")
     current: Decimal | None = None
     if status == 200 and schedule is not None:
@@ -227,13 +237,14 @@ def plan_price(app_id: str, price: str | None) -> None:
         fail(f"Could not read the price schedule: {status} {schedule}")
     if current == wanted:
         return
+    # The dry run looks the price point up too, so that a price that Apple does not offer fails the pull request.
+    points = all_pages(f"/v1/apps/{app_id}/appPricePoints?filter[territory]={PRICE_TERRITORY}&limit=200")
+    matches = [p["id"] for p in points if Decimal(p["attributes"]["customerPrice"]) == wanted]
+    if len(matches) != 1:
+        fail(f"Found {len(matches)} price points of {wanted} in {PRICE_TERRITORY}; expected exactly one.")
     print(f"  price ({PRICE_TERRITORY}): {current} -> {wanted}")
 
     def set_price() -> None:
-        points = all_pages(f"/v1/apps/{app_id}/appPricePoints?filter[territory]={PRICE_TERRITORY}&limit=200")
-        matches = [p["id"] for p in points if Decimal(p["attributes"]["customerPrice"]) == wanted]
-        if len(matches) != 1:
-            fail(f"Found {len(matches)} price points of {wanted} in {PRICE_TERRITORY}; expected exactly one.")
         write(
             "POST",
             "/v1/appPriceSchedules",
@@ -263,8 +274,7 @@ def plan_price(app_id: str, price: str | None) -> None:
 config = json.loads(CONFIG.read_text())
 if set(config) != CONFIG_KEYS:
     fail(f"{CONFIG} must have exactly the keys {sorted(CONFIG_KEYS)}, not {sorted(config)}.")
-if config["price"] is not None and not isinstance(config["price"], str):
-    fail(f'price in {CONFIG} must be null or a string such as "1.99", not {config["price"]!r}.')
+price = read_price()
 
 status, body = api("GET", f"/v1/apps?filter[bundleId]={BUNDLE}")
 if status in (401, 403):
@@ -325,7 +335,7 @@ if versions:
 else:
     print("::notice::No editable App Store version: create one in App Store Connect; version text and screenshots wait for it.")
 
-plan_price(app_id, config["price"])
+plan_price(app_id, price)
 
 if APPLY:
     for s, action in plan:

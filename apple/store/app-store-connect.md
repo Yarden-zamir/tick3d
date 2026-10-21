@@ -1,14 +1,14 @@
 # App Store Connect answers
 
-The `app-store-listing` workflow syncs the texts in `en-US/`, the screenshots, and `app-store-connect.json` (category, content rights, age rating, price). This file explains those answers and holds the App Privacy answers, which you enter by hand.
+The `app-store-listing` workflow syncs the texts in `en-US/`, the screenshots, `app-store-connect.json` (category, content rights, age rating) and the price in `store/price-usd.txt`. This file explains those answers and holds the App Privacy answers, which you enter by hand.
 Each answer follows the code: see `/privacy` and `server/store.ts`. Keep the answers consistent with [android/store/play-console.md](../../android/store/play-console.md).
 Privacy policy: https://tick3d.yarden-zamir.com/privacy
 
-## Synced from app-store-connect.json
+## Synced from app-store-connect.json and store/price-usd.txt
 
 - Category: Games, subcategory Board (`GAMES`, `GAMES_BOARD`), like Play.
 - Content rights: the app uses no third-party content (`DOES_NOT_USE_THIRD_PARTY_CONTENT`).
-- Price: `null` keeps the price that App Store Connect has. Set a customer price in US dollars as a string (for example `"1.99"`) only after a maintainer confirms it. A paid price needs the Paid Applications agreement in App Store Connect first.
+- Price: the US dollar price in [store/price-usd.txt](../../store/price-usd.txt), the same file as Play (1.99 today). Apple sets the prices of the other countries from it. A paid price needs the Paid Applications agreement in App Store Connect first.
 - Age rating: no violence, fear, sexual content, drugs, gambling, loot boxes, contests, ads or medical topics. Two answers are yes:
   - Messaging and chat: yes. Online games have a chat between players.
   - User-generated content: yes. Players set names and write chat messages that other players see. Reports, blocks and hidden messages moderate them.

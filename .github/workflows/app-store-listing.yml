@@ -6,9 +6,9 @@ name: app-store-listing
 on:
   push:
     branches: [main]
-    paths: ['apple/store/**', 'apple/scripts/app-store-listing.py', 'apple/scripts/asc.py']
+    paths: ['apple/store/**', 'store/price-usd.txt', 'apple/scripts/app-store-listing.py', 'apple/scripts/asc.py']
   pull_request:
-    paths: ['apple/store/**', 'apple/scripts/app-store-listing.py', 'apple/scripts/asc.py', '.github/workflows/app-store-listing.yml']
+    paths: ['apple/store/**', 'store/price-usd.txt', 'apple/scripts/app-store-listing.py', 'apple/scripts/asc.py', '.github/workflows/app-store-listing.yml']
   workflow_dispatch:
     inputs:
       apply:
