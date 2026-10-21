@@ -197,7 +197,8 @@ export type SchemaName =
   | 'ClaimedCode'
   | 'TesterClaims'
   | 'AppOpen'
-  | 'CopyAnswer';
+  | 'CopyAnswer'
+  | 'PurchaseNonce';
 
 export const ref = (name: SchemaName): Schema => ({ $ref: `#/components/schemas/${name}` });
 const nullable = (schema: Schema): Schema => ({ oneOf: [schema, { type: 'null' }] });
@@ -863,8 +864,10 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     ),
   }),
   AppOpen: object('The Android app opened on this device.', {
+    proof: { type: 'string', minLength: 1, maxLength: 32768, description: 'The Play Integrity token from the native launch activity.' },
     by: { ...nullable(person), description: 'The person id of the inviter, from the invite link /share?by=<person id> that this browser opened first, or null.' },
   }),
+  PurchaseNonce: object('A one-time purchase challenge.', { nonce: { type: 'string' } }),
   CopyAnswer: object('Whether you hold a copy of the paid Android app.', { hasCopy }),
   Previews: object('The production site and the open pull requests with a live preview, most recently updated first.', {
     main: nullable({ type: 'string', pattern: '^https://', description: 'The production site, built from the main branch. null on a server without previews.' }),
@@ -1918,15 +1921,25 @@ export const ROUTES = {
     ],
     examplePlayer: AGENT_A,
   },
+  'POST /api/copies/nonce': {
+    operationId: 'purchaseNonce',
+    tag: 'Account',
+    summary: 'Get a one-time Play Integrity nonce. Valid for five minutes.',
+    description: 'Bound to the X-Player token. A different player cannot submit its proof.',
+    player: 'required',
+    response: { status: 200, description: 'A fresh nonce.', schema: 'PurchaseNonce', example: { nonce: 'one-time-server-nonce' } },
+    errors: [BAD_PLAYER, { status: 429, when: 'Too many checks from this address.' }, { status: 503, when: 'Too many outstanding checks.' }],
+    examplePlayer: AGENT_A,
+  },
   'POST /api/copies': {
     operationId: 'reportAppOpen',
     tag: 'Account',
-    summary: 'Report that the paid Android app opened on this device. The app sends it on each start.',
+    summary: 'Prove a paid Android app open with Play Integrity. The app sends it on each start.',
     description: `The app is paid, so the first open makes a copy of this device. The copy belongs to the account that is logged in on this device now, or to the device without a login. A login with another account moves it. With an inviter, the copy counts for the invite achievements of that person, once per person, also when the same person claimed a code through the link. A later open only adds an inviter that the copy lacks. One address can report ${APP_OPENS_PER_HOUR} times per hour.`,
     player: 'required',
-    body: { schema: 'AppOpen', example: { by: OTHER_PERSON } },
+    body: { schema: 'AppOpen', example: { by: OTHER_PERSON, proof: 'encrypted-play-integrity-token' } },
     response: { status: 200, description: 'Stored, or known already.', schema: 'CopyAnswer', example: { hasCopy: true } },
-    errors: [BAD_PLAYER, { status: 400, when: 'The body needs a person id or null in `by`.' }, TOO_BIG, { status: 429, when: `This address reported ${APP_OPENS_PER_HOUR} app opens in the last hour.` }],
+    errors: [BAD_PLAYER, { status: 400, when: 'The body needs a proof token and a person id or null in `by`.' }, { status: 403, when: 'The store proof is invalid, expired or used already.' }, { status: 503, when: 'Purchase verification is unavailable.' }, TOO_BIG, { status: 429, when: `This address reported ${APP_OPENS_PER_HOUR} app opens in the last hour.` }],
     examplePlayer: AGENT_A,
   },
   'GET /api/testing/claims': {

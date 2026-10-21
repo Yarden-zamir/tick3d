@@ -61,6 +61,7 @@ import { createWaiters } from './waiters.ts';
 import { testerCodesFromEnv } from './tester-codes.ts';
 import { TESTER_NAME_MAX_LENGTH, parseClaimRequest } from '../src/share/codes.ts';
 import { parseAppOpen } from '../src/copies.ts';
+import { PurchaseProofError, createPlayProof, playDecoderFromEnv } from './play-proof.ts';
 
 // PORT lets a test run its own server next to another one.
 const PORT = Number(process.env.PORT ?? 8080);
@@ -99,6 +100,8 @@ const allowDataDelete = createLimiter(DATA_DELETES_PER_HOUR, 3_600_000, 10_000, 
 const allowTesterClaim = createLimiter(TESTER_CLAIMS_PER_HOUR, 3_600_000, 10_000, 'Too many code claims from this address. Try again later.');
 // Reports of an Android app open per address (POST /api/copies). Same limits as allowCreate.
 const allowAppOpen = createLimiter(APP_OPENS_PER_HOUR, 3_600_000, 10_000, 'Too many app reports from this address. Try again later.');
+const allowProofNonce = createLimiter(APP_OPENS_PER_HOUR, 3_600_000, 10_000, 'Too many purchase checks from this address.');
+const playProof = createPlayProof(playDecoderFromEnv(process.env));
 // Each entry holds at most one open request, so `total` also caps the open announce requests.
 const lobby = createLobby({ perNetwork: NEARBY_HOSTS_PER_NETWORK, total: 1000, waitMs: WAIT_MS, graceMs: NEARBY_GRACE_MS });
 
@@ -525,15 +528,21 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return send(res, 200, await store.claimTesterCode(id, claim, player));
     }
     // A cross-site form cannot send the X-Player header, so another site cannot report for a player.
+    case 'POST /api/copies/nonce': {
+      allowProofNonce(clientOf(req), Date.now());
+      return send(res, 200, { nonce: playProof.nonce(requirePlayer(req)) });
+    }
     case 'POST /api/copies': {
       allowAppOpen(clientOf(req), Date.now());
       const player = requirePlayer(req);
-      const open = parseAppOpen(await readJson(req));
+      const open = parseAppOpen(await readJson(req, 40 * 1024));
       if (open === undefined) throw new HttpError(400, 'An app open report needs the person id of the inviter, or null, in "by".');
+      const licensed = await playProof.verify(open.proof, player);
       // A login cookie links this browser first, so the answer and the owner at the first open name the account.
       const user = auth?.user(req);
       if (user !== undefined) await store.linkToken(player, user);
-      return send(res, 200, { hasCopy: await store.reportAppOpen(player, open.by) });
+      if (!licensed) return send(res, 200, { hasCopy: await store.revokePlayCopy(player) });
+      return send(res, 200, { hasCopy: await store.reportAppOpen(player, open.by, true) });
     }
     case 'GET /api/testing/claims':
       requireMaintainer(req);
@@ -726,6 +735,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 const server = createServer((req, res) => {
   route(req, res).catch((error: unknown) => {
     if (error instanceof SessionError) return send(res, error.status, { error: error.message, ...(error.code === undefined ? {} : { code: error.code }) });
+    if (error instanceof PurchaseProofError) return send(res, error.status, { error: error.message });
     if (error instanceof HttpError) return send(res, error.status, { error: error.message }, error.headers);
     if (error instanceof TooManyRequests) return send(res, error.status, { error: error.message }, error.headers);
     if (error instanceof LobbyError) return send(res, error.status, { error: error.message }, error.headers);

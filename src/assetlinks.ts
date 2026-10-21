@@ -23,7 +23,7 @@ export function assetLinks(twaManifest: unknown): unknown[] {
   if (!values.every(isFingerprint)) throw new Error('a fingerprint in twa-manifest.json is not an uppercase SHA-256 with colons');
   return [
     {
-      relation: ['delegate_permission/common.handle_all_urls'],
+      relation: ['delegate_permission/common.handle_all_urls', 'delegate_permission/common.use_as_origin'],
       target: { namespace: 'android_app', package_name: packageId, sha256_cert_fingerprints: values },
     },
   ];

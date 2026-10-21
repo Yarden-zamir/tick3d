@@ -11,3 +11,10 @@ store-images/test-results/
 
 # Local agent secrets, linked from _shared/.orchestration
 /.orchestration/
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+/android/*.keystore
+/android/*.apk
+/android/*.aab

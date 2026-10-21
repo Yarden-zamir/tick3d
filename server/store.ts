@@ -309,6 +309,7 @@ const SCHEMA = [
      invited_by VARCHAR,
      opened_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
+  'ALTER TABLE app_copies ADD COLUMN IF NOT EXISTS proved BOOLEAN DEFAULT false',
   // The one-time data changes (runOnce in openStore) that ran on this database, by name.
   `CREATE TABLE IF NOT EXISTS migrations (
      name VARCHAR PRIMARY KEY,
@@ -2014,16 +2015,15 @@ export async function openStore(
     // open makes the copy of the device. Its owner then (an account or the device) stays for the invite events only:
     // the copy itself follows the account that holds the device now (hasCopyOf). A later open only adds an inviter
     // that the copy lacks; the first inviter wins. A self-invite counts for nobody. Answers whether the player holds a copy.
-    // Limit: the page tells the app by its referrer, which a player can fake for an achievement. That is fine for
-    // a game. Revisit this if a copy or an invite ever gets a prize (Play Integrity is the strong check).
-    reportAppOpen: (token: PlayerToken, by: PersonId | null): Promise<boolean> =>
+    // Only a verified store proof sets proved. Old rows remain unproved.
+    reportAppOpen: (token: PlayerToken, by: PersonId | null, proved = false): Promise<boolean> =>
       serialized(async () => {
         const invitedBy = by !== null && !(await personsOfTokens([...(await identityOf(token))])).has(by) ? by : null;
         const changed = await rows(
-          `INSERT INTO app_copies (token, owner, invited_by) VALUES ($token, $owner, $by)
-           ON CONFLICT (token) DO UPDATE SET invited_by = coalesce(app_copies.invited_by, excluded.invited_by)
+          `INSERT INTO app_copies (token, owner, invited_by, proved) VALUES ($token, $owner, $by, $proved)
+           ON CONFLICT (token) DO UPDATE SET invited_by = coalesce(app_copies.invited_by, excluded.invited_by), proved = app_copies.proved OR excluded.proved
            RETURNING invited_by`,
-          { token, owner: await ownerOf(token), by: invitedBy },
+          { token, owner: await ownerOf(token), by: invitedBy, proved },
           { invited_by: nullable(text) },
         );
         if (invitedBy !== null && changed[0]?.invited_by === invitedBy) {
@@ -2032,6 +2032,13 @@ export async function openStore(
         }
         return hasCopyOf(token);
       }),
+
+    // A valid, player-bound negative Play verdict revokes only this device, not its account's other devices.
+    // Limit: Apple refunds are not checked. Revisit when a player reports a refund.
+    revokePlayCopy: (token: PlayerToken): Promise<boolean> => serialized(async () => {
+      await db.run('UPDATE app_copies SET proved = false WHERE token = $token', { token });
+      return hasCopyOf(token);
+    }),
 
     hasCopy: (token: PlayerToken): Promise<boolean> => serialized(() => hasCopyOf(token)),
 

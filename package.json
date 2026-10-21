@@ -14,7 +14,8 @@
     "e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
-    "@duckdb/node-api": "1.5.6-r.1"
+    "@duckdb/node-api": "1.5.6-r.1",
+    "google-auth-library": "11.3.1"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
