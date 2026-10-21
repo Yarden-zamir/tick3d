@@ -1,7 +1,8 @@
 name: android
 
-# Builds the committed Android project. It runs by hand or on an android-v tag.
-# A tag or a run by hand uploads to closed testing (alpha) with release notes (android/release-notes.sh).
+# Builds the committed Android project. It runs on a push to main that changes the app, on an android-v tag,
+# or by hand. Each run uploads to closed testing (alpha) with release notes (android/release-notes.sh).
+# The page is the same everywhere, so a site deploy reaches the app with no app build (like ios.yml).
 # Every build makes a GitHub release with the bundle. Promotion to other tracks: play-promote.yml.
 #
 # The secrets have no KITSHN_ prefix: KitSHn forwards every KITSHN_ secret to the server, and the
@@ -15,14 +16,27 @@ on:
         type: choice
         options: [alpha, internal, none]
         default: alpha
+  # GitHub does not check the paths for a tag push, so every android-v* tag builds.
+  # The store listing (play-listing.yml), the fastlane tools, the scripts and the docs do not change the app.
+  # This file holds the build steps, so a change to it builds too.
   push:
+    branches: [main]
     tags: ['android-v*']
+    paths:
+      - 'android/**'
+      - '!android/store/**'
+      - '!android/Gemfile*'
+      - '!android/package*.json'
+      - '!android/*.sh'
+      - '!android/*.md'
+      - '.github/workflows/android.yml'
 
 # contents: write makes the GitHub release of a tag. pull-requests: read lists the release notes.
 permissions:
   contents: write
   pull-requests: read
 
+# Pushes to main share one group: one build runs, and a newer push replaces an older queued one.
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: false
