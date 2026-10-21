@@ -25,7 +25,7 @@ import {
   cardCloseButton,
   showCardButton,
 } from './dom.ts';
-import { noteAchievements, showUnlocks, unlockLabel, unlockedBy } from './achievements.ts';
+import { noteAchievements, showUnlocks, unlockLabel, unlockToast, unlockedBy } from './achievements.ts';
 import { showError, showToast } from './feedback.ts';
 import { previewsDialog } from '../header/previews.ts';
 import { type GameId, onlineGameId } from '../protocol.ts';
@@ -98,7 +98,7 @@ async function linkGame(open: Session, game: Game, index: number): Promise<void>
   if (unlocked.length === 0) return;
   // The open card of this game shows the news. Else a toast tells it.
   if (card?.index === index && cardDialog.open) await openCard(index);
-  else showToast(`${unlockLabel(unlocked)}.`);
+  else showToast(unlockToast(unlocked));
 }
 
 const showsFinished = (open: Session, index: number) => page.session?.code === open.code && page.games.length - 1 === index && !isLive();
@@ -154,7 +154,7 @@ function cardInput(game: Game, index: number, gameId: GameId | undefined, tuned:
       : page.session?.mode === 'online'
         ? `Online · ${page.session.name}`
         : page.session?.mode === 'nearby'
-          ? `Nearby · ${page.session.name}`
+          ? `Wi-Fi · ${page.session.name}`
           : 'Two players, one screen';
   const first = game.times[0] ?? 0;
   const last = game.times.at(-1) ?? 0;

@@ -13,7 +13,7 @@ describe('the game of the smart-memory ad', () => {
     const random = seededRandom(SEED);
     let game = newGame('X');
     while (game.status.kind === 'playing') {
-      const result = play(game, chooseMove(game.board, game.turn, LEVELS[game.turn], random));
+      const result = play(game, chooseMove(game, LEVELS[game.turn], random));
       if (!result.ok) throw new Error(result.error);
       game = result.game;
     }

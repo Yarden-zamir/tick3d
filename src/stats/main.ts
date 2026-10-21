@@ -13,13 +13,14 @@ import { CELL_COUNT, SIZE } from '../game.ts';
 import { accountLink, setupPageHeader } from '../header/header.ts';
 import { myGamesHref } from '../header/my-games-link.ts';
 import { leaderboardCard } from './leaderboard.ts';
-import { playerCard } from './player-card.ts';
+import { playerCard, playerCardPlaceholder } from './player-card.ts';
 import { loadBlocks } from '../blocks.ts';
 import { OnlineError, api } from '../online.ts';
 import { releaseLabel } from '../release.ts';
 import {
   ALL_STATS,
   type Count,
+  type PersonId,
   type ReleaseCount,
   FORM_WINDOW,
   MOVE_TIME_BUCKETS,
@@ -351,7 +352,7 @@ function tiles(stats: Stats): void {
 // The cards that only Mine and a person filter have. A person filter has no opponents (server/stats.ts).
 function personalCards(personal: NonNullable<Stats['personal']>, own: boolean): void {
   stacked(
-    card(own ? 'Your results' : 'Results', false, 'Won, drawn and lost, per mode and computer level. Friend games have no side, so they do not count.'),
+    card(own ? 'Your results' : 'Results', false, 'Won, drawn and lost, per mode and computer level. Same-screen games have no side, so they do not count.'),
     personal.results.map((row) => ({ label: row.level === null ? modeName(row.mode) : `${modeName(row.mode)} · ${row.level}`, parts: [row.won, row.drawn, row.lost] })),
     [
       { name: 'Won', color: 'var(--win)' },
@@ -394,7 +395,7 @@ const MIN_OPENINGS = 3;
 const openingRates = (stats: Stats) =>
   stats.openings.map((games, cell) => (games < MIN_OPENINGS ? 0 : Math.round(((stats.openingWinsX[cell] ?? 0) / games) * 100)));
 
-const MODE_NAMES: Record<SessionMode, string> = { computer: 'Computer', friend: 'Friend', online: 'Online', nearby: 'Nearby' };
+const MODE_NAMES: Record<SessionMode, string> = { computer: 'Computer', friend: 'Same screen', online: 'Online', nearby: 'Wi-Fi' };
 const ENDING_NAMES: Record<string, string> = {
   axis: 'Line along an axis',
   plane: 'Diagonal in a plane',
@@ -420,7 +421,7 @@ function draw(stats: Stats): void {
   // The leaderboard names players, so it shows in the Everyone view only, not in Mine or for one person.
   if (!mine && stats.person === null) {
     leaderboardCard(
-      card('Leaderboard', true, 'Every player who does not hide their stats, with the filters above, but not the players that you blocked. Friend games do not count. Tap a column to sort, or a player for their card.'),
+      card('Leaderboard', true, 'Every player who does not hide their stats, with the filters above, but not the players that you blocked. Same-screen games do not count. Tap a column to sort, or a player for their card.'),
       stats.filter,
       (person) => navigate({ ...stats.filter, person }),
     );
@@ -430,9 +431,9 @@ function draw(stats: Stats): void {
       'Win rate over time',
       true,
       stats.person !== null
-        ? `The share of wins of ${stats.person.name} in their last ${FORM_WINDOW} games, after each game. Friend games do not count. The dashed lines mark 25%, 50% and 75%.`
+        ? `The share of wins of ${stats.person.name} in their last ${FORM_WINDOW} games, after each game. Same-screen games do not count. The dashed lines mark 25%, 50% and 75%.`
         : mine
-        ? `Your share of wins in your last ${FORM_WINDOW} games, after each game. Friend games do not count. The dashed lines mark 25%, 50% and 75%.`
+        ? `Your share of wins in your last ${FORM_WINDOW} games, after each game. Same-screen games do not count. The dashed lines mark 25%, 50% and 75%.`
         : `The players' share of wins against the computer in the last ${FORM_WINDOW} games, after each game. The dashed lines mark 25%, 50% and 75%.`,
     ),
     stats.form,
@@ -569,7 +570,7 @@ function draw(stats: Stats): void {
   ]);
   table(input, ['Undos', 'Games with an undo'], [[stats.undo.undos, stats.undo.gamesWithUndo]]);
   bars(card('Refused actions'), stats.refusals, 'var(--danger)', (key) => key);
-  bars(card('Nearby device mixes', false, 'The host device and the other player\'s device.'), stats.nearbyMixes, 'var(--o)');
+  bars(card('Wi-Fi device mixes', false, 'The host device and the other player\'s device.'), stats.nearbyMixes, 'var(--o)');
 
 }
 
@@ -640,13 +641,37 @@ function readFilter(): { filter: StatsFilter; problem: string } {
   return { filter: ALL_STATS, problem: 'The address had an unknown filter, so the page shows all games. ' };
 }
 
-// The player card of a person filter. A blocked person shows as they are, with a note: the visitor opened them on purpose.
-function showPerson(stats: Stats | null): void {
-  const person = stats?.person ?? null;
-  const id = stats?.filter.person ?? null;
+// The person of the shown player card. Another range, mode or level keeps the card of the same person.
+let cardOf: PersonId | null = null;
+
+// The player card of a person filter, from its own request: it reads no game, so it shows before the stats.
+// A failed card hides: the stats request shows the reason (private, or no games).
+// A blocked person shows as they are, with a note: the visitor opened them on purpose.
+function showPerson(person: PersonId | null): void {
   personHead.hidden = person === null;
-  if (person === null || id === null) return personHead.replaceChildren();
-  playerCard(personHead, id, person, stats?.achievements ?? null);
+  if (person === cardOf) return;
+  cardOf = person;
+  if (person === null) return personHead.replaceChildren();
+  playerCardPlaceholder(personHead);
+  api.statsCard(person).then(
+    (card) => {
+      if (cardOf === person) playerCard(personHead, person, card);
+    },
+    () => {
+      if (cardOf !== person) return;
+      cardOf = null;
+      personHead.hidden = true;
+      personHead.replaceChildren();
+    },
+  );
+}
+
+// An empty card with grey bars in the shape of a title, a hint and a chart.
+function placeholderCard(wide: boolean): HTMLElement {
+  const box = el('section', wide ? 'stats-card wide stats-placeholder' : 'stats-card stats-placeholder');
+  box.setAttribute('aria-hidden', 'true');
+  box.append(el('span', 'stats-skeleton stats-skeleton-title'), el('span', 'stats-skeleton stats-skeleton-hint'), el('span', 'stats-skeleton stats-skeleton-chart'));
+  return box;
 }
 
 // A newer view replaces a view that still loads.
@@ -656,18 +681,19 @@ async function show(filter: StatsFilter, problem = ''): Promise<void> {
   const id = ++request;
   accountLink.href = myGamesHref(`${location.pathname}${location.search}`);
   renderFilters(filter);
+  // Before the stats request, so the card request is first in the queue of the server.
+  showPerson(filter.person);
   note.textContent = `${problem}Loading…`;
   grid.setAttribute('aria-busy', 'true');
   // The first view reserves room for the cards, so the page does not jump when they come.
   // A later view keeps the old cards, dimmed, until the new ones replace them.
   if (grid.childElementCount === 0) {
-    grid.append(...[true, true, false, false, false, false].map((wide) => el('section', wide ? 'stats-card wide stats-placeholder' : 'stats-card stats-placeholder')));
+    grid.append(...[true, true, false, false, false, false].map(placeholderCard));
   }
   try {
     const stats = parseStats(await api.stats(filter));
     if (id !== request) return;
     grid.replaceChildren();
-    showPerson(stats);
     draw(stats);
     const scope =
       stats.person !== null
@@ -681,7 +707,6 @@ async function show(filter: StatsFilter, problem = ''): Promise<void> {
   } catch (error) {
     if (id !== request) return;
     grid.replaceChildren();
-    showPerson(null);
     // 403 and 404 are answers about the person (private, or no games), not faults.
     const answered = error instanceof OnlineError && (error.status === 403 || error.status === 404);
     note.textContent = answered ? `${problem}${error.message}` : `${problem}The stats did not load. ${error instanceof Error ? error.message : String(error)}`;

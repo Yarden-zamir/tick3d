@@ -36,7 +36,7 @@
 - Your game as a song: the Song button on the end card and on a game link. A long press shares the song as a WAV file, with your voice on the moves that your voice placed.
 - An end card with the result, to share or save as an image.
 - Survival records: the longest game against each computer level and setup.
-- Achievements: 16 goals such as a first win, a win in 7 moves or 5 wins in a row (`src/achievements.ts`). Past games count too, and a friend game with a winner counts as a win. My games and the stats page list them with their rarity ("12% of players"), and the end card and the shared image show a new one. "Clear history" keeps them, and "Reset achievements" in My games starts them over.
+- Achievements: 51 goals such as a first win, a win in 7 moves or 5 wins in a row (`src/achievements.ts`). Some goals are ladders with a step per computer level, where a higher step also unlocks the lower ones. A person never counts for a computer level; themed goals have their own achievement for people. The tier color shows how hard a goal is, from stone to a moving mythic foil. Hidden goals show a question mark until they unlock. The goals about people (different people, a nemesis, a revenge) need the server, which knows each opponent. Past games count too, and a friend game with a winner counts as a win, but friend games count for no ladder. Three goals count invites (1, 5 and 25 people): see the share page below. My games and the stats page list them with their rarity ("12% of players"), and the end card and the shared image show a new one. An unlock that this device did not show on an end card, such as an invite or a game on another device, pops up in a card at the bottom of the game page when the page opens or comes back to the front (`src/page/achievement-popup.ts`). The card lists the 3 newest, with "+N more" that opens My games. The device keeps the achievements that it showed in localStorage, so each one pops once. "Clear history" keeps them, and "Reset achievements" in My games starts them over.
 - Twelve themes.
 - The same header on every page, with My games and Info, and the same footer, with kitshn and GitHub (`src/header/`).
 - Info on the game page shows the tutorial video "How to play" (Basics). The slider under it jumps between the checkpoints of the video, and the headline of each checkpoint shows over the slider while you drag. The checkpoints come from the video plan (`src/tutorial-chapters.json`, written by `video/scripts/tutorial.ts`). The page loads a small web copy of the video from `public/tutorial/` on the first open of Info.
@@ -64,6 +64,7 @@
 - Before the first chat message, the chat shows only its title and the message field. The message log shows from the first message on, with the game events of the session.
 - The server decides a timeout, so a page that closes cannot avoid a loss on time.
 - A session with moves never expires. A player can leave and come back, so a game can run asynchronously.
+- A page reads the game again when it comes back to the front, and when it refuses a move as not its turn. After a server restart, it opens a new live stream (`subscribe` in `src/online.ts`).
 
 ### Report and block
 
@@ -87,13 +88,20 @@
 - After the first visit, a service worker keeps the page, so the game opens without a network. The game is installable.
 - Computer, friend and Nearby games run on the device and stay in IndexedDB. The device uploads results when it has a network.
 - After a deploy, the page shows "A new version of tick3d is ready" with a Reload button.
+- A game in progress continues through a deploy, with no reload. A page that cannot read an answer of the new server loads the new version by itself, and the online game opens again.
 - Safari deletes the data of a site that you do not open for 7 days, unless you add the game to the home screen.
 
-## Nearby
+## Wi-Fi (Nearby)
 
-- Choose Nearby to play with devices on the same Wi-Fi. One device hosts, the others join.
+- Choose **Here** for two people sharing one screen. Its icon follows the device: phone, tablet or computer.
+- Choose **Online** when both devices have internet, even when sitting together. **Wi-Fi** (the Nearby mode in the API and stored data) also works without internet. Both devices must use the same Wi-Fi, and the network must allow devices to communicate.
+- Open the app once on both devices while online so the game and scanner are saved for offline use.
+- Choose **Start a game** on one device and **Scan to join** on the other. Scan inside tick3d, then show the joining device's new QR to the starter. The starter taps **They’ve scanned — scan back** and scans it. Both devices enter the game without changing apps or tabs.
 - Online, the hosted game shows in "Games near you" on the other devices of the same network.
-- Offline, the devices exchange QR codes, or text codes to copy and paste.
+- **Other ways to connect** keeps text codes to copy and paste, and existing camera-app links still work. Camera access is requested only when scanning; images stay on the device. The camera stops after a scan, on cancel, when switching modes, or when the page goes into the background.
+- Under **Other ways to connect**, **Listen for reply** on the starter and **Send reply by sound** on the joining device replace the return scan after the first QR. The optional sound sends the real compressed WebRTC reply in error-corrected packets, tied to the current invite. It is not just the demo jingle: a full reply takes longer, with packet progress shown. Only the receiver requests a microphone, and both controls can stop immediately. QR and text stay available. The decoder and audio worklet are cached for offline use; audio stays on the devices, and voice play pauses during the transfer.
+- If Online is reachable, Wi-Fi shows a nonblocking **Play online instead** suggestion. The list and suggestion depend on an actual server response, not the browser's online flag.
+- Keep the starter's device open. Its screen wake lock is requested again when the app returns to the foreground. If a guest disconnects, the host keeps their game and seat; use **Add device** and **Scan to join** again.
 - The devices talk directly over WebRTC. The host's device holds the session and checks every move with the same rules as the server.
 - To host a full server on a laptop, run `docker compose -f compose.lan.yml up --build`. Others open `http://<that computer's address>:8080` and play Online. Set `LAN_HOST_NAME` for the host name and `LAN_PORT` for another port.
 
@@ -163,6 +171,7 @@ A mode change moves neither the board nor the Opponent picker:
 - `src/page/safety.ts`, `src/page/person-mark.ts`: the report and block menu of the game. `src/safety-dialog.ts` and `src/blocks.ts`: the menu and the block list, shared with the stats page.
 - `src/header/`: the header and the footer of every page. `src/markup.test.ts` checks that every page has the same header and footer.
 - `stats.html`, `src/stats/`: the stats page. `sound-training.html`, `src/sound-training/`: the ear trainer.
+- `share.html`, `src/share/`: the share page. `server/tester-codes.ts`: the codes from `TESTER_CODES`.
 - `src/pwa.ts`, `vite.config.ts`: the service worker and the manifest.
 - `server/main.ts`: the HTTP API. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login.
 - `server/api-docs.ts`: every API route with its docs. The server finds routes in this list.
@@ -178,6 +187,7 @@ The page is plain TypeScript built with Vite, with no runtime dependencies. The 
 - A breaking change needs a new `CURRENT_FORMAT` and one `UPGRADES` step. `src/session/format.ts` explains the rules.
 - `src/session/fixtures/` holds a document of each released format. A test reads each one.
 - Table changes are append-only statements in `server/store.ts`, such as `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
+- A one-time data change runs through `runOnce` in `server/store.ts`: the `migrations` table keeps its name, so it runs once per database.
 
 ## API
 
@@ -191,15 +201,43 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 - `/stats` is public: the game Info panel and My games link to it, and search engines may list it.
 - Filters: Everyone or Mine, the time (7 days, 30 days or all), the mode and the level. The address holds them, for example `/stats?scope=mine&range=30d`. `GET /api/stats` takes the same query and answers 400 for an unknown value.
 - A person filter (`/stats?person=<person id>`) shows the games of one person, with their name and picture. A click on a person's picture in the game opens it large, with a Stats link to this view.
-- "Hide my stats" in My games closes your person view, your achievements included, to everyone but you: `GET /api/stats` then answers 403. It also takes you off the leaderboard. Mine still works, and Everyone still counts your games without your name. The setting follows a GitHub login.
+- "Hide my stats" in My games closes your person view, your achievements included, to everyone but you: `GET /api/stats` and `GET /api/stats/card/{person}` then answer 403. It also takes you off the leaderboard. Mine still works, and Everyone still counts your games without your name. The setting follows a GitHub login.
 - Leaderboard (Everyone only): one row per player with their name, GitHub login and picture, and games, won, drawn, lost, win rate, best streak, fastest win, average moves, achievements and last game. Tap a column to sort; tap it again to turn the order around. It follows the time, mode and level filters, and loads when it scrolls into view. The achievements count covers all games. Friend games and the computer do not count. Players that you blocked are not on your board. `GET /api/leaderboard` gives the same rows.
 - Everyone answers (the stats and the leaderboard) come from a snapshot. A second database connection refreshes it in the background when it is a minute old, or older for a costly refresh, so a visitor and the game never wait for it. With more than 100,000 games, the charts of moves, times, settings and devices show the newest 100,000.
 - Speed: the queries read plain columns that each write copies out of the stored game (`server/fields.ts`), and the games of one player come through indexes on the seat columns. At 1,000,000 players (5,000,000 games) every request of one player answered in under 1.5 s.
-- A tap on a row opens the person view. Its player card shows the unlocked achievements in a row that scrolls, and Report or block.
+- A tap on a row opens the person view. Its player card shows the unlocked achievements in a row that scrolls, newest first, and Report or block. The card has its own request (`GET /api/stats/card/{person}`), which reads no game, so it shows before the stats of the person.
+- On a phone, the player column of the leaderboard stays in view and cuts off long names, so about 4 number columns fit next to it.
+- While the stats load, the cards show as grey skeletons with a moving light, and then fade in. With reduced motion, the skeletons stay still.
 - Everyone shows counts only, apart from the leaderboard: no player names and no page faults. Mine (your games on every linked device) adds your win rate over time, streaks, results, survival records and favourite opponents. A person view adds the same, without the opponents.
 - The stats never show a token, a result id or a game id.
 - A finished game sends, besides the game: the device kind, the view, the layout, the theme, input and undo counts, refusals, computer thinking times, the offline flag and the app version.
 - A fault report holds the error message, the file and line, and the app version. It holds no token and no address.
+
+## Share page
+
+`/share` holds the invite link and the steps to join the closed test: Android (Google Group, Play testing, a free Google Play promo code, install) and iPhone (TestFlight). The page was `/testing` before: `/testing` redirects to `/share` (`container/Caddyfile`), and `testing.tick3d.yarden-zamir.com` redirects there on production (`Caddyfile.j2`), both with the query, so the links sent before the rename keep working.
+
+- The codes come from the GitHub secret `KITSHN_TESTER_CODES` in the Environment `prod`, never from git: one entry per line or comma. `CODE` is a free code, and `CODE=Name` is a code that Name has already. A code has 10 to 30 characters from A-Z and 0-9.
+- At start, the API adds the codes that it does not hold yet. A known code keeps its row and its claim. A bad entry stops the start. Only production reads the secret, so a preview shows no codes.
+- A claim stores the email and the name that the tester types, the player token of the claimer and its owner then, and the person id of the inviter. The page shows the name and the Gravatar picture of each claim, never the email or a full code. `GET /api/testing/claims` gives the emails and the inviters to the maintainers, to add them to the Google Group.
+- Each code keeps its slot (#1, #2, ...): the order of the secret, with later codes at the end. The page refreshes the list every 20 s and when it comes back into view, and turns a claimed card in its place.
+- One address can claim 5 codes per hour. The browser keeps its codes in localStorage and shows them on the next visit.
+- The 15 s trailer (`public/trailer/`, 1.4 MB: 1280×720, x264 two-pass at 700 kbit/s with `-tune animation`, AAC 80 kbit/s, faststart) plays at the top without sound, once the browser expects to play it without a stop. A tap turns the sound on for one run: at the end the trailer starts again without sound. With reduced motion, it waits for a tap. A new encode gets a new file name, so no cache serves the old one.
+- The count of free codes is a button: it scrolls to the first free card and makes it pulse.
+- Share with a friend shares only the invite link `<origin>/share?by=<person id>`, with the public person id of the sharer. The Share button of the game header offers the same link ("Share tick3d"), and "Play online with a friend": a new online game, as the Online choice starts one, and its play link. The iOS app hides "Share tick3d", because `/share` offers Google Play codes.
+- The page keeps the first valid `by` in localStorage, and a claim sends it. The server stores it as `invited_by` on the code. An invite from the claimer's own person (a device or the account) counts for nobody.
+- Copies of the paid Android app (`src/copies.ts`): the native launch activity opens Chrome and establishes its validated message channel. The page requests a five-minute, one-time server nonce with its existing `X-Player`, then sends that nonce to the native activity. The activity returns a classic Play Integrity token and the Play Install Referrer over the channel. The page submits the proof with the same player token to `POST /api/copies`. The server calls Google's `decodeIntegrityToken`, checks the nonce's player, freshness and single use, timestamp, package, `PLAY_RECOGNIZED` and `LICENSED`, then records a proved copy. A launch referrer alone proves nothing. Without a network or a message channel the app opens without a new proof. Existing copies stay unproved until a verified open. The channel needs Chrome 115 or later and the `use_as_origin` relation in the site's Digital Asset Links.
+- The copy belongs to the account that is logged in on that device now, or to the device without a login. A login with another account on the device moves the copy to that account, and a logout moves it back to the device. So one copy serves one account at a time. No step on the page is needed.
+- `GET /api/me` gives `hasCopy`: true on every browser of an account that holds a copy, the web too.
+- A valid, player-bound Play verdict without `LICENSED` clears `proved` on that device only. Other proved devices of the account keep their copies. A malformed, stale, reused or wrong-player proof cannot revoke a copy. Apple refunds are not checked; revisit when a player reports a refund.
+- The invite achievements count distinct people: the claims and the app opens with that inviter, merged when they share a device, an owner or the account that holds a device now (`server/invite-people.ts`). A claim in the browser, a later login and the app on the same phone count once, and so do two devices of one account, also when a device logs in after its event. The claims from before the invite links count as invites of Yarden, except the codes that he gave to himself (a one-time migration in `server/store.ts`).
+- The iPhone app reports StoreKit 2 `AppTransaction` through a small Capacitor plugin. The server verifies its signed data with Apple's App Store Server Library, the bundle identifier, app identifier and environment. Apple's `appTransactionId` identifies an app purchase; `originalTransactionId` belongs to in-app purchases and is not present here. One purchase can prove at most five player tokens. A token cannot switch Apple purchases to free a slot. Delete my data removes its copy and frees its slot. TestFlight gets copies while it stays invite only; revisit when the TestFlight link becomes public. The iPhone browser storage is separate from Safari, so only an inviter visible inside the app can count.
+
+Run it locally with fake codes:
+
+```sh
+TESTER_CODES="AAAAAAAAAAAAAAAAAAAAAA1=Tom,BBBBBBBBBBBBBBBBBBBBBB2" DB_PATH=/tmp/share.duckdb node server/main.ts
+```
 
 ## Develop
 
@@ -285,11 +323,12 @@ uv run store-images/convert.py /tmp/shots
 
 See [kitshn.md](kitshn.md). A push to `main` deploys production.
 
-The paid Android app on Google Play wraps the production site. The `android` workflow builds it from [android/twa-manifest.json](android/twa-manifest.json), and the `play-*` workflows release it, sync the listing and file issues from reviews and crashes.
+The paid Android app on Google Play wraps the production site. The `android` workflow builds the committed Gradle project in `android/`, and the `play-*` workflows release it, sync the listing and file issues from reviews and crashes. Do not run `bubblewrap update` over the native purchase activity.
 
-The iOS app wraps the production site the same way, with [Capacitor](https://capacitorjs.com): a site deploy reaches it with no app build. The `ios` workflow generates the Xcode project from [apple/capacitor.config.json](apple/capacitor.config.json) on every run, so the repository keeps no native code. A tag `ios-v1.2.0` builds, signs and uploads the app to TestFlight, and makes a GitHub release.
+The iOS app wraps the production site the same way, with [Capacitor](https://capacitorjs.com): a site deploy reaches it with no app build. The `ios` workflow generates the Xcode project from [apple/capacitor.config.json](apple/capacitor.config.json), then installs the committed Swift purchase plugin with `apple/install-purchase-plugin.mjs`. A tag `ios-v1.2.0` builds, signs and uploads the app to TestFlight, and makes a GitHub release.
 
 - The App Store account comes from repository settings only: the variables `APPLE_TEAM_ID` and `IOS_BUNDLE_ID`, and the secrets `APP_STORE_CONNECT_KEY` (the `.p8` text of an Admin key), `APP_STORE_CONNECT_KEY_ID` and `APP_STORE_CONNECT_ISSUER_ID`. Xcode signs with the key (cloud signing). Without them, the workflow builds for the simulator only.
+- The native purchase proof needs iOS 16 or later. The project installer raises the generated app target from iOS 15 to iOS 16.
 - A pull request that touches `apple/` or `ios.yml` runs the workflow's `lint` job: `actionlint` on the workflow itself, and the same Capacitor project generation as the real build, with no Xcode and no macOS runner. It catches a bad `apple/capacitor.config.json` or a broken install in well under a minute, before a change reaches the 45-minute macOS build.
 - The app adds `tick3dApp/ios` to the user agent. The page then sets `<html data-platform="ios">` (`src/platform.ts`) and hides what the App Store does not allow: the GitHub link and the previews button (`data-hide-in="ios"`), and the GitHub login (App Store rule 4.8). `e2e/ios.spec.ts` checks this on every preview.
 - `WKAppBoundDomains` lets the web view run the service worker, so the game plays offline after one start online. Without a network at the first start, the app shows `apple/www/index.html`.

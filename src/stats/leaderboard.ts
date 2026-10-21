@@ -77,7 +77,7 @@ function render(box: HTMLElement, board: Leaderboard, filter: StatsFilter, open:
     button.type = 'button';
     button.dataset.tip = column.tip;
     button.dataset.sort = column.key;
-    if (active) button.append(el('span', 'leaderboard-arrow', sort.lowFirst ? ' ▲' : ' ▼'));
+    if (active) button.append(el('span', 'leaderboard-arrow', sort.lowFirst ? '\u00a0▲' : '\u00a0▼'));
     // A first tap sorts best first. A tap on the sorted column turns the order around.
     button.addEventListener('click', () => {
       sort = active ? { key: column.key, lowFirst: !sort.lowFirst } : defaultSort(column.key);

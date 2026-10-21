@@ -7,7 +7,10 @@ import { token } from './online.ts';
 import { normalizeCode, parseGameId } from './protocol.ts';
 import { readLinkIntent } from './session-link.ts';
 import { setMuted, setSoundSet } from './sound.ts';
+import { checkUnlocks, setupAchievementPopup } from './page/achievement-popup.ts';
 import { setupAdvanced } from './page/advanced.ts';
+import { reportAppOpen } from './page/app-copy.ts';
+import { setupShareMenu } from './page/share-menu.ts';
 import { applyCamera, setupBoard } from './page/board.ts';
 import { setupChat } from './page/chat.ts';
 import { setupPanelAnchor } from './page/panel-anchor.ts';
@@ -32,7 +35,7 @@ import { render } from './page/render.ts';
 import { flushResults } from './page/results.ts';
 import { refresh, setUrlCode, setUrlGame, joinSession, openLocalSession } from './page/sessions.ts';
 import { settings } from './page/settings.ts';
-import { page } from './page/state.ts';
+import { page, shared } from './page/state.ts';
 import { applyTheme, setupTheme } from './page/theme.ts';
 import { setupSettingsHint } from './page/settings-hint.ts';
 import { setupSlidePills } from './page/slide-pill.ts';
@@ -66,6 +69,8 @@ setupPwa({
 setupClocks();
 setupAdvanced();
 setupEndCard();
+setupAchievementPopup();
+setupShareMenu();
 setupTheme();
 setupSoundSets(soundSetList, (id) => {
   setSoundSet(id);
@@ -136,6 +141,10 @@ async function start(): Promise<void> {
   page.local = createLocalBackend(page.deviceDb, token, () => page.account.user);
   const account = refreshAccount();
   void checkLanHost();
+  // The unlocks that this device did not show yet, such as an invite on /share. A login links this browser first.
+  void account.then(checkUnlocks).catch(showError);
+  // The Android app reports its open: the copy of this device, and the invite of the inviter. A login links this browser first.
+  void account.then(reportAppOpen).catch(showError);
   // The account button of another page asks to open My games. The dialog opens after the account
   // is known, so it shows the right login.
   const myGamesRequest = readMyGamesRequest(new URL(location.href));
@@ -158,6 +167,17 @@ async function start(): Promise<void> {
     render();
   });
   addEventListener('offline', () => render());
+  // A page that comes back to the front reads its game again. A phone that sleeps can miss changes on
+  // the live stream, and a page from the back-forward cache shows the game from before it left.
+  const reread = () => {
+    if (shared() && page.session !== undefined) void refresh(page.session.code);
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') reread();
+  });
+  addEventListener('pageshow', (event) => {
+    if (event.persisted) reread();
+  });
 
   const linkCode = new URLSearchParams(location.search).get('code');
   const code = linkCode === null ? undefined : normalizeCode(linkCode);

@@ -2,6 +2,7 @@
 // held note places your move. The engine owns the microphone, the pitch, the range and the sticky cells,
 // so a calibration in the Voice room (/sound-input) applies here too. voice-gate.ts decides when it listens.
 import { toCoords } from '../game.ts';
+import { pairingSoundActive } from '../nearby/sound-audio.ts';
 import { MIC_ICON } from '../icons.ts';
 import { type VoiceClip, type VoiceClips, liveSoundUntil } from '../sound.ts';
 import { type Voice, type VoiceFrame, createVoice } from '../voice/engine.ts';
@@ -87,7 +88,7 @@ function gate(): VoiceGate {
     live: isLive(),
     // In a friend game this screen plays both seats.
     myTurn: session !== undefined && (session.mode === 'friend' || current().turn === session.you),
-    waiting: page.busy || page.thinking || page.review !== undefined,
+    waiting: page.busy || page.thinking || page.review !== undefined || pairingSoundActive(),
     soundUntil: liveSoundUntil(),
     now: performance.now(),
   };
@@ -167,7 +168,7 @@ function onFrame(frame: VoiceFrame): void {
   const move = current().moves.length;
   // The clip comes before the move: a move that ends the game stops the engine, and the engine has no clip then.
   const clip = takeClip(frame);
-  humanMove(frame.cell, 'keypad');
+  humanMove(frame.cell, 'voice');
   if (clip !== undefined && page.games.at(-1)?.moves.length === move + 1) keepClip(clip, move);
   if (page.games.at(-1)?.moves.length === move + 1) voiceCells?.burst(frame.cell);
 }

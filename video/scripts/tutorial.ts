@@ -67,7 +67,8 @@ if (!stillsOnly && crops.includes('landscape')) {
   const web = `tick3d-${name}-${sha}-web.mp4`;
   const poster = `tick3d-${name}-${sha}-poster.jpg`;
   const landscape = path(`${out}tick3d-${name}-landscape.mp4`);
-  const ffmpeg = (args: readonly string[]) => execFileSync('ffmpeg', ['-v', 'error', '-y', ...args], { stdio: 'inherit' });
+  // The ffmpeg of Remotion, so the encode needs no system ffmpeg (CI has none). It has libx264, aac and mjpeg.
+  const ffmpeg = (args: readonly string[]) => execFileSync('npx', ['--no-install', 'remotion', 'ffmpeg', '-v', 'error', '-y', ...args], { stdio: 'inherit' });
   ffmpeg(['-i', landscape, '-vf', 'scale=960:540', '-c:v', 'libx264', '-preset', 'slow', '-crf', '28', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', path(`${out}${web}`)]);
   // The poster: the frame of the title checkpoint, from the home view with "How to win" on.
   const title = SECTIONS[0]?.chapter;

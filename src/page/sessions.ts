@@ -3,7 +3,8 @@ import { sameClock, describeClock, hasLimit } from '../clock.ts';
 import { checkPlayoffInvite } from './playoff-invite.ts';
 import { type Game, play, newGame, type Player, other } from '../game.ts';
 import { OnlineError, api } from '../online.ts';
-import { type ChatMessage, type Code, type GameId, MATCH_OPTIONS, type SessionView, isChatEvent, parseSessionView, toGame } from '../protocol.ts';
+import { loadNewVersion } from '../pwa.ts';
+import { type ChatMessage, type Code, type GameId, MATCH_OPTIONS, type Metrics, type SessionView, isChatEvent, parseSessionView, toGame } from '../protocol.ts';
 import { type LinkIntent, withWatch } from '../session-link.ts';
 import type { SessionDoc } from '../session/format.ts';
 import { sounds } from '../sound.ts';
@@ -11,7 +12,7 @@ import { notifyChat } from './chat.ts';
 import { eventText } from './chat-log.ts';
 import { ownPerson, visibleChat } from './safety.ts';
 import { scheduleComputer } from './computer.ts';
-import { burstEl, undoButton } from './dom.ts';
+import { burstEl, scrollMotion, undoButton } from './dom.ts';
 import { announce, finish } from './end-card.ts';
 import { reject, showToast, showError, showProblem } from './feedback.ts';
 import { closeGameView } from './game-view.ts';
@@ -43,13 +44,13 @@ import {
 // The error sound of a refused move lasts about 0.27 s. A taken cell plays its own sound after it.
 const TAKEN_SOUND_DELAY_MS = 320;
 
-export function humanMove(cell: number, via: 'board' | 'keypad'): void {
+export function humanMove(cell: number, via: keyof Metrics['input']): void {
   if (page.viewing) return reject(cell, 'viewing');
   if (page.review) return reject(cell, 'reviewing');
   void playMove(cell, via);
 }
 
-async function playMove(cell: number, via: 'board' | 'keypad'): Promise<void> {
+async function playMove(cell: number, via: keyof Metrics['input']): Promise<void> {
   if (page.session === undefined) return reject(cell, 'no-session');
   if (page.session.you === null) return reject(cell, 'spectator');
   const waitReason = page.session.mode === 'computer' ? 'wait' : 'not-your-turn';
@@ -58,16 +59,22 @@ async function playMove(cell: number, via: 'board' | 'keypad'): Promise<void> {
   const result = play(game, cell, nowMs());
   if (!result.ok) {
     // A press on the own last move works as the Undo button, and only when that button can run now.
-    if (result.error === 'occupied' && cell === ownLastCell(game, page.session) && !undoButton.disabled && !undoButton.hidden) return undoMove();
+    if (result.error === 'occupied' && pressUndoes(cell)) return undoMove();
     reject(cell, result.error);
     // A taken cell plays its own sound after the error sound, so the player learns by ear what is there.
     const mark = game.board[cell];
     if (result.error === 'occupied' && mark) setTimeout(() => sounds.place(mark, cell), TAKEN_SOUND_DELAY_MS);
     return;
   }
-  // In a friend game this device plays both seats.
-  if (page.session.mode !== 'friend' && game.turn !== page.session.you) return reject(cell, waitReason);
   const { code, backend } = page.session;
+  // In a friend game this device plays both seats.
+  if (page.session.mode !== 'friend' && game.turn !== page.session.you) {
+    reject(cell, waitReason);
+    // With another device, this screen can miss a change, for example a move or a seat swap while
+    // the phone slept. The refusal sends nothing, so the page reads the game again.
+    if (shared()) void refresh(code);
+    return;
+  }
   const request = { game: page.games.length - 1, moveCount: game.moves.length, cell };
   countMove(via);
   // Show the move at once. The answer replaces it, or a refresh undoes it on an error.
@@ -91,6 +98,13 @@ export function undoMove(): void {
 }
 
 // The cell of the last move that Undo takes back for this device: in a friend game the last move, else the last move of `you`.
+// A press on `cell` works as the Undo button: the cell is the own last move, and Undo can run now.
+// Voice only lets this press through too (src/page/board.ts): it takes back a move, it places none.
+export function pressUndoes(cell: number): boolean {
+  if (page.session === undefined) return false;
+  return cell === ownLastCell(current(), page.session) && !undoButton.disabled && !undoButton.hidden;
+}
+
 function ownLastCell(game: Game, session: Session): number | undefined {
   if (session.mode === 'friend') return game.moves.at(-1);
   if (session.you === null) return undefined;
@@ -228,6 +242,8 @@ export async function refresh(code: Code): Promise<void> {
     }
     applyView(view);
   } catch (error) {
+    // An answer that this page cannot read comes from a newer release of the server.
+    if (open.backend === api && !(error instanceof OnlineError)) void loadNewVersion();
     showError(error);
   }
 }
@@ -255,6 +271,9 @@ export async function sendShownChange(code: Code, send: () => Promise<SessionVie
   } catch (error) {
     shownChanges -= 1;
     refreshOwed = false;
+    // The screen goes back to the last answer of the server at once. The refresh can fail too, for example
+    // while a deploy replaces the server. The event stream then loads the session when the server is back.
+    if (page.session?.code === code) page.games = page.session.games.map(toGame);
     await refresh(code);
     wakeSentWaiters();
     throw error;
@@ -286,7 +305,7 @@ export async function withBusy(task: () => Promise<void>): Promise<void> {
 
 export function defaultSessionName(mode: Mode = 'online'): string {
   const day = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-  const kind = mode === 'computer' ? `${settings.difficulty} computer` : mode === 'friend' ? 'friend' : mode === 'nearby' ? 'nearby game' : 'game';
+  const kind = mode === 'computer' ? `${settings.difficulty} computer` : mode === 'friend' ? 'same screen' : mode === 'nearby' ? 'Wi-Fi game' : 'game';
   return mode === 'online' ? `Game of ${day}` : `${kind[0]?.toUpperCase()}${kind.slice(1)} · ${day}`;
 }
 
@@ -404,6 +423,8 @@ export function startNewGame(): void {
   if (settingsLocked()) return reject(undefined, 'locked');
   if (page.session === undefined) return reject(undefined, 'no-session');
   newRound(); // drops a computer move for the game that ends here
+  // New game sits below the board, and on a phone the board is out of view. The top of the page shows the status and the board.
+  window.scrollTo({ top: 0, behavior: scrollMotion() });
   page.computerThinkMs = [];
   setThinking(false);
   const { code, backend } = page.session;

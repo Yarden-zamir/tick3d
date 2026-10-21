@@ -255,11 +255,11 @@ async function expectSameLayout(page: Page, baseline: Record<string, Box>, messa
 }
 
 const MODE_STEPS = [
-  { mode: 'Friend', ready: (page: Page) => expect(page.locator('#undo')).toBeVisible() },
+  { mode: 'friend', ready: (page: Page) => expect(page.locator('#undo')).toBeVisible() },
   // Online creates a game, which opens the chat.
-  { mode: 'Online', ready: (page: Page) => expect(page.locator('#chat')).not.toHaveClass(/closed/) },
-  { mode: 'Nearby', ready: (page: Page) => expect(page.locator('#nearby-host')).toBeVisible() },
-  { mode: 'Computer', ready: (page: Page) => expect(page.locator('#undo')).toBeVisible() },
+  { mode: 'online', ready: (page: Page) => expect(page.locator('#chat')).not.toHaveClass(/closed/) },
+  { mode: 'nearby', ready: (page: Page) => expect(page.locator('#nearby-host')).toBeVisible() },
+  { mode: 'computer', ready: (page: Page) => expect(page.locator('#undo')).toBeVisible() },
 ] as const;
 
 for (const [name, viewport] of Object.entries(VIEWPORTS)) {
@@ -280,7 +280,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     if (name === 'desktop') expect(chatColumn, 'the closed chat column').not.toBeNull();
 
     for (const { mode, ready } of MODE_STEPS) {
-      await picker.getByRole('button', { name: mode, exact: true }).click();
+      await picker.locator(`[data-value="${mode}"]`).click();
       await ready(page);
       await page.mouse.move(0, 0);
       await expectSameLayout(page, baseline, `the board or the panel moved: ${mode}`);
@@ -289,7 +289,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     }
 
     // Host opens a Nearby game, and with it the chat.
-    await picker.getByRole('button', { name: 'Nearby', exact: true }).click();
+    await picker.getByRole('button', { name: 'Wi-Fi', exact: true }).click();
     await page.locator('#nearby-host').click();
     await expect(page.locator('#chat')).not.toHaveClass(/closed/);
     await page.mouse.move(0, 0);
@@ -335,6 +335,8 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     answer();
     await expect(page.locator('#online-code')).not.toHaveText('····');
     await expect(page.locator('[data-pending]')).toHaveCount(0);
+    // Wide glyphs used to squeeze "QR code" onto two lines on a small phone.
+    await page.locator('#online-code').evaluate((element) => { element.textContent = 'WWWW'; });
     await page.mouse.move(0, 0);
     await expectSameLayout(page, before, 'a control moved when the server answered', PENDING);
   });

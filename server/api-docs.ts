@@ -47,6 +47,7 @@ import {
   parseGameId,
 } from '../src/protocol.ts';
 import { EMPTY_SESSION_TTL_MS, ERROR_CODES, SEAT_REQUEST_MS } from '../src/session/core.ts';
+import { CODE_MAX_LENGTH, CODE_MIN_LENGTH, EMAIL_MAX_LENGTH, HINT_LENGTH, TESTER_NAME_MAX_LENGTH } from '../src/share/codes.ts';
 
 // Long polls wait at most this long. Proxies keep an idle request open for longer.
 export const WAIT_MS = 25_000;
@@ -66,10 +67,17 @@ export const PRACTICE_RUNS_PER_10_MINUTES = 60;
 export const REPORTS_PER_10_MINUTES = 20;
 // Delete my data calls per hour from one address. server/main.ts enforces it.
 export const DATA_DELETES_PER_HOUR = 10;
+// Claims of tester codes per hour from one address. server/main.ts enforces it.
+export const TESTER_CLAIMS_PER_HOUR = 5;
+// Reports of an Android app open per hour from one address (POST /api/copies). The app sends one per start, so 60
+// leave room for a family that starts the app often.
+export const APP_OPENS_PER_HOUR = 60;
 // The tables that Delete my data (deleteData in server/store.ts) changes, with the rows it deleted and
 // the rows it kept without the player. chat_messages counts the messages inside the session documents.
-// The other tables hold no player data: events, and moderation_log (kept for moderation).
-export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'player_tokens', 'users'] as const;
+// The other tables hold no player data: events, and moderation_log (kept for moderation). tester_codes holds
+// the email and the name that a tester typed, without a player token: a maintainer deletes them on an email
+// request. Delete my data only removes the person ids of the player from it.
+export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'app_copies', 'player_tokens', 'users'] as const;
 export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number; anonymised: number }>;
 // The previews list on production is at most this old. server/previews.ts enforces it.
 // Only production calls GitHub, without a token: 60 calls per hour, 5 of them kept in reserve, so 55.
@@ -159,6 +167,7 @@ export type SchemaName =
   | 'StatsFilter'
   | 'Stats'
   | 'StatsPrivacy'
+  | 'StatsCard'
   | 'NearbyAnnounce'
   | 'NearbyAnnounced'
   | 'NearbyHost'
@@ -182,7 +191,14 @@ export type SchemaName =
   | 'ReportStored'
   | 'Reports'
   | 'DeletedData'
-  | 'DeletedPeople';
+  | 'DeletedPeople'
+  | 'TesterCodes'
+  | 'ClaimRequest'
+  | 'ClaimedCode'
+  | 'TesterClaims'
+  | 'AppOpen'
+  | 'CopyAnswer'
+  | 'PurchaseNonce';
 
 export const ref = (name: SchemaName): Schema => ({ $ref: `#/components/schemas/${name}` });
 const nullable = (schema: Schema): Schema => ({ oneOf: [schema, { type: 'null' }] });
@@ -220,6 +236,11 @@ const person: Schema = {
   pattern: `^[0-9a-f]{${PERSON_ID_LENGTH}}$`,
   description: 'A public person id. The same player has the same id in every session, also on every device of a GitHub account. It is not a player id and reveals none.',
 };
+const hasCopy: Schema = {
+  type: 'boolean',
+  description: 'Whether you hold a copy of the paid Android app: this device holds one, or another device that is logged in to your GitHub account. A copy belongs to the account that logged in last on its device.',
+};
+const testerName: Schema = { type: 'string', minLength: 1, maxLength: TESTER_NAME_MAX_LENGTH, description: `A display name: 1 to ${TESTER_NAME_MAX_LENGTH} letters, digits, spaces or - _ . '. The server trims spaces.` };
 const signalCode: Schema = { type: 'string', minLength: 1, maxLength: MAX_CODE_LENGTH };
 const hostId: Schema = { type: 'string', pattern: '^[A-Za-z0-9_-]{16}$', description: 'The id of a Nearby host in the list.' };
 const strings = (values: readonly string[], description?: string): Schema => ({ type: 'string', enum: values, ...(description === undefined ? {} : { description }) });
@@ -227,6 +248,8 @@ const list = (description: string, items?: Schema): Schema => ({ type: 'array', 
 const count = (description?: string): Schema => ({ type: 'integer', minimum: 0, ...(description === undefined ? {} : { description }) });
 const tally = (description: string, keys: readonly string[]): Schema =>
   object(description, Object.fromEntries(keys.map((key) => [key, ref('Tally')])));
+
+const statsPerson = object('Whose stats these are.', { name: displayName, player: nullable(ref('PlayerInfo')), you: { type: 'boolean', description: 'The X-Player header names this person.' } });
 
 export const SCHEMAS: Record<SchemaName, Schema> = {
   Player: { type: 'string', enum: ['X', 'O'], description: 'A seat. X moves first in every game. The players swap X and O for each new game, unless fixedSeats is true.' },
@@ -407,6 +430,8 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     loginAvailable: { type: 'boolean' },
     user: nullable(ref('PlayerInfo')),
     name: { ...nullable(displayName), description: 'The name that you chose with PUT /api/me/name, or null.' },
+    hasCopy,
+    person: { ...person, description: 'Your public person id: of the GitHub account when you are logged in, else of your player id. The /share page and the Share menu of the game put it in the invite link.' },
   }),
   Tally: object('Game counts.', {
     played: { type: 'integer', minimum: 0 },
@@ -539,7 +564,11 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     view: strings(VIEWS),
     layout: strings(LAYOUTS),
     theme: strings(THEMES),
-    input: object('Moves of this player by how they were placed.', { board: count(), keypad: count() }),
+    input: object(
+      'Moves of this player by how they were placed.',
+      { board: count(), keypad: count(), voice: count('The keypad moves that the voice placed. A missing value means 0.') },
+      ['voice'],
+    ),
     refused: { type: 'object', additionalProperties: count(), description: `Refused actions by reason: ${REFUSALS.join(', ')}.` },
     undos: count(),
     thinkMs: list('The thinking time of each computer move, in milliseconds.', { type: 'number', minimum: 0 }),
@@ -603,7 +632,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     offlineGames: count(),
     nearbyMixes: list('Nearby device mixes.', ref('Count')),
     filter: ref('StatsFilter'),
-    person: { ...nullable(object('Whose stats these are.', { name: displayName, player: nullable(ref('PlayerInfo')), you: { type: 'boolean', description: 'The X-Player header names this person.' } })), description: 'The person of a person filter: the name and GitHub account that their games show. null without a person filter.' },
+    person: { ...nullable(statsPerson), description: 'The person of a person filter: the name and GitHub account that their games show. null without a person filter.' },
     form: list(`The win rate over time, oldest first: at each game, the share of wins in the ${FORM_WINDOW} games up to it. mine: your games. everyone: the games against the computer, from the player's side.`, object('One game.', { at: { type: 'number' }, rate: { type: 'number', minimum: 0, maximum: 1 } })),
     lengths: list('Games per number of moves. Index n holds the games with n moves.', count()),
     openingWinsX: list('Games that X won, per first move.', count()),
@@ -708,6 +737,10 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     lastPlayed: { type: 'integer', minimum: 0, description: 'When the last game ended, in epoch milliseconds.' },
     achievements: count('The achievements that the person unlocked, over all their games. The filters do not change it.'),
   }),
+  StatsCard: object('The player card of a person view of the stats page.', {
+    person: statsPerson,
+    unlocked: list('The achievements that the person unlocked, newest first.', strings(ACHIEVEMENT_IDS)),
+  }),
   Leaderboard: object(`The common stats of each player, for the page to sort. The most active ${LEADERBOARD_ROWS} players at most.`, {
     generatedAt: { type: 'integer', minimum: 0, description: 'Server time in epoch milliseconds.' },
     rows: list('The players, most games first.', ref('LeaderboardRow')),
@@ -792,6 +825,51 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       }),
     ),
   }),
+  TesterCodes: object('The Google Play promo codes of the Android closed test, in a fixed order. Never a full code or an email.', {
+    codes: list(
+      'Every code, free and claimed.',
+      object('One code.', {
+        id: { type: 'integer', minimum: 1, description: 'The id to claim the code with.' },
+        hint: { type: 'string', minLength: HINT_LENGTH, maxLength: HINT_LENGTH, description: `The first ${HINT_LENGTH} characters of the code.` },
+        claimed: { type: 'boolean' },
+        name: { ...nullable(testerName), description: 'The name of the tester who has the code. null for a free code.' },
+        gravatar: {
+          ...nullable({ type: 'string', pattern: '^[0-9a-f]{64}$' }),
+          description: 'The SHA-256 Gravatar hash of the email of the tester, for https://gravatar.com/avatar/<hash>. null for a free code and for a code that the maintainer gave out by hand.',
+        },
+      }),
+    ),
+  }),
+  ClaimRequest: object('The tester who claims the code. The maintainers add the email to the Google Group of the test.', {
+    email: { type: 'string', minLength: 3, maxLength: EMAIL_MAX_LENGTH, description: 'The email of the Google account on the phone. The server trims spaces.' },
+    name: testerName,
+    by: {
+      ...nullable(person),
+      description: 'The person id of the inviter, from the invite link /share?by=<person id>. The claim counts for their invite achievements. Your own person id counts for nobody. Leave it out, or send null, without an invite.',
+    },
+  }, ['by']),
+  ClaimedCode: object('The code is yours.', {
+    code: { type: 'string', pattern: `^[A-Z0-9]{${CODE_MIN_LENGTH},${CODE_MAX_LENGTH}}$`, description: 'The full Google Play promo code.' },
+  }),
+  TesterClaims: object('The claimed tester codes with the emails, oldest first. Only the maintainers can read them.', {
+    claims: list(
+      'The claims.',
+      object('A claim.', {
+        hint: { type: 'string', minLength: HINT_LENGTH, maxLength: HINT_LENGTH },
+        name: testerName,
+        email: { ...nullable({ type: 'string' }), description: 'null for a code that the maintainer gave out by hand.' },
+        claimedAt: { type: 'number', description: 'Epoch milliseconds.' },
+        invitedBy: { ...nullable(person), description: 'The person id of the inviter, or null without an invite. Every claim from before the invite links counts as an invite of the maintainer Yarden.' },
+      }),
+    ),
+  }),
+  AppOpen: object('The Android app opened on this device.', {
+    store: { type: 'string', enum: ['play', 'apple'], description: 'Which store signed the proof.' },
+    proof: { type: 'string', minLength: 1, maxLength: 32768, description: 'The Play Integrity token from the native launch activity.' },
+    by: { ...nullable(person), description: 'The person id of the inviter, from the invite link /share?by=<person id> that this browser opened first, or null.' },
+  }),
+  PurchaseNonce: object('A one-time purchase challenge.', { nonce: { type: 'string' } }),
+  CopyAnswer: object('Whether you hold a copy of the paid Android app.', { hasCopy }),
   Previews: object('The production site and the open pull requests with a live preview, most recently updated first.', {
     main: nullable({ type: 'string', pattern: '^https://', description: 'The production site, built from the main branch. null on a server without previews.' }),
     previews: list('The previews.', ref('Preview')),
@@ -873,6 +951,8 @@ const ACHIEVEMENTS_EXAMPLE = achievementProgress([
     options: { hideBoard: false, hideHistory: false, hideCoordinates: false },
     tuned: false,
     finishedAt: toEpochMs(T0 + 70_000),
+    opponent: null,
+    input: null,
   },
 ]);
 
@@ -961,7 +1041,7 @@ type Response =
 
 export type Route = {
   operationId: string;
-  tag: 'Play' | 'Nearby' | 'Docs' | 'Account' | 'Safety';
+  tag: 'Play' | 'Nearby' | 'Docs' | 'Account' | 'Safety' | 'Testing';
   summary: string;
   description?: string;
   // The X-Player header: your player id. It is your seat.
@@ -1002,6 +1082,11 @@ export const PATH_PARAMS: Record<string, { description: string; schema: Schema; 
     description: 'The id of a chat message.',
     schema: { type: 'integer', minimum: 1 },
     example: '3',
+  },
+  codeId: {
+    description: 'The id of a tester code, from GET /api/testing/codes.',
+    schema: { type: 'integer', minimum: 1 },
+    example: '2',
   },
   host: {
     description: 'The id of a Nearby host, from GET /api/nearby/hosts.',
@@ -1282,7 +1367,7 @@ export const ROUTES = {
         view: 'tower',
         layout: 'grid',
         theme: 'light',
-        input: { board: 4, keypad: 0 },
+        input: { board: 4, keypad: 0, voice: 0 },
         refused: { occupied: 1 },
         undos: 0,
         thinkMs: [],
@@ -1450,6 +1535,21 @@ export const ROUTES = {
     ],
     examplePlayer: AGENT_A,
   },
+  'GET /api/stats/card/{person}': {
+    operationId: 'statsCard',
+    tag: 'Account',
+    summary: 'The player card of a person view at /stats: the name and the unlocked achievements.',
+    description: 'It reads no game, so it answers before GET /api/stats with the same person. It reads the X-Player header as a person filter does: a person who hides their stats still sees their own card.',
+    player: 'optional',
+    response: { status: 200, description: 'The card. No token.', schema: 'StatsCard', example: { person: { name: 'braveOtter', player: null, you: false }, unlocked: [ACHIEVEMENT_IDS[1], ACHIEVEMENT_IDS[0]] } },
+    errors: [
+      { status: 400, when: 'The person id is not valid.' },
+      { ...BAD_PLAYER, when: `Only with an invalid header. ${BAD_PLAYER.when}` },
+      { status: 403, when: 'That person hides their stats ("Hide my stats" in My games).' },
+      { status: 404, when: 'No account and no finished game has that person id.' },
+    ],
+    examplePlayer: AGENT_A,
+  },
   'GET /api/leaderboard': {
     operationId: 'leaderboard',
     tag: 'Account',
@@ -1507,7 +1607,7 @@ export const ROUTES = {
     summary: 'Your GitHub login state. The page uses it.',
     description: 'A login cookie from the page links your player id to a GitHub account. A client without a page login gets null.',
     player: 'required',
-    response: { status: 200, description: 'Your login state.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith' } },
+    response: { status: 200, description: 'Your login state.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith', hasCopy: false, person: OTHER_PERSON } },
     errors: [BAD_PLAYER],
     examplePlayer: AGENT_A,
   },
@@ -1543,7 +1643,7 @@ export const ROUTES = {
     description: 'Without a GitHub login, other players see this name in place of your generated name. A GitHub login still goes first.',
     player: 'required',
     body: { schema: 'NameRequest', example: { name: 'Agent Smith' } },
-    response: { status: 200, description: 'Your login state with the new name.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith' } },
+    response: { status: 200, description: 'Your login state with the new name.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith', hasCopy: false, person: OTHER_PERSON } },
     errors: [BAD_PLAYER, { status: 400, when: 'The name is not valid.' }, { status: 409, when: 'The name is the login of a GitHub account.' }],
     examplePlayer: AGENT_A,
   },
@@ -1552,7 +1652,7 @@ export const ROUTES = {
     tag: 'Account',
     summary: 'Go back to your generated name.',
     player: 'required',
-    response: { status: 200, description: 'Your login state without a custom name.', schema: 'Me', example: { loginAvailable: true, user: null, name: null } },
+    response: { status: 200, description: 'Your login state without a custom name.', schema: 'Me', example: { loginAvailable: true, user: null, name: null, hasCopy: false, person: OTHER_PERSON } },
     errors: [BAD_PLAYER],
     examplePlayer: AGENT_A,
   },
@@ -1779,6 +1879,81 @@ export const ROUTES = {
         ],
         actions: [{ login: 'Yarden-zamir', action: 'hide-message', code: EXAMPLE_CODE, message: 3, person: null, at: T0 }],
       },
+    },
+    errors: [BAD_PLAYER, MAINTAINER_401, MAINTAINER_403, NO_LOGIN],
+    examplePlayer: AGENT_A,
+  },
+  'GET /api/testing/codes': {
+    operationId: 'testerCodes',
+    tag: 'Testing',
+    summary: 'The Google Play promo codes of the Android closed test. The /share page uses it.',
+    description: 'Each code shows its first characters only. A claimed code shows the name of the tester and a Gravatar hash, never the email.',
+    player: 'none',
+    response: {
+      status: 200,
+      description: 'Every code, free and claimed.',
+      schema: 'TesterCodes',
+      example: {
+        codes: [
+          { id: 1, hint: 'K7Q', claimed: true, name: 'Tom', gravatar: null },
+          { id: 2, hint: 'M2X', claimed: true, name: 'Dana', gravatar: '84059b07d4be67b806386c0aad8070a23f18836bbaae342275dc0a83414c32ee' },
+          { id: 3, hint: 'B9W', claimed: false, name: null, gravatar: null },
+        ],
+      },
+    },
+    errors: [],
+  },
+  'POST /api/testing/codes/{codeId}/claim': {
+    operationId: 'claimTesterCode',
+    tag: 'Testing',
+    summary: 'Claim one Google Play promo code of the Android closed test.',
+    description: `The answer holds the full code, once. The server stores the email, the name and the person id of the inviter, and no player id. The X-Player header is required, so a form on another site cannot claim. One address can claim ${TESTER_CLAIMS_PER_HOUR} codes per hour.`,
+    player: 'required',
+    body: { schema: 'ClaimRequest', example: { email: 'dana@example.com', name: 'Dana', by: OTHER_PERSON } },
+    response: { status: 200, description: 'The code is yours.', schema: 'ClaimedCode', example: { code: 'B9WQ4T7XK2M8RZ5P3N6H1JD' } },
+    errors: [
+      BAD_PLAYER,
+      { status: 400, when: `The body needs an email of at most ${EMAIL_MAX_LENGTH} characters and a name of 1 to ${TESTER_NAME_MAX_LENGTH} characters. A \`by\` value must be a person id.` },
+      { status: 400, when: 'The id is not a whole number from 1.' },
+      { status: 404, when: 'No tester code has this id.' },
+      { status: 409, when: 'Somebody claimed this code already.' },
+      TOO_BIG,
+      { status: 429, when: `This address claimed ${TESTER_CLAIMS_PER_HOUR} codes in the last hour.` },
+    ],
+    examplePlayer: AGENT_A,
+  },
+  'POST /api/copies/nonce': {
+    operationId: 'purchaseNonce',
+    tag: 'Account',
+    summary: 'Get a one-time Play Integrity nonce. Valid for five minutes.',
+    description: 'Bound to the X-Player token. A different player cannot submit its proof.',
+    player: 'required',
+    response: { status: 200, description: 'A fresh nonce.', schema: 'PurchaseNonce', example: { nonce: 'one-time-server-nonce' } },
+    errors: [BAD_PLAYER, { status: 429, when: 'Too many checks from this address.' }, { status: 503, when: 'Too many outstanding checks.' }],
+    examplePlayer: AGENT_A,
+  },
+  'POST /api/copies': {
+    operationId: 'reportAppOpen',
+    tag: 'Account',
+    summary: 'Prove a paid Android app open with Play Integrity. The app sends it on each start.',
+    description: `The app is paid, so the first open makes a copy of this device. The copy belongs to the account that is logged in on this device now, or to the device without a login. A login with another account moves it. With an inviter, the copy counts for the invite achievements of that person, once per person, also when the same person claimed a code through the link. A later open only adds an inviter that the copy lacks. One address can report ${APP_OPENS_PER_HOUR} times per hour.`,
+    player: 'required',
+    body: { schema: 'AppOpen', example: { by: OTHER_PERSON, proof: 'encrypted-play-integrity-token', store: 'play' } },
+    response: { status: 200, description: 'Stored, or known already.', schema: 'CopyAnswer', example: { hasCopy: true } },
+    errors: [BAD_PLAYER, { status: 400, when: 'The body needs a proof token and a person id or null in `by`.' }, { status: 403, when: 'The store proof is invalid, expired or used already.' }, { status: 503, when: 'Purchase verification is unavailable.' }, TOO_BIG, { status: 429, when: `This address reported ${APP_OPENS_PER_HOUR} app opens in the last hour.` }],
+    examplePlayer: AGENT_A,
+  },
+  'GET /api/testing/claims': {
+    operationId: 'testerClaims',
+    tag: 'Testing',
+    summary: 'The claimed tester codes with the emails of the testers. Maintainers only.',
+    description: 'Needs the X-Player header and the login cookie of a maintainer. The maintainers add the emails to the Google Group of the test.',
+    player: 'required',
+    response: {
+      status: 200,
+      description: 'Every claim, oldest first.',
+      schema: 'TesterClaims',
+      example: { claims: [{ hint: 'K7Q', name: 'Tom', email: null, claimedAt: T0, invitedBy: null }, { hint: 'M2X', name: 'Dana', email: 'dana@example.com', claimedAt: T0, invitedBy: OTHER_PERSON }] },
     },
     errors: [BAD_PLAYER, MAINTAINER_401, MAINTAINER_403, NO_LOGIN],
     examplePlayer: AGENT_A,

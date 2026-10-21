@@ -497,11 +497,12 @@ input:disabled {
   }
 }
 
-/* One column: half a screen of room under the footer. The gear never covers the footer links, and the panel
-   can sit in the middle of the screen at the end of the page. Without the room, a mode change that hides a
-   block (Friend hides Difficulty) shortens the page, and the browser pulls the scroll back by that height. */
+/* The game page in one column: half a screen of room under the footer. The gear never covers the footer links,
+   and the panel can sit in the middle of the screen at the end of the page. Without the room, a mode change
+   that hides a block (Friend hides Difficulty) shortens the page, and the browser pulls the scroll back by that
+   height. The other pages have no gear and no mode change, so they keep a plain footer. */
 @media (width <= 52rem) {
-  .site-footer {
+  .app + .site-footer {
     padding-bottom: max(50dvh, env(safe-area-inset-bottom));
   }
 }
@@ -2086,7 +2087,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: block;
   font-size: 2.2rem;
   font-weight: 800;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.1em;
   line-height: 1.1;
 }
 
@@ -3128,6 +3129,11 @@ body[data-turn='O'] .status[data-state='playing'] {
   transition: none;
 }
 
+/* A custom time that the player edits keeps its own light background over the pill, so its dark text reads. */
+.has-pill > .limit-custom:focus-within {
+  background: var(--peer);
+}
+
 /* ---- Press and toggle motion ----
    Every control moves under a press. A .btn presses into its shadow (above). A free-standing control
    without a shadow (a segmented choice, a time pick, a fold) shrinks a little.
@@ -3355,7 +3361,13 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* Achievements (src/page/achievements.ts), in the style of Steam: a list of rows with a badge, the
-   name and the description, and the unlock date. The badge has the color of the tier of the goal. */
+   name and the description, and the unlock date. The badge has the color of the tier of the goal.
+   TIER_COLORS in src/achievement-icons.ts has the same colors. */
+[data-tier='stone'] {
+  --tier: #d9d2c5;
+  --tier-deep: #8f8676;
+}
+
 [data-tier='bronze'] {
   --tier: #ffb36b;
   --tier-deep: #c7672a;
@@ -3369,6 +3381,11 @@ body[data-turn='O'] .status[data-state='playing'] {
 [data-tier='gold'] {
   --tier: #ffe14d;
   --tier-deep: #ff9d00;
+}
+
+[data-tier='mythic'] {
+  --tier: #e6b8ff;
+  --tier-deep: #6c5ce7;
 }
 
 .achievements-summary {
@@ -3418,6 +3435,39 @@ body[data-turn='O'] .status[data-state='playing'] {
   translate: -100% 0;
   animation: badge-shine 5s ease-in-out infinite;
   pointer-events: none;
+}
+
+/* Stone: matte, with no shine, so an easy goal looks plain. */
+.achievement-icon[data-tier='stone'] {
+  background: linear-gradient(145deg, var(--tier), var(--tier-deep));
+}
+
+.achievement-icon[data-tier='stone']::after {
+  display: none;
+}
+
+/* Mythic: a rainbow foil that turns, and a faster shine. */
+@property --foil-turn {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.achievement-icon[data-tier='mythic'] {
+  background:
+    radial-gradient(circle at 30% 25%, rgb(255 255 255 / 0.7), transparent 45%),
+    conic-gradient(from var(--foil-turn), #ff7ad9, #b98cff, #6be4ff, #7cff8a, #ffe14d, #ff9d6b, #ff7ad9);
+  animation: badge-foil 6s linear infinite;
+}
+
+.achievement-icon[data-tier='mythic']::after {
+  animation-duration: 2.6s;
+}
+
+@keyframes badge-foil {
+  to {
+    --foil-turn: 360deg;
+  }
 }
 
 @keyframes badge-shine {
@@ -3492,11 +3542,27 @@ body[data-turn='O'] .status[data-state='playing'] {
   rotate: 4deg;
 }
 
-/* A locked badge is grey, with a small lock on its corner. */
+/* A locked badge is grey, with a small lock on its corner. A hidden one is a striped question mark. */
+.achievement[data-state='hidden'] .achievement-icon {
+  background: repeating-linear-gradient(45deg, var(--surface-2) 0 6px, var(--surface) 6px 12px);
+  box-shadow: none;
+  color: var(--muted);
+  animation: none;
+}
+
+.achievement[data-state='hidden'] .achievement-icon::after {
+  display: none;
+}
+
+.achievement[data-state='hidden'] .achievement-text b {
+  color: var(--muted);
+}
+
 .achievement[data-state='locked'] .achievement-icon {
   background: var(--surface);
   box-shadow: none;
   color: var(--muted);
+  animation: none;
 }
 
 .achievement[data-state='locked'] .achievement-icon > svg {
@@ -3640,6 +3706,22 @@ body[data-turn='O'] .status[data-state='playing'] {
   animation: medal-pop 0.55s calc(0.25s + var(--i) * 0.18s) cubic-bezier(0.34, 1.8, 0.64, 1) both;
 }
 
+/* The foil of a mythic badge keeps turning after the pop. */
+.unlock-medals .achievement-icon[data-tier='mythic'] {
+  animation:
+    medal-pop 0.55s calc(0.25s + var(--i) * 0.18s) cubic-bezier(0.34, 1.8, 0.64, 1) both,
+    badge-foil 6s linear infinite;
+}
+
+/* The count of the badges that the strip has no room for. */
+.unlock-more {
+  align-self: center;
+  margin-left: 0.3rem;
+  color: #ffffff;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
 .unlock-medals .achievement-icon[aria-pressed='true'] {
   z-index: 1;
   outline: 3px solid var(--tier);
@@ -3746,6 +3828,117 @@ body[data-turn='O'] .status[data-state='playing'] {
   }
 }
 
+/* The achievement popup (src/page/achievement-popup.ts): the dark band of the end card unlock, as a card at the
+   bottom of the screen. It lands like a sticker, and its badges pop in one after another. */
+.achievement-popup {
+  position: fixed;
+  z-index: 20;
+  left: 50%;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  translate: -50% 0;
+  display: grid;
+  gap: 0.6rem;
+  width: min(calc(100vw - 1.5rem), 24rem);
+  padding: 0.8rem;
+  border: var(--border) solid #000000;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 12% 20%, rgb(150 120 255 / 0.55), transparent 55%),
+    linear-gradient(120deg, #17122f, #2c2166);
+  box-shadow: 4px 4px 0 #000000;
+  color: #ffffff;
+}
+
+.achievement-popup[hidden] {
+  display: none;
+}
+
+.achievement-popup.pop {
+  animation: popup-land 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* As sticker-slap, from below: the card keeps its centring translate. */
+@keyframes popup-land {
+  from {
+    opacity: 0;
+    translate: -50% 120%;
+    rotate: -6deg;
+  }
+
+  70% {
+    opacity: 1;
+    rotate: 1deg;
+  }
+}
+
+.achievement-popup-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.achievement-popup-head h2 {
+  flex: 1;
+  margin: 0;
+  color: #ffe14d;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The popup is dark in every theme, so its buttons keep black borders. */
+.achievement-popup .btn {
+  border-color: #000000;
+}
+
+.achievement-popup-head .btn {
+  background: #ffffff;
+  color: #000000;
+}
+
+.achievement-popup-list {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The badge, its size and the gap to the text as on the unlock band of the end card (.unlock). */
+.achievement-popup-item {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.achievement-popup-item .achievement-icon {
+  flex-shrink: 0;
+  width: 3rem;
+  height: 3rem;
+  padding: 0.45rem;
+  border-color: #000000;
+  box-shadow: 2px 2px 0 #000000;
+}
+
+.achievement-popup.pop .achievement-popup-item .achievement-icon {
+  animation: medal-pop 0.55s calc(0.25s + var(--i) * 0.18s) cubic-bezier(0.34, 1.8, 0.64, 1) both;
+}
+
+.achievement-popup.pop .achievement-popup-item .achievement-icon[data-tier='mythic'] {
+  animation:
+    medal-pop 0.55s calc(0.25s + var(--i) * 0.18s) cubic-bezier(0.34, 1.8, 0.64, 1) both,
+    badge-foil 6s linear infinite;
+}
+
+.achievement-popup-item .unlock-text b {
+  font-size: 1rem;
+}
+
+.achievement-popup-more {
+  justify-self: start;
+}
+
 /* A player who closed an async game: dimmed, but the game goes on. */
 .tally.away {
   opacity: 0.6;
@@ -3787,6 +3980,18 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 /* ---- Nearby ---- */
 
+.mode-note {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.here-icon {
+  display: inline-flex;
+  flex: none;
+}
+
 .nearby {
   display: grid;
   gap: 0.7rem;
@@ -3804,13 +4009,119 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 .nearby-me {
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 0.5rem;
+  margin-top: 0.6rem;
 }
 
-.nearby-me input {
-  flex: 1;
+.nearby-intro b {
+  display: block;
+}
+
+.nearby-identity summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  list-style: none;
+  cursor: pointer;
+}
+
+.nearby-identity summary::-webkit-details-marker {
+  display: none;
+}
+
+.nearby-identity b {
+  overflow-wrap: anywhere;
+}
+
+.nearby-edit {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-decoration: underline;
+}
+
+.nearby-online {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.7rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.nearby-online p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.nearby-progress {
+  margin: 0 0 0.4rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.nearby-step-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  line-height: 1.15;
+}
+
+.nearby-camera {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.nearby-viewfinder {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: #15122b;
+}
+
+.nearby-viewfinder video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.nearby-viewfinder span {
+  position: absolute;
+  inset: 12%;
+  border: 3px solid #ffe14d;
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.nearby-text > details,
+.nearby-text > .nearby-input {
+  margin-top: 0.6rem;
+}
+
+.nearby-sound {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.6rem;
+}
+
+.nearby-sound-link {
+  justify-self: start;
+  padding: 0.35rem 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
 }
 
 .device-icon {
@@ -3837,6 +4148,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .nearby .btn {
   flex: 1;
+  min-height: 44px;
 }
 
 .nearby-step {
@@ -3924,15 +4236,9 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
-.nearby-laptop summary,
 .nearby-text summary {
   cursor: pointer;
   font-weight: 700;
-}
-
-.nearby-laptop p {
-  margin: 0.4rem 0 0;
-  color: var(--muted);
 }
 
 .lan-host {
@@ -3973,6 +4279,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 .share-buttons {
   display: grid;
   gap: 0.4rem;
+  white-space: nowrap;
 }
 
 .online-qr {
@@ -3981,6 +4288,26 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.4rem;
   font-weight: 700;
   text-align: center;
+}
+
+/* The Share button of the game header sits with the header buttons, at the right. The header is the same on
+   every page (src/markup.test.ts), so the button stays outside .brand-links. A negative right margin turns the
+   gap of .brand (1rem) into the gap of .brand-links (0.6rem), so it looks like one more button of the group. */
+.brand > .game-share {
+  margin-left: auto;
+  margin-right: calc(0.6rem - 1rem);
+  anchor-name: --game-share;
+}
+
+@media (width < 64rem) {
+  .brand:has(> .status, > .page-title) > .game-share + .game-share-menu + .brand-links {
+    margin-left: 0;
+  }
+}
+
+/* The Share menu: under the Share button, at its right edge, as the link menu below. */
+.share-menu.game-share-menu {
+  position-anchor: --game-share;
 }
 
 /* The link menu: a popover under the caret of Link, at its right edge. It flips above when there is no room below.

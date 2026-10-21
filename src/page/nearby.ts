@@ -5,6 +5,9 @@ import { detectDevice, deviceLabel, DEVICE_ICONS } from '../nearby/device.ts';
 import type { Announced, HostId, LobbyHost } from '../nearby/lobby.ts';
 import { type Channel, createOffer, answerOffer } from '../nearby/peer.ts';
 import { renderQr } from '../nearby/qr.ts';
+import { cameraProblem, scanQr } from '../nearby/scanner.ts';
+import { listenForSoundReply, sendSoundReply } from '../nearby/sound-link.ts';
+import { canSendSoundReply } from '../nearby/sound-code.ts';
 import { type NearbyHost, type NearbyGuest, createNearbyHost, createNearbyGuest } from '../nearby/session.ts';
 import { type Hello, HELLO_NAME_MAX_LENGTH, decodeSignal } from '../nearby/signal.ts';
 import { OnlineError, api, token } from '../online.ts';
@@ -17,6 +20,7 @@ import {
   nearbyAdd,
   nearbyStop,
   nearbyDeviceIcon,
+  nearbyIntro,
   nearbyDevices,
   nearbyStep,
   nearbyStepText,
@@ -35,6 +39,22 @@ import {
   nearbyHostsEmpty,
   nearbyOffline,
   nearbyVisible,
+  nearbyMyName,
+  nearbyOnline,
+  nearbyGoOnline,
+  nearbyStepTitle,
+  nearbyProgress,
+  nearbyScan,
+  nearbyScanBack,
+  nearbyCamera,
+  nearbyVideo,
+  nearbyCameraStatus,
+  nearbyCameraRetry,
+  nearbyManual,
+  nearbySound,
+  nearbySoundToggle,
+  nearbySoundStatus,
+  nearbyReconnect,
 } from './dom.ts';
 import { useHostLink } from './end-card.ts';
 import { copyText, showProblem, showToast, showError } from './feedback.ts';
@@ -61,8 +81,23 @@ type Invite = Awaited<ReturnType<typeof createOffer>>;
 let nearby: NearbyState = { kind: 'idle' };
 // The Nearby step for other modules. Only this module changes it.
 export const nearbyKind = () => nearby.kind;
-let wakeLock: { release(): Promise<void> } | undefined;
+let wakeLock: WakeLockSentinel | undefined;
+let requestingWake = false;
 const thisDevice = detectDevice();
+
+// A wake lock is released when a page goes into the background. Ask again when its host returns.
+async function keepHostAwake(): Promise<void> {
+  if (nearby.kind !== 'hosting' || document.hidden || requestingWake || (wakeLock !== undefined && !wakeLock.released)) return;
+  const host = nearby.host;
+  requestingWake = true;
+  try {
+    const lock = await navigator.wakeLock?.request('screen').catch(() => undefined);
+    if (nearby.kind !== 'hosting' || nearby.host !== host || document.hidden) return void lock?.release().catch(() => undefined);
+    wakeLock = lock;
+  } finally {
+    requestingWake = false;
+  }
+}
 
 // The device name starts as the name that the other players see for this player (ownName), so the
 // device list matches the score by default. A custom name fits: CUSTOM_NAME_MAX_LENGTH is HELLO_NAME_MAX_LENGTH.
@@ -93,13 +128,17 @@ function seatRole(seat: Player | null): string {
 
 async function renderNearby(): Promise<void> {
   const state = nearby;
-  nearbyStart.hidden = state.kind !== 'idle';
-  nearbyActions.hidden = state.kind !== 'hosting' && state.kind !== 'guest';
+  const pairing = !nearbyStep.hidden;
+  nearbyIntro.hidden = pairing;
+  nearbyStart.hidden = state.kind !== 'idle' || pairing;
+  nearbyActions.hidden = (state.kind !== 'hosting' && state.kind !== 'guest') || pairing;
   nearbyAdd.hidden = state.kind !== 'hosting';
   nearbyStop.textContent = state.kind === 'guest' ? 'Leave' : 'End';
   nearbyDeviceIcon.innerHTML = DEVICE_ICONS[thisDevice];
+  nearbyMyName.textContent = nearbyHello().name;
   if (state.kind === 'hosting') {
     const guests = await state.host.guests();
+    if (nearby !== state) return;
     nearbyDevices.replaceChildren(
       deviceItem(nearbyHello(), `You · Host · ${seatRole(page.session?.you ?? null)}`),
       ...guests.map((guest) => deviceItem(guest.hello, seatRole(guest.seat))),
@@ -110,9 +149,8 @@ async function renderNearby(): Promise<void> {
       deviceItem(nearbyHello(), `You · ${seatRole(page.session?.you ?? null)}`),
     );
   } else nearbyDevices.replaceChildren();
-  nearbyDevices.hidden = nearbyDevices.childElementCount === 0;
+  nearbyDevices.hidden = nearbyDevices.childElementCount === 0 || pairing;
   nearbyVisible.hidden = !(state.kind === 'hosting' && listed);
-  nearbyOffline.hidden = !(state.kind === 'idle' && !navigator.onLine);
   renderLobby();
   void watchLobby();
 }
@@ -121,9 +159,10 @@ async function renderNearby(): Promise<void> {
 
 // The list of games near you shows while this device is online and idle in Nearby mode.
 const lobbyWanted = () =>
-  settings.mode === 'nearby' && nearby.kind === 'idle' && navigator.onLine && page.viewing === undefined && !document.hidden;
+  settings.mode === 'nearby' && nearby.kind === 'idle' && nearbyStep.hidden && page.viewing === undefined && !document.hidden;
 // The last list from the server. Undefined before the first answer, and after a failed request.
 let lobbyHosts: LobbyHost[] | undefined;
+let lobbyFailed = false;
 // What the list shows, so a new answer with the same content keeps the buttons (and their focus).
 let lobbyShown = '';
 let lobbyWatching = false;
@@ -142,7 +181,10 @@ async function watchLobby(): Promise<void> {
   lobbyWatching = true;
   try {
     while (lobbyWanted()) {
-      lobbyHosts = await api.nearbyHosts().catch(() => undefined);
+      // Wi-Fi without internet often still reports navigator.onLine. A usable API answer, not that
+      // flag, decides whether to suggest Online or offer the internet-assisted game list.
+      lobbyHosts = await api.nearbyHosts(AbortSignal.timeout(5000)).catch(() => undefined);
+      lobbyFailed = lobbyHosts === undefined;
       renderLobby();
       await sleep(LOBBY_POLL_MS);
     }
@@ -154,6 +196,8 @@ async function watchLobby(): Promise<void> {
 const hostedAgo = (age: number) => (age < 60 ? 'Hosts now' : `Hosts for ${Math.floor(age / 60)} min`);
 
 function renderLobby(): void {
+  nearbyOnline.hidden = !lobbyWanted() || lobbyHosts === undefined;
+  nearbyOffline.hidden = !lobbyWanted() || !lobbyFailed;
   nearbyLobby.hidden = !lobbyWanted() || lobbyHosts === undefined;
   const hosts = lobbyHosts ?? [];
   nearbyHostsEmpty.hidden = hosts.length > 0;
@@ -194,7 +238,8 @@ function announce(host: NearbyHost): void {
   void announceLoop(host, abort.signal)
     .catch(showError)
     .finally(() => {
-      if (announcing === abort) announcing = undefined;
+      if (announcing !== abort) return;
+      announcing = undefined;
       listed = false;
       void renderNearby();
     });
@@ -260,9 +305,10 @@ async function acceptListedGuest(host: NearbyHost, invite: Invite, answer: strin
   }
 }
 
-function welcomeGuest(host: NearbyHost, channel: Channel, peer: Hello): void {
+function welcomeGuest(host: NearbyHost, channel: Channel, peer: Hello, bySound = false): void {
   host.addGuest(channel, peer);
-  sounds.sent();
+  if (bySound) sounds.pairingConnected();
+  else sounds.sent();
   showToast(`${peer.name} joined.`);
   void renderNearby();
 }
@@ -282,11 +328,111 @@ function nearbyCodeOf(text: string): string {
   }
 }
 
-function showNearbyStep(text: string, options: { code?: string; input?: boolean } = {}): void {
+let stepGeneration = 0;
+let scanner: AbortController | undefined;
+let scanKind: 'offer' | 'answer' | undefined;
+let soundMode: { offer: string; answer?: string } | undefined;
+let soundOperation: AbortController | undefined;
+
+function soundStatus(text: string): void {
+  nearbySoundStatus.textContent = text;
+  nearbySoundStatus.hidden = text === '';
+}
+
+function soundLabel(): void {
+  nearbySoundToggle.textContent = soundMode?.answer === undefined ? 'Listen for reply' : 'Send reply by sound';
+}
+
+function stopSound(): void {
+  soundOperation?.abort();
+  soundOperation = undefined;
+  soundLabel();
+}
+
+async function toggleSound(): Promise<void> {
+  if (soundOperation !== undefined) {
+    stopSound();
+    soundStatus('');
+    return render();
+  }
+  const mode = soundMode;
+  if (mode === undefined) return;
+  stopScanner();
+  nearbyCamera.hidden = true;
+  nearbyQr.hidden = false;
+  nearbyScanBack.hidden = true;
+  const current = new AbortController();
+  soundOperation = current;
+  nearbySoundToggle.textContent = mode.answer === undefined ? 'Stop listening' : 'Stop sound';
+  soundStatus(mode.answer === undefined ? 'Opening microphone…' : 'Preparing sound…');
+  try {
+    if (mode.answer === undefined) {
+      const pending = listenForSoundReply(mode.offer, current.signal, (received, total) => {
+        if (soundOperation === current) soundStatus(total === 0 ? 'Listening… Ask them to send the reply.' : `Receiving ${received}/${total}…`);
+      });
+      render();
+      const reply = await pending;
+      if (soundOperation !== current) return;
+      stopSound();
+      await useNearbyCode(reply, true);
+    } else {
+      const pending = sendSoundReply(mode.offer, mode.answer, current.signal, (part, total) => {
+        if (soundOperation === current) soundStatus(`Sending ${part}/${total}…`);
+      });
+      render();
+      await pending;
+      if (soundOperation === current) soundStatus('Reply sent. Waiting for connection…');
+    }
+  } catch (error) {
+    if (soundOperation !== current || current.signal.aborted) return;
+    const name = error instanceof DOMException ? error.name : '';
+    soundStatus(name === 'NotAllowedError' || name === 'SecurityError'
+      ? 'Microphone access is off. Allow it in settings, or scan the reply.'
+      : name === 'TimeoutError' ? mode.answer === undefined ? 'No reply heard. Try again or scan the reply.' : 'Sound timed out. Try again or scan the reply.'
+        : error instanceof Error ? error.message : 'Sound pairing failed. Scan the reply instead.');
+  } finally {
+    if (soundOperation === current) {
+      soundOperation = undefined;
+      soundLabel();
+    }
+    render();
+  }
+}
+
+function stopScanner(): void {
+  scanner?.abort();
+  scanner = undefined;
+}
+
+function cameraStatus(text: string): void {
+  nearbyCameraStatus.textContent = text;
+  nearbyCameraStatus.hidden = text === '';
+}
+
+function showNearbyStep(title: string, text: string, options: { code?: string; input?: boolean; step?: 1 | 2; scanBack?: boolean; replyTo?: string } = {}): void {
+  stopScanner();
+  stopSound();
+  soundMode = options.code !== undefined && options.scanBack ? { offer: options.code }
+    : options.code !== undefined && options.replyTo !== undefined && canSendSoundReply(options.code) ? { offer: options.replyTo, answer: options.code } : undefined;
+  nearbySound.hidden = soundMode === undefined;
+  soundLabel();
+  soundStatus('');
+  scanKind = undefined;
+  const generation = ++stepGeneration;
   nearbyStep.hidden = false;
+  nearbyStepTitle.textContent = title;
   nearbyStepText.textContent = text;
+  nearbyStepText.hidden = text === '';
+  nearbyProgress.hidden = options.step === undefined;
+  nearbyProgress.textContent = options.step === undefined ? '' : `Step ${options.step} of 2`;
+  nearbyCamera.hidden = true;
+  nearbyScan.hidden = !options.scanBack;
+  nearbyScanBack.hidden = true;
   nearbyQr.hidden = options.code === undefined;
+  nearbyManual.hidden = options.code === undefined && !options.input;
+  nearbyManual.open = false;
   nearbyText.hidden = options.code === undefined;
+  nearbyText.open = false;
   nearbyCodeOut.value = options.code ?? '';
   nearbyInput.hidden = !options.input;
   nearbyCodeIn.value = '';
@@ -294,13 +440,65 @@ function showNearbyStep(text: string, options: { code?: string; input?: boolean 
     const code = options.code;
     // The QR code holds a link, the text box the bare code. Both work in either place.
     void renderQr(nearbyLink(code)).then((svg) => {
-      if (nearbyCodeOut.value === code) nearbyQr.replaceChildren(svg);
+      if (stepGeneration === generation) nearbyQr.replaceChildren(svg);
     });
   } else nearbyQr.replaceChildren();
+  void renderNearby();
 }
 
 function hideNearbyStep(): void {
+  stopScanner();
+  stopSound();
+  soundMode = undefined;
+  scanKind = undefined;
+  stepGeneration++;
   nearbyStep.hidden = true;
+}
+
+async function startScanner(kind: 'offer' | 'answer'): Promise<void> {
+  stopSound();
+  soundStatus('');
+  stopScanner();
+  scanKind = kind;
+  nearbyProgress.hidden = false;
+  nearbyProgress.textContent = `Step ${kind === 'offer' ? 1 : 2} of 2`;
+  nearbyStepTitle.textContent = kind === 'offer' ? 'Scan your friend’s screen' : 'Scan their screen';
+  nearbyStepText.textContent = kind === 'offer' ? '' : 'Scan the new code on their screen.';
+  nearbyStepText.hidden = kind === 'offer';
+  nearbyQr.hidden = true;
+  nearbyScan.hidden = true;
+  nearbyScanBack.hidden = kind !== 'answer';
+  nearbyCamera.hidden = false;
+  nearbyCameraRetry.hidden = true;
+  cameraStatus('Starting camera…');
+  const current = new AbortController();
+  scanner = current;
+  let reading = false;
+  try {
+    await scanQr(nearbyVideo, current.signal, (text) => {
+      if (reading || scanner !== current) return;
+      reading = true;
+      void (async () => {
+        const code = nearbyCodeOf(text);
+        const signal = await decodeSignal(code).catch(() => undefined);
+        if (scanner !== current) return;
+        if (signal?.kind !== kind) {
+          cameraStatus(signal === undefined
+            ? 'That is not a tick3d code.'
+            : kind === 'offer' ? 'Scan the code on the device that started the game.' : 'Scan the new code on the joining device, not your own invite.');
+          return;
+        }
+        stopScanner();
+        await useNearbyCode(code);
+      })().finally(() => { reading = false; });
+    });
+    if (scanner === current) cameraStatus('');
+  } catch (error) {
+    if (scanner !== current || current.signal.aborted) return;
+    stopScanner();
+    cameraStatus(cameraProblem(error));
+    nearbyCameraRetry.hidden = false;
+  }
 }
 
 // Stops the shown step: a host keeps hosting, a joining device goes back to the start.
@@ -310,11 +508,13 @@ function cancelNearbyStep(): void {
   hideNearbyStep();
   onNearbyCode = undefined;
   if (nearby.kind === 'joining') nearby = { kind: 'idle' };
+  render();
   void renderNearby();
 }
 
 // Runs a code from the text box, or from a link that a camera opened, through the current step.
-let onNearbyCode: ((code: string) => Promise<void>) | undefined;
+let onNearbyCode: ((code: string, bySound: boolean) => Promise<void>) | undefined;
+let usingCode = false;
 
 function nearbyProblem(error: unknown, fallback: string): void {
   // Cancel, End and Leave stop an attempt on purpose, so they need no message.
@@ -322,13 +522,29 @@ function nearbyProblem(error: unknown, fallback: string): void {
   showProblem(error instanceof Error ? error.message : fallback);
 }
 
-async function useNearbyCode(code: string): Promise<void> {
+async function useNearbyCode(code: string, bySound = false): Promise<void> {
   const handler = onNearbyCode;
-  if (handler === undefined) return;
+  if (handler === undefined || usingCode) return;
+  let connecting = false;
+  let attempt: NearbyState | undefined;
+  usingCode = true;
+  nearbyUseCode.disabled = true;
   try {
-    await handler(nearbyCodeOf(code));
+    const bare = nearbyCodeOf(code);
+    const signal = await decodeSignal(bare);
+    const wanted = nearby.kind === 'hosting' ? 'answer' : 'offer';
+    if (signal.kind !== wanted) throw new Error(wanted === 'answer' ? 'Scan the new code on the joining device.' : 'Scan the code on the device that started the game.');
+    if (handler !== onNearbyCode) return;
+    connecting = true;
+    attempt = nearby;
+    showNearbyStep('Connecting…', '');
+    await handler(bare, bySound);
   } catch (error) {
+    if (connecting && nearby === attempt) cancelNearbyStep();
     nearbyProblem(error, 'That code did not work.');
+  } finally {
+    usingCode = false;
+    nearbyUseCode.disabled = false;
   }
 }
 
@@ -342,20 +558,23 @@ async function inviteGuest(): Promise<void> {
   if (nearby !== state) return invite.close();
   const current = { ...state, invite };
   nearby = current;
-  showNearbyStep('1. Scan this code with the other device\'s camera. 2. Then scan the code that device shows with this device\'s camera, or paste it below.', {
+  showNearbyStep('Let your friend scan', 'On their device, open Wi-Fi → Scan to join.', {
     code: invite.code,
     input: true,
+    step: 1,
+    scanBack: true,
   });
-  onNearbyCode = async (code) => {
+  onNearbyCode = async (code, bySound) => {
     const { channel, peer } = await invite.accept(code);
     if (nearby !== current) return channel.close();
     onNearbyCode = undefined;
     hideNearbyStep();
-    welcomeGuest(state.host, channel, peer);
+    welcomeGuest(state.host, channel, peer, bySound);
   };
 }
 
 async function hostNearby(): Promise<void> {
+  nearbyReconnect.hidden = true;
   newSwitch(); // a slow load of another session must not replace this one
   const backend = page.local;
   if (backend === undefined) throw new Error('the device backend is not ready');
@@ -370,9 +589,7 @@ async function hostNearby(): Promise<void> {
   const hosting: NearbyState = { kind: 'hosting', host };
   nearby = hosting;
   // Keep the host's screen on: guests lose the game when the host's page sleeps.
-  const lock = await navigator.wakeLock?.request('screen').catch(() => undefined);
-  if (nearby !== hosting) return void lock?.release().catch(() => undefined);
-  wakeLock = lock;
+  void keepHostAwake();
   announce(host);
   await inviteGuest();
   void renderNearby();
@@ -395,6 +612,10 @@ async function connectGuest(joining: JoiningState, offerCode: string, deliver: (
     if (nearby.kind !== 'guest' || nearby.guest !== guest) return;
     showToast(reason);
     endNearby(false);
+    if (reason === 'The connection to the host closed.') {
+      nearbyReconnect.textContent = `Connection interrupted. Ask ${answer.peer.name} to tap Add device, then Scan to join again. Your game and seat stay on their device.`;
+      nearbyReconnect.hidden = false;
+    }
   });
   guest.onLink((game, id) => {
     if (nearby.kind !== 'guest' || nearby.guest !== guest || page.session?.mode !== 'nearby') return;
@@ -407,15 +628,18 @@ async function connectGuest(joining: JoiningState, offerCode: string, deliver: (
   // The player left while the game loaded. endNearby closed the connection already.
   if (nearby.kind !== 'guest' || nearby.guest !== guest) return;
   openSession(view, guest, 'nearby');
+  nearbyReconnect.hidden = true;
   sounds.sent();
   showToast(view.you === null ? 'Both seats are taken. You are watching.' : `Joined the game hosted on ${answer.peer.name} as ${view.you}.`);
   void renderNearby();
 }
 
 function startJoining(): JoiningState {
+  if (nearby.kind === 'joining') nearby.answer?.close();
   newSwitch(); // a slow load of another session must not replace the joined one
   const joining: JoiningState = { kind: 'joining' };
   nearby = joining;
+  render();
   void renderNearby();
   return joining;
 }
@@ -423,19 +647,20 @@ function startJoining(): JoiningState {
 // Joins with codes: the guest reads the host's code, and shows its answer code to the host.
 async function joinNearby(code?: string): Promise<void> {
   const joining = startJoining();
-  showNearbyStep("Scan the host's code with this device's camera, or paste it below.", { input: true });
+  showNearbyStep('Scan your friend’s screen', '', { input: true, step: 1 });
   onNearbyCode = (offerCode) =>
     connectGuest(joining, offerCode, async (answer) => {
-      showNearbyStep(`Show this code to ${answer.peer.name}, the host, to scan.`, { code: answer.code });
+      showNearbyStep(`Now show ${answer.peer.name} your screen`, 'They tap “They’ve scanned — scan back” and scan this code.', { code: answer.code, step: 2, replyTo: offerCode });
       onNearbyCode = undefined;
     });
   if (code !== undefined) await useNearbyCode(code);
+  else await startScanner('offer');
 }
 
 // Joins a game from the list: the answer code goes to the host through the server.
 async function joinListed(host: LobbyHost): Promise<void> {
   const joining = startJoining();
-  showNearbyStep(`Connecting to ${host.name}…`);
+  showNearbyStep(`Connecting to ${host.name}…`, '');
   const timer = setTimeout(() => {
     if (nearby !== joining || joining.answer === undefined) return;
     showProblem(`${host.name} did not answer. Try again.`);
@@ -467,7 +692,7 @@ export async function openNearbyLink(code: string): Promise<void> {
   openNearby();
   if ((await decodeSignal(code).catch(() => undefined))?.kind === 'answer') {
     nearbyHandoff?.postMessage(code);
-    showNearbyStep('The code went to the tab that hosts the game. You can close this tab.');
+    showNearbyStep('Return to your game', 'The code went to the tab that hosts the game. You can close this tab.');
     return;
   }
   await joinNearby(code);
@@ -485,6 +710,7 @@ export function endNearby(sayBye = true): void {
   wakeLock = undefined;
   onNearbyCode = undefined;
   hideNearbyStep();
+  nearbyReconnect.hidden = true;
   nearby = { kind: 'idle' };
   if (page.session?.mode === 'nearby') leaveSession();
   render();
@@ -502,6 +728,34 @@ export function openNearby(): void {
 }
 
 export function setupNearby(): void {
+  nearbySoundToggle.addEventListener('click', () => void toggleSound());
+  nearbyNameInput.addEventListener('input', () => { nearbyMyName.textContent = nearbyHello().name; });
+  nearbyGoOnline.addEventListener('click', () => {
+    document.querySelector<HTMLButtonElement>('.mode-picker [data-value="online"]')?.click();
+  });
+  nearbyScan.addEventListener('click', () => void startScanner('answer'));
+  nearbyScanBack.addEventListener('click', () => {
+    if (nearby.kind !== 'hosting' || nearby.invite === undefined) return;
+    showNearbyStep('Let your friend scan', 'On their device, open Wi-Fi → Scan to join.', {
+      code: nearby.invite.code, input: true, step: 1, scanBack: true,
+    });
+  });
+  nearbyCameraRetry.addEventListener('click', () => {
+    if (scanKind !== undefined) void startScanner(scanKind);
+  });
+  nearbyManual.addEventListener('toggle', () => {
+    if (!nearbyManual.open && soundOperation !== undefined) {
+      stopSound();
+      soundStatus('');
+      render();
+    }
+    // A player copying codes does not need to keep their camera running.
+    if (nearbyManual.open && scanner !== undefined) {
+      stopScanner();
+      cameraStatus('Camera paused.');
+      nearbyCameraRetry.hidden = false;
+    }
+  });
   nearbyHandoff?.addEventListener('message', (event: MessageEvent<unknown>) => {
     if (nearby.kind === 'hosting' && onNearbyCode !== undefined && typeof event.data === 'string') {
       void useNearbyCode(event.data);
@@ -527,9 +781,24 @@ export function setupNearby(): void {
   });
   addEventListener('offline', () => {
     stopAnnouncing();
+    lobbyHosts = undefined;
+    lobbyFailed = true;
     void renderNearby();
   });
-  document.addEventListener('visibilitychange', () => void renderNearby());
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && soundOperation !== undefined) {
+      stopSound();
+      soundStatus('Sound paused.');
+    }
+    if (document.hidden && scanner !== undefined) {
+      stopScanner();
+      cameraStatus('Camera paused.');
+      nearbyCameraRetry.hidden = false;
+    }
+    if (!document.hidden) void keepHostAwake();
+    void renderNearby();
+  });
+  addEventListener('pagehide', () => { stopScanner(); stopSound(); });
   nearbyUseCode.addEventListener('click', () => void useNearbyCode(nearbyCodeIn.value));
   nearbyCopy.addEventListener('click', () => {
     void copyText(nearbyCodeOut.value).then(

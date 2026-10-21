@@ -5,8 +5,17 @@
 }
 
 :8080 {
+	# The page /testing moved to /share. The redirect keeps the links sent before the rename working, with their query
+	# (an invite link keeps its "by"). Revisit: remove it when /testing gets no requests for a few months.
+	@testing path /testing /testing/ /testing.html
+	redir @testing /share{?query} 302
+
 	handle /api/* {
-		reverse_proxy api:8080
+		# A restart of `api` holds the requests until the new process answers, without a 502.
+		reverse_proxy api:8080 {
+			lb_try_duration 30s
+			lb_try_interval 250ms
+		}
 	}
 
 	handle {

@@ -59,15 +59,6 @@ function chapterAt(index: number): Chapter {
 }
 
 const LAST = tutorial.chapters.length - 1;
-// Before the video knows its length, the last checkpoint counts as this long.
-const LAST_CHAPTER_SECONDS = 3;
-
-// The end of checkpoint `index`: the start of the next one, or the end of the video.
-function endOf(index: number): number {
-  const next = tutorial.chapters[index + 1];
-  if (next !== undefined) return next.start;
-  return Number.isFinite(video.duration) ? video.duration : chapterAt(index).start + LAST_CHAPTER_SECONDS;
-}
 
 // The checkpoint at a slider position. Position LAST is the start of the last checkpoint and onward.
 const indexOf = (position: number) => Math.min(LAST, Math.max(0, Math.floor(position + 1e-6)));
@@ -77,7 +68,8 @@ function positionAt(seconds: number): number {
   const index = Math.max(0, tutorial.chapters.findLastIndex((chapter) => chapter.start <= seconds + 1e-3));
   if (index === LAST) return LAST;
   const start = chapterAt(index).start;
-  return index + Math.min(1, Math.max(0, (seconds - start) / (endOf(index) - start)));
+  const end = chapterAt(index + 1).start;
+  return index + Math.min(1, Math.max(0, (seconds - start) / (end - start)));
 }
 
 let shown = -1;
@@ -90,6 +82,8 @@ function show(position: number, index = indexOf(position)): void {
   if (index === shown) return;
   shown = index;
   const chapter = chapterAt(index);
+  // A screen reader says the checkpoint, not a position such as 2.5.
+  range.setAttribute('aria-valuetext', chapter.headline);
   bubble.textContent = chapter.headline;
   headlineEl.textContent = chapter.headline;
   textEl.textContent = chapter.text;
@@ -135,11 +129,18 @@ function snapTo(index: number): void {
 }
 
 // While the video plays, the thumb moves every frame, so it slides instead of jumping at each timeupdate.
+// One loop at a time: each play starts a new loop, and an older one stops at its next frame.
+let loop = 0;
+
 function follow(): void {
-  snapped = null;
-  if (video.paused || video.ended) return;
-  if (bubble.dataset.dragging === undefined) show(positionAt(video.currentTime));
-  requestAnimationFrame(follow);
+  const id = ++loop;
+  const step = () => {
+    if (id !== loop || video.paused || video.ended) return;
+    snapped = null;
+    if (bubble.dataset.dragging === undefined) show(positionAt(video.currentTime));
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 function showPlaying(): void {
@@ -157,10 +158,11 @@ function load(): void {
   video.src = `${BASE}${tutorial.video}`;
 }
 
-// The sound of the video starts as the sound of the game, and the speaker of the video changes it.
-let muted = settings.muted;
+// The sound of the video follows the mute of the game, until the player presses the speaker of the video.
+let ownMute: boolean | null = null;
 
 function showMuted(): void {
+  const muted = ownMute ?? settings.muted;
   video.muted = muted;
   muteButton.innerHTML = muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
   muteButton.setAttribute('aria-pressed', String(!muted));
@@ -180,14 +182,16 @@ export function setupTutorial(): void {
   showPlaying();
   showMuted();
   muteButton.addEventListener('click', () => {
-    muted = !muted;
+    ownMute = !(ownMute ?? settings.muted);
     showMuted();
   });
 
   panel.addEventListener('toggle', (event) => {
     if (!(event instanceof ToggleEvent)) return;
-    if (event.newState === 'open') load();
-    else video.pause();
+    if (event.newState === 'open') {
+      load();
+      showMuted();
+    } else video.pause();
   });
   playButton.addEventListener('click', togglePlay);
   video.addEventListener('click', togglePlay);

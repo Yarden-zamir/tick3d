@@ -1,4 +1,4 @@
-import { type Board, type Mark, type Player, emptyCells, LINES, linesThrough, other, winningLine } from './game.ts';
+import { type Board, CELL_COUNT, type Game, type Mark, type Player, emptyCells, LINES, linesThrough, other, replay, winningLine } from './game.ts';
 import { DEFAULT_TUNING, type HardTuning, type StyledLevel, type Tuning, feelAt } from './tuning.ts';
 
 export const DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
@@ -39,13 +39,15 @@ function findWin(board: Board, player: Player): number | undefined {
   return emptyCells(board).find((cell) => winningLine(board.with(cell, player), cell, player));
 }
 
-// True when a line holds three marks of the opponent and one of `player`: a threat that `player` blocked.
-// The board does not show the order of the marks. So a line that `player` held before the opponent's third mark
-// also counts, and easy then loses its sure first block. Pass the moves of the game to chooseMove if that matters.
-function hasBlocked(board: Board, player: Player): boolean {
-  return LINES.some((line) => {
-    const { mine, theirs } = countLine(board, line, player);
-    return mine === 1 && theirs === 3;
+// True when `player` blocked a threat earlier in the game: a move onto a cell that completed a line of the opponent.
+// The moves give the order. A line that `player` held before the opponent's third mark is not a block.
+function hasBlocked({ moves, first }: Position, player: Player): boolean {
+  const board: Mark[] = Array<Mark>(CELL_COUNT).fill(null);
+  return moves.some((cell, i) => {
+    const mover = i % 2 === 0 ? first : other(first);
+    const blocks = mover === player && winningCells(board, other(player)).includes(cell);
+    board[cell] = mover;
+    return blocks;
   });
 }
 
@@ -256,13 +258,13 @@ function hardMove(board: Board, player: Player, hard: HardTuning, strongCellBonu
 
 // Easy and medium: a few ideas in order of urgency, each taken with the chance of the level, then a weighted choice.
 // The chances and the randomness follow how tired the level is at this point of the game.
-function styledMove(board: Board, player: Player, level: StyledLevel, tuning: Tuning, random: Random): number {
+function styledMove(position: Position, board: Board, player: Player, level: StyledLevel, tuning: Tuning, random: Random): number {
   const style = tuning[level];
   const feel = feelAt(style, board.length - emptyCells(board).length);
   const opponent = other(player);
   const block = findWin(board, opponent);
   // Easy always blocks the first threat of a game, so no player wins against it without one block.
-  const firstThreat = level === 'easy' && !hasBlocked(board, player);
+  const firstThreat = level === 'easy' && !hasBlocked(position, player);
   if (block !== undefined && (firstThreat || random() < feel.block)) return block;
   // A missed block means the level did not see the threat, so the choice below ignores it too.
   const blind = block !== undefined;
@@ -274,15 +276,14 @@ function styledMove(board: Board, player: Player, level: StyledLevel, tuning: Tu
   return weightedPick(moves, feel.temperature, random);
 }
 
-export function chooseMove(
-  board: Board,
-  player: Player,
-  difficulty: Difficulty,
-  random: Random = Math.random,
-  tuning: Tuning = DEFAULT_TUNING,
-): number {
+// A game as its moves and the player who moved first. The board and the player to move follow from these.
+export type Position = Pick<Game, 'moves' | 'first'>;
+
+// The move of the player to move. Throws if the moves are not a legal game or the game is over.
+export function chooseMove(position: Position, difficulty: Difficulty, random: Random = Math.random, tuning: Tuning = DEFAULT_TUNING): number {
+  const { board, turn: player, status } = replay(position.moves, { first: position.first });
+  if (status.kind !== 'playing') throw new Error(`no legal move: the game is over (${status.kind})`);
   const empty = emptyCells(board);
-  if (empty.length === 0) throw new Error('no legal move: the board is full');
 
   // Every level takes a win.
   const win = findWin(board, player);
@@ -294,7 +295,7 @@ export function chooseMove(
   switch (difficulty) {
     case 'easy':
     case 'medium':
-      return styledMove(board, player, difficulty, tuning, random);
+      return styledMove(position, board, player, difficulty, tuning, random);
     case 'hard': {
       const block = findWin(board, other(player));
       if (block !== undefined) return block;

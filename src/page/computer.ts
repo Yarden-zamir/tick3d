@@ -47,7 +47,7 @@ export function scheduleComputer(): void {
     const tuning = computerTuning();
     void (async () => {
       try {
-        const cell = await search(game.board, game.turn, difficulty, tuning);
+        const cell = await search(game, difficulty, tuning);
         const thinkMs = Math.round(performance.now() - startedMs);
         // The game can end during the search, for example on time.
         if (stale() || !isComputerTurn()) return;

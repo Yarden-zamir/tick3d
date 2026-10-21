@@ -55,7 +55,7 @@ test('the stats API refuses an unknown filter', async ({ request }) => {
 
 test('the leaderboard loads on scroll, marks your row, sorts by a column, and opens a player', async ({ open }) => {
   const { page } = await open({ settings: { mode: 'computer' } });
-  // A medium game: no other test views this filter, so no cached answer from before the upload hides it.
+  // A medium game: no other test in this run views this filter.
   const stored = await page.evaluate(async ({ moves, token }) => {
     const now = Date.now();
     const game = { moves, times: moves.map((_, i) => now - 60_000 + i * 1_000), clock: { perMove: null, perGame: null }, timedOut: false };
@@ -65,11 +65,18 @@ test('the leaderboard loads on scroll, marks your row, sorts by a column, and op
   }, { moves: X_WINS, token: await playerToken(page) });
   expect(stored).toBe(1);
 
-  await page.goto('/stats?mode=computer&level=medium');
   const board = page.locator('.stats-card', { has: page.getByRole('heading', { name: 'Leaderboard' }) });
-  await board.scrollIntoViewIfNeeded();
   const you = board.locator('.leaderboard-you');
-  await expect(you).toBeVisible();
+  // The leaderboard comes from a snapshot that refreshes in the background (server/store.ts). An old
+  // snapshot of this filter, for example from an earlier run on the same preview, answers first and
+  // starts the refresh once it is STATS_CACHE_MS (60 s) old. So the page loads again until a snapshot
+  // has this player, which can take that long when a run just before this one viewed the filter.
+  test.setTimeout(150_000);
+  await expect(async () => {
+    await page.goto('/stats?mode=computer&level=medium');
+    await board.scrollIntoViewIfNeeded();
+    await expect(you).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 90_000 });
 
   const fastest = board.locator('th', { hasText: 'Fastest win' });
   await fastest.getByRole('button').click();

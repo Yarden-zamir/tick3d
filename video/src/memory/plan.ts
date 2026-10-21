@@ -1,16 +1,16 @@
 // The plans of the smart-memory ad (issue #130): what shows and when, on the beat grid of src/grid.ts (sixteenths
 // of the 136 BPM song, 16 to a bar). Each plan is a 'full' cut (at most 15.0 s) or a 'short' cut (at most 8.0 s).
 // MEMORY_PLAN picks one; scripts/memory.ts passes it into the render browser. 'full' and 'short' are variant A
-// "Shatter" of the storyboards on #130. 'remember' (variant B), 'numbers' (variant C) and 'next-level' (A with the
-// Hide coordinates proposal) are mock-ups for the maintainers' pick. After the pick, the chosen variant becomes
-// 'full' and 'short', and the other plans go.
+// "Shatter" of the storyboards on #130, which the maintainers picked. 'next-level' is A with the Hide coordinates
+// proposal (option A of the open question on #130). After the answer, the chosen way becomes 'full' and 'short',
+// and 'next-level' goes.
 import { SIXTEENTH } from '../../../src/song.ts';
 import { FPS, frameOf } from '../grid.ts';
 import { ELEVATION, HOME_AZIMUTH } from '../rig.ts';
 import { playerOf } from './game.ts';
 
 type Cut = 'full' | 'short';
-export const PLAN_IDS = ['full', 'short', 'remember', 'numbers', 'next-level'] as const;
+export const PLAN_IDS = ['full', 'short', 'next-level'] as const;
 export type PlanId = (typeof PLAN_IDS)[number];
 
 // Where the camera stands: a point on an orbit around the centre of the tower (see tutorial/plan.ts).
@@ -29,10 +29,6 @@ export type MemoryEvent =
   // buttons of the game panel show above the slots from the keypad on, Board and History on, and the Coordinates
   // button switches on at `at` (the "next level" proposal on #130).
   | { kind: 'mask'; at: number; toggle?: true }
-  // The marks of the board at the shatter fade back as ghosts, one per sixteenth, in the order of the moves.
-  | { kind: 'recall'; at: number }
-  // Every winning line of the game flashes, thin, then fades over 8 sixteenths.
-  | { kind: 'all-lines'; at: number }
   // The trails of the X marks light, and the two lines of the double threat draw through them.
   | { kind: 'threats'; at: number }
   // The whole board snaps back with every mark, and the winning line burns across the cube.
@@ -146,85 +142,6 @@ const PLANS: Readonly<Record<PlanId, Omit<Plan, 'id'>>> = {
       { name: 'threat', at: 30 },
       { name: 'reveal', at: 38 },
       { name: 'end-card', at: 68 },
-    ],
-  },
-  // Variant B "Remember this": 6 bars and the final chord, 11.5 s. The full board at the fork, X to move, then
-  // it dissolves, and the viewer tries to recall it.
-  remember: {
-    cut: 'full',
-    seconds: 11.5,
-    firstMove: 10,
-    events: [
-      { kind: 'shatter', at: 8 },
-      { kind: 'keypad', at: 16, until: 64 },
-      { kind: 'mask', at: 18 },
-      { kind: 'recall', at: 32 },
-      { kind: 'threats', at: 40 },
-      ...moves(10, [52, 56, 60]),
-      { kind: 'reveal', at: 64 },
-      { kind: 'end-card', at: 80 },
-      { kind: 'final-chord', at: 96 },
-    ],
-    text: [
-      { at: 0, until: 16, text: 'Remember this board.' },
-      { at: 66, until: 80, text: 'Did you see it?' },
-      { at: 88, until: Infinity, text: 'Top 1%? Prove it.' },
-    ],
-    camera: [
-      { at: 0, view: view(HOME_AZIMUTH) },
-      { at: 12, view: view(HOME_AZIMUTH + 4) },
-      { at: 17, view: keypadView(HOME_AZIMUTH + 8) },
-      { at: 32, view: keypadView(HOME_AZIMUTH + 40) },
-      { at: 50, view: keypadView(HOME_AZIMUTH + 44, ELEVATION + 4, 0.78) },
-      { at: 62, view: keypadView(HOME_AZIMUTH + 46, ELEVATION + 4, 0.78) },
-      { at: 68, view: view(HOME_AZIMUTH + 50, ELEVATION, 0.86, 0) },
-      { at: 80, view: view(HOME_AZIMUTH + 52, ELEVATION, 0.86, 0) },
-      { at: 84, view: { ...END_VIEW, azimuth: HOME_AZIMUTH + 54 } },
-    ],
-    stills: [
-      { name: 'hook', at: 4 },
-      { name: 'recall', at: 38 },
-      { name: 'threat', at: 54 },
-      { name: 'reveal', at: 70 },
-    ],
-  },
-  // Variant C "64 · 76 · 0": 5 bars and the final chord, 9.6 s. The numbers of the game first, then the board
-  // shatters, and the rest of the game plays from memory, fast.
-  numbers: {
-    cut: 'full',
-    seconds: 9.6,
-    firstMove: 7,
-    events: [
-      { kind: 'all-lines', at: 6 },
-      { kind: 'shatter', at: 12 },
-      { kind: 'keypad', at: 16, until: 52 },
-      { kind: 'mask', at: 16 },
-      ...moves(7, [20, 26, 30]),
-      { kind: 'threats', at: 32 },
-      ...moves(10, [40, 44, 50]),
-      { kind: 'reveal', at: 52 },
-      { kind: 'end-card', at: 64 },
-      { kind: 'final-chord', at: 80 },
-    ],
-    text: [
-      { at: 1, until: 16, text: '64 cells. 76 ways to win.' },
-      { at: 18, until: 32, text: 'Zero on screen.' },
-      { at: 72, until: Infinity, text: 'Top 1%? Prove it.' },
-    ],
-    camera: [
-      { at: 0, view: view(HOME_AZIMUTH) },
-      { at: 12, view: view(HOME_AZIMUTH + 8) },
-      { at: 17, view: keypadView(HOME_AZIMUTH + 12) },
-      { at: 38, view: keypadView(HOME_AZIMUTH + 22, ELEVATION + 4, 0.78) },
-      { at: 50, view: keypadView(HOME_AZIMUTH + 26, ELEVATION + 4, 0.78) },
-      { at: 56, view: view(HOME_AZIMUTH + 30, ELEVATION, 0.86, 0) },
-      { at: 64, view: view(HOME_AZIMUTH + 32, ELEVATION, 0.86, 0) },
-      { at: 68, view: { ...END_VIEW, azimuth: HOME_AZIMUTH + 34 } },
-    ],
-    stills: [
-      { name: 'hook', at: 9 },
-      { name: 'memory', at: 22 },
-      { name: 'threat', at: 42 },
     ],
   },
   // Variant A with the Hide coordinates proposal (option 1 of the question on #130): the game plays with Hide board

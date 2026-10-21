@@ -115,7 +115,7 @@ test('a second win in a row against easy moves the player up to medium; the body
   await expect(page.locator('[data-setting="difficulty"] [data-value="medium"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#difficulty-field')).toHaveClass(/level-up/);
   await expectToast(page, 'Two wins in a row against Easy. Up to Medium!');
-  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null') as unknown, STORAGE_KEYS.levelUp)).toEqual({ easyWins: 2, done: true });
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null') as unknown, STORAGE_KEYS.levelUp)).toEqual({ easyWins: 2, earned: true, done: true });
   // The player did not take over, so the page scrolls back to the top after the pop.
   await expect.poll(() => page.evaluate(() => scrollY), { message: 'the page scrolled back', timeout: 8000 }).toBe(0);
 });

@@ -3,7 +3,7 @@
 // Production keeps no data from it: every API write fails, except in the online scene, which plays
 // on the local Docker Compose build at LOCAL_URL (compose.lan.yml), because an online game needs writes.
 import type { Page } from '@playwright/test';
-import { cell, expect, expectMyMove, status, test as base } from '../e2e/fixtures.ts';
+import { cell, expect, expectMyMove, openMore, status, test as base } from '../e2e/fixtures.ts';
 import { STORAGE_KEYS } from '../src/storage-keys.ts';
 
 const OUT = process.env.SHOTS_DIR ?? '';
@@ -159,7 +159,9 @@ test('4 a blind game on the keypad', async ({ open }) => {
   const { page } = await open({ settings: { mode: 'friend' } });
   await readOnly(page);
   await play(page, [21, 42]);
-  await page.locator('[data-toggle="hideBoard"]').click();
+  // Hide is a step control in the More card: the Board step hides the history and the board.
+  await openMore(page);
+  await page.locator('[data-hide-level="2"]').click();
   for (const digit of ['2', '2', '3']) await page.locator(`[data-digit="${digit}"]`).click();
   await showMiddle(page, '#coords');
   await shot(page, '4-blind');

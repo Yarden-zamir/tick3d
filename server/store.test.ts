@@ -329,7 +329,7 @@ const METRICS: Metrics = {
   view: 'tower',
   layout: 'grid',
   theme: 'dark',
-  input: { board: 3, keypad: 1 },
+  input: { board: 3, keypad: 1, voice: 0 },
   refused: { occupied: 2 },
   undos: 1,
   thinkMs: [120, 300],
@@ -605,7 +605,46 @@ describe('achievements', () => {
     const progress = await store.achievements(alice);
     expect(countOf(progress, 'beat-easy')).toBe(1);
     expect(countOf(progress, 'beat-hard')).toBe(1);
-    expect(countOf(progress, 'streak-3')).toBe(2);
+    expect(countOf(progress, 'computer-streak-easy-5')).toBe(2);
+  });
+
+  it('knows the opponent of a Nearby game by their seat, with all their devices as one person', async () => {
+    store = await openStore(':memory:');
+    const BOB_GITHUB = { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' };
+    const bobPhone = 'eeeeeeee-0000-4000-8000-000000000005' as PlayerToken;
+    // O wins along a row: Alice, on X, loses.
+    const O_WINS = [4, 0, 5, 1, 6, 2, 32, 3];
+    await store.linkToken(bob, BOB_GITHUB);
+    await store.linkToken(bobPhone, BOB_GITHUB);
+    const nearby = (id: string, guest: PlayerToken, moves: number[], finished: number) =>
+      result(id, { mode: 'nearby', difficulty: null, you: 'X', guest, game: finishedGame(moves), finishedAt: ms(finished), metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } });
+    await store.addResults(alice, [
+      nearby('afafafaf-1111-4000-8000-000000000001', bob, O_WINS, 2_000),
+      nearby('afafafaf-1111-4000-8000-000000000002', bobPhone, X_WINS, 3_000),
+    ]);
+    const progress = await store.achievements(alice);
+    expect(countOf(progress, 'people-5')).toBe(1);
+    expect(countOf(progress, 'revenge')).toBe(1);
+  });
+
+  it('counts the devices of an opponent as one person once they link, also in the rarity', async () => {
+    store = await openStore(':memory:');
+    const BOB_GITHUB = { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' };
+    const bobPhone = 'eeeeeeee-0000-4000-8000-000000000005' as PlayerToken;
+    const nearby = (id: string, guest: PlayerToken, finished: number) =>
+      result(id, { mode: 'nearby', difficulty: null, you: 'X', guest, finishedAt: ms(finished), metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } });
+    await store.addResults(alice, [nearby('a0a0a0a0-1111-4000-8000-000000000001', bob, 2_000), nearby('a0a0a0a0-1111-4000-8000-000000000002', bobPhone, 3_000)]);
+    expect(countOf(await store.achievements(alice), 'people-5')).toBe(2);
+    await store.linkToken(bob, BOB_GITHUB);
+    await store.linkToken(bobPhone, BOB_GITHUB);
+    expect(countOf(await store.achievements(alice), 'people-5')).toBe(1);
+  });
+
+  it('reads the voice moves of a computer game from the metrics of its result', async () => {
+    store = await openStore(':memory:');
+    const hidden = { hideBoard: true, hideHistory: false, hideCoordinates: false };
+    await store.addResults(alice, [result('a1a1a1a1-1111-4000-8000-000000000001', { options: hidden, metrics: { ...METRICS, input: { board: 0, keypad: 4, voice: 4 } } })]);
+    expect(countOf(await store.achievements(alice), 'sound-only')).toBe(1);
   });
 });
 
@@ -940,6 +979,20 @@ describe('stats filters', () => {
     const computerId = await personId('computer');
     expect(await status(() => store.stats({ ...all, person: carolId }))).toBe(404);
     expect(await status(() => store.stats({ ...all, person: computerId }))).toBe(404);
+    expect(await status(() => store.statsCard(carolId, null))).toBe(404);
+  });
+
+  it('gives the player card the name and the unlocks of the person view, newest first', async () => {
+    await seeded();
+    const aliceId = await personId(alice);
+    const view = await store.stats({ ...all, person: aliceId });
+    const newestFirst = (view.achievements?.achievements ?? [])
+      .filter((entry) => entry.unlockedAt !== null)
+      .toSorted((a, b) => (b.unlockedAt ?? 0) - (a.unlockedAt ?? 0))
+      .map((entry) => entry.id);
+    expect(newestFirst.length).toBeGreaterThan(1);
+    expect(await store.statsCard(aliceId, null)).toEqual({ person: view.person, unlocked: newestFirst });
+    expect((await store.statsCard(aliceId, alice)).person.you).toBe(true);
   });
 
   it('refuses a person filter to others when the person hides their stats, and keeps Mine and Everyone', async () => {
@@ -950,6 +1003,8 @@ describe('stats filters', () => {
     expect(await store.statsPrivate(bob)).toBe(true);
     expect(await status(() => store.stats({ ...all, person: bobId }))).toBe(403);
     expect(await status(() => store.stats({ ...all, person: bobId }, alice))).toBe(403);
+    expect(await status(() => store.statsCard(bobId, alice))).toBe(403);
+    expect((await store.statsCard(bobId, bob)).person.you).toBe(true);
     // Bob still sees his own stats, by person id and by Mine.
     expect((await store.stats({ ...all, person: bobId }, bob)).totals.games).toBe(2);
     expect((await store.stats({ ...all, scope: 'mine' }, bob)).totals.games).toBe(2);
@@ -1287,7 +1342,7 @@ describe('report and block', () => {
 describe('delete my data', () => {
   const ALICE_ACCOUNT = `${ACCOUNT_TOKEN_PREFIX}${String(ALICE_GITHUB.id).padStart(16, '0')}`;
   const aliceTokens = [alice, alicePhone, ALICE_ACCOUNT];
-  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
+  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'app_copies', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
 
   // Per group of needles: the rows of each table whose text holds one of them. The store closes for the check and opens again.
   async function rowsHolding(path: string, groups: readonly (readonly string[])[]): Promise<Record<string, number>[]> {
@@ -1346,6 +1401,11 @@ describe('delete my data', () => {
     await store.addPracticeRun(alice, run);
     await store.addPracticeRun(bob, run);
     const aliceIds = await Promise.all(aliceTokens.map((token) => personId(token)));
+    // Bob claimed a tester code through Alice's invite link.
+    await store.addTesterCodes([{ code: 'AAAAAAAAAAAAAAAAAAAAAA1', name: null }]);
+    await store.claimTesterCode(1, { email: 'bob@example.com', name: 'Bob', by: await store.person(alice) }, bob);
+    // Alice's phone opened the Android app.
+    await store.reportAppOpen(alicePhone, null);
     // The leaderboard fills achievement_players, which names Alice's account.
     await store.leaderboard(ALL_STATS, undefined);
 
@@ -1363,6 +1423,8 @@ describe('delete my data', () => {
       seat_people: { deleted: 3, anonymised: 0 },
       practice_runs: { deleted: 1, anonymised: 0 },
       reports: { deleted: 0, anonymised: 1 },
+      tester_codes: { deleted: 0, anonymised: 1 },
+      app_copies: { deleted: 1, anonymised: 0 },
       player_tokens: { deleted: 3, anonymised: 0 },
       users: { deleted: 1, anonymised: 0 },
     });

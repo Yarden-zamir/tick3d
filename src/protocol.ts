@@ -1,5 +1,5 @@
 // Contract between the page and the online API. Both sides import this file.
-import type { Achievements } from './achievements.ts';
+import type { AchievementId, Achievements } from './achievements.ts';
 import { DIFFICULTIES, type Difficulty } from './ai.ts';
 import { NO_LIMIT, type TimeControl, parseClock } from './clock.ts';
 import { type EpochMs, isEpochMs } from './epoch.ts';
@@ -542,7 +542,7 @@ function sameStatus(value: unknown, status: Status): boolean {
 const GITHUB_LOGIN_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
 export const isGitHubLogin = (login: string): boolean => login.length >= 1 && login.length <= 39 && [...login].every((char) => GITHUB_LOGIN_CHARS.includes(char));
 
-const isDisplayName = (value: unknown): value is string => typeof value === 'string' && value.length >= 1 && value.length <= NAME_MAX_LENGTH;
+export const isDisplayName = (value: unknown): value is string => typeof value === 'string' && value.length >= 1 && value.length <= NAME_MAX_LENGTH;
 const isSeatName = (value: unknown): value is string | null => value === null || isDisplayName(value);
 
 function parsePeople(value: unknown): Record<Player, PersonId | null> | undefined {
@@ -648,8 +648,8 @@ export type Metrics = {
   view: (typeof VIEWS)[number];
   layout: (typeof LAYOUTS)[number];
   theme: (typeof THEMES)[number];
-  // Moves of the player at this device, by how they were placed.
-  input: { board: number; keypad: number };
+  // Moves of the player at this device, by how they were placed. voice counts the keypad moves that the voice placed.
+  input: { board: number; keypad: number; voice: number };
   refused: Partial<Record<Refusal, number>>;
   undos: number;
   // The thinking time of each computer move, in milliseconds.
@@ -693,7 +693,11 @@ export function parseMetrics(value: unknown): Metrics | undefined {
   const layout = oneOf(LAYOUTS, value.layout);
   const theme = oneOf(THEMES, value.theme);
   if (device === undefined || view === undefined || layout === undefined || theme === undefined) return undefined;
-  if (!isRecord(input) || !hasOnlyKeys(input, ['board', 'keypad']) || !isCount(input.board) || !isCount(input.keypad)) return undefined;
+  if (!isRecord(input) || !hasOnlyKeys(input, ['board', 'keypad', 'voice']) || !isCount(input.board) || !isCount(input.keypad)) return undefined;
+  // Limit: a page from before the voice count sends none, and a result that waits on such a device must
+  // still upload, so a missing count is 0. Remove this when no result from before the count can wait anymore.
+  const voice = input.voice ?? 0;
+  if (!isCount(voice) || voice > input.keypad) return undefined;
   if (!isRecord(refused)) return undefined;
   const refusals: Metrics['refused'] = {};
   for (const [key, count] of Object.entries(refused)) {
@@ -718,7 +722,7 @@ export function parseMetrics(value: unknown): Metrics | undefined {
     view,
     layout,
     theme,
-    input: { board: input.board, keypad: input.keypad },
+    input: { board: input.board, keypad: input.keypad, voice },
     refused: refusals,
     undos,
     thinkMs: [...thinkMs],
@@ -1047,6 +1051,9 @@ export type PersonalStats = {
 // The name and the GitHub account of the person of a person filter: the name that the games show.
 // `you`: the caller is this person, so the page offers no report and no block.
 export type StatsPerson = { name: string; player: PlayerInfo | null; you: boolean };
+
+// GET /api/stats/card/{person}: the player card of a person view. `unlocked` holds the unlocked achievements, newest first.
+export type StatsCard = { person: StatsPerson; unlocked: AchievementId[] };
 
 // The "Hide my stats" setting (GET and PUT /api/me/stats-privacy). When it is on, a person filter
 // with your person id answers 403 to everyone but you. Everyone totals still count your games.

@@ -50,6 +50,9 @@ export function setupSlidePills(): void {
       subtree: true,
       attributeFilter: ['aria-pressed', 'class', 'data-level'],
     });
-    new ResizeObserver(() => place(group, pill, true)).observe(group);
+    // The buttons too: a late web font or a bold choice changes their widths inside a group of the same size.
+    const resize = new ResizeObserver(() => place(group, pill, true));
+    resize.observe(group);
+    for (const child of group.children) if (child !== pill) resize.observe(child);
   }
 }

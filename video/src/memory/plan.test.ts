@@ -26,9 +26,8 @@ describe.each(PLAN_IDS)('the %s plan of the smart-memory ad', (id) => {
 
   it('opens on the hook: the shatter is the first big motion, and the first line shows within 2 s', () => {
     const shatter = eventOf('shatter', plan);
-    // The flash of the lines in variant C is thin light over the standing tower, before the shatter.
-    expect(plan.events.filter((event) => event.kind !== 'all-lines').every((event) => event.at >= shatter.at)).toBe(true);
-    expect(shatter.at * SIXTEENTH).toBeLessThan(2);
+    expect(plan.events.every((event) => event.at >= shatter.at)).toBe(true);
+    expect(shatter.at * SIXTEENTH).toBeLessThan(1);
     expect((plan.text[0]?.at ?? Infinity) * SIXTEENTH).toBeLessThan(2);
   });
 

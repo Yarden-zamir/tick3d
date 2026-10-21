@@ -28,6 +28,7 @@ RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 # Page-only modules come along but Node never loads them. Tests do not belong in a runtime image.
 COPY --from=build /app/src src/
 COPY --from=build /app/server server/
+COPY --from=build /app/android/twa-manifest.json android/twa-manifest.json
 # The release of this build: the API stores it at start (server/main.ts).
 COPY --from=build /app/dist/release.json release.json
 RUN find src server -name '*.test.ts' -delete

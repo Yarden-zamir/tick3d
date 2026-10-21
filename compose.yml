@@ -36,6 +36,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+      # During start_period, check every second, so a deploy waits less for a healthy service.
+      start_interval: 1s
     restart: unless-stopped
 
   # Online sessions: a Node API with a DuckDB file on the sessions volume. Caddy in `site` proxies /api/* here.
@@ -65,6 +67,13 @@ services:
       PREVIEWS_DOMAIN: tick3d.yarden-zamir.com
       # prod or pr-<n>. Only prod calls GitHub; every other environment reads the list from production.
       KITSHN_ENVIRONMENT: ${KITSHN_ENVIRONMENT}
+      # The Google Play promo codes of the /share page, from the KITSHN_TESTER_CODES secret (server/tester-codes.ts).
+      # Only prod reads them, so a preview database never holds a real code.
+      TESTER_CODES: ${TESTER_CODES:-}
+      # KITSHN_PLAY_SERVICE_ACCOUNT_JSON is separate from the upload signing key.
+      PLAY_SERVICE_ACCOUNT_JSON: ${PLAY_SERVICE_ACCOUNT_JSON:-}
+      APPLE_BUNDLE_ID: ${APPLE_BUNDLE_ID:-}
+      APPLE_APP_ID: ${APPLE_APP_ID:-}
     volumes:
       - sessions:/data
     healthcheck:
@@ -73,6 +82,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+      # During start_period, check every second, so a deploy waits less for a healthy service.
+      start_interval: 1s
     restart: unless-stopped
 
 volumes:
