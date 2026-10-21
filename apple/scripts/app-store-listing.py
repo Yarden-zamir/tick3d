@@ -220,21 +220,22 @@ def read_price() -> Decimal:
 
 
 def plan_price(app_id: str, wanted: Decimal) -> None:
-    status, schedule = api("GET", f"/v1/apps/{app_id}/appPriceSchedule")
+    # An app that never had a price answers 404 here. The schedule id is the app id, so no lookup is needed.
     current: Decimal | None = None
-    if status == 200 and schedule is not None:
+    status, prices = api(
+        "GET",
+        f"/v1/appPriceSchedules/{app_id}/manualPrices"
+        f"?filter[territory]={PRICE_TERRITORY}&include=appPricePoint&fields[appPricePoints]=customerPrice",
+    )
+    if status == 200 and prices is not None:
         today = date.today().isoformat()
-        prices = get(
-            f"/v1/appPriceSchedules/{schedule['data']['id']}/manualPrices"
-            f"?filter[territory]={PRICE_TERRITORY}&include=appPricePoint&fields[appPricePoints]=customerPrice"
-        )
         points = {p["id"]: p["attributes"]["customerPrice"] for p in prices.get("included", [])}
         for p in prices["data"]:
             start, end = p["attributes"].get("startDate"), p["attributes"].get("endDate")
             if (start is None or start <= today) and (end is None or end > today):
                 current = Decimal(points[p["relationships"]["appPricePoint"]["data"]["id"]])
     elif status != 404:
-        fail(f"Could not read the price schedule: {status} {schedule}")
+        fail(f"Could not read the price schedule: {status} {prices}")
     if current == wanted:
         return
     # The dry run looks the price point up too, so that a price that Apple does not offer fails the pull request.
