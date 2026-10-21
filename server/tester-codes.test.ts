@@ -193,12 +193,12 @@ describe('invites', () => {
   it('count an app open once per device, for the first inviter, and no self-invite', async () => {
     store = await openStore(':memory:');
     const by = await store.person(inviter);
-    expect(await store.reportAppOpen(player, by)).toBe(true);
-    expect(await store.reportAppOpen(player, by)).toBe(true);
+    expect(await store.reportAppOpen(player, by, true)).toBe(true);
+    expect(await store.reportAppOpen(player, by, true)).toBe(true);
     // A later link of another inviter does not move the copy.
     await store.reportAppOpen(player, await personId(inviterLaptop));
     // The inviter's own app open is a copy, but no invite.
-    expect(await store.reportAppOpen(inviter, by)).toBe(true);
+    expect(await store.reportAppOpen(inviter, by, true)).toBe(true);
     expect(await unlocked(inviter)).toMatchObject([{ count: 1, unlocked: true }, { count: 1 }, { count: 1 }]);
     expect(await unlocked(inviterLaptop)).toMatchObject([{ count: 0 }, { count: 0 }, { count: 0 }]);
   });
@@ -359,7 +359,7 @@ describe('copies of the Android app', () => {
 
   it('belong to the account that is logged in on the device now, or to the device', async () => {
     expect(await store.hasCopy(phone)).toBe(false);
-    expect(await store.reportAppOpen(phone, null)).toBe(true);
+    expect(await store.reportAppOpen(phone, null, true)).toBe(true);
     await store.linkToken(phone, ALICE);
     expect(await store.hasCopy(phone)).toBe(true);
     // Carol logs in on the phone of Alice and holds the copy. Alice holds it again after her next login there.
@@ -383,7 +383,7 @@ describe('copies of the Android app', () => {
     await store.linkToken(web, ALICE);
     expect(await store.hasCopy(web)).toBe(false);
     await store.linkToken(phone, ALICE);
-    await store.reportAppOpen(phone, null);
+    await store.reportAppOpen(phone, null, true);
     expect(await store.hasCopy(web)).toBe(true);
     // Another device without a login holds no copy.
     expect(await store.hasCopy(phone2)).toBe(false);
@@ -397,7 +397,7 @@ describe('copies of the Android app', () => {
     await store.linkToken(phone, ALICE);
     // The second phone opened while logged in to the same account.
     await store.linkToken(phone2, ALICE);
-    await store.reportAppOpen(phone2, by);
+    await store.reportAppOpen(phone2, by, true);
     expect((await store.achievements(inviter)).achievements.find((entry) => entry.id === 'invite-5')?.count).toBe(1);
   });
 });

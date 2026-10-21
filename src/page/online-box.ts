@@ -6,6 +6,7 @@ import { normalizeCode, type Code, normalizeName } from '../protocol.ts';
 import { type LinkIntent, sessionLink } from '../session-link.ts';
 import {
   lanHost,
+  hostingAppStore,
   joinForm,
   joinCodeInput,
   newCodeButton,
@@ -24,12 +25,17 @@ import {
 import { showToast, showProblem } from './feedback.ts';
 import { BUSY_TEXT, joinSession, createSession, withBusy, applyView } from './sessions.ts';
 import { page } from './state.ts';
+import { render } from './render.ts';
 
 // A LAN host (a laptop that runs the server for the local network) says so in the online box.
 export async function checkLanHost(): Promise<void> {
   try {
     const response = await fetch('/api/health');
     const body: unknown = await response.json();
+    if (typeof body === 'object' && body !== null && 'appStore' in body) {
+      if (typeof body.appStore === 'string') hostingAppStore.href = body.appStore;
+      else hostingAppStore.textContent = 'the App Store (coming soon)';
+    }
     const lan = typeof body === 'object' && body !== null && 'lan' in body ? body.lan : null;
     if (typeof lan === 'object' && lan !== null && 'name' in lan && typeof lan.name === 'string') {
       lanHost.hidden = false;
@@ -40,6 +46,8 @@ export async function checkLanHost(): Promise<void> {
       const text = document.createElement('span');
       text.textContent = `Hosted on ${lan.name} on this network`;
       lanHost.append(icon, text);
+      page.selfHosted = true;
+      render();
     }
   } catch {
     // No server answers (offline, or a static preview). The online box stays as it is.

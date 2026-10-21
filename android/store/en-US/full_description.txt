@@ -3,8 +3,8 @@ tick3d is tic-tac-toe in three dimensions. The board is a tower of four 4×4 lay
 Ways to play
 • Against the computer, from easy to hard.
 • With a friend on one screen.
-• Online: share a code or a link, and chat during the game.
-• Nearby: devices on the same Wi-Fi find each other.
+• Online: your app purchase lets you host. Share a code or a link; friends join free in a browser and chat during the game.
+• Nearby: devices on the same Wi-Fi find each other. Hosting and joining Nearby games stay free.
 
 More to explore
 • Every cell has its own sound. Play a finished game back as a song.

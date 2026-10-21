@@ -4696,3 +4696,27 @@ body[data-turn='O'] .status[data-state='playing'] {
 .rename-problem:empty {
   display: none;
 }
+/* The store links use the same ink border and accent as the game controls. */
+.hosting-note {
+  background: var(--surface);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  padding: 12px;
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.hosting-note strong {
+  font-size: 1rem;
+}
+
+.hosting-note p {
+  margin: 8px 0 0;
+}
+
+.hosting-note a {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+}

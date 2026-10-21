@@ -44,7 +44,8 @@ import { markPerson } from './person-mark.ts';
 import { renderPlayers, seatPerson } from './players.ts';
 import { hideLevel, settings } from './settings.ts';
 import { syncVoice } from './voice.ts';
-import { me, page, shared, current, isLive, isWatching, matchOptions, settingsLocked, canChangeMatch, bothSeated, awaitingSession, isMyTurn } from './state.ts';
+import { me, page, shared, current, isLive, isWatching, matchOptions, settingsLocked, canChangeMatch, bothSeated, awaitingSession, isMyTurn, canHostOnline } from './state.ts';
+import { hostingNote, onlineSessionBox, onlineNameField, gameSharePlay, gameActions, playersBox } from './dom.ts';
 
 // One name per seat, the same in the score, status, chat, clocks, keypad, history and end card.
 // This screen's own seat is "You". Then come "Computer", the GitHub login and the generated name.
@@ -105,7 +106,8 @@ function statusText(): string {
     return `Game ${page.review.game + 1} · move ${page.review.move} of ${reviewed?.moves.length ?? 0}`;
   }
   if (settings.mode === 'online' && page.session === undefined) {
-    return navigator.onLine ? 'Create a game or enter a code' : 'You are offline. Online games need a connection.';
+    if (!navigator.onLine) return 'You are offline. Online games need a connection.';
+    return canHostOnline() ? 'Create a game or enter a code' : "Enter a friend's code to join";
   }
   if (settings.mode === 'nearby' && page.session === undefined) return NEARBY_STEPS[nearbyKind()];
   if (page.session === undefined) return 'Getting the game ready…';
@@ -246,6 +248,15 @@ export function render(): void {
   sessionNameInput.disabled = onlineSession?.you == null || page.busy;
   joinCodeInput.disabled = page.busy;
   newCodeButton.disabled = page.busy;
+  const canHost = canHostOnline();
+  newCodeButton.hidden = !canHost;
+  hostingNote.hidden = canHost;
+  const joinOnly = !canHost && onlineSession === undefined;
+  onlineSessionBox.hidden = joinOnly;
+  onlineNameField.hidden = joinOnly;
+  gameSharePlay.hidden = !canHost && onlineSession === undefined;
+  gameActions.hidden = settings.mode === 'online' && joinOnly;
+  if (settings.mode === 'online' && joinOnly) playersBox.hidden = true;
 
   // Score: finished games of this session only, per player. The seats can rotate between games.
   const score = { X: 0, O: 0, draw: 0 };

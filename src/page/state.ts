@@ -101,6 +101,7 @@ type PageState = {
   local: LocalBackend | undefined;
   // Login state from the server. Without a network or on a LAN host, login is not available.
   account: Me;
+  selfHosted: boolean;
   readonly thinking: boolean;
   // An action waits for its backend. Also before a session is open, such as the first online game.
   busy: boolean;
@@ -138,6 +139,7 @@ export function saveAccount(account: Me): void {
 
 // The name that other players see for this player: the GitHub login, the custom name, or the generated name.
 export const ownName = (): string => page.account.user?.login ?? page.account.name ?? nameOf(token);
+export const canHostOnline = (): boolean => page.account.hasCopy === true || page.selfHosted;
 
 export const page: PageState = {
   games: [newGame('X', settings.clock)],
@@ -150,6 +152,7 @@ export const page: PageState = {
   deviceDb: undefined,
   local: undefined,
   account: { loginAvailable: false, user: null, name: storedName(), person: null, hasCopy: null },
+  selfHosted: false,
   get thinking() {
     return screen.kind === 'session' && screen.thinking;
   },

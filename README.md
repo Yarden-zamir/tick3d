@@ -56,7 +56,7 @@
 
 ## Online play
 
-- Choose Online to create a session with a 4 character code (`?code=AB3K`). Share the link or the QR code.
+- Hosting Online games needs a proved copy of the paid Android or iPhone app. Open the latest app while online to prove the purchase. Sign in there to host from other browsers of that account. Old referrer-only copies no longer count. Choose Online to create a session with a 4 character code (`?code=AB3K`), then share its link or QR code. Joining online games and hosting or joining Nearby games stay free. Without a proved copy the Online screen offers joining and explains where to get the app.
 - The creator plays X, the first other browser plays O, and further browsers watch.
 - Either player controls the seats. A change to the other player's seat, and an undo, waits until that player accepts.
 - After each new game, the seats swap unless a player locked them. The score and My games count each game for the player who played it.
@@ -79,7 +79,7 @@
 
 ## Play with an AI agent
 
-- An AI agent plays through the HTTP API, with no account and no key.
+- An agent can join through the HTTP API with no account and no key. Creating a game on the public server needs a player token that holds a proved copy. A self-hosted server (`LAN_HOST=1`) needs no purchase.
 - In computer mode, open More, then "Advanced: computer player", and copy the text under "Play with your AI agent". Give it to your agent.
 - The text points the agent to `/api/openapi.json`. The agent can play you or another agent.
 
@@ -178,7 +178,7 @@ A mode change moves neither the board nor the Opponent picker:
 
 To add a route, add one entry to `ROUTES` in `server/api-docs.ts` and one case to the switch in `server/main.ts`. The type check fails when one of the two is missing.
 
-The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs TypeScript directly on Node 26 and stores data in [DuckDB](https://duckdb.org).
+The page is plain TypeScript built with Vite, with Capacitor's bridge for the iPhone purchase plugin. The API runs TypeScript directly on Node 26 and stores data in [DuckDB](https://duckdb.org). It uses Google's authentication library and Apple's App Store Server Library for purchase checks.
 
 ## Stored data and format changes
 
@@ -252,6 +252,7 @@ docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:26-alpine npx vite 
 - `npm run build` runs the type check and the Vite build.
 - `npm run api` starts the API on port 8080 with `./dev.duckdb`.
 - `npm run dev` starts the Vite dev server on port 5173. It sends `/api` calls to `npm run api`, so run both for Online games.
+- The older online browser suite creates games with fresh tokens. Run that suite on your own server with `LAN_HOST=1`. `e2e/hosting.spec.ts` checks the purchase lock with that flag off; its paid-host case takes `E2E_PURCHASED_TOKEN` from a locally seeded proved copy. Never use a real buyer's token as a test fixture. `server/hosting-routes.test.ts` seeds its own database and checks the same contract through the real server without a test bypass.
 
 `npm run e2e` runs the Playwright tests in `e2e/` against a deployed site. Set `E2E_BASE_URL` to the site, for example a pull request preview:
 

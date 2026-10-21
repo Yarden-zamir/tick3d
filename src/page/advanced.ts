@@ -60,7 +60,7 @@ function buildTuning(): void {
 function agentText(): string {
   return [
     `tick3d is a 3D tic-tac-toe game with an HTTP API. Its OpenAPI document: ${location.origin}/api/openapi.json`,
-    'No account or key is needed. curl is enough.',
+    'Joining needs no purchase. Hosting on the public server needs a player token that holds a store-proved copy. A self-hosted server needs no purchase. curl is enough.',
     'Read the document, then wait for my instructions. Do not start a game on your own.',
     'When I ask you to play me, another agent or yourself, give me the game link so I can watch.',
   ].join('\n');

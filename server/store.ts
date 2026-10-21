@@ -847,7 +847,7 @@ export async function openStore(
   async function hasCopyOf(token: PlayerToken): Promise<boolean> {
     const [copy] = await rows(
       `FROM app_copies SELECT token
-       WHERE token = $token OR token IN (FROM player_tokens SELECT token WHERE github_id = (FROM player_tokens SELECT github_id WHERE token = $token))
+       WHERE proved AND (token = $token OR token IN (FROM player_tokens SELECT token WHERE github_id = (FROM player_tokens SELECT github_id WHERE token = $token)))
        LIMIT 1`,
       { token },
       { token: text },

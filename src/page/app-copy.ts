@@ -5,6 +5,7 @@ import { storedInviter } from '../share/invite.ts';
 import { page } from './state.ts';
 import { receivePlayOpen } from './play-open.ts';
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { render } from './render.ts';
 
 // Listen before storage and account loading can delay the native message channel.
 const playOpen = receivePlayOpen();
@@ -42,4 +43,5 @@ export async function reportAppOpen(): Promise<void> {
     throw error;
   }
   page.account = { ...page.account, hasCopy };
+  render();
 }
