@@ -40,6 +40,7 @@ test('a won online game unlocks achievements on the end card and in My games', a
   await expect.poll(() => alice.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? '[]') as unknown, STORAGE_KEYS.achievementsSeen)).toHaveLength(unlocked.length);
   await expect(alice.locator('#achievement-popup')).toBeHidden();
   await alice.locator('#account-button').click();
+  await alice.getByRole('tab', { name: 'Achievements' }).click();
   // A reset locks Alice's achievements again. Her history keeps the game.
   await alice.locator('#my-games-reset-achievements').click();
   await alice.locator('#reset-achievements-confirm-yes').click();

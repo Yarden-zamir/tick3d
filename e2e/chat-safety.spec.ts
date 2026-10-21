@@ -42,6 +42,7 @@ test('a long press on a message opens the menu, Block hides the person, and a re
 
   // Unblock in My games: the messages come back.
   await bob.locator('#account-button').click();
+  await bob.getByRole('tab', { name: 'Account' }).click();
   const blocked = bob.locator('#my-games-blocked li', { hasText: aliceName });
   await blocked.getByRole('button', { name: 'Unblock' }).click();
   await expect(bob.locator('#my-games-blocked-box')).toBeHidden();

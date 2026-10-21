@@ -4717,16 +4717,14 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: none;
 }
 
-/* Preview of the 3 redesigns of My games (src/page/my-games-layout.ts, ?mygames=a, b or c).
-   Nothing is wider than the dialog: every part can shrink, and rows of buttons wrap. */
+/* The tabs of My games (src/page/my-games-layout.ts). Nothing is wider than the dialog: every part
+   can shrink, and rows of buttons wrap. */
 .my-games > *,
-.my-games-panel > *,
-.my-games-column > * {
+.my-games-panel > * {
   min-width: 0;
 }
 
-.my-games-panel,
-.my-games-column {
+.my-games-panel {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
@@ -4748,35 +4746,12 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--on-color);
 }
 
-.my-games-jump {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.my-games-card {
-  padding: 0.5rem 0.75rem;
-  border: 2px solid var(--line);
-  border-radius: 12px;
-}
-
-.my-games-card[open] {
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-}
-
-/* In the fold, the title holds the count, so the heading of the section goes. */
-.my-games-card section > h3:first-child {
-  display: none;
-}
-
 /* The achievements as a grid of badges. A tapped badge opens its row across the grid. */
-[data-layout] .achievements {
+.my-games .achievements {
   grid-template-columns: repeat(auto-fill, minmax(3.9rem, 1fr));
 }
 
-[data-layout] .achievement:not([data-expanded]) {
+.my-games .achievement:not([data-expanded]) {
   display: block;
   padding: 0;
   border: 0;
@@ -4784,47 +4759,11 @@ body[data-turn='O'] .status[data-state='playing'] {
   cursor: pointer;
 }
 
-[data-layout] .achievement:not([data-expanded]) > :not(.achievement-icon) {
+.my-games .achievement:not([data-expanded]) > :not(.achievement-icon) {
   display: none;
 }
 
-[data-layout] .achievement[data-expanded] {
+.my-games .achievement[data-expanded] {
   grid-column: 1 / -1;
   cursor: pointer;
-}
-
-/* C: a full page, with you on the left and your games on the right on a wide screen. */
-/* 100%, not 100vw: the page keeps room for its scroll bar while a modal is open, and 100vw runs under it. */
-.my-games.my-games-page {
-  width: 100%;
-  max-width: none;
-  height: 100%;
-  max-height: none;
-  margin: 0;
-  inset: 0;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
-
-.my-games-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1.2rem;
-  width: 100%;
-  max-width: 70rem;
-  margin-inline: auto;
-}
-
-@media (min-width: 56rem) {
-  .my-games-columns {
-    grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
-    align-items: start;
-  }
-}
-
-@media (max-width: 55.99rem) {
-  .my-games-main {
-    order: -1;
-  }
 }
