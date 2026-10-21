@@ -173,6 +173,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     const before = await offset();
 
     await page.locator('#account-button').click();
+    await page.locator('#my-games-session-box > summary').click();
     await page.locator('#my-games-session li').first().getByRole('button', { name: 'Replay' }).click();
     await expect(page.locator('#review')).toBeVisible();
     await expect(page.locator('#coords')).toBeHidden();
@@ -202,6 +203,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     const before = await offset();
 
     await page.locator('#account-button').click();
+    await page.locator('#my-games-session-box > summary').click();
     await page.locator('#my-games-session li').first().getByRole('button', { name: 'Replay' }).click();
     await expect(page.locator('#review')).toBeVisible();
     await expect(page.locator('#clocks')).toBeHidden();

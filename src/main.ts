@@ -126,7 +126,7 @@ async function startStorage(): Promise<DeviceDb> {
     // Games then last for this visit only.
     showToast(
       error instanceof StorageWaitError
-        ? 'Another tick3d tab or app holds the game data, so this game lasts for this visit only. Close the other tick3d tabs and the app, then reload.'
+        ? 'tick3d is open in another tab or the app. Close it, then reload.'
         : // The browser blocks storage (some private modes), or an older tab blocks it.
           'This browser does not let the game store data, so games last for this visit only.',
     );

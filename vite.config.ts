@@ -93,7 +93,8 @@ export default defineConfig({
         ignoreURLParametersMatching: [/./],
         // /.well-known/: Android and a browser get the asset links file, not the app.
         // /toys/: a pull request preview serves its toys there (container/build-toys.sh), not the app.
-        navigateFallbackDenylist: [/^\/api\//, /^\/\.well-known\//, /^\/toys\//],
+        // /testing: Caddy redirects it to /share (container/Caddyfile). Remove it with that redirect.
+        navigateFallbackDenylist: [/^\/api\//, /^\/\.well-known\//, /^\/toys\//, /^\/testing/],
       },
     }),
   ],

@@ -60,6 +60,7 @@ test('two players play a full game, and a watcher replays it', async ({ open, ba
   await expect(carol.locator('#session-name')).toHaveValue('Friday rematch');
   // The games of the session are in My games. Replay closes the dialog and shows the game on the board.
   await carol.locator('#account-button').click();
+  await carol.locator('#my-games-session-box > summary').click();
   await carol.locator('#my-games-session li').first().getByRole('button', { name: 'Replay' }).click();
   await expect(carol.locator('#my-games')).not.toHaveAttribute('open');
   await expect(status(carol)).toContainText('move 7 of 7');

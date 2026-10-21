@@ -3254,6 +3254,15 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-size: 1rem;
 }
 
+.my-games-fold summary {
+  cursor: pointer;
+}
+
+/* Inline, so the heading stays on the line of the fold marker. */
+.my-games-fold h3 {
+  display: inline-block;
+}
+
 .account {
   display: flex;
   flex-wrap: wrap;
@@ -3970,6 +3979,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   align-items: center;
   gap: 0.75rem;
   translate: -50% 0;
+  width: max-content;
+  max-width: calc(100vw - 1.5rem);
   padding: 0.55rem 0.75rem 0.55rem 1rem;
   border: var(--border) solid var(--line);
   border-radius: 10px;
