@@ -70,7 +70,7 @@ describe('parseSessionView', () => {
     version: 2,
     chat: [{ id: 7, from: 'O', text: 'good luck', at: 1_700_000_000_000, by: '00112233445566ff' }, { id: 8, from: 'X', text: 'thanks', at: 1_700_000_000_001 }],
     presence: { X: true, O: false },
-    players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' }, O: null },
+    players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4', name: null, seed: null }, O: null },
     names: { X: 'braveOtter', O: null },
     people: { X: '0123456789abcdef', O: null },
     watchers: [{ id: '0123456789abcdef', name: 'Carol', player: null, person: 'fedcba9876543210' }],
@@ -385,7 +385,7 @@ describe('parsePublicGame', () => {
     difficulty: 'hard',
     tuned: false,
     computer: 'O',
-    players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4' }, O: null },
+    players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4', name: null, seed: null }, O: null },
     names: { X: 'braveOtter', O: null },
     finishedAt: 1_700_000_000_000,
   };

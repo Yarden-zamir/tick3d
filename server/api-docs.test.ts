@@ -19,6 +19,7 @@ import {
   parseResultUpload,
   parseSessionUpdate,
   parseSessionView,
+  parseAvatarRequest,
   parseCustomName,
   parseSeatAction,
   parseSeatAnswer,
@@ -81,6 +82,7 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   SeatAnswer: parseSeatAnswer,
   // server/main.ts reads `name` and checks it with parseCustomName.
   NameRequest: (value) => (isRecord(value) ? parseCustomName(value.name) : undefined),
+  AvatarRequest: parseAvatarRequest,
   BlockRequest: parseBlockRequest,
   StatsPrivacy: parseStatsPrivacy,
   Blocks: parseBlocks,

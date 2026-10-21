@@ -71,10 +71,16 @@ export function previewsConfigFromEnv(env: NodeJS.ProcessEnv): PreviewsConfig | 
 
 type GitHubPerson = Omit<Contributor, 'url'>;
 
-// A GitHub account that is a person. parsePlayerInfo refuses the "[bot]" logins and avatars from other hosts.
+// parsePlayerInfo refuses the "[bot]" logins and avatars from other hosts. A contributor has no name or seed.
+function personOf(login: unknown, avatar: unknown): GitHubPerson | undefined {
+  const info = parsePlayerInfo({ login, avatar });
+  return info === undefined ? undefined : { login: info.login, avatar: info.avatar };
+}
+
+// A GitHub account that is a person.
 function accountOf(value: unknown): GitHubPerson | undefined {
   if (!isRecord(value) || value.type === 'Bot') return undefined;
-  return parsePlayerInfo({ login: value.login, avatar: value.avatar_url });
+  return personOf(value.login, value.avatar_url);
 }
 
 // `branch` and `base` are GitHub labels (owner:branch), so a fork branch never matches a branch of this repository.
@@ -129,7 +135,7 @@ function coAuthorOf(line: string): GitHubPerson | undefined {
   if (start === -1 || end <= start) return undefined;
   const [id, login, ...rest] = line.slice(start + 1, end).split('+');
   if (id === undefined || login === undefined || rest.length > 0 || id === '' || ![...id].every(isDigit)) return undefined;
-  return parsePlayerInfo({ login, avatar: `https://avatars.githubusercontent.com/u/${id}?v=4` });
+  return personOf(login, `https://avatars.githubusercontent.com/u/${id}?v=4`);
 }
 
 const isDigit = (char: string) => char >= '0' && char <= '9';
