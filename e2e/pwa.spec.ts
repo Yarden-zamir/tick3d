@@ -72,6 +72,13 @@ test('a computer game plays and finishes offline, and its result uploads after a
   await expect(page.locator('.login-link')).toHaveCount(1);
 });
 
+test('with the offline cache in charge, an old /testing link still reaches the redirect to /share', async ({ open }) => {
+  const { page } = await open();
+  await waitForServiceWorker(page);
+  await page.goto('/testing?by=someone');
+  await expect(page).toHaveURL(/\/share\?by=someone$/);
+});
+
 // Runs in the page before the app: a Worker whose script never loads, like WebKit offline, where the
 // service worker does not serve the worker script.
 function workerScriptFails(): void {
