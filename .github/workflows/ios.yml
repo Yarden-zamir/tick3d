@@ -2,7 +2,11 @@ name: ios
 
 # Builds the iOS app: a Capacitor shell that loads the production site, like the Android app (android.yml).
 # The page is the same everywhere, so a site deploy reaches the app with no app build. The macOS `app` job
-# runs only for a new shell: a tag such as ios-v1.2.0, or by hand. It never runs on a pull request.
+# runs only for a new shell: a tag such as ios-v1.2.0, a push to main that changes the shell, or by hand.
+# It never runs on a pull request. A push to main uploads to TestFlight for the internal testers only;
+# only a tag sends the build to the external testers, so a tag stays the deliberate release.
+# Pushes to main share one concurrency group: one build runs, and a newer push replaces an older queued one.
+# Each tag has its own group, so a push to main never cancels a release.
 # The Xcode project is generated here on every run from apple/capacitor.config.json, so the repository
 # adds the committed purchase plugin after generation.
 #
@@ -11,10 +15,18 @@ name: ios
 # with Node alone (no `xcodebuild`, no CocoaPods) catches a bad apple/capacitor.config.json or a broken
 # install in well under a minute, so most mistakes surface on the pull request, before the real build.
 #
+# The `distribute` job runs after a real upload of an ios-v* tag (never after a run by hand or a simulator-only
+# build) and needs no Xcode either: it calls the App Store Connect API directly (a JWT signed with the same
+# Admin key) to add the new build to the external "Testers" group and submit it for Beta App Review, so every
+# tagged release reaches external testers with no manual step in App Store Connect. The group itself, and its
+# Beta App Review contact information, are a one-time setup in App Store Connect's TestFlight tab; this job
+# never creates or changes either, only looks the group up by name and acts on the build of its own run.
+#
 # The App Store account is set by repository settings, not by code:
 # - variables APPLE_TEAM_ID and IOS_BUNDLE_ID;
 # - secrets APP_STORE_CONNECT_KEY (the .p8 text), APP_STORE_CONNECT_KEY_ID and APP_STORE_CONNECT_ISSUER_ID.
-#   An Admin key lets Xcode create the certificate and the profile itself (cloud signing).
+#   An Admin key lets Xcode create the certificate and the profile itself (cloud signing), and lets
+#   `distribute` call the App Store Connect API directly.
 # The secrets have no KITSHN_ prefix: KitSHn forwards every KITSHN_ secret to the server.
 # Without them, the job builds for the simulator only, which checks that the project builds.
 on:
@@ -24,8 +36,17 @@ on:
         description: Upload the build to TestFlight (needs the App Store Connect key and the variables)
         type: boolean
         default: false
+  # GitHub does not check the paths for a tag push, so every ios-v* tag builds.
+  # apple/store (App Store art) and apple/scripts (used only by `distribute`) do not change the app.
+  # This file holds the Info.plist values and the build steps, so a change to it builds too.
   push:
+    branches: [main]
     tags: ['ios-v*']
+    paths:
+      - 'apple/**'
+      - '!apple/store/**'
+      - '!apple/scripts/**'
+      - '.github/workflows/ios.yml'
   pull_request:
     paths: ['apple/**', '.github/workflows/ios.yml']
 
@@ -77,6 +98,12 @@ jobs:
     env:
       BUILD_DIR: ${{ github.workspace }}/build/ios
       SITE_HOST: tick3d.yarden-zamir.com
+    # True only once a signed build was actually uploaded (not a simulator build, not a signed export
+    # with no upload), so `distribute` runs exactly when there is a new TestFlight build to send out.
+    outputs:
+      uploaded: ${{ steps.archive.outputs.uploaded }}
+      # The build number of this run, so `distribute` sends this build and never an older one.
+      code: ${{ steps.version.outputs.code }}
     steps:
       # The tags and their history let android/changelog.sh find the previous release.
       - uses: actions/checkout@v7
@@ -92,13 +119,25 @@ jobs:
         with:
           node-version: 26
 
-      # The version code must grow with every upload: the run number of this workflow does.
-      # A tag ios-v1.2.0 names the version 1.2.0. A run by hand gets 0.<run number>.
+      # The version code must grow with every upload: the run number of this workflow does, for tag,
+      # push and hand runs alike, so two builds never share a number.
+      # A tag ios-v1.2.0 names the version 1.2.0. Any other run takes the next patch after the latest
+      # ios-v* tag (1.2.1), because App Store Connect refuses a version below an approved one.
+      # Before the first tag, it gets 0.<run number>. A tag that is not X.Y.Z fails this step.
       - name: Version
         id: version
         run: |
           code=${{ github.run_number }}
-          if [[ "$GITHUB_REF" == refs/tags/ios-v* ]]; then name="${GITHUB_REF#refs/tags/ios-v}"; else name="0.$code"; fi
+          latest=$(git tag --list 'ios-v*' --sort=-version:refname | head -n 1)
+          if [[ "$GITHUB_REF" == refs/tags/ios-v* ]]; then
+            name="${GITHUB_REF#refs/tags/ios-v}"
+          elif [[ -n "$latest" ]]; then
+            IFS=. read -r major minor patch <<< "${latest#ios-v}"
+            [[ "$major$minor$patch" =~ ^[0-9]+$ && -n "$minor" && -n "$patch" ]] || { echo "::error::$latest is not ios-vX.Y.Z"; exit 1; }
+            name="$major.$minor.$((patch + 1))"
+          else
+            name="0.$code"
+          fi
           echo "code=$code" >> "$GITHUB_OUTPUT"
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "Version $name (build $code)" >> "$GITHUB_STEP_SUMMARY"
@@ -177,14 +216,17 @@ jobs:
 
       # Xcode signs with the App Store Connect key (cloud signing) and uploads to TestFlight at export.
       - name: Archive and upload
+        id: archive
         if: steps.signing.outputs.sign == 'true'
         working-directory: ${{ env.BUILD_DIR }}/ios/App
         env:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           TEAM: ${{ vars.APPLE_TEAM_ID }}
-          UPLOAD: ${{ startsWith(github.ref, 'refs/tags/ios-v') || inputs.upload }}
+          UPLOAD: ${{ github.event_name == 'push' || inputs.upload }}
         run: |
+          # Without pipefail, `| tail` hides a failed archive or upload, and `distribute` then sends nothing new.
+          set -o pipefail
           auth=(-allowProvisioningUpdates -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8"
             -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER")
           # iPhone only (TARGETED_DEVICE_FAMILY 1): the iPad layout is not tested yet.
@@ -204,6 +246,7 @@ jobs:
           xcodebuild -exportArchive -archivePath "$BUILD_DIR/tick3d.xcarchive" \
             -exportOptionsPlist "$BUILD_DIR/export.plist" -exportPath "$BUILD_DIR/export" "${auth[@]}" | tail -n 40
           echo "Export: $destination" >> "$GITHUB_STEP_SUMMARY"
+          echo "uploaded=$([[ "$destination" == upload ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
       - name: Remove the key
         if: always()
@@ -230,3 +273,28 @@ jobs:
           name: iOS ${{ steps.version.outputs.name }}
           body_path: ${{ steps.release.outputs.body }}
           make_latest: false
+
+  # Sends each tagged TestFlight upload to external testers automatically: no Xcode here, only the App Store
+  # Connect API (apple/scripts/testflight-distribute.py). Runs only after `app` actually uploaded the build
+  # of an ios-v* tag. A push to main, or a run by hand with "upload", only uploads to TestFlight.
+  distribute:
+    needs: app
+    if: needs.app.outputs.uploaded == 'true' && startsWith(github.ref, 'refs/tags/ios-v')
+    runs-on: ubuntu-latest
+    # The script waits up to POLL_DEADLINE_MIN (40) for Apple's processing of the build, then fails.
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Add the build to the external testing group and submit it for review
+        env:
+          ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          BUNDLE: ${{ vars.IOS_BUNDLE_ID }}
+          BUILD_NUMBER: ${{ needs.app.outputs.code }}
+        run: uv run apple/scripts/testflight-distribute.py
