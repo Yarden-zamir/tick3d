@@ -1,17 +1,21 @@
 // The plans of the smart-memory ad (issue #130): what shows and when, on the beat grid of src/grid.ts (sixteenths
 // of the 136 BPM song, 16 to a bar). Each plan is a 'full' cut (at most 15.0 s) or a 'short' cut (at most 8.0 s).
-// MEMORY_PLAN picks one; scripts/memory.ts passes it into the render browser. 'full' and 'short' are variant A
-// "Shatter" of the storyboards on #130, which the maintainers picked. 'next-level' is A with the Hide coordinates
-// proposal (option A of the open question on #130). After the answer, the chosen way becomes 'full' and 'short',
-// and 'next-level' goes.
+// MEMORY_PLAN picks one; scripts/memory.ts passes it into the render browser. Every plan is variant A "Shatter" of
+// the storyboards on #130, which the maintainers picked, in one of the three ways to show Hide coordinates of the
+// open question on #130 (HIDE_WAYS). The maintainers choose a way from the finished videos; then the other ways go.
 import { SIXTEENTH } from '../../../src/song.ts';
 import { FPS, frameOf } from '../grid.ts';
 import { ELEVATION, HOME_AZIMUTH } from '../rig.ts';
 import { playerOf } from './game.ts';
 
-type Cut = 'full' | 'short';
-export const PLAN_IDS = ['full', 'short', 'next-level'] as const;
-export type PlanId = (typeof PLAN_IDS)[number];
+const CUTS = ['full', 'short'] as const;
+type Cut = (typeof CUTS)[number];
+// a: the game hides the board and the history, and the stepped Hide control moves on to Coordinates just before the
+// reveal. b: board, history and coordinates are hidden from the start, as the issue says. c: no Hide coordinates.
+const HIDE_WAYS = ['a', 'b', 'c'] as const;
+type HideWay = (typeof HIDE_WAYS)[number];
+export type PlanId = `${HideWay}-${Cut}`;
+export const PLAN_IDS: readonly PlanId[] = HIDE_WAYS.flatMap((way) => CUTS.map((cut): PlanId => `${way}-${cut}`));
 
 // Where the camera stands: a point on an orbit around the centre of the tower (see tutorial/plan.ts).
 export type View = { azimuth: number; elevation: number; zoom: number; lift: number };
@@ -55,34 +59,41 @@ export type Plan = {
 };
 
 const view = (azimuth: number, elevation = ELEVATION, zoom = 0.82, lift = 0.1): View => ({ azimuth, elevation, zoom, lift });
-// While the keypad shows, the tower sits small in the top part of the square, above the keypad.
-const OVER_KEYPAD = { zoom: 0.7, lift: 0.34 } as const;
-const keypadView = (azimuth: number, elevation = ELEVATION, zoom: number = OVER_KEYPAD.zoom): View => view(azimuth, elevation, zoom, OVER_KEYPAD.lift);
+// While the keypad shows, the tower sits small in the top part of the square, above the keypad. In way a, the Hide
+// control sits on top of the slots, so the tower sits higher and smaller.
+const OVER_KEYPAD: Readonly<Record<HideWay, { zoom: number; lift: number }>> = {
+  a: { zoom: 0.62, lift: 0.46 },
+  b: { zoom: 0.7, lift: 0.34 },
+  c: { zoom: 0.7, lift: 0.34 },
+};
 // The end card: the tower small in the middle, the line above it and the address under it.
 const END_VIEW: View = { azimuth: HOME_AZIMUTH + 40, elevation: ELEVATION, zoom: 0.5, lift: 0.08 };
 
 // The moves from `from` on, at the given sixteenths. An X move types over the 3 sixteenths before its place.
 const moves = (from: number, ats: readonly number[]): MemoryEvent[] => ats.map((at, i) => ({ kind: 'move', at, move: from + i, gap: 1 }));
 
-const PLANS: Readonly<Record<PlanId, Omit<Plan, 'id'>>> = {
-  // 7 bars and the final chord: 13.0 s.
-  full: {
+// The 7 bars of the full cut and the final chord: 13.0 s. The board shatters, the memory load, the double threat,
+// the reveal, the end card.
+function fullCut(way: HideWay): Omit<Plan, 'id'> {
+  const keypadView = (azimuth: number, elevation = ELEVATION, push = 0): View => view(azimuth, elevation, OVER_KEYPAD[way].zoom + push, OVER_KEYPAD[way].lift);
+  const mask: readonly MemoryEvent[] = { a: [{ kind: 'mask', at: 74, toggle: true } as const], b: [{ kind: 'mask', at: 17 } as const], c: [] }[way];
+  return {
     cut: 'full',
     seconds: 13,
     firstMove: 5,
-    events: [
+    events: ([
       { kind: 'shatter', at: 4 },
       { kind: 'keypad', at: 16, until: 80 },
       // Bars 2 and 3: the memory load. O 3 3 2, X 1 4 4, O 1 4 1, X 2 3 3, O 3 2 2.
       ...moves(5, [20, 28, 32, 38, 42]),
-      { kind: 'mask', at: 44 },
       // Bars 4 and 5: the double threat, X 2 4 3, O blocks at 2 1 3, X wins on 3 4 2.
       { kind: 'threats', at: 48 },
       ...moves(10, [60, 64, 72]),
+      ...mask,
       { kind: 'reveal', at: 80 },
       { kind: 'end-card', at: 96 },
       { kind: 'final-chord', at: 112 },
-    ],
+    ] satisfies MemoryEvent[]).toSorted((x, y) => x.at - y.at),
     text: [
       { at: 2, until: 18, text: "Win a game you can't see?" },
       { at: 82, until: 96, text: 'That was all memory.' },
@@ -93,8 +104,8 @@ const PLANS: Readonly<Record<PlanId, Omit<Plan, 'id'>>> = {
       { at: 12, view: view(HOME_AZIMUTH + 6) },
       { at: 17, view: keypadView(HOME_AZIMUTH + 10) },
       { at: 48, view: keypadView(HOME_AZIMUTH + 22) },
-      { at: 60, view: keypadView(HOME_AZIMUTH + 30, ELEVATION + 4, 0.78) },
-      { at: 78, view: keypadView(HOME_AZIMUTH + 34, ELEVATION + 4, 0.78) },
+      { at: 60, view: keypadView(HOME_AZIMUTH + 30, ELEVATION + 4, 0.08) },
+      { at: 78, view: keypadView(HOME_AZIMUTH + 34, ELEVATION + 4, 0.08) },
       { at: 84, view: view(HOME_AZIMUTH + 38, ELEVATION, 0.86, 0) },
       { at: 96, view: view(HOME_AZIMUTH + 40, ELEVATION, 0.86, 0) },
       { at: 100, view: END_VIEW },
@@ -103,26 +114,32 @@ const PLANS: Readonly<Record<PlanId, Omit<Plan, 'id'>>> = {
       { name: 'hook', at: 6 },
       { name: 'memory', at: 46 },
       { name: 'threat', at: 62 },
+      ...(way === 'a' ? [{ name: 'coordinates', at: 78 }] : []),
       { name: 'reveal', at: 86 },
       { name: 'end-card', at: 117 },
     ],
-  },
-  // 4 bars and the final chord: 7.6 s. The board shatters, the keypad shows `? ? ?`, X types the win, the board
-  // snaps back, the end card.
-  short: {
+  };
+}
+
+// The 4 bars of the short cut and the final chord: 7.6 s. The board shatters, the keypad, X types the win, the
+// board snaps back, the end card.
+function shortCut(way: HideWay): Omit<Plan, 'id'> {
+  const keypadView = (azimuth: number, elevation = ELEVATION, push = 0): View => view(azimuth, elevation, OVER_KEYPAD[way].zoom + push, OVER_KEYPAD[way].lift);
+  const mask: readonly MemoryEvent[] = { a: [{ kind: 'mask', at: 27, toggle: true } as const], b: [{ kind: 'mask', at: 16 } as const], c: [] }[way];
+  return {
     cut: 'short',
     seconds: 7.6,
     firstMove: 12,
-    events: [
+    events: ([
       { kind: 'shatter', at: 4 },
       { kind: 'keypad', at: 14, until: 32 },
-      { kind: 'mask', at: 16 },
       { kind: 'threats', at: 18 },
-      ...moves(12, [28]),
+      ...moves(12, [26]),
+      ...mask,
       { kind: 'reveal', at: 32 },
       { kind: 'end-card', at: 48 },
       { kind: 'final-chord', at: 64 },
-    ],
+    ] satisfies MemoryEvent[]).toSorted((x, y) => x.at - y.at),
     text: [
       { at: 2, until: 16, text: "Win a game you can't see?" },
       { at: 54, until: Infinity, text: 'Top 1%? Prove it.' },
@@ -131,66 +148,29 @@ const PLANS: Readonly<Record<PlanId, Omit<Plan, 'id'>>> = {
       { at: 0, view: view(HOME_AZIMUTH) },
       { at: 10, view: view(HOME_AZIMUTH + 5) },
       { at: 15, view: keypadView(HOME_AZIMUTH + 8) },
-      { at: 30, view: keypadView(HOME_AZIMUTH + 14, ELEVATION + 4, 0.78) },
+      { at: 30, view: keypadView(HOME_AZIMUTH + 14, ELEVATION + 4, 0.08) },
       { at: 36, view: view(HOME_AZIMUTH + 18, ELEVATION, 0.86, 0) },
       { at: 48, view: view(HOME_AZIMUTH + 22, ELEVATION, 0.86, 0) },
       { at: 52, view: END_VIEW },
     ],
     stills: [
       { name: 'hook', at: 6 },
-      { name: 'memory', at: 18 },
-      { name: 'threat', at: 30 },
+      { name: 'memory', at: 20 },
+      { name: 'threat', at: 27 },
+      ...(way === 'a' ? [{ name: 'coordinates', at: 30 }] : []),
       { name: 'reveal', at: 38 },
       { name: 'end-card', at: 68 },
     ],
-  },
-  // Variant A with the Hide coordinates proposal (option 1 of the question on #130): the game plays with Hide board
-  // and Hide history, so the slots show each move. The Coordinates button switches on just before the reveal.
-  'next-level': {
-    cut: 'full',
-    seconds: 13,
-    firstMove: 5,
-    events: [
-      { kind: 'shatter', at: 4 },
-      { kind: 'keypad', at: 16, until: 80 },
-      ...moves(5, [20, 28, 32, 38, 42]),
-      { kind: 'threats', at: 48 },
-      ...moves(10, [60, 64, 72]),
-      { kind: 'mask', at: 74, toggle: true },
-      { kind: 'reveal', at: 80 },
-      { kind: 'end-card', at: 96 },
-      { kind: 'final-chord', at: 112 },
-    ],
-    text: [
-      { at: 2, until: 18, text: "Win a game you can't see?" },
-      { at: 82, until: 96, text: 'That was all memory.' },
-      { at: 104, until: Infinity, text: 'Top 1%? Prove it.' },
-    ],
-    camera: [
-      { at: 0, view: view(HOME_AZIMUTH) },
-      { at: 12, view: view(HOME_AZIMUTH + 6) },
-      { at: 17, view: keypadView(HOME_AZIMUTH + 10) },
-      { at: 48, view: keypadView(HOME_AZIMUTH + 22) },
-      { at: 60, view: keypadView(HOME_AZIMUTH + 30, ELEVATION + 4, 0.78) },
-      { at: 78, view: keypadView(HOME_AZIMUTH + 34, ELEVATION + 4, 0.78) },
-      { at: 84, view: view(HOME_AZIMUTH + 38, ELEVATION, 0.86, 0) },
-      { at: 96, view: view(HOME_AZIMUTH + 40, ELEVATION, 0.86, 0) },
-      { at: 100, view: END_VIEW },
-    ],
-    stills: [
-      { name: 'memory', at: 40 },
-      { name: 'next-level', at: 75 },
-      { name: 'next-level-done', at: 78 },
-    ],
-  },
-};
+  };
+}
 
 export function planOf(id: PlanId): Plan {
-  return { id, ...PLANS[id] };
+  const [way, cut] = id.split('-') as [HideWay, Cut];
+  return { id, ...(cut === 'full' ? fullCut(way) : shortCut(way)) };
 }
 
 const isPlanId = (name: string): name is PlanId => (PLAN_IDS as readonly string[]).includes(name);
-const requested = globalThis.process?.env?.['MEMORY_PLAN'] ?? 'full';
+const requested = globalThis.process?.env?.['MEMORY_PLAN'] ?? 'a-full';
 if (!isPlanId(requested)) throw new Error(`MEMORY_PLAN=${requested} is not one of ${PLAN_IDS.join(', ')}`);
 export const PLAN = planOf(requested);
 export const DURATION_FRAMES = Math.round(PLAN.seconds * FPS);

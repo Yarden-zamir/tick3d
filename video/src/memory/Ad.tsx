@@ -4,10 +4,10 @@ import { PLAN } from './plan.ts';
 import { createMemoryWorld } from './world.ts';
 
 // The render passes the plan twice: as MEMORY_PLAN for plan.ts, and as an input prop for this check, so a render
-// can never fall back to the full cut in silence.
+// can never fall back to the default plan in silence.
 function checkPlan(): void {
   const props: unknown = getInputProps();
-  const wanted = typeof props === 'object' && props !== null && 'plan' in props ? props.plan : 'full';
+  const wanted = typeof props === 'object' && props !== null && 'plan' in props ? props.plan : 'a-full';
   if (wanted !== PLAN.id) throw new Error(`the render asked for plan ${String(wanted)}, but plan.ts loaded ${PLAN.id}`);
 }
 

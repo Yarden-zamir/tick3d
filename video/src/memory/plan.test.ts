@@ -34,10 +34,12 @@ describe.each(PLAN_IDS)('the %s plan of the smart-memory ad', (id) => {
   it('tells the story in order: shatter, then Hide coordinates and the threats, reveal, end card, final chord', () => {
     const times = (['shatter', 'reveal', 'end-card', 'final-chord'] as const).map((kind) => eventOf(kind, plan).at);
     expect(times).toEqual(times.toSorted((a, b) => a - b));
-    for (const kind of ['mask', 'threats'] as const) {
-      expect(eventOf(kind, plan).at).toBeGreaterThanOrEqual(eventOf('shatter', plan).at);
-      expect(eventOf(kind, plan).at).toBeLessThan(eventOf('reveal', plan).at);
+    // Way c of the plans has no mask.
+    for (const event of [...eventsOf('mask'), eventOf('threats', plan)]) {
+      expect(event.at).toBeGreaterThanOrEqual(eventOf('shatter', plan).at);
+      expect(event.at).toBeLessThan(eventOf('reveal', plan).at);
     }
+    expect(eventsOf('mask').length).toBe(id.startsWith('c-') ? 0 : 1);
     expect(eventOf('final-chord', plan).at).toBeLessThan(end);
   });
 
