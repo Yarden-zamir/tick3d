@@ -23,6 +23,7 @@ import {
   parseSeatAction,
   parseSeatAnswer,
   parseSessionUpdate,
+  parseLeaderboardFilter,
   parseStatsFilter,
 } from '../src/protocol.ts';
 import { asHostId, parseAnnounce, parseAnswerRequest } from '../src/nearby/lobby.ts';
@@ -37,10 +38,13 @@ import {
   NEARBY_CALLS_PER_10_MINUTES,
   NEARBY_GRACE_MS,
   NEARBY_HOSTS_PER_NETWORK,
+  LEADERBOARD_FILTER_ERROR,
   STATS_FILTER_ERROR,
   PRACTICE_RUNS_PER_10_MINUTES,
   REPORTS_PER_10_MINUTES,
   ROUTES,
+  TESTER_CLAIMS_PER_HOUR,
+  APP_OPENS_PER_HOUR,
   type Route,
   WAIT_MS,
   matchRoute,
@@ -54,6 +58,11 @@ import { parsePlayoffRequest } from '../src/practice/playoff.ts';
 import { parseBoardQuery, parsePracticeRun } from '../src/practice/practice.ts';
 import { openStore } from './store.ts';
 import { createWaiters } from './waiters.ts';
+import { testerCodesFromEnv } from './tester-codes.ts';
+import { TESTER_NAME_MAX_LENGTH, parseClaimRequest } from '../src/share/codes.ts';
+import { parseAppOpen } from '../src/copies.ts';
+import { PurchaseProofError, createPlayProof, playDecoderFromEnv } from './play-proof.ts';
+import { appleVerifierFromEnv } from './apple-proof.ts';
 
 // PORT lets a test run its own server next to another one.
 const PORT = Number(process.env.PORT ?? 8080);
@@ -87,6 +96,14 @@ const allowReport = createLimiter(REPORTS_PER_10_MINUTES, 600_000, 10_000, 'Too 
 // Delete my data per address: a player needs it once, so 10 per hour leaves room for a family on one
 // address and keeps a flood of deletes from holding the store queue. Same limits as allowCreate.
 const allowDataDelete = createLimiter(DATA_DELETES_PER_HOUR, 3_600_000, 10_000, 'Too many data deletions from this address. Try again later.');
+// Claims of tester codes per address: a tester needs one code, so 5 per hour leaves room for a family on one
+// address and keeps one visitor from taking every code. Same limits as allowCreate.
+const allowTesterClaim = createLimiter(TESTER_CLAIMS_PER_HOUR, 3_600_000, 10_000, 'Too many code claims from this address. Try again later.');
+// Reports of an Android app open per address (POST /api/copies). Same limits as allowCreate.
+const allowAppOpen = createLimiter(APP_OPENS_PER_HOUR, 3_600_000, 10_000, 'Too many app reports from this address. Try again later.');
+const allowProofNonce = createLimiter(APP_OPENS_PER_HOUR, 3_600_000, 10_000, 'Too many purchase checks from this address.');
+const playProof = createPlayProof(playDecoderFromEnv(process.env));
+const appleProof = appleVerifierFromEnv(process.env);
 // Each entry holds at most one open request, so `total` also caps the open announce requests.
 const lobby = createLobby({ perNetwork: NEARBY_HOSTS_PER_NETWORK, total: 1000, waitMs: WAIT_MS, graceMs: NEARBY_GRACE_MS });
 
@@ -127,6 +144,10 @@ function openTokens(code: Code): PlayerToken[] {
 }
 
 const store = await openStore(dbPath, { open: openTokens, onChange: notify });
+
+// The tester codes of TESTER_CODES (server/tester-codes.ts). A bad entry stops the start.
+const testerCodes = testerCodesFromEnv(process.env);
+if (testerCodes.length > 0) console.log(`tester codes: ${await store.addTesterCodes(testerCodes)} new of ${testerCodes.length}`);
 
 // The release of this build (src/release.ts). The Docker image holds release.json next to server/.
 // A local API has no build, so it records no release. A bad file stops the start: it is a build fault.
@@ -329,12 +350,14 @@ function requireMaintainer(req: IncomingMessage): string {
   return user.login;
 }
 
-// The answer of GET /api/me: the login state and the custom name.
+// The answer of GET /api/me: the login state, the custom name and the public person id.
 async function me(token: PlayerToken, user: ReturnType<Auth['user']>) {
   return {
     loginAvailable: auth !== undefined,
     user: user === undefined ? null : { login: user.login, avatar: user.avatar },
     name: await store.customName(token),
+    hasCopy: await store.hasCopy(token),
+    person: await store.person(token),
   };
 }
 
@@ -473,7 +496,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       allowReport(clientOf(req), Date.now());
       const token = requirePlayer(req);
       const report = parseReportRequest(await readJson(req));
-      if (report === undefined) throw new HttpError(400, 'A report needs a code, one message id or person id, a reason, and a note of at most 200 characters.');
+      if (report === undefined) throw new HttpError(400, 'A report needs one message id with a code or one person id, a reason, and a note of at most 200 characters.');
       return send(res, 201, await store.report(token, report));
     }
     case 'GET /api/reports':
@@ -491,6 +514,47 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       for (const token of await store.clearNameOf(requirePerson(match.params.person), login)) notifyPlayer(token as PlayerToken);
       return send(res, 200, { ok: true });
     }
+
+    case 'GET /api/testing/codes':
+      return send(res, 200, await store.testerCodes());
+    // A cross-site form cannot send the X-Player header, so another site cannot claim a code.
+    case 'POST /api/testing/codes/{codeId}/claim': {
+      allowTesterClaim(clientOf(req), Date.now());
+      const player = requirePlayer(req);
+      const id = Number(match.params.codeId);
+      if (!Number.isSafeInteger(id) || id < 1 || String(id) !== match.params.codeId) throw new HttpError(400, 'A code id is a whole number from 1.');
+      const claim = parseClaimRequest(await readJson(req));
+      if (claim === undefined) {
+        throw new HttpError(400, `A claim needs a valid email, a name of 1 to ${TESTER_NAME_MAX_LENGTH} letters, digits, spaces or - _ . ', and in "by" a person id or nothing.`);
+      }
+      return send(res, 200, await store.claimTesterCode(id, claim, player));
+    }
+    // A cross-site form cannot send the X-Player header, so another site cannot report for a player.
+    case 'POST /api/copies/nonce': {
+      allowProofNonce(clientOf(req), Date.now());
+      return send(res, 200, { nonce: playProof.nonce(requirePlayer(req)) });
+    }
+    case 'POST /api/copies': {
+      allowAppOpen(clientOf(req), Date.now());
+      const player = requirePlayer(req);
+      const open = parseAppOpen(await readJson(req, 40 * 1024));
+      if (open === undefined) throw new HttpError(400, 'An app open report needs the person id of the inviter, or null, in "by".');
+      let purchase: boolean | Awaited<ReturnType<NonNullable<typeof appleProof>>>;
+      if (open.store === 'play') {
+        purchase = await playProof.verify(open.proof, player);
+      } else {
+        if (appleProof === undefined) throw new PurchaseProofError(503, 'Apple purchase checks are not configured.');
+        purchase = await appleProof(open.proof, open.device);
+      }
+      // A login cookie links this browser first, so the answer and the owner at the first open name the account.
+      const user = auth?.user(req);
+      if (user !== undefined) await store.linkToken(player, user);
+      if (purchase === false) return send(res, 200, { hasCopy: await store.revokePlayCopy(player) });
+      return send(res, 200, { hasCopy: await store.reportAppOpen(player, open.by, purchase) });
+    }
+    case 'GET /api/testing/claims':
+      requireMaintainer(req);
+      return send(res, 200, await store.testerClaims());
 
     // An email request for Delete my data: the same deletion, by a maintainer.
     case 'DELETE /api/players/{person}': {
@@ -557,6 +621,23 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const token = asPlayerToken(header);
       if (header !== undefined && token === undefined) throw new HttpError(400, 'Invalid X-Player header.');
       return send(res, 200, await store.stats(filter, token ?? null));
+    }
+    // The player card of a person view, before the stats of that person. It reads the X-Player header as a person filter does.
+    case 'GET /api/stats/card/{person}': {
+      const header = req.headers['x-player'];
+      const token = asPlayerToken(header);
+      if (header !== undefined && token === undefined) throw new HttpError(400, 'Invalid X-Player header.');
+      return send(res, 200, await store.statsCard(requirePerson(match.params.person), token ?? null));
+    }
+    // Names and results of each player, so the stats page can rank them. It reads the X-Player header
+    // when it is there, to mark the caller.
+    case 'GET /api/leaderboard': {
+      const filter = parseLeaderboardFilter(url.searchParams);
+      if (filter === undefined) throw new HttpError(400, LEADERBOARD_FILTER_ERROR);
+      const header = req.headers['x-player'];
+      const token = asPlayerToken(header);
+      if (header !== undefined && token === undefined) throw new HttpError(400, 'Invalid X-Player header.');
+      return send(res, 200, await store.leaderboard(filter, token));
     }
     // Cached in server/previews.ts, so a flood of requests costs no extra GitHub calls and needs no limiter.
     case 'GET /api/previews':
@@ -662,6 +743,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 const server = createServer((req, res) => {
   route(req, res).catch((error: unknown) => {
     if (error instanceof SessionError) return send(res, error.status, { error: error.message, ...(error.code === undefined ? {} : { code: error.code }) });
+    if (error instanceof PurchaseProofError) return send(res, error.status, { error: error.message });
     if (error instanceof HttpError) return send(res, error.status, { error: error.message }, error.headers);
     if (error instanceof TooManyRequests) return send(res, error.status, { error: error.message }, error.headers);
     if (error instanceof LobbyError) return send(res, error.status, { error: error.message }, error.headers);
@@ -691,11 +773,22 @@ server.listen(PORT, () =>
   console.log(`tick3d api on :${PORT}, db ${dbPath}, login ${auth === undefined ? 'off' : 'on'}${lanHost ? `, LAN host ${lanHost.name}` : ''}`),
 );
 
-for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-  process.on(signal, () => {
-    server.close();
-    for (const set of streams.values()) for (const stream of set) stream.res.end();
-    store.close();
-    process.exit(0);
-  });
+// A deploy stops this process with SIGTERM. The requests that run get this long to answer, so a move during
+// a deploy counts and its player sees it. Then the process cuts the connections that still wait: long polls
+// and Nearby announcements. Their clients ask again (src/page/nearby.ts), and Caddy repeats a cut GET by itself.
+const SHUTDOWN_GRACE_MS = 1000;
+
+let stopping = false;
+
+function stop(): void {
+  if (stopping) return;
+  stopping = true;
+  // The pages open a new stream after the retry time of the stream, and the proxies hold it until the next process answers.
+  const open = [...streams.values()].flatMap((set) => [...set]);
+  streams.clear();
+  for (const stream of open) stream.res.end();
+  server.close(() => void store.close().finally(() => process.exit(0)));
+  setTimeout(() => server.closeAllConnections(), SHUTDOWN_GRACE_MS).unref();
 }
+
+for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, stop);

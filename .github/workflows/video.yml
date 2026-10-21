@@ -1,7 +1,7 @@
 name: video
 
 # Checks the video code on every pull request that touches it. Renders the 15 s spot (issue #119), every variant
-# in both crops, and the tutorial "How to win" at both paces (40 s and 27.5 s) in both crops, by hand, on a push to
+# in both crops, and both tutorials ("How to play" and "Strong cells") at both paces in both crops, by hand, on a push to
 # main that touches the video, and on a tag. Pull request previews are rendered on a Mac and published with
 # video/scripts/publish.sh, because a CI render round takes about 5 minutes (maintainer decision on #119). A tag
 # such as video-v1 also attaches the spot files to a GitHub Release. No secrets.
@@ -94,8 +94,9 @@ jobs:
           path: video/render/
           if-no-files-found: error
 
-  # The tutorial "How to win" (video/src/tutorial/), one job per pace and crop: the MP4, the soundtrack and one
-  # still per section. The long pace lasts 40.0 s, the short one 27.5 s; the check allows 0.1 s either way.
+  # The tutorials (video/src/tutorial/), one job per tutorial, pace and crop: the MP4, the soundtrack, one still per
+  # section and per checkpoint, and with the landscape crop the web copy for the Info panel. Lengths in seconds:
+  # Basics 48 (long) and 34 (short), Strong cells 17 and 12 (video/creative/tutorial.md); the check allows 0.1 s.
   tutorial:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
@@ -103,13 +104,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        tutorial: [basics, strong]
         pace: [long, short]
         crop: [landscape, portrait]
     env:
+      TUTORIAL: ${{ matrix.tutorial }}
       TUTORIAL_PACE: ${{ matrix.pace }}
-      # The folder and the file names of a pace (scripts/tutorial.ts), and its length in seconds.
-      CUT: ${{ matrix.pace == 'long' && 'tutorial' || 'tutorial-short' }}
-      SECONDS_WANTED: ${{ matrix.pace == 'long' && '40.0' || '27.5' }}
+      # The folder and the file names of a tutorial and pace (NAME in src/tutorial/plan.ts), and its length in seconds.
+      CUT: tutorial-${{ matrix.tutorial }}${{ matrix.pace == 'short' && '-short' || '' }}
+      SECONDS_WANTED: ${{ fromJSON('{"basics-long":"48.0","basics-short":"34.0","strong-long":"17.0","strong-short":"12.0"}')[format('{0}-{1}', matrix.tutorial, matrix.pace)] }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -124,7 +127,7 @@ jobs:
         with:
           path: video/node_modules/.remotion
           key: chrome-headless-shell-${{ runner.os }}-${{ hashFiles('video/package-lock.json') }}
-      - name: Render the tutorial, ${{ matrix.pace }}, ${{ matrix.crop }}
+      - name: Render the tutorial ${{ matrix.tutorial }}, ${{ matrix.pace }}, ${{ matrix.crop }}
         working-directory: video
         run: npm run tutorial -- --crop ${{ matrix.crop }}
       - name: Check the length and the size of the MP4

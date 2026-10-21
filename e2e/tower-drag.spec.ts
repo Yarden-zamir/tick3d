@@ -1,4 +1,4 @@
-import { cell, expect, marks, storedSettings, test } from './fixtures.ts';
+import { cell, expect, marks, openMore, storedSettings, test } from './fixtures.ts';
 import type { Locator, Page } from '@playwright/test';
 
 const friend = { settings: { mode: 'friend', view: 'tower' } };
@@ -22,6 +22,11 @@ async function dragFrom(page: Page, x: number, y: number): Promise<void> {
 test('a drag in the empty stage beside the tower turns it, and a drag on the keypad does not', async ({ open }) => {
   const { page } = await open(friend);
   const before = await storedSpin(page);
+  // The keypad shows only while the board is hidden.
+  await openMore(page);
+  const hideBoard = page.getByRole('button', { name: 'Hide history and board', exact: true });
+  await hideBoard.click();
+  await expect(hideBoard).toHaveAttribute('aria-pressed', 'true');
 
   const keypadKey = page.getByRole('button', { name: '1', exact: true });
   await keypadKey.scrollIntoViewIfNeeded();
@@ -32,6 +37,8 @@ test('a drag in the empty stage beside the tower turns it, and a drag on the key
   await dragFrom(page, x, y);
   expect(await storedSpin(page)).toEqual(before);
 
+  await page.getByRole('button', { name: 'Hide nothing', exact: true }).click();
+  await expect(page.locator('#board')).toBeVisible();
   await page.evaluate(() => scrollTo(0, 0));
   const stage = await box(page.locator('#stage'));
   const board = await box(page.locator('#board'));

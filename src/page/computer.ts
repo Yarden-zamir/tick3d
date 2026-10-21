@@ -1,15 +1,13 @@
-// The computer turn and undo, for games on this device.
-import { hasLimit } from '../clock.ts';
+// The computer turn, for games on this device.
 import { type Game, type Player, other } from '../game.ts';
 import { createSearch } from '../move-search.ts';
 import { isTunedFor } from '../tuning.ts';
 import { computerTuning } from './advanced.ts';
 import { showError } from './feedback.ts';
-import { requestUndo } from './players.ts';
 import { render } from './render.ts';
-import { applyView, withBusy } from './sessions.ts';
+import { applyView } from './sessions.ts';
 import { settings } from './settings.ts';
-import { page, isLive, current, currentRound, newRound, setThinking, shared } from './state.ts';
+import { page, isLive, current, currentRound, setThinking } from './state.ts';
 
 const COMPUTER_DELAY_MS = 450;
 
@@ -33,7 +31,7 @@ export function scheduleComputer(): void {
   render();
   const { code } = page.session;
   const computer = other(page.session.you);
-  // A new screen, a new game or an undo starts a new round and clears `thinking` itself.
+  // A new screen or a new game starts a new round and clears `thinking` itself.
   // A stale step then only stops, so it does not clear `thinking` for the next computer turn.
   const stale = currentRound().isStale;
   setTimeout(() => {
@@ -49,7 +47,7 @@ export function scheduleComputer(): void {
     const tuning = computerTuning();
     void (async () => {
       try {
-        const cell = await search(game.board, game.turn, difficulty, tuning);
+        const cell = await search(game, difficulty, tuning);
         const thinkMs = Math.round(performance.now() - startedMs);
         // The game can end during the search, for example on time.
         if (stale() || !isComputerTurn()) return;
@@ -69,24 +67,4 @@ export function scheduleComputer(): void {
       }
     })();
   }, COMPUTER_DELAY_MS);
-}
-
-export function undoMove(): void {
-  // With another device, the other player must accept an undo.
-  if (shared()) return requestUndo();
-  const backend = page.local;
-  if (page.session === undefined || backend === undefined || (page.session.mode !== 'computer' && page.session.mode !== 'friend')) return;
-  if (page.thinking || page.review || !isLive() || current().moves.length === 0) return;
-  // Undo would hand back time that the clock already counted, so a timed game has no undo.
-  if (hasLimit(current().clock)) return;
-  // Against the computer, go back to the last position where it was the human's turn.
-  const you = page.session.you;
-  const count = page.session.mode === 'computer' && current().turn === you && current().moves.length >= 2 ? 2 : 1;
-  newRound();
-  const { code } = page.session;
-  void withBusy(async () => {
-    applyView(await backend.undo(code, count));
-    // Keep the think times of the computer moves that are still on the board.
-    if (you !== null) page.computerThinkMs = page.computerThinkMs.slice(0, movesBy(current(), other(you)));
-  }).then(scheduleComputer);
 }

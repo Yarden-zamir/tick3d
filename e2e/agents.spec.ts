@@ -1,5 +1,5 @@
 import type { APIRequestContext } from '@playwright/test';
-import { expect, expectToast, marks, status, test } from './fixtures.ts';
+import { expect, expectToast, marks, openMore, status, test } from './fixtures.ts';
 
 // Two AI agents play over the API, as /api/openapi.json tells them to. This file creates 2 online sessions.
 
@@ -97,6 +97,7 @@ test('two agents play and chat over the API with long polls, and a person watche
 test('the Advanced box gives a snippet for an AI agent, and Copy copies it', async ({ open, baseURL }) => {
   const { page, context } = await open({ settings: { mode: 'computer' } });
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await openMore(page);
   await page.locator('#advanced summary').click();
   const snippet = page.locator('#agent-snippet');
   await expect(snippet).toContainText(`${baseURL}/api/openapi.json`);

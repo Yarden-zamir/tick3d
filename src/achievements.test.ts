@@ -20,6 +20,8 @@ const X_ROW = [0, 16, 1, 17, 2, 18, 3];
 const X_SPACE = [0, 1, 21, 2, 42, 3, 63];
 // O wins along a row in 8 moves.
 const O_ROW = [4, 0, 5, 1, 6, 2, 32, 3];
+// X wins straight down the floors (0-16-32-48) after a fork: X 0 threatens 3 and 48, and O blocks 3.
+const X_FORK = [1, 63, 2, 21, 16, 42, 32, 54, 0, 3, 48];
 // A full cube with no line (see src/game.test.ts), X marks and O marks in turn.
 const DRAW_BOARD = 'XXOXOOXOXOXXXXOXOOXOOXOXXOXXXOOXOOXOXXXOXOOXOXOOOOXXOXOOOXXOXOXO';
 const cellsOf = (mark: string) => [...DRAW_BOARD].flatMap((value, cell) => (value === mark ? [cell] : []));
@@ -38,17 +40,24 @@ function game(moves: number[], extra: Partial<AchievementGame> = {}): Achievemen
     options: { hideBoard: false, hideHistory: false, hideCoordinates: false },
     tuned: false,
     finishedAt: ms(clock),
+    opponent: null,
+    input: null,
     ...extra,
   };
 }
+const friend = { mode: 'friend', you: null, difficulty: null } as const;
+const online = (opponent: string) => ({ mode: 'online', difficulty: null, opponent }) as const;
+const level = (difficulty: 'easy' | 'medium' | 'hard') => ({ difficulty });
 
 const unlocked = (progress: readonly AchievementProgress[]): AchievementId[] => progress.filter((p) => p.unlockedAt !== null).map((p) => p.id);
+const unlocks = (...games: AchievementGame[]) => unlocked(achievementProgress(games));
 const progressOf = (progress: readonly AchievementProgress[], id: AchievementId) => progress.find((p) => p.id === id);
 
 describe('achievements', () => {
   it('unlocks nothing without games, with every achievement listed once', () => {
     const progress = achievementProgress([]);
     expect(progress.map((p) => p.id)).toEqual(ACHIEVEMENTS.map((a) => a.id));
+    expect(new Set(progress.map((p) => p.id)).size).toBe(ACHIEVEMENTS.length);
     expect(unlocked(progress)).toEqual([]);
   });
 
@@ -58,56 +67,163 @@ describe('achievements', () => {
     expect(progressOf(progress, 'first-win')).toEqual({ id: 'first-win', count: 1, unlockedAt: first.finishedAt, unlockedBy: first.id });
   });
 
-  it('counts a computer level only for an untuned win at that level', () => {
-    expect(unlocked(achievementProgress([game(X_ROW, { difficulty: 'easy' })]))).toContain('beat-easy');
-    expect(unlocked(achievementProgress([game(X_ROW, { difficulty: 'easy', tuned: true })]))).not.toContain('beat-easy');
-    expect(unlocked(achievementProgress([game(X_ROW, { you: 'O' })]))).not.toContain('beat-hard');
+  it('unlocks the lower steps of a ladder with a game at a higher level', () => {
+    expect(unlocks(game(X_ROW, level('easy')))).toEqual(expect.arrayContaining(['beat-easy', 'fastest-easy']));
+    expect(unlocks(game(X_ROW, level('easy')))).not.toContain('beat-medium');
+    const hard = unlocks(game(X_ROW));
+    expect(hard).toEqual(expect.arrayContaining(['beat-easy', 'beat-medium', 'beat-hard', 'fastest-easy', 'fastest-medium']));
+    // The fastest win against Hard is luck, so the top step needs a person.
+    expect(hard).not.toContain('fastest-person');
+    // A person counts for no computer level, only for the goals about people.
+    const person = unlocks(game(X_ROW, online('ana')));
+    expect(person).toEqual(expect.arrayContaining(['fastest-person', 'online-win']));
+    for (const id of ['beat-easy', 'beat-hard', 'fastest-easy', 'fastest-medium'] as const) expect(person).not.toContain(id);
   });
 
-  it('knows the fastest win and the line kind', () => {
-    const fast = unlocked(achievementProgress([game(X_ROW)]));
-    expect(fast).toContain('fastest-win');
-    expect(fast).not.toContain('space-diagonal');
-    expect(unlocked(achievementProgress([game(X_SPACE)]))).toContain('space-diagonal');
-    expect(unlocked(achievementProgress([game(O_ROW, { you: 'O' })]))).not.toContain('fastest-win');
+  it('gives a tuned computer and a friend game no level', () => {
+    for (const extra of [{ tuned: true }, friend]) {
+      const won = unlocks(game(X_ROW, extra));
+      expect(won).toContain('first-win');
+      for (const id of ['beat-easy', 'fastest-easy', 'online-win', 'nearby-win'] as const) expect(won).not.toContain(id);
+    }
+    expect(unlocks(game(X_ROW, { you: 'O' }))).not.toContain('beat-easy');
   });
 
-  it('counts a win on time, but not as a line', () => {
+  it('reads the line of the win', () => {
+    expect(unlocks(game(X_SPACE, level('medium')))).toEqual(expect.arrayContaining(['space-diagonal-easy', 'space-diagonal-medium']));
+    expect(unlocks(game(X_SPACE, level('medium')))).not.toContain('space-diagonal-hard');
+    expect(unlocks(game(X_ROW))).not.toContain('space-diagonal-easy');
+    expect(unlocks(game(X_SPACE, online('ana')))).toContain('space-diagonal-person');
+    expect(unlocks(game(X_SPACE, online('ana')))).not.toContain('space-diagonal-hard');
+    expect(unlocks(game(X_FORK))).toContain('elevator');
+    expect(unlocks(game(X_ROW))).not.toContain('elevator');
+  });
+
+  it('knows a fork: two cells to win on, of which the opponent blocked one', () => {
+    expect(unlocks(game(X_FORK, level('medium')))).toContain('fork');
+    expect(unlocks(game(X_FORK, level('easy')))).not.toContain('fork');
+    expect(unlocks(game(X_FORK, online('ana')))).toContain('fork');
+    expect(unlocks(game(X_ROW))).not.toContain('fork');
+  });
+
+  it('climbs the timer ladder with shorter limits, but not in a friend game', () => {
+    const timed = (perMove: number | null, perGame: number | null, extra: Partial<AchievementGame> = {}) => {
+      const base = game(X_ROW, extra);
+      return { ...base, game: { ...base.game, clock: { perMove, perGame } } };
+    };
+    expect(unlocks(timed(30, null))).toContain('timed-win');
+    expect(unlocks(timed(30, null))).not.toContain('timed-win-short');
+    expect(unlocks(timed(null, 120))).toEqual(expect.arrayContaining(['timed-win', 'timed-win-short']));
+    expect(unlocks(timed(null, 120))).not.toContain('timed-win-bullet');
+    expect(unlocks(timed(5, null))).toEqual(expect.arrayContaining(['timed-win', 'timed-win-short', 'timed-win-bullet']));
+    expect(unlocks(timed(5, null, friend))).not.toContain('timed-win-short');
+    expect(unlocks(timed(5, null, { tuned: true }))).toContain('timed-win-bullet');
+  });
+
+  it('counts a win on time, but not as a line, and as a flag fall only against a person', () => {
     // X moved last, so O ran out of time: X wins.
     const moves = X_ROW.slice(0, 5);
-    const timeout = game(moves, { game: { moves, times: moves.map((_, i) => ms(i)), clock: { perMove: 10, perGame: null }, timedOut: true } });
-    const progress = unlocked(achievementProgress([timeout]));
-    expect(progress).toEqual(expect.arrayContaining(['first-win', 'timed-win']));
-    expect(progress).not.toContain('fastest-win');
+    const timeout = (extra: Partial<AchievementGame>) =>
+      game(moves, { game: { moves, times: moves.map((_, i) => ms(i)), clock: { perMove: 10, perGame: null }, timedOut: true }, ...extra });
+    const computer = unlocks(timeout({}));
+    expect(computer).toEqual(expect.arrayContaining(['first-win', 'timed-win']));
+    expect(computer).not.toContain('fastest-easy');
+    expect(computer).not.toContain('won-on-time');
+    expect(unlocks(timeout(online('ana')))).toContain('won-on-time');
+  });
+
+  it('knows a photo finish: less than a second left after the winning move', () => {
+    const finish = (lastMoveMs: number) => {
+      const times = X_ROW.map((_, i) => ms(i * 1000 + (i === X_ROW.length - 1 ? lastMoveMs - 1000 : 0)));
+      return game(X_ROW, { game: { moves: X_ROW, times, clock: { perMove: 10, perGame: null }, timedOut: false } });
+    };
+    expect(unlocks(finish(9500))).toContain('photo-finish');
+    expect(unlocks(finish(8000))).not.toContain('photo-finish');
+  });
+
+  it('knows a photo finish on the game clock too', () => {
+    const times = [0, 0, 10_000, 10_000, 20_000, 20_000, 29_500].map(ms);
+    const finish = game(X_ROW, { game: { moves: X_ROW, times, clock: { perMove: null, perGame: 30 }, timedOut: false } });
+    expect(unlocks(finish)).toContain('photo-finish');
+  });
+
+  it('knows a Hard win with the board hidden and every move by voice', () => {
+    const hidden = { hideBoard: true, hideHistory: false, hideCoordinates: false };
+    const byVoice = (input: { board: number; keypad: number; voice: number }, extra: Partial<AchievementGame> = {}) =>
+      game(X_ROW, { options: hidden, input, ...extra });
+    expect(unlocks(byVoice({ board: 0, keypad: 4, voice: 4 }))).toContain('sound-only');
+    expect(unlocks(byVoice({ board: 0, keypad: 4, voice: 3 }))).not.toContain('sound-only');
+    expect(unlocks(byVoice({ board: 1, keypad: 3, voice: 3 }))).not.toContain('sound-only');
+    expect(unlocks(byVoice({ board: 0, keypad: 4, voice: 4 }, level('medium')))).not.toContain('sound-only');
+    expect(unlocks(game(X_ROW, { options: hidden }))).not.toContain('sound-only');
+  });
+
+  it('counts a win as O, who moves second', () => {
+    expect(unlocks(game(O_ROW, { you: 'O', ...level('medium') }))).toContain('o-win-medium');
+    expect(unlocks(game(O_ROW, { you: 'O', ...level('medium') }))).not.toContain('o-win-hard');
+    expect(unlocks(game(O_ROW, { you: 'O', ...level('easy') }))).not.toContain('o-win-medium');
+    expect(unlocks(game(O_ROW, { you: 'O', ...level('hard') }))).toEqual(expect.arrayContaining(['o-win-medium', 'o-win-hard']));
+    expect(unlocks(game(O_ROW, { you: 'O', ...level('hard') }))).not.toContain('o-win-person');
+    const person = unlocks(game(O_ROW, { you: 'O', ...online('ana') }));
+    expect(person).toContain('o-win-person');
+    expect(person).not.toContain('o-win-medium');
   });
 
   it('reads the hide settings and the mode', () => {
     const hidden = { hideBoard: true, hideHistory: false, hideCoordinates: true };
-    expect(unlocked(achievementProgress([game(X_ROW, { options: hidden })]))).toEqual(expect.arrayContaining(['board-hidden', 'coordinates-hidden']));
-    expect(unlocked(achievementProgress([game(X_ROW, { mode: 'online', difficulty: null })]))).toContain('online-win');
-    expect(unlocked(achievementProgress([game(X_ROW, { mode: 'nearby', difficulty: null })]))).toContain('nearby-win');
+    expect(unlocks(game(X_ROW, { options: hidden }))).toEqual(expect.arrayContaining(['board-hidden-easy', 'board-hidden-hard', 'coordinates-hidden']));
+    expect(unlocks(game(X_ROW, { options: hidden, ...level('easy') }))).not.toContain('board-hidden-medium');
+    expect(unlocks(game(X_ROW, { options: hidden, ...online('ana') }))).toContain('board-hidden-person');
+    expect(unlocks(game(X_ROW, { options: hidden, ...online('ana') }))).not.toContain('board-hidden-easy');
+    expect(unlocks(game(X_ROW, online('ana')))).toContain('online-win');
+    expect(unlocks(game(X_ROW, { mode: 'nearby', difficulty: null }))).toContain('nearby-win');
   });
 
   it('counts a draw and every game, and a friend game with a winner as a win', () => {
-    const friend = { mode: 'friend', you: null, difficulty: null } as const;
     const progress = achievementProgress([game(DRAW, friend), game(O_ROW, friend)]);
-    expect(unlocked(progress)).toEqual(['first-win', 'full-cube']);
+    expect(unlocked(progress)).toEqual(['first-win', 'friend-game', 'full-cube']);
     expect(progressOf(progress, 'games-10')?.count).toBe(2);
-    // A friend game is no win against the computer or a person in another mode.
-    const won = unlocked(achievementProgress([game(X_ROW, friend)]));
-    for (const id of ['beat-hard', 'online-win', 'nearby-win'] as const) expect(won).not.toContain(id);
+    expect(progressOf(progress, 'friend-streak-5')?.count).toBe(2);
   });
 
-  it('needs wins in a row for a streak, where a won friend game counts and a drawn one breaks it', () => {
-    const friend = { mode: 'friend', you: null, difficulty: null } as const;
-    // game() gives each game a later finish time, so the order of the calls is the order of play.
-    const twoThenLoss = [game(X_ROW), game(X_ROW), game(O_ROW), game(X_ROW)];
-    expect(progressOf(achievementProgress(twoThenLoss), 'streak-3')).toMatchObject({ count: 2, unlockedAt: null });
-    const games = [...twoThenLoss, game(O_ROW, friend), game(X_ROW)];
-    const third = games.at(-1);
-    const progress = achievementProgress(games);
-    expect(progressOf(progress, 'streak-3')).toMatchObject({ count: 3, unlockedBy: third?.id });
-    expect(progressOf(achievementProgress([...games, game(DRAW, friend), game(X_ROW)]), 'streak-5')?.count).toBe(3);
+  it('runs a computer streak over computer games only, at the level of the step or higher', () => {
+    const medium = () => game(X_ROW, level('medium'));
+    // An online loss is no computer game, so it does not break the run.
+    const run = [medium(), game(O_ROW, online('ana')), medium(), game(X_ROW)];
+    const progress = achievementProgress(run);
+    expect(progressOf(progress, 'computer-streak-medium-3')).toMatchObject({ count: 3, unlockedBy: run.at(-1)?.id });
+    expect(progressOf(progress, 'computer-streak-easy-5')?.count).toBe(3);
+    expect(progressOf(progress, 'computer-streak-hard-2')?.count).toBe(1);
+    // A win on Easy breaks a run on Medium.
+    expect(progressOf(achievementProgress([medium(), game(X_ROW, level('easy')), medium()]), 'computer-streak-medium-3')?.count).toBe(1);
+    expect(unlocks(game(X_ROW), game(X_ROW))).toContain('computer-streak-hard-2');
+  });
+
+  it('runs a people streak over online and Nearby games only', () => {
+    const win = () => game(X_ROW, online('ana'));
+    const games = [win(), win(), game(O_ROW), game(X_ROW, friend), game(O_ROW, online('ben')), win(), win()];
+    expect(progressOf(achievementProgress(games), 'streak-3')?.count).toBe(2);
+    const three = [win(), game(O_ROW), win(), win()];
+    expect(progressOf(achievementProgress(three), 'streak-3')).toMatchObject({ count: 3, unlockedBy: three.at(-1)?.id });
+  });
+
+  it('knows each opponent: different people, a nemesis and a revenge', () => {
+    const loss = (who: string) => game(O_ROW, online(who));
+    const win = (who: string) => game(X_ROW, online(who));
+    const people = achievementProgress(['a', 'b', 'a', 'c', 'd', 'b', 'e'].map(win));
+    expect(progressOf(people, 'people-5')?.count).toBe(5);
+    expect(progressOf(people, 'people-20')?.count).toBe(5);
+    expect(unlocks(loss('a'), loss('a'), loss('b'), loss('a'))).toContain('nemesis');
+    expect(unlocks(loss('a'), loss('a'), win('a'), loss('a'))).not.toContain('nemesis');
+    expect(unlocks(loss('a'), win('b'), win('a'))).toContain('revenge');
+    expect(unlocks(loss('a'), win('b'))).not.toContain('revenge');
+    // The device does not know the opponent.
+    expect(unlocks(game(O_ROW, { mode: 'online', difficulty: null }), game(X_ROW, { mode: 'online', difficulty: null }))).not.toContain('revenge');
+  });
+
+  it('knows a loss to Easy', () => {
+    expect(unlocks(game(O_ROW, level('easy')))).toContain('lost-to-easy');
+    expect(unlocks(game(O_ROW))).not.toContain('lost-to-easy');
   });
 
   it('orders the games by their finish time', () => {
@@ -165,5 +281,21 @@ describe('parseAchievements', () => {
     expect(parseAchievements(answer(progress, { ...rarity, players: 0 }))).toBeUndefined();
     const { 'first-win': _, ...missing } = rarity.unlocked;
     expect(parseAchievements(answer(progress, { ...rarity, unlocked: missing as AchievementRarity['unlocked'] }))).toBeUndefined();
+  });
+});
+
+describe('invite achievements', () => {
+  it('unlock at the claim that reaches the goal, in any order, with no game', () => {
+    const invites = [50, 10, 40, 30, 20].map(ms);
+    const progress = achievementProgress([game(X_ROW)], invites);
+    expect(progressOf(progress, 'invite-1')).toEqual({ id: 'invite-1', count: 1, unlockedAt: ms(10), unlockedBy: null });
+    expect(progressOf(progress, 'invite-5')).toEqual({ id: 'invite-5', count: 5, unlockedAt: ms(50), unlockedBy: null });
+    expect(progressOf(progress, 'invite-25')).toEqual({ id: 'invite-25', count: 5, unlockedAt: null, unlockedBy: null });
+    // The answer of the server with invites passes the same checks on the page.
+    expect(parseAchievements(JSON.parse(JSON.stringify({ achievements: progress, rarity: rarityOf([progress]) })))?.achievements).toEqual(progress);
+  });
+
+  it('stay locked without invites, as on a device', () => {
+    expect(unlocks(game(X_ROW)).filter((id) => id.startsWith('invite-'))).toEqual([]);
   });
 });

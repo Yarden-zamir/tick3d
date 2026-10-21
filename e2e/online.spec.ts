@@ -1,4 +1,4 @@
-import { cell, createOnline, expect, expectMyMove, expectToast, joinAsO, marks, ownName, playTurns, playerToken, readQr, status, test, xWins } from './fixtures.ts';
+import { cell, createOnline, expect, expectMyMove, expectToast, joinAsO, marks, openMore, ownName, playTurns, playerToken, readQr, status, test, xWins } from './fixtures.ts';
 import type { Page } from '@playwright/test';
 import { SIZE } from '../src/game.ts';
 
@@ -60,6 +60,7 @@ test('two players play a full game, and a watcher replays it', async ({ open, ba
   await expect(carol.locator('#session-name')).toHaveValue('Friday rematch');
   // The games of the session are in My games. Replay closes the dialog and shows the game on the board.
   await carol.locator('#account-button').click();
+  await carol.locator('#my-games-session-box > summary').click();
   await carol.locator('#my-games-session li').first().getByRole('button', { name: 'Replay' }).click();
   await expect(carol.locator('#my-games')).not.toHaveAttribute('open');
   await expect(status(carol)).toContainText('move 7 of 7');
@@ -85,26 +86,35 @@ test('hide options and the lock belong to the session', async ({ open }) => {
   await expect(alice.locator('#lock')).toBeEnabled();
   const { page: carol } = await open({ path: `/?code=${code}` });
   await expect(status(carol)).toContainText('Watching');
-  const hideBoard = (page: Page) => page.getByRole('button', { name: 'Hide board', exact: true });
+  // Hide goes in steps. Each step also hides what the steps before it hide.
+  const hideNothing = (page: Page) => page.getByRole('button', { name: 'Hide nothing', exact: true });
   const hideHistory = (page: Page) => page.getByRole('button', { name: 'Hide history', exact: true });
+  const hideBoard = (page: Page) => page.getByRole('button', { name: 'Hide history and board', exact: true });
+  const hideCoordinates = (page: Page) => page.getByRole('button', { name: 'Hide history, board and coordinates', exact: true });
+  // The watcher opens More too: a button in the closed card has no role, so getByRole finds nothing.
+  for (const page of [alice, bob, carol]) await openMore(page);
 
   await hideBoard(alice).click();
   await expect(bob.locator('#board')).toBeHidden();
-  await expectToast(bob, 'Hide board is on for both');
+  // One press changes two options, and one toast names the new step.
+  await expectToast(bob, 'The history and the board are hidden for both players.');
   await expect(carol.locator('#board')).toBeHidden();
   await expect(hideHistory(carol)).toBeDisabled();
   await expect(carol.locator('#lock')).toBeDisabled();
 
-  await hideBoard(bob).click();
+  await hideNothing(bob).click();
   await expect(alice.locator('#board')).toBeVisible();
   await expect(hideBoard(alice)).toHaveAttribute('aria-pressed', 'false');
   await hideHistory(bob).click();
   await expect(hideHistory(alice)).toHaveAttribute('aria-pressed', 'true');
-  const hideCoordinates = (page: Page) => page.getByRole('button', { name: 'Hide coordinates', exact: true });
   await hideCoordinates(alice).click();
-  await expectToast(bob, 'Hide coordinates is on for both');
+  await expectToast(bob, 'The history, the board and the coordinates are hidden for both players.');
   await expect(hideCoordinates(bob)).toHaveAttribute('aria-pressed', 'true');
   await expect(bob.locator('#train-link')).toHaveClass(/highlight/);
+  // Back to the history step, so the players can tap the board below.
+  await hideHistory(bob).click();
+  await expect(alice.locator('#board')).toBeVisible();
+  await expect(hideHistory(alice)).toHaveAttribute('aria-pressed', 'true');
 
   // The view stays per screen.
   await alice.getByRole('button', { name: 'Flat' }).click();
@@ -117,7 +127,7 @@ test('hide options and the lock belong to the session', async ({ open }) => {
     await expect(control).toBeDisabled();
   }
   // The lock holds the rules, not the screen or the way out: the view, the mode and Join stay open.
-  for (const control of [alice.getByRole('button', { name: 'Tower' }), alice.getByRole('button', { name: 'Computer' }), alice.locator('#join-code')]) {
+  for (const control of [alice.getByRole('button', { name: 'Tower' }), alice.getByRole('button', { name: 'Computer', exact: true }), alice.locator('#join-code')]) {
     await expect(control).toBeEnabled();
   }
   // A watcher sees the lock, but keeps its own settings, so the lock never traps a watcher.
@@ -172,6 +182,7 @@ test('an away player keeps the seat, and the game waits for the move', async ({ 
 test('the session clock reaches both players, and the server decides a timeout', async ({ open }) => {
   const { page: alice } = await open();
   const perMove = (page: Page) => page.locator('[data-limit="perMove"]');
+  await openMore(alice);
   await perMove(alice).locator('[data-limit-on]').check();
   await perMove(alice).locator('[data-limit-value]').fill('5');
   await perMove(alice).locator('[data-limit-value]').press('Tab');
@@ -182,6 +193,7 @@ test('the session clock reaches both players, and the server decides a timeout',
 
   await cell(alice, 0).click();
   await expect(marks(bob)).toHaveCount(1);
+  await openMore(bob);
   // The per-game switch starts at its default of 5 minutes.
   await bob.locator('[data-limit="perGame"] [data-limit-on]').check();
   await expectToast(alice, 'for the next game');

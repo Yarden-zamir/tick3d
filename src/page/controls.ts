@@ -1,15 +1,15 @@
 // The settings controls, review, new game, undo, lock and sound.
 import { DIFFICULTIES } from '../ai.ts';
 import { onSegmented } from '../board/view-controls.ts';
-import { setMuted } from '../sound.ts';
-import { undoMove } from './computer.ts';
-import { reviewEl, newGameButton, undoButton, lockButton, seatLockButtons, soundButton, watcherChatButton } from './dom.ts';
+import { detectDevice, DEVICE_ICONS } from '../nearby/device.ts';
+import { setMuted, sounds } from '../sound.ts';
+import { hereMode, hereIcon, hereNote, reviewEl, newGameButton, undoButton, lockButton, seatLockButtons, soundButton, watcherChatButton } from './dom.ts';
 import { reject, showError, showToast } from './feedback.ts';
 import { nearbyKind, endNearby, openNearby } from './nearby.ts';
 import { render } from './render.ts';
-import { leaveSession, createSession, openLocalSession, withBusy, applyView, startNewGame, seatLockText, watcherChatText } from './sessions.ts';
-import { LAYOUTS, MATCH_OPTIONS, VIEWS } from '../protocol.ts';
-import { settings, oneOf, MODES, PLAYERS, saveSettings } from './settings.ts';
+import { leaveSession, createSession, openLocalSession, withBusy, applyView, startNewGame, seatLockText, watcherChatText, undoMove } from './sessions.ts';
+import { LAYOUTS, type MatchOptions, VIEWS } from '../protocol.ts';
+import { settings, oneOf, HIDE_STEPS, MODES, type Mode, PLAYERS, saveSettings } from './settings.ts';
 import { page, settingsLocked, isLive, setReview, shared } from './state.ts';
 
 export function startReview(index: number): void {
@@ -43,9 +43,13 @@ function changeSetting(setting: string, value: string | undefined): void {
     case 'mode':
       settings.mode = oneOf(MODES, value, settings.mode);
       break;
-    case 'difficulty':
-      settings.difficulty = oneOf(DIFFICULTIES, value, settings.difficulty);
+    case 'difficulty': {
+      const level = oneOf(DIFFICULTIES, value, settings.difficulty);
+      // The level announces itself, so the press plays this sound instead of the click (src/click-sound.ts).
+      if (level !== settings.difficulty) sounds.difficulty(level);
+      settings.difficulty = level;
       break;
+    }
     case 'human':
       settings.human = oneOf(PLAYERS, value, settings.human);
       break;
@@ -54,31 +58,56 @@ function changeSetting(setting: string, value: string | undefined): void {
   }
   saveSettings();
   if (setting === 'view' || setting === 'layout') return render();
+  void openMode(previousMode);
+}
+
+// Opens the mode of the settings after a change from `previousMode`. A local game stays on the device, so a
+// switch loses nothing and asks nothing.
+function openMode(previousMode: Mode): Promise<void> {
   if (previousMode === 'nearby' && nearbyKind() !== 'idle') endNearby();
   leaveSession();
   render();
-  if (settings.mode === 'online') {
-    if (previousMode !== 'online') void createSession();
-    return;
+  if (settings.mode === 'online') return previousMode === 'online' ? Promise.resolve() : createSession();
+  if (settings.mode === 'nearby') {
+    openNearby();
+    return Promise.resolve();
   }
-  if (settings.mode === 'nearby') return openNearby();
   // Each match-up continues its newest session on this device, or starts one.
-  void openLocalSession(settings.mode).catch(showError);
+  return openLocalSession(settings.mode).catch(showError);
+}
+
+// "Play online with a friend" in the Share menu: a new online game, as the Online choice of the Opponent picker
+// starts one. An open online game stays, so the menu shares its link.
+export async function startOnlineGame(): Promise<void> {
+  if (page.session?.mode === 'online') return;
+  const previousMode = settings.mode;
+  settings.mode = 'online';
+  saveSettings();
+  // Online mode without a session: its create failed before, as after "New code" offline.
+  await (previousMode === 'online' ? createSession() : openMode(previousMode));
 }
 
 export function setupControls(): void {
+  const device = detectDevice();
+  hereIcon.innerHTML = DEVICE_ICONS[device];
+  hereMode.setAttribute('aria-label', `Here — two players on this ${device}`);
+  hereNote.textContent = `Two players. One ${device}.`;
   onSegmented(document, changeSetting);
 
-  document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) => {
-    const toggle = button.dataset.toggle;
-    const option = MATCH_OPTIONS.find((known) => known === toggle);
-    if (option === undefined) throw new Error(`unknown toggle ${toggle}`);
+  // Hide goes in steps: each step hides what the steps before it hide (see HIDE_STEPS).
+  document.querySelectorAll<HTMLButtonElement>('[data-hide-level]').forEach((button) => {
+    const level = Number(button.dataset.hideLevel);
+    if (!Number.isInteger(level) || level < 0 || level > HIDE_STEPS.length) throw new Error(`unknown hide level ${button.dataset.hideLevel}`);
     button.addEventListener('click', () => {
       if (settingsLocked()) return reject(undefined, 'locked');
       if (page.session === undefined) return reject(undefined, 'no-session');
       if (page.session.you === null) return reject(undefined, 'spectator');
-      const { code, backend } = page.session;
-      const changes = { [option]: !page.session.options[option] };
+      const { code, backend, options } = page.session;
+      const changes: Partial<MatchOptions> = {};
+      HIDE_STEPS.forEach((option, index) => {
+        if (options[option] !== index < level) changes[option] = index < level;
+      });
+      if (Object.keys(changes).length === 0) return;
       void withBusy(async () => applyView(await backend.update(code, changes)));
     });
   });

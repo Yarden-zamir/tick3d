@@ -131,14 +131,14 @@ export function rpcClient(channel: Channel) {
   });
 
   return {
-    call(method: RpcMethod, args: unknown): Promise<unknown> {
+    call(method: RpcMethod, args: unknown, timeoutMs = CALL_TIMEOUT_MS): Promise<unknown> {
       if (closed) return Promise.reject(new RpcError(503, 'The connection to the host closed.'));
       const id = nextId++;
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(id);
           reject(new RpcError(504, 'The host did not answer.'));
-        }, CALL_TIMEOUT_MS);
+        }, timeoutMs);
         pending.set(id, { resolve, reject, timer });
         try {
           channel.send({ t: 'call', id, method, args } satisfies GuestMessage);

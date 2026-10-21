@@ -1,9 +1,9 @@
 // The sounds of the tutorial, all from the game's sound code and in C major pentatonic: a soft Cells note for
-// each lit cell and each line that shows, a soft chord when a set of lines flashes, the Classic note of each
-// layer, the win jingle and a final chord. No bass, no glass bell (maintainer feedback on #119).
+// each lit cell and each line that shows, for each mark, tap, undo and drag beat, a soft chord when a set of lines
+// flashes, a line is blocked or the cube is full, the Classic note of each layer, the win jingle and a final chord. No bass, no glass bell (maintainer feedback on #119).
 import { type ScheduledSound, winVoices } from '../../../src/sound.ts';
 import { SOUND_SETS, type SoundSet } from '../../../src/sound-sets.ts';
-import { linesThrough } from '../../../src/game.ts';
+import { type Player, linesThrough } from '../../../src/game.ts';
 import { SCALE, inKey, landing, midiOf, withoutBell } from '../key.ts';
 import { KINDS, linesOf } from './lines.ts';
 import { SECTIONS } from './plan.ts';
@@ -23,9 +23,9 @@ function pitchOf(degree: number): number {
   return 60 + 12 * Math.floor(degree / SCALE.length) + step;
 }
 
-// A melody note with the voice of `cell` in `set`, cut to the key.
-function note(at: number, midi: number, cell: number, set: SoundSet = CELLS, level = LEVEL): ScheduledSound {
-  return { at, note: { kind: 'melody', at: 0, midi, player: 'X', cell, level }, set: inKey(set, midi) };
+// A melody note of `player` with the voice of `cell` in `set`, cut to the key.
+function note(at: number, midi: number, cell: number, set: SoundSet = CELLS, level = LEVEL, player: Player = 'X'): ScheduledSound {
+  return { at, note: { kind: 'melody', at: 0, midi, player, cell, level }, set: inKey(set, midi) };
 }
 
 // The notes of a chord. A chord note plays a soft triangle; the set only names it.
@@ -77,6 +77,31 @@ export function tutorialSounds(): ScheduledSound[] {
         break;
       case 'final-chord':
         sounds.push(...chord(event.at, [48, 52, 55, 60], 1.2));
+        break;
+      case 'tap':
+        sounds.push(note(event.at, pitchOf(5), event.cell));
+        break;
+      case 'drag':
+        // A rising note on each beat of the drag.
+        for (let i = 0; i * 4 <= event.length; i++) sounds.push(note(event.at + i * 4, pitchOf(2 + i), 0));
+        break;
+      case 'block':
+        // The O fall one step per piece, A minor on the threat, C major on the block (the tap plays the X).
+        event.line.slice(0, 3).forEach((cell, i) => sounds.push(note(event.at + i * event.gap, pitchOf(4 - i), cell, CELLS, LEVEL, 'O')));
+        sounds.push(...chord(event.at + 3 * event.gap, A_MINOR), ...chord(event.blocked, C_MAJOR));
+        break;
+      case 'turns':
+        // A note per mark on a whole sixteenth: every mark of a slow turn, every fourth of the fast fill.
+        event.cells.forEach((cell, i) => {
+          const at = event.at + i * event.gap;
+          if (Number.isInteger(at)) sounds.push(note(at, pitchOf(i % 2 === 0 ? 3 + (i % 3) : 5 + (i % 3)), cell, CELLS, LEVEL, i % 2 === 0 ? 'X' : 'O'));
+        });
+        break;
+      case 'undo':
+        sounds.push(note(event.at, pitchOf(4), event.cell), note(event.at + 1, pitchOf(2), event.cell));
+        break;
+      case 'chord':
+        sounds.push(...chord(event.at, C_MAJOR));
         break;
       case 'end-card':
         break;

@@ -25,10 +25,11 @@ import {
   cardCloseButton,
   showCardButton,
 } from './dom.ts';
-import { noteAchievements, showUnlocks, unlockLabel, unlockedBy } from './achievements.ts';
+import { noteAchievements, showUnlocks, unlockLabel, unlockToast, unlockedBy } from './achievements.ts';
 import { showError, showToast } from './feedback.ts';
 import { previewsDialog } from '../header/previews.ts';
 import { type GameId, onlineGameId } from '../protocol.ts';
+import { noteComputerResult, runLevelUp } from './level-up.ts';
 import { nearbyKind, shareGameLink } from './nearby.ts';
 import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnlineMetrics, hostLinkOf, setHostLink, gameTuning } from './results.ts';
 import { changesSent, setUrlGame, startNewGame } from './sessions.ts';
@@ -64,6 +65,7 @@ export function finish(game: Game): void {
   }
   const index = page.games.length - 1;
   if (page.session !== undefined) void linkGame(page.session, game, index);
+  if (page.session?.mode === 'computer' && mine !== null) noteComputerResult(settings.difficulty, winner === mine);
   if (page.session?.mode === 'computer' && winner !== null && mine !== null && winner !== mine) {
     // A failed record shows its error, and the card still opens.
     survival = noteSurvival(page.session, game, index).catch(showError);
@@ -96,7 +98,7 @@ async function linkGame(open: Session, game: Game, index: number): Promise<void>
   if (unlocked.length === 0) return;
   // The open card of this game shows the news. Else a toast tells it.
   if (card?.index === index && cardDialog.open) await openCard(index);
-  else showToast(`${unlockLabel(unlocked)}.`);
+  else showToast(unlockToast(unlocked));
 }
 
 const showsFinished = (open: Session, index: number) => page.session?.code === open.code && page.games.length - 1 === index && !isLive();
@@ -152,7 +154,7 @@ function cardInput(game: Game, index: number, gameId: GameId | undefined, tuned:
       : page.session?.mode === 'online'
         ? `Online · ${page.session.name}`
         : page.session?.mode === 'nearby'
-          ? `Nearby · ${page.session.name}`
+          ? `Wi-Fi · ${page.session.name}`
           : 'Two players, one screen';
   const first = game.times[0] ?? 0;
   const last = game.times.at(-1) ?? 0;
@@ -234,6 +236,7 @@ export function setupEndCard(): void {
     return { game, filename: cardFilename('wav'), text: `${input.title}: ${input.subtitle} on tick3d, as a song.`, light, clips: voiceClips(card.index), shareVoice: cardVoice.checked };
   });
   cardDialog.addEventListener('close', song.stop);
+  cardDialog.addEventListener('close', runLevelUp);
   cardShareButton.addEventListener('click', () => {
     if (card === undefined) return;
     const { canvas, index, gameId, tuned } = card;

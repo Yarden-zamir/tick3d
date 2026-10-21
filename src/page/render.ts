@@ -15,6 +15,9 @@ import {
   reviewEl,
   reviewLabel,
   coordsForm,
+  hideStepsEl,
+  keypadEl,
+  voicePanel,
   onlineCodeEl,
   shareButton,
   shareQrButton,
@@ -39,9 +42,9 @@ import { nearbyKind } from './nearby.ts';
 import { renderOnlineQr } from './online-box.ts';
 import { markPerson } from './person-mark.ts';
 import { renderPlayers, seatPerson } from './players.ts';
-import { settings, type Toggle } from './settings.ts';
+import { hideLevel, settings } from './settings.ts';
 import { syncVoice } from './voice.ts';
-import { me, page, shared, current, isLive, isWatching, matchOptions, settingsLocked, canChangeMatch, bothSeated, awaitingSession } from './state.ts';
+import { me, page, shared, current, isLive, isWatching, matchOptions, settingsLocked, canChangeMatch, bothSeated, awaitingSession, isMyTurn } from './state.ts';
 
 // One name per seat, the same in the score, status, chat, clocks, keypad, history and end card.
 // This screen's own seat is "You". Then come "Computer", the GitHub login and the generated name.
@@ -87,9 +90,9 @@ export function resultText(game: Game, index: number): string {
 
 // The status in Nearby mode before a game opens, by the Nearby step of this device.
 const NEARBY_STEPS: Record<ReturnType<typeof nearbyKind>, string> = {
-  idle: 'Host a game, or join one.',
+  idle: 'Start a game, or scan to join.',
   starting: 'Starting the game…',
-  joining: 'Connecting to the host…',
+  joining: 'Connect the two devices below.',
   guest: 'Joining the game…',
   // The host opens its session before it counts as hosting, so this shows only for a moment.
   hosting: 'Starting the game…',
@@ -139,6 +142,7 @@ function statusText(): string {
 function undoProblemText(): string | undefined {
   const game = current();
   if (!isLive()) return 'The game is over.';
+  if (page.session?.mode === 'computer') return 'A game against the computer has no undo.';
   if (game.moves.length === 0) return 'No move to take back yet.';
   if (hasLimit(game.clock)) return 'A timed game has no undo.';
   if (!shared()) return undefined;
@@ -172,6 +176,11 @@ export function render(): void {
   const frozen = settingsLocked();
 
   document.body.dataset.turn = game.turn;
+  // The edge of the screen takes the color of the player to move, and pulses on the turn of this screen (src/style.css).
+  // The first move of a game never colors the edge: the frame starts once a mark is on the board.
+  const turnFrame = live && game.status.kind === 'playing' && game.moves.length > 0;
+  document.body.toggleAttribute('data-playing', turnFrame);
+  document.body.toggleAttribute('data-my-turn', turnFrame && isMyTurn());
   boardEl.className = `board ${settings.view} layout-${settings.layout}`;
   boardEl.classList.toggle('finished', game.status.kind !== 'playing');
   boardEl.classList.toggle('thinking', page.thinking || page.busy);
@@ -202,7 +211,6 @@ export function render(): void {
 
   reviewEl.hidden = page.review === undefined;
   if (page.review) reviewLabel.textContent = statusText();
-  coordsForm.hidden = page.review !== undefined;
   renderCoords();
   renderChat();
   renderPlayers();
@@ -219,8 +227,10 @@ export function render(): void {
     field.toggleAttribute('data-pending', pending);
   });
   showSegmented(document, settings);
-  document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) => {
-    button.setAttribute('aria-pressed', String(options[button.dataset.toggle as Toggle]));
+  const level = hideLevel(options);
+  hideStepsEl.dataset.level = String(level);
+  hideStepsEl.querySelectorAll<HTMLButtonElement>('[data-hide-level]').forEach((button) => {
+    button.setAttribute('aria-pressed', String(Number(button.dataset.hideLevel) === level));
     button.disabled = frozen || page.busy || !canChangeMatch();
   });
   // With the coordinates hidden, the game goes by ear: the ear training link stands out.
@@ -312,6 +322,10 @@ export function render(): void {
   soundButton.innerHTML = settings.muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
   soundButton.setAttribute('aria-pressed', String(!settings.muted));
   syncVoice();
+  // The keypad and the coordinates of the last move show only with the board hidden. The voice aims in the same
+  // slots, so they also show while the voice is on (src/page/voice.ts decides that).
+  keypadEl.hidden = !hideBoard;
+  coordsForm.hidden = page.review !== undefined || (!hideBoard && voicePanel.hidden);
 }
 
 // The watcher chat switch in the Players box. Unlike the seat lock, a settings lock leaves it open.

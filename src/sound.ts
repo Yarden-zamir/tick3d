@@ -1,3 +1,4 @@
+import type { Difficulty } from './ai.ts';
 import type { Player } from './game.ts';
 import type { Song, SongNote } from './song.ts';
 import { SOUND_SETS, type SoundSetId, type SoundSet, type Voice, midiHz } from './sound-sets.ts';
@@ -23,16 +24,64 @@ export function setMuted(value: boolean): void {
 function audio(): AudioContext | undefined {
   soundRequests++;
   if (muted || typeof AudioContext === 'undefined') return undefined;
-  context ??= new AudioContext();
+  const ctx = wake();
+  if (ctx.state === 'running') return ctx;
   // Browsers start the context suspended until a user gesture. A sound without a gesture (a chat
-  // message or the other player's move before the first tap) is skipped: a suspended context would
-  // queue it and play it late, together with the next sounds.
-  if (context.state === 'suspended') {
-    // Safari before 16.4 has no userActivation, and then plays the sound as before.
-    if (navigator.userActivation && !navigator.userActivation.isActive) return undefined;
-    void context.resume();
+  // message or the other player's move before the first tap) is skipped: a context that does not run
+  // would queue it and play it late, together with the next sounds.
+  // Safari before 16.4 has no userActivation, and then plays the sound as before.
+  if (navigator.userActivation && !navigator.userActivation.isActive) return undefined;
+  return ctx;
+}
+
+// The audio clock at the last check while the context ran.
+let lastClock: { at: number; time: number } | undefined;
+
+// iOS can keep a context 'running' with a stopped clock and no sound after the app was in the back
+// (WebKit bugs 276016 and 283419). Only a new context plays again. Only a gesture checks the clock: a
+// new context starts suspended, so a check without a gesture would drop the next sounds if a browser
+// ever stops an idle clock on purpose.
+function clockStopped(ctx: AudioContext): boolean {
+  if (ctx.state !== 'running') {
+    lastClock = undefined;
+    return false;
   }
+  const before = lastClock;
+  lastClock = { at: performance.now(), time: ctx.currentTime };
+  return before !== undefined && lastClock.at - before.at > 500 && lastClock.time - before.time < 0.05;
+}
+
+// The live context: made on the first call, and again when it closed or (with `checkClock`) its clock
+// stopped. A context that does not run gets a resume: 'suspended' until a gesture, or 'interrupted' on
+// iOS (a call, the lock screen, another app). The DOM types do not know 'interrupted', so the check is
+// "not running".
+function wake(checkClock = false): AudioContext {
+  if (context === undefined || context.state === 'closed' || (checkClock && clockStopped(context))) {
+    if (context !== undefined && context.state !== 'closed') void context.close();
+    context = new AudioContext();
+    lastClock = undefined;
+  }
+  // The promise rejects only for a closed context. On iOS it can also never settle (WebKit bug 281566),
+  // and the next gesture tries again.
+  if (context.state !== 'running') void context.resume();
   return context;
+}
+
+// A tap or a key resumes the context, so the next sound plays even when the tap itself plays none: the
+// first sound can be the other player's move. Coming back to the front resumes it too: iOS leaves it
+// 'interrupted' after a call or the lock screen. The video spot (video/) imports this file outside a page.
+if (typeof document !== 'undefined') {
+  const onGesture = () => {
+    if (!muted && typeof AudioContext !== 'undefined') wake(true);
+  };
+  for (const type of ['pointerup', 'touchend', 'click', 'keydown']) addEventListener(type, onGesture, { capture: true, passive: true });
+  const onFront = () => {
+    if (!muted && context !== undefined) wake();
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') onFront();
+  });
+  addEventListener('pageshow', onFront);
 }
 
 type Tone = { frequency: number; at?: number; duration: number; type?: OscillatorType; volume?: number; slideTo?: number; pan?: number };
@@ -109,6 +158,42 @@ function play(voices: readonly Voice[], scale = 1, delay = 0, ctx: BaseAudioCont
 }
 
 let soundSet: SoundSet = SOUND_SETS.cells;
+
+// The sound of a press on a difficulty: easy is friendly, hard is scary.
+// Easy: a bright, bouncy major arpeggio (C, E, G, C) with a soft sparkle on top.
+// Medium: a steady call, a fifth up, through a soft filter.
+// Hard: a low growl of two sawtooth tones a half step apart that slide down while the filter closes,
+// a rumble of filtered noise under it, and a short tritone stab on top.
+export function difficultyVoices(level: Difficulty): Voice[] {
+  switch (level) {
+    case 'easy':
+      return [
+        ...[523.25, 659.25, 783.99, 1046.5].map((frequency, i): Voice => ({ wave: 'triangle', frequency, at: i * 0.055, decay: 0.22, level: 0.11 })),
+        { wave: 'sine', frequency: 2093, at: 0.2, decay: 0.16, level: 0.03 },
+      ];
+    case 'medium':
+      return [
+        { wave: 'square', frequency: 392, decay: 0.16, level: 0.06, filter: { type: 'lowpass', frequency: 1800 } },
+        { wave: 'triangle', frequency: 587.33, at: 0.1, decay: 0.3, level: 0.09 },
+        { wave: 'sine', frequency: 880, at: 0.1, decay: 0.22, level: 0.025 },
+      ];
+    case 'hard':
+      return [
+        ...[110, 116.54].map((frequency): Voice => ({
+          wave: 'sawtooth',
+          frequency,
+          slideTo: frequency / 2,
+          attack: 0.02,
+          decay: 0.75,
+          level: 0.08,
+          vibrato: { rate: 7, depth: 0.03 },
+          filter: { type: 'lowpass', frequency: 900, to: 160 },
+        })),
+        { wave: 'noise', attack: 0.02, decay: 0.55, level: 0.1, filter: { type: 'lowpass', frequency: 420, to: 110 } },
+        ...[440, 622.25].map((frequency): Voice => ({ wave: 'square', frequency, decay: 0.18, level: 0.035, filter: { type: 'lowpass', frequency: 2400 } })),
+      ];
+  }
+}
 
 export function setSoundSet(id: SoundSetId): void {
   soundSet = SOUND_SETS[id];
@@ -280,7 +365,19 @@ export const previewVoices = (set: SoundSet, cell: number): Voice[] => set.voice
 const WIN_NOTES = [523.25, 659.25, 783.99, 1046.5, 1318.5] as const;
 export const winVoices = (gap: number): Voice[] => WIN_NOTES.map((frequency, i) => ({ wave: 'triangle', frequency, at: i * gap, attack: 0.01, decay: 0.35, level: 0.2 }));
 
+// Sound pairing is explicitly requested, so its short O pickup plays even with game sounds muted.
+// The actual error-corrected data tones follow it; the pickup is not part of the encoded message.
+export function playPairingIntro(ctx: BaseAudioContext): void {
+  play([
+    { wave: 'triangle', frequency: 261.625, decay: 0.13, level: 0.18 },
+    { wave: 'triangle', frequency: 391.995, at: 0.09, decay: 0.12, level: 0.12 },
+  ], 1, 0, ctx);
+}
+
 export const sounds = {
+  pairingConnected(): void {
+    play(winVoices(0.085).slice(0, 4));
+  },
   place(player: Player, cell: number): void {
     play(soundSet.voices(cell, player));
   },
@@ -329,6 +426,9 @@ export const sounds = {
   },
   click(): void {
     tone({ frequency: 1200, duration: 0.04, volume: 0.05 });
+  },
+  difficulty(level: Difficulty): void {
+    play(difficultyVoices(level));
   },
   win(): void {
     play(winVoices(0.09));

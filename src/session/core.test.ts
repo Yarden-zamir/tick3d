@@ -162,11 +162,13 @@ describe('games in a session', () => {
     expect(core.newGame(doc, alice).games).toHaveLength(1);
   });
 
-  it('undoes moves on one device only, and never in a timed game', () => {
+  it('undoes moves on one device only, never against the computer, and never in a timed game', () => {
     const local = core.createDoc({ name: 'Couch', mode: 'friend', seats: { X: ALICE, O: ALICE } });
     const two = core.move(core.move(local, alice, { game: 0, moveCount: 0, cell: 0 }, ms(0)), alice, { game: 0, moveCount: 1, cell: 1 }, ms(1));
     expect(core.undo(two, alice, 1).games[0]?.moves).toEqual([0]);
     expect(status(() => core.undo(play(onlineDoc(), [0, 1]), alice, 1))).toBe(409);
+    const versus = core.createDoc({ name: 'Versus', mode: 'computer', seats: { X: ALICE, O: core.COMPUTER_TOKEN }, computer: { difficulty: 'easy', seat: 'O' } });
+    expect(status(() => core.undo(core.move(versus, alice, { game: 0, moveCount: 0, cell: 0 }, ms(0)), alice, 1))).toBe(409);
     const timed = core.createDoc({ name: 'Timed', mode: 'friend', clock: { perMove: 30, perGame: null }, seats: { X: ALICE, O: ALICE } });
     expect(status(() => core.undo(core.move(timed, alice, { game: 0, moveCount: 0, cell: 0 }, ms(0)), alice, 1))).toBe(409);
   });

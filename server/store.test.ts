@@ -100,7 +100,7 @@ describe('sessions', () => {
     await store.join(code, bob);
     await store.move(code, alice, { game: 0, moveCount: 0, cell: 5 });
     await store.chat(code, bob, 'hello');
-    store.close();
+    await store.close();
     store = await openStore(path);
     expect(await store.get(code, bob)).toMatchObject({ you: 'O', games: [{ moves: [5] }], chat: [{ from: 'O', text: 'hello' }] });
   });
@@ -210,7 +210,7 @@ describe('accounts', () => {
     const other = (await store.create(bob, 'Join later')).code;
     await store.linkToken(alice, ALICE_GITHUB);
     await store.linkToken(alicePhone, ALICE_GITHUB);
-    store.close();
+    await store.close();
     // A database from before account seats has no account row.
     const instance = await DuckDBInstance.create(path);
     const db = await instance.connect();
@@ -329,7 +329,7 @@ const METRICS: Metrics = {
   view: 'tower',
   layout: 'grid',
   theme: 'dark',
-  input: { board: 3, keypad: 1 },
+  input: { board: 3, keypad: 1, voice: 0 },
   refused: { occupied: 2 },
   undos: 1,
   thinkMs: [120, 300],
@@ -605,28 +605,68 @@ describe('achievements', () => {
     const progress = await store.achievements(alice);
     expect(countOf(progress, 'beat-easy')).toBe(1);
     expect(countOf(progress, 'beat-hard')).toBe(1);
-    expect(countOf(progress, 'streak-3')).toBe(2);
+    expect(countOf(progress, 'computer-streak-easy-5')).toBe(2);
+  });
+
+  it('knows the opponent of a Nearby game by their seat, with all their devices as one person', async () => {
+    store = await openStore(':memory:');
+    const BOB_GITHUB = { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' };
+    const bobPhone = 'eeeeeeee-0000-4000-8000-000000000005' as PlayerToken;
+    // O wins along a row: Alice, on X, loses.
+    const O_WINS = [4, 0, 5, 1, 6, 2, 32, 3];
+    await store.linkToken(bob, BOB_GITHUB);
+    await store.linkToken(bobPhone, BOB_GITHUB);
+    const nearby = (id: string, guest: PlayerToken, moves: number[], finished: number) =>
+      result(id, { mode: 'nearby', difficulty: null, you: 'X', guest, game: finishedGame(moves), finishedAt: ms(finished), metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } });
+    await store.addResults(alice, [
+      nearby('afafafaf-1111-4000-8000-000000000001', bob, O_WINS, 2_000),
+      nearby('afafafaf-1111-4000-8000-000000000002', bobPhone, X_WINS, 3_000),
+    ]);
+    const progress = await store.achievements(alice);
+    expect(countOf(progress, 'people-5')).toBe(1);
+    expect(countOf(progress, 'revenge')).toBe(1);
+  });
+
+  it('counts the devices of an opponent as one person once they link, also in the rarity', async () => {
+    store = await openStore(':memory:');
+    const BOB_GITHUB = { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' };
+    const bobPhone = 'eeeeeeee-0000-4000-8000-000000000005' as PlayerToken;
+    const nearby = (id: string, guest: PlayerToken, finished: number) =>
+      result(id, { mode: 'nearby', difficulty: null, you: 'X', guest, finishedAt: ms(finished), metrics: { ...METRICS, nearby: { role: 'host', other: 'phone' } } });
+    await store.addResults(alice, [nearby('a0a0a0a0-1111-4000-8000-000000000001', bob, 2_000), nearby('a0a0a0a0-1111-4000-8000-000000000002', bobPhone, 3_000)]);
+    expect(countOf(await store.achievements(alice), 'people-5')).toBe(2);
+    await store.linkToken(bob, BOB_GITHUB);
+    await store.linkToken(bobPhone, BOB_GITHUB);
+    expect(countOf(await store.achievements(alice), 'people-5')).toBe(1);
+  });
+
+  it('reads the voice moves of a computer game from the metrics of its result', async () => {
+    store = await openStore(':memory:');
+    const hidden = { hideBoard: true, hideHistory: false, hideCoordinates: false };
+    await store.addResults(alice, [result('a1a1a1a1-1111-4000-8000-000000000001', { options: hidden, metrics: { ...METRICS, input: { board: 0, keypad: 4, voice: 4 } } })]);
+    expect(countOf(await store.achievements(alice), 'sound-only')).toBe(1);
   });
 });
 
-// A store file with rows as an older version left them: a result without the new columns, and an
-// online game that ended before the server recorded games in `results`.
+// A store file with rows as an older version left them: a result from before game links (no public id, no
+// ending; the migration of pull request #128 filled its plain columns and its seat), and an online game that
+// ended before the server recorded games in `results`.
 async function oldStore(): Promise<{ path: string; code: Code }> {
   const path = `${await mkdtemp('/tmp/tick3d-store-')}/old.duckdb`;
   store = await openStore(path);
   const { code } = await store.create(alice, 'Old match');
   await store.join(code, bob);
   await playMoves(code, X_WINS);
-  store.close();
+  await store.close();
   const instance = await DuckDBInstance.create(path);
   const db = await instance.connect();
   await db.run("DELETE FROM results WHERE id LIKE 'online:%'");
   const old = { id: '99999999-0000-4000-8000-000000000001', mode: 'computer', game: finishedGame(X_WINS_LATE), you: 'O', difficulty: 'easy', finishedAt: 5_000 };
-  await db.run('INSERT INTO results (id, token, doc, finished_at) VALUES ($id, $token, $doc::JSON::VARIANT, make_timestamptz(5000000))', {
-    id: old.id,
-    token: alice,
-    doc: JSON.stringify(old),
-  });
+  await db.run(
+    `INSERT INTO results (id, token, doc, finished_at, player_o, mode, level, you, moves, times, per_game, per_move, timed_out)
+     VALUES ($id, $token, $doc::JSON::VARIANT, make_timestamptz(5000000), $token, 'computer', 'easy', 'O', $moves::INTEGER[], $times::DOUBLE[], NULL, NULL, false)`,
+    { id: old.id, token: alice, doc: JSON.stringify(old), moves: JSON.stringify(old.game.moves), times: JSON.stringify(old.game.times) },
+  );
   db.closeSync();
   instance.closeSync();
   store = await openStore(path);
@@ -644,7 +684,7 @@ describe('rows from before game links', () => {
     expect(stats.levels).toEqual([expect.objectContaining({ level: 'easy', games: 1, lost: 1 })]);
     expect((await store.stats({ ...ALL_STATS, scope: 'mine' }, alice)).personal?.survival).toEqual([{ level: 'easy', moves: 9 }]);
     expect(stats.endings).toEqual([{ key: 'won', count: 1 }]);
-    // The old row stays as it was: the one-off migration fills it, not the server.
+    // The old row keeps no link: the server gives it no public id.
     expect((await store.history(alice, 0)).games[0]?.id).toBeNull();
   });
 
@@ -703,6 +743,48 @@ describe('online game metrics', () => {
     expect(stats.metricsGames).toBe(2);
     expect(stats.themes).toEqual(expect.arrayContaining([{ key: 'dark', count: 1 }, { key: 'mono', count: 1 }]));
     expect(stats.input).toEqual({ board: 6, keypad: 2 });
+  });
+});
+
+describe('leaderboard', () => {
+  it('counts each person from their side, merges linked devices, and leaves out friend games and hidden people', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.addResults(alicePhone, [result('aaaaaaaa-3333-4000-8000-000000000001', { finishedAt: ms(1_000) })]);
+    await store.addResults(carol, [
+      result('aaaaaaaa-3333-4000-8000-000000000002', { finishedAt: ms(1_000), game: finishedGame(X_WINS_LATE) }),
+      result('aaaaaaaa-3333-4000-8000-000000000003', { finishedAt: ms(2_000) }),
+      result('aaaaaaaa-3333-4000-8000-000000000004', { finishedAt: ms(3_000), you: 'O' }),
+      result('aaaaaaaa-3333-4000-8000-000000000005', { finishedAt: ms(4_000), mode: 'friend', you: null, difficulty: null }),
+      // A win on time after 3 moves: it counts as a win, but not as the fastest win.
+      result('aaaaaaaa-3333-4000-8000-000000000006', {
+        finishedAt: ms(5_000),
+        game: { moves: [0, 1, 2], times: [ms(1_000), ms(2_000), ms(3_000)], clock: { perMove: 5, perGame: null }, timedOut: true },
+      }),
+    ]);
+    const board = await store.leaderboard(ALL_STATS, alice);
+    const aliceId = await personId(`account-${String(ALICE_GITHUB.id).padStart(16, '0')}`);
+    expect(board.you).toBe(aliceId);
+    expect(board.rows.find((found) => found.person === aliceId)).toMatchObject({ name: 'alice', player: { login: 'alice' }, games: 2, won: 2, lost: 0, bestStreak: 2 });
+    const carolId = await personId(carol);
+    expect(board.rows.find((found) => found.person === carolId)).toMatchObject({ games: 4, won: 3, lost: 1, fastestWin: X_WINS.length, bestStreak: 2 });
+    const bobId = await personId(bob);
+    expect(board.rows.find((found) => found.person === bobId)).toMatchObject({ games: 1, won: 0, lost: 1, fastestWin: null, bestStreak: 0 });
+    expect(board.rows.map((found) => found.games)).toEqual([4, 2, 1]);
+    // The count is the unlocked achievements of the person view.
+    const carolView = await store.stats({ ...ALL_STATS, person: carolId });
+    const carolUnlocked = carolView.achievements?.achievements.filter((entry) => entry.unlockedAt !== null).length;
+    expect(carolUnlocked).toBeGreaterThan(0);
+    expect(board.rows.find((found) => found.person === carolId)?.achievements).toBe(carolUnlocked);
+
+    // The computer filter keeps the computer games only, and "Hide my stats" takes a person off the board.
+    // A new filter has its own cache entry, so the change shows here at once.
+    await store.setStatsPrivate(carol, true);
+    const computer = await store.leaderboard({ ...ALL_STATS, mode: 'computer' }, undefined);
+    expect(computer.you).toBeNull();
+    expect(computer.rows.map((found) => found.person)).toEqual([aliceId]);
   });
 });
 
@@ -771,14 +853,16 @@ describe('stats', () => {
     ]);
   });
 
-  it('keeps the answer for a minute', async () => {
+  it('keeps the answer for a minute, then answers at once and refreshes in the background', async () => {
     let time = 1_000_000;
     store = await openStore(':memory:', { now: () => ms(time) });
     const first = await store.stats();
     await store.addResults(alice, [result('bbbbbbbb-1111-4000-8000-000000000001')]);
     expect((await store.stats()).totals.games).toBe(first.totals.games);
     time += 60_000;
-    expect((await store.stats()).totals.games).toBe(first.totals.games + 1);
+    // The old answer still comes at once; the refresh that it starts brings the new game.
+    expect((await store.stats()).totals.games).toBe(first.totals.games);
+    await vi.waitFor(async () => expect((await store.stats()).totals.games).toBe(first.totals.games + 1), { timeout: 10_000 });
   });
 });
 
@@ -876,7 +960,8 @@ describe('stats filters', () => {
     const bobs = await store.stats({ ...all, person: await personId(bob) });
     // Bob: the online game against Alice and his computer loss.
     expect(bobs.totals.games).toBe(2);
-    expect(bobs.person).toEqual({ name: nameOf(bob), player: null });
+    expect(bobs.person).toEqual({ name: nameOf(bob), player: null, you: false });
+    expect((await store.stats({ ...all, person: await personId(bob) }, bob)).person?.you).toBe(true);
     expect(bobs.personal).toMatchObject({ results: expect.arrayContaining([{ mode: 'online', level: null, won: 0, drawn: 0, lost: 1 }]), opponents: [] });
     expect(JSON.stringify(bobs)).not.toContain(bob);
 
@@ -884,7 +969,7 @@ describe('stats filters', () => {
     await store.linkToken(alice, ALICE_GITHUB);
     const alices = await store.stats({ ...all, person: await personId(`account-${String(ALICE_GITHUB.id).padStart(16, '0')}`) });
     expect(alices.totals.games).toBe(4);
-    expect(alices.person).toEqual({ name: 'alice', player: { login: 'alice', avatar: ALICE_GITHUB.avatar } });
+    expect(alices.person).toEqual({ name: 'alice', player: { login: 'alice', avatar: ALICE_GITHUB.avatar }, you: false });
     expect(JSON.stringify(alices)).not.toContain(alice);
   });
 
@@ -894,6 +979,20 @@ describe('stats filters', () => {
     const computerId = await personId('computer');
     expect(await status(() => store.stats({ ...all, person: carolId }))).toBe(404);
     expect(await status(() => store.stats({ ...all, person: computerId }))).toBe(404);
+    expect(await status(() => store.statsCard(carolId, null))).toBe(404);
+  });
+
+  it('gives the player card the name and the unlocks of the person view, newest first', async () => {
+    await seeded();
+    const aliceId = await personId(alice);
+    const view = await store.stats({ ...all, person: aliceId });
+    const newestFirst = (view.achievements?.achievements ?? [])
+      .filter((entry) => entry.unlockedAt !== null)
+      .toSorted((a, b) => (b.unlockedAt ?? 0) - (a.unlockedAt ?? 0))
+      .map((entry) => entry.id);
+    expect(newestFirst.length).toBeGreaterThan(1);
+    expect(await store.statsCard(aliceId, null)).toEqual({ person: view.person, unlocked: newestFirst });
+    expect((await store.statsCard(aliceId, alice)).person.you).toBe(true);
   });
 
   it('refuses a person filter to others when the person hides their stats, and keeps Mine and Everyone', async () => {
@@ -904,6 +1003,8 @@ describe('stats filters', () => {
     expect(await store.statsPrivate(bob)).toBe(true);
     expect(await status(() => store.stats({ ...all, person: bobId }))).toBe(403);
     expect(await status(() => store.stats({ ...all, person: bobId }, alice))).toBe(403);
+    expect(await status(() => store.statsCard(bobId, alice))).toBe(403);
+    expect((await store.statsCard(bobId, bob)).person.you).toBe(true);
     // Bob still sees his own stats, by person id and by Mine.
     expect((await store.stats({ ...all, person: bobId }, bob)).totals.games).toBe(2);
     expect((await store.stats({ ...all, scope: 'mine' }, bob)).totals.games).toBe(2);
@@ -1077,7 +1178,7 @@ describe('seat controls for an account without an account row', () => {
     store = await openStore(path, { open: () => open });
     const { code } = await store.create(bob, 'Seat an old account');
     await store.linkToken(alicePhone, ALICE_GITHUB);
-    store.close();
+    await store.close();
     const instance = await DuckDBInstance.create(path);
     const db = await instance.connect();
     await db.run("DELETE FROM player_tokens WHERE token LIKE 'account-%'");
@@ -1213,6 +1314,14 @@ describe('report and block', () => {
     expect(await status(async () => store.report(alice, { code, target: { person: await personId(carol) }, reason: 'spam', note: null }))).toBe(404);
   });
 
+  it('stores a report of a stats page player without a code, and refuses a person without games', async () => {
+    store = await openStore(':memory:');
+    await store.addResults(carol, [result('aaaaaaaa-4444-4000-8000-000000000001')]);
+    await store.report(alice, { code: null, target: { person: await personId(carol) }, reason: 'name', note: null });
+    expect((await store.reports()).reports).toMatchObject([{ code: null, person: await personId(carol), name: nameOf(carol), reporter: await personId(alice) }]);
+    expect(await status(async () => store.report(alice, { code: null, target: { person: await personId(bob) }, reason: 'spam', note: null }))).toBe(404);
+  });
+
   it('lets a maintainer hide a message for everyone and clear a custom name, and logs both', async () => {
     const code = await session();
     await store.chat(code, bob, 'spam spam');
@@ -1233,11 +1342,11 @@ describe('report and block', () => {
 describe('delete my data', () => {
   const ALICE_ACCOUNT = `${ACCOUNT_TOKEN_PREFIX}${String(ALICE_GITHUB.id).padStart(16, '0')}`;
   const aliceTokens = [alice, alicePhone, ALICE_ACCOUNT];
-  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
+  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'app_copies', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
 
   // Per group of needles: the rows of each table whose text holds one of them. The store closes for the check and opens again.
   async function rowsHolding(path: string, groups: readonly (readonly string[])[]): Promise<Record<string, number>[]> {
-    store.close();
+    await store.close();
     const instance = await DuckDBInstance.create(path);
     const db = await instance.connect();
     const found: Record<string, number>[] = [];
@@ -1292,6 +1401,13 @@ describe('delete my data', () => {
     await store.addPracticeRun(alice, run);
     await store.addPracticeRun(bob, run);
     const aliceIds = await Promise.all(aliceTokens.map((token) => personId(token)));
+    // Bob claimed a tester code through Alice's invite link.
+    await store.addTesterCodes([{ code: 'AAAAAAAAAAAAAAAAAAAAAA1', name: null }]);
+    await store.claimTesterCode(1, { email: 'bob@example.com', name: 'Bob', by: await store.person(alice) }, bob);
+    // Alice's phone opened the Android app.
+    await store.reportAppOpen(alicePhone, null);
+    // The leaderboard fills achievement_players, which names Alice's account.
+    await store.leaderboard(ALL_STATS, undefined);
 
     const deleted = await store.deleteData(alicePhone);
     expect(deleted).toEqual({
@@ -1303,8 +1419,13 @@ describe('delete my data', () => {
       blocks: { deleted: 1, anonymised: 1 },
       private_stats: { deleted: 1, anonymised: 0 },
       achievement_resets: { deleted: 1, anonymised: 0 },
+      achievement_players: { deleted: 1, anonymised: 0 },
+      seat_people: { deleted: 3, anonymised: 0 },
       practice_runs: { deleted: 1, anonymised: 0 },
       reports: { deleted: 0, anonymised: 1 },
+      tester_codes: { deleted: 0, anonymised: 1 },
+      app_copies: { deleted: 1, anonymised: 0 },
+      apple_slots: { deleted: 0, anonymised: 0 },
       player_tokens: { deleted: 3, anonymised: 0 },
       users: { deleted: 1, anonymised: 0 },
     });

@@ -1,12 +1,13 @@
 // The messages between the page and the move search in src/ai-worker.ts, and the page side of the search.
 // Each side checks every message, so a bad message fails loudly instead of playing a wrong cell.
 // A Worker does not exist in Node, so the tests drive these functions with a fake worker.
-import { isCount, isRecord } from './guards.ts';
-import { type Difficulty, DIFFICULTIES, chooseMove } from './ai.ts';
-import { type Board, type Player, CELL_COUNT } from './game.ts';
+import { isCount, isRecord, isUnknownArray } from './guards.ts';
+import { type Difficulty, DIFFICULTIES, type Position, chooseMove } from './ai.ts';
+import { type Board, type Player, CELL_COUNT, replay } from './game.ts';
 import { type Tuning, parseTuning } from './tuning.ts';
 
-export type SearchRequest = { id: number; board: Board; player: Player; difficulty: Difficulty; tuning: Tuning };
+// The game goes as its moves, so the board and the player to move have one source: chooseMove replays the moves.
+export type SearchRequest = Position & { id: number; difficulty: Difficulty; tuning: Tuning };
 export type SearchAnswer = { id: number; cell: number } | { id: number; error: string };
 
 // The first message of the worker, when its script loaded.
@@ -18,15 +19,16 @@ export const WORKER_START_MS = 3000;
 
 const isPlayer = (value: unknown): value is Player => value === 'X' || value === 'O';
 const isDifficulty = (value: unknown): value is Difficulty => DIFFICULTIES.some((level) => level === value);
-const isBoard = (value: unknown): value is Board =>
-  Array.isArray(value) && value.length === CELL_COUNT && value.every((mark) => mark === null || isPlayer(mark));
+// A list of at most 64 cells of the board. chooseMove replays it and throws on a taken cell.
+const isMoves = (value: unknown): value is readonly number[] =>
+  isUnknownArray(value) && value.length <= CELL_COUNT && value.every((cell) => isCount(cell) && cell < CELL_COUNT);
 
 export function parseRequest(value: unknown): SearchRequest | undefined {
   if (!isRecord(value)) return undefined;
-  const { id, board, player, difficulty, tuning } = value;
-  if (!isCount(id) || !isBoard(board) || !isPlayer(player) || !isDifficulty(difficulty)) return undefined;
+  const { id, moves, first, difficulty, tuning } = value;
+  if (!isCount(id) || !isMoves(moves) || !isPlayer(first) || !isDifficulty(difficulty)) return undefined;
   // The page sends its own checked settings, so parseTuning changes nothing in normal use.
-  return { id, board, player, difficulty, tuning: parseTuning(tuning) };
+  return { id, moves, first, difficulty, tuning: parseTuning(tuning) };
 }
 
 // The worker's whole job: one answer for each message. An error goes back to the page, which shows it.
@@ -34,7 +36,7 @@ export function answerRequest(value: unknown): SearchAnswer {
   const request = parseRequest(value);
   if (request === undefined) return { id: isRecord(value) && isCount(value.id) ? value.id : -1, error: 'invalid search request' };
   try {
-    return { id: request.id, cell: chooseMove(request.board, request.player, request.difficulty, Math.random, request.tuning) };
+    return { id: request.id, cell: chooseMove(request, request.difficulty, Math.random, request.tuning) };
   } catch (error) {
     return { id: request.id, error: error instanceof Error ? error.message : String(error) };
   }
@@ -65,10 +67,13 @@ export type SearchWorker = {
   terminate(): void;
 };
 
-export type Search = (board: Board, player: Player, difficulty: Difficulty, tuning: Tuning) => Promise<number>;
+export type Search = (position: Position, difficulty: Difficulty, tuning: Tuning) => Promise<number>;
 
-const searchHere = ({ board, player, difficulty, tuning }: Omit<SearchRequest, 'id'>): number =>
-  legalCell(board, chooseMove(board, player, difficulty, Math.random, tuning));
+// The board of the position, to check the answer of the search.
+const boardOf = ({ moves, first }: Position): Board => replay(moves, { first }).board;
+
+const searchHere = (request: Omit<SearchRequest, 'id'>): number =>
+  legalCell(boardOf(request), chooseMove(request, request.difficulty, Math.random, request.tuning));
 
 type Waiting = { request: SearchRequest; resolve: (cell: number) => void; reject: (error: Error) => void };
 
@@ -126,7 +131,7 @@ export function createSearch(start: () => SearchWorker): Search {
     pending.delete(answer.id);
     if ('error' in answer) return waiting.reject(new Error(`move search failed: ${answer.error}`));
     try {
-      waiting.resolve(legalCell(waiting.request.board, answer.cell));
+      waiting.resolve(legalCell(boardOf(waiting.request), answer.cell));
     } catch (error) {
       waiting.reject(error instanceof Error ? error : new Error(String(error)));
     }
@@ -148,10 +153,11 @@ export function createSearch(start: () => SearchWorker): Search {
     return worker;
   };
 
-  return (board, player, difficulty, tuning) => {
+  return ({ moves, first }, difficulty, tuning) => {
+    const position = { moves, first };
     const current = ready();
-    if (current === undefined) return Promise.resolve().then(() => searchHere({ board, player, difficulty, tuning }));
-    const request = { id: nextId++, board, player, difficulty, tuning };
+    if (current === undefined) return Promise.resolve().then(() => searchHere({ ...position, difficulty, tuning }));
+    const request = { id: nextId++, ...position, difficulty, tuning };
     return new Promise((resolve, reject) => {
       pending.set(request.id, { request, resolve, reject });
       current.postMessage(request);

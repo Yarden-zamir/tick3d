@@ -2,7 +2,7 @@
 import { other } from '../game.ts';
 import { type ChatMessage, type SessionView, isChatEvent, normalizeChat } from '../protocol.ts';
 import { sounds } from '../sound.ts';
-import { chatEl, chatInput, chatSend, chatLog, chatNoticeFrom, chatNoticeText, chatNotice, chatForm } from './dom.ts';
+import { chatEl, chatInput, chatSend, chatLog, chatNoticeFrom, chatNoticeText, chatNotice, chatForm, scrollMotion } from './dom.ts';
 import { type Sender, chatGroups } from './chat-log.ts';
 import { nameOf } from '../names.ts';
 import { authorOf, ownPerson, shownPerson, visibleChat } from './safety.ts';
@@ -62,17 +62,13 @@ export function renderChat(): void {
 
   const session = page.session;
   const messages = visibleChat(session);
+  // The log shows from the first chat message on. Before it, the chat is the title and the message field only;
+  // the game events of that time (a new game, a seat change) show in the log once it shows.
+  chatLog.hidden = !messages.some((entry) => !isChatEvent(entry));
   // A block changes the shown names, so the key holds the shown sender of every message.
   const shown = `${session.code}:${messages.map((entry) => `${entry.id}:${isChatEvent(entry) ? 'event' : senderOf(session, entry).label}`).join(',')}`;
   if (shown === chatShown) return;
   chatShown = shown;
-  if (messages.length === 0) {
-    const empty = document.createElement('li');
-    empty.className = 'chat-empty';
-    empty.textContent = canWrite ? 'No messages yet. Say hi.' : 'No messages yet.';
-    chatLog.replaceChildren(empty);
-    return;
-  }
   chatLog.replaceChildren(...chatGroups(messages, (message) => senderOf(session, message)));
   chatLog.scrollTop = chatLog.scrollHeight;
 }
@@ -109,7 +105,7 @@ function hideChatNotice(): void {
 export function setupChat(): void {
   chatNotice.addEventListener('click', () => {
     hideChatNotice();
-    chatEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    chatEl.scrollIntoView({ behavior: scrollMotion(), block: 'center' });
     if (page.session !== undefined && canChat(page.session)) chatInput.focus({ preventScroll: true });
   });
 

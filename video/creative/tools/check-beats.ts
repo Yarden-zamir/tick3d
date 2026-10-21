@@ -25,7 +25,7 @@ function checkTimeline(beats: Beats, name: string): void {
   const random = seededRandom(beats.game.seed);
   let game = newGame(beats.game.first);
   while (game.status.kind === 'playing') {
-    const result = play(game, chooseMove(game.board, game.turn, beats.game.levels[game.turn], random));
+    const result = play(game, chooseMove(game, beats.game.levels[game.turn], random));
     if (!result.ok) throw new Error(`self-play made an illegal move: ${result.error}`);
     game = result.game;
   }

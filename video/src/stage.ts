@@ -76,9 +76,9 @@ export function squareFrame(inner: number): BufferGeometry {
 // of the cell. `near` is 1, or less when the cell fades near the camera.
 type TowerCell = { group: Group; tile: Painted; materials: MeshBasicMaterial[]; near: number };
 
-// A beam of `--win` light with a `--line` outline, and with `halos`, two soft halos. It is light: it shines
-// through the tiles, so it draws over the tower, the widest part first, from `renderOrder` up.
-type BeamOptions = { radius?: number; halos?: boolean; renderOrder?: number };
+// A beam of `--win` light (or of `token`) with a `--line` outline, and with `halos`, two soft halos. It is light: it
+// shines through the tiles, so it draws over the tower, the widest part first, from `renderOrder` up.
+type BeamOptions = { radius?: number; halos?: boolean; renderOrder?: number; token?: Token };
 type Beam = {
   hide(): void;
   // `length`: the share of the way from `from` to `to`. `throb`: the width. `opacity`: a share of the full light.
@@ -203,13 +203,14 @@ export function createStage(width: number, height: number): Stage {
       return { group, lift, materials };
     },
 
-    beam({ radius = 0.1, halos = true, renderOrder = 10 } = {}) {
+    beam({ radius = 0.1, halos = true, renderOrder = 10, token = 'win' } = {}) {
       const light = { transparent: true, depthTest: false, depthWrite: false };
-      const parts = [
-        ...(halos ? [{ radius: 4.5 * radius, token: 'win' as const, opacity: 0.14 }, { radius: 2.4 * radius, token: 'win' as const, opacity: 0.35 }] : []),
-        { radius: radius + OUTLINE, token: 'line' as const, opacity: 1 },
-        { radius, token: 'win' as const, opacity: 1 },
-      ].map((part, order) => {
+      const layers: { radius: number; token: Token; opacity: number }[] = [
+        ...(halos ? [{ radius: 4.5 * radius, token, opacity: 0.14 }, { radius: 2.4 * radius, token, opacity: 0.35 }] : []),
+        { radius: radius + OUTLINE, token: 'line', opacity: 1 },
+        { radius, token, opacity: 1 },
+      ];
+      const parts = layers.map((part, order) => {
         const options = part.token === 'line' ? { ...light, side: BackSide } : part.opacity < 1 ? { ...light, opacity: part.opacity } : light;
         const mesh = new Mesh(unitCylinder(part.radius), paint(part.token, options).material);
         mesh.renderOrder = renderOrder + order;

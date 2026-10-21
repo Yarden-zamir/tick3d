@@ -1,6 +1,6 @@
 // QR codes for the Nearby handshake and the online game link. The library loads on first use, so
-// players who never show a code never download it. Codes are links, so a phone's own camera reads them;
-// the page has no scanner of its own.
+// players who never show a code never download it. Codes are links, so both the in-app scanner and
+// a phone's own camera can read them.
 const QUIET_ZONE = 4;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 

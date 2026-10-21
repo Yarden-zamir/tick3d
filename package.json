@@ -14,21 +14,25 @@
     "e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
-    "@duckdb/node-api": "1.5.6-r.1"
+    "@apple/app-store-server-library": "3.1.0",
+    "@capacitor/core": "8.5.3",
+    "@duckdb/node-api": "1.5.6-r.1",
+    "google-auth-library": "11.3.1"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@seriousme/openapi-schema-validator": "^2.11.0",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "@types/pngjs": "^6.0.5",
     "ajv": "^8.20.0",
     "fake-indexeddb": "^6.2.5",
+    "ggwave": "0.4.0",
     "happy-dom": "^20.14.6",
     "html-validate": "^11.16.2",
     "jsqr": "^1.4.0",
     "knip": "^6.41.0",
-    "oxlint": "^1.87.0",
-    "oxlint-tsgolint": "^7.0.2003",
+    "oxlint": "^1.88.0",
+    "oxlint-tsgolint": "^7.0.2004",
     "pngjs": "^7.0.0",
     "qrcode-generator": "^2.0.4",
     "stylelint": "^17.16.0",
@@ -36,7 +40,7 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vite-plugin-pwa": "^2.0.0",
-    "vitest": "^5.0.3",
+    "vitest": "^5.0.5",
     "workbox-window": "^7.4.1"
   },
   "knip": {

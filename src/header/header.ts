@@ -1,9 +1,9 @@
-// The header of every page: the wordmark, the account button, Info, kitshn and GitHub.
-// Each page has the same header markup (src/markup.test.ts checks it). The Info button opens the
+// The header of every page: the wordmark, the account button and Info. kitshn and GitHub sit in the
+// footer of every page. Each page has the same header and footer markup (src/markup.test.ts checks it). The Info button opens the
 // #info-panel popover of the page, so each page writes its own Info text, and Info needs no script.
 // The header setup also installs the click sound of every control (src/click-sound.ts).
 import { element } from '../element.ts';
-import { api, OnlineError } from '../online.ts';
+import { type Me, api, OnlineError } from '../online.ts';
 import type { PlayerInfo } from '../protocol.ts';
 import { myGamesHref } from './my-games-link.ts';
 import { setupTooltips } from '../tooltip.ts';
@@ -34,7 +34,8 @@ export function setupGameHeader(): void {
 
 // A page other than the game: the account button opens My games on the game page, and a login there
 // returns here. Offline, the button shows "My games" without the login.
-export function setupPageHeader(): void {
+// `onAccount` gets the answer of GET /api/me, when one comes.
+export function setupPageHeader(onAccount?: (me: Me) => void): void {
   markPlatform();
   setupClickSound();
   setupTooltips();
@@ -43,7 +44,10 @@ export function setupPageHeader(): void {
   if (!navigator.onLine) return;
   api
     .me()
-    .then(({ user }) => showAccount(user))
+    .then((me) => {
+      showAccount(me.user);
+      onAccount?.(me);
+    })
     .catch((error: unknown) => {
       if (!(error instanceof OnlineError)) throw error;
     });

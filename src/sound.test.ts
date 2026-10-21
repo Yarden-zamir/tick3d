@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { songOf } from './song.ts';
-import { type VoiceClip, type VoiceClips, clipOf, previewVoices, scheduleNotes, winVoices } from './sound.ts';
+import { DIFFICULTIES } from './ai.ts';
+import { type VoiceClip, type VoiceClips, clipOf, difficultyVoices, previewVoices, scheduleNotes, winVoices } from './sound.ts';
 import { CELL_COUNT, replay, toCell } from './game.ts';
 import { SOUND_SET_GROUPS, SOUND_SET_IDS, SOUND_SETS, type Voice, harmonyNotes, midiHz } from './sound-sets.ts';
 
@@ -207,5 +208,27 @@ describe('winVoices', () => {
     const voices = winVoices(0.25);
     expect(voices.map((v) => (v.wave === 'noise' ? undefined : Math.round(69 + 12 * Math.log2(v.frequency / 440))))).toEqual([72, 76, 79, 84, 88]);
     expect(voices.map((v) => v.at)).toEqual([0, 0.25, 0.5, 0.75, 1]);
+  });
+});
+
+describe('the difficulty sounds', () => {
+  const lowest = (voices: readonly Voice[]) => Math.min(...voices.flatMap((voice) => (voice.wave === 'noise' ? [] : [voice.frequency])));
+
+  it('gives each level its own short, audible sound', () => {
+    const prints = DIFFICULTIES.map((level) => fingerprint(difficultyVoices(level)));
+    expect(new Set(prints).size).toBe(DIFFICULTIES.length);
+    for (const level of DIFFICULTIES) {
+      for (const voice of difficultyVoices(level)) {
+        expect(voice.level).toBeGreaterThan(0);
+        expect(voice.decay).toBeGreaterThan(0);
+        expect((voice.at ?? 0) + voice.decay).toBeLessThan(1);
+      }
+    }
+  });
+
+  it('sounds lower and darker as the level gets harder', () => {
+    expect(lowest(difficultyVoices('hard'))).toBeLessThan(lowest(difficultyVoices('medium')));
+    expect(lowest(difficultyVoices('medium'))).toBeLessThan(lowest(difficultyVoices('easy')));
+    expect(difficultyVoices('hard').some((voice) => voice.wave === 'noise')).toBe(true);
   });
 });

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { DEFAULT_RANGE, frequencyAt, stepOfCell } from '../src/voice/mapping.ts';
-import { cell, expect, oscillatorMic, setTone, status, test } from './fixtures.ts';
+import { cell, expect, openMore, oscillatorMic, setTone, status, test } from './fixtures.ts';
 
 // Runs in the page before the app: counts the oscillators that the page makes, live or offline.
 function countOscillators(): void {
@@ -106,6 +106,8 @@ test('a winning move by voice plays the voice in the song of the end card', asyn
   await page.reload();
   // Six taps, then X takes cell 3, the last cell of the row, by voice. The winning move stops the voice.
   for (const index of X_WINS.slice(0, -1)) await cell(page, index).click();
+  // Play by voice is a field of the More card.
+  await openMore(page);
   await page.getByRole('button', { name: 'Play by voice' }).click();
   await setTone(page, frequencyAt(stepOfCell(3) + 0.5, { range: DEFAULT_RANGE, spread: 'log' }));
   await expect(status(page)).toHaveText('Player X wins!');

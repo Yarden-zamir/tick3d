@@ -96,7 +96,7 @@ function modeLabel(shown: PublicGame): string {
       return `Online · game ${index + 1} of session ${code}`;
     }
     case 'nearby':
-      return 'Nearby';
+      return 'Wi-Fi';
     case 'friend':
       return 'Two players, one screen';
   }

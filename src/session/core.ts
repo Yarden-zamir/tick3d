@@ -180,6 +180,7 @@ export function noteTunedMove(doc: SessionDoc, game: number, tuning: Tuning): Se
 export function undo(doc: SessionDoc, identity: Identity, count: number): SessionDoc {
   requireSeat(doc, identity);
   if (isShared(doc)) throw new SessionError(409, 'With another device, the other player must accept an undo.');
+  if (doc.mode === 'computer') throw new SessionError(409, 'A game against the computer has no undo.');
   const game = currentGame(doc);
   if (game.status.kind !== 'playing') throw new SessionError(409, 'This game is over.');
   if (game.clock.perMove !== null || game.clock.perGame !== null) throw new SessionError(409, 'A timed game has no undo.');

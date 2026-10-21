@@ -21,8 +21,8 @@ import { page, isLive, current, newRound, setThinking } from './state.ts';
 
 // What a player loses when they go home now, or undefined when there is nothing to lose.
 function homeWarning(): string | undefined {
-  if (nearbyKind() === 'hosting') return 'End the Nearby game for everyone?';
-  if (nearbyKind() !== 'idle') return 'Leave the Nearby game?';
+  if (nearbyKind() === 'hosting') return 'End the Wi-Fi game for everyone?';
+  if (nearbyKind() !== 'idle') return 'Leave the Wi-Fi game?';
   if (page.session?.mode === 'online') return 'Leave this online game? You can open it again from My games.';
   if (page.session !== undefined && isLive() && current().moves.length > 0) return 'Leave this game? The game in progress ends.';
   return undefined;

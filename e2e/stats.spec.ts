@@ -52,3 +52,86 @@ test('the stats API refuses an unknown filter', async ({ request }) => {
   expect((await request.get('/api/stats?mode=online&level=hard')).status()).toBe(400);
   expect((await request.get('/api/stats?scope=mine')).status()).toBe(400);
 });
+
+test('the leaderboard loads on scroll, marks your row, sorts by a column, and opens a player', async ({ open }) => {
+  const { page } = await open({ settings: { mode: 'computer' } });
+  // A medium game: no other test in this run views this filter.
+  const stored = await page.evaluate(async ({ moves, token }) => {
+    const now = Date.now();
+    const game = { moves, times: moves.map((_, i) => now - 60_000 + i * 1_000), clock: { perMove: null, perGame: null }, timedOut: false };
+    const result = { id: `e2e-board-${crypto.randomUUID()}`, mode: 'computer', game, you: 'X', difficulty: 'medium', finishedAt: now };
+    const response = await fetch('/api/results', { method: 'POST', headers: { 'content-type': 'application/json', 'x-player': token }, body: JSON.stringify({ results: [result] }) });
+    return ((await response.json()) as { stored: number }).stored;
+  }, { moves: X_WINS, token: await playerToken(page) });
+  expect(stored).toBe(1);
+
+  const board = page.locator('.stats-card', { has: page.getByRole('heading', { name: 'Leaderboard' }) });
+  const you = board.locator('.leaderboard-you');
+  // The leaderboard comes from a snapshot that refreshes in the background (server/store.ts). An old
+  // snapshot of this filter, for example from an earlier run on the same preview, answers first and
+  // starts the refresh once it is STATS_CACHE_MS (60 s) old. So the page loads again until a snapshot
+  // has this player, which can take that long when a run just before this one viewed the filter.
+  test.setTimeout(150_000);
+  await expect(async () => {
+    await page.goto('/stats?mode=computer&level=medium');
+    await board.scrollIntoViewIfNeeded();
+    await expect(you).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 90_000 });
+
+  const fastest = board.locator('th', { hasText: 'Fastest win' });
+  await fastest.getByRole('button').click();
+  await expect(fastest).toHaveAttribute('aria-sort', 'ascending');
+  await fastest.getByRole('button').click();
+  await expect(fastest).toHaveAttribute('aria-sort', 'descending');
+
+  await you.locator('.leaderboard-name').click();
+  await expect(page).toHaveURL(/person=[0-9a-f]+/);
+  await expect(page.locator('#stats-person')).toBeVisible();
+});
+
+test('the player card shows the achievements, and blocks and reports another player', async ({ open }) => {
+  const { page } = await open({ settings: { mode: 'computer' } });
+  // Another player with one won computer game, and their person id (personId in src/protocol.ts).
+  const other = await page.evaluate(async (moves) => {
+    const token = crypto.randomUUID();
+    const now = Date.now();
+    const game = { moves, times: moves.map((_, i) => now - 60_000 + i * 1_000), clock: { perMove: null, perGame: null }, timedOut: false };
+    const result = { id: `e2e-card-${crypto.randomUUID()}`, mode: 'computer', game, you: 'X', difficulty: 'easy', finishedAt: now };
+    await fetch('/api/results', { method: 'POST', headers: { 'content-type': 'application/json', 'x-player': token }, body: JSON.stringify({ results: [result] }) });
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`tick3d-person:${token}`));
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('').slice(0, 16);
+  }, X_WINS);
+
+  await page.goto(`/stats?person=${other}`);
+  const card = page.locator('#stats-person');
+  await expect(card.getByRole('img', { name: 'First win' })).toBeVisible();
+
+  await card.getByRole('button', { name: 'Report or block' }).click();
+  const menu = page.locator('#safety-menu');
+  await menu.getByRole('button', { name: 'Report' }).click();
+  await menu.getByLabel('Inappropriate name').check();
+  await menu.getByRole('button', { name: 'Send report' }).click();
+  await expect(menu).toBeHidden();
+  await expect(card.getByRole('status')).toContainText('The report went to the maintainers');
+
+  await card.getByRole('button', { name: 'Report or block' }).click();
+  await menu.getByRole('button', { name: 'Block' }).click();
+  await expect(card.getByRole('status')).toContainText('is blocked');
+});
+
+test('your own player card offers no report and no block', async ({ open }) => {
+  const { page } = await open({ settings: { mode: 'computer' } });
+  await uploadGames(page);
+  await page.goto(`/stats?person=${await page.evaluate(async (token) => {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`tick3d-person:${token}`));
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('').slice(0, 16);
+  }, await playerToken(page))}`);
+  await expect(page.locator('#stats-person')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Report or block' })).toHaveCount(0);
+});
+
+test('the leaderboard API takes the range, mode and level filters only', async ({ request }) => {
+  expect((await request.get('/api/leaderboard?range=30d&mode=computer&level=hard')).status()).toBe(200);
+  expect((await request.get('/api/leaderboard?scope=mine')).status()).toBe(400);
+  expect((await request.get('/api/leaderboard?person=0123456789abcdef')).status()).toBe(400);
+});
