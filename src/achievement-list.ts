@@ -96,3 +96,15 @@ function steamOrder(progress: readonly AchievementProgress[]): AchievementProgre
 export function achievementItems(progress: readonly AchievementProgress[], rarity: AchievementRarity | null, isNew: (id: AchievementId) => boolean): HTMLLIElement[] {
   return steamOrder(progress).map((entry) => achievementItem(entry, rarity, isNew(entry.id)));
 }
+
+// Fades an edge of the sideways scroll row `row` while more badges hide past it (.unlock-row in src/style.css).
+export function fadeHiddenEdges(row: HTMLElement): void {
+  const update = () => {
+    const end = row.scrollWidth - row.clientWidth;
+    // A pixel of slack: the scroll position of a zoomed page is fractional.
+    row.classList.toggle('more-start', row.scrollLeft > 1);
+    row.classList.toggle('more-end', row.scrollLeft < end - 1);
+  };
+  row.addEventListener('scroll', update, { passive: true });
+  new ResizeObserver(update).observe(row);
+}
