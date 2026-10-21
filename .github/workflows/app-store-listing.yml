@@ -1,0 +1,60 @@
+name: app-store-listing
+
+# Pushes the App Store listing in apple/store/ (texts, category, age rating, screenshots, price) to App Store
+# Connect with apple/scripts/app-store-listing.py. A pull request runs a dry run: it reads App Store Connect
+# and prints the planned changes in the run summary. App Privacy and Submit for Review stay manual.
+on:
+  push:
+    branches: [main]
+    paths: ['apple/store/**', 'apple/scripts/app-store-listing.py', 'apple/scripts/asc.py']
+  pull_request:
+    paths: ['apple/store/**', 'apple/scripts/app-store-listing.py', 'apple/scripts/asc.py', '.github/workflows/app-store-listing.yml']
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Write the changes to App Store Connect. Off runs a dry run.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-store-listing-${{ github.event_name == 'pull_request' && github.ref || 'apply' }}
+  cancel-in-progress: false
+
+jobs:
+  listing:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: secrets
+        env:
+          KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          BUNDLE: ${{ vars.IOS_BUNDLE_ID }}
+        run: |
+          if [[ -n "$KEY" && -n "$KEY_ID" && -n "$ISSUER" && -n "$BUNDLE" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No APP_STORE_CONNECT_* secrets or IOS_BUNDLE_ID variable (a fork or Dependabot pull request has none): the App Store listing sync skips."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        if: steps.secrets.outputs.present == 'true'
+
+      # A push to main applies only when the variable APP_STORE_LISTING_ON_PUSH is 'true'. It stays unset
+      # until the first sync by hand (workflow_dispatch with apply) was checked in App Store Connect.
+      - name: Sync the listing
+        if: steps.secrets.outputs.present == 'true'
+        env:
+          ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          BUNDLE: ${{ vars.IOS_BUNDLE_ID }}
+          APPLY: ${{ (github.event_name == 'workflow_dispatch' && inputs.apply) || (github.event_name == 'push' && vars.APP_STORE_LISTING_ON_PUSH == 'true') }}
+        run: uv run apple/scripts/app-store-listing.py
