@@ -3512,8 +3512,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   background: linear-gradient(90deg, color-mix(in srgb, var(--tier) 38%, var(--surface)), var(--surface) 70%);
 }
 
+/* minmax(0, 1fr): the progress row never makes the text wider than its card. */
 .achievement-text {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.1rem;
   min-width: 0;
 }
@@ -3626,8 +3628,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   appearance: none;
 }
 
+/* min-width: a progress bar is about 10em wide by default, and a narrow row must not grow past its card. */
 .achievement-progress progress {
   flex: 1;
+  min-width: 2rem;
 }
 
 .achievements-bar {
