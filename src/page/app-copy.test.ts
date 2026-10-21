@@ -30,7 +30,7 @@ describe('app open purchase errors', () => {
       expect(page.account).toBe(previous);
       expect(page.account.hasCopy).toBe(hasCopy);
     }
-    expect(api.reportAppOpen).toHaveBeenCalledWith(null, 'signed-proof', 'play');
+    expect(api.reportAppOpen).toHaveBeenCalledWith({ by: null, proof: 'signed-proof', store: 'play' });
   });
   it('still surfaces an unexpected programming error', async () => {
     const error = new Error('invalid purchase answer');

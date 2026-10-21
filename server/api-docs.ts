@@ -77,7 +77,7 @@ export const APP_OPENS_PER_HOUR = 60;
 // The other tables hold no player data: events, and moderation_log (kept for moderation). tester_codes holds
 // the email and the name that a tester typed, without a player token: a maintainer deletes them on an email
 // request. Delete my data only removes the person ids of the player from it.
-export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'app_copies', 'player_tokens', 'users'] as const;
+export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'app_copies', 'apple_slots', 'player_tokens', 'users'] as const;
 export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number; anonymised: number }>;
 // The previews list on production is at most this old. server/previews.ts enforces it.
 // Only production calls GitHub, without a token: 60 calls per hour, 5 of them kept in reserve, so 55.
@@ -863,11 +863,20 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       }),
     ),
   }),
-  AppOpen: object('The Android app opened on this device.', {
-    store: { type: 'string', enum: ['play', 'apple'], description: 'Which store signed the proof.' },
-    proof: { type: 'string', minLength: 1, maxLength: 32768, description: 'The Play Integrity token from the native launch activity.' },
-    by: { ...nullable(person), description: 'The person id of the inviter, from the invite link /share?by=<person id> that this browser opened first, or null.' },
-  }),
+  AppOpen: object(
+    'The paid app opened on this device.',
+    {
+      store: { type: 'string', enum: ['play', 'apple'], description: 'Which store signed the proof.' },
+      proof: { type: 'string', minLength: 1, maxLength: 32768, description: 'The Play Integrity token from the native launch activity, or the signed App Store AppTransaction.' },
+      device: {
+        type: 'string',
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+        description: 'Apple only: AppStore.deviceVerificationID in lower case. The signed deviceVerification hash must match it. One purchase holds at most 5 devices.',
+      },
+      by: { ...nullable(person), description: 'The person id of the inviter, from the invite link /share?by=<person id> that this browser opened first, or null.' },
+    },
+    ['device'],
+  ),
   PurchaseNonce: object('A one-time purchase challenge.', { nonce: { type: 'string' } }),
   CopyAnswer: object('Whether you hold a copy of the paid Android app.', { hasCopy }),
   Previews: object('The production site and the open pull requests with a live preview, most recently updated first.', {
@@ -1940,7 +1949,7 @@ export const ROUTES = {
     player: 'required',
     body: { schema: 'AppOpen', example: { by: OTHER_PERSON, proof: 'encrypted-play-integrity-token', store: 'play' } },
     response: { status: 200, description: 'Stored, or known already.', schema: 'CopyAnswer', example: { hasCopy: true } },
-    errors: [BAD_PLAYER, { status: 400, when: 'The body needs a proof token and a person id or null in `by`.' }, { status: 403, when: 'The store proof is invalid, expired or used already.' }, { status: 503, when: 'Purchase verification is unavailable.' }, TOO_BIG, { status: 429, when: `This address reported ${APP_OPENS_PER_HOUR} app opens in the last hour.` }],
+    errors: [BAD_PLAYER, { status: 400, when: 'The body needs a proof token and a person id or null in `by`.' }, { status: 403, when: 'The store proof is invalid, expired or used already, belongs to another device, or the Apple purchase holds 5 devices already.' }, { status: 409, when: 'This iPhone holds another Apple purchase.' }, { status: 503, when: 'Purchase verification is unavailable.' }, TOO_BIG, { status: 429, when: `This address reported ${APP_OPENS_PER_HOUR} app opens in the last hour.` }],
     examplePlayer: AGENT_A,
   },
   'GET /api/testing/claims': {

@@ -1425,6 +1425,7 @@ describe('delete my data', () => {
       reports: { deleted: 0, anonymised: 1 },
       tester_codes: { deleted: 0, anonymised: 1 },
       app_copies: { deleted: 1, anonymised: 0 },
+      apple_slots: { deleted: 0, anonymised: 0 },
       player_tokens: { deleted: 3, anonymised: 0 },
       users: { deleted: 1, anonymised: 0 },
     });

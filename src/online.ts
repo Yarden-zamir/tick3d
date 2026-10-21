@@ -48,7 +48,7 @@ import {
 } from './protocol.ts';
 import { STORAGE_KEYS } from './storage-keys.ts';
 import { type ClaimRequest, type ClaimedCode, type TesterCodes, parseClaimedCode, parseTesterCodes } from './share/codes.ts';
-import { parseCopyAnswer } from './copies.ts';
+import { type AppOpen, parseCopyAnswer } from './copies.ts';
 
 
 // crypto.randomUUID exists only on HTTPS and localhost. A phone on the local network loads the dev
@@ -227,8 +227,8 @@ export const api = {
     if (typeof answer !== 'object' || answer === null || !('nonce' in answer) || typeof answer.nonce !== 'string') throw new Error('invalid answer from /api/copies/nonce');
     return answer.nonce;
   },
-  reportAppOpen: async (by: PersonId | null, proof: string, store: 'play' | 'apple'): Promise<boolean> => {
-    const answer = parseCopyAnswer(await call('POST', '/copies', { by, proof, store }));
+  reportAppOpen: async (open: AppOpen): Promise<boolean> => {
+    const answer = parseCopyAnswer(await call('POST', '/copies', open));
     if (answer === undefined) throw new Error('invalid answer from /api/copies');
     return answer.hasCopy;
   },
