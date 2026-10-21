@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, randomInt } from 'node:crypto';
+import type { ApplePurchase } from './apple-proof.ts';
 import { type DuckDBValue, DuckDBInstance, listValue } from '@duckdb/node-api';
 import {
   ACHIEVEMENT_IDS,
@@ -310,6 +311,7 @@ const SCHEMA = [
      opened_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
   'ALTER TABLE app_copies ADD COLUMN IF NOT EXISTS proved BOOLEAN DEFAULT false',
+  'ALTER TABLE app_copies ADD COLUMN IF NOT EXISTS apple_purchase VARCHAR',
   // The one-time data changes (runOnce in openStore) that ran on this database, by name.
   `CREATE TABLE IF NOT EXISTS migrations (
      name VARCHAR PRIMARY KEY,
@@ -2016,14 +2018,24 @@ export async function openStore(
     // the copy itself follows the account that holds the device now (hasCopyOf). A later open only adds an inviter
     // that the copy lacks; the first inviter wins. A self-invite counts for nobody. Answers whether the player holds a copy.
     // Only a verified store proof sets proved. Old rows remain unproved.
-    reportAppOpen: (token: PlayerToken, by: PersonId | null, proved = false): Promise<boolean> =>
+    reportAppOpen: (token: PlayerToken, by: PersonId | null, proof: boolean | ApplePurchase = false): Promise<boolean> =>
       serialized(async () => {
+        const purchase = typeof proof === 'boolean' ? null : `${proof.environment}:${proof.appTransactionId}`;
+        if (purchase !== null) {
+          const [device] = await rows('FROM app_copies SELECT apple_purchase WHERE token = $token', { token }, { apple_purchase: nullable(text) });
+          if (device?.apple_purchase !== null && device?.apple_purchase !== undefined && device.apple_purchase !== purchase) {
+            throw new SessionError(409, 'This device already holds another Apple purchase.');
+          }
+          const [used] = await rows('FROM app_copies SELECT count(*)::INTEGER AS n WHERE apple_purchase = $purchase AND token != $token', { purchase, token }, { n: int });
+          if ((used?.n ?? 0) >= 5) throw new SessionError(403, 'This Apple purchase already proves five devices.');
+        }
         const invitedBy = by !== null && !(await personsOfTokens([...(await identityOf(token))])).has(by) ? by : null;
         const changed = await rows(
-          `INSERT INTO app_copies (token, owner, invited_by, proved) VALUES ($token, $owner, $by, $proved)
-           ON CONFLICT (token) DO UPDATE SET invited_by = coalesce(app_copies.invited_by, excluded.invited_by), proved = app_copies.proved OR excluded.proved
+          `INSERT INTO app_copies (token, owner, invited_by, proved, apple_purchase) VALUES ($token, $owner, $by, $proved, $purchase)
+           ON CONFLICT (token) DO UPDATE SET invited_by = coalesce(app_copies.invited_by, excluded.invited_by), proved = app_copies.proved OR excluded.proved,
+             apple_purchase = coalesce(app_copies.apple_purchase, excluded.apple_purchase)
            RETURNING invited_by`,
-          { token, owner: await ownerOf(token), by: invitedBy, proved },
+          { token, owner: await ownerOf(token), by: invitedBy, proved: proof !== false, purchase },
           { invited_by: nullable(text) },
         );
         if (invitedBy !== null && changed[0]?.invited_by === invitedBy) {

@@ -227,8 +227,8 @@ export const api = {
     if (typeof answer !== 'object' || answer === null || !('nonce' in answer) || typeof answer.nonce !== 'string') throw new Error('invalid answer from /api/copies/nonce');
     return answer.nonce;
   },
-  reportAppOpen: async (by: PersonId | null, proof: string): Promise<boolean> => {
-    const answer = parseCopyAnswer(await call('POST', '/copies', { by, proof }));
+  reportAppOpen: async (by: PersonId | null, proof: string, store: 'play' | 'apple'): Promise<boolean> => {
+    const answer = parseCopyAnswer(await call('POST', '/copies', { by, proof, store }));
     if (answer === undefined) throw new Error('invalid answer from /api/copies');
     return answer.hasCopy;
   },

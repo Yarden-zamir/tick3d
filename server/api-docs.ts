@@ -864,6 +864,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     ),
   }),
   AppOpen: object('The Android app opened on this device.', {
+    store: { type: 'string', enum: ['play', 'apple'], description: 'Which store signed the proof.' },
     proof: { type: 'string', minLength: 1, maxLength: 32768, description: 'The Play Integrity token from the native launch activity.' },
     by: { ...nullable(person), description: 'The person id of the inviter, from the invite link /share?by=<person id> that this browser opened first, or null.' },
   }),
@@ -1937,7 +1938,7 @@ export const ROUTES = {
     summary: 'Prove a paid Android app open with Play Integrity. The app sends it on each start.',
     description: `The app is paid, so the first open makes a copy of this device. The copy belongs to the account that is logged in on this device now, or to the device without a login. A login with another account moves it. With an inviter, the copy counts for the invite achievements of that person, once per person, also when the same person claimed a code through the link. A later open only adds an inviter that the copy lacks. One address can report ${APP_OPENS_PER_HOUR} times per hour.`,
     player: 'required',
-    body: { schema: 'AppOpen', example: { by: OTHER_PERSON, proof: 'encrypted-play-integrity-token' } },
+    body: { schema: 'AppOpen', example: { by: OTHER_PERSON, proof: 'encrypted-play-integrity-token', store: 'play' } },
     response: { status: 200, description: 'Stored, or known already.', schema: 'CopyAnswer', example: { hasCopy: true } },
     errors: [BAD_PLAYER, { status: 400, when: 'The body needs a proof token and a person id or null in `by`.' }, { status: 403, when: 'The store proof is invalid, expired or used already.' }, { status: 503, when: 'Purchase verification is unavailable.' }, TOO_BIG, { status: 429, when: `This address reported ${APP_OPENS_PER_HOUR} app opens in the last hour.` }],
     examplePlayer: AGENT_A,

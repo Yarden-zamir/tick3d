@@ -74,7 +74,8 @@ describe('the tester code routes', () => {
     expect((await report({ by: 'nope' })).status).toBe(400);
     expect((await call('POST', '/copies', { body: { by: null }, client: '203.0.113.40' })).status).toBe(400);
     expect((await report({ by: '0123456789abcdef' })).status).toBe(400);
-    expect((await report({ by: null, proof: 'invented' })).status).toBe(503);
+    expect((await report({ by: null, proof: 'invented', store: 'play' })).status).toBe(503);
+    expect((await report({ by: null, proof: 'invented', store: 'apple' })).status).toBe(503);
     expect((await call('POST', '/copies/nonce')).status).toBe(400);
     const first = await call('POST', '/copies/nonce', { player });
     const second = await call('POST', '/copies/nonce', { player });
