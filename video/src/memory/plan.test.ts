@@ -10,17 +10,16 @@ const MAX_WORDS = 6;
 
 describe.each(PLAN_IDS)('the %s plan of the smart-memory ad', (id) => {
   const plan = planOf(id);
-  const { cut } = plan;
   const end = plan.seconds / SIXTEENTH;
   const eventsOf = <K extends Parameters<typeof planEvents>[0]>(kind: K) => planEvents(kind, plan);
 
   it('stays inside its length limit, in whole frames', () => {
-    expect(plan.seconds).toBeLessThanOrEqual(LIMITS[cut].seconds);
+    expect(plan.seconds).toBeLessThanOrEqual(LIMITS[id].seconds);
     expect(Number.isInteger(plan.seconds * 30)).toBe(true);
   });
 
   it('has few, short text lines', () => {
-    expect(plan.text.length).toBeLessThanOrEqual(LIMITS[cut].lines);
+    expect(plan.text.length).toBeLessThanOrEqual(LIMITS[id].lines);
     for (const line of plan.text) expect(line.text.split(' ').length, line.text).toBeLessThanOrEqual(MAX_WORDS);
   });
 
@@ -31,15 +30,11 @@ describe.each(PLAN_IDS)('the %s plan of the smart-memory ad', (id) => {
     expect((plan.text[0]?.at ?? Infinity) * SIXTEENTH).toBeLessThan(2);
   });
 
-  it('tells the story in order: shatter, then Hide coordinates and the threats, reveal, end card, final chord', () => {
+  it('tells the story in order: shatter, threats, reveal, end card, final chord', () => {
     const times = (['shatter', 'reveal', 'end-card', 'final-chord'] as const).map((kind) => eventOf(kind, plan).at);
     expect(times).toEqual(times.toSorted((a, b) => a - b));
-    // Way c of the plans has no mask.
-    for (const event of [...eventsOf('mask'), eventOf('threats', plan)]) {
-      expect(event.at).toBeGreaterThanOrEqual(eventOf('shatter', plan).at);
-      expect(event.at).toBeLessThan(eventOf('reveal', plan).at);
-    }
-    expect(eventsOf('mask').length).toBe(id.startsWith('c-') ? 0 : 1);
+    expect(eventOf('threats', plan).at).toBeGreaterThan(eventOf('shatter', plan).at);
+    expect(eventOf('threats', plan).at).toBeLessThan(eventOf('reveal', plan).at);
     expect(eventOf('final-chord', plan).at).toBeLessThan(end);
   });
 
@@ -59,7 +54,7 @@ describe.each(PLAN_IDS)('the %s plan of the smart-memory ad', (id) => {
   });
 
   it('keeps the double threat on screen in a full cut', () => {
-    if (cut !== 'full') return;
+    if (id !== 'full') return;
     expect(plan.firstMove).toBeLessThanOrEqual(FORK_MOVE);
     expect(eventOf('threats', plan).at).toBeLessThan(eventsOf('move').find((event) => event.move === FORK_MOVE)?.at ?? -1);
   });

@@ -19,19 +19,10 @@ const SLOT = { y: 250, width: 170, height: 136, gap: 26 } as const;
 const KEY = { y: 410, width: 112, height: 92, gap: 20, place: 210 } as const;
 const SLIDE = 3;
 const LABELS = ['Layer', 'Row', 'Column'] as const;
-// The stepped Hide control of the game panel (index.html `#hide-steps`, src/style.css `.hide-steps`), above the
-// slots, for a mask with `toggle`. Each step hides what the steps before it hide.
-const STEPS = { y: 92, width: 760, height: 76, pad: 8 } as const;
-const HIDE_STEPS = ['Off', 'History', 'Board', 'Coordinates'] as const;
-// The steps of the bar: from History to Board, then to Coordinates at the mask.
-const BOARD_STEP = 2;
-const COORDINATES_STEP = 3;
 // A pressed key lights for this many sixteenths.
 const PRESS = 1.5;
 
 const keypad = eventOf('keypad');
-// Hide coordinates: no mask in way c of the plans.
-const [mask] = eventsOf('mask');
 const moves = eventsOf('move');
 
 function box(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, fill: Token, theme: Theme): void {
@@ -58,9 +49,9 @@ function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number
   ctx.restore();
 }
 
-// What the slots show at a frame: the digits that X types, else the last move in its player's color. With Hide
-// coordinates on, the last move shows as `? ? ?` (src/page/keypad.ts renderCoords).
-type Slots = { digits: readonly string[]; tint: 'x' | 'o' | 'surface'; masked: boolean };
+// What the slots show at a frame: the digits that X types, else the last move in its player's color
+// (src/page/keypad.ts renderCoords).
+type Slots = { digits: readonly string[]; tint: 'x' | 'o' | 'surface' };
 function slotsAt(frame: number): Slots {
   const typing = moves.find((event) => {
     const [first] = typingOf(event);
@@ -70,13 +61,12 @@ function slotsAt(frame: number): Slots {
     const typed = typingOf(typing).filter((at) => frame >= frameOf(at)).length;
     const cell = MOVES[typing.move];
     if (cell === undefined) throw new RangeError(`no move ${typing.move}`);
-    return { digits: digitsOf(cell).slice(0, typed).map(String), tint: 'surface', masked: false };
+    return { digits: digitsOf(cell).slice(0, typed).map(String), tint: 'surface' };
   }
   const last = moves.findLast((event) => frame >= frameOf(event.at))?.move ?? PLAN.firstMove - 1;
   const cell = MOVES[last];
   if (cell === undefined) throw new RangeError(`no move ${last}`);
-  const masked = mask !== undefined && frame >= frameOf(mask.at);
-  return { digits: masked ? ['?', '?', '?'] : digitsOf(cell).map(String), tint: playerOf(last) === 'X' ? 'x' : 'o', masked };
+  return { digits: digitsOf(cell).map(String), tint: playerOf(last) === 'X' ? 'x' : 'o' };
 }
 
 // The digit key that X pressed last, and how long ago, in sixteenths. Place is key 4.
@@ -92,25 +82,6 @@ function pressAt(frame: number): { key: number; age: number } | undefined {
   return { key: press.key, age: since(frame, press.at) };
 }
 
-// The game plays on the step Board (Hide board and Hide history). At the mask, the bar in the toggle color slides
-// on to Coordinates, as the slide pill of the game does (src/page/slide-pill.ts).
-function drawToggles(ctx: CanvasRenderingContext2D, frame: number, theme: Theme, at: number): void {
-  const left = -STEPS.width / 2;
-  const top = STEPS.y - STEPS.height / 2;
-  const column = (STEPS.width - 2 * STEPS.pad) / HIDE_STEPS.length;
-  label(ctx, 'Hide', left + 40, top - 30, 30, 'ink', theme);
-  box(ctx, left, top, STEPS.width, STEPS.height, 'surface', theme);
-  const last = BOARD_STEP + interpolate(since(frame, at), [0, 1], [0, COORDINATES_STEP - BOARD_STEP], { ...clamp, easing: Easing.out(Easing.back(1.4)) });
-  ctx.beginPath();
-  ctx.roundRect(left + STEPS.pad + column, top + STEPS.pad, column * last, STEPS.height - 2 * STEPS.pad, 10);
-  ctx.fillStyle = css(theme['toggle-on']);
-  ctx.fill();
-  HIDE_STEPS.forEach((name, i) => {
-    const on = i >= 1 && i <= Math.round(last);
-    label(ctx, name, left + STEPS.pad + column * (i + 0.5), STEPS.y + 3, 30, on ? 'on-color' : 'ink', theme, on ? 1 : 0.7);
-  });
-}
-
 function drawKeypad(ctx: CanvasRenderingContext2D, frame: number, theme: Theme): void {
   const shown = interpolate(since(frame, keypad.at), [0, SLIDE], [0, 1], { ...clamp, easing: Easing.out(Easing.back(1.4)) });
   const gone = interpolate(since(frame, keypad.until), [0, 2], [0, 1], { ...clamp, easing: Easing.in(cubic) });
@@ -118,7 +89,6 @@ function drawKeypad(ctx: CanvasRenderingContext2D, frame: number, theme: Theme):
   ctx.save();
   ctx.translate(0, (1 - shown + gone) * 760);
 
-  if (mask?.toggle === true) drawToggles(ctx, frame, theme, mask.at);
   const slots = slotsAt(frame);
   const slotsWidth = 3 * SLOT.width + 2 * SLOT.gap;
   LABELS.forEach((name, i) => {
@@ -127,22 +97,7 @@ function drawKeypad(ctx: CanvasRenderingContext2D, frame: number, theme: Theme):
     box(ctx, x, top, SLOT.width, SLOT.height, slots.tint, theme);
     const ink = slots.tint === 'surface' ? 'ink' : 'on-color';
     label(ctx, name, x + SLOT.width / 2, top + 30, 26, ink, theme, 0.75);
-    // Hide coordinates: each slot rolls its digit up and out, and `?` in from below, half a sixteenth apart.
-    const roll = mask === undefined ? 1 : interpolate(since(frame, mask.at + 0.5 * i), [0, 1.5], [0, 1], { ...clamp, easing: Easing.inOut(cubic) });
-    const digit = slots.digits[i] ?? '';
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(x, top + 48, SLOT.width, SLOT.height - 52);
-    ctx.clip();
-    const centre = top + 92;
-    if (mask !== undefined && slots.masked && roll < 1) {
-      const before = slotsAt(frameOf(mask.at) - 1).digits[i] ?? '';
-      label(ctx, before, x + SLOT.width / 2, centre - roll * 90, 84, ink, theme);
-      label(ctx, digit, x + SLOT.width / 2, centre + (1 - roll) * 90, 84, ink, theme);
-    } else {
-      label(ctx, digit, x + SLOT.width / 2, centre, 84, ink, theme);
-    }
-    ctx.restore();
+    label(ctx, slots.digits[i] ?? '', x + SLOT.width / 2, top + 92, 84, ink, theme);
   });
 
   const press = pressAt(frame);

@@ -1,21 +1,15 @@
 // The plans of the smart-memory ad (issue #130): what shows and when, on the beat grid of src/grid.ts (sixteenths
 // of the 136 BPM song, 16 to a bar). Each plan is a 'full' cut (at most 15.0 s) or a 'short' cut (at most 8.0 s).
-// MEMORY_PLAN picks one; scripts/memory.ts passes it into the render browser. Every plan is variant A "Shatter" of
-// the storyboards on #130, which the maintainers picked, in one of the three ways to show Hide coordinates of the
-// open question on #130 (HIDE_WAYS). The maintainers choose a way from the finished videos; then the other ways go.
+// MEMORY_PLAN picks one; scripts/memory.ts passes it into the render browser. Both are variant A "Shatter" of the
+// storyboards on #130, without Hide coordinates: the maintainers picked this from finished videos (#130). With the
+// board and the coordinates both hidden, only the sound of a move tells where it went, and the ad shows no sound.
 import { SIXTEENTH } from '../../../src/song.ts';
 import { FPS, frameOf } from '../grid.ts';
 import { ELEVATION, HOME_AZIMUTH } from '../rig.ts';
 import { playerOf } from './game.ts';
 
-const CUTS = ['full', 'short'] as const;
-type Cut = (typeof CUTS)[number];
-// a: the game hides the board and the history, and the stepped Hide control moves on to Coordinates just before the
-// reveal. b: board, history and coordinates are hidden from the start, as the issue says. c: no Hide coordinates.
-const HIDE_WAYS = ['a', 'b', 'c'] as const;
-type HideWay = (typeof HIDE_WAYS)[number];
-export type PlanId = `${HideWay}-${Cut}`;
-export const PLAN_IDS: readonly PlanId[] = HIDE_WAYS.flatMap((way) => CUTS.map((cut): PlanId => `${way}-${cut}`));
+export const PLAN_IDS = ['full', 'short'] as const;
+export type PlanId = (typeof PLAN_IDS)[number];
 
 // Where the camera stands: a point on an orbit around the centre of the tower (see tutorial/plan.ts).
 export type View = { azimuth: number; elevation: number; zoom: number; lift: number };
@@ -29,10 +23,6 @@ export type MemoryEvent =
   // sixteenths before `at`, one per `gap`, and places on `at`. Either way a ghost mark flashes at the cell, then
   // fades to a faint trail. An older trail fades out when a newer one comes: Hide history.
   | { kind: 'move'; at: number; move: number; gap: number }
-  // The slots spin to `? ? ?` and show the last move so from then on: Hide coordinates. With `toggle`, the Hide
-  // buttons of the game panel show above the slots from the keypad on, Board and History on, and the Coordinates
-  // button switches on at `at` (the "next level" proposal on #130).
-  | { kind: 'mask'; at: number; toggle?: true }
   // The trails of the X marks light, and the two lines of the double threat draw through them.
   | { kind: 'threats'; at: number }
   // The whole board snaps back with every mark, and the winning line burns across the cube.
@@ -46,7 +36,6 @@ type TextLine = { at: number; until: number; text: string };
 
 export type Plan = {
   id: PlanId;
-  cut: Cut;
   seconds: number;
   // The board at the first frame: the moves before this one are on it.
   firstMove: number;
@@ -59,13 +48,8 @@ export type Plan = {
 };
 
 const view = (azimuth: number, elevation = ELEVATION, zoom = 0.82, lift = 0.1): View => ({ azimuth, elevation, zoom, lift });
-// While the keypad shows, the tower sits small in the top part of the square, above the keypad. In way a, the Hide
-// control sits on top of the slots, so the tower sits higher and smaller.
-const OVER_KEYPAD: Readonly<Record<HideWay, { zoom: number; lift: number }>> = {
-  a: { zoom: 0.62, lift: 0.46 },
-  b: { zoom: 0.7, lift: 0.34 },
-  c: { zoom: 0.7, lift: 0.34 },
-};
+// While the keypad shows, the tower sits small in the top part of the square, above the keypad. `push` zooms in.
+const keypadView = (azimuth: number, elevation = ELEVATION, push = 0): View => view(azimuth, elevation, 0.7 + push, 0.34);
 // The end card: the tower small in the middle, the line above it and the address under it.
 const END_VIEW: View = { azimuth: HOME_AZIMUTH + 40, elevation: ELEVATION, zoom: 0.5, lift: 0.08 };
 
@@ -74,14 +58,11 @@ const moves = (from: number, ats: readonly number[]): MemoryEvent[] => ats.map((
 
 // The 7 bars of the full cut and the final chord: 13.0 s. The board shatters, the memory load, the double threat,
 // the reveal, the end card.
-function fullCut(way: HideWay): Omit<Plan, 'id'> {
-  const keypadView = (azimuth: number, elevation = ELEVATION, push = 0): View => view(azimuth, elevation, OVER_KEYPAD[way].zoom + push, OVER_KEYPAD[way].lift);
-  const mask: readonly MemoryEvent[] = { a: [{ kind: 'mask', at: 74, toggle: true } as const], b: [{ kind: 'mask', at: 17 } as const], c: [] }[way];
+function fullCut(): Omit<Plan, 'id'> {
   return {
-    cut: 'full',
     seconds: 13,
     firstMove: 5,
-    events: ([
+    events: [
       { kind: 'shatter', at: 4 },
       { kind: 'keypad', at: 16, until: 80 },
       // Bars 2 and 3: the memory load. O 3 3 2, X 1 4 4, O 1 4 1, X 2 3 3, O 3 2 2.
@@ -89,11 +70,10 @@ function fullCut(way: HideWay): Omit<Plan, 'id'> {
       // Bars 4 and 5: the double threat, X 2 4 3, O blocks at 2 1 3, X wins on 3 4 2.
       { kind: 'threats', at: 48 },
       ...moves(10, [60, 64, 72]),
-      ...mask,
       { kind: 'reveal', at: 80 },
       { kind: 'end-card', at: 96 },
       { kind: 'final-chord', at: 112 },
-    ] satisfies MemoryEvent[]).toSorted((x, y) => x.at - y.at),
+    ],
     text: [
       { at: 2, until: 18, text: "Win a game you can't see?" },
       { at: 82, until: 96, text: 'That was all memory.' },
@@ -114,7 +94,6 @@ function fullCut(way: HideWay): Omit<Plan, 'id'> {
       { name: 'hook', at: 6 },
       { name: 'memory', at: 46 },
       { name: 'threat', at: 62 },
-      ...(way === 'a' ? [{ name: 'coordinates', at: 78 }] : []),
       { name: 'reveal', at: 86 },
       { name: 'end-card', at: 117 },
     ],
@@ -123,23 +102,19 @@ function fullCut(way: HideWay): Omit<Plan, 'id'> {
 
 // The 4 bars of the short cut and the final chord: 7.6 s. The board shatters, the keypad, X types the win, the
 // board snaps back, the end card.
-function shortCut(way: HideWay): Omit<Plan, 'id'> {
-  const keypadView = (azimuth: number, elevation = ELEVATION, push = 0): View => view(azimuth, elevation, OVER_KEYPAD[way].zoom + push, OVER_KEYPAD[way].lift);
-  const mask: readonly MemoryEvent[] = { a: [{ kind: 'mask', at: 27, toggle: true } as const], b: [{ kind: 'mask', at: 16 } as const], c: [] }[way];
+function shortCut(): Omit<Plan, 'id'> {
   return {
-    cut: 'short',
     seconds: 7.6,
     firstMove: 12,
-    events: ([
+    events: [
       { kind: 'shatter', at: 4 },
       { kind: 'keypad', at: 14, until: 32 },
       { kind: 'threats', at: 18 },
       ...moves(12, [26]),
-      ...mask,
       { kind: 'reveal', at: 32 },
       { kind: 'end-card', at: 48 },
       { kind: 'final-chord', at: 64 },
-    ] satisfies MemoryEvent[]).toSorted((x, y) => x.at - y.at),
+    ],
     text: [
       { at: 2, until: 16, text: "Win a game you can't see?" },
       { at: 54, until: Infinity, text: 'Top 1%? Prove it.' },
@@ -157,7 +132,6 @@ function shortCut(way: HideWay): Omit<Plan, 'id'> {
       { name: 'hook', at: 6 },
       { name: 'memory', at: 20 },
       { name: 'threat', at: 27 },
-      ...(way === 'a' ? [{ name: 'coordinates', at: 30 }] : []),
       { name: 'reveal', at: 38 },
       { name: 'end-card', at: 68 },
     ],
@@ -165,12 +139,11 @@ function shortCut(way: HideWay): Omit<Plan, 'id'> {
 }
 
 export function planOf(id: PlanId): Plan {
-  const [way, cut] = id.split('-') as [HideWay, Cut];
-  return { id, ...(cut === 'full' ? fullCut(way) : shortCut(way)) };
+  return { id, ...(id === 'full' ? fullCut() : shortCut()) };
 }
 
 const isPlanId = (name: string): name is PlanId => (PLAN_IDS as readonly string[]).includes(name);
-const requested = globalThis.process?.env?.['MEMORY_PLAN'] ?? 'a-full';
+const requested = globalThis.process?.env?.['MEMORY_PLAN'] ?? 'full';
 if (!isPlanId(requested)) throw new Error(`MEMORY_PLAN=${requested} is not one of ${PLAN_IDS.join(', ')}`);
 export const PLAN = planOf(requested);
 export const DURATION_FRAMES = Math.round(PLAN.seconds * FPS);

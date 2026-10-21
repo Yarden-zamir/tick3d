@@ -7,7 +7,7 @@ import { createMemoryWorld } from './world.ts';
 // can never fall back to the default plan in silence.
 function checkPlan(): void {
   const props: unknown = getInputProps();
-  const wanted = typeof props === 'object' && props !== null && 'plan' in props ? props.plan : 'a-full';
+  const wanted = typeof props === 'object' && props !== null && 'plan' in props ? props.plan : 'full';
   if (wanted !== PLAN.id) throw new Error(`the render asked for plan ${String(wanted)}, but plan.ts loaded ${PLAN.id}`);
 }
 

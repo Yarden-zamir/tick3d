@@ -1,9 +1,9 @@
-// Renders the smart-memory ad (src/memory/, issue #130) in the plan of MEMORY_PLAN (a-full by default; plan.ts
-// lists the others): its soundtrack, then out/smart-memory-<plan>-<format>.mp4 (H.264, AAC) for each format,
-// and the stills of the plan in out/smart-memory-<plan>/stills/. The 'threat' still is the cover of a format.
+// Renders the smart-memory ad (src/memory/, issue #130) in the cut of MEMORY_PLAN (full by default, or short):
+// its soundtrack, then out/smart-memory[-short]-<format>.mp4 (H.264, AAC) for each format, and the stills of the
+// cut in out/smart-memory[-short]/stills/. The 'threat' still is the cover image of a format.
 //   --format 4x5|1x1|9x16   one format only (CI renders one format per job)
 //   --stills                the full stills only, no MP4
-//   --draft                 half-size JPEG stills only, in out/smart-memory-<plan>/draft/
+//   --draft                 half-size JPEG stills only, in out/smart-memory[-short]/draft/
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { FORMAT_IDS, isFormat } from '../src/memory/formats.ts';
@@ -17,7 +17,7 @@ const draft = values.draft === true;
 const stillsOnly = draft || values.stills === true;
 const format = values.format;
 if (format !== undefined && !isFormat(format)) throw new Error(`--format ${format}: use ${FORMAT_IDS.join(', ')}`);
-const name = `smart-memory-${PLAN.id}`;
+const name = PLAN.id === 'full' ? 'smart-memory' : `smart-memory-${PLAN.id}`;
 const out = `../out/${name}/`;
 
 const sounds = memorySounds();
