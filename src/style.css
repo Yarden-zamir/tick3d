@@ -3318,8 +3318,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   list-style: none;
 }
 
+/* A narrow row wraps its badge and buttons below the text. */
 .my-games-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.6rem;
   padding: 0.4rem 0.6rem;
@@ -3330,9 +3332,9 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .my-games-list li > div {
   display: grid;
-  flex: 1;
+  flex: 1 1 8rem;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .my-games-list .avatar {
