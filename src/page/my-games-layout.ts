@@ -1,7 +1,7 @@
 // The tabs of My games (issue #210): Games, Achievements and Account. Each tab shows its own sections
 // of the dialog, so the lists and buttons work as before.
-// Limit: the tabs move the sections of index.html when the page starts, and all of them load when the
-// dialog opens. Revisit this when the redesign moves the sections into the tabs in index.html.
+// Limit: the tabs move the sections of index.html when the page starts. Revisit this when a tab needs
+// markup of its own.
 import {
   accountBox,
   myGamesAchievements,
@@ -39,6 +39,15 @@ let show: (tab: MyGamesTab) => void = () => {
 
 export const showMyGamesTab = (tab: MyGamesTab): void => show(tab);
 
+let current: MyGamesTab = 'Games';
+export const currentMyGamesTab = (): MyGamesTab => current;
+
+// src/page/my-games.ts loads the lists of a tab when it shows.
+let shown: (tab: MyGamesTab) => void = () => undefined;
+export function onMyGamesTabShown(run: (tab: MyGamesTab) => void): void {
+  shown = run;
+}
+
 export function setupMyGamesTabs(): void {
   const head = myGamesDialog.querySelector('.modal-head');
   const data = myGamesDialog.querySelector('.my-games-data');
@@ -61,6 +70,7 @@ export function setupMyGamesTabs(): void {
     return tab;
   });
   show = (wanted) => {
+    current = wanted;
     for (const [index, label] of TABS.entries()) {
       const box = panels[index];
       const tab = tabs[index];
@@ -68,6 +78,7 @@ export function setupMyGamesTabs(): void {
       box.hidden = label !== wanted;
       tab.setAttribute('aria-selected', String(label === wanted));
     }
+    shown(wanted);
   };
   bar.append(...tabs);
   head.after(bar, ...panels);

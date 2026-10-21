@@ -57,6 +57,7 @@ import {
   myGamesSessionCount,
 } from './dom.ts';
 import { currentProgress, setupAchievements, showAchievements } from './achievements.ts';
+import { type MyGamesTab, currentMyGamesTab, onMyGamesTabShown } from './my-games-layout.ts';
 import { showError } from './feedback.ts';
 import { openGameView } from './game-view.ts';
 import { startReview } from './controls.ts';
@@ -236,6 +237,17 @@ async function loadAchievements(request: number): Promise<void> {
 // Opening the dialog again while a list loads starts over, so a late answer never adds a second copy.
 let myGamesRequest = 0;
 
+// The Achievements and Account tabs load when they show, once per opening of the dialog. Then the Games
+// tab does not wait behind their requests on the server. The Games tab loads at every opening.
+const tabsLoaded = new Set<MyGamesTab>();
+
+function loadTab(request: number, tab: MyGamesTab): void {
+  if (tabsLoaded.has(tab)) return;
+  tabsLoaded.add(tab);
+  if (tab === 'Achievements') void loadAchievements(request).catch(showError);
+  if (tab === 'Account') void loadStatsPrivacy(request).catch(showError);
+}
+
 // The page where a login returns, kept for a rebuild of the account box while My games is open.
 let accountReturnTo: string | undefined;
 
@@ -277,8 +289,8 @@ export async function openMyGames(returnTo?: string): Promise<void> {
   const request = ++myGamesRequest;
   myGamesDialog.showModal();
   renderBlockedList();
-  void loadStatsPrivacy(request).catch(showError);
-  void loadAchievements(request).catch(showError);
+  tabsLoaded.clear();
+  loadTab(request, currentMyGamesTab());
   accountReturnTo = returnTo;
   renderAccountBox();
   // Device sessions
@@ -536,6 +548,9 @@ export async function refreshAccount(): Promise<void> {
 
 export function setupMyGames(): void {
   setupAchievements();
+  onMyGamesTabShown((tab) => {
+    if (myGamesDialog.open) loadTab(myGamesRequest, tab);
+  });
   // The account button is a link to the My games request (src/header/my-games-link.ts). Here it opens
   // the dialog at once. A modified click opens a new tab, as for any link, and the dialog opens there.
   accountLink.addEventListener('click', (event) => {
