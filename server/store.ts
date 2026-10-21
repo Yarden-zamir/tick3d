@@ -321,8 +321,6 @@ const SCHEMA = [
      token VARCHAR NOT NULL UNIQUE,
      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
-  // apple_slots replaced this column. Production held no row with it. Remove this line after production ran it.
-  'ALTER TABLE app_copies DROP COLUMN IF EXISTS apple_purchase',
   // The one-time data changes (runOnce in openStore) that ran on this database, by name.
   `CREATE TABLE IF NOT EXISTS migrations (
      name VARCHAR PRIMARY KEY,
