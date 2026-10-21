@@ -53,6 +53,7 @@ import {
   myGamesPrivateOption,
   myGamesSession,
   myGamesSessionBox,
+  myGamesSessionCount,
 } from './dom.ts';
 import { currentProgress, setupAchievements, showAchievements } from './achievements.ts';
 import { showError } from './feedback.ts';
@@ -420,6 +421,7 @@ async function deleteMyData(): Promise<void> {
 // so the list stays current while the dialog is open. A game from a link has no session here.
 export function renderSessionGames(): void {
   myGamesSessionBox.hidden = page.session === undefined;
+  myGamesSessionCount.textContent = gameCount(page.games.length);
   myGamesSession.replaceChildren(
     ...page.games.map((game, index) => {
       const actions: Action[] = [];
