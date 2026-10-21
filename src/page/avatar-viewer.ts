@@ -1,7 +1,7 @@
 // A click, a tap, Enter or Space on a person's picture opens it large, with the name and a link to their stats.
 // A long press opens the report and block menu (src/page/safety.ts) and drops the click that ends it,
 // so it never also opens the viewer here. A right-click and Shift+F10 send no click.
-import { VIEW_PIXELS, type Viewable, avatarImage, viewablePerson } from '../avatar.ts';
+import { VIEW_PIXELS, type Viewable, avatarImage, hiddenLogin, viewablePerson } from '../avatar.ts';
 import { ALL_STATS, statsQuery } from '../protocol.ts';
 import { avatarViewer, avatarViewerClose, avatarViewerName, avatarViewerPicture, avatarViewerStats } from './dom.ts';
 
@@ -10,6 +10,12 @@ function openViewer({ person, id }: Viewable): void {
   if (avatarViewer.open) return;
   avatarViewerPicture.replaceChildren(avatarImage(person, VIEW_PIXELS));
   avatarViewerName.textContent = person.name;
+  const login = hiddenLogin(person);
+  if (login !== null) {
+    const note = document.createElement('small');
+    note.textContent = `GitHub: ${login}`;
+    avatarViewerName.append(document.createElement('br'), note);
+  }
   avatarViewerStats.hidden = id === null;
   if (id === null) avatarViewerStats.removeAttribute('href');
   else avatarViewerStats.href = `/stats${statsQuery({ ...ALL_STATS, person: id })}`;

@@ -150,7 +150,8 @@ A mode change moves neither the board nor the Opponent picker:
 
 - Login with GitHub is optional. Without a login, every browser plays with a random token and a generated name, such as "braveOtter".
 - A login lets a player continue a game on every device of the account.
-- A player without a login can choose a name in My games.
+- Every player can choose a name in My games. With a login, the name belongs to the account and shows in place of the GitHub login.
+- With a login, New picture in My games swaps the GitHub picture for a generated one, and each press gives another. Use GitHub picture goes back. Without a login, these buttons show grayed out.
 - My games shows the account, the stats, the games of the open session, the match history and the online sessions. Stats in its head opens your own stats.
 
 <img src="docs/screenshots/my-games.png" alt="My games: stats and sessions" width="480">

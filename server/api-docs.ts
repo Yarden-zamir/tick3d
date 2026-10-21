@@ -13,6 +13,8 @@ import { HELLO_NAME_MAX_LENGTH, MAX_CODE_LENGTH } from '../src/nearby/signal.ts'
 import { PLAYOFF_COUNTDOWN_MS, PLAYOFF_TARGETS } from '../src/practice/playoff.ts';
 import { ECHO_POINTS, MAX_ROUND_MS, PRACTICE_MODES, PRESET_IDS, ROUNDS } from '../src/practice/practice.ts';
 import {
+  AVATAR_PICTURES,
+  AVATAR_SEED_LENGTH,
   CHAT_KEEP,
   CHAT_MAX_LENGTH,
   CODE_ALPHABET,
@@ -138,6 +140,7 @@ export type SchemaName =
   | 'SeatAction'
   | 'SeatAnswer'
   | 'NameRequest'
+  | 'AvatarRequest'
   | 'NewSession'
   | 'SessionUpdate'
   | 'MoveRequest'
@@ -307,6 +310,14 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
   PlayerInfo: object('The GitHub account of a seat, when its player logged in on the page.', {
     login: { type: 'string', minLength: 1, maxLength: 39 },
     avatar: { type: 'string', pattern: '^https://avatars\\.githubusercontent\\.com/' },
+    name: {
+      ...nullable({ type: 'string', minLength: CUSTOM_NAME_MIN_LENGTH, maxLength: CUSTOM_NAME_MAX_LENGTH }),
+      description: 'The name that the account chose with PUT /api/me/name. Show it in place of the login. null: show the login.',
+    },
+    seed: {
+      ...nullable({ type: 'string', minLength: AVATAR_SEED_LENGTH, maxLength: AVATAR_SEED_LENGTH, pattern: '^[0-9a-f]+$' }),
+      description: 'The seed of a generated picture that the account chose with PUT /api/me/avatar. Show it in place of `avatar`. null: show `avatar`.',
+    },
   }),
   SeatNames: object('The name of the player on each seat: a custom name, else a generated name such as "braveOtter". null for an empty seat and for the computer.', {
     X: nullable(seatName),
@@ -405,6 +416,9 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
   ),
   SeatAnswer: object('An answer to the open seat request.', {
     accept: { type: 'boolean', description: 'true applies the change. false declines it, or cancels your own request.' },
+  }),
+  AvatarRequest: object('Your picture.', {
+    picture: strings(AVATAR_PICTURES, 'github: the picture of your GitHub account. generated: a new generated picture, so a second call gives another one.'),
   }),
   NameRequest: object('Your display name.', {
     name: {
@@ -1649,7 +1663,7 @@ export const ROUTES = {
     operationId: 'setName',
     tag: 'Account',
     summary: 'Choose your display name.',
-    description: 'Without a GitHub login, other players see this name in place of your generated name. A GitHub login still goes first.',
+    description: 'Other players see this name in place of your generated name. With a GitHub login, the name belongs to the account, on every device, and shows in place of the login.',
     player: 'required',
     body: { schema: 'NameRequest', example: { name: 'Agent Smith' } },
     response: { status: 200, description: 'Your login state with the new name.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith', hasCopy: false, person: OTHER_PERSON } },
@@ -1659,10 +1673,32 @@ export const ROUTES = {
   'DELETE /api/me/name': {
     operationId: 'clearName',
     tag: 'Account',
-    summary: 'Go back to your generated name.',
+    summary: 'Go back to your generated name, or to your GitHub login.',
     player: 'required',
     response: { status: 200, description: 'Your login state without a custom name.', schema: 'Me', example: { loginAvailable: true, user: null, name: null, hasCopy: false, person: OTHER_PERSON } },
     errors: [BAD_PLAYER],
+    examplePlayer: AGENT_A,
+  },
+  'PUT /api/me/avatar': {
+    operationId: 'setAvatar',
+    tag: 'Account',
+    summary: 'Choose your picture: your GitHub picture, or a new generated one.',
+    description: 'Only with a GitHub login. The choice belongs to the account, on every device, and other players see it.',
+    player: 'required',
+    body: { schema: 'AvatarRequest', example: { picture: 'generated' } },
+    response: {
+      status: 200,
+      description: 'Your login state with the new picture.',
+      schema: 'Me',
+      example: {
+        loginAvailable: true,
+        user: { login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', name: null, seed: '3f9a0c12b7e4' },
+        name: null,
+        hasCopy: false,
+        person: OTHER_PERSON,
+      },
+    },
+    errors: [BAD_PLAYER, { status: 400, when: 'picture is not "github" or "generated".' }, { status: 401, when: 'The request has no GitHub login.' }],
     examplePlayer: AGENT_A,
   },
   'GET /api/me/games': {
@@ -2134,7 +2170,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
           '`games`: every game, oldest first. The last one is the live game. `moves` lists its cells in order: X played moves 0, 2, 4 and so on, O played moves 1, 3, 5.',
           '`version`: grows with every change.',
           '`chat`: the newest messages, oldest first.',
-          '`players` and `names`: who plays each seat. `players` holds the GitHub account of a player who logged in on the page. A player without a GitHub login has a name in `names`: a name that the player chose (PUT /api/me/name), else a generated name such as "braveOtter". The same player id always gets the same generated name, so you also get one.',
+          '`players` and `names`: who plays each seat. `players` holds the GitHub account of a player who logged in on the page: show its `name`, else its `login`, and its `seed` picture, else its `avatar`. A player without a GitHub login has a name in `names`: a name that the player chose (PUT /api/me/name), else a generated name such as "braveOtter". The same player id always gets the same generated name, so you also get one.',
           '`watchers`: the browsers that have the game open without a seat.',
           '`seatRequest`: a seat change that waits for an answer, or null.',
         ],

@@ -1,6 +1,6 @@
 // The chat with the other player in a game with another device.
 import { other } from '../game.ts';
-import { type ChatMessage, type SessionView, isChatEvent, normalizeChat } from '../protocol.ts';
+import { type ChatMessage, accountNameOf, type SessionView, isChatEvent, normalizeChat } from '../protocol.ts';
 import { sounds } from '../sound.ts';
 import { chatEl, chatInput, chatSend, chatLog, chatNoticeFrom, chatNoticeText, chatNotice, chatForm, scrollMotion } from './dom.ts';
 import { type Sender, chatGroups } from './chat-log.ts';
@@ -31,7 +31,7 @@ function senderOf(session: SessionView, message: ChatMessage): Sender {
   const person =
     seat !== undefined
       ? seatPerson(session, seat)
-      : shownPerson(id, watcher === undefined ? { player: null, name: nameOf(id ?? message.from) } : { player: watcher.player, name: watcher.player?.login ?? watcher.name });
+      : shownPerson(id, watcher === undefined ? { player: null, name: nameOf(id ?? message.from) } : { player: watcher.player, name: accountNameOf(watcher.player) ?? watcher.name });
   return { label: mine ? 'You' : person.name, person, id, mine };
 }
 

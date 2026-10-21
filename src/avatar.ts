@@ -1,9 +1,10 @@
-// The picture of a player: the GitHub avatar after a login, else a generated "tower".
+// The picture of a player: the GitHub avatar after a login, else a generated "tower". An account can
+// also choose a generated tower (PlayerInfo.seed in src/protocol.ts).
 // The tower is a 4×4 grid of block columns, 0 to 4 blocks high, drawn in isometric view like the board.
 // It is mirrored on the diagonal, so it reads as one shape at 20 px. One column is "lit" in a second color.
 //
-// The seed is the name that the page shows next to the picture (the login, the custom name or the
-// generated name). Every screen has that name, so every screen draws the same picture without a
+// Without an account, the seed is the name that the page shows next to the picture (the custom name or
+// the generated name). Every screen has that name, so every screen draws the same picture without a
 // player token. Limit: a rename gives a new picture, and two players with one name share a picture.
 // Revisit when the view sends a public player id.
 import { hash } from './names.ts';
@@ -107,6 +108,9 @@ export function avatarSvg(seed: string): string {
 // A person as every screen shows them: the GitHub account, else null, and the shown name without "You".
 export type Person = { player: PlayerInfo | null; name: string };
 
+// The GitHub login of a person whose shown name is another name, for the player cards. Else null.
+export const hiddenLogin = ({ player, name }: Person): string | null => (player === null || player.login === name ? null : player.login);
+
 // A picture in the viewer (src/page/avatar-viewer.ts). `id` is the public person id, for the Stats
 // link of the viewer, or null when the screen has no id for the person.
 export type Viewable = { person: Person; id: PersonId | null };
@@ -115,15 +119,21 @@ const viewable = new WeakMap<HTMLImageElement, Viewable>();
 // The size of the picture in the viewer.
 export const VIEW_PIXELS = 240;
 
-// The picture of one person. `pixels` is the shown size: GitHub sends twice that, for sharp
-// pictures on high-density screens. The alt text is empty, because the name is always next to the picture.
-export function avatarImage({ player, name }: Person, pixels: number): HTMLImageElement {
+// The address of the picture of one person. `pixels` is the shown size: GitHub sends twice that, for
+// sharp pictures on high-density screens.
+export function avatarSrc({ player, name }: Person, pixels: number): string {
+  const generated = (seed: string) => `data:image/svg+xml,${encodeURIComponent(avatarSvg(seed))}`;
+  return player === null ? generated(name) : player.seed === null ? `${player.avatar}&s=${pixels * 2}` : generated(player.seed);
+}
+
+// The picture of one person. The alt text is empty, because the name is always next to the picture.
+export function avatarImage(person: Person, pixels: number): HTMLImageElement {
   const image = document.createElement('img');
   image.className = 'avatar';
   image.alt = '';
   image.width = pixels;
   image.height = pixels;
-  image.src = player === null ? `data:image/svg+xml,${encodeURIComponent(avatarSvg(name))}` : `${player.avatar}&s=${pixels * 2}`;
+  image.src = avatarSrc(person, pixels);
   return image;
 }
 

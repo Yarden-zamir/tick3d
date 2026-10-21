@@ -6,6 +6,8 @@ import {
   normalizeChat,
   normalizeCode,
   parsePlayerInfo,
+  parseAvatarRequest,
+  accountNameOf,
   PREVIEW_IMAGE_ALT_LENGTH,
   PREVIEW_IMAGES,
   parsePreviews,
@@ -190,10 +192,30 @@ describe('normalizeChat', () => {
 describe('parsePlayerInfo', () => {
   it('accepts a GitHub login with a GitHub avatar only', () => {
     const avatar = 'https://avatars.githubusercontent.com/u/7?v=4';
-    expect(parsePlayerInfo({ login: 'octo-cat', avatar })).toEqual({ login: 'octo-cat', avatar });
+    expect(parsePlayerInfo({ login: 'octo-cat', avatar })).toEqual({ login: 'octo-cat', avatar, name: null, seed: null });
     expect(parsePlayerInfo({ login: 'octo', avatar: 'https://evil.example.org/a.png' })).toBeUndefined();
     expect(parsePlayerInfo({ login: '<script>', avatar })).toBeUndefined();
     expect(parsePlayerInfo({ login: 'x'.repeat(40), avatar })).toBeUndefined();
+  });
+
+  it('accepts a custom name and a generated picture seed, and refuses bad ones', () => {
+    const avatar = 'https://avatars.githubusercontent.com/u/7?v=4';
+    const player = { login: 'octo', avatar, name: 'Dana', seed: '0123456789ab' };
+    expect(parsePlayerInfo(player)).toEqual(player);
+    expect(accountNameOf(player)).toBe('Dana');
+    expect(accountNameOf({ ...player, name: null })).toBe('octo');
+    expect(parsePlayerInfo({ ...player, name: ' Dana ' })).toBeUndefined();
+    expect(parsePlayerInfo({ ...player, seed: 'ABCDEF012345' })).toBeUndefined();
+    expect(parsePlayerInfo({ ...player, seed: '0123' })).toBeUndefined();
+  });
+});
+
+describe('parseAvatarRequest', () => {
+  it('accepts github and generated only', () => {
+    expect(parseAvatarRequest({ picture: 'generated' })).toBe('generated');
+    expect(parseAvatarRequest({ picture: 'github' })).toBe('github');
+    expect(parseAvatarRequest({ picture: 'gravatar' })).toBeUndefined();
+    expect(parseAvatarRequest({ picture: 'github', seed: '0123456789ab' })).toBeUndefined();
   });
 });
 

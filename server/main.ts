@@ -11,6 +11,7 @@ import {
   isGitHubLogin,
   normalizeCode,
   parseClientEvent,
+  parseAvatarRequest,
   parseCustomName,
   parseGameId,
   parseMetrics,
@@ -354,7 +355,8 @@ function requireMaintainer(req: IncomingMessage): string {
 async function me(token: PlayerToken, user: ReturnType<Auth['user']>) {
   return {
     loginAvailable: auth !== undefined,
-    user: user === undefined ? null : { login: user.login, avatar: user.avatar },
+    // The stored account holds the name and picture choices. A device that is not linked yet has none.
+    user: user === undefined ? null : ((await store.account(token)) ?? { login: user.login, avatar: user.avatar, name: null, seed: null }),
     name: await store.customName(token),
     hasCopy: await store.hasCopy(token),
     person: await store.person(token),
@@ -455,15 +457,31 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const body = await readJson(req);
       const name = parseCustomName(typeof body === 'object' && body !== null && 'name' in body ? body.name : undefined);
       if (name === undefined) throw new HttpError(400, 'A name needs 2 to 24 letters, digits, spaces, "-" or "_".');
-      await store.setName(token, name);
+      // With a login, the name is the account's, on every device.
+      const user = auth?.user(req);
+      if (user !== undefined) await store.linkToken(token, user);
+      await store.setName(token, name, user?.id ?? null);
       notifyPlayer(token);
-      return send(res, 200, await me(token, auth?.user(req)));
+      return send(res, 200, await me(token, user));
     }
     case 'DELETE /api/me/name': {
       const token = requirePlayer(req);
-      await store.clearName(token);
+      const user = auth?.user(req);
+      if (user !== undefined) await store.linkToken(token, user);
+      await store.clearName(token, user?.id ?? null);
       notifyPlayer(token);
-      return send(res, 200, await me(token, auth?.user(req)));
+      return send(res, 200, await me(token, user));
+    }
+    case 'PUT /api/me/avatar': {
+      const token = requirePlayer(req);
+      const picture = parseAvatarRequest(await readJson(req));
+      if (picture === undefined) throw new HttpError(400, 'picture is "github" or "generated".');
+      const user = auth?.user(req);
+      if (user === undefined) throw new HttpError(401, 'Log in with GitHub first.');
+      await store.linkToken(token, user);
+      await store.setAvatar(user.id, picture);
+      notifyPlayer(token);
+      return send(res, 200, await me(token, user));
     }
 
     case 'GET /api/me/stats-privacy':

@@ -13,7 +13,6 @@ import { PREVIEWS_CACHE_MS, PREVIEWS_RELAY_CACHE_MS } from './api-docs.ts';
 import { type EpochMs, isEpochMs } from '../src/epoch.ts';
 import {
   type Contributor,
-  type PlayerInfo,
   type Preview,
   type PreviewImage,
   type Previews,
@@ -70,8 +69,10 @@ export function previewsConfigFromEnv(env: NodeJS.ProcessEnv): PreviewsConfig | 
 // ---- Reading the GitHub answers ----
 
 
+type GitHubPerson = Omit<Contributor, 'url'>;
+
 // A GitHub account that is a person. parsePlayerInfo refuses the "[bot]" logins and avatars from other hosts.
-function accountOf(value: unknown): PlayerInfo | undefined {
+function accountOf(value: unknown): GitHubPerson | undefined {
   if (!isRecord(value) || value.type === 'Bot') return undefined;
   return parsePlayerInfo({ login: value.login, avatar: value.avatar_url });
 }
@@ -87,7 +88,7 @@ type Pull = {
   head: string;
   branch: string;
   base: string;
-  author: PlayerInfo | undefined;
+  author: GitHubPerson | undefined;
   labels: string[];
 };
 
@@ -122,7 +123,7 @@ export function parsePull(value: unknown): Pull | undefined {
 // The noreply address of a GitHub account: <id>+<login>@users.noreply.github.com.
 // Limit: the older form without the id has no avatar address, so it is left out. Other addresses
 // have no known account. Revisit when contributors without the id form show up.
-function coAuthorOf(line: string): PlayerInfo | undefined {
+function coAuthorOf(line: string): GitHubPerson | undefined {
   const start = line.indexOf('<');
   const end = line.indexOf('@users.noreply.github.com>');
   if (start === -1 || end <= start) return undefined;
@@ -135,9 +136,9 @@ const isDigit = (char: string) => char >= '0' && char <= '9';
 const CO_AUTHOR = 'co-authored-by:';
 
 // The people behind one commit from GET /repos/{repo}/pulls/{n}/commits: its GitHub author and its co-authors.
-export function commitPeople(value: unknown): PlayerInfo[] {
+export function commitPeople(value: unknown): GitHubPerson[] {
   if (!isRecord(value)) return [];
-  const people: PlayerInfo[] = [];
+  const people: GitHubPerson[] = [];
   const author = accountOf(value.author);
   if (author !== undefined) people.push(author);
   const message = isRecord(value.commit) ? value.commit.message : undefined;
@@ -152,8 +153,8 @@ export function commitPeople(value: unknown): PlayerInfo[] {
 
 // The author of the pull request and the people behind its commits, once each, most commits first.
 // A tie keeps the first seen order, so the author of the pull request comes first.
-export function mergeContributors(author: PlayerInfo | undefined, commits: readonly PlayerInfo[][]): Contributor[] {
-  const byLogin = new Map<string, PlayerInfo & { commits: number }>();
+export function mergeContributors(author: GitHubPerson | undefined, commits: readonly GitHubPerson[][]): Contributor[] {
+  const byLogin = new Map<string, GitHubPerson & { commits: number }>();
   if (author !== undefined) byLogin.set(author.login.toLowerCase(), { ...author, commits: 0 });
   for (const people of commits) {
     // A commit counts once for each person, also when a trailer names its author again.

@@ -4707,3 +4707,9 @@ body[data-turn='O'] .status[data-state='playing'] {
 .rename-problem:empty {
   display: none;
 }
+
+/* Without a login, the picture buttons show grayed out with this hint (src/page/my-games.ts pictureControls). */
+.picture-hint {
+  align-self: center;
+  color: var(--muted);
+}

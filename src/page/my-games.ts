@@ -8,6 +8,7 @@ import {
   HISTORY_PAGE_SIZE,
   type HistoryEntry,
   type Outcome,
+  type AvatarPicture,
   type PlayerInfo,
   type SessionMode,
   type SessionSummary,
@@ -15,6 +16,7 @@ import {
   CUSTOM_NAME_MAX_LENGTH,
   CUSTOM_NAME_MIN_LENGTH,
   ALL_STATS,
+  accountNameOf,
   outcomeOf,
   parseCustomName,
   statsQuery,
@@ -132,7 +134,7 @@ async function deviceTallies(): Promise<Tally> {
 
 // The same rule as playerName in render.ts. A null name means that the other seat is still empty.
 function opponentOf({ opponent, opponentName }: { opponent: PlayerInfo | null; opponentName: string | null }): Person | undefined {
-  const name = opponent?.login ?? opponentName;
+  const name = accountNameOf(opponent) ?? opponentName;
   return name === null ? undefined : { player: opponent, name };
 }
 
@@ -238,16 +240,21 @@ let accountReturnTo: string | undefined;
 // The account part of My games. refreshAccount rebuilds it when a slower /api/me answer changes the account.
 function renderAccountBox(): void {
   accountBox.replaceChildren();
-  if (page.account.user) {
-    const avatar = avatarFor({ player: page.account.user, name: page.account.user.login }, ACCOUNT_AVATAR_PIXELS, null);
+  const user = page.account.user;
+  if (user !== null) {
+    const shown = accountNameOf(user);
+    const avatar = avatarFor({ player: user, name: shown }, ACCOUNT_AVATAR_PIXELS, null);
     const name = document.createElement('b');
-    name.textContent = page.account.user.login;
+    name.textContent = shown;
     const logout = document.createElement('button');
     logout.type = 'button';
     logout.className = 'btn btn-small';
     logout.textContent = 'Log out';
     logout.addEventListener('click', () => void logOut().then(() => myGamesDialog.close(), showError));
-    accountBox.append(avatar, name, logout);
+    accountBox.append(avatar, name);
+    if (user.name !== null) accountBox.append(` (GitHub: ${user.login})`);
+    accountBox.append(logout);
+    if (navigator.onLine) accountBox.append(renameControls({ current: user.name, fallback: user.login, reset: 'Use GitHub name' }), pictureControls(user));
   } else {
     // The same name that the server shows to the other players: the custom name, else the generated one (src/names.ts).
     const text = document.createElement('span');
@@ -255,9 +262,11 @@ function renderAccountBox(): void {
     name.textContent = ownName();
     text.append('You play as ', name, '.');
     accountBox.append(avatarFor({ player: null, name: ownName() }, ACCOUNT_AVATAR_PIXELS, null), text);
-    if (navigator.onLine) accountBox.append(renameControls());
+    if (navigator.onLine) accountBox.append(renameControls({ current: page.account.name, fallback: nameOf(token), reset: 'Reset to generated name' }));
     // The iOS app offers no GitHub login: App Store rule 4.8 asks for Sign in with Apple next to it.
     if (page.account.loginAvailable && navigator.onLine && platform() === 'web') {
+      // The picture buttons show grayed out, so a player sees what a login adds.
+      accountBox.append(pictureControls(null));
       text.append(' Log in with GitHub to use your GitHub name.');
       const login = document.createElement('a');
       login.className = 'btn btn-small btn-primary login-link';
@@ -439,7 +448,10 @@ export function renderSessionGames(): void {
 
 // Rename for a player without a GitHub login: an inline form, and a reset to the generated name.
 // The dialog covers the toasts, so a refused name shows in the form.
-function renameControls(): HTMLElement {
+// `current` is the custom name or null, `fallback` the name without it, and `reset` the label of the button that clears it.
+type NameChoice = { current: string | null; fallback: string; reset: string };
+
+function renameControls({ current, fallback, reset: resetLabel }: NameChoice): HTMLElement {
   const box = document.createElement('div');
   box.className = 'rename';
   const open = document.createElement('button');
@@ -452,8 +464,8 @@ function renameControls(): HTMLElement {
   const input = document.createElement('input');
   input.type = 'text';
   input.maxLength = CUSTOM_NAME_MAX_LENGTH;
-  input.value = page.account.name ?? '';
-  input.placeholder = nameOf(token);
+  input.value = current ?? '';
+  input.placeholder = fallback;
   input.setAttribute('aria-label', 'Your name');
   const save = document.createElement('button');
   save.className = 'btn btn-small btn-primary';
@@ -467,12 +479,12 @@ function renameControls(): HTMLElement {
   problem.className = 'rename-problem';
   form.append(input, save, cancel, problem);
   box.append(open, form);
-  if (page.account.name !== null) {
+  if (current !== null) {
     const reset = document.createElement('button');
     reset.className = 'btn btn-small';
     reset.type = 'button';
-    reset.textContent = 'Reset to generated name';
-    reset.addEventListener('click', () => void changeName(() => api.clearName(), problem));
+    reset.textContent = resetLabel;
+    reset.addEventListener('click', () => void changeAccount(() => api.clearName(), problem));
     box.append(reset);
   }
   open.addEventListener('click', () => {
@@ -492,12 +504,40 @@ function renameControls(): HTMLElement {
       problem.textContent = `A name needs ${CUSTOM_NAME_MIN_LENGTH} to ${CUSTOM_NAME_MAX_LENGTH} letters, digits, spaces, "-" or "_".`;
       return;
     }
-    void changeName(() => api.setName(name), problem);
+    void changeAccount(() => api.setName(name), problem);
   });
   return box;
 }
 
-async function changeName(call: () => Promise<Me>, problem: HTMLElement): Promise<void> {
+// New picture and Use GitHub picture. Without an account (`user` null) both show grayed out, with a hint.
+function pictureControls(user: PlayerInfo | null): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'rename';
+  const problem = document.createElement('small');
+  problem.className = 'rename-problem';
+  const button = (label: string, picture: AvatarPicture) => {
+    const element = document.createElement('button');
+    element.className = 'btn btn-small';
+    element.type = 'button';
+    element.textContent = label;
+    element.disabled = user === null;
+    element.addEventListener('click', () => void changeAccount(() => api.setAvatar(picture), problem));
+    return element;
+  };
+  box.append(button('New picture', 'generated'));
+  // A GitHub picture is the default, so the button shows only when a generated picture replaces it.
+  if (user !== null && user.seed !== null) box.append(button('Use GitHub picture', 'github'));
+  if (user === null) {
+    const hint = document.createElement('small');
+    hint.className = 'picture-hint';
+    hint.textContent = 'Log in to change your avatar.';
+    box.append(hint);
+  }
+  box.append(problem);
+  return box;
+}
+
+async function changeAccount(call: () => Promise<Me>, problem: HTMLElement): Promise<void> {
   try {
     saveAccount(await call());
   } catch (error) {
