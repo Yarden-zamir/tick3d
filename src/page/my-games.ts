@@ -7,6 +7,7 @@ import {
   type GameId,
   HISTORY_PAGE_SIZE,
   type HistoryEntry,
+  type HistoryPage,
   type Outcome,
   type AvatarPicture,
   type PlayerInfo,
@@ -191,13 +192,16 @@ function showHistory(entries: HistoryEntry[], append: boolean): void {
 
 let historyOffset = 0;
 
-// The next page of the history from the server.
-async function loadHistory(request: number, append: boolean): Promise<void> {
-  const next = await api.history(append ? historyOffset : 0);
-  if (request !== myGamesRequest) return;
+// A page of the history from the server: the first page, or the next one after `append`.
+function showHistoryPage(next: HistoryPage, append: boolean): void {
   historyOffset = (append ? historyOffset : 0) + next.games.length;
   showHistory(next.games, append);
   myGamesMore.hidden = !next.more;
+}
+
+async function loadMoreHistory(request: number): Promise<void> {
+  const next = await api.history(historyOffset);
+  if (request === myGamesRequest) showHistoryPage(next, true);
 }
 
 const ACCOUNT_AVATAR_PIXELS = 32;
@@ -307,7 +311,8 @@ export async function openMyGames(returnTo?: string): Promise<void> {
   myGamesOnline.replaceChildren();
   try {
     if (!navigator.onLine) throw new OnlineError('offline');
-    const mine = await api.myGames();
+    // Both requests start at once, so the history does not wait for the games.
+    const [mine, firstPage] = await Promise.all([api.myGames(), api.history(0)]);
     if (request !== myGamesRequest) return;
     myGamesNote.textContent = mine.user ? 'Your games on every device you logged in with.' : 'Your games on this browser.';
     myGamesStats.append(
@@ -330,7 +335,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     );
     if (mine.sessions.length === 0) myGamesOnline.innerHTML = '<li class="empty">No online sessions yet.</li>';
     myGamesOnlineBox.hidden = false;
-    await loadHistory(request, false);
+    showHistoryPage(firstPage, false);
     myGamesClear.hidden = historyOffset === 0;
   } catch (error) {
     if (!(error instanceof OnlineError)) throw error;
@@ -583,7 +588,7 @@ export function setupMyGames(): void {
   myGamesStatsLink.href = `/stats${statsQuery({ ...ALL_STATS, scope: 'mine' })}`;
   myGamesStatsLink.insertAdjacentHTML('afterbegin', STATS_ICON);
   myGamesPrivate.addEventListener('change', () => void changeStatsPrivacy().catch(showError));
-  myGamesMore.addEventListener('click', () => void loadHistory(myGamesRequest, true).catch(showError));
+  myGamesMore.addEventListener('click', () => void loadMoreHistory(myGamesRequest).catch(showError));
   myGamesClear.addEventListener('click', () => {
     clearConfirm.showModal();
     clearConfirmNo.focus();

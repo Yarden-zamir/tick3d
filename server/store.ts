@@ -1040,19 +1040,24 @@ export async function openStore(
     return new Set([token, ...account, ...linked.map((row) => row.token)]);
   }
 
-  async function playersOf(doc: SessionDoc): Promise<Record<Player, PlayerInfo | null>> {
-    const seatTokens = [doc.seats.X, doc.seats.O].filter((token) => token !== null);
-    if (seatTokens.length === 0) return { X: null, O: null };
+  // The GitHub account of each token, in one query. A token without an account, or null, has none.
+  async function accountsOf(tokens: readonly (string | null)[]): Promise<(token: string | null) => PlayerInfo | null> {
+    const known = [...new Set(tokens.filter((token) => token !== null))];
+    if (known.length === 0) return () => null;
     const found = await rows(
       `FROM player_tokens JOIN users USING (github_id) SELECT token, login, avatar, name, seed
        WHERE list_contains($tokens, token)`,
-      { tokens: listValue(seatTokens) },
+      { tokens: listValue(known) },
       { token: text, ...ACCOUNT_COLUMNS },
     );
-    const info = (token: string | null): PlayerInfo | null => {
+    return (token) => {
       const match = found.find((row) => row.token === token);
       return match === undefined ? null : accountOf(match);
     };
+  }
+
+  async function playersOf(doc: SessionDoc): Promise<Record<Player, PlayerInfo | null>> {
+    const info = await accountsOf([doc.seats.X, doc.seats.O]);
     return { X: info(doc.seats.X), O: info(doc.seats.O) };
   }
 
@@ -2203,10 +2208,10 @@ export async function openStore(
       return { ...(await snapshot(`leaderboard ${statsQuery(filter)}`, () => leaderboardOf(filter))), you };
     },
 
-    // Every session and result of this player, on all their linked devices.
-    // Limit: the session query reads every document in the table, and other requests wait in the
-    // queue meanwhile. Revisit this when the sessions table holds about 100,000 rows, or when this
-    // call takes more than about 100 ms. A list of seat tokens in its own indexed table then helps.
+    // Every session and result of this player, on all their linked devices. It makes at most 6 queries, whatever
+    // the number of sessions: the seat indexes find the sessions and the results.
+    // Limit: it parses every result of the player in JS, and other requests wait in the queue meanwhile.
+    // Revisit this when one player has about 10,000 results. Counting the outcomes in SQL then helps.
     myGames: (token: PlayerToken): Promise<MyGames> =>
       serialized(async () => {
         const identity = await identityOf(token);
@@ -2221,11 +2226,12 @@ export async function openStore(
           tokenValues(tokens),
           { code: codeColumn, doc: json, updated: epoch },
         );
-        const sessions: SessionSummary[] = [];
+        const seated: { code: Code; doc: SessionDoc; you: Player; updated: EpochMs }[] = [];
         for (const row of sessionRows) {
           const doc = parseDoc(row.doc);
           const you = core.seatsOf(doc, identity)[0];
           if (you === undefined) continue;
+          seated.push({ code: row.code, doc, you, updated: row.updated });
           for (const [index, record] of doc.games.entries()) {
             const game = toGame(record);
             if (game.status.kind === 'playing') continue;
@@ -2235,18 +2241,25 @@ export async function openStore(
             count(total, outcome);
             count(byMode.online, outcome);
           }
+        }
+        // One query for the accounts and one for the names of every opponent, not two per session.
+        const opponents = seated.map(({ doc, you }) => doc.seats[other(you)]);
+        const accountOf = await accountsOf(opponents);
+        const nameOf = await namesOf(opponents);
+        const sessions = seated.map(({ code, doc, you, updated }): SessionSummary => {
           const live = core.currentGame(doc);
-          sessions.push({
-            code: row.code,
+          const opponent = doc.seats[other(you)];
+          return {
+            code,
             name: doc.name,
             games: doc.games.filter((record) => record.moves.length > 0).length,
             you,
-            opponent: (await playersOf(doc))[other(you)],
-            opponentName: core.seatName(doc.seats[other(you)], await namesOf([doc.seats[other(you)]])),
-            yourTurn: live.status.kind === 'playing' && live.turn === you && doc.seats[other(you)] !== null,
-            updatedAt: row.updated,
-          });
-        }
+            opponent: accountOf(opponent),
+            opponentName: core.seatName(opponent, nameOf),
+            yourTurn: live.status.kind === 'playing' && live.turn === you && opponent !== null,
+            updatedAt: updated,
+          };
+        });
 
         // The online rows of results repeat the session games counted above, so they stay out.
         const resultRows = await rows(

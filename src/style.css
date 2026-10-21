@@ -3308,16 +3308,20 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--muted);
 }
 
+/* minmax(0, 1fr): a long name never widens a row past the dialog. */
 .my-games-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.4rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* A narrow row wraps its badge and buttons below the text. */
 .my-games-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.6rem;
   padding: 0.4rem 0.6rem;
@@ -3328,8 +3332,9 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .my-games-list li > div {
   display: grid;
-  flex: 1;
+  flex: 1 1 8rem;
   min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .my-games-list .avatar {

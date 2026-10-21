@@ -48,7 +48,11 @@ function showTrailerSound(): void {
   trailerSound.textContent = trailerVideo.muted ? 'Tap for sound' : 'Sound on';
 }
 
+// The pause on the last frame before the next run (see the `ended` listener), or undefined.
+let lastFrame: ReturnType<typeof setTimeout> | undefined;
+
 function toggleTrailerSound(): void {
+  clearTimeout(lastFrame);
   trailerVideo.muted = !trailerVideo.muted;
   // Turning the sound on restarts the trailer, so the first words are heard.
   if (!trailerVideo.muted) trailerVideo.currentTime = 0;
@@ -57,11 +61,16 @@ function toggleTrailerSound(): void {
 trailerVideo.addEventListener('click', toggleTrailerSound);
 trailerSound.addEventListener('click', toggleTrailerSound);
 trailerVideo.addEventListener('volumechange', showTrailerSound);
-// The sound plays for one run only: at the end the trailer starts again without sound, and loops so.
+// The sound plays for one run only: the next run starts without sound, and the trailer loops so.
+// Each run ends on its last frame for LAST_FRAME_MS before the loop. The pause also lets the speaker
+// play the last sound out: the browser fires `ended` while the speaker still plays it (more with Bluetooth).
+const LAST_FRAME_MS = 2500;
 trailerVideo.addEventListener('ended', () => {
-  trailerVideo.muted = true;
-  trailerVideo.currentTime = 0;
-  void trailerVideo.play().catch(() => undefined);
+  lastFrame = setTimeout(() => {
+    trailerVideo.muted = true;
+    trailerVideo.currentTime = 0;
+    void trailerVideo.play().catch(() => undefined);
+  }, LAST_FRAME_MS);
 });
 // The page starts the trailer itself (no autoplay attribute). With reduced motion, it waits for a tap.
 // It starts once the browser expects to play to the end without a stop (canplaythrough), so a slow link shows
