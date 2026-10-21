@@ -324,7 +324,7 @@ describe('my games', () => {
   it('gives each session its own opponent', async () => {
     store = await openStore(':memory:');
     await store.linkToken(alice, ALICE_GITHUB);
-    await store.setName(carol, 'Dana');
+    await store.setName(carol, 'Dana', null);
     const withAlice = (await store.create(bob, 'With Alice')).code;
     await store.join(withAlice, alice);
     const withCarol = (await store.create(carol, 'With Carol')).code;

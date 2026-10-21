@@ -2244,7 +2244,7 @@ export async function openStore(
         }
         // One query for the accounts and one for the names of every opponent, not two per session.
         const opponents = seated.map(({ doc, you }) => doc.seats[other(you)]);
-        const accountOf = await accountsOf(opponents);
+        const opponentAccount = await accountsOf(opponents);
         const nameOf = await namesOf(opponents);
         const sessions = seated.map(({ code, doc, you, updated }): SessionSummary => {
           const live = core.currentGame(doc);
@@ -2254,7 +2254,7 @@ export async function openStore(
             name: doc.name,
             games: doc.games.filter((record) => record.moves.length > 0).length,
             you,
-            opponent: accountOf(opponent),
+            opponent: opponentAccount(opponent),
             opponentName: core.seatName(opponent, nameOf),
             yourTurn: live.status.kind === 'playing' && live.turn === you && opponent !== null,
             updatedAt: updated,
