@@ -311,7 +311,18 @@ const SCHEMA = [
      opened_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
   'ALTER TABLE app_copies ADD COLUMN IF NOT EXISTS proved BOOLEAN DEFAULT false',
-  'ALTER TABLE app_copies ADD COLUMN IF NOT EXISTS apple_purchase VARCHAR',
+  // The device slots of the iPhone app purchases (server/apple-proof.ts): one row per device. `device` is the App
+  // Store id of the phone, which the signed purchase proves. `purchase` is `<environment>:<appTransactionId>`, and
+  // one purchase holds at most APPLE_SLOTS_PER_PURCHASE rows. `token` is the one player token of the device now.
+  // Tokens: never send them to a page.
+  `CREATE TABLE IF NOT EXISTS apple_slots (
+     device VARCHAR PRIMARY KEY,
+     purchase VARCHAR NOT NULL,
+     token VARCHAR NOT NULL UNIQUE,
+     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  // apple_slots replaced this column. Production held no row with it. Remove this line after production ran it.
+  'ALTER TABLE app_copies DROP COLUMN IF EXISTS apple_purchase',
   // The one-time data changes (runOnce in openStore) that ran on this database, by name.
   `CREATE TABLE IF NOT EXISTS migrations (
      name VARCHAR PRIMARY KEY,
@@ -391,6 +402,9 @@ const MAX_ID_ATTEMPTS = 20;
 // Raise it when a rule in src/achievements.ts changes: every row of achievement_players then fills again.
 // A new or removed achievement changes the signatures by itself.
 const ACHIEVEMENT_RULES_VERSION = 3;
+// The devices that one iPhone app purchase can prove, and the days after which an unused device frees its slot (takeAppleSlot).
+const APPLE_SLOTS_PER_PURCHASE = 5;
+const APPLE_SLOT_IDLE_DAYS = 90;
 // The time to live of an Everyone snapshot is at least this many times the cost of its last refresh.
 const SNAPSHOT_COST_FACTOR = 10;
 // The signature of a row in achievement_players for an inviter without games (refreshOwners).
@@ -844,6 +858,35 @@ export async function openStore(
 
   // Whether the player of this browser holds a copy: this device holds one, or another device that is logged in to the
   // same account. So a copy follows the account that logged in last on that device, and a logout takes it back.
+  // Takes the device slot of an iPhone app purchase for this player token, in one transaction. A device keeps its slot
+  // on later opens. A new token on the same device (cleared app data) takes the slot over, and the old token loses its
+  // proof: a copied proof and device id can only take turns with the real phone, never add a slot. A new device gets a
+  // slot while the purchase holds fewer than APPLE_SLOTS_PER_PURCHASE; a slot unused for APPLE_SLOT_IDLE_DAYS frees
+  // itself first, so a lost phone does not keep its slot. 409 when the device holds another purchase, 403 when full.
+  async function takeAppleSlot(token: PlayerToken, { environment, appTransactionId, device }: ApplePurchase): Promise<void> {
+    const purchase = `${environment}:${appTransactionId}`;
+    await db.run('BEGIN TRANSACTION');
+    try {
+      const [slot] = await rows('FROM apple_slots SELECT purchase, token WHERE device = $device', { device }, { purchase: text, token: text });
+      if (slot !== undefined && slot.purchase !== purchase) throw new SessionError(409, 'This device holds another Apple purchase.');
+      if (slot === undefined) {
+        await db.run(`DELETE FROM apple_slots WHERE purchase = $purchase AND last_seen_at < now() - INTERVAL ${APPLE_SLOT_IDLE_DAYS} DAY`, { purchase });
+        const [used] = await rows('FROM apple_slots SELECT count(*)::INTEGER AS n WHERE purchase = $purchase AND token <> $token', { purchase, token }, { n: int });
+        if ((used?.n ?? 0) >= APPLE_SLOTS_PER_PURCHASE) {
+          throw new SessionError(403, `This Apple purchase holds ${APPLE_SLOTS_PER_PURCHASE} devices already. A device unused for ${APPLE_SLOT_IDLE_DAYS} days frees its place.`);
+        }
+      }
+      if (slot !== undefined && slot.token !== token) await db.run('UPDATE app_copies SET proved = false WHERE token = $old', { old: slot.token });
+      // A token lives on one device: its slot under another device id goes.
+      await db.run('DELETE FROM apple_slots WHERE token = $token OR device = $device', { token, device });
+      await db.run('INSERT INTO apple_slots (device, purchase, token) VALUES ($device, $purchase, $token)', { device, purchase, token });
+      await db.run('COMMIT');
+    } catch (error) {
+      await db.run('ROLLBACK');
+      throw error;
+    }
+  }
+
   async function hasCopyOf(token: PlayerToken): Promise<boolean> {
     const [copy] = await rows(
       `FROM app_copies SELECT token
@@ -1378,6 +1421,8 @@ export async function openStore(
       counts.app_copies.deleted = (
         await changedIds('DELETE FROM app_copies WHERE list_contains($ids, token) OR list_contains($ids, owner) RETURNING token AS id', { ids })
       ).length;
+      // The device slots of this player's tokens: the purchase gets the place back.
+      counts.apple_slots.deleted = (await changedIds('DELETE FROM apple_slots WHERE list_contains($ids, token) RETURNING device AS id', { ids })).length;
       counts.app_copies.anonymised = (
         await changedIds(
           'UPDATE app_copies SET invited_by = NULL WHERE list_contains($persons, invited_by) RETURNING token AS id',
@@ -2020,22 +2065,13 @@ export async function openStore(
     // Only a verified store proof sets proved. Old rows remain unproved.
     reportAppOpen: (token: PlayerToken, by: PersonId | null, proof: boolean | ApplePurchase = false): Promise<boolean> =>
       serialized(async () => {
-        const purchase = typeof proof === 'boolean' ? null : `${proof.environment}:${proof.appTransactionId}`;
-        if (purchase !== null) {
-          const [device] = await rows('FROM app_copies SELECT apple_purchase WHERE token = $token', { token }, { apple_purchase: nullable(text) });
-          if (device?.apple_purchase !== null && device?.apple_purchase !== undefined && device.apple_purchase !== purchase) {
-            throw new SessionError(409, 'This device already holds another Apple purchase.');
-          }
-          const [used] = await rows('FROM app_copies SELECT count(*)::INTEGER AS n WHERE apple_purchase = $purchase AND token != $token', { purchase, token }, { n: int });
-          if ((used?.n ?? 0) >= 5) throw new SessionError(403, 'This Apple purchase already proves five devices.');
-        }
+        if (typeof proof !== 'boolean') await takeAppleSlot(token, proof);
         const invitedBy = by !== null && !(await personsOfTokens([...(await identityOf(token))])).has(by) ? by : null;
         const changed = await rows(
-          `INSERT INTO app_copies (token, owner, invited_by, proved, apple_purchase) VALUES ($token, $owner, $by, $proved, $purchase)
-           ON CONFLICT (token) DO UPDATE SET invited_by = coalesce(app_copies.invited_by, excluded.invited_by), proved = app_copies.proved OR excluded.proved,
-             apple_purchase = coalesce(app_copies.apple_purchase, excluded.apple_purchase)
+          `INSERT INTO app_copies (token, owner, invited_by, proved) VALUES ($token, $owner, $by, $proved)
+           ON CONFLICT (token) DO UPDATE SET invited_by = coalesce(app_copies.invited_by, excluded.invited_by), proved = app_copies.proved OR excluded.proved
            RETURNING invited_by`,
-          { token, owner: await ownerOf(token), by: invitedBy, proved: proof !== false, purchase },
+          { token, owner: await ownerOf(token), by: invitedBy, proved: proof !== false },
           { invited_by: nullable(text) },
         );
         if (invitedBy !== null && changed[0]?.invited_by === invitedBy) {

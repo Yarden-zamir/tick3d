@@ -1,4 +1,5 @@
 // Only the server can accept a store proof. The Android launch referrer is not purchase evidence.
+import { type AppOpen, parseAppleDeviceId } from '../copies.ts';
 import { OnlineError, api } from '../online.ts';
 import { parsePersonId } from '../protocol.ts';
 import { storedInviter } from '../share/invite.ts';
@@ -9,33 +10,41 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 // Listen before storage and account loading can delay the native message channel.
 const playOpen = receivePlayOpen();
 
-const purchase = registerPlugin<{ proof(): Promise<{ jws: string }> }>('Purchase');
+// `device` is AppStore.deviceVerificationID in lower case (apple/native/PurchasePlugin.swift).
+const purchase = registerPlugin<{ proof(): Promise<{ jws: string; device: string }> }>('Purchase');
 
 export async function reportAppOpen(): Promise<void> {
   const native = await playOpen;
   const url = new URL(location.href);
-  let proof = native?.proof ?? url.searchParams.get('playProof');
+  const proof = native?.proof ?? url.searchParams.get('playProof');
   const referrer = native?.referrer ?? url.searchParams.get('playReferrer');
   // Remove the bearer proof before any link or share can carry it elsewhere.
   url.searchParams.delete('playProof');
   url.searchParams.delete('playReferrer');
   history.replaceState(history.state, '', url);
   if (!navigator.onLine) return;
-  const store = Capacitor.getPlatform() === 'ios' ? 'apple' : 'play';
-  if (store === 'apple') {
+  const by = storedInviter() ?? parsePersonId(new URLSearchParams(referrer ?? '').get('by')) ?? null;
+  let open: AppOpen;
+  if (Capacitor.getPlatform() === 'ios') {
     // Old shells have no plugin. They must update before they can prove a purchase.
     if (!Capacitor.isPluginAvailable('Purchase')) return;
+    let answer: { jws: string; device: string };
     try {
-      proof = (await purchase.proof()).jws;
+      answer = await purchase.proof();
     } catch {
       // StoreKit can be offline too. The next app open retries.
       return;
     }
+    const device = parseAppleDeviceId(answer.device);
+    if (device === undefined) throw new Error('invalid device id from the Purchase plugin');
+    open = { by, proof: answer.jws, store: 'apple', device };
+  } else {
+    if (proof === null) return;
+    open = { by, proof, store: 'play' };
   }
-  if (proof === null) return;
   let hasCopy: boolean;
   try {
-    hasCopy = await api.reportAppOpen(storedInviter() ?? parsePersonId(new URLSearchParams(referrer ?? '').get('by')) ?? null, proof, store);
+    hasCopy = await api.reportAppOpen(open);
   } catch (error) {
     // Purchase checks can be unavailable or refused. Keep the last copy state and retry next open.
     if (error instanceof OnlineError) return;

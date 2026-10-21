@@ -544,7 +544,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         purchase = await playProof.verify(open.proof, player);
       } else {
         if (appleProof === undefined) throw new PurchaseProofError(503, 'Apple purchase checks are not configured.');
-        purchase = await appleProof(open.proof);
+        purchase = await appleProof(open.proof, open.device);
       }
       // A login cookie links this browser first, so the answer and the owner at the first open name the account.
       const user = auth?.user(req);
