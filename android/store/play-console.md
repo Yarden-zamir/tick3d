@@ -6,7 +6,7 @@ Privacy policy: https://tick3d.yarden-zamir.com/privacy
 ## Store settings
 
 - App or game: Game. Category: Board.
-- Price: paid, 1.99 USD. A paid app needs a payments profile first.
+- Price: paid, the US dollar price in [store/price-usd.txt](../../store/price-usd.txt) (1.99 today). Play has no API for the price of a paid app: set it by hand in Play Console after a change to that file. The App Store sync reads the same file. A paid app needs a payments profile first.
 - Ads: no ads.
 - App access: all features work without a login.
 - Target audience: 13 to 15, 16 to 17, 18 and over. The app does not target children.
