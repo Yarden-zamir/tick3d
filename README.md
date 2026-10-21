@@ -323,7 +323,7 @@ uv run store-images/convert.py /tmp/shots
 
 See [kitshn.md](kitshn.md). A push to `main` deploys production.
 
-The paid Android app on Google Play wraps the production site. The `android` workflow builds the committed Gradle project in `android/`, and the `play-*` workflows release it, sync the listing and file issues from reviews and crashes. Do not run `bubblewrap update` over the native purchase activity.
+The paid Android app on Google Play wraps the production site. The `android` workflow builds the committed Gradle project in `android/` and uploads it to closed testing. It runs on a push to `main` that changes the app (`android/`, except the listing, the scripts and the fastlane tools), on a tag `android-v1.2.0`, or by hand. The `play-*` workflows release it, sync the listing and file issues from reviews and crashes. Do not run `bubblewrap update` over the native purchase activity.
 
 The iOS app wraps the production site the same way, with [Capacitor](https://capacitorjs.com): a site deploy reaches it with no app build. The `ios` workflow generates the Xcode project from [apple/capacitor.config.json](apple/capacitor.config.json), then installs the committed Swift purchase plugin with `apple/install-purchase-plugin.mjs`. A tag `ios-v1.2.0` builds, signs and uploads the app to TestFlight, and makes a GitHub release.
 
