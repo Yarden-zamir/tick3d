@@ -533,11 +533,11 @@
         <input type="checkbox" role="switch" id="my-games-private" />
         Hide my stats from other players
       </label>
-      <!-- The games of the open session. src/page/my-games.ts fills the list on every render. -->
-      <section id="my-games-session-box">
-        <h3 id="my-games-session-title">This session</h3>
+      <!-- The games of the open session, folded by default. src/page/my-games.ts fills the list and the count on every render. -->
+      <details class="my-games-fold" id="my-games-session-box">
+        <summary><h3>This session <small class="achievements-summary" id="my-games-session-count"></small></h3></summary>
         <ol class="my-games-list" id="my-games-session"></ol>
-      </section>
+      </details>
       <!-- src/page/achievements.ts fills the list when the dialog opens. -->
       <section>
         <h3>Achievements <small class="achievements-summary" id="my-games-achievements-summary"></small></h3>
@@ -650,7 +650,7 @@
       </div>
     </dialog>
     <div class="update-bar" id="update-bar" hidden role="status">
-      <span>A new version of tick3d is ready.</span>
+      <span>New version ready</span>
       <button type="button" class="btn btn-small btn-primary" id="update-reload">Reload</button>
     </div>
     <!-- The achievements that unlocked away from an end card of this device, such as an invite (src/page/achievement-popup.ts).

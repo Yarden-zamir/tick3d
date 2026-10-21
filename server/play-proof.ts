@@ -16,7 +16,13 @@ const FRESH_MS = 5 * 60_000;
 
 export function playDecoderFromEnv(env: NodeJS.ProcessEnv): ((token: string) => Promise<unknown>) | undefined {
   if (!env.PLAY_SERVICE_ACCOUNT_JSON) return undefined;
-  const credentials: unknown = JSON.parse(env.PLAY_SERVICE_ACCOUNT_JSON);
+  let credentials: unknown;
+  try {
+    credentials = JSON.parse(env.PLAY_SERVICE_ACCOUNT_JSON);
+  } catch {
+    // The parse error quotes part of the secret, so the start crash must not carry it into the log.
+    throw new Error('PLAY_SERVICE_ACCOUNT_JSON is not valid JSON');
+  }
   if (!isRecord(credentials) || typeof credentials.client_email !== 'string' || typeof credentials.private_key !== 'string') {
     throw new Error('PLAY_SERVICE_ACCOUNT_JSON needs client_email and private_key');
   }
@@ -63,7 +69,10 @@ export function createPlayProof(decode: ((token: string) => Promise<unknown>) | 
       }
       // No await between the lookup and delete: concurrent submissions cannot use one nonce twice.
       pending.delete(String(request.nonce));
-      return account.appLicensingVerdict === 'LICENSED';
+      // UNEVALUATED means that Google could not decide, so only UNLICENSED is a negative verdict.
+      if (account.appLicensingVerdict === 'LICENSED') return true;
+      if (account.appLicensingVerdict === 'UNLICENSED') return false;
+      throw new PurchaseProofError(403, 'Google Play could not check the purchase. Open the app again later.');
     },
   };
 }

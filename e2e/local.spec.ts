@@ -96,6 +96,8 @@ test('My games lists the games of this session, with Replay and the result card'
   await page.locator('#end-card-close').click();
   await page.locator('#new-game').click();
   await page.locator('#account-button').click();
+  // This session starts folded.
+  await page.locator('#my-games-session-box > summary').click();
   const games = page.locator('#my-games-session li');
   await expect(games).toHaveCount(2);
   await expect(games.first()).toContainText('Player X won');
@@ -224,7 +226,7 @@ test('a tab that holds the game data does not stop a new tab from starting', asy
   await page.evaluate(holdSessions, DB_NAME);
   const second = await context.newPage();
   await second.goto('/');
-  await expectToast(second, 'Another tick3d tab or app holds the game data');
+  await expectToast(second, 'tick3d is open in another tab or the app');
   await cell(second, 0).click();
   await expect(marks(second)).toHaveCount(1);
 });

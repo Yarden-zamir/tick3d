@@ -13,9 +13,14 @@ public class PurchasePlugin: CAPPlugin, CAPBridgedPlugin {
         Task {
             do {
                 let result = try await AppTransaction.shared
+                // The server checks the signed deviceVerification hash against this id, so the proof counts for this device only.
+                guard let device = AppStore.deviceVerificationID else {
+                    call.reject("This device has no App Store verification id.")
+                    return
+                }
                 switch result {
                 case .verified:
-                    call.resolve(["jws": result.jwsRepresentation])
+                    call.resolve(["jws": result.jwsRepresentation, "device": device.uuidString.lowercased()])
                 case .unverified:
                     call.reject("Apple could not verify this app purchase.")
                 }

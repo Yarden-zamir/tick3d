@@ -54,11 +54,11 @@ describe('Play purchase proof', () => {
     nonce = proof.nonce(player);
     await expect(proof.verify('token', player)).rejects.toMatchObject({ status: 403 });
   });
-  it.each(['UNLICENSED', 'UNEVALUATED'])('returns a verified negative %s verdict only to the nonce owner, once', async (licensing) => {
+  it('returns a verified UNLICENSED verdict only to the nonce owner, once', async () => {
     let nonce = '';
     const proof = createPlayProof(async () => {
       const result = verdict(nonce);
-      result.tokenPayloadExternal.accountDetails.appLicensingVerdict = licensing;
+      result.tokenPayloadExternal.accountDetails.appLicensingVerdict = 'UNLICENSED';
       return result;
     }, () => time);
     nonce = proof.nonce(player);
@@ -66,9 +66,31 @@ describe('Play purchase proof', () => {
     await expect(proof.verify('negative', player)).resolves.toBe(false);
     await expect(proof.verify('negative', player)).rejects.toMatchObject({ status: 403 });
   });
+  it('refuses an UNEVALUATED verdict instead of returning a negative one', async () => {
+    let nonce = '';
+    const proof = createPlayProof(async () => {
+      const result = verdict(nonce);
+      result.tokenPayloadExternal.accountDetails.appLicensingVerdict = 'UNEVALUATED';
+      return result;
+    }, () => time);
+    nonce = proof.nonce(player);
+    await expect(proof.verify('unevaluated', player)).rejects.toMatchObject({ status: 403 });
+  });
   it('fails closed without credentials and rejects malformed configuration', async () => {
     expect(playDecoderFromEnv({})).toBeUndefined();
     expect(() => playDecoderFromEnv({ PLAY_SERVICE_ACCOUNT_JSON: '{}' })).toThrow();
     await expect(createPlayProof(undefined).verify('token', player)).rejects.toMatchObject({ status: 503 });
+  });
+  it('keeps a malformed secret out of the error message', () => {
+    const secret = '{"private_key": "-----BEGIN PRIVATE KEY-----secret-part';
+    let message = '';
+    try {
+      playDecoderFromEnv({ PLAY_SERVICE_ACCOUNT_JSON: secret });
+    } catch (error) {
+      message = error instanceof Error ? `${error.message} ${String(error.cause)}` : String(error);
+    }
+    expect(message).toContain('not valid JSON');
+    expect(message).not.toContain('secret-part');
+    expect(message).not.toContain('PRIVATE KEY');
   });
 });

@@ -75,7 +75,9 @@ describe('the tester code routes', () => {
     expect((await call('POST', '/copies', { body: { by: null }, client: '203.0.113.40' })).status).toBe(400);
     expect((await report({ by: '0123456789abcdef' })).status).toBe(400);
     expect((await report({ by: null, proof: 'invented', store: 'play' })).status).toBe(503);
-    expect((await report({ by: null, proof: 'invented', store: 'apple' })).status).toBe(503);
+    // An Apple proof names its device. Without the id, the body is invalid.
+    expect((await report({ by: null, proof: 'invented', store: 'apple' })).status).toBe(400);
+    expect((await report({ by: null, proof: 'invented', store: 'apple', device: '0f1e2d3c-4b5a-4978-8a6b-000000000001' })).status).toBe(503);
     expect((await call('POST', '/copies/nonce')).status).toBe(400);
     const first = await call('POST', '/copies/nonce', { player });
     const second = await call('POST', '/copies/nonce', { player });
