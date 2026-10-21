@@ -3308,8 +3308,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--muted);
 }
 
+/* minmax(0, 1fr): a long name never widens a row past the dialog. */
 .my-games-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.4rem;
   margin: 0;
   padding: 0;
@@ -3330,6 +3332,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: grid;
   flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .my-games-list .avatar {
