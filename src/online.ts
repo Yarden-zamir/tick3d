@@ -38,6 +38,7 @@ import {
   parseCustomName,
   parseDeviceGameId,
   parseHistoryPage,
+  parsePersonId,
   parsePlayerInfo,
   parsePreviews,
   parsePublicGame,
@@ -46,7 +47,8 @@ import {
   statsQuery,
 } from './protocol.ts';
 import { STORAGE_KEYS } from './storage-keys.ts';
-import { type ClaimRequest, type ClaimedCode, type TesterCodes, parseClaimedCode, parseTesterCodes } from './testing/codes.ts';
+import { type ClaimRequest, type ClaimedCode, type TesterCodes, parseClaimedCode, parseTesterCodes } from './share/codes.ts';
+import { parseCopyAnswer } from './copies.ts';
 
 
 // crypto.randomUUID exists only on HTTPS and localhost. A phone on the local network loads the dev
@@ -119,8 +121,10 @@ async function call(method: string, path: string, body?: unknown, signal?: Abort
 const request = async (method: string, path: string, body?: unknown): Promise<SessionView> =>
   parseSessionView(await call(method, `/sessions${path}`, body));
 
-// `name` is the custom name of a player without a GitHub login, or null.
-export type Me = { loginAvailable: boolean; user: PlayerInfo | null; name: string | null };
+// `name` is the custom name of a player without a GitHub login, or null. `person` is the public person id of
+// this player (of the account when logged in), and `hasCopy` whether the player holds a copy of the paid Android app
+// (src/copies.ts). The server always sends both; null means no answer came yet.
+export type Me = { loginAvailable: boolean; user: PlayerInfo | null; name: string | null; person: PersonId | null; hasCopy: boolean | null };
 
 export function parseMe(value: unknown): Me {
   if (typeof value !== 'object' || value === null) throw new Error('invalid answer from /api/me');
@@ -129,10 +133,19 @@ export function parseMe(value: unknown): Me {
   // An older server sends no name.
   const raw = (value as Record<string, unknown>).name;
   const name = raw === undefined || raw === null ? null : parseCustomName(raw);
-  if (typeof loginAvailable !== 'boolean' || info === undefined || name === undefined || (raw !== undefined && raw !== null && raw !== name)) {
+  const person = parsePersonId((value as Record<string, unknown>).person);
+  const { hasCopy } = value as Record<string, unknown>;
+  if (
+    typeof loginAvailable !== 'boolean' ||
+    info === undefined ||
+    name === undefined ||
+    (raw !== undefined && raw !== null && raw !== name) ||
+    person === undefined ||
+    typeof hasCopy !== 'boolean'
+  ) {
     throw new Error('invalid answer from /api/me');
   }
-  return { loginAvailable, user: info, name };
+  return { loginAvailable, user: info, name, person, hasCopy };
 }
 
 // The page reads "My games" only to display it, so a light shape check is enough here.
@@ -197,7 +210,7 @@ export const api = {
   report: (report: { reason: ReportReason; note: string } & ({ code: Code; message: number } | { code?: Code; person: PersonId })) =>
     call('POST', '/reports', report),
   previews: async (): Promise<Previews> => parsePreviews(await call('GET', '/previews')),
-  // The promo codes of the Android closed test (/testing).
+  // The promo codes of the Android closed test (/share).
   testerCodes: async (): Promise<TesterCodes> => {
     const codes = parseTesterCodes(await call('GET', '/testing/codes'));
     if (codes === undefined) throw new Error('invalid answer from /api/testing/codes');
@@ -207,6 +220,12 @@ export const api = {
     const claimed = parseClaimedCode(await call('POST', `/testing/codes/${id}/claim`, claim));
     if (claimed === undefined) throw new Error('invalid answer from /api/testing/codes/{codeId}/claim');
     return claimed;
+  },
+  // The paid Android app opened on this device, with the inviter that /share kept. Answers whether the player holds a copy.
+  reportAppOpen: async (by: PersonId | null): Promise<boolean> => {
+    const answer = parseCopyAnswer(await call('POST', '/copies', { by }));
+    if (answer === undefined) throw new Error('invalid answer from /api/copies');
+    return answer.hasCopy;
   },
   logout: () => call('POST', '/auth/logout'),
   // Login is a full page visit to GitHub and back to `returnTo`, by default this page.

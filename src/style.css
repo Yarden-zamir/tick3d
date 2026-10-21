@@ -3828,6 +3828,117 @@ body[data-turn='O'] .status[data-state='playing'] {
   }
 }
 
+/* The achievement popup (src/page/achievement-popup.ts): the dark band of the end card unlock, as a card at the
+   bottom of the screen. It lands like a sticker, and its badges pop in one after another. */
+.achievement-popup {
+  position: fixed;
+  z-index: 20;
+  left: 50%;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  translate: -50% 0;
+  display: grid;
+  gap: 0.6rem;
+  width: min(calc(100vw - 1.5rem), 24rem);
+  padding: 0.8rem;
+  border: var(--border) solid #000000;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 12% 20%, rgb(150 120 255 / 0.55), transparent 55%),
+    linear-gradient(120deg, #17122f, #2c2166);
+  box-shadow: 4px 4px 0 #000000;
+  color: #ffffff;
+}
+
+.achievement-popup[hidden] {
+  display: none;
+}
+
+.achievement-popup.pop {
+  animation: popup-land 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* As sticker-slap, from below: the card keeps its centring translate. */
+@keyframes popup-land {
+  from {
+    opacity: 0;
+    translate: -50% 120%;
+    rotate: -6deg;
+  }
+
+  70% {
+    opacity: 1;
+    rotate: 1deg;
+  }
+}
+
+.achievement-popup-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.achievement-popup-head h2 {
+  flex: 1;
+  margin: 0;
+  color: #ffe14d;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The popup is dark in every theme, so its buttons keep black borders. */
+.achievement-popup .btn {
+  border-color: #000000;
+}
+
+.achievement-popup-head .btn {
+  background: #ffffff;
+  color: #000000;
+}
+
+.achievement-popup-list {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The badge, its size and the gap to the text as on the unlock band of the end card (.unlock). */
+.achievement-popup-item {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.achievement-popup-item .achievement-icon {
+  flex-shrink: 0;
+  width: 3rem;
+  height: 3rem;
+  padding: 0.45rem;
+  border-color: #000000;
+  box-shadow: 2px 2px 0 #000000;
+}
+
+.achievement-popup.pop .achievement-popup-item .achievement-icon {
+  animation: medal-pop 0.55s calc(0.25s + var(--i) * 0.18s) cubic-bezier(0.34, 1.8, 0.64, 1) both;
+}
+
+.achievement-popup.pop .achievement-popup-item .achievement-icon[data-tier='mythic'] {
+  animation:
+    medal-pop 0.55s calc(0.25s + var(--i) * 0.18s) cubic-bezier(0.34, 1.8, 0.64, 1) both,
+    badge-foil 6s linear infinite;
+}
+
+.achievement-popup-item .unlock-text b {
+  font-size: 1rem;
+}
+
+.achievement-popup-more {
+  justify-self: start;
+}
+
 /* A player who closed an async game: dimmed, but the game goes on. */
 .tally.away {
   opacity: 0.6;
@@ -4177,6 +4288,26 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.4rem;
   font-weight: 700;
   text-align: center;
+}
+
+/* The Share button of the game header sits with the header buttons, at the right. The header is the same on
+   every page (src/markup.test.ts), so the button stays outside .brand-links. A negative right margin turns the
+   gap of .brand (1rem) into the gap of .brand-links (0.6rem), so it looks like one more button of the group. */
+.brand > .game-share {
+  margin-left: auto;
+  margin-right: calc(0.6rem - 1rem);
+  anchor-name: --game-share;
+}
+
+@media (width < 64rem) {
+  .brand:has(> .status, > .page-title) > .game-share + .game-share-menu + .brand-links {
+    margin-left: 0;
+  }
+}
+
+/* The Share menu: under the Share button, at its right edge, as the link menu below. */
+.share-menu.game-share-menu {
+  position-anchor: --game-share;
 }
 
 /* The link menu: a popover under the caret of Link, at its right edge. It flips above when there is no room below.

@@ -1,8 +1,9 @@
 import type { Page } from '@playwright/test';
 import { PAGES } from '../src/pages.ts';
+import { STORAGE_KEYS } from '../src/storage-keys.ts';
 import { expect, test } from './fixtures.ts';
 
-// The testing page (/testing) with a fake code list, so the test needs no real codes. A preview has none.
+// The share page (/share) with a fake code list, so the test needs no real codes. A preview has none.
 
 const CODE = 'B9WQ4T7XK2M8RZ5P3N6H1JD';
 type Card = { id: number; hint: string; claimed: boolean; name: string | null; gravatar: string | null };
@@ -32,7 +33,7 @@ async function fakeCodes(page: Page, taken: number[] = []): Promise<void> {
 const card = (page: Page, hint: string) => page.locator('.code-card', { has: page.locator('.code-hint', { hasText: hint }) });
 
 test('the page asks for the phone, and each phone shows its own steps', async ({ open }) => {
-  const { page } = await open({ path: PAGES.testing.path });
+  const { page } = await open({ path: PAGES.share.path });
   await expect(page.locator('#android-path')).toBeHidden();
   await expect(page.locator('#iphone-path')).toBeHidden();
   await page.getByRole('button', { name: 'iPhone' }).click();
@@ -45,7 +46,7 @@ test('the page asks for the phone, and each phone shows its own steps', async ({
 });
 
 test('a claim shows the code, and a second claim asks first', async ({ open }) => {
-  const { page } = await open({ path: PAGES.testing.path });
+  const { page } = await open({ path: PAGES.share.path });
   await fakeCodes(page);
   await page.getByRole('button', { name: 'Android' }).click();
   await expect(card(page, 'K7Q')).toHaveAttribute('data-state', 'taken');
@@ -76,7 +77,7 @@ test('a claim shows the code, and a second claim asks first', async ({ open }) =
 });
 
 test('a code that somebody else took first turns taken, with a message', async ({ open }) => {
-  const { page } = await open({ path: PAGES.testing.path });
+  const { page } = await open({ path: PAGES.share.path });
   await fakeCodes(page, [2]);
   await page.getByRole('button', { name: 'Android' }).click();
   await card(page, 'B9W').click();
@@ -89,14 +90,14 @@ test('a code that somebody else took first turns taken, with a message', async (
 });
 
 test('without free codes, the page says whom to ask', async ({ open }) => {
-  const { page } = await open({ path: PAGES.testing.path });
+  const { page } = await open({ path: PAGES.share.path });
   await page.route('**/api/testing/codes', (route) => route.fulfill({ json: { codes: [{ id: 1, hint: 'K7Q', claimed: true, name: 'Tom', gravatar: null }] } }));
   await page.getByRole('button', { name: 'Android' }).click();
   await expect(page.locator('#codes-empty')).toBeVisible();
 });
 
 test('a refresh turns a card that another tester took in its own slot, without a new grid', async ({ open }) => {
-  const { page } = await open({ path: PAGES.testing.path });
+  const { page } = await open({ path: PAGES.share.path });
   const codes: Card[] = Array.from({ length: 30 }, (_, i) => ({ id: i + 1, hint: `C${String(i).padStart(2, '0')}`, claimed: false, name: null, gravatar: null }));
   await page.route('**/api/testing/codes', (route) => route.fulfill({ json: { codes } }));
   await page.getByRole('button', { name: 'Android' }).click();
@@ -118,4 +119,44 @@ test('a refresh turns a card that another tester took in its own slot, without a
   // The same element turned, and the page did not move.
   expect(await page.evaluate(() => document.querySelector('.code-card[data-slot="30"]') === (window as unknown as { e2eCard: Element }).e2eCard)).toBe(true);
   expect(await page.evaluate(() => scrollY)).toBe(scroll);
+});
+
+test('an invite link credits its first inviter in the claim, and the share button shares the own invite link', async ({ open }) => {
+  const INVITER = '0123456789abcdef';
+  const { page } = await open({ path: `${PAGES.share.path}?by=${INVITER}` });
+  await fakeCodes(page);
+  // The share sheet gets the link only, with the person id of this browser.
+  await page.evaluate(() => {
+    Object.assign(navigator, {
+      share: async (data: ShareData) => {
+        Object.assign(window, { e2eShared: data });
+      },
+    });
+  });
+  const token = await page.evaluate((key) => localStorage.getItem(key) ?? '', STORAGE_KEYS.player);
+  const me = (await (await page.request.get('/api/me', { headers: { 'x-player': token } })).json()) as { person: string };
+  // The page knows its person once its own GET /api/me answers.
+  await expect
+    .poll(async () => {
+      await page.locator('#share-page').click();
+      return page.evaluate(() => (window as unknown as { e2eShared?: ShareData }).e2eShared);
+    })
+    .toEqual({ url: `${new URL(page.url()).origin}/share?by=${me.person}` });
+
+  // A later visit with another inviter, or none, keeps the first one.
+  await page.goto(`${PAGES.share.path}?by=fedcba9876543210`);
+  await page.goto(`${PAGES.share.path}?by=bad`);
+  await page.getByRole('button', { name: 'Android' }).click();
+  await card(page, 'B9W').click();
+  await page.getByLabel('Google Play email').fill('dana@example.com');
+  await page.getByLabel('Your name').fill('Dana');
+  const claim = page.waitForRequest('**/api/testing/codes/2/claim');
+  await page.getByRole('button', { name: 'Claim the code', exact: true }).click();
+  expect((await claim).postDataJSON()).toEqual({ email: 'dana@example.com', name: 'Dana', by: INVITER });
+});
+
+test('the old address /testing redirects to /share with its query', async ({ request }) => {
+  const response = await request.get('/testing?by=0123456789abcdef', { maxRedirects: 0 });
+  expect(response.status()).toBe(302);
+  expect(response.headers().location).toBe('/share?by=0123456789abcdef');
 });

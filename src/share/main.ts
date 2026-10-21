@@ -1,16 +1,22 @@
-// The testing page (/testing): the steps to join the closed test on Android or iPhone, and the Google Play
-// promo codes of the Android path (src/testing/codes.ts). The page keeps the codes that it claimed in localStorage.
+// The share page (/share): the invite link, the steps to join the closed test on Android or iPhone, and the Google Play
+// promo codes of the Android path (src/share/codes.ts). The page keeps the codes that it claimed in localStorage.
 import '../style.css';
-import './testing.css';
+import './share.css';
 import { element } from '../element.ts';
 import { setupPageHeader } from '../header/header.ts';
 import { renderQr } from '../nearby/qr.ts';
 import { OnlineError, api } from '../online.ts';
 import { STORAGE_KEYS } from '../storage-keys.ts';
 import { type MyCode, TESTER_NAME_MAX_LENGTH, type TesterCode, parseClaimRequest, parseMyCodes, redeemUrl } from './codes.ts';
+import { inviteUrl, inviterOf } from './invite.ts';
 import { PHONES, type Phone, isPhone, phoneOf } from './phone.ts';
+import type { PersonId } from '../protocol.ts';
 
-setupPageHeader();
+// The person id of this player, for the invite link. It stays null until GET /api/me answers.
+let me: PersonId | null = null;
+setupPageHeader((answer) => {
+  me = answer.person;
+});
 
 const paths: Record<Phone, HTMLElement> = { android: element('#android-path', HTMLElement), iphone: element('#iphone-path', HTMLElement) };
 const choices: Record<Phone, HTMLButtonElement> = { android: element('#pick-android', HTMLButtonElement), iphone: element('#pick-iphone', HTMLButtonElement) };
@@ -36,23 +42,38 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const trailerVideo = element('#trailer', HTMLVideoElement);
 const trailerSound = element('#trailer-sound', HTMLButtonElement);
 
+// The badge shows the real state of the video.
+function showTrailerSound(): void {
+  trailerSound.setAttribute('aria-pressed', String(!trailerVideo.muted));
+  trailerSound.textContent = trailerVideo.muted ? 'Tap for sound' : 'Sound on';
+}
+
 function toggleTrailerSound(): void {
   trailerVideo.muted = !trailerVideo.muted;
   // Turning the sound on restarts the trailer, so the first words are heard.
   if (!trailerVideo.muted) trailerVideo.currentTime = 0;
   void trailerVideo.play().catch(() => undefined);
-  trailerSound.setAttribute('aria-pressed', String(!trailerVideo.muted));
-  trailerSound.textContent = trailerVideo.muted ? 'Tap for sound' : 'Sound on';
 }
 trailerVideo.addEventListener('click', toggleTrailerSound);
 trailerSound.addEventListener('click', toggleTrailerSound);
+trailerVideo.addEventListener('volumechange', showTrailerSound);
+// The sound plays for one run only: at the end the trailer starts again without sound, and loops so.
+trailerVideo.addEventListener('ended', () => {
+  trailerVideo.muted = true;
+  trailerVideo.currentTime = 0;
+  void trailerVideo.play().catch(() => undefined);
+});
 // The page starts the trailer itself (no autoplay attribute). With reduced motion, it waits for a tap.
-if (!reducedMotion.matches) void trailerVideo.play().catch(() => undefined);
+// It starts once the browser expects to play to the end without a stop (canplaythrough), so a slow link shows
+// the poster a little longer instead of a stuttering start. readyState 4 means that moment passed already.
+if (!reducedMotion.matches) {
+  const start = () => void trailerVideo.play().catch(() => undefined);
+  if (trailerVideo.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) start();
+  else trailerVideo.addEventListener('canplaythrough', start, { once: true });
+}
 
 // ---- Share ----
 
-// Production shares the short address (Caddyfile.j2). Other hosts, such as a preview, share their own page.
-const shareUrl = location.hostname === 'tick3d.yarden-zamir.com' ? 'https://testing.tick3d.yarden-zamir.com' : `${location.origin}/testing`;
 const shareButton = element('#share-page', HTMLButtonElement);
 const shareLabel = element('#share-page-label', HTMLSpanElement);
 
@@ -65,10 +86,12 @@ function showShareResult(text: string): void {
   }, 2000);
 }
 
+// The share sheet gets the link only: a chat app then pastes the link, and its preview (share.html) tells the rest.
 async function sharePage(): Promise<void> {
+  const shareUrl = inviteUrl(location.origin, me);
   if (typeof navigator.share === 'function') {
     try {
-      await navigator.share({ title: 'Test tick3d', text: 'Help test tick3d, a 3D tic-tac-toe game. Android gets a free code, iPhone gets TestFlight.', url: shareUrl });
+      await navigator.share({ url: shareUrl });
       return;
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -105,6 +128,13 @@ function writeStored(key: string, value: unknown): boolean {
 
 const mine: MyCode[] = parseMyCodes(readStored(STORAGE_KEYS.testerCodes));
 
+// The person whose invite link brought this browser here. A claim sends it, so the claim counts for them.
+// The Android app reads it too (src/page/invite-install.ts), so an open of the app counts for them as well.
+// Limit: only Android counts. The iPhone path (TestFlight) is free and gives no signal of a purchase.
+// Revisit this when the iPhone app is paid.
+const invitedBy = inviterOf(readStored(STORAGE_KEYS.testerInvitedBy), location.search);
+if (invitedBy !== null) writeStored(STORAGE_KEYS.testerInvitedBy, invitedBy);
+
 // ---- The phone ----
 
 let qrShown = false;
@@ -112,7 +142,7 @@ let qrShown = false;
 function showPhone(phone: Phone | null): void {
   for (const each of PHONES) {
     choices[each].setAttribute('aria-pressed', String(each === phone));
-    // A path that turns visible plays its entrance animation again (testing.css).
+    // A path that turns visible plays its entrance animation again (share.css).
     paths[each].hidden = each !== phone;
   }
   if (phone === 'android' && !codesLoaded) void loadCodes();
@@ -406,7 +436,7 @@ form.addEventListener('submit', (event) => {
   event.preventDefault();
   const id = claiming;
   if (id === undefined) throw new Error('the claim form is open without a code');
-  const claim = parseClaimRequest({ email: emailInput.value, name: nameInput.value });
+  const claim = parseClaimRequest({ email: emailInput.value, name: nameInput.value, by: invitedBy });
   if (claim === undefined) {
     showClaimError(`Type a valid email and a name of 1 to ${TESTER_NAME_MAX_LENGTH} letters.`);
     return;
@@ -415,7 +445,7 @@ form.addEventListener('submit', (event) => {
   api
     .claimTesterCode(id, claim)
     .then(({ code }) => {
-      mine.push({ id, code, ...claim });
+      mine.push({ id, code, name: claim.name, email: claim.email });
       const kept = writeStored(STORAGE_KEYS.testerCodes, mine);
       dialog.close();
       notice = kept ? '' : 'This browser cannot keep your code, so copy it now.';

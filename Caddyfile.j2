@@ -9,10 +9,13 @@
         lb_try_interval 250ms
     }
 }
-{# The short address of the testing page, for production only. host() would give each preview a name
-   such as pr-<number>.tick3d.yarden-zamir.com, so this block names the host itself. #}
+{# The old short address of the share page (it was the testing page), for production only. It keeps the links sent
+   before the rename working, with their query. host() would give each preview a name such as
+   pr-<number>.tick3d.yarden-zamir.com, so this block names the host itself.
+   Revisit: remove it when testing.tick3d.yarden-zamir.com gets no requests for a few months. #}
 {% if environment == "prod" %}
 testing.tick3d.yarden-zamir.com {
-    redir https://tick3d.yarden-zamir.com/testing 302
+    {# {?query} is the query with its "?", or nothing for no query, so an invite link keeps its "by". #}
+    redir https://tick3d.yarden-zamir.com/share{?query} 302
 }
 {% endif %}

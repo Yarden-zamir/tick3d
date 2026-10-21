@@ -46,7 +46,7 @@ export async function checkLanHost(): Promise<void> {
   }
 }
 
-async function shareLink(intent: LinkIntent): Promise<void> {
+export async function shareLink(intent: LinkIntent): Promise<void> {
   if (page.session?.mode !== 'online') return;
   const url = sessionLink(location.origin, page.session.code, intent);
   const text = intent === 'watch' ? 'Watch my 3D tic-tac-toe game on tick3d.' : `Play 3D tic-tac-toe with me on tick3d. Code ${page.session.code}.`;

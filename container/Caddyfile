@@ -15,6 +15,11 @@ http:// {
 	# previous container, so no socat sidecar is needed. 0666 lets the host Caddy connect.
 	bind unix/{$KITSHN_DEFAULT_SOCKET}|0666
 
+	# The page /testing moved to /share. The redirect keeps the links sent before the rename working, with their query
+	# (an invite link keeps its "by"). Revisit: remove it when /testing gets no requests for a few months.
+	@testing path /testing /testing/ /testing.html
+	redir @testing /share{?query} 302
+
 	# Online sessions. Caddy flushes the text/event-stream responses at once, so live updates are not held back.
 	handle /api/* {
 		# A restart of `api` (a crash, or a deploy) holds the requests until the new process answers, without a 502.

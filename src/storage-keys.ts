@@ -17,9 +17,13 @@ export const STORAGE_KEYS = {
   deletionsChecked: 'tick3d.deletions-checked',
   // The run of wins against easy, and whether this device moved up to medium once (src/page/level-up.ts).
   levelUp: 'tick3d.level-up',
-  // The tester codes that this browser claimed on /testing, and the phone that the visitor picked there.
+  // The tester codes that this browser claimed on /share, and the phone that the visitor picked there.
   testerCodes: 'tick3d.tester-codes',
   testerPhone: 'tick3d.tester-phone',
+  // The person id of the first invite link that brought this browser to /share (src/share/invite.ts).
+  testerInvitedBy: 'tick3d.tester-invited-by',
+  // The achievements that this device showed already, in a popup or on an end card (src/page/achievement-popup.ts).
+  achievementsSeen: 'tick3d.achievements-seen',
 } as const;
 
 // The keys that hold settings, not game data. 'tick3d.voice' is the key of src/voice/settings.ts

@@ -1,6 +1,11 @@
+import { mkdtemp } from 'node:fs/promises';
+import { DuckDBInstance } from '@duckdb/node-api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseClaimRequest, parseTesterCodeEntries, parseTesterCodes } from '../src/testing/codes.ts';
+import { toEpochMs as ms } from '../src/epoch.ts';
+import { replay } from '../src/game.ts';
+import { parseClaimRequest, parseTesterCodeEntries, parseTesterCodes } from '../src/share/codes.ts';
 import { type Store, openStore } from './store.ts';
+import { ACCOUNT_TOKEN_PREFIX, type PlayerToken, personId, toRecord } from '../src/protocol.ts';
 import { gravatarOf, testerCodesFromEnv } from './tester-codes.ts';
 
 // DuckDB writes for each statement. A busy CI machine needs more than the default 5 s (as in server/store.test.ts).
@@ -9,7 +14,8 @@ vi.setConfig({ testTimeout: 20_000 });
 const FREE_A = 'AAAAAAAAAAAAAAAAAAAAAA1';
 const FREE_B = 'BBBBBBBBBBBBBBBBBBBBBB2';
 const GIVEN = 'CCCCCCCCCCCCCCCCCCCCCC3';
-const DANA = { email: 'Dana@Example.com', name: 'Dana' };
+const DANA = { email: 'Dana@Example.com', name: 'Dana', by: null };
+const player = 'aaaaaaaa-0000-4000-8000-000000000001' as PlayerToken;
 
 describe('the TESTER_CODES setting', () => {
   it('reads free codes and codes given out by hand, split by commas and new lines', () => {
@@ -43,7 +49,9 @@ describe('the TESTER_CODES setting', () => {
 
 describe('a claim request', () => {
   it('takes a trimmed email and name', () => {
-    expect(parseClaimRequest({ email: ' dana@example.com ', name: '  Dana   Levi ' })).toEqual({ email: 'dana@example.com', name: 'Dana Levi' });
+    expect(parseClaimRequest({ email: ' dana@example.com ', name: '  Dana   Levi ' })).toEqual({ email: 'dana@example.com', name: 'Dana Levi', by: null });
+    expect(parseClaimRequest({ email: 'dana@example.com', name: 'Dana', by: '0123456789abcdef' })?.by).toBe('0123456789abcdef');
+    expect(parseClaimRequest({ email: 'dana@example.com', name: 'Dana', by: null })?.by).toBeNull();
     expect(parseClaimRequest({ email: 'o.brien@mail.co.uk', name: "Seán O'Brien" })).toBeDefined();
   });
 
@@ -57,6 +65,8 @@ describe('a claim request', () => {
     { email: 'dana@example.com', name: 'x'.repeat(41) },
     { email: 'dana@example.com', name: '<script>' },
     { email: 'dana@example.com' },
+    { email: 'dana@example.com', name: 'Dana', by: 'not a person' },
+    { email: 'dana@example.com', name: 'Dana', by: 7 },
   ])('refuses %o', (body) => {
     expect(parseClaimRequest(body)).toBeUndefined();
   });
@@ -75,7 +85,7 @@ describe('the tester codes table', () => {
     expect(await store.addTesterCodes(parseTesterCodeEntries(`${FREE_A},${GIVEN}=Tom`))).toBe(2);
     const [first] = (await store.testerCodes()).codes;
     if (first === undefined) throw new Error('no code');
-    await store.claimTesterCode(first.id, DANA);
+    await store.claimTesterCode(first.id, DANA, player);
     // The secret now lists the claimed code as free, and the hand-given code with another name: the rows stay.
     expect(await store.addTesterCodes(parseTesterCodeEntries(`${FREE_A},${GIVEN}=Someone,${FREE_B}`))).toBe(1);
     expect((await store.testerCodes()).codes).toEqual([
@@ -89,14 +99,14 @@ describe('the tester codes table', () => {
     await store.addTesterCodes(parseTesterCodeEntries(`${FREE_A},${GIVEN}=Tom`));
     const [free, given] = (await store.testerCodes()).codes;
     if (free === undefined || given === undefined) throw new Error('no codes');
-    expect(await store.claimTesterCode(free.id, DANA)).toEqual({ code: FREE_A });
-    await expect(store.claimTesterCode(free.id, { email: 'eve@example.com', name: 'Eve' })).rejects.toMatchObject({ status: 409 });
-    await expect(store.claimTesterCode(given.id, DANA)).rejects.toMatchObject({ status: 409 });
-    await expect(store.claimTesterCode(999, DANA)).rejects.toMatchObject({ status: 404 });
+    expect(await store.claimTesterCode(free.id, DANA, player)).toEqual({ code: FREE_A });
+    await expect(store.claimTesterCode(free.id, { email: 'eve@example.com', name: 'Eve', by: null }, player)).rejects.toMatchObject({ status: 409 });
+    await expect(store.claimTesterCode(given.id, DANA, player)).rejects.toMatchObject({ status: 409 });
+    await expect(store.claimTesterCode(999, DANA, player)).rejects.toMatchObject({ status: 404 });
     // The second claimer did not replace the first.
     expect((await store.testerClaims()).claims).toEqual([
-      { hint: 'CCC', name: 'Tom', email: null, claimedAt: expect.any(Number) },
-      { hint: 'AAA', name: 'Dana', email: DANA.email, claimedAt: expect.any(Number) },
+      { hint: 'CCC', name: 'Tom', email: null, claimedAt: expect.any(Number), invitedBy: null },
+      { hint: 'AAA', name: 'Dana', email: DANA.email, claimedAt: expect.any(Number), invitedBy: null },
     ]);
   });
 
@@ -107,7 +117,7 @@ describe('the tester codes table', () => {
     for (const index of [3, 1]) {
       const code = before[index];
       if (code === undefined) throw new Error('no code');
-      await store.claimTesterCode(code.id, DANA);
+      await store.claimTesterCode(code.id, DANA, player);
     }
     // A new secret value in another order adds its new code after the others.
     await store.addTesterCodes(parseTesterCodeEntries(['E'.repeat(23), ...codes.toReversed()].join(',')));
@@ -121,10 +131,273 @@ describe('the tester codes table', () => {
     await store.addTesterCodes(parseTesterCodeEntries(`${FREE_A},${FREE_B},${GIVEN}=Tom`));
     const [free] = (await store.testerCodes()).codes;
     if (free === undefined) throw new Error('no code');
-    await store.claimTesterCode(free.id, DANA);
+    await store.claimTesterCode(free.id, DANA, player);
     const list = await store.testerCodes();
     expect(parseTesterCodes(list)).toEqual(list);
     const text = JSON.stringify(list);
     for (const secret of [FREE_A, FREE_B, GIVEN, DANA.email, DANA.email.toLowerCase()]) expect(text).not.toContain(secret);
+  });
+});
+
+describe('invites', () => {
+  const inviter = 'bbbbbbbb-0000-4000-8000-000000000002' as PlayerToken;
+  const inviterLaptop = 'cccccccc-0000-4000-8000-000000000003' as PlayerToken;
+  const GITHUB = { id: 202, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/202?v=4' };
+  const codes = (count: number) => Array.from({ length: count }, (_, i) => `CODE${String(i).padStart(19, '0')}`).join(',');
+  const tester = (i: number) => ({ email: `tester${i}@example.com`, name: `Tester ${i}` });
+  // The browser of tester i.
+  const browser = (i: number) => `eeeeeeee-0000-4000-8000-${String(i).padStart(12, '0')}` as PlayerToken;
+  let store: Store;
+  afterEach(async () => {
+    await store.close();
+  });
+
+  const unlocked = async (token: PlayerToken) =>
+    (await store.achievements(token)).achievements.filter((entry) => entry.id.startsWith('invite-')).map(({ id, count, unlockedAt }) => ({ id, count, unlocked: unlockedAt !== null }));
+
+  it('count each person who claimed through the link once, on every device of the account', async () => {
+    store = await openStore(':memory:');
+    await store.addTesterCodes(parseTesterCodeEntries(codes(7)));
+    // The inviter shares before the login, and later logs in on a second device too.
+    const before = await store.person(inviter);
+    for (let i = 1; i <= 4; i++) await store.claimTesterCode(i, { ...tester(i), by: before }, browser(i));
+    await store.linkToken(inviter, GITHUB);
+    await store.linkToken(inviterLaptop, GITHUB);
+    const account = await store.person(inviterLaptop);
+    expect(account).not.toBe(before);
+    // A second code of one person counts once, also with another email.
+    await store.claimTesterCode(5, { email: 'second@example.com', name: 'Tester 1', by: account }, browser(1));
+    expect(await unlocked(inviterLaptop)).toEqual([
+      { id: 'invite-1', count: 1, unlocked: true },
+      { id: 'invite-5', count: 4, unlocked: false },
+      { id: 'invite-25', count: 4, unlocked: false },
+    ]);
+    await store.claimTesterCode(6, { ...tester(6), by: account }, browser(6));
+    expect(await unlocked(inviter)).toMatchObject([{ count: 1 }, { count: 5, unlocked: true }, { count: 5, unlocked: false }]);
+    expect((await store.testerClaims()).claims.map((claim) => claim.invitedBy)).toEqual([before, before, before, before, account, account]);
+    // Nobody invited the claimer: nothing counts for them.
+    expect(await unlocked(player)).toMatchObject([{ count: 0 }, { count: 0 }, { count: 0 }]);
+  });
+
+  it('count no self-invite, also from another device of the same account', async () => {
+    store = await openStore(':memory:');
+    await store.addTesterCodes(parseTesterCodeEntries(codes(2)));
+    await store.linkToken(inviter, GITHUB);
+    await store.linkToken(inviterLaptop, GITHUB);
+    await store.claimTesterCode(1, { ...tester(1), by: await store.person(inviter) }, inviterLaptop);
+    await store.claimTesterCode(2, { ...tester(2), by: await personId(inviterLaptop) }, inviter);
+    expect((await store.testerClaims()).claims.map((claim) => claim.invitedBy)).toEqual([null, null]);
+    expect(await unlocked(inviter)).toMatchObject([{ count: 0 }, { count: 0 }, { count: 0 }]);
+  });
+
+  it('count an app open once per device, for the first inviter, and no self-invite', async () => {
+    store = await openStore(':memory:');
+    const by = await store.person(inviter);
+    expect(await store.reportAppOpen(player, by)).toBe(true);
+    expect(await store.reportAppOpen(player, by)).toBe(true);
+    // A later link of another inviter does not move the copy.
+    await store.reportAppOpen(player, await personId(inviterLaptop));
+    // The inviter's own app open is a copy, but no invite.
+    expect(await store.reportAppOpen(inviter, by)).toBe(true);
+    expect(await unlocked(inviter)).toMatchObject([{ count: 1, unlocked: true }, { count: 1 }, { count: 1 }]);
+    expect(await unlocked(inviterLaptop)).toMatchObject([{ count: 0 }, { count: 0 }, { count: 0 }]);
+  });
+
+  it('count a person once when they claimed a code and opened the app', async () => {
+    store = await openStore(':memory:');
+    await store.addTesterCodes(parseTesterCodeEntries(codes(2)));
+    const by = await store.person(inviter);
+    await store.claimTesterCode(1, { ...tester(1), by }, player);
+    await store.reportAppOpen(player, by);
+    // Another person opened the app without a code claim.
+    await store.reportAppOpen(inviterLaptop, by);
+    expect(await unlocked(inviter)).toMatchObject([{ count: 1 }, { count: 2 }, { count: 2 }]);
+  });
+
+  const ALICE = { id: 301, login: 'alice', avatar: 'https://avatars.githubusercontent.com/u/301?v=4' };
+  const CAROL = { id: 302, login: 'carol', avatar: 'https://avatars.githubusercontent.com/u/302?v=4' };
+  const count = async () => (await unlocked(inviter))[1]?.count;
+
+  it('R1: a claim in the browser before a login and an app open after it count once', async () => {
+    store = await openStore(':memory:');
+    await store.addTesterCodes(parseTesterCodeEntries(codes(1)));
+    const by = await store.person(inviter);
+    const phone = browser(1);
+    await store.claimTesterCode(1, { ...tester(1), by }, phone);
+    await store.linkToken(phone, ALICE);
+    // The app on the same phone shares the storage of Chrome, so the same device token reports.
+    await store.reportAppOpen(phone, by);
+    expect(await count()).toBe(1);
+  });
+
+  it('R2: a device with an invite event never adds a second person, also after a login with another account', async () => {
+    store = await openStore(':memory:');
+    await store.addTesterCodes(parseTesterCodeEntries(codes(1)));
+    const by = await store.person(inviter);
+    const phone = browser(1);
+    await store.linkToken(phone, ALICE);
+    await store.reportAppOpen(phone, by);
+    await store.unlinkToken(phone);
+    await store.linkToken(phone, CAROL);
+    await store.reportAppOpen(phone, by);
+    // A code claim on that device as Carol still names the same device.
+    await store.claimTesterCode(1, { ...tester(2), by }, phone);
+    expect(await count()).toBe(1);
+  });
+
+  it('R3: the owner of the device at its first event keeps the game, not a later account', async () => {
+    const path = `${await mkdtemp('/tmp/tick3d-invites-')}/owner.duckdb`;
+    store = await openStore(path);
+    const by = await store.person(inviter);
+    const phone = browser(1);
+    await store.linkToken(phone, ALICE);
+    await store.reportAppOpen(phone, by);
+    await store.unlinkToken(phone);
+    await store.linkToken(phone, CAROL);
+    await store.reportAppOpen(phone, by);
+    await store.close();
+    const instance = await DuckDBInstance.create(path);
+    const db = await instance.connect();
+    const owners = (await db.runAndReadAll('FROM app_copies SELECT owner')).getRowObjectsJS().map((row) => row.owner);
+    db.closeSync();
+    instance.closeSync();
+    expect(owners).toEqual([`${ACCOUNT_TOKEN_PREFIX}${String(ALICE.id).padStart(16, '0')}`]);
+    store = await openStore(path);
+  });
+
+  it('R5: a claim on a laptop and an app open on a phone count once when the laptop logs in to the account later', async () => {
+    store = await openStore(':memory:');
+    await store.addTesterCodes(parseTesterCodeEntries(codes(1)));
+    const by = await store.person(inviter);
+    await store.claimTesterCode(1, { ...tester(1), by }, browser(1));
+    await store.linkToken(browser(2), ALICE);
+    await store.reportAppOpen(browser(2), by);
+    expect(await count()).toBe(2);
+    await store.linkToken(browser(1), ALICE);
+    expect(await count()).toBe(1);
+  });
+
+  it('R4: two devices of one account count once', async () => {
+    store = await openStore(':memory:');
+    await store.addTesterCodes(parseTesterCodeEntries(codes(1)));
+    const by = await store.person(inviter);
+    await store.linkToken(browser(1), ALICE);
+    await store.linkToken(browser(2), ALICE);
+    await store.claimTesterCode(1, { ...tester(1), by }, browser(1));
+    await store.reportAppOpen(browser(2), by);
+    expect(await count()).toBe(1);
+  });
+
+  it('count an inviter without games in the rarity, so an unlock never shows 0% of players', async () => {
+    store = await openStore(':memory:');
+    await store.reportAppOpen(player, await store.person(inviter));
+    const { rarity } = await store.achievements(inviter);
+    expect(rarity.players).toBe(1);
+    expect(rarity.unlocked['invite-1']).toBe(1);
+  });
+
+  it('count in the rarity of the players with a game', async () => {
+    store = await openStore(':memory:');
+    await store.addTesterCodes(parseTesterCodeEntries(codes(1)));
+    const game = toRecord(replay([0, 1, 16, 2, 32, 3, 48], { times: [1, 2, 3, 4, 5, 6, 7].map((t) => ms(1_000 + t)) }));
+    const options = { hideBoard: false, hideHistory: false, hideCoordinates: false };
+    await store.addResults(inviter, [{ id: 'eeeeeeee-1111-4000-8000-000000000001', mode: 'computer', game, you: 'X', difficulty: 'easy', finishedAt: ms(2_000), publicId: null, options, tuned: false, metrics: null, guest: null }]);
+    expect((await store.achievements(inviter)).rarity.unlocked['invite-1']).toBe(0);
+    await store.claimTesterCode(1, { ...tester(1), by: await store.person(inviter) }, player);
+    const { rarity } = await store.achievements(inviter);
+    expect(rarity).toMatchObject({ players: 1, unlocked: { 'invite-1': 1, 'invite-5': 0 } });
+  });
+});
+
+describe('the claims from before the invite links', () => {
+  const YARDEN = `${ACCOUNT_TOKEN_PREFIX}${'8178413'.padStart(16, '0')}`;
+
+  it('count as invites of Yarden once per database, so a later claim without an invite stays without one', async () => {
+    const path = `${await mkdtemp('/tmp/tick3d-invites-')}/old.duckdb`;
+    // A database from before this release: the tester_codes table without invited_by, one code claimed.
+    const instance = await DuckDBInstance.create(path, { storage_compatibility_version: 'v1.5.0' });
+    const db = await instance.connect();
+    await db.run("CREATE SEQUENCE tester_code_order");
+    await db.run(`CREATE TABLE tester_codes (
+      id INTEGER PRIMARY KEY DEFAULT nextval('tester_code_order'), code VARCHAR NOT NULL UNIQUE, name VARCHAR, email VARCHAR,
+      claimed_at TIMESTAMPTZ, added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CHECK ((claimed_at IS NULL) = (name IS NULL) AND (email IS NULL OR name IS NOT NULL)))`);
+    // GIVEN: the code that Yarden gave to himself by hand. It is no invite.
+    await db.run(
+      `INSERT INTO tester_codes (code, name, email, claimed_at) VALUES ('${FREE_A}', 'Dana', 'dana@example.com', now()), ('${FREE_B}', NULL, NULL, NULL), ('${GIVEN}', 'Yarden', NULL, now())`,
+    );
+    db.closeSync();
+    instance.closeSync();
+
+    let store = await openStore(path);
+    const yarden = await personId(YARDEN);
+    expect((await store.testerClaims()).claims.map((claim) => ({ name: claim.name, invitedBy: claim.invitedBy }))).toEqual([
+      { name: 'Dana', invitedBy: yarden },
+      { name: 'Yarden', invitedBy: null },
+    ]);
+    await store.claimTesterCode(2, { email: 'eve@example.com', name: 'Eve', by: null }, player);
+    await store.close();
+
+    store = await openStore(path);
+    expect((await store.testerClaims()).claims.map((claim) => claim.invitedBy)).toEqual([yarden, null, null]);
+    await store.close();
+  });
+});
+
+describe('copies of the Android app', () => {
+  const phone = 'dddddddd-0000-4000-8000-000000000001' as PlayerToken;
+  const phone2 = 'dddddddd-0000-4000-8000-000000000002' as PlayerToken;
+  const ALICE = { id: 401, login: 'alice', avatar: 'https://avatars.githubusercontent.com/u/401?v=4' };
+  const CAROL = { id: 402, login: 'carol', avatar: 'https://avatars.githubusercontent.com/u/402?v=4' };
+  let store: Store;
+  beforeEach(async () => {
+    store = await openStore(':memory:');
+  });
+  afterEach(async () => {
+    await store.close();
+  });
+
+  it('belong to the account that is logged in on the device now, or to the device', async () => {
+    expect(await store.hasCopy(phone)).toBe(false);
+    expect(await store.reportAppOpen(phone, null)).toBe(true);
+    await store.linkToken(phone, ALICE);
+    expect(await store.hasCopy(phone)).toBe(true);
+    // Carol logs in on the phone of Alice and holds the copy. Alice holds it again after her next login there.
+    await store.unlinkToken(phone);
+    await store.linkToken(phone, CAROL);
+    const aliceWeb = 'dddddddd-0000-4000-8000-000000000003' as PlayerToken;
+    await store.linkToken(aliceWeb, ALICE);
+    expect(await store.hasCopy(phone)).toBe(true);
+    expect(await store.hasCopy(aliceWeb)).toBe(false);
+    await store.unlinkToken(phone);
+    await store.linkToken(phone, ALICE);
+    expect(await store.hasCopy(aliceWeb)).toBe(true);
+    // After a logout, the device holds the copy, and the account does not.
+    await store.unlinkToken(phone);
+    expect(await store.hasCopy(phone)).toBe(true);
+    expect(await store.hasCopy(aliceWeb)).toBe(false);
+  });
+
+  it('count for every device of the account', async () => {
+    const web = 'dddddddd-0000-4000-8000-000000000003' as PlayerToken;
+    await store.linkToken(web, ALICE);
+    expect(await store.hasCopy(web)).toBe(false);
+    await store.linkToken(phone, ALICE);
+    await store.reportAppOpen(phone, null);
+    expect(await store.hasCopy(web)).toBe(true);
+    // Another device without a login holds no copy.
+    expect(await store.hasCopy(phone2)).toBe(false);
+  });
+
+  it('of one account count as one invited person, also on two phones', async () => {
+    const inviter = 'bbbbbbbb-0000-4000-8000-000000000002' as PlayerToken;
+    const by = await store.person(inviter);
+    // The first phone opened before the login.
+    await store.reportAppOpen(phone, by);
+    await store.linkToken(phone, ALICE);
+    // The second phone opened while logged in to the same account.
+    await store.linkToken(phone2, ALICE);
+    await store.reportAppOpen(phone2, by);
+    expect((await store.achievements(inviter)).achievements.find((entry) => entry.id === 'invite-5')?.count).toBe(1);
   });
 });

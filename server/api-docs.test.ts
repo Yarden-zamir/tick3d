@@ -36,7 +36,8 @@ import { PATH_PARAMS, ROUTES, ROUTE_NAMES, type Route, SCHEMAS, type SchemaName,
 import { curlOf, openApi, swaggerHtml } from './api-docs-render.ts';
 import { openStore } from './store.ts';
 import { isRecord } from '../src/guards.ts';
-import { parseClaimRequest, parseClaimedCode, parseTesterCodes } from '../src/testing/codes.ts';
+import { parseClaimRequest, parseClaimedCode, parseTesterCodes } from '../src/share/codes.ts';
+import { parseAppOpen, parseCopyAnswer } from '../src/copies.ts';
 
 const ORIGIN = 'https://tick3d.example.com';
 const fail = (id: string): never => {
@@ -87,6 +88,8 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   TesterCodes: parseTesterCodes,
   ClaimRequest: parseClaimRequest,
   ClaimedCode: parseClaimedCode,
+  AppOpen: parseAppOpen,
+  CopyAnswer: parseCopyAnswer,
 };
 
 function parses(name: SchemaName, value: unknown): boolean {

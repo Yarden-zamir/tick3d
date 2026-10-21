@@ -66,6 +66,10 @@ export const ACHIEVEMENT_ICONS: Record<AchievementId, string> = {
   'lost-to-easy': `${ROBOT}${EYES}<path d="M9 15.5h6M11 15.5v2.2a1 1 0 0 0 2 0v-2.2"/>`,
   'photo-finish': '<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 4h6v5.3H3ZM15 4h6v5.3h-6ZM9 9.3h6v5.4H9ZM3 14.7h6V20H3ZM15 14.7h6V20h-6Z" fill="currentColor"/>',
   'last-move': '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7.5 3v18M12 3v18M16.5 3v18M3 7.5h18M3 12h18M3 16.5h18" stroke-width="1.3"/><rect x="16.5" y="16.5" width="4.5" height="4.5" fill="currentColor"/>',
+  'invite-1': '<circle cx="9" cy="7.5" r="3.5"/><path d="M2.5 20.5a6.5 6.5 0 0 1 13 0"/><path d="M19 8v6M16 11h6"/>',
+  'invite-5': '<path d="M3 10v4h3l9 5V5L6 10Z"/><path d="M6 14l1.5 6h3L9 15.5"/><path d="M18.5 9a4 4 0 0 1 0 6M20.5 6.5a7.5 7.5 0 0 1 0 11" stroke-width="1.8"/>',
+  'invite-25':
+    '<rect x="1" y="10.5" width="15" height="3.5" rx="1.75" transform="rotate(-40 8.5 12.25)"/><circle cx="6.2" cy="14.2" r="0.7" fill="currentColor"/><circle cx="8.5" cy="12.25" r="0.7" fill="currentColor"/><circle cx="10.8" cy="10.3" r="0.7" fill="currentColor"/><path d="M16.5 8.5V3l4.5-1v5.5"/><circle cx="15.2" cy="8.7" r="1.5" fill="currentColor"/><circle cx="19.7" cy="7.7" r="1.5" fill="currentColor"/>',
 };
 // A hidden achievement before its unlock.
 export const HIDDEN_ICON = '<path d="M8.5 9a3.5 3.5 0 1 1 5 3.2c-1 .5-1.5 1.2-1.5 2.3v.5"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/>';

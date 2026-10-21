@@ -44,6 +44,7 @@ import {
   REPORTS_PER_10_MINUTES,
   ROUTES,
   TESTER_CLAIMS_PER_HOUR,
+  APP_OPENS_PER_HOUR,
   type Route,
   WAIT_MS,
   matchRoute,
@@ -58,7 +59,8 @@ import { parseBoardQuery, parsePracticeRun } from '../src/practice/practice.ts';
 import { openStore } from './store.ts';
 import { createWaiters } from './waiters.ts';
 import { testerCodesFromEnv } from './tester-codes.ts';
-import { TESTER_NAME_MAX_LENGTH, parseClaimRequest } from '../src/testing/codes.ts';
+import { TESTER_NAME_MAX_LENGTH, parseClaimRequest } from '../src/share/codes.ts';
+import { parseAppOpen } from '../src/copies.ts';
 
 // PORT lets a test run its own server next to another one.
 const PORT = Number(process.env.PORT ?? 8080);
@@ -95,6 +97,8 @@ const allowDataDelete = createLimiter(DATA_DELETES_PER_HOUR, 3_600_000, 10_000, 
 // Claims of tester codes per address: a tester needs one code, so 5 per hour leaves room for a family on one
 // address and keeps one visitor from taking every code. Same limits as allowCreate.
 const allowTesterClaim = createLimiter(TESTER_CLAIMS_PER_HOUR, 3_600_000, 10_000, 'Too many code claims from this address. Try again later.');
+// Reports of an Android app open per address (POST /api/copies). Same limits as allowCreate.
+const allowAppOpen = createLimiter(APP_OPENS_PER_HOUR, 3_600_000, 10_000, 'Too many app reports from this address. Try again later.');
 // Each entry holds at most one open request, so `total` also caps the open announce requests.
 const lobby = createLobby({ perNetwork: NEARBY_HOSTS_PER_NETWORK, total: 1000, waitMs: WAIT_MS, graceMs: NEARBY_GRACE_MS });
 
@@ -341,12 +345,14 @@ function requireMaintainer(req: IncomingMessage): string {
   return user.login;
 }
 
-// The answer of GET /api/me: the login state and the custom name.
+// The answer of GET /api/me: the login state, the custom name and the public person id.
 async function me(token: PlayerToken, user: ReturnType<Auth['user']>) {
   return {
     loginAvailable: auth !== undefined,
     user: user === undefined ? null : { login: user.login, avatar: user.avatar },
     name: await store.customName(token),
+    hasCopy: await store.hasCopy(token),
+    person: await store.person(token),
   };
 }
 
@@ -509,12 +515,25 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // A cross-site form cannot send the X-Player header, so another site cannot claim a code.
     case 'POST /api/testing/codes/{codeId}/claim': {
       allowTesterClaim(clientOf(req), Date.now());
-      requirePlayer(req);
+      const player = requirePlayer(req);
       const id = Number(match.params.codeId);
       if (!Number.isSafeInteger(id) || id < 1 || String(id) !== match.params.codeId) throw new HttpError(400, 'A code id is a whole number from 1.');
       const claim = parseClaimRequest(await readJson(req));
-      if (claim === undefined) throw new HttpError(400, `A claim needs a valid email and a name of 1 to ${TESTER_NAME_MAX_LENGTH} letters, digits, spaces or - _ . '.`);
-      return send(res, 200, await store.claimTesterCode(id, claim));
+      if (claim === undefined) {
+        throw new HttpError(400, `A claim needs a valid email, a name of 1 to ${TESTER_NAME_MAX_LENGTH} letters, digits, spaces or - _ . ', and in "by" a person id or nothing.`);
+      }
+      return send(res, 200, await store.claimTesterCode(id, claim, player));
+    }
+    // A cross-site form cannot send the X-Player header, so another site cannot report for a player.
+    case 'POST /api/copies': {
+      allowAppOpen(clientOf(req), Date.now());
+      const player = requirePlayer(req);
+      const open = parseAppOpen(await readJson(req));
+      if (open === undefined) throw new HttpError(400, 'An app open report needs the person id of the inviter, or null, in "by".');
+      // A login cookie links this browser first, so the answer and the owner at the first open name the account.
+      const user = auth?.user(req);
+      if (user !== undefined) await store.linkToken(player, user);
+      return send(res, 200, { hasCopy: await store.reportAppOpen(player, open.by) });
     }
     case 'GET /api/testing/claims':
       requireMaintainer(req);

@@ -1342,7 +1342,7 @@ describe('report and block', () => {
 describe('delete my data', () => {
   const ALICE_ACCOUNT = `${ACCOUNT_TOKEN_PREFIX}${String(ALICE_GITHUB.id).padStart(16, '0')}`;
   const aliceTokens = [alice, alicePhone, ALICE_ACCOUNT];
-  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
+  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'app_copies', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
 
   // Per group of needles: the rows of each table whose text holds one of them. The store closes for the check and opens again.
   async function rowsHolding(path: string, groups: readonly (readonly string[])[]): Promise<Record<string, number>[]> {
@@ -1401,6 +1401,11 @@ describe('delete my data', () => {
     await store.addPracticeRun(alice, run);
     await store.addPracticeRun(bob, run);
     const aliceIds = await Promise.all(aliceTokens.map((token) => personId(token)));
+    // Bob claimed a tester code through Alice's invite link.
+    await store.addTesterCodes([{ code: 'AAAAAAAAAAAAAAAAAAAAAA1', name: null }]);
+    await store.claimTesterCode(1, { email: 'bob@example.com', name: 'Bob', by: await store.person(alice) }, bob);
+    // Alice's phone opened the Android app.
+    await store.reportAppOpen(alicePhone, null);
     // The leaderboard fills achievement_players, which names Alice's account.
     await store.leaderboard(ALL_STATS, undefined);
 
@@ -1418,6 +1423,8 @@ describe('delete my data', () => {
       seat_people: { deleted: 3, anonymised: 0 },
       practice_runs: { deleted: 1, anonymised: 0 },
       reports: { deleted: 0, anonymised: 1 },
+      tester_codes: { deleted: 0, anonymised: 1 },
+      app_copies: { deleted: 1, anonymised: 0 },
       player_tokens: { deleted: 3, anonymised: 0 },
       users: { deleted: 1, anonymised: 0 },
     });
