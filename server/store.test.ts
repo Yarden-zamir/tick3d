@@ -320,6 +320,23 @@ describe('my games', () => {
     expect(mine.sessions).toMatchObject([{ code, you: 'O', games: 1, yourTurn: false }]);
     expect((await store.myGames(carol)).total.played).toBe(0);
   });
+
+  it('gives each session its own opponent', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.setName(carol, 'Dana');
+    const withAlice = (await store.create(bob, 'With Alice')).code;
+    await store.join(withAlice, alice);
+    const withCarol = (await store.create(carol, 'With Carol')).code;
+    await store.join(withCarol, bob);
+    const alone = (await store.create(bob, 'Alone')).code;
+    const sessions = (await store.myGames(bob)).sessions;
+    const of = (code: Code) => sessions.find((summary) => summary.code === code);
+    expect(sessions).toHaveLength(3);
+    expect(of(withAlice)).toMatchObject({ you: 'X', opponent: { login: 'alice' } });
+    expect(of(withCarol)).toMatchObject({ you: 'O', opponent: null, opponentName: 'Dana' });
+    expect(of(alone)).toMatchObject({ you: 'X', opponent: null, opponentName: null });
+  });
 });
 
 // X wins on move 9 along 0, 16, 32, 48.
