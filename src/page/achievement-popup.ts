@@ -1,7 +1,7 @@
 // The popup of the achievements that unlocked away from an end card of this device: an invite on /share, a
 // game on another device, or the unlocks from before the popup existed. It checks when the page opens and when
 // it comes back to the front. It is no modal: the game stays playable under it, and Close or My games hide it.
-import { badge } from '../achievement-list.ts';
+import { badge, setupUnlockRow } from '../achievement-list.ts';
 import { type AchievementId, achievementOf } from '../achievements.ts';
 import { OnlineError, api } from '../online.ts';
 import { sounds } from '../sound.ts';
@@ -10,16 +10,15 @@ import { element } from './dom.ts';
 import { showError } from './feedback.ts';
 import { openMyGames } from './my-games.ts';
 import { showMyGamesTab } from './my-games-layout.ts';
-
-// More unlocks than this show as "+N more", which opens My games. The first check of a device can find dozens.
-const SHOWN = 3;
+import { previewUnlocks } from './preview-unlocks.ts';
 
 const popup = element('#achievement-popup', HTMLElement);
 const title = element('#achievement-popup-title', HTMLHeadingElement);
 const list = element('#achievement-popup-list', HTMLUListElement);
 const more = element('#achievement-popup-more', HTMLButtonElement);
 
-// The unlocks in the popup now, newest first. A check while it shows adds its unlocks at the top.
+// The unlocks in the popup now, newest first, in a row that scrolls sideways: the first check of a device can
+// find dozens. A check while it shows adds its unlocks at the top.
 let shown: AchievementId[] = [];
 let checking = false;
 
@@ -43,9 +42,8 @@ function item(id: AchievementId, index: number): HTMLLIElement {
 function show(fresh: readonly AchievementId[]): void {
   shown = [...fresh, ...shown.filter((id) => !fresh.includes(id))];
   title.textContent = shown.length === 1 ? 'Achievement unlocked' : `${shown.length} achievements unlocked`;
-  list.replaceChildren(...shown.slice(0, SHOWN).map(item));
-  more.hidden = shown.length <= SHOWN;
-  more.textContent = `+${shown.length - SHOWN} more in My games`;
+  list.replaceChildren(...shown.map(item));
+  list.scrollTo({ left: 0 });
   popup.hidden = false;
   // A new list plays the entrance again (.achievement-popup in src/style.css).
   popup.classList.remove('pop');
@@ -77,6 +75,9 @@ export async function checkUnlocks(): Promise<void> {
 }
 
 export function setupAchievementPopup(): void {
+  setupUnlockRow(list);
+  const preview = previewUnlocks();
+  if (preview !== undefined) show(preview);
   element('#achievement-popup-close', HTMLButtonElement).addEventListener('click', hide);
   more.addEventListener('click', () => {
     hide();

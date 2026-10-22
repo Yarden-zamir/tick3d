@@ -20,6 +20,8 @@ export const STORAGE_KEYS = {
   // The tester codes that this browser claimed on /share, and the phone that the visitor picked there.
   testerCodes: 'tick3d.tester-codes',
   testerPhone: 'tick3d.tester-phone',
+  // The steps that the visitor did on /share, and the wait before the code step (src/share/steps.ts).
+  testerSteps: 'tick3d.tester-steps',
   // The person id of the first invite link that brought this browser to /share (src/share/invite.ts).
   testerInvitedBy: 'tick3d.tester-invited-by',
   // The achievements that this device showed already, in a popup or on an end card (src/page/achievement-popup.ts).

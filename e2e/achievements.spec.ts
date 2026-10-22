@@ -12,13 +12,12 @@ test('a won online game unlocks achievements on the end card and in My games', a
   await expect(status(alice)).toHaveText('You win!');
 
   // X won in 7 moves against a person online, straight down the floors. A person counts for no computer
-  // level. The strip lists the rarest first, with room for 3 badges.
+  // level. The strip lists the rarest first, all in one row that scrolls sideways.
   // The card is open, so the unlock shows on it, with a badge for each achievement, and not in a toast.
   const unlocked = ['Seven wonders', 'Worthy opponent', 'Elevator', 'First win'];
   const strip = alice.locator('#end-card-achievements');
   await expect(strip).toHaveAccessibleName(`Achievements unlocked: ${unlocked.join(', ')}`);
-  await expect(strip.getByRole('button')).toHaveCount(3);
-  await expect(strip).toContainText('+1');
+  await expect(strip.getByRole('button')).toHaveCount(unlocked.length);
   await expect(strip).toContainText('Seven wonders');
   await strip.getByRole('button', { name: 'Worthy opponent' }).click();
   await expect(strip).toContainText('Beat a person online.');

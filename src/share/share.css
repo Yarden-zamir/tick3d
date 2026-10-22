@@ -283,6 +283,54 @@
   rotate: -1deg;
 }
 
+/* ---- The order of the steps (src/share/steps.ts) ---- */
+
+/* A step that waits for an earlier one looks grayed out: lower contrast, not hidden. A tap opens it. */
+.step:is([data-state='locked'], [data-state='waiting']) {
+  background: var(--surface-2);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.step:is([data-state='locked'], [data-state='waiting']) > :not(.step-force, .step-wait),
+.step:is([data-state='locked'], [data-state='waiting'])::before {
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+
+/* A done step shows a check in its number. */
+.step[data-state='done']::before {
+  content: '✓';
+  background: var(--win);
+}
+
+.step .step-force {
+  justify-self: start;
+}
+
+.step-wait {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  padding: 0.6rem 0.75rem;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--primary);
+  color: var(--on-color);
+  cursor: auto;
+}
+
+.step .wait-line {
+  font-weight: 700;
+}
+
+.wait-left {
+  display: inline-block;
+  min-width: 3.2ch;
+  font-size: 1.3rem;
+  font-variant-numeric: tabular-nums;
+}
+
 /* The code grid needs the full width on a phone. */
 @media (width < 30rem) {
   .step-codes {
