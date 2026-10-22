@@ -1,5 +1,5 @@
 // The achievements section of My games, and the unlock band of the end card.
-import { achievementItems, badge, fadeHiddenEdges } from '../achievement-list.ts';
+import { achievementItems, badge, setupUnlockRow } from '../achievement-list.ts';
 import { type AchievementGame, type AchievementId, type AchievementProgress, type AchievementRarity, achievementOf, achievementProgress, rarestFirst } from '../achievements.ts';
 import { api, OnlineError } from '../online.ts';
 import type { Code, GameId } from '../protocol.ts';
@@ -115,7 +115,8 @@ export const unlockToast = (unlocked: readonly AchievementId[]) =>
   unlocked.length > TOAST_NAMES ? `${unlocked.length} achievements unlocked.` : `${unlockLabel(unlocked)}.`;
 
 // Fills `box` with the badges of `unlocked`, which pop in one after another, and the name of one of them.
-// The badges scroll sideways when they do not fit. A tap on a badge, or a scroll, stops the turns.
+// The badges scroll sideways when they do not fit. A tap on a badge, or a scroll, stops the turns. When a scroll
+// hides the shown badge, the name of the badge in the middle of the row shows.
 export function showUnlocks(box: HTMLElement, unlocked: readonly AchievementId[]): void {
   clearInterval(unlockTimer);
   box.setAttribute('aria-label', unlockLabel(unlocked));
@@ -145,7 +146,7 @@ export function showUnlocks(box: HTMLElement, unlocked: readonly AchievementId[]
   row.addEventListener('pointerdown', stopTurns);
   row.addEventListener('wheel', stopTurns, { passive: true });
   medals.append(row);
-  fadeHiddenEdges(row);
+  setupUnlockRow(row);
   const buttons = unlocked.map((id, index) => {
     const button = badge('button', id);
     button.type = 'button';
@@ -158,7 +159,20 @@ export function showUnlocks(box: HTMLElement, unlocked: readonly AchievementId[]
     row.append(button);
     return button;
   });
+  let pressed = 0;
+  row.addEventListener('scrollend', () => {
+    const shownBadge = buttons[pressed];
+    if (shownBadge === undefined) throw new Error(`no badge ${pressed}`);
+    const inView = shownBadge.offsetLeft >= row.scrollLeft && shownBadge.offsetLeft + shownBadge.offsetWidth <= row.scrollLeft + row.clientWidth;
+    if (inView) return;
+    const middle = row.scrollLeft + row.clientWidth / 2;
+    const distances = buttons.map((button) => Math.abs(button.offsetLeft + button.offsetWidth / 2 - middle));
+    const nearest = distances.indexOf(Math.min(...distances));
+    clearInterval(unlockTimer);
+    show(nearest);
+  });
   const show = (index: number) => {
+    pressed = index;
     const id = unlocked[index];
     if (id === undefined) throw new Error(`no unlocked achievement ${index}`);
     const { name, description, tier } = achievementOf(id);

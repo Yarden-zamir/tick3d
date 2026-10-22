@@ -3702,7 +3702,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* A row of unlocks that scrolls sideways, on the end card and in the achievement popup. An edge fades while
-   more unlocks hide past it (fadeHiddenEdges in src/achievement-list.ts). */
+   more unlocks hide past it, and a mouse wheel scrolls it (setupUnlockRow in src/achievement-list.ts). */
 .unlock-row {
   position: relative;
   display: flex;
@@ -3714,6 +3714,14 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .unlock-row::-webkit-scrollbar {
   display: none;
+}
+
+/* With a mouse, a thin scrollbar shows that the row scrolls, and the player can drag it. */
+@media (hover: hover) and (pointer: fine) {
+  .unlock-row {
+    scrollbar-color: rgb(255 255 255 / 0.45) transparent;
+    scrollbar-width: thin;
+  }
 }
 
 .unlock-row > * {
