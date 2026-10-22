@@ -149,12 +149,21 @@ export function parseMe(value: unknown): Me {
   return { loginAvailable, user: info, name, person, hasCopy };
 }
 
-// The page reads "My games" only to display it, so a light shape check is enough here.
+// The page reads "My games" only to display it, so a light shape check is enough here. The accounts
+// go through parsePlayerInfo, because their pictures load from the avatar address or draw from the seed.
 export function parseMyGames(value: unknown): MyGames {
   if (typeof value !== 'object' || value === null || !('total' in value) || !('sessions' in value)) {
     throw new Error('invalid answer from /api/me/games');
   }
-  return value as MyGames;
+  const games = value as MyGames;
+  const account = (player: unknown): PlayerInfo | null => {
+    if (player === null) return null;
+    const info = parsePlayerInfo(player);
+    if (info === undefined) throw new Error('invalid account in the answer from /api/me/games');
+    return info;
+  };
+  if (!Array.isArray(games.sessions)) throw new Error('invalid answer from /api/me/games');
+  return { ...games, user: account(games.user), sessions: games.sessions.map((session) => ({ ...session, opponent: account(session.opponent) })) };
 }
 
 export function parseStatsCard(value: unknown): StatsCard {

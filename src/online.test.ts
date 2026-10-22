@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api } from './online.ts';
+import { api, parseMyGames } from './online.ts';
 import { normalizeCode } from './protocol.ts';
 
 // A stand-in for the browser EventSource. The test opens, fails and closes each stream by hand.
@@ -118,5 +118,18 @@ describe('api.subscribe', () => {
     first.fail();
     vi.advanceTimersByTime(60_000);
     expect(FakeSource.opened).toHaveLength(1);
+  });
+});
+
+describe('parseMyGames', () => {
+  const avatar = 'https://avatars.githubusercontent.com/u/7?v=4';
+  const answer = (opponent: unknown) => ({ user: null, total: {}, byMode: {}, byDifficulty: {}, sessions: [{ code: 'AB3K', opponent }] });
+
+  it('fills the name and seed that an older server leaves out, so a picture never draws from a missing seed', () => {
+    expect(parseMyGames(answer({ login: 'octo', avatar })).sessions[0]?.opponent).toEqual({ login: 'octo', avatar, name: null, seed: null });
+  });
+
+  it('refuses an account with a picture from another host', () => {
+    expect(() => parseMyGames(answer({ login: 'octo', avatar: 'https://evil.example.org/a.png' }))).toThrow();
   });
 });
