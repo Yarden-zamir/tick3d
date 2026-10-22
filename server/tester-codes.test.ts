@@ -401,3 +401,88 @@ describe('copies of the Android app', () => {
     expect((await store.achievements(inviter)).achievements.find((entry) => entry.id === 'invite-5')?.count).toBe(1);
   });
 });
+
+describe('the invite pair and Family tree', () => {
+  const alice = 'aaaaaaaa-1111-4000-8000-000000000001' as PlayerToken;
+  const aliceLaptop = 'aaaaaaaa-1111-4000-8000-000000000002' as PlayerToken;
+  const bob = 'bbbbbbbb-1111-4000-8000-000000000001' as PlayerToken;
+  const bobPhone = 'bbbbbbbb-1111-4000-8000-000000000002' as PlayerToken;
+  const carol = 'cccccccc-1111-4000-8000-000000000001' as PlayerToken;
+  const ALICE = { id: 301, login: 'alice', avatar: 'https://avatars.githubusercontent.com/u/301?v=4' };
+  const BOB = { id: 302, login: 'bob', avatar: 'https://avatars.githubusercontent.com/u/302?v=4' };
+  const X_WINS = [0, 1, 16, 2, 32, 3, 48];
+  const O_WINS = [4, 0, 5, 1, 6, 2, 32, 3];
+  const options = { hideBoard: false, hideHistory: false, hideCoordinates: false };
+  // A Nearby game that `host` (on X) uploads against `guest`. The invites happen now, so `finished` 2 s is before them.
+  const nearby = (host: PlayerToken, guest: PlayerToken, moves: number[], finished: number, id: string) =>
+    store.addResults(host, [
+      {
+        id,
+        mode: 'nearby',
+        game: toRecord(replay(moves, { times: moves.map((_, i) => ms(1_000 + i)) })),
+        you: 'X',
+        difficulty: null,
+        finishedAt: ms(finished),
+        publicId: null,
+        options,
+        tuned: false,
+        metrics: null,
+        guest,
+      },
+    ]);
+  const PAIR = ['beaten-by-invitee', 'beat-inviter', 'family-tree'] as const;
+  const pairOf = async (token: PlayerToken) =>
+    Object.fromEntries((await store.achievements(token)).achievements.filter((entry) => PAIR.some((id) => id === entry.id)).map(({ id, unlockedAt }) => [id, unlockedAt !== null]));
+  let store: Store;
+  beforeEach(async () => {
+    store = await openStore(':memory:');
+    await store.addTesterCodes(parseTesterCodeEntries(Array.from({ length: 4 }, (_, i) => `PAIR${String(i).padStart(19, '0')}`).join(',')));
+  });
+  afterEach(async () => {
+    await store.close();
+  });
+
+  it('unlock for the inviter who loses to the invited person, and for that person, with all their devices as one person', async () => {
+    // Bob claims on his browser through Alice's link, and later plays on his phone: both devices log in to one account.
+    await store.claimTesterCode(1, { email: 'bob@example.com', name: 'Bob', by: await store.person(alice) }, bob);
+    await store.linkToken(bob, BOB);
+    await store.linkToken(bobPhone, BOB);
+    // Bob, on O, beats Alice.
+    await nearby(alice, bobPhone, O_WINS, Date.now() + 1_000, 'f1f1f1f1-1111-4000-8000-000000000001');
+    expect(await pairOf(alice)).toEqual({ 'beaten-by-invitee': true, 'beat-inviter': false, 'family-tree': false });
+    expect(await pairOf(bobPhone)).toEqual({ 'beaten-by-invitee': false, 'beat-inviter': true, 'family-tree': false });
+    // The rarity and the leaderboard read the stored rows, which count the pair too.
+    const { rarity } = await store.achievements(alice);
+    expect(rarity.unlocked).toMatchObject({ 'beaten-by-invitee': 1, 'beat-inviter': 1 });
+  });
+
+  it('count no game before the invite, and no win of the inviter', async () => {
+    await nearby(alice, bob, O_WINS, 2_000, 'f2f2f2f2-1111-4000-8000-000000000001');
+    await store.claimTesterCode(1, { email: 'bob@example.com', name: 'Bob', by: await store.person(alice) }, bob);
+    await nearby(alice, bob, X_WINS, Date.now() + 1_000, 'f2f2f2f2-1111-4000-8000-000000000002');
+    expect(await pairOf(alice)).toMatchObject({ 'beaten-by-invitee': false });
+    expect(await pairOf(bob)).toMatchObject({ 'beat-inviter': false });
+  });
+
+  it('count no invite from yourself, also between two devices that later log in to one account', async () => {
+    await store.claimTesterCode(1, { email: 'alice@example.com', name: 'Alice', by: await store.person(alice) }, aliceLaptop);
+    await store.linkToken(alice, ALICE);
+    await store.linkToken(aliceLaptop, ALICE);
+    await nearby(alice, aliceLaptop, O_WINS, Date.now() + 1_000, 'f3f3f3f3-1111-4000-8000-000000000001');
+    expect(await pairOf(alice)).toEqual({ 'beaten-by-invitee': false, 'beat-inviter': false, 'family-tree': false });
+  });
+
+  it('unlock Family tree when a person you invited brings a new person, and not when they bring you back', async () => {
+    await store.claimTesterCode(1, { email: 'bob@example.com', name: 'Bob', by: await store.person(alice) }, bob);
+    // Bob's link brings Alice's other device: that is Alice, no new person.
+    await store.linkToken(alice, ALICE);
+    await store.linkToken(aliceLaptop, ALICE);
+    await store.reportAppOpen(aliceLaptop, await store.person(bob));
+    expect(await pairOf(alice)).toMatchObject({ 'family-tree': false });
+    await store.reportAppOpen(carol, await store.person(bob));
+    expect(await pairOf(alice)).toMatchObject({ 'family-tree': true });
+    // Bob brought Carol himself: that is his Plus one, not his Family tree.
+    expect(await pairOf(bob)).toMatchObject({ 'family-tree': false });
+    expect((await store.achievements(alice)).rarity.unlocked['family-tree']).toBe(1);
+  });
+});

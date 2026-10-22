@@ -25,7 +25,18 @@ export type AchievementGame = {
   opponent: string | null;
   // How the player placed their moves, from the metrics of their device. Null without them, as in an online game.
   input: Metrics['input'] | null;
+  // The first time that the opponent got the game through the invite link of the player, and the first time that the
+  // player got it through the link of the opponent (inviteEvents in server/store.ts). Only the server knows them:
+  // null on the device, without an opponent, and without such an invite.
+  invitedOpponentAt: EpochMs | null;
+  invitedByOpponentAt: EpochMs | null;
 };
+
+// The people who got the game through an invite, each person once, as the time when they got it, in any order.
+// direct: the people that the player invited. second: the people that those people invited in turn.
+// Only the server knows them (invitesOf in server/store.ts), so the device passes none.
+export type Invites = { direct: readonly EpochMs[]; second: readonly EpochMs[] };
+const NO_INVITES: Invites = { direct: [], second: [] };
 
 // The opponent: a computer level, or a person online or in Nearby.
 // A friend game and a tuned computer have no level, so they count for no ladder.
@@ -46,8 +57,8 @@ const TIERS = ['stone', 'bronze', 'silver', 'gold', 'mythic'] as const;
 // count: the goal is a number of games that pass the test.
 // streak: the goal is a run of games in a row that pass the test. Only the games of `among` make or break the run.
 // invites: the goal is a number of people who got the game through the invite link of the player (/share): they
-// claimed a Google Play code, or opened the paid Android app. Only the server knows them (inviteRows in
-// server/store.ts), so this kind reads no game.
+// claimed a Google Play code, or opened the paid Android app. `reach` second counts the people that those people
+// invited in turn. Only the server knows them (Invites), so this kind reads no game.
 type Rule = {
   id: string;
   name: string;
@@ -60,7 +71,7 @@ type Rule = {
 } & (
   | { kind: 'count'; test: (game: PlayedGame) => boolean }
   | { kind: 'streak'; among: (game: PlayedGame) => boolean; test: (game: PlayedGame) => boolean }
-  | { kind: 'invites' }
+  | { kind: 'invites'; reach: keyof Invites }
 );
 
 const won = (game: PlayedGame) => game.outcome === 'won';
@@ -73,6 +84,8 @@ const atLeast = (level: Difficulty) => (game: PlayedGame) =>
 const wonAtLeast = (level: Difficulty) => (game: PlayedGame) => won(game) && atLeast(level)(game);
 const againstComputer = (game: PlayedGame) => game.level !== null && game.level !== 'person';
 const againstPerson = (game: PlayedGame) => game.level === 'person';
+// An invite that came before this game. A game before the invite does not count.
+const invitedBefore = (game: PlayedGame, at: EpochMs | null) => at !== null && at < game.finishedAt;
 
 // The fewest moves of a win: 4 marks of X, with 3 marks of O between them.
 const FASTEST_WIN = 7;
@@ -519,7 +532,7 @@ export const ACHIEVEMENTS = [
     name: 'Echolocation',
     description: 'Beat the computer on Hard with the board hidden, with every move placed by your voice.',
     tier: 'mythic',
-    hidden: true,
+    hidden: false,
     goal: 1,
     kind: 'count',
     // Limit: an online game has no metrics in its result, so only a computer game counts. Revisit this when
@@ -577,8 +590,8 @@ export const ACHIEVEMENTS = [
     id: 'last-move',
     name: 'Last gasp',
     description: 'Win with the last free cell of the cube.',
-    tier: 'gold',
-    hidden: true,
+    tier: 'mythic',
+    hidden: false,
     goal: 1,
     kind: 'count',
     test: (game: PlayedGame) => wonByLine(game) && game.end.moves.length === CELL_COUNT,
@@ -593,6 +606,7 @@ export const ACHIEVEMENTS = [
     hidden: false,
     goal: 1,
     kind: 'invites',
+    reach: 'direct',
   },
   {
     id: 'invite-5',
@@ -602,6 +616,7 @@ export const ACHIEVEMENTS = [
     hidden: false,
     goal: 5,
     kind: 'invites',
+    reach: 'direct',
   },
   {
     id: 'invite-25',
@@ -611,6 +626,38 @@ export const ACHIEVEMENTS = [
     hidden: false,
     goal: 25,
     kind: 'invites',
+    reach: 'direct',
+  },
+  {
+    id: 'family-tree',
+    name: 'Family tree',
+    description: 'Somebody you invited brings a new person who gets the game.',
+    tier: 'gold',
+    hidden: false,
+    goal: 1,
+    kind: 'invites',
+    reach: 'second',
+  },
+  // A person online or over Wi-Fi: a friend game on one device has no second person.
+  {
+    id: 'beaten-by-invitee',
+    name: 'Oops, I made a monster',
+    description: 'Lose to a person you invited, online or over Wi-Fi.',
+    tier: 'gold',
+    hidden: false,
+    goal: 1,
+    kind: 'count',
+    test: (game: PlayedGame) => lost(game) && againstPerson(game) && invitedBefore(game, game.invitedOpponentAt),
+  },
+  {
+    id: 'beat-inviter',
+    name: 'Shoulders of giants',
+    description: 'Beat the person who invited you, online or over Wi-Fi.',
+    tier: 'gold',
+    hidden: false,
+    goal: 1,
+    kind: 'count',
+    test: (game: PlayedGame) => won(game) && againstPerson(game) && invitedBefore(game, game.invitedByOpponentAt),
   },
 ] as const satisfies readonly Rule[];
 
@@ -624,9 +671,7 @@ export const ACHIEVEMENT_IDS: readonly AchievementId[] = ACHIEVEMENTS.map((achie
 export type AchievementProgress = { id: AchievementId; count: number; unlockedAt: EpochMs | null; unlockedBy: GameId | null };
 
 // The progress of every achievement, in the order of ACHIEVEMENTS. The games can come in any order.
-// `invites` holds the time of each person who claimed a tester code through the invite link of the player,
-// in any order. Only the server knows them, so the device passes none.
-export function achievementProgress(games: readonly AchievementGame[], invites: readonly EpochMs[] = []): AchievementProgress[] {
+export function achievementProgress(games: readonly AchievementGame[], invites: Invites = NO_INVITES): AchievementProgress[] {
   const rivalries = new Map<string, Outcome[]>();
   const played = games
     .toSorted((a, b) => a.finishedAt - b.finishedAt)
@@ -640,8 +685,8 @@ export function achievementProgress(games: readonly AchievementGame[], invites: 
       if (game.opponent !== null) rivalries.set(game.opponent, [...rivalry, outcome]);
       return { ...game, end, outcome, level: levelOf(game), rivalry };
     });
-  const invited = invites.toSorted((a, b) => a - b);
-  return ACHIEVEMENTS.map((rule) => (rule.kind === 'invites' ? inviteProgress(rule, invited) : progressOf(rule, played)));
+  const invited = { direct: invites.direct.toSorted((a, b) => a - b), second: invites.second.toSorted((a, b) => a - b) };
+  return ACHIEVEMENTS.map((rule) => (rule.kind === 'invites' ? inviteProgress(rule, invited[rule.reach]) : progressOf(rule, played)));
 }
 
 // `invited` is sorted, oldest first. The person who reached the goal unlocks it, so no game does.

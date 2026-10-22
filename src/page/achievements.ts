@@ -38,6 +38,8 @@ async function deviceProgress(): Promise<ShownAchievements> {
       // Revisit this if the device stores a person id with each result.
       opponent: null,
       input: upload.metrics?.input ?? null,
+      invitedOpponentAt: null,
+      invitedByOpponentAt: null,
     })),
   );
   return { achievements, rarity: null };

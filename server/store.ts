@@ -8,6 +8,7 @@ import {
   type AchievementProgress,
   type AchievementRarity,
   type Achievements,
+  type Invites,
   achievementProgress,
 } from '../src/achievements.ts';
 import { DIFFICULTIES } from '../src/ai.ts';
@@ -399,7 +400,7 @@ const isDuplicateKey = (error: unknown) => error instanceof Error && error.messa
 const MAX_ID_ATTEMPTS = 20;
 // Raise it when a rule in src/achievements.ts changes: every row of achievement_players then fills again.
 // A new or removed achievement changes the signatures by itself.
-const ACHIEVEMENT_RULES_VERSION = 3;
+const ACHIEVEMENT_RULES_VERSION = 4;
 // The devices that one iPhone app purchase can prove, and the days after which an unused device frees its slot (takeAppleSlot).
 const APPLE_SLOTS_PER_PURCHASE = 5;
 const APPLE_SLOT_IDLE_DAYS = 90;
@@ -609,9 +610,10 @@ export async function openStore(
   };
 
   // One finished game as the rules read it, for the player who holds the seats where `mine` is true.
-  // The opponent is the canonical token of the other seat of an online or Nearby game.
+  // The opponent is the canonical token of the other seat of an online or Nearby game. The invites between the
+  // player and the opponent come from inviteFactsOf.
   type AchievementRow = { public_id: GameId | null; doc: unknown; metrics: unknown; finished: EpochMs; owner_x: string | null; owner_o: string | null };
-  function achievementGame(row: AchievementRow, mineX: boolean, mineO: boolean): AchievementGame {
+  function achievementGame(row: AchievementRow, mineX: boolean, mineO: boolean): Omit<AchievementGame, keyof InviteBond> {
     if (!mineX && !mineO) throw new Error('an achievement game has no seat of the player');
     const { mode, game, difficulty, options, tuned } = readStored(row.doc);
     // A friend game holds this player on both seats.
@@ -632,7 +634,8 @@ export async function openStore(
   // Limit: one Play purchase installs on every phone of that Google account, so two copies cannot tell two purchases
   // from one. The copies of one account count as one person: by the owner at the open, and by the account now.
   // Limit: it reads every invite, a few hundred rows at most now. Revisit this past 10,000 rows.
-  async function inviteEvents(): Promise<(InviteEvent & { invitedBy: PersonId })[]> {
+  // `tokens` are the token, the owner and the account of the invited person, without the email and the code.
+  async function inviteEvents(): Promise<(InviteEvent & { invitedBy: PersonId; tokens: string[] })[]> {
     const found = await rows(
       `FROM tester_codes LEFT JOIN player_tokens linked ON linked.token = claimed_token
          SELECT invited_by, claimed_token AS token, claimed_owner AS owner,
@@ -664,7 +667,8 @@ export async function openStore(
         row.email === null ? [] : [`e:${row.email}`],
       ].flat();
       if (keys.length === 0 && row.code === null) throw new Error('an invite event names nobody');
-      return { invitedBy: row.invited_by, keys: keys.length === 0 ? [`c:${row.code ?? ''}`] : keys, at: row.at };
+      const tokens = [row.token, row.owner, row.account].filter((token) => token !== null);
+      return { invitedBy: row.invited_by, keys: keys.length === 0 ? [`c:${row.code ?? ''}`] : keys, at: row.at, tokens };
     });
   }
   type InviteRow = Awaited<ReturnType<typeof inviteEvents>>[number];
@@ -673,10 +677,76 @@ export async function openStore(
   // counts for the account, and an invite from the account counts on every device.
   const personsOfTokens = async (tokens: readonly string[]) => new Set(await Promise.all(tokens.map((token) => personId(token))));
 
-  // The invites of a player for achievementProgress: the first time of each person that one of `persons` invited,
-  // after the last "Reset achievements" (`since`). The events of one person count once (peopleOf).
-  function invitesOf(events: readonly InviteRow[], persons: ReadonlySet<string>, since: EpochMs | null): EpochMs[] {
-    return peopleOf(events.filter((event) => persons.has(event.invitedBy) && (since === null || event.at > since)));
+  // The tokens of each owner (a canonical token): the owner itself, and the device tokens of an account.
+  async function tokensOfOwners(owners: readonly string[]): Promise<Map<string, string[]>> {
+    if (owners.length === 0) return new Map();
+    const linked = await rows(
+      `SELECT token, owner FROM (FROM player_tokens SELECT token, $account || lpad(github_id::VARCHAR, 16, '0') AS owner) WHERE list_contains($owners, owner)`,
+      { owners: listValue([...owners]), account: ACCOUNT_TOKEN_PREFIX },
+      { token: text, owner: text },
+    );
+    const byOwner = Map.groupBy(linked, (row) => row.owner);
+    return new Map(owners.map((owner) => [owner, [owner, ...(byOwner.get(owner) ?? []).map((row) => row.token)]]));
+  }
+
+  const opponentsOf = (games: readonly { opponent: string | null }[]) => [...new Set(games.flatMap((game) => (game.opponent === null ? [] : [game.opponent])))];
+  type InviteBond = Pick<AchievementGame, 'invitedOpponentAt' | 'invitedByOpponentAt'>;
+  const NO_BOND: InviteBond = { invitedOpponentAt: null, invitedByOpponentAt: null };
+  const firstAt = (events: readonly InviteRow[]): EpochMs | null =>
+    events.reduce<EpochMs | null>((first, event) => (first === null || event.at < first ? event.at : first), null);
+
+  // What the invites tell the rules about the player with these `tokens` (all of them, the owner too):
+  // - invites: the people that the player invited, and the people that those people invited in turn, after the last
+  //   "Reset achievements" (`since`). The events of one person count once (peopleOf). An invite of the player counts for nobody.
+  // - bondOf: the first invite in each direction between the player and each opponent, at any time. `opponents` holds
+  //   the tokens of each opponent (tokensOfOwners), by its canonical token. It reads no table, so it can run in parallel.
+  // Limit: an invited person counts by token and account only. A claim from before the token columns (only an email)
+  // links nobody to an opponent and brings no second invite. Revisit this if such players report a missing unlock.
+  async function inviteFactsOf(
+    events: readonly InviteRow[],
+    tokens: readonly string[],
+    opponents: ReadonlyMap<string, readonly string[]>,
+    since: EpochMs | null,
+  ): Promise<{ invites: Invites; bondOf: (opponent: string | null) => InviteBond }> {
+    if (events.length === 0) return { invites: { direct: [], second: [] }, bondOf: () => NO_BOND };
+    const mine = new Set(tokens);
+    const persons = await personsOfTokens(tokens);
+    const after = (at: EpochMs) => since === null || at > since;
+    const sent = events.filter((event) => persons.has(event.invitedBy));
+    const second: InviteEvent[] = [];
+    for (const first of sent) {
+      const theirs = await personsOfTokens(first.tokens);
+      for (const next of events) {
+        const self = next.tokens.some((token) => mine.has(token) || first.tokens.includes(token));
+        // The second person got the game after the first one: that is when the chain is whole.
+        const at = next.at > first.at ? next.at : first.at;
+        if (theirs.has(next.invitedBy) && !self && after(at)) second.push({ keys: next.keys, at });
+      }
+    }
+    const bonds = new Map(
+      await Promise.all(
+        [...opponents].map(async ([opponent, theirTokens]) => {
+          const theirs = await personsOfTokens(theirTokens);
+          const bond: InviteBond = {
+            invitedOpponentAt: firstAt(sent.filter((event) => event.tokens.includes(opponent))),
+            invitedByOpponentAt: firstAt(events.filter((event) => theirs.has(event.invitedBy) && event.tokens.some((token) => mine.has(token)))),
+          };
+          return [opponent, bond] as const;
+        }),
+      ),
+    );
+    return {
+      invites: { direct: peopleOf(sent.filter((event) => after(event.at))), second: peopleOf(second) },
+      bondOf: (opponent) => (opponent === null ? NO_BOND : (bonds.get(opponent) ?? NO_BOND)),
+    };
+  }
+
+  // A new invite of the person `by` changes the invite achievements of `by`, and the Family tree of the people who invited `by`.
+  async function inviteChanged(by: PersonId): Promise<void> {
+    achievementCache.clear();
+    const above: PersonId[] = [];
+    for (const event of await inviteEvents()) if ((await personsOfTokens(event.tokens)).has(by)) above.push(event.invitedBy);
+    for (const owner of await ownersOfPersons([by, ...above])) changedOwners.add(owner);
   }
 
   // The canonical tokens of the players behind these person ids: an account (by any of its tokens) or a device
@@ -704,11 +774,15 @@ export async function openStore(
     const found = await rows(achievementRows(seatedResults(tokens.length)), { ...tokenValues(tokens), account: ACCOUNT_TOKEN_PREFIX }, ACHIEVEMENT_COLUMNS);
     const [reset] = await rows('FROM achievement_resets SELECT epoch_ms(reset_at) AS at WHERE owner = $owner', { owner }, { at: epoch });
     const own = new Set(tokens);
+    const games = found
+      .filter((row) => reset === undefined || row.finished > reset.at)
+      .map((row) => achievementGame(row, row.token_x !== null && own.has(row.token_x), row.token_o !== null && own.has(row.token_o)));
+    const events = await inviteEvents();
+    const opponents = events.length === 0 ? new Map() : await tokensOfOwners(opponentsOf(games));
+    const { invites, bondOf } = await inviteFactsOf(events, tokens, opponents, reset?.at ?? null);
     const progress = achievementProgress(
-      found
-        .filter((row) => reset === undefined || row.finished > reset.at)
-        .map((row) => achievementGame(row, row.token_x !== null && own.has(row.token_x), row.token_o !== null && own.has(row.token_o))),
-      invitesOf(await inviteEvents(), await personsOfTokens(tokens), reset?.at ?? null),
+      games.map((game) => ({ ...game, ...bondOf(game.opponent) })),
+      invites,
     );
     achievementCache.set(key, progress);
     return progress;
@@ -734,12 +808,18 @@ export async function openStore(
   // Fills the rows of these owners again from their games, through the seat indexes. An owner without
   // games (a device that joined an account) loses its row.
   async function refreshOwners(owners: readonly string[]): Promise<void> {
-    const linked = await rows(
-      `SELECT token, owner FROM (FROM player_tokens SELECT token, $account || lpad(github_id::VARCHAR, 16, '0') AS owner) WHERE list_contains($owners, owner)`,
-      { owners: listValue([...owners]), account: ACCOUNT_TOKEN_PREFIX },
-      { token: text, owner: text },
+    const tokensOf = await tokensOfOwners(owners);
+    const tokens = [...new Set([...tokensOf.values()].flat())];
+    // A device that joined an account counts as the account, so it keeps no row of its own, also with invites.
+    const joined = new Set(
+      (
+        await rows(
+          `FROM player_tokens SELECT token WHERE list_contains($owners, token) AND token <> $account || lpad(github_id::VARCHAR, 16, '0')`,
+          { owners: listValue([...owners]), account: ACCOUNT_TOKEN_PREFIX },
+          { token: text },
+        )
+      ).map((row) => row.token),
     );
-    const tokens = [...new Set([...owners, ...linked.map((row) => row.token)])];
     const source = seatedResults(tokens.length);
     const values = { ...ownerValues(), ...tokenValues(tokens), owners: listValue([...owners]) };
     const signatures = await rows(
@@ -768,17 +848,19 @@ export async function openStore(
               (row) => [row.owner, row.at],
             ),
           );
-    const linkedOf = Map.groupBy(linked, (row) => row.owner);
     const signatureOf = new Map(signatures.map((row) => [row.owner, row.signature]));
     // A player with games, or an inviter without games (INVITES_ONLY), so the rarity counts every holder of an invite achievement.
+    const playedOf = new Map(owners.map((owner) => [owner, (games.get(owner) ?? []).map((row) => achievementGame(row, row.owner_x === owner, row.owner_o === owner))]));
+    const opponents = claims.length === 0 ? new Map() : await tokensOfOwners(opponentsOf([...playedOf.values()].flat()));
     const filled = await Promise.all(
       owners.map(async (owner) => {
-        const invites =
-          claims.length === 0 ? [] : invitesOf(claims, await personsOfTokens([owner, ...(linkedOf.get(owner) ?? []).map((row) => row.token)]), resets.get(owner) ?? null);
-        const signature = signatureOf.get(owner) ?? (invites.length > 0 ? INVITES_ONLY : undefined);
+        if (joined.has(owner)) return [];
+        const played = playedOf.get(owner) ?? [];
+        const { invites, bondOf } = await inviteFactsOf(claims, tokensOf.get(owner) ?? [owner], opponents, resets.get(owner) ?? null);
+        const signature = signatureOf.get(owner) ?? (invites.direct.length > 0 || invites.second.length > 0 ? INVITES_ONLY : undefined);
         if (signature === undefined) return [];
         const unlocked = achievementProgress(
-          (games.get(owner) ?? []).map((row) => achievementGame(row, row.owner_x === owner, row.owner_o === owner)),
+          played.map((game) => ({ ...game, ...bondOf(game.opponent) })),
           invites,
         )
           .filter((entry) => entry.unlockedAt !== null)
@@ -2051,8 +2133,7 @@ export async function openStore(
         );
         if (claimed !== undefined) {
           if (invitedBy !== null) {
-            achievementCache.clear();
-            for (const owner of await ownersOfPersons([invitedBy])) changedOwners.add(owner);
+            await inviteChanged(invitedBy);
           }
           return claimed;
         }
@@ -2078,8 +2159,7 @@ export async function openStore(
           { invited_by: nullable(text) },
         );
         if (invitedBy !== null && changed[0]?.invited_by === invitedBy) {
-          achievementCache.clear();
-          for (const owner of await ownersOfPersons([invitedBy])) changedOwners.add(owner);
+          await inviteChanged(invitedBy);
         }
         return hasCopyOf(token);
       }),
