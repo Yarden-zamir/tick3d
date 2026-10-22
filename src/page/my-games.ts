@@ -424,7 +424,8 @@ export async function openMyGames(returnTo?: string): Promise<void> {
   fresh.catch(() => undefined);
   const local = (await page.local?.list()) ?? [];
   if (request !== myGamesRequest) return;
-  const deviceRows = local.flatMap((entry) => (entry.mode === 'nearby' ? [] : [deviceRow(entry, entry.mode)]));
+  // A session without a game, such as the new one after a page start, is not a game to list.
+  const deviceRows = local.flatMap((entry) => (entry.mode === 'nearby' || entry.games === 0 ? [] : [deviceRow(entry, entry.mode)]));
   sessionRows = [...deviceRows, ...sessionRows.filter(({ mode }) => mode === 'online')];
   if (myGamesHistory.querySelector('li[data-kind]') !== null || cachedGames !== undefined || deviceRows.length > 0) renderGamesList();
   try {
