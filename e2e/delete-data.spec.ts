@@ -15,6 +15,7 @@ test('Delete my data empties My games on the server and on this device, and keep
   await page.locator('#account-button').click();
   await expect(page.locator('#my-games-history li:not(.empty)')).toHaveCount(1);
   await expect(page.locator('#my-games-device')).toContainText('1 game');
+  await page.getByRole('tab', { name: 'Account' }).click();
   await page.locator('#my-games-delete').click();
   const dialog = page.locator('#delete-confirm');
   await expect(dialog).toBeVisible();

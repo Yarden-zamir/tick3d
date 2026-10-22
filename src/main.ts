@@ -26,6 +26,7 @@ import { setupReports } from './page/metrics.ts';
 import { openMyGames, refreshAccount, setupMyGames } from './page/my-games.ts';
 import { setupGameHeader } from './header/header.ts';
 import { readMyGamesRequest, withoutMyGamesRequest } from './header/my-games-link.ts';
+import { setupMyGamesTabs } from './page/my-games-layout.ts';
 import { openNearbyLink, openNearby, setupNearby } from './page/nearby.ts';
 import { checkLanHost, setupOnlineBox } from './page/online-box.ts';
 import { setupPlayers } from './page/players.ts';
@@ -50,6 +51,7 @@ setupControls();
 setupVoice();
 setupNearby();
 setupMyGames();
+setupMyGamesTabs();
 setupGameHeader();
 
 setupPwa({

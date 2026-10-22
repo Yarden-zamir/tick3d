@@ -16,6 +16,7 @@ test('players change seats, with the other player asked first, and a custom name
 
   // Bob renames himself in My games. Alice sees the new name in the score and the chat.
   await bob.locator('#account-button').click();
+  await bob.getByRole('tab', { name: 'Account' }).click();
   await bob.locator('#account-box').getByRole('button', { name: 'Rename' }).click();
   await bob.locator('#account-box input').fill('  Bob   Builder ');
   await bob.locator('#account-box').getByRole('button', { name: 'Save' }).click();

@@ -27,6 +27,7 @@ test('the picture viewer links to the stats of the person, and "Hide my stats" c
 
   // Alice hides her stats in My games: Bob gets the message, and Alice still sees hers.
   await alice.locator('#account-button').click();
+  await alice.getByRole('tab', { name: 'Account' }).click();
   const hide = alice.getByRole('switch', { name: 'Hide my stats from other players' });
   await hide.check();
   await expect(hide).toBeChecked();

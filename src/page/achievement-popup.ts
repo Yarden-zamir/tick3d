@@ -9,6 +9,7 @@ import { loadSeen, markSeen, unseenUnlocks } from './achievement-seen.ts';
 import { element } from './dom.ts';
 import { showError } from './feedback.ts';
 import { openMyGames } from './my-games.ts';
+import { showMyGamesTab } from './my-games-layout.ts';
 
 // More unlocks than this show as "+N more", which opens My games. The first check of a device can find dozens.
 const SHOWN = 3;
@@ -79,6 +80,7 @@ export function setupAchievementPopup(): void {
   element('#achievement-popup-close', HTMLButtonElement).addEventListener('click', hide);
   more.addEventListener('click', () => {
     hide();
+    showMyGamesTab('Achievements');
     void openMyGames().catch(showError);
   });
   document.addEventListener('visibilitychange', () => {

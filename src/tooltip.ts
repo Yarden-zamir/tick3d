@@ -19,8 +19,13 @@ const tipTarget = (target: EventTarget | null): HTMLElement | null =>
 function place(box: HTMLDivElement, target: HTMLElement): void {
   const margin = 8;
   const anchor = target.getBoundingClientRect();
+  // Measured at the left edge, so the size is not the narrower size of the last place.
+  box.style.left = '0px';
   const size = box.getBoundingClientRect();
-  const left = Math.min(Math.max(margin, anchor.left + anchor.width / 2 - size.width / 2), innerWidth - size.width - margin);
+  // Inside a dialog, the tooltip stays left of its scroll bar and of the room that the page keeps for its own.
+  const host = box.parentElement;
+  const right = host instanceof HTMLDialogElement ? Math.min(innerWidth, host.getBoundingClientRect().left + host.clientLeft + host.clientWidth) : innerWidth;
+  const left = Math.min(Math.max(margin, anchor.left + anchor.width / 2 - size.width / 2), right - size.width - margin);
   // Above the element, or below it when there is no room above. It stays inside the viewport.
   const above = anchor.top - size.height - margin;
   const top = above >= margin ? above : Math.min(anchor.bottom + margin, innerHeight - size.height - margin);

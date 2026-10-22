@@ -3512,8 +3512,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   background: linear-gradient(90deg, color-mix(in srgb, var(--tier) 38%, var(--surface)), var(--surface) 70%);
 }
 
+/* minmax(0, 1fr): the progress row never makes the text wider than its card. */
 .achievement-text {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.1rem;
   min-width: 0;
 }
@@ -3626,8 +3628,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   appearance: none;
 }
 
+/* min-width: a progress bar is about 10em wide by default, and a narrow row must not grow past its card. */
 .achievement-progress progress {
   flex: 1;
+  min-width: 2rem;
 }
 
 .achievements-bar {
@@ -4736,4 +4740,55 @@ body[data-turn='O'] .status[data-state='playing'] {
 .picture-hint {
   align-self: center;
   color: var(--muted);
+}
+
+/* The tabs of My games (src/page/my-games-layout.ts). Nothing is wider than the dialog: every part
+   can shrink, and rows of buttons wrap. */
+.my-games > *,
+.my-games-panel > * {
+  min-width: 0;
+}
+
+.my-games-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+/* Each tab is as wide as its label, and the 3 share the rest of the row. They wrap on a very narrow screen. */
+.my-games-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.my-games-tabs .btn {
+  flex: 1 1 auto;
+}
+
+.my-games-tabs .btn[aria-selected='true'] {
+  background: var(--primary);
+  color: var(--on-color);
+}
+
+/* The achievements as a grid of badges. A tapped badge opens its row across the grid. */
+.my-games .achievements {
+  grid-template-columns: repeat(auto-fill, minmax(3.9rem, 1fr));
+}
+
+.my-games .achievement:not([data-expanded]) {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.my-games .achievement:not([data-expanded]) > :not(.achievement-icon) {
+  display: none;
+}
+
+.my-games .achievement[data-expanded] {
+  grid-column: 1 / -1;
+  cursor: pointer;
 }
