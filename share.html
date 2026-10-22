@@ -64,7 +64,7 @@
       </figure>
       <section class="share-hero" aria-labelledby="share-title">
         <h2 id="share-title">Test tick3d before everyone else</h2>
-        <p>Thanks for helping! It takes about two minutes. Which phone do you have?</p>
+        <p>Thanks for helping! Which phone do you have?</p>
         <div class="phone-picker" id="phone-picker" role="group" aria-label="Your phone">
           <button type="button" class="phone-choice" id="pick-android" data-phone="android" aria-pressed="false">
             <svg viewBox="0 0 24 24" width="34" height="34" fill="currentColor" aria-hidden="true"><path d="M6 18c0 .55.45 1 1 1h1v3.5a1.5 1.5 0 0 0 3 0V19h2v3.5a1.5 1.5 0 0 0 3 0V19h1c.55 0 1-.45 1-1V8H6v10ZM3.5 8A1.5 1.5 0 0 0 2 9.5v7a1.5 1.5 0 0 0 3 0v-7A1.5 1.5 0 0 0 3.5 8Zm17 0A1.5 1.5 0 0 0 19 9.5v7a1.5 1.5 0 0 0 3 0v-7A1.5 1.5 0 0 0 20.5 8Zm-4.97-5.84 1.3-1.3a.5.5 0 0 0-.7-.71l-1.48 1.48A5.96 5.96 0 0 0 12 1c-.96 0-1.86.23-2.66.63L7.85.15a.5.5 0 0 0-.7.71l1.31 1.31A5.98 5.98 0 0 0 6 7h12a5.98 5.98 0 0 0-2.47-4.84ZM10 5H9V4h1v1Zm5 0h-1V4h1v1Z"/></svg>
@@ -80,20 +80,26 @@
       <section class="share-path" id="android-path" aria-labelledby="android-title" hidden>
         <h2 id="android-title" class="path-title">Android</h2>
         <ol class="steps">
-          <li class="step">
+          <li class="step" data-step="group">
             <h3>Join the Google Group</h3>
-            <p>Use the same Google account as on your phone.</p>
-            <a class="btn" href="https://groups.google.com/g/tick3d" target="_blank" rel="noopener">Open the group</a>
+            <p>Use the Google account of your phone.</p>
+            <a class="btn" href="https://groups.google.com/g/tick3d" target="_blank" rel="noopener" data-done>Open the group</a>
           </li>
-          <li class="step">
+          <li class="step" data-step="tester">
             <h3>Become a tester</h3>
-            <p>Tap "Become a tester", then come back to this page. Right after you join the group, Play can take a few minutes before this works.</p>
-            <p class="step-stop"><b>Do not download yet.</b> Play shows a price until you redeem your free code in the next step.</p>
-            <a class="btn" href="https://play.google.com/apps/testing/com.yardenzamir.tick3d" target="_blank" rel="noopener">Become a tester</a>
+            <p>Tap "Become a tester", then come back here. If it fails, wait a minute and try again.</p>
+            <p class="step-stop"><b>Do not download yet.</b> Play shows a price until you redeem your code.</p>
+            <a class="btn" href="https://play.google.com/apps/testing/com.yardenzamir.tick3d" target="_blank" rel="noopener" data-done>Become a tester</a>
           </li>
-          <li class="step step-codes">
+          <li class="step step-codes" data-step="code">
+            <!-- The wait after "Become a tester" (src/share/steps.ts). It shows while this step waits. -->
+            <div class="step-wait" id="step-wait" hidden>
+              <p class="wait-line"><b class="wait-left" id="wait-left">2:00</b> Google needs a few minutes before the code works.</p>
+              <button type="button" class="btn btn-small" id="remind-me">Remind me</button>
+              <p class="remind-note" id="remind-note" role="status" hidden></p>
+            </div>
             <h3>Claim a free code, then redeem it</h3>
-            <p>The app costs money on Play. Pick one card for a free code. Redeem it in Play, or in the Play Store app: profile picture → Payments &amp; subscriptions → Redeem code.</p>
+            <p>Pick one card for a free code, then redeem it in Play.</p>
             <div class="my-codes" id="my-codes" aria-live="polite"></div>
             <p class="codes-note" id="codes-note" role="status">Loading the codes…</p>
             <div class="code-grid" id="code-grid"></div>
@@ -101,9 +107,9 @@
               <b>No codes left right now.</b>
             </div>
           </li>
-          <li class="step">
+          <li class="step" data-step="install">
             <h3>Install</h3>
-            <p>After you redeem the code, open tick3d on Play. It shows "Install" with no price. If Play still shows a price, redeem your code first.</p>
+            <p>Open tick3d on Play. It shows "Install" with no price. A price means that the code is not redeemed yet.</p>
             <a class="btn btn-primary" href="https://play.google.com/store/apps/details?id=com.yardenzamir.tick3d" target="_blank" rel="noopener">Install from Play</a>
           </li>
         </ol>
@@ -112,22 +118,22 @@
       <section class="share-path" id="iphone-path" aria-labelledby="iphone-title" hidden>
         <h2 id="iphone-title" class="path-title">iPhone</h2>
         <ol class="steps">
-          <li class="step">
+          <li class="step" data-step="testflight">
             <h3>Install TestFlight</h3>
-            <p>TestFlight is the free Apple app for test builds.</p>
-            <a class="btn" href="https://apps.apple.com/app/testflight/id899247664" target="_blank" rel="noopener">TestFlight on the App Store</a>
+            <p>The free Apple app for test builds.</p>
+            <a class="btn" href="https://apps.apple.com/app/testflight/id899247664" target="_blank" rel="noopener" data-done>TestFlight on the App Store</a>
           </li>
-          <li class="step">
+          <li class="step" data-step="invite">
             <h3>Open the invite on your iPhone</h3>
-            <p>Tap Accept, then Install. On a computer? Scan the code with the iPhone camera.</p>
+            <p>Tap Accept, then Install. On a computer? Scan the code with your iPhone.</p>
             <div class="invite">
-              <a class="btn btn-primary" id="testflight-link" href="https://testflight.apple.com/join/8R7N2ka6" target="_blank" rel="noopener">Open the invite</a>
+              <a class="btn btn-primary" id="testflight-link" href="https://testflight.apple.com/join/8R7N2ka6" target="_blank" rel="noopener" data-done>Open the invite</a>
               <figure class="invite-qr" id="invite-qr" aria-label="QR code of the invite"></figure>
             </div>
           </li>
-          <li class="step">
+          <li class="step" data-step="keep">
             <h3>Keep TestFlight</h3>
-            <p>New builds come through TestFlight. A test build stops after 90 days, so keep TestFlight to get the next one.</p>
+            <p>New builds come through TestFlight. A build stops after 90 days.</p>
           </li>
         </ol>
       </section>

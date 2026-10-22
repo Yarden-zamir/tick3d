@@ -8,8 +8,11 @@ import { renderQr } from '../nearby/qr.ts';
 import { OnlineError, api } from '../online.ts';
 import { STORAGE_KEYS } from '../storage-keys.ts';
 import { type MyCode, TESTER_NAME_MAX_LENGTH, type TesterCode, parseClaimRequest, parseMyCodes, redeemUrl } from './codes.ts';
+import { type Countdown, countdown, formatLeft } from './countdown.ts';
 import { inviteUrl, inviterOf } from './invite.ts';
 import { PHONES, type Phone, isPhone, phoneOf } from './phone.ts';
+import { askReminder, remind, reminderSupport } from './reminder.ts';
+import { type Progress, STEPS, type StepId, force, markDone, parseProgress, stepStates } from './steps.ts';
 import type { PersonId } from '../protocol.ts';
 
 // The person id of this player, for the invite link. It stays null until GET /api/me answers.
@@ -143,6 +146,100 @@ const mine: MyCode[] = parseMyCodes(readStored(STORAGE_KEYS.testerCodes));
 // Revisit this when the iPhone app is paid.
 const invitedBy = inviterOf(readStored(STORAGE_KEYS.testerInvitedBy), location.search);
 if (invitedBy !== null) writeStored(STORAGE_KEYS.testerInvitedBy, invitedBy);
+
+// ---- The steps ----
+
+let progress: Progress = parseProgress(readStored(STORAGE_KEYS.testerSteps));
+const stepItems = new Map<StepId, HTMLLIElement>();
+const forceButtons = new Map<StepId, HTMLButtonElement>();
+const waitBox = element('#step-wait', HTMLDivElement);
+const waitLeftText = element('#wait-left', HTMLElement);
+const remindButton = element('#remind-me', HTMLButtonElement);
+const remindNote = element('#remind-note', HTMLParagraphElement);
+
+function saveProgress(next: Progress): void {
+  progress = next;
+  writeStored(STORAGE_KEYS.testerSteps, progress);
+  renderSteps();
+}
+
+for (const step of Object.values(STEPS).flat()) {
+  const item = element(`li[data-step="${step}"]`, HTMLLIElement);
+  stepItems.set(step, item);
+  // The visible way to open a grayed step. A tap anywhere on the step does the same (the listener below).
+  const forceButton = document.createElement('button');
+  forceButton.type = 'button';
+  forceButton.className = 'btn btn-small step-force';
+  forceButton.textContent = 'Open now';
+  item.querySelector('h3')?.after(forceButton);
+  forceButtons.set(step, forceButton);
+  // The capture phase runs before the links and the code cards: the first tap on a grayed step only opens it.
+  item.addEventListener(
+    'click',
+    (event) => {
+      if (item.dataset.state !== 'locked' && item.dataset.state !== 'waiting') return;
+      // The countdown box stays usable while its step waits.
+      if (event.target instanceof Element && event.target.closest('.step-wait') !== null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      saveProgress(force(progress, step));
+    },
+    { capture: true },
+  );
+  for (const link of item.querySelectorAll('a[data-done]')) {
+    link.addEventListener('click', () => saveProgress(markDone(progress, step, Date.now())));
+  }
+}
+
+// The countdown of the wait, while a step waits.
+let wait: Countdown | null = null;
+
+function renderSteps(): void {
+  let waiting = false;
+  for (const phone of PHONES) {
+    for (const { step, state } of stepStates(progress, phone, Date.now())) {
+      const item = stepItems.get(step);
+      const forceButton = forceButtons.get(step);
+      if (item === undefined || forceButton === undefined) throw new Error(`no element for the step ${step}`);
+      item.dataset.state = state;
+      forceButton.hidden = state !== 'locked' && state !== 'waiting';
+      if (state === 'waiting') waiting = true;
+    }
+  }
+  waitBox.hidden = !waiting;
+  if (waiting && wait === null && progress.waitUntil !== null) {
+    wait = countdown(progress.waitUntil, (left) => (waitLeftText.textContent = formatLeft(left)), endWait);
+  }
+  if (!waiting && wait !== null) {
+    wait.stop();
+    wait = null;
+  }
+  renderReminder();
+}
+
+function endWait(): void {
+  wait = null;
+  if (progress.remind) void remind('tick3d: step 3 is ready', 'Google had its few minutes. Claim your free code now.');
+  renderSteps();
+}
+
+function renderReminder(): void {
+  const support = reminderSupport();
+  const asked = progress.remind && support === 'granted';
+  remindButton.hidden = asked || support === 'none' || support === 'denied';
+  remindNote.hidden = !asked && support !== 'none' && support !== 'denied';
+  remindNote.textContent = asked ? 'We remind you when the time is up.' : 'Come back here when the time is up.';
+}
+
+remindButton.addEventListener('click', () => {
+  void askReminder().then((support) => {
+    if (support === 'granted') saveProgress({ ...progress, remind: true });
+    else renderReminder();
+  });
+});
+
+// A browser delays the timers of a background tab. The countdown reads the clock again when the tab comes back.
+document.addEventListener('visibilitychange', () => wait?.check());
 
 // ---- The phone ----
 
@@ -456,6 +553,7 @@ form.addEventListener('submit', (event) => {
     .then(({ code }) => {
       mine.push({ id, code, name: claim.name, email: claim.email });
       const kept = writeStored(STORAGE_KEYS.testerCodes, mine);
+      saveProgress(markDone(progress, 'code', Date.now()));
       dialog.close();
       notice = kept ? '' : 'This browser cannot keep your code, so copy it now.';
       render();
@@ -485,4 +583,7 @@ element('#claim-close', HTMLButtonElement).addEventListener('click', () => dialo
 
 const stored = readStored(STORAGE_KEYS.testerPhone);
 renderMine();
+// A code from an earlier visit means that the code step is done.
+if (mine.length > 0 && !progress.done.includes('code')) saveProgress(markDone(progress, 'code', Date.now()));
+else renderSteps();
 showPhone(isPhone(stored) ? stored : phoneOf(navigator.userAgent));

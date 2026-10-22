@@ -59,9 +59,9 @@ http:// {
 		rewrite @page {path}.html
 		header @page Cache-Control "no-cache"
 
-		# The service worker, its Workbox runtime and the manifest have fixed names. A browser must
+		# The service worker, its imported script, its Workbox runtime and the manifest have fixed names. A browser must
 		# check them on every visit, or a new version never reaches a player who has the old one.
-		@pwa path /sw.js /workbox-*.js /manifest.webmanifest
+		@pwa path /sw.js /sw-share-reminder.js /workbox-*.js /manifest.webmanifest
 		header @pwa Cache-Control "no-cache"
 
 		# Digital Asset Links of the Android app (src/assetlinks.ts). Android requires JSON, without a redirect.

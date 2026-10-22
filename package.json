@@ -51,6 +51,7 @@
     ],
     "playwright": false,
     "ignore": [
+      "public/sw-share-reminder.js",
       "video/{src,scripts,out}/**"
     ]
   }

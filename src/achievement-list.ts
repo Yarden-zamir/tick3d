@@ -96,3 +96,29 @@ function steamOrder(progress: readonly AchievementProgress[]): AchievementProgre
 export function achievementItems(progress: readonly AchievementProgress[], rarity: AchievementRarity | null, isNew: (id: AchievementId) => boolean): HTMLLIElement[] {
   return steamOrder(progress).map((entry) => achievementItem(entry, rarity, isNew(entry.id)));
 }
+
+// A wheel step in lines, as Firefox gives it, in pixels.
+const WHEEL_LINE_PX = 40;
+
+// Sets up the sideways scroll row `row` of unlocks (.unlock-row in src/style.css). An edge fades while more
+// badges hide past it. A mouse wheel turns only up and down, so it scrolls the row sideways. At the end of the
+// row, the wheel scrolls the page again.
+export function setupUnlockRow(row: HTMLElement): void {
+  const update = () => {
+    const end = row.scrollWidth - row.clientWidth;
+    // A pixel of slack: the scroll position of a zoomed page is fractional.
+    row.classList.toggle('more-start', row.scrollLeft > 1);
+    row.classList.toggle('more-end', row.scrollLeft < end - 1);
+  };
+  row.addEventListener('scroll', update, { passive: true });
+  new ResizeObserver(update).observe(row);
+  row.addEventListener('wheel', (event) => {
+    // A sideways swipe of a trackpad scrolls the row by itself.
+    if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+    const forward = event.deltaY > 0;
+    if (!row.classList.contains(forward ? 'more-end' : 'more-start')) return;
+    event.preventDefault();
+    const step = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY * WHEEL_LINE_PX : event.deltaY;
+    row.scrollBy({ left: step });
+  });
+}

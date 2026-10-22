@@ -85,6 +85,8 @@ export default defineConfig({
         // The install dialog loads the screenshots online only, so the offline cache skips them.
         // Link previews (og/) are for chat apps and social sites, never for the page.
         globIgnores: ['screenshots/**', 'og/**'],
+        // The tap on the reminder of /share (public/sw-share-reminder.js).
+        importScripts: ['/sw-share-reminder.js'],
         // A page address opens the cached app. API calls always go to the network.
         navigateFallback: 'index.html',
         // The other pages (src/pages.ts) need no entry: the precache serves them from their .html files
