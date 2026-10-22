@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SIXTEENTH } from '../../../src/song.ts';
+import { NOTE_DELAY } from '../lettering.ts';
 import { FORMATS, areaOf } from './formats.ts';
 import { FORK_MOVE, MOVES, playerOf } from './game.ts';
 import { PLAN_IDS, eventOf, eventsOf as planEvents, planOf, stillsOf, typingOf } from './plan.ts';
@@ -57,6 +58,13 @@ describe.each(PLAN_IDS)('the %s plan of the smart-memory ad', (id) => {
     if (id !== 'full') return;
     expect(plan.firstMove).toBeLessThanOrEqual(FORK_MOVE);
     expect(eventOf('threats', plan).at).toBeLessThan(eventsOf('move').find((event) => event.move === FORK_MOVE)?.at ?? -1);
+  });
+
+  // The end card of the tutorial: the call to action 8 sixteenths after the wordmark, the badges 12 after, and their
+  // "soon" note one beat later. Each shows for at least 1 s before the end (tutorial/plan.ts).
+  it('shows every part of the end card for at least 1 s', () => {
+    const note = eventOf('end-card', plan).at + 12 + NOTE_DELAY;
+    expect((end - note) * SIXTEENTH).toBeGreaterThanOrEqual(1);
   });
 
   it('has a still of each part inside the cut', () => {

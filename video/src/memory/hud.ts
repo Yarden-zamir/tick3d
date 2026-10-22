@@ -166,7 +166,22 @@ export function drawHud(ctx: CanvasRenderingContext2D, frame: number, theme: The
         });
       }
       const card = eventOf('end-card');
-      endCard(ctx, frame, [{ text: 'tick3d', at: card.at }, { text: '.yarden-zamir.com', at: card.at + 4 }], theme, art);
+      // The end card of the spot and the tutorial (tutorial/plan.ts): the wordmark, the URL suffix, the call to action,
+      // then both store badges on the beat after it. The iPhone app is in TestFlight only, so the App Store badge
+      // keeps its "soon" note; revisit when the app is in the App Store.
+      endCard(
+        ctx,
+        frame,
+        [
+          { text: 'tick3d', at: card.at },
+          { text: '.yarden-zamir.com', at: card.at + 4 },
+          { text: 'Play in your browser.', at: card.at + 8 },
+          { text: 'App Store', at: card.at + 12, badge: 'app-store', note: 'soon' },
+          { text: 'Google Play', at: card.at + 12, badge: 'google-play' },
+        ],
+        theme,
+        art,
+      );
     },
     area,
   );

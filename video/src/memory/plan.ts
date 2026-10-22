@@ -61,11 +61,12 @@ const endNotes = (at: number): MemoryEvent[] => [0, 1, 2, 3].map((layer) => ({ k
 // The moves from `from` on, at the given sixteenths. An X move types over the 3 sixteenths before its place.
 const moves = (from: number, ats: readonly number[]): MemoryEvent[] => ats.map((at, i) => ({ kind: 'move', at, move: from + i, gap: 1 }));
 
-// The 7 bars of the full cut and the final chord: 13.0 s. The board shatters, the memory load, the double threat,
-// the reveal, the end card.
+// The 7 bars of the full cut, the end card and the final chord: 13.5 s. The board shatters, the memory load, the
+// double threat, the reveal, the end card.
 function fullCut(): Omit<Plan, 'id'> {
   return {
-    seconds: 13,
+    // 13.5 s, so the last part of the end card (the soon note) shows for 1 s, as in the tutorial.
+    seconds: 13.5,
     firstMove: 5,
     events: [
       { kind: 'shatter', at: 4 },
@@ -101,16 +102,16 @@ function fullCut(): Omit<Plan, 'id'> {
       { name: 'memory', at: 46 },
       { name: 'threat', at: 62 },
       { name: 'reveal', at: 86 },
-      { name: 'end-card', at: 117 },
+      { name: 'end-card', at: 121 },
     ],
   };
 }
 
-// The 4 bars of the short cut and the final chord: 7.6 s. The board shatters, the keypad, X types the win, the
+// The 4 bars of the short cut, the end card and the final chord: 8.0 s. The board shatters, the keypad, X types the win, the
 // board snaps back, the end card.
 function shortCut(): Omit<Plan, 'id'> {
   return {
-    seconds: 7.6,
+    seconds: 8,
     firstMove: 12,
     events: [
       { kind: 'shatter', at: 4 },
@@ -118,13 +119,13 @@ function shortCut(): Omit<Plan, 'id'> {
       { kind: 'threats', at: 18 },
       ...moves(12, [26]),
       { kind: 'reveal', at: 32 },
-      { kind: 'end-card', at: 48 },
-      ...endNotes(48),
-      { kind: 'final-chord', at: 64 },
+      { kind: 'end-card', at: 44 },
+      ...endNotes(44),
+      { kind: 'final-chord', at: 60 },
     ],
     text: [
       { at: 2, until: 16, text: "Win a game you can't see?" },
-      { at: 54, until: Infinity, text: 'Top 1%? Prove it.' },
+      { at: 50, until: Infinity, text: 'Top 1%? Prove it.' },
     ],
     camera: [
       { at: 0, view: view(HOME_AZIMUTH) },
@@ -132,15 +133,15 @@ function shortCut(): Omit<Plan, 'id'> {
       { at: 15, view: keypadView(HOME_AZIMUTH + 8) },
       { at: 30, view: keypadView(HOME_AZIMUTH + 14, ELEVATION + 4, 0.08) },
       { at: 36, view: view(HOME_AZIMUTH + 18, ELEVATION, 0.86, 0) },
-      { at: 48, view: view(HOME_AZIMUTH + 22, ELEVATION, 0.86, 0) },
-      { at: 52, view: END_VIEW },
+      { at: 44, view: view(HOME_AZIMUTH + 22, ELEVATION, 0.86, 0) },
+      { at: 48, view: END_VIEW },
     ],
     stills: [
       { name: 'hook', at: 6 },
       { name: 'memory', at: 20 },
       { name: 'threat', at: 27 },
       { name: 'reveal', at: 38 },
-      { name: 'end-card', at: 68 },
+      { name: 'end-card', at: 71 },
     ],
   };
 }
