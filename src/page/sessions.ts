@@ -345,8 +345,18 @@ export function beginSwitch(): Token {
   return newSwitch();
 }
 
-// Opens the newest session on this device for the chosen match-up, or starts one.
+// Opens the newest session on this device for the chosen match-up, or starts one, and draws it.
+// The callers leave the old session without a draw, so a failure draws the empty screen here.
 export async function openLocalSession(mode: 'computer' | 'friend'): Promise<void> {
+  try {
+    await openNewestLocal(mode);
+  } catch (error) {
+    render();
+    throw error;
+  }
+}
+
+async function openNewestLocal(mode: 'computer' | 'friend'): Promise<void> {
   const switching = beginSwitch();
   const backend = page.local;
   if (backend === undefined) throw new Error('the device backend is not ready');

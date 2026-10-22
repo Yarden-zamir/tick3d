@@ -230,3 +230,27 @@ test('a tab that holds the game data does not stop a new tab from starting', asy
   await cell(second, 0).click();
   await expect(marks(second)).toHaveCount(1);
 });
+
+// A switch between local modes draws the new session in one step. Before, the page drew an empty screen
+// between the two sessions for a few milliseconds: no marks, and "Getting the game ready…" as the status.
+test('a mode switch never draws an empty screen between the two sessions', async ({ open }) => {
+  const { page } = await open(friend);
+  await play(page, [0, 1]);
+  await expect(marks(page)).toHaveCount(2);
+  // The observer runs after each change of the page, also between two frames, so it sees a screen that lasts no frame.
+  await page.evaluate(() => {
+    const seen: string[] = [];
+    (window as unknown as { e2eStatuses: string[] }).e2eStatuses = seen;
+    const statusEl = document.querySelector('#status');
+    if (statusEl === null) throw new Error('the page has no #status');
+    new MutationObserver(() => seen.push(statusEl.textContent ?? '')).observe(statusEl, { childList: true, characterData: true, subtree: true });
+  });
+  const picker = page.locator('.mode-picker');
+  await picker.locator('[data-value="computer"]').click();
+  await expect(status(page)).toContainText('Your move');
+  await picker.locator('[data-value="friend"]').click();
+  await expect(marks(page)).toHaveCount(2);
+  const statuses = await page.evaluate(() => (window as unknown as { e2eStatuses: string[] }).e2eStatuses);
+  expect(statuses.length).toBeGreaterThan(0);
+  expect(statuses).not.toContain('Getting the game ready…');
+});

@@ -72,10 +72,10 @@ export async function openGameView(id: GameId): Promise<boolean> {
 // Back to play: the screen's own mode, as on a first visit.
 export async function closeGameView(): Promise<void> {
   leaveSession();
+  // A local session draws itself when it opens, so the game from the link stays until then (see openMode).
+  if (settings.mode === 'computer' || settings.mode === 'friend') return openLocalSession(settings.mode);
   render();
-  if (settings.mode === 'online') return;
-  if (settings.mode === 'nearby') return openNearby();
-  await openLocalSession(settings.mode);
+  if (settings.mode === 'nearby') openNearby();
 }
 
 // The same rule as playerName in render.ts, for a game from a link: no seat is "You".
