@@ -14,7 +14,6 @@ import { showError } from './feedback.ts';
 import { homeLink } from '../header/header.ts';
 import { previewsDialog } from '../header/previews.ts';
 import { nearbyKind, endNearby } from './nearby.ts';
-import { render } from './render.ts';
 import { leaveSession, openLocalSession, applyView } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
 import { page, isLive, current, newRound, setThinking } from './state.ts';
