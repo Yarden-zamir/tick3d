@@ -3289,7 +3289,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
-/* The totals in one line, and a chip per mode that filters the games list. The chips wrap. */
+/* The totals in one line, and a chip per mode that filters the games list. */
 .my-games-stats {
   display: grid;
   gap: 0.5rem;
@@ -3300,10 +3300,20 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 800;
 }
 
+/* One row that scrolls sideways (Yarden's choice: it keeps the list high up). The padding keeps the
+   shadows of the chips inside the row, which clips everything past its edges. */
 .my-games-chips {
   display: flex;
-  flex-wrap: wrap;
   gap: 0.35rem;
+  overflow-x: auto;
+  padding: 0 4px 5px 0;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+}
+
+.my-games-chips .btn {
+  flex: none;
+  white-space: nowrap;
 }
 
 .my-games-chips .btn[aria-pressed='true'] {
