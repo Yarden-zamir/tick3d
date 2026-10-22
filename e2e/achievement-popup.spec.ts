@@ -27,15 +27,16 @@ async function fakeAchievements(page: Page, now: { ids: AchievementId[] }): Prom
 
 const popup = (page: Page) => page.locator('#achievement-popup');
 
-test('the first check of a device shows the newest unlocks, with the rest in My games, once', async ({ open }) => {
+test('the first check of a device shows every unlock in a row, newest first, once', async ({ open }) => {
   // The privacy page makes no check, so the fake answer is the first one that the game page gets.
   const { page } = await open({ path: PAGES.privacy.path });
   await fakeAchievements(page, { ids: ['invite-1', 'first-win', 'games-10', 'elevator', 'friend-game'] });
   await page.goto('/');
   await expect(popup(page)).toBeVisible();
   await expect(popup(page).locator('h2')).toHaveText('5 achievements unlocked');
-  await expect(popup(page).locator('li')).toHaveText([/Plus one/, /First win/, /Regular/]);
-  await popup(page).getByRole('button', { name: '+2 more in My games' }).click();
+  await expect(popup(page).locator('li')).toHaveCount(5);
+  await expect(popup(page).locator('li').first()).toHaveText(/Plus one/);
+  await popup(page).getByRole('button', { name: 'See in My games' }).click();
   await expect(popup(page)).toBeHidden();
   await expect(page.locator('#my-games')).toHaveAttribute('open');
 
@@ -58,7 +59,6 @@ test('a new unlock shows when the page comes back to the front, and Close hides 
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await expect(popup(page).locator('h2')).toHaveText('Achievement unlocked');
   await expect(popup(page).locator('li')).toHaveText([/Plus one.*invite link/]);
-  await expect(popup(page).getByRole('button', { name: /more in My games/ })).toBeHidden();
   // The game stays playable under the popup: it is no modal.
   await expect(page.locator('dialog[open]')).toHaveCount(0);
   await popup(page).getByRole('button', { name: 'Close' }).click();

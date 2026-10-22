@@ -1,5 +1,5 @@
 // The achievements section of My games, and the unlock band of the end card.
-import { achievementItems, badge } from '../achievement-list.ts';
+import { achievementItems, badge, setupUnlockRow } from '../achievement-list.ts';
 import { type AchievementGame, type AchievementId, type AchievementProgress, type AchievementRarity, achievementOf, achievementProgress, rarestFirst } from '../achievements.ts';
 import { api, OnlineError } from '../online.ts';
 import type { Code, GameId } from '../protocol.ts';
@@ -12,8 +12,10 @@ import {
   resetAchievementsConfirm,
   resetAchievementsNo,
   resetAchievementsYes,
+  scrollMotion,
 } from './dom.ts';
 import { markSeen } from './achievement-seen.ts';
+import { previewUnlocks } from './preview-unlocks.ts';
 import { showError } from './feedback.ts';
 import { page } from './state.ts';
 
@@ -97,8 +99,8 @@ export function setupAchievements(): void {
 const UNLOCK_TURN_MS = 2600;
 // The bits of the burst behind the badges.
 const SPARKS = 14;
-// More badges than this show as "+N", so the name keeps its room on a phone. src/card.ts has the same limit.
-const BADGES_SHOWN = 3;
+// More unlocks than this show only their count in the toast.
+const TOAST_NAMES = 3;
 let unlockTimer: ReturnType<typeof setInterval> | undefined;
 
 export function unlockedBy(code: Code, index: number): readonly AchievementId[] | undefined {
@@ -110,10 +112,11 @@ export const unlockLabel = (unlocked: readonly AchievementId[]) =>
 
 // The toast after a closed end card: the names, or only the count when there are many.
 export const unlockToast = (unlocked: readonly AchievementId[]) =>
-  unlocked.length > BADGES_SHOWN ? `${unlocked.length} achievements unlocked.` : `${unlockLabel(unlocked)}.`;
+  unlocked.length > TOAST_NAMES ? `${unlocked.length} achievements unlocked.` : `${unlockLabel(unlocked)}.`;
 
 // Fills `box` with the badges of `unlocked`, which pop in one after another, and the name of one of them.
-// A tap on a badge shows its name and stops the turns.
+// The badges scroll sideways when they do not fit. A tap on a badge, or a scroll, stops the turns. When a scroll
+// hides the shown badge, the name of the badge in the middle of the row shows.
 export function showUnlocks(box: HTMLElement, unlocked: readonly AchievementId[]): void {
   clearInterval(unlockTimer);
   box.setAttribute('aria-label', unlockLabel(unlocked));
@@ -137,7 +140,14 @@ export function showUnlocks(box: HTMLElement, unlocked: readonly AchievementId[]
   const text = document.createElement('div');
   text.className = 'unlock-text';
   text.append(kicker, title, detail);
-  const buttons = unlocked.slice(0, BADGES_SHOWN).map((id, index) => {
+  const row = document.createElement('div');
+  row.className = 'unlock-row';
+  const stopTurns = () => clearInterval(unlockTimer);
+  row.addEventListener('pointerdown', stopTurns);
+  row.addEventListener('wheel', stopTurns, { passive: true });
+  medals.append(row);
+  setupUnlockRow(row);
+  const buttons = unlocked.map((id, index) => {
     const button = badge('button', id);
     button.type = 'button';
     button.style.setProperty('--i', String(index));
@@ -146,21 +156,31 @@ export function showUnlocks(box: HTMLElement, unlocked: readonly AchievementId[]
       clearInterval(unlockTimer);
       show(index);
     });
-    medals.append(button);
+    row.append(button);
     return button;
   });
-  if (unlocked.length > BADGES_SHOWN) {
-    const more = document.createElement('span');
-    more.className = 'unlock-more';
-    more.textContent = `+${unlocked.length - BADGES_SHOWN}`;
-    more.setAttribute('aria-hidden', 'true');
-    medals.append(more);
-  }
+  let pressed = 0;
+  row.addEventListener('scrollend', () => {
+    const shownBadge = buttons[pressed];
+    if (shownBadge === undefined) throw new Error(`no badge ${pressed}`);
+    const inView = shownBadge.offsetLeft >= row.scrollLeft && shownBadge.offsetLeft + shownBadge.offsetWidth <= row.scrollLeft + row.clientWidth;
+    if (inView) return;
+    const middle = row.scrollLeft + row.clientWidth / 2;
+    const distances = buttons.map((button) => Math.abs(button.offsetLeft + button.offsetWidth / 2 - middle));
+    const nearest = distances.indexOf(Math.min(...distances));
+    clearInterval(unlockTimer);
+    show(nearest);
+  });
   const show = (index: number) => {
+    pressed = index;
     const id = unlocked[index];
     if (id === undefined) throw new Error(`no unlocked achievement ${index}`);
     const { name, description, tier } = achievementOf(id);
     buttons.forEach((button, at) => button.setAttribute('aria-pressed', String(at === index)));
+    // The shown badge scrolls to the middle of the row. Only the row scrolls, not the card around it.
+    const button = buttons[index];
+    if (button === undefined) throw new Error(`no badge ${index}`);
+    row.scrollTo({ left: button.offsetLeft - (row.clientWidth - button.offsetWidth) / 2, behavior: scrollMotion() });
     text.dataset.tier = tier;
     kicker.textContent = unlocked.length === 1 ? 'Achievement unlocked' : `Unlocked · ${index + 1} of ${unlocked.length}`;
     title.textContent = name;
@@ -188,7 +208,7 @@ export function showUnlocks(box: HTMLElement, unlocked: readonly AchievementId[]
 // Limit: a game that the server does not have yet (offline, or an upload that waits) counts only the games
 // on this device. Revisit this if players report a missing or a repeated notice.
 export async function noteAchievements(code: Code, index: number, id: GameId): Promise<readonly AchievementId[]> {
-  const unlocked = rarestFirst((await currentProgress()).achievements.filter((entry) => entry.unlockedBy === id).map((entry) => entry.id));
+  const unlocked = previewUnlocks() ?? rarestFirst((await currentProgress()).achievements.filter((entry) => entry.unlockedBy === id).map((entry) => entry.id));
   // The end card or a toast shows them, so the achievement popup does not show them again.
   markSeen(unlocked);
   if (unlocked.length === 0) return unlocked;
