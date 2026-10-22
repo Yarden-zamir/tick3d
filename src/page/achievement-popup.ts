@@ -9,6 +9,7 @@ import { loadSeen, markSeen, unseenUnlocks } from './achievement-seen.ts';
 import { element } from './dom.ts';
 import { showError } from './feedback.ts';
 import { openMyGames } from './my-games.ts';
+import { showMyGamesTab } from './my-games-layout.ts';
 import { previewUnlocks } from './preview-unlocks.ts';
 
 const popup = element('#achievement-popup', HTMLElement);
@@ -80,6 +81,7 @@ export function setupAchievementPopup(): void {
   element('#achievement-popup-close', HTMLButtonElement).addEventListener('click', hide);
   more.addEventListener('click', () => {
     hide();
+    showMyGamesTab('Achievements');
     void openMyGames().catch(showError);
   });
   document.addEventListener('visibilitychange', () => {

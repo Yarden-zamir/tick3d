@@ -3301,23 +3301,69 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
+/* The totals in one line, and a chip per mode that filters the games list. */
 .my-games-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
   gap: 0.5rem;
 }
 
-.my-tally {
-  display: grid;
-  padding: 0.45rem 0.6rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-2);
+.my-games-total {
+  margin: 0;
+  font-weight: 800;
 }
 
-.my-tally span {
-  font-size: 0.85rem;
-  color: var(--muted);
+/* One row that scrolls sideways (Yarden's choice: it keeps the list high up). The padding keeps the
+   shadows of the chips inside the row, which clips everything past its edges. */
+.my-games-chips {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding: 0 4px 5px 0;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+}
+
+.my-games-chips .btn {
+  flex: none;
+  white-space: nowrap;
+}
+
+.my-games-chips .btn[aria-pressed='true'] {
+  background: var(--primary);
+  color: var(--on-color);
+}
+
+/* The tags of a row in the games list, such as "Online" or "Won", on their own line under the title. */
+.my-games-list .tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-block: 0.1rem;
+}
+
+.my-games-list .tag {
+  padding: 0 0.4rem;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.my-games-list .tag[data-kind='won'] {
+  background: var(--win);
+  color: var(--on-color);
+}
+
+.my-games-list .tag[data-kind='lost'] {
+  background: var(--danger);
+  color: var(--on-color);
+}
+
+.my-games-list .tag[data-kind='turn'] {
+  background: var(--primary);
+  color: var(--on-color);
 }
 
 /* minmax(0, 1fr): a long name never widens a row past the dialog. */
@@ -4773,4 +4819,33 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .rename-problem:empty {
   display: none;
+}
+
+/* The tabs of My games (src/page/my-games-layout.ts). Nothing is wider than the dialog: every part
+   can shrink, and rows of buttons wrap. */
+.my-games > *,
+.my-games-panel > * {
+  min-width: 0;
+}
+
+.my-games-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+/* Each tab is as wide as its label, and the 3 share the rest of the row. They wrap on a very narrow screen. */
+.my-games-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.my-games-tabs .btn {
+  flex: 1 1 auto;
+}
+
+.my-games-tabs .btn[aria-selected='true'] {
+  background: var(--primary);
+  color: var(--on-color);
 }

@@ -39,6 +39,7 @@ test('the first check of a device shows every unlock in a row, newest first, onc
   await popup(page).getByRole('button', { name: 'See in My games' }).click();
   await expect(popup(page)).toBeHidden();
   await expect(page.locator('#my-games')).toHaveAttribute('open');
+  await expect(page.getByRole('tab', { name: 'Achievements' })).toHaveAttribute('aria-selected', 'true');
 
   // The device saw them all, so a new visit shows nothing.
   const checked = page.waitForResponse((response) => response.url().endsWith('/api/me/achievements'));

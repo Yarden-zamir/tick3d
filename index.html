@@ -547,9 +547,9 @@
           <button type="button" class="btn btn-small my-games-more" id="my-games-reset-achievements" hidden>Reset achievements</button>
         </div>
       </section>
+      <!-- src/page/my-games.ts fills one list: the open sessions and the finished games, newest first. -->
       <section>
-        <h3>History</h3>
-        <ul class="my-games-list" id="my-games-history"></ul>
+        <ul class="my-games-list" id="my-games-history" aria-label="Your games"></ul>
         <div class="my-games-history-actions">
           <button type="button" class="btn btn-small my-games-more" id="my-games-more" hidden>More games</button>
           <button type="button" class="btn btn-small my-games-more" id="my-games-clear" hidden>Clear history</button>
@@ -558,14 +558,6 @@
       <section id="my-games-blocked-box" hidden>
         <h3>Blocked people</h3>
         <ul class="my-games-list" id="my-games-blocked"></ul>
-      </section>
-      <section id="my-games-online-box">
-        <h3>Online sessions</h3>
-        <ul class="my-games-list" id="my-games-online"></ul>
-      </section>
-      <section>
-        <h3>On this device</h3>
-        <ul class="my-games-list" id="my-games-device"></ul>
       </section>
       <section class="my-games-data">
         <h3>Your data</h3>
