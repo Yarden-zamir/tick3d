@@ -1,6 +1,7 @@
 // The background music of the smart-memory ad, all from the game's sound code and in C major pentatonic: the
 // Classic layer notes falling as the board shatters, a soft chord on each downbeat, a soft Cells note on each
-// move, the win jingle on the reveal and a final chord. The ad is about memory, not sound: the music only
+// move, the win jingle on the reveal, four rising Classic layer notes on the end card and a final chord, as the
+// spot ends. The ad is about memory, not sound: the music only
 // follows the picture (issue #130).
 import { type ScheduledSound, winVoices } from '../../../src/sound.ts';
 import { A_MINOR, C_MAJOR, chord, layerNote, note, pitchOf } from '../notes.ts';
@@ -23,6 +24,7 @@ export function memorySounds(): ScheduledSound[] {
     sounds.push(note(event.at, pitchOf(5 + i), cell));
   });
   winVoices(0).forEach((voice, i) => sounds.push({ at: reveal.at + 1 + i, voices: [voice] }));
+  for (const event of eventsOf('layer-pulse')) sounds.push(layerNote(event.at, event.layer));
   sounds.push(...chord(final.at, [48, 52, 55, 60], 1.2));
   if (sounds.some((sound) => sound.at >= END)) throw new Error(`a sound of the ${PLAN.id} plan starts after its end`);
   return sounds.sort((a, b) => a.at - b.at);

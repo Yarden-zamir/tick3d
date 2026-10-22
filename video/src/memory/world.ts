@@ -3,7 +3,7 @@
 // Everything in it is a function of the frame number.
 import { DoubleSide, Mesh, Vector3 } from 'three';
 import { Easing, interpolate } from 'remotion';
-import type { Line } from '../../../src/game.ts';
+import { type Line, toCoords } from '../../../src/game.ts';
 import { seededRandom } from '../../../src/practice/practice.ts';
 import { SIXTEENTH } from '../../../src/song.ts';
 import { createConfetti } from '../confetti.ts';
@@ -55,7 +55,7 @@ export function createMemoryWorld(width: number, height: number, art: BadgeArt):
   const theme = readTheme('light');
   const area = areaOf(width, height);
   const stage = createStage(width, height);
-  const { scene, camera, paint, cells } = stage;
+  const { scene, camera, paint, cells, layers } = stage;
   const random = seededRandom(SEED);
 
   const shatter = eventOf('shatter');
@@ -163,6 +163,12 @@ export function createMemoryWorld(width: number, height: number, art: BadgeArt):
       }
     });
 
+    // The layers bump on their notes of the end card (tutorial/world.ts). A piece is not in its layer group, so it
+    // moves and grows with the bump of its layer by hand.
+    const bumpOf = (layer: number) => Math.max(0, ...eventsOf('layer-pulse').filter((event) => event.layer === layer).map((event) => pulse(since(frame, event.at))));
+    const bumpScale = (bump: number) => new Vector3(1 + bump * 0.12, 1 + bump * 0.3, 1 + bump * 0.12);
+    layers.forEach((layer, index) => layer.scale.copy(bumpScale(bumpOf(index))));
+
     for (const piece of pieces) {
       const { cell, move, at } = piece;
       const onBoard = move < PLAN.firstMove;
@@ -178,7 +184,10 @@ export function createMemoryWorld(width: number, height: number, art: BadgeArt):
       // A board piece flies with its cell. A ghost drops onto its cell on its place.
       const flight = flights[cell];
       const flying = onBoard && !isRevealed && blown > 0 && blown < 1 && flight !== undefined;
-      piece.group.position.copy(cellBase(cell));
+      const layerScale = bumpScale(bumpOf(toCoords(cell).layer));
+      const floor = layers[toCoords(cell).layer]?.position.y ?? 0;
+      piece.group.position.copy(cellBase(cell)).sub(new Vector3(0, floor, 0)).multiply(layerScale).add(new Vector3(0, floor, 0));
+      piece.group.scale.copy(layerScale);
       if (flying) piece.group.position.addScaledVector(flight.out, flight.reach * blown);
       const t = at === undefined ? Infinity : since(frame, at);
       piece.lift.position.y = !isRevealed && t >= -1 && t < 0 ? 1.8 * t * t : 0;

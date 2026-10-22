@@ -29,6 +29,8 @@ export type MemoryEvent =
   | { kind: 'reveal'; at: number }
   // The wordmark and the address (lettering.ts endCard), the tower shrinks into the top half.
   | { kind: 'end-card'; at: number }
+  // A layer of the tower bumps on its Classic note: the four rising notes of the end card, as in the spot.
+  | { kind: 'layer-pulse'; at: number; layer: number }
   | { kind: 'final-chord'; at: number };
 
 // A line of text in the top band of the square. It wraps into rows when it does not fit the width.
@@ -53,6 +55,9 @@ const keypadView = (azimuth: number, elevation = ELEVATION, push = 0): View => v
 // The end card: the tower small in the middle, the line above it and the address under it.
 const END_VIEW: View = { azimuth: HOME_AZIMUTH + 40, elevation: ELEVATION, zoom: 0.5, lift: 0.08 };
 
+// The four layers bump from the bottom up, one per beat from `at`, before the final chord (the spot, music.md).
+const endNotes = (at: number): MemoryEvent[] => [0, 1, 2, 3].map((layer) => ({ kind: 'layer-pulse', at: at + layer * 4, layer }));
+
 // The moves from `from` on, at the given sixteenths. An X move types over the 3 sixteenths before its place.
 const moves = (from: number, ats: readonly number[]): MemoryEvent[] => ats.map((at, i) => ({ kind: 'move', at, move: from + i, gap: 1 }));
 
@@ -72,6 +77,7 @@ function fullCut(): Omit<Plan, 'id'> {
       ...moves(10, [60, 64, 72]),
       { kind: 'reveal', at: 80 },
       { kind: 'end-card', at: 96 },
+      ...endNotes(96),
       { kind: 'final-chord', at: 112 },
     ],
     text: [
@@ -113,6 +119,7 @@ function shortCut(): Omit<Plan, 'id'> {
       ...moves(12, [26]),
       { kind: 'reveal', at: 32 },
       { kind: 'end-card', at: 48 },
+      ...endNotes(48),
       { kind: 'final-chord', at: 64 },
     ],
     text: [
