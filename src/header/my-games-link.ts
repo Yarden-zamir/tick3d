@@ -2,7 +2,7 @@
 // My games. The request carries the page to return to after a GitHub login.
 import { RETURN, readReturn } from '../return-path.ts';
 
-const OPEN = 'open';
+export const OPEN = 'open';
 const MY_GAMES = 'my-games';
 
 // `returnTo` is a full URL on the origin of the game page. Without it, the login returns to the game page.

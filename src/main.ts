@@ -10,7 +10,7 @@ import { setMuted, setSoundSet } from './sound.ts';
 import { checkUnlocks, setupAchievementPopup } from './page/achievement-popup.ts';
 import { setupAdvanced } from './page/advanced.ts';
 import { reportAppOpen } from './page/app-copy.ts';
-import { setupShareMenu } from './page/share-menu.ts';
+import { playWithFriend, setupShareMenu } from './page/share-menu.ts';
 import { applyCamera, setupBoard } from './page/board.ts';
 import { setupChat } from './page/chat.ts';
 import { setupPanelAnchor } from './page/panel-anchor.ts';
@@ -26,6 +26,7 @@ import { setupReports } from './page/metrics.ts';
 import { openMyGames, refreshAccount, setupMyGames, preloadMyGames } from './page/my-games.ts';
 import { setupGameHeader } from './header/header.ts';
 import { readMyGamesRequest, withoutMyGamesRequest } from './header/my-games-link.ts';
+import { takePlayOnlineRequest } from './header/play-online-link.ts';
 import { setupMyGamesTabs } from './page/my-games-layout.ts';
 import { openNearbyLink, openNearby, setupNearby } from './page/nearby.ts';
 import { checkLanHost, setupOnlineBox } from './page/online-box.ts';
@@ -155,6 +156,12 @@ async function start(): Promise<void> {
   if (myGamesRequest !== undefined) {
     history.replaceState(null, '', withoutMyGamesRequest(new URL(location.href)));
     void account.then(() => openMyGames(myGamesRequest.returnTo)).catch(showError);
+  }
+  // "Play online with a friend" in the Share menu of /share. The game starts after the account is known.
+  const playOnline = takePlayOnlineRequest(new URL(location.href));
+  if (playOnline !== undefined) {
+    history.replaceState(null, '', playOnline);
+    void account.then(playWithFriend).catch(showError);
   }
   const params = new URLSearchParams(location.search);
   if (params.get('login') === 'failed') {

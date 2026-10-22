@@ -11,7 +11,9 @@ import { page } from './state.ts';
 
 const menu = element('#game-share-menu', HTMLDivElement);
 
-async function playWithFriend(): Promise<void> {
+// Also runs at the start for the request of /share (src/header/play-online-link.ts). The share sheet then needs
+// a tap that the page does not have, so the play link goes to the clipboard or shows in a message.
+export async function playWithFriend(): Promise<void> {
   await startOnlineGame();
   // The create failed (offline, for example), and its error shows already.
   if (page.session?.mode !== 'online') return;
