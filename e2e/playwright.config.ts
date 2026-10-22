@@ -11,7 +11,9 @@ export default defineConfig({
   testDir: '.',
   outputDir: 'test-results',
   fullyParallel: true,
-  workers: 4,
+  // The preview server runs one store request at a time, and 4 workers queue the requests of multi-page
+  // tests past their timeouts. Go back to 4 when issue 228 (store queue throughput) lands.
+  workers: 2,
   // The online and computer games play many turns, and the time limit tests wait for a timeout.
   timeout: 90_000,
   // Chromium draws the 3D board in software in a container, so a busy page answers slowly.
