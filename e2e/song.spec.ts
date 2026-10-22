@@ -59,6 +59,9 @@ test('the song button of the end card plays the game, and a long press downloads
   await expect(page.locator('#end-card-light')).toBeHidden();
 
   // A long press: the button asks for the release, and the release downloads the file (desktop Chromium has no file share).
+  // The card grows when the server answers with the new achievements. That moves the button away from
+  // a held mouse, and a pointer that leaves the button ends the press. So the press waits for them.
+  await expect(page.locator('#end-card-achievements')).toBeVisible();
   const box = await song.boundingBox();
   if (box === null) throw new Error('the song button has no box');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

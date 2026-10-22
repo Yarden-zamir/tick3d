@@ -183,12 +183,14 @@ test('the session clock reaches both players, and the server decides a timeout',
   const { page: alice } = await open();
   const perMove = (page: Page) => page.locator('[data-limit="perMove"]');
   await openMore(alice);
+  // Alice's second move counts from the moment Bob's move reaches the server, and the live stream of a
+  // busy preview takes up to 7 s to show that move to her. So the limit leaves her time to answer.
   await perMove(alice).locator('[data-limit-on]').check();
-  await perMove(alice).locator('[data-limit-value]').fill('5');
+  await perMove(alice).locator('[data-limit-value]').fill('15');
   await perMove(alice).locator('[data-limit-value]').press('Tab');
   const code = await createOnline(alice);
   const { page: bob } = await joinAsO(open, `/?code=${code}`);
-  await expect(bob.locator('#clock-summary')).toContainText('5 s per move');
+  await expect(bob.locator('#clock-summary')).toContainText('15 s per move');
   await expect(bob.locator('#clocks')).toBeVisible();
 
   await cell(alice, 0).click();
@@ -197,13 +199,13 @@ test('the session clock reaches both players, and the server decides a timeout',
   // The per-game switch starts at its default of 5 minutes.
   await bob.locator('[data-limit="perGame"] [data-limit-on]').check();
   await expectToast(alice, 'for the next game');
-  await expect(alice.locator('#clock-summary')).toContainText('Next game: 5 min per player + 5 s per move');
+  await expect(alice.locator('#clock-summary')).toContainText('Next game: 5 min per player + 15 s per move');
 
   // The first move of each player is untimed. Bob then lets his clock run out.
   await cell(bob, 1).click();
   await expect(marks(alice)).toHaveCount(2);
   await cell(alice, 2).click();
-  await expect(status(alice)).toContainText('ran out of time. You win!');
+  await expect(status(alice)).toContainText('ran out of time. You win!', { timeout: 30_000 });
   await expect(status(bob)).toHaveText('You ran out of time.');
 
   const late = await bob.evaluate(
