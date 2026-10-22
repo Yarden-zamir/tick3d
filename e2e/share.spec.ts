@@ -31,6 +31,14 @@ async function fakeCodes(page: Page, taken: number[] = []): Promise<void> {
 }
 
 const card = (page: Page, hint: string) => page.locator('.code-card', { has: page.locator('.code-hint', { hasText: hint }) });
+const step = (page: Page, id: string) => page.locator(`li[data-step="${id}"]`);
+
+// Picks Android and opens the code step early, as a tap on the grayed step does.
+async function openCodeStep(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Android' }).click();
+  await step(page, 'code').getByRole('button', { name: 'Open now' }).click();
+  await expect(step(page, 'code')).toHaveAttribute('data-state', 'open');
+}
 
 test('the page asks for the phone, and each phone shows its own steps', async ({ open }) => {
   const { page } = await open({ path: PAGES.share.path });
@@ -45,10 +53,37 @@ test('the page asks for the phone, and each phone shows its own steps', async ({
   await expect(page.getByRole('button', { name: 'iPhone' })).toHaveAttribute('aria-pressed', 'true');
 });
 
+test('the steps open in order, with a wait before the code step, and a tap opens a step early', async ({ open }) => {
+  const { page } = await open({ path: PAGES.share.path });
+  // The links open Google in a new tab. The test needs only the tap.
+  await page.context().route(/^https:\/\/(groups|play)\.google\.com\//, (route) => route.fulfill({ body: '' }));
+  await page.getByRole('button', { name: 'Android' }).click();
+  await expect(step(page, 'group')).toHaveAttribute('data-state', 'open');
+  await expect(step(page, 'tester')).toHaveAttribute('data-state', 'locked');
+  await expect(step(page, 'code')).toHaveAttribute('data-state', 'locked');
+
+  await step(page, 'group').getByRole('link', { name: 'Open the group' }).click();
+  await expect(step(page, 'group')).toHaveAttribute('data-state', 'done');
+  await expect(step(page, 'tester')).toHaveAttribute('data-state', 'open');
+
+  await step(page, 'tester').getByRole('link', { name: 'Become a tester' }).click();
+  await expect(step(page, 'code')).toHaveAttribute('data-state', 'waiting');
+  await expect(page.locator('#step-wait')).toContainText('Google needs a few minutes');
+  await expect(page.locator('#wait-left')).toHaveText(/^[12]:\d\d$/);
+
+  // The wait keeps its end time over a reload. A tap opens the step early.
+  await page.reload();
+  await expect(step(page, 'code')).toHaveAttribute('data-state', 'waiting');
+  await step(page, 'code').getByRole('button', { name: 'Open now' }).click();
+  await expect(step(page, 'code')).toHaveAttribute('data-state', 'open');
+  await expect(page.locator('#step-wait')).toBeHidden();
+  await expect(step(page, 'install')).toHaveAttribute('data-state', 'locked');
+});
+
 test('a claim shows the code, and a second claim asks first', async ({ open }) => {
   const { page } = await open({ path: PAGES.share.path });
   await fakeCodes(page);
-  await page.getByRole('button', { name: 'Android' }).click();
+  await openCodeStep(page);
   await expect(card(page, 'K7Q')).toHaveAttribute('data-state', 'taken');
   await expect(card(page, 'K7Q')).toContainText('Tom');
 
@@ -79,7 +114,7 @@ test('a claim shows the code, and a second claim asks first', async ({ open }) =
 test('a code that somebody else took first turns taken, with a message', async ({ open }) => {
   const { page } = await open({ path: PAGES.share.path });
   await fakeCodes(page, [2]);
-  await page.getByRole('button', { name: 'Android' }).click();
+  await openCodeStep(page);
   await card(page, 'B9W').click();
   await page.getByLabel('Google Play email').fill('dana@example.com');
   await page.getByLabel('Your name').fill('Dana');
@@ -146,7 +181,7 @@ test('an invite link credits its first inviter in the claim, and the share butto
   // A later visit with another inviter, or none, keeps the first one.
   await page.goto(`${PAGES.share.path}?by=fedcba9876543210`);
   await page.goto(`${PAGES.share.path}?by=bad`);
-  await page.getByRole('button', { name: 'Android' }).click();
+  await openCodeStep(page);
   await card(page, 'B9W').click();
   await page.getByLabel('Google Play email').fill('dana@example.com');
   await page.getByLabel('Your name').fill('Dana');
