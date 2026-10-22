@@ -1,6 +1,15 @@
 import { createHmac, randomBytes, randomInt } from 'node:crypto';
+import type { ApplePurchase } from './apple-proof.ts';
 import { type DuckDBValue, DuckDBInstance, listValue } from '@duckdb/node-api';
-import { type AchievementGame, type AchievementProgress, type AchievementRarity, type Achievements, achievementProgress, rarityOf } from '../src/achievements.ts';
+import {
+  ACHIEVEMENT_IDS,
+  type AchievementGame,
+  type AchievementId,
+  type AchievementProgress,
+  type AchievementRarity,
+  type Achievements,
+  achievementProgress,
+} from '../src/achievements.ts';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { NO_LIMIT, type TimeControl } from '../src/clock.ts';
 import { type EpochMs, MAX_EPOCH_MS, epochNow, toEpochMs } from '../src/epoch.ts';
@@ -41,8 +50,10 @@ import {
   type SessionUpdate,
   type SessionView,
   STATS_PRIVATE_MESSAGE,
+  type Leaderboard,
   type Stats,
   type StatsFilter,
+  type StatsCard,
   type StatsPerson,
   type Tally,
   ALL_STATS,
@@ -60,6 +71,7 @@ import {
   parseResultUpload,
   seatIn,
   statsQuery,
+  parseMetrics,
   toGame,
 } from '../src/protocol.ts';
 import { type Records, addLoss } from '../src/records.ts';
@@ -69,10 +81,23 @@ import type { PlayoffRequest } from '../src/practice/playoff.ts';
 import type { PracticeBoard, PracticeMode, PracticeRun, PresetId } from '../src/practice/practice.ts';
 import { DELETED_NAME } from '../src/deletions.ts';
 import type { Release } from '../src/release.ts';
-import { DATA_TABLES, type DeletedData } from './api-docs.ts';
+import { DATA_TABLES, type DeletedData, STATS_CACHE_MS } from './api-docs.ts';
+import { FIELD_SCHEMA, GAME_COLUMN_LIST, GAME_VALUES, METRIC_COLUMN_LIST, METRIC_VALUES, SESSION_SEAT_SET, SESSION_SEAT_VALUES } from './fields.ts';
 import { practiceBoard, practiceStats } from './practice.ts';
 import { type Rows, bigId, bool, code as codeColumn, deviceGameId, epoch, gameId, int, json, nullable, oneOf, readRow, text } from './sql.ts';
-import { computeStats, SEAT_O, SEAT_X } from './stats.ts';
+import { computeStats, inTokens, seatedResults, seatedRows, tokenValues } from './stats.ts';
+import { leaderRows } from './leaderboard.ts';
+import { type InviteEvent, peopleOf } from './invite-people.ts';
+import { type ClaimRequest, type ClaimedCode, type TesterCodeEntry, type TesterCodes, hintOf } from '../src/share/codes.ts';
+import { gravatarOf } from './tester-codes.ts';
+
+// The claims of tester codes with their emails, for the maintainers only (GET /api/testing/claims).
+// `invitedBy` is the person id of the inviter, or null for a claim without an invite.
+export type TesterClaims = { claims: { hint: string; name: string; email: string | null; claimedAt: EpochMs; invitedBy: PersonId | null }[] };
+
+// The GitHub account of the maintainer Yarden (login Yarden-zamir). Every code that testers claimed before the
+// invite links counts as his invite (the migration 'tester-invites-before-links' in openStore).
+const YARDEN_GITHUB_ID = 8178413;
 
 const { SessionError } = core;
 
@@ -135,7 +160,7 @@ const SCHEMA = [
   "ALTER TABLE results ADD COLUMN IF NOT EXISTS line VARCHAR",
   "ALTER TABLE results ADD COLUMN IF NOT EXISTS metrics VARIANT",
   // A unique index allows many NULLs. Rows from before game links have no public id: they show in
-  // the history without a link (see SEAT_X below for how the queries read them).
+  // the history without a link.
   "CREATE UNIQUE INDEX IF NOT EXISTS results_public_id ON results (public_id)",
   // Faults that pages report, for the failures list of the stats page. No token, no address.
   `CREATE TABLE IF NOT EXISTS events (
@@ -200,6 +225,20 @@ const SCHEMA = [
    )`,
   // "Reset achievements": only games that finished after `reset_at` count for the achievements of `owner`.
   // `owner` is the token of the player, as in private_stats. "Clear history" does not touch it.
+  // The unlocked achievements of each player (owner: a canonical token), for the rarity and the
+  // leaderboard. `signature` names the games that made the row (refreshAchievements fills a row again
+  // when it changes). Never send an owner to a page.
+  `CREATE TABLE IF NOT EXISTS achievement_players (
+     owner VARCHAR PRIMARY KEY,
+     signature VARCHAR NOT NULL,
+     unlocked VARCHAR[] NOT NULL
+   )`,
+  // The person id of each token that held a seat of a result (personId in src/protocol.ts), so a person view
+  // finds a player without an account by a key lookup, not by a hash of every seat. Never send a token to a page.
+  `CREATE TABLE IF NOT EXISTS seat_people (
+     person VARCHAR PRIMARY KEY,
+     token VARCHAR NOT NULL
+   )`,
   `CREATE TABLE IF NOT EXISTS achievement_resets (
      owner VARCHAR PRIMARY KEY,
      reset_at TIMESTAMPTZ NOT NULL
@@ -209,7 +248,7 @@ const SCHEMA = [
   'CREATE SEQUENCE IF NOT EXISTS report_order',
   `CREATE TABLE IF NOT EXISTS reports (
      id BIGINT PRIMARY KEY DEFAULT nextval('report_order'),
-     code VARCHAR NOT NULL,
+     code VARCHAR,
      message INTEGER,
      message_text VARCHAR,
      person VARCHAR,
@@ -238,6 +277,55 @@ const SCHEMA = [
      person VARCHAR PRIMARY KEY,
      deleted_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
+  ...FIELD_SCHEMA,
+  // The Google Play promo codes of the Android closed test (/share, src/share/codes.ts). TESTER_CODES fills
+  // the table at start (server/tester-codes.ts). A claim stores the email and the name that the tester typed,
+  // and no player token. A code that the maintainer gave out by hand has a name and no email.
+  // Never send a code or an email in the public list. A maintainer deletes a row by hand on an email request.
+  'CREATE SEQUENCE IF NOT EXISTS tester_code_order',
+  `CREATE TABLE IF NOT EXISTS tester_codes (
+     id INTEGER PRIMARY KEY DEFAULT nextval('tester_code_order'),
+     code VARCHAR NOT NULL UNIQUE,
+     name VARCHAR,
+     email VARCHAR,
+     claimed_at TIMESTAMPTZ,
+     added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     CHECK ((claimed_at IS NULL) = (name IS NULL) AND (email IS NULL OR name IS NOT NULL))
+   )`,
+  // The person id of the inviter of a claim (ClaimRequest in src/share/codes.ts), or null. The claim counts for
+  // the invite achievements of that person (src/achievements.ts). A self-invite stores null.
+  'ALTER TABLE tester_codes ADD COLUMN IF NOT EXISTS invited_by VARCHAR',
+  // The device token of the claimer and its owner at the time of the claim (the account token when the device was
+  // logged in, else the device token), so the invite events of one person count once (inviteEvents). Tokens: never
+  // send them to a page. Null for a claim from before these columns.
+  'ALTER TABLE tester_codes ADD COLUMN IF NOT EXISTS claimed_token VARCHAR',
+  'ALTER TABLE tester_codes ADD COLUMN IF NOT EXISTS claimed_owner VARCHAR',
+  // The bought copies of the paid Android app (src/copies.ts): one row per device (`token`) where the app opened
+  // (POST /api/copies). `owner` is the account (or the device) that held the device at the first open. `invited_by`
+  // is the inviter that /share kept on that device, or null. The account that holds the device now holds the copy
+  // (hasCopyOf), so a copy follows the last login on the app. Tokens: never send them to a page.
+  `CREATE TABLE IF NOT EXISTS app_copies (
+     token VARCHAR PRIMARY KEY,
+     owner VARCHAR NOT NULL,
+     invited_by VARCHAR,
+     opened_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  'ALTER TABLE app_copies ADD COLUMN IF NOT EXISTS proved BOOLEAN DEFAULT false',
+  // The device slots of the iPhone app purchases (server/apple-proof.ts): one row per device. `device` is the App
+  // Store id of the phone, which the signed purchase proves. `purchase` is `<environment>:<appTransactionId>`, and
+  // one purchase holds at most APPLE_SLOTS_PER_PURCHASE rows. `token` is the one player token of the device now.
+  // Tokens: never send them to a page.
+  `CREATE TABLE IF NOT EXISTS apple_slots (
+     device VARCHAR PRIMARY KEY,
+     purchase VARCHAR NOT NULL,
+     token VARCHAR NOT NULL UNIQUE,
+     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  // The one-time data changes (runOnce in openStore) that ran on this database, by name.
+  `CREATE TABLE IF NOT EXISTS migrations (
+     name VARCHAR PRIMARY KEY,
+     ran_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
 ];
 
 // The token that a seat holds when a logged-in player takes it. The account has a player_tokens row
@@ -252,7 +340,8 @@ export type GitHubUser = { id: number; login: string; avatar: string };
 // A stored report as a maintainer reads it (GET /api/reports). It holds person ids, never a token.
 export type StoredReport = {
   id: number;
-  code: Code;
+  // Null for a report of a person on the stats page.
+  code: Code | null;
   message: number | null;
   text: string | null;
   person: PersonId | null;
@@ -308,10 +397,18 @@ const isFinished = (record: GameRecord) => toGame(record).status.kind !== 'playi
 const isDuplicateKey = (error: unknown) => error instanceof Error && error.message.includes('Duplicate key');
 // A unique id is a few random tries away. Twenty failures mean a bug, not bad luck.
 const MAX_ID_ATTEMPTS = 20;
-// The stats page asks often; the numbers change slowly.
-const STATS_CACHE_MS = 60_000;
-// Rarity changes slowly, and each computation replays every game.
-const RARITY_CACHE_MS = 10 * 60_000;
+// Raise it when a rule in src/achievements.ts changes: every row of achievement_players then fills again.
+// A new or removed achievement changes the signatures by itself.
+const ACHIEVEMENT_RULES_VERSION = 3;
+// The devices that one iPhone app purchase can prove, and the days after which an unused device frees its slot (takeAppleSlot).
+const APPLE_SLOTS_PER_PURCHASE = 5;
+const APPLE_SLOT_IDLE_DAYS = 90;
+// The time to live of an Everyone snapshot is at least this many times the cost of its last refresh.
+const SNAPSHOT_COST_FACTOR = 10;
+// The signature of a row in achievement_players for an inviter without games (refreshOwners).
+const INVITES_ONLY = 'invites';
+// Players per replay round of refreshAchievements, so the memory and the list of bound tokens stay small.
+const ACHIEVEMENT_BATCH = 500;
 
 // What SQL cannot read from a stored game without a replay.
 type Ending = { winner: Player | null; ending: 'won' | 'timeout' | 'draw'; line: LineKind | null };
@@ -367,19 +464,20 @@ function accountOf(login: string | null, avatar: string | null): PlayerInfo | nu
 // The two copies can differ in the time of the last move by some milliseconds, so the match uses the
 // moves and a finish within 10 minutes. Two games of the same two players with the same moves inside
 // 10 minutes then count as one. Revisit this if a result ever carries a shared game id from the host.
-const HOST_HAS_GAME = `(results.metrics.nearby.role::VARCHAR = 'guest' AND EXISTS (
-  FROM results host SELECT 1
-  WHERE host.doc.mode::VARCHAR = 'nearby' AND host.metrics.nearby.role::VARCHAR = 'host'
-    AND results.token IN (host.player_x, host.player_o) AND host.token <> results.token
-    AND host.doc.game.moves::INTEGER[] = results.doc.game.moves::INTEGER[]
-    AND abs(epoch_ms(host.finished_at) - epoch_ms(results.finished_at)) < 600000))`;
+// The guest rows that have a host row, as one join of the few Nearby rows, once per query: a correlated
+// EXISTS made DuckDB join every result (12.8 s at 5,000,000 results, against 0.3 s for this form). One equality
+// join per host seat, so DuckDB can hash them.
+const guestCopies = (seat: 'player_x' | 'player_o') => `SELECT guest.id FROM results guest JOIN results host ON host.${seat} = guest.token
+  WHERE guest.nearby_role = 'guest' AND host.mode = 'nearby' AND host.nearby_role = 'host' AND host.token <> guest.token
+    AND host.moves = guest.moves AND abs(epoch_ms(host.finished_at) - epoch_ms(guest.finished_at)) < 600000`;
+const HOST_HAS_GAME = `(results.nearby_role IS NOT DISTINCT FROM 'guest' AND results.id IN (${guestCopies('player_x')} UNION ${guestCopies('player_o')}))`;
 
 // Joins the GitHub account of each seat of a result row: x_login, x_avatar, o_login, o_avatar.
 const SEAT_ACCOUNTS = `
-  LEFT JOIN player_tokens tx ON tx.token = ${SEAT_X} LEFT JOIN users ux ON ux.github_id = tx.github_id
-  LEFT JOIN player_tokens t_o ON t_o.token = ${SEAT_O} LEFT JOIN users uo ON uo.github_id = t_o.github_id`;
+  LEFT JOIN player_tokens tx ON tx.token = results.player_x LEFT JOIN users ux ON ux.github_id = tx.github_id
+  LEFT JOIN player_tokens t_o ON t_o.token = results.player_o LEFT JOIN users uo ON uo.github_id = t_o.github_id`;
 const SEAT_ACCOUNT_COLUMNS = 'ux.login AS x_login, ux.avatar AS x_avatar, uo.login AS o_login, uo.avatar AS o_avatar';
-// The shape of SEAT_ACCOUNT_COLUMNS, and of the seat tokens (SEAT_X AS token_x, SEAT_O AS token_o).
+// The shape of SEAT_ACCOUNT_COLUMNS, and of the seat tokens (player_x AS token_x, player_o AS token_o).
 // A seat token is null for a seat without a known player.
 const SEAT_SHAPE = {
   x_login: nullable(text),
@@ -417,6 +515,32 @@ export async function openStore(
   });
   const db = await instance.connect();
   for (const statement of SCHEMA) await db.run(statement);
+  // DuckDB 1.5.6 cannot replay ALTER ... DROP NOT NULL on `reports` (its id defaults to nextval) from the
+  // write-ahead log. SCHEMA runs that ALTER on every start, so a crash before the next checkpoint leaves a file
+  // that does not open. A checkpoint right after SCHEMA keeps those statements out of the log.
+  // Revisit when a DuckDB release replays it, or when SCHEMA no longer runs ALTER statements on each start.
+  await db.run('CHECKPOINT');
+
+  // Runs `task` once per database: the migrations table keeps the name, so a later start skips it.
+  // The task and the name go in one transaction, so a failed task runs again on the next start.
+  async function runOnce(name: string, task: () => Promise<void>): Promise<void> {
+    await db.run('BEGIN TRANSACTION');
+    try {
+      const added = await db.runAndReadAll('INSERT INTO migrations (name) VALUES ($name) ON CONFLICT DO NOTHING RETURNING name', { name });
+      if (added.getRowObjectsJS().length > 0) await task();
+      await db.run('COMMIT');
+    } catch (error) {
+      await db.run('ROLLBACK');
+      throw error;
+    }
+  }
+  // The claims from before the invite links have no inviter. They count as invites of Yarden, once: a later
+  // claim without an invite stays without one. The codes that Yarden gave to himself (by hand, so without email) stay without one.
+  await runOnce('tester-invites-before-links', async () => {
+    await db.run("UPDATE tester_codes SET invited_by = $person WHERE claimed_at IS NOT NULL AND invited_by IS NULL AND NOT (email IS NULL AND name = 'Yarden')", {
+      person: await personId(accountToken(YARDEN_GITHUB_ID)),
+    });
+  });
 
   // DuckDB calls are async, so two requests could interleave a read and a write. A queue runs
   // store operations one at a time, which keeps each read-check-write atomic in this process.
@@ -430,6 +554,21 @@ export async function openStore(
 
   const rows: Rows = async (sql, values, shape) => (await db.runAndReadAll(sql, values)).getRowObjectsJS().map((row) => readRow(row, shape));
 
+  // A second connection for the answers about every player (the Everyone stats and the leaderboard). They read
+  // every game, so they run here, one at a time, and the store queue never waits for them. Each query reads a
+  // consistent view of the data while the main connection writes.
+  const reader = await instance.connect();
+  const readRows: Rows = async (sql, values, shape) => (await reader.runAndReadAll(sql, values)).getRowObjectsJS().map((row) => readRow(row, shape));
+  let readQueue: Promise<unknown> = Promise.resolve();
+  // Set by close: no new background work starts.
+  let closing = false;
+  function inBackground<T>(task: () => Promise<T>): Promise<T> {
+    if (closing) return Promise.reject(new Error('the store is closing'));
+    const run = readQueue.then(task, task);
+    readQueue = run.catch(() => undefined);
+    return run;
+  }
+
   async function loadRaw(code: Code): Promise<Row> {
     const [row] = await rows('FROM sessions SELECT doc::JSON AS doc, version WHERE code = $code', { code }, { doc: json, version: int });
     if (row === undefined) throw new SessionError(404, `No game with code ${code}.`);
@@ -441,81 +580,331 @@ export async function openStore(
   // The achievements of each player, by their sorted tokens. A new or deleted result clears it all.
   // Limit: a clear drops every player's entry. Revisit this if achievement requests take more than about 100 ms.
   const achievementCache = new Map<string, AchievementProgress[]>();
-  // The rarity of the achievements over every player, at most RARITY_CACHE_MS old.
-  let rarityCache: { at: EpochMs; rarity: AchievementRarity } | undefined;
+  // The owners (canonical tokens) whose games changed since achievement_players saw them. Each write that
+  // changes the games of a player adds them. checkAllAchievements adds the changes that this process did not
+  // see (a deploy, a stop before a refresh).
+  const changedOwners = new Set<string>();
+  // The rarity from achievement_players, until a refresh changes a row.
+  let rarityCache: AchievementRarity | undefined;
 
-  // A Nearby guest counts the host's copy of the game, as in the history.
-  const ACHIEVEMENT_ROWS = `FROM results SELECT results.public_id, results.doc::JSON AS doc, epoch_ms(results.finished_at) AS finished,
-    ${SEAT_X} AS token_x, ${SEAT_O} AS token_o`;
-  const ACHIEVEMENT_COLUMNS = { public_id: nullable(gameId), doc: json, finished: epoch, token_x: nullable(text), token_o: nullable(text) };
+  // A Nearby guest counts the host's copy of the game, as in the history. owner_x and owner_o are the
+  // canonical tokens of the seats (see ownerOfSeat), which name the opponent.
+  // Limit: the guest's own copy has no host seat, so a guest sees the host as the opponent only after the
+  // host uploads. Revisit this if Nearby guests report missing progress on the goals about people.
+  const achievementRows = (source: string) => `FROM ${source} results
+      LEFT JOIN player_tokens px ON px.token = results.player_x LEFT JOIN player_tokens po ON po.token = results.player_o
+    SELECT results.public_id, results.doc::JSON AS doc, results.metrics::JSON AS metrics, epoch_ms(results.finished_at) AS finished,
+      results.player_x AS token_x, results.player_o AS token_o,
+      ${ownerOfSeat('results.player_x', 'px')} AS owner_x, ${ownerOfSeat('results.player_o', 'po')} AS owner_o
+    WHERE NOT ${HOST_HAS_GAME}`;
+  const ACHIEVEMENT_COLUMNS = {
+    public_id: nullable(gameId),
+    doc: json,
+    metrics: nullable(json),
+    finished: epoch,
+    token_x: nullable(text),
+    token_o: nullable(text),
+    owner_x: nullable(text),
+    owner_o: nullable(text),
+  };
 
   // One finished game as the rules read it, for the player who holds the seats where `mine` is true.
-  function achievementGame(row: { public_id: GameId | null; doc: unknown; finished: EpochMs }, mineX: boolean, mineO: boolean): AchievementGame {
+  // The opponent is the canonical token of the other seat of an online or Nearby game.
+  type AchievementRow = { public_id: GameId | null; doc: unknown; metrics: unknown; finished: EpochMs; owner_x: string | null; owner_o: string | null };
+  function achievementGame(row: AchievementRow, mineX: boolean, mineO: boolean): AchievementGame {
     if (!mineX && !mineO) throw new Error('an achievement game has no seat of the player');
     const { mode, game, difficulty, options, tuned } = readStored(row.doc);
     // A friend game holds this player on both seats.
     const you: Player | null = mineX && mineO ? null : mineX ? 'X' : 'O';
-    return { id: row.public_id, mode, game, you, difficulty, options, tuned, finishedAt: row.finished };
+    const theirs = you === 'X' ? row.owner_o : you === 'O' ? row.owner_x : null;
+    const opponent = (mode === 'online' || mode === 'nearby') && theirs !== core.COMPUTER_TOKEN ? theirs : null;
+    // The metrics belong to the device that uploaded the result. In a computer game, that is the player.
+    const metrics = mode === 'computer' && row.metrics !== null ? parseMetrics(row.metrics) : undefined;
+    const input = metrics?.input ?? null;
+    return { id: row.public_id, mode, game, you, difficulty, options, tuned, finishedAt: row.finished, opponent, input };
   }
 
-  // The time of each "Reset achievements", by owner (see achievement_resets).
-  async function achievementResets(): Promise<Map<string, EpochMs>> {
-    const found = await rows('FROM achievement_resets SELECT owner, epoch_ms(reset_at) AS at', {}, { owner: text, at: epoch });
-    return new Map(found.map((row) => [row.owner, row.at]));
+  // Every invite event: a claimed tester code with an inviter, and a copy of the Android app with an inviter. The keys
+  // name the human for peopleOf (server/invite-people.ts): the device token and the owner at the time of the event,
+  // the account that holds the device now, and the email of a claim. So a claim on a
+  // laptop and an app open on a phone count once when both devices log in to one account, also after the events. A claim from before the token columns has only its
+  // email, or its code (given out by hand).
+  // Limit: one Play purchase installs on every phone of that Google account, so two copies cannot tell two purchases
+  // from one. The copies of one account count as one person: by the owner at the open, and by the account now.
+  // Limit: it reads every invite, a few hundred rows at most now. Revisit this past 10,000 rows.
+  async function inviteEvents(): Promise<(InviteEvent & { invitedBy: PersonId })[]> {
+    const found = await rows(
+      `FROM tester_codes LEFT JOIN player_tokens linked ON linked.token = claimed_token
+         SELECT invited_by, claimed_token AS token, claimed_owner AS owner,
+           CASE WHEN linked.github_id IS NULL THEN NULL ELSE $account || lpad(linked.github_id::VARCHAR, 16, '0') END AS account,
+           lower(email) AS email, code, epoch_ms(claimed_at) AS at
+       WHERE invited_by IS NOT NULL AND claimed_at IS NOT NULL
+       UNION ALL
+       FROM app_copies LEFT JOIN player_tokens linked ON linked.token = app_copies.token
+         SELECT invited_by, app_copies.token, owner,
+           CASE WHEN linked.github_id IS NULL THEN NULL ELSE $account || lpad(linked.github_id::VARCHAR, 16, '0') END,
+           NULL, NULL, epoch_ms(opened_at)
+       WHERE invited_by IS NOT NULL`,
+      { account: ACCOUNT_TOKEN_PREFIX },
+      {
+        invited_by: personColumn,
+        token: nullable(text),
+        owner: nullable(text),
+        account: nullable(text),
+        email: nullable(text),
+        code: nullable(text),
+        at: epoch,
+      },
+    );
+    return found.map((row) => {
+      const keys = [
+        row.token === null ? [] : [`t:${row.token}`],
+        row.owner === null ? [] : [`o:${row.owner}`],
+        row.account === null ? [] : [`o:${row.account}`],
+        row.email === null ? [] : [`e:${row.email}`],
+      ].flat();
+      if (keys.length === 0 && row.code === null) throw new Error('an invite event names nobody');
+      return { invitedBy: row.invited_by, keys: keys.length === 0 ? [`c:${row.code ?? ''}`] : keys, at: row.at };
+    });
+  }
+  type InviteRow = Awaited<ReturnType<typeof inviteEvents>>[number];
+
+  // The person ids of a player: one for each of their tokens. An invite from a device before its login still
+  // counts for the account, and an invite from the account counts on every device.
+  const personsOfTokens = async (tokens: readonly string[]) => new Set(await Promise.all(tokens.map((token) => personId(token))));
+
+  // The invites of a player for achievementProgress: the first time of each person that one of `persons` invited,
+  // after the last "Reset achievements" (`since`). The events of one person count once (peopleOf).
+  function invitesOf(events: readonly InviteRow[], persons: ReadonlySet<string>, since: EpochMs | null): EpochMs[] {
+    return peopleOf(events.filter((event) => persons.has(event.invitedBy) && (since === null || event.at > since)));
+  }
+
+  // The canonical tokens of the players behind these person ids: an account (by any of its tokens) or a device
+  // without an account that held a seat (seat_people). A person without either has no row in achievement_players.
+  async function ownersOfPersons(persons: readonly string[]): Promise<string[]> {
+    if (persons.length === 0) return [];
+    const found = await rows(
+      `SELECT DISTINCT $account || lpad(github_id::VARCHAR, 16, '0') AS owner FROM player_tokens
+       WHERE list_contains($persons, left(sha256($prefix || token), ${PERSON_ID_LENGTH}))
+         OR list_contains($persons, left(sha256($prefix || $account || lpad(github_id::VARCHAR, 16, '0')), ${PERSON_ID_LENGTH}))
+       UNION
+       SELECT token AS owner FROM seat_people WHERE list_contains($persons, person) AND token NOT IN (FROM player_tokens SELECT token)`,
+      { persons: listValue([...persons]), prefix: PERSON_ID_PREFIX, account: ACCOUNT_TOKEN_PREFIX },
+      { owner: text },
+    );
+    return found.map((row) => row.owner);
   }
 
   // The achievements of the player `owner` (a canonical token) with these tokens, over every finished game
-  // on all their devices since their last reset.
+  // on all their devices since their last reset (see achievement_resets), and the invites of these tokens.
   async function progressOfTokens(owner: string, tokens: readonly string[]): Promise<AchievementProgress[]> {
     const key = tokens.toSorted().join(' ');
     const cached = achievementCache.get(key);
     if (cached !== undefined) return cached;
-    const found = await rows(
-      `${ACHIEVEMENT_ROWS} WHERE (list_contains($tokens, ${SEAT_X}) OR list_contains($tokens, ${SEAT_O})) AND NOT ${HOST_HAS_GAME}`,
-      { tokens: listValue([...tokens]) },
-      ACHIEVEMENT_COLUMNS,
-    );
-    const reset = (await achievementResets()).get(owner);
+    const found = await rows(achievementRows(seatedResults(tokens.length)), { ...tokenValues(tokens), account: ACCOUNT_TOKEN_PREFIX }, ACHIEVEMENT_COLUMNS);
+    const [reset] = await rows('FROM achievement_resets SELECT epoch_ms(reset_at) AS at WHERE owner = $owner', { owner }, { at: epoch });
     const own = new Set(tokens);
     const progress = achievementProgress(
       found
-        .filter((row) => reset === undefined || row.finished > reset)
+        .filter((row) => reset === undefined || row.finished > reset.at)
         .map((row) => achievementGame(row, row.token_x !== null && own.has(row.token_x), row.token_o !== null && own.has(row.token_o))),
+      invitesOf(await inviteEvents(), await personsOfTokens(tokens), reset?.at ?? null),
     );
     achievementCache.set(key, progress);
     return progress;
   }
 
-  // Every person with a finished game counts: an account with its devices, or a device without an account.
-  // Limit: it reads and replays every result. Revisit this when it takes more than about 1 s, or the results
-  // table holds about 100,000 rows: then keep the unlocks of each person in a table.
-  async function rarity(): Promise<AchievementRarity> {
-    if (rarityCache !== undefined && now() - rarityCache.at < RARITY_CACHE_MS) return rarityCache.rarity;
-    const found = await rows(`${ACHIEVEMENT_ROWS} WHERE NOT ${HOST_HAS_GAME}`, {}, ACHIEVEMENT_COLUMNS);
-    const seats = found.flatMap((row) => [row.token_x, row.token_o]).filter((token): token is string => token !== null && token !== core.COMPUTER_TOKEN);
-    const canon = await canonical(seats);
-    const person = (token: string | null) => (token === null ? undefined : canon.get(token));
-    const resets = await achievementResets();
-    const games = new Map<string, AchievementGame[]>();
-    for (const row of found) {
-      const x = person(row.token_x);
-      const o = person(row.token_o);
-      for (const owner of new Set([x, o])) {
-        if (owner === undefined) continue;
-        const list = games.get(owner) ?? [];
-        games.set(owner, list);
-        // A player who reset still counts as a player, with the games since the reset.
-        const reset = resets.get(owner);
-        if (reset === undefined || row.finished > reset) list.push(achievementGame(row, x === owner, o === owner));
-      }
+  // The counted games of each player in `source` (owner: the canonical token of a seat), as in the rarity:
+  // an account with its devices, or a device without an account. A Nearby guest counts the host's copy.
+  // `counts` is false for a game before the player's last "Reset achievements": such a player still counts as a player.
+  // Bound values: $account and $computer, and those of `source`.
+  const ownedGames = (source: string) => `seats AS (
+      SELECT results.id, results.finished_at, unnest([results.player_x, results.player_o]) AS token FROM ${source} results WHERE NOT ${HOST_HAS_GAME}),
+    owned AS (
+      SELECT DISTINCT seats.id, seats.finished_at, coalesce($account || lpad(pt.github_id::VARCHAR, 16, '0'), seats.token) AS owner
+      FROM seats LEFT JOIN player_tokens pt USING (token) WHERE seats.token IS NOT NULL AND seats.token <> $computer),
+    counted AS (
+      SELECT owned.*, r.reset_at IS NULL OR owned.finished_at > r.reset_at AS counts FROM owned LEFT JOIN achievement_resets r USING (owner))`;
+  // The games behind a row of achievement_players. A new or removed achievement changes it too ($rules).
+  const SIGNATURE = `md5($rules) || ':' || count(*) FILTER (counts) || ':' || coalesce(bit_xor(hash(id)) FILTER (counts), 0)`;
+  const ownerOfSeat = (seat: string, joined: string) => `coalesce($account || lpad(${joined}.github_id::VARCHAR, 16, '0'), ${seat})`;
+  const ownerValues = () => ({ account: ACCOUNT_TOKEN_PREFIX, computer: core.COMPUTER_TOKEN });
+  const rulesValue = () => `${ACHIEVEMENT_RULES_VERSION} ${ACHIEVEMENT_IDS.join(' ')}`;
+
+  // Fills the rows of these owners again from their games, through the seat indexes. An owner without
+  // games (a device that joined an account) loses its row.
+  async function refreshOwners(owners: readonly string[]): Promise<void> {
+    const linked = await rows(
+      `SELECT token, owner FROM (FROM player_tokens SELECT token, $account || lpad(github_id::VARCHAR, 16, '0') AS owner) WHERE list_contains($owners, owner)`,
+      { owners: listValue([...owners]), account: ACCOUNT_TOKEN_PREFIX },
+      { token: text, owner: text },
+    );
+    const tokens = [...new Set([...owners, ...linked.map((row) => row.token)])];
+    const source = seatedResults(tokens.length);
+    const values = { ...ownerValues(), ...tokenValues(tokens), owners: listValue([...owners]) };
+    const signatures = await rows(
+      `WITH ${ownedGames(source)} SELECT owner, ${SIGNATURE} AS signature FROM counted WHERE list_contains($owners, owner) GROUP BY owner`,
+      { ...values, rules: rulesValue() },
+      { owner: text, signature: text },
+    );
+    const found = await rows(
+      `WITH ${ownedGames(source)}
+      SELECT counted.owner, results.public_id, results.doc::JSON AS doc, results.metrics::JSON AS metrics, epoch_ms(results.finished_at) AS finished,
+        ${ownerOfSeat('results.player_x', 'px')} AS owner_x, ${ownerOfSeat('results.player_o', 'po')} AS owner_o
+      FROM counted JOIN ${source} results USING (id)
+        LEFT JOIN player_tokens px ON px.token = results.player_x LEFT JOIN player_tokens po ON po.token = results.player_o
+      WHERE counted.counts AND list_contains($owners, counted.owner)`,
+      values,
+      { owner: text, public_id: nullable(gameId), doc: json, metrics: nullable(json), finished: epoch, owner_x: nullable(text), owner_o: nullable(text) },
+    );
+    const games = Map.groupBy(found, (row) => row.owner);
+    // The invites, as in progressOfTokens. Most refreshes find no invited claim, and then hash no token.
+    const claims = await inviteEvents();
+    const resets =
+      claims.length === 0
+        ? new Map<string, EpochMs>()
+        : new Map(
+            (await rows('FROM achievement_resets SELECT owner, epoch_ms(reset_at) AS at WHERE list_contains($owners, owner)', { owners: listValue([...owners]) }, { owner: text, at: epoch })).map(
+              (row) => [row.owner, row.at],
+            ),
+          );
+    const linkedOf = Map.groupBy(linked, (row) => row.owner);
+    const signatureOf = new Map(signatures.map((row) => [row.owner, row.signature]));
+    // A player with games, or an inviter without games (INVITES_ONLY), so the rarity counts every holder of an invite achievement.
+    const filled = await Promise.all(
+      owners.map(async (owner) => {
+        const invites =
+          claims.length === 0 ? [] : invitesOf(claims, await personsOfTokens([owner, ...(linkedOf.get(owner) ?? []).map((row) => row.token)]), resets.get(owner) ?? null);
+        const signature = signatureOf.get(owner) ?? (invites.length > 0 ? INVITES_ONLY : undefined);
+        if (signature === undefined) return [];
+        const unlocked = achievementProgress(
+          (games.get(owner) ?? []).map((row) => achievementGame(row, row.owner_x === owner, row.owner_o === owner)),
+          invites,
+        )
+          .filter((entry) => entry.unlockedAt !== null)
+          .toSorted((a, b) => (b.unlockedAt ?? 0) - (a.unlockedAt ?? 0))
+          .map((entry) => entry.id);
+        return [{ owner, signature, unlocked }];
+      }),
+    );
+    const written = filled.flat();
+    await db.run('DELETE FROM achievement_players WHERE list_contains($owners, owner)', { owners: listValue([...owners]) });
+    if (written.length > 0) {
+      await db.run(
+        `INSERT INTO achievement_players (owner, signature, unlocked)
+         SELECT unnest($owners::VARCHAR[]), unnest($signatures::VARCHAR[]), unnest($unlocked::JSON::VARCHAR[][])`,
+        {
+          owners: listValue(written.map((row) => row.owner)),
+          signatures: listValue(written.map((row) => row.signature)),
+          // As JSON text: a list value cannot hold an empty list without a type.
+          unlocked: JSON.stringify(written.map((row) => row.unlocked)),
+        },
+      );
     }
-    const fresh = rarityOf([...games.values()].map((list) => achievementProgress(list)));
-    rarityCache = { at: now(), rarity: fresh };
-    return fresh;
+    rarityCache = undefined;
+  }
+
+  // Brings achievement_players up to date for the changed owners. It runs on the store queue.
+  async function refreshAchievements(): Promise<void> {
+    const owners = [...changedOwners];
+    changedOwners.clear();
+    for (let start = 0; start < owners.length; start += ACHIEVEMENT_BATCH) await refreshOwners(owners.slice(start, start + ACHIEVEMENT_BATCH));
+  }
+
+  // Compares every player with achievement_players in the background, at the start and after a deletion
+  // (which can change the games of other players: a Nearby guest counts again without the host's copy).
+  // The reads run on the reader; the store queue then drops the rows of players without games and marks the changed ones.
+  // Limit: it reads every result, about 10 s at 5,000,000 results, outside the store queue.
+  function checkAllAchievements(): void {
+    inBackground(async () => {
+      const changed = await readRows(
+        `WITH ${ownedGames('results')}, current AS (SELECT owner, ${SIGNATURE} AS signature FROM counted GROUP BY owner)
+        SELECT owner FROM current LEFT JOIN achievement_players p USING (owner) WHERE p.signature IS DISTINCT FROM current.signature`,
+        { ...ownerValues(), rules: rulesValue() },
+        { owner: text },
+      );
+      const gone = await readRows(`FROM achievement_players SELECT owner WHERE owner NOT IN (WITH ${ownedGames('results')} SELECT owner FROM owned)`, ownerValues(), {
+        owner: text,
+      });
+      await serialized(async () => {
+        if (gone.length > 0) await db.run('DELETE FROM achievement_players WHERE list_contains($owners, owner)', { owners: listValue(gone.map((row) => row.owner)) });
+        for (const { owner } of changed) changedOwners.add(owner);
+        // A signature names games, not invites, so every inviter that the server can find gets a fresh row. That also
+        // brings back an inviter without games, whose row went with `gone`. Inviters are few.
+        const invited = [...new Set((await inviteEvents()).map((event) => event.invitedBy))];
+        for (const owner of await ownersOfPersons(invited)) changedOwners.add(owner);
+        rarityCache = undefined;
+      });
+    }).catch((error: unknown) => console.error('achievement check:', error instanceof Error ? error.message : String(error)));
+  }
+
+  // How many players unlocked each achievement, out of every player with a finished game.
+  async function everyonesRarity(): Promise<AchievementRarity> {
+    await refreshAchievements();
+    if (rarityCache !== undefined) return rarityCache;
+    const [total] = await rows('SELECT count(*)::INTEGER AS n FROM achievement_players', {}, { n: int });
+    const counts = await rows(
+      'SELECT id, count(*)::INTEGER AS n FROM (SELECT unnest(unlocked) AS id FROM achievement_players) GROUP BY id',
+      {},
+      { id: oneOf(ACHIEVEMENT_IDS), n: int },
+    );
+    const byId = new Map(counts.map((row) => [row.id, row.n]));
+    const unlocked = Object.fromEntries(ACHIEVEMENT_IDS.map((id) => [id, byId.get(id) ?? 0])) as Record<AchievementId, number>;
+    rarityCache = { players: total?.n ?? 0, unlocked };
+    return rarityCache;
+  }
+
+  // Whether the player of this browser holds a copy: this device holds one, or another device that is logged in to the
+  // same account. So a copy follows the account that logged in last on that device, and a logout takes it back.
+  // Takes the device slot of an iPhone app purchase for this player token, in one transaction. A device keeps its slot
+  // on later opens. A new token on the same device (cleared app data) takes the slot over, and the old token loses its
+  // proof: a copied proof and device id can only take turns with the real phone, never add a slot. A new device gets a
+  // slot while the purchase holds fewer than APPLE_SLOTS_PER_PURCHASE; a slot unused for APPLE_SLOT_IDLE_DAYS frees
+  // itself first, so a lost phone does not keep its slot. 409 when the device holds another purchase, 403 when full.
+  async function takeAppleSlot(token: PlayerToken, { environment, appTransactionId, device }: ApplePurchase): Promise<void> {
+    const purchase = `${environment}:${appTransactionId}`;
+    await db.run('BEGIN TRANSACTION');
+    try {
+      const [slot] = await rows('FROM apple_slots SELECT purchase, token WHERE device = $device', { device }, { purchase: text, token: text });
+      if (slot !== undefined && slot.purchase !== purchase) throw new SessionError(409, 'This device holds another Apple purchase.');
+      if (slot === undefined) {
+        await db.run(`DELETE FROM apple_slots WHERE purchase = $purchase AND last_seen_at < now() - INTERVAL ${APPLE_SLOT_IDLE_DAYS} DAY`, { purchase });
+        const [used] = await rows('FROM apple_slots SELECT count(*)::INTEGER AS n WHERE purchase = $purchase AND token <> $token', { purchase, token }, { n: int });
+        if ((used?.n ?? 0) >= APPLE_SLOTS_PER_PURCHASE) {
+          throw new SessionError(403, `This Apple purchase holds ${APPLE_SLOTS_PER_PURCHASE} devices already. A device unused for ${APPLE_SLOT_IDLE_DAYS} days frees its place.`);
+        }
+      }
+      if (slot !== undefined && slot.token !== token) await db.run('UPDATE app_copies SET proved = false WHERE token = $old', { old: slot.token });
+      // A token lives on one device: its slot under another device id goes.
+      await db.run('DELETE FROM apple_slots WHERE token = $token OR device = $device', { token, device });
+      await db.run('INSERT INTO apple_slots (device, purchase, token) VALUES ($device, $purchase, $token)', { device, purchase, token });
+      await db.run('COMMIT');
+    } catch (error) {
+      await db.run('ROLLBACK');
+      throw error;
+    }
+  }
+
+  async function hasCopyOf(token: PlayerToken): Promise<boolean> {
+    const [copy] = await rows(
+      `FROM app_copies SELECT token
+       WHERE token = $token OR token IN (FROM player_tokens SELECT token WHERE github_id = (FROM player_tokens SELECT github_id WHERE token = $token))
+       LIMIT 1`,
+      { token },
+      { token: text },
+    );
+    return copy !== undefined;
   }
 
   async function achievementsOf(owner: string, tokens: readonly string[]): Promise<Achievements> {
-    return { achievements: await progressOfTokens(owner, tokens), rarity: await rarity() };
+    const achievements = await progressOfTokens(owner, tokens);
+    // An inviter without games and without a seat is unknown to ownersOfPersons, so it gets its row here, before
+    // the rarity: an unlocked achievement never shows "0% of players".
+    if (achievements.some((entry) => entry.unlockedAt !== null)) {
+      const [known] = await rows('FROM achievement_players SELECT owner WHERE owner = $owner', { owner }, { owner: text });
+      if (known === undefined) changedOwners.add(owner);
+    }
+    return { achievements, rarity: await everyonesRarity() };
   }
 
   type NewResult = {
@@ -534,8 +923,8 @@ export async function openStore(
   async function insertResult(result: NewResult): Promise<boolean> {
     const { winner, ending, line } = endingOf(result.game);
     const inserted = await rows(
-      `INSERT INTO results (id, token, doc, finished_at, public_id, player_x, player_o, winner, ending, line, metrics)
-       VALUES ($id, $token, $doc::JSON::VARIANT, make_timestamptz($finished * 1000), $publicId, $x, $o, $winner, $ending, $line, $metrics::JSON::VARIANT)
+      `INSERT INTO results (id, token, doc, finished_at, public_id, player_x, player_o, winner, ending, line, metrics, ${GAME_COLUMN_LIST}, ${METRIC_COLUMN_LIST})
+       VALUES ($id, $token, $doc::JSON::VARIANT, make_timestamptz($finished * 1000), $publicId, $x, $o, $winner, $ending, $line, $metrics::JSON::VARIANT, ${GAME_VALUES}, ${METRIC_VALUES})
        ON CONFLICT (id) DO NOTHING RETURNING id`,
       {
         id: result.id,
@@ -553,6 +942,9 @@ export async function openStore(
       { id: text },
     );
     achievementCache.clear();
+    const seats = [result.seats.X, result.seats.O].filter((seat): seat is string => seat !== null && seat !== core.COMPUTER_TOKEN);
+    for (const seat of seats) await db.run('INSERT OR IGNORE INTO seat_people (person, token) VALUES ($person, $token)', { person: await personId(seat), token: seat });
+    for (const owner of (await canonical(seats)).values()) changedOwners.add(owner);
     return inserted.length > 0;
   }
 
@@ -578,7 +970,7 @@ export async function openStore(
 
   async function save(row: Row, doc: SessionDoc): Promise<Row> {
     await db.run(
-      'UPDATE sessions SET doc = $doc::JSON::VARIANT, version = version + 1, updated_at = now() WHERE code = $code',
+      `UPDATE sessions SET doc = $doc::JSON::VARIANT, ${SESSION_SEAT_SET}, version = version + 1, updated_at = now() WHERE code = $code`,
       { code: row.code, doc: serialize(doc) },
     );
     // Only the live game can end, by a move or by a timeout.
@@ -632,19 +1024,24 @@ export async function openStore(
     return new Set([token, ...account, ...linked.map((row) => row.token)]);
   }
 
-  async function playersOf(doc: SessionDoc): Promise<Record<Player, PlayerInfo | null>> {
-    const seatTokens = [doc.seats.X, doc.seats.O].filter((token) => token !== null);
-    if (seatTokens.length === 0) return { X: null, O: null };
+  // The GitHub account of each token, in one query. A token without an account, or null, has none.
+  async function accountsOf(tokens: readonly (string | null)[]): Promise<(token: string | null) => PlayerInfo | null> {
+    const known = [...new Set(tokens.filter((token) => token !== null))];
+    if (known.length === 0) return () => null;
     const found = await rows(
       `FROM player_tokens JOIN users USING (github_id) SELECT token, login, avatar
        WHERE list_contains($tokens, token)`,
-      { tokens: listValue(seatTokens) },
+      { tokens: listValue(known) },
       { token: text, login: text, avatar: text },
     );
-    const info = (token: string | null): PlayerInfo | null => {
+    return (token) => {
       const match = found.find((row) => row.token === token);
       return match === undefined ? null : { login: match.login, avatar: match.avatar };
     };
+  }
+
+  async function playersOf(doc: SessionDoc): Promise<Record<Player, PlayerInfo | null>> {
+    const info = await accountsOf([doc.seats.X, doc.seats.O]);
     return { X: info(doc.seats.X), O: info(doc.seats.O) };
   }
 
@@ -675,10 +1072,8 @@ export async function openStore(
 
   // The person behind a public person id: their canonical token, their tokens for the stats, and the
   // name and GitHub account that their games show. undefined when no account and no finished game has the id.
-  // DuckDB's sha256 finds the token behind the person id, as in clearPersonName.
-  // Limit: the device search hashes every seat token of every result. Revisit this when a person filter
-  // takes more than about 100 ms: then keep the person id of each seat in a column.
-  async function statsPersonOf(person: PersonId): Promise<{ owner: string; tokens: string[]; shown: StatsPerson } | undefined> {
+  // An account: DuckDB's sha256 over the accounts finds it, as in clearPersonName. A device: seat_people.
+  async function statsPersonOf(person: PersonId): Promise<{ owner: string; tokens: string[]; shown: Omit<StatsPerson, 'you'> } | undefined> {
     const [account] = await rows(
       `FROM (SELECT DISTINCT github_id FROM player_tokens) LEFT JOIN users USING (github_id) SELECT github_id, login, avatar
        WHERE left(sha256($prefix || $account || lpad(github_id::VARCHAR, 16, '0')), ${PERSON_ID_LENGTH}) = $person`,
@@ -693,16 +1088,27 @@ export async function openStore(
       return { owner, tokens: [owner, ...linked.map((row) => row.token)], shown: { name, player } };
     }
     // A device without an account. A linked token stands for its account, so it is not a device person.
+    // The token still holds a seat: a logout moves the games of a device to its account.
     const [device] = await rows(
-      `SELECT DISTINCT seat AS token FROM (SELECT unnest([${SEAT_X}, ${SEAT_O}]) AS seat FROM results)
-       WHERE seat IS NOT NULL AND seat <> $computer AND seat NOT IN (FROM player_tokens SELECT token)
-         AND left(sha256($prefix || seat), ${PERSON_ID_LENGTH}) = $person
-       LIMIT 1`,
-      { prefix: PERSON_ID_PREFIX, person, computer: core.COMPUTER_TOKEN },
+      `FROM seat_people p SELECT p.token
+       WHERE p.person = $person AND p.token NOT IN (FROM player_tokens SELECT token)
+         AND (EXISTS (FROM results WHERE player_x = p.token) OR EXISTS (FROM results WHERE player_o = p.token))`,
+      { person },
       { token: text },
     );
     if (device === undefined) return undefined;
     return { owner: device.token, tokens: [device.token], shown: { name: (await namesOf([device.token]))(device.token), player: null } };
+  }
+
+  // The person of a person view, for the caller `token`: 403 when the person hides their stats from the caller,
+  // 404 without an account and a finished game. It runs on the store queue.
+  async function visiblePersonOf(person: PersonId, token: PlayerToken | null): Promise<{ owner: string; tokens: string[]; person: StatsPerson }> {
+    const hidden = await privateOwnerOf(person);
+    const caller = token === null ? null : await ownerOf(token);
+    if (hidden !== undefined && caller !== hidden) throw new SessionError(403, STATS_PRIVATE_MESSAGE);
+    const found = await statsPersonOf(person);
+    if (found === undefined) throw new SessionError(404, 'This player has no finished games yet.');
+    return { owner: found.owner, tokens: found.tokens, person: { ...found.shown, you: caller === found.owner } };
   }
 
   async function isStatsPrivate(owner: string): Promise<boolean> {
@@ -845,8 +1251,60 @@ export async function openStore(
     return { X: core.seatName(x, name), O: core.seatName(o, name) };
   }
 
-  // Everyone answers by filter query (statsQuery). The filters have a few dozen combinations, so the map stays small.
-  const statsCache = new Map<string, Stats>();
+  // The last answer of each Everyone query, by kind and filter (statsQuery). The filters have a few dozen
+  // combinations, so the map stays small. A request gets the last answer at once. An answer older than its
+  // time to live starts a refresh in the background, and the next request gets the new answer. The time to
+  // live grows with the cost of a refresh, so a slow refresh does not keep the reader busy.
+  // Only the first request of a filter after a start waits for the answer.
+  const snapshots = new Map<string, { value: unknown; at: EpochMs; ttl: number }>();
+  const refreshing = new Map<string, Promise<unknown>>();
+  function snapshot<T>(key: string, compute: () => Promise<T>): Promise<T> {
+    const refresh = (): Promise<T> => {
+      const running = refreshing.get(key);
+      if (running !== undefined) return running as Promise<T>;
+      const started = inBackground(async () => {
+        const began = now();
+        const value = await compute();
+        snapshots.set(key, { value, at: now(), ttl: Math.max(STATS_CACHE_MS, SNAPSHOT_COST_FACTOR * (now() - began)) });
+        return value;
+      }).finally(() => refreshing.delete(key));
+      refreshing.set(key, started);
+      return started;
+    };
+    const known = snapshots.get(key);
+    if (known === undefined) return refresh();
+    if (now() - known.at >= known.ttl) {
+      refresh().catch((error: unknown) => console.error(`snapshot ${key}:`, error instanceof Error ? error.message : String(error)));
+    }
+    return Promise.resolve(known.value as T);
+  }
+
+  // The leaderboard of a range, mode and level, without the caller. The unlocks come first (a write, so on the
+  // store queue), then the board on the reader, then the names on the store queue.
+  async function leaderboardOf(filter: StatsFilter): Promise<Omit<Leaderboard, 'you'>> {
+    await serialized(refreshAchievements);
+    const found = await leaderRows(readRows, filter, now());
+    const names = await serialized(() => namesOf(found.map((row) => row.owner)));
+    return {
+      generatedAt: now(),
+      rows: await Promise.all(
+        found.map(async (row) => ({
+          person: await personId(row.owner),
+          name: row.login ?? names(row.owner),
+          player: row.login === null || row.avatar === null ? null : { login: row.login, avatar: row.avatar },
+          games: row.games,
+          won: row.won,
+          drawn: row.drawn,
+          lost: row.lost,
+          fastestWin: row.fastest_win,
+          avgMoves: row.avg_moves,
+          bestStreak: row.best_streak,
+          lastPlayed: row.last_played,
+          achievements: row.achievements,
+        })),
+      ),
+    };
+  }
 
   // Delete my data: deletes or anonymises every row of this player, on every linked device, in one
   // transaction. A second call finds nothing and returns zero counts. Per table:
@@ -854,8 +1312,11 @@ export async function openStore(
   //   text. A session that has no player and no move after that goes.
   // - results: a game that the player uploaded goes. An online game with another player stays for
   //   that player, and so does another player's upload: the player's seat becomes null.
-  // - seat_metrics of the player's seats, player_names, the player's own blocks, private_stats, achievement_resets, practice_runs: deleted.
+  // - seat_metrics of the player's seats, player_names, the player's own blocks, private_stats, achievement_resets,
+  //   achievement_players, seat_people, practice_runs: deleted.
   // - reports: a report about the player stays for moderation. A report that the player filed loses its reporter.
+  // - tester_codes: a code that the player invited or claimed stays with its tester, without the player's person id and tokens.
+  // - app_copies: the copies of the player's devices: deleted. Another copy loses its inviter when it is this player.
   // - player_tokens and users: the account goes, so no device acts for it any more.
   // Limit: a device of the account that is still logged in links itself again on its next visit,
   // because its login cookie stays valid. That account then starts empty. Revisit this if the
@@ -864,6 +1325,8 @@ export async function openStore(
   // `token` is a device token, or the account token of a maintainer request (deleteDataOf).
   async function deleteFor(token: PlayerToken): Promise<DeletedData> {
     achievementCache.clear();
+    // A deletion can change the games of other players too, so every player gets a check. Deletions are rare.
+    checkAllAchievements();
     const identity = await identityOf(token);
     const ids = listValue([...identity]);
     const ownPersons = new Set(await Promise.all([...identity].map((owner) => personId(owner))));
@@ -901,7 +1364,7 @@ export async function openStore(
           counts.sessions.deleted++;
           continue;
         }
-        await db.run('UPDATE sessions SET doc = $doc::JSON::VARIANT, version = version + 1, updated_at = now() WHERE code = $code', {
+        await db.run(`UPDATE sessions SET doc = $doc::JSON::VARIANT, ${SESSION_SEAT_SET}, version = version + 1, updated_at = now() WHERE code = $code`, {
           code,
           doc: serialize({ ...doc, seats, seatRequest, chat }),
         });
@@ -920,8 +1383,8 @@ export async function openStore(
 
       // The games that this player uploaded, and the online games without another player.
       const deleted = await changedIds(
-        `DELETE FROM results WHERE (list_contains($ids, token) AND doc.mode::VARCHAR IS DISTINCT FROM 'online')
-           OR (doc.mode::VARCHAR = 'online' AND (list_contains($ids, player_x) OR list_contains($ids, player_o))
+        `DELETE FROM results WHERE (list_contains($ids, token) AND mode IS DISTINCT FROM 'online')
+           OR (mode = 'online' AND (list_contains($ids, player_x) OR list_contains($ids, player_o))
              AND coalesce(list_contains($ids, player_x), true) AND coalesce(list_contains($ids, player_o), true))
          RETURNING id`,
         { ids },
@@ -939,11 +1402,36 @@ export async function openStore(
       counts.blocks.deleted = (await changedIds('DELETE FROM blocks WHERE list_contains($ids, owner) RETURNING person AS id', { ids })).length;
       counts.private_stats.deleted = (await changedIds('DELETE FROM private_stats WHERE list_contains($ids, owner) RETURNING owner AS id', { ids })).length;
       counts.achievement_resets.deleted = (await changedIds('DELETE FROM achievement_resets WHERE list_contains($ids, owner) RETURNING owner AS id', { ids })).length;
+      counts.achievement_players.deleted = (await changedIds('DELETE FROM achievement_players WHERE list_contains($ids, owner) RETURNING owner AS id', { ids })).length;
+      counts.seat_people.deleted = (await changedIds('DELETE FROM seat_people WHERE list_contains($ids, token) RETURNING person AS id', { ids })).length;
       // A block of this player by another player stays for that player, without the name.
       counts.blocks.anonymised = (
         await changedIds('UPDATE blocks SET name = $name WHERE list_contains($persons, person) AND name <> $name RETURNING owner || person AS id', { persons, name: DELETED_NAME })
       ).length;
       counts.practice_runs.deleted = (await changedIds('DELETE FROM practice_runs WHERE list_contains($ids, token) RETURNING id', { ids })).length;
+      // A code that this player invited or claimed stays with its tester, without the person id and tokens of this player.
+      counts.tester_codes.anonymised = (
+        await changedIds(
+          `UPDATE tester_codes SET invited_by = CASE WHEN list_contains($persons, invited_by) THEN NULL ELSE invited_by END,
+             claimed_token = CASE WHEN list_contains($ids, claimed_token) OR list_contains($ids, claimed_owner) THEN NULL ELSE claimed_token END,
+             claimed_owner = CASE WHEN list_contains($ids, claimed_token) OR list_contains($ids, claimed_owner) THEN NULL ELSE claimed_owner END
+           WHERE list_contains($persons, invited_by) OR list_contains($ids, claimed_token) OR list_contains($ids, claimed_owner) RETURNING id::VARCHAR AS id`,
+          { persons, ids },
+        )
+      ).length;
+      // The copies of this player's devices, or first opened by this player. A copy of another device keeps no invite
+      // by this player.
+      counts.app_copies.deleted = (
+        await changedIds('DELETE FROM app_copies WHERE list_contains($ids, token) OR list_contains($ids, owner) RETURNING token AS id', { ids })
+      ).length;
+      // The device slots of this player's tokens: the purchase gets the place back.
+      counts.apple_slots.deleted = (await changedIds('DELETE FROM apple_slots WHERE list_contains($ids, token) RETURNING device AS id', { ids })).length;
+      counts.app_copies.anonymised = (
+        await changedIds(
+          'UPDATE app_copies SET invited_by = NULL WHERE list_contains($persons, invited_by) RETURNING token AS id',
+          { persons },
+        )
+      ).length;
       counts.reports.anonymised = (
         await changedIds(
           `UPDATE reports SET reporter = NULL, reporter_person = NULL
@@ -973,6 +1461,9 @@ export async function openStore(
     return counts;
   }
 
+  // The achievements of every player against their games, once per start.
+  checkAllAchievements();
+
   return {
     // The creator takes seat X, so the creator moves first in the first game.
     create: (token: PlayerToken, name: string, clock: TimeControl = NO_LIMIT): Promise<SessionView> =>
@@ -981,7 +1472,7 @@ export async function openStore(
         for (let attempt = 0; attempt < 20; attempt++) {
           const code = newCode();
           try {
-            await db.run('INSERT INTO sessions (code, doc) VALUES ($code, $doc::JSON::VARIANT)', { code, doc: serialize(doc) });
+            await db.run(`INSERT INTO sessions (code, doc, seat_x, seat_o) VALUES ($code, $doc::JSON::VARIANT, ${SESSION_SEAT_VALUES})`, { code, doc: serialize(doc) });
           } catch (error) {
             if (error instanceof Error && error.message.includes('Duplicate key')) continue;
             throw error;
@@ -1103,14 +1594,31 @@ export async function openStore(
       }),
 
     // Stores a report of a message or a person of an online session. The session must hold the target now.
+    // A report without a code names a person of the stats page: any person with a finished game or an account.
     report: (token: PlayerToken, request: ReportRequest): Promise<{ id: number }> =>
       serialized(async () => {
+        const reporter = await ownerOf(token);
+        const store = async (code: Code | null, target: { message: number | null; text: string | null; person: PersonId | null; name: string | null }) => {
+          const [stored] = await rows(
+            `INSERT INTO reports (code, message, message_text, person, person_name, reason, note, reporter, reporter_person)
+             VALUES ($code, $message, $text, $person, $name, $reason, $note, $reporter, $reporterPerson) RETURNING id`,
+            { code, ...target, reason: request.reason, note: request.note, reporter, reporterPerson: await personId(reporter) },
+            { id: int },
+          );
+          if (stored === undefined) throw new Error('a report insert returned no id');
+          return { id: stored.id };
+        };
+        if (request.code === null) {
+          const id = request.target.person;
+          const found = await statsPersonOf(id);
+          if (found === undefined) throw new SessionError(404, 'That player has no finished games.');
+          return store(null, { message: null, text: null, person: id, name: found.shown.name });
+        }
         const row = await load(request.code);
         const { watchers } = await audience(row.code, row.doc);
         const everyone = [row.doc.seats.X, row.doc.seats.O, ...watchers.map((watcher) => watcher.token)];
         const person = await personsOf(everyone);
         const name = await namesOf(everyone);
-        const reporter = await ownerOf(token);
         let target: { message: number | null; text: string | null; person: PersonId | null; name: string | null };
         if ('message' in request.target) {
           const id = request.target.message;
@@ -1132,14 +1640,7 @@ export async function openStore(
           if (found === undefined || found === null) throw new SessionError(404, 'That person is not in this game now.');
           target = { message: null, text: null, person: id, name: name(found) };
         }
-        const [stored] = await rows(
-          `INSERT INTO reports (code, message, message_text, person, person_name, reason, note, reporter, reporter_person)
-           VALUES ($code, $message, $text, $person, $name, $reason, $note, $reporter, $reporterPerson) RETURNING id`,
-          { code: row.code, ...target, reason: request.reason, note: request.note, reporter, reporterPerson: await personId(reporter) },
-          { id: int },
-        );
-        if (stored === undefined) throw new Error('a report insert returned no id');
-        return { id: stored.id };
+        return store(row.code, target);
       }),
 
     // The newest reports and moderation actions, for the maintainers.
@@ -1153,7 +1654,7 @@ export async function openStore(
           {},
           {
             id: int,
-            code: codeColumn,
+            code: nullable(codeColumn),
             message: nullable(int),
             text: nullable(text),
             person: nullable(personColumn),
@@ -1201,6 +1702,19 @@ export async function openStore(
     // Links this browser to a GitHub account, and refreshes the account's name and picture.
     linkToken: (token: PlayerToken, user: GitHubUser): Promise<void> =>
       serialized(async () => {
+        // The games of the device move to the account, also from an account that the device was linked to before.
+        changedOwners.add(await ownerOf(token));
+        changedOwners.add(token);
+        changedOwners.add(accountToken(user.id));
+        // The players who met this device now meet the account, so the opponent of their games changes.
+        // An achievement about different people can lock again: two devices of one person count once.
+        const met = await rows(`FROM ${seatedResults(1)} results SELECT results.player_x AS x, results.player_o AS o`, tokenValues([token]), {
+          x: nullable(text),
+          o: nullable(text),
+        });
+        const others = met.flatMap((row) => [row.x, row.o]).filter((seat): seat is string => seat !== null && seat !== token && seat !== core.COMPUTER_TOKEN);
+        for (const owner of (await canonical(others)).values()) changedOwners.add(owner);
+        achievementCache.clear();
         await db.run(
           `INSERT INTO users (github_id, login, avatar) VALUES ($id, $login, $avatar)
            ON CONFLICT (github_id) DO UPDATE SET login = excluded.login, avatar = excluded.avatar, seen_at = now()`,
@@ -1230,8 +1744,8 @@ export async function openStore(
         if (linked === undefined) return;
         const account = await ensureAccountRow(linked.github_id);
         const held = await rows(
-          'FROM sessions SELECT code WHERE doc.seats.X::VARCHAR = $token OR doc.seats.O::VARCHAR = $token',
-          { token },
+          `FROM ${seatedRows('sessions', 'seat_x', 'seat_o', 1)} sessions SELECT code`,
+          tokenValues([token]),
           { code: codeColumn },
         );
         for (const { code } of held) {
@@ -1289,7 +1803,7 @@ export async function openStore(
       serialized(async () => {
         const [row] = await rows(
           `FROM results ${SEAT_ACCOUNTS} SELECT doc::JSON AS doc, epoch_ms(finished_at) AS finished, ${SEAT_ACCOUNT_COLUMNS},
-             ${SEAT_X} AS token_x, ${SEAT_O} AS token_o
+             results.player_x AS token_x, results.player_o AS token_o
            WHERE public_id = $id`,
           { id },
           { doc: json, finished: epoch, ...SEAT_SHAPE },
@@ -1315,22 +1829,21 @@ export async function openStore(
     history: (token: PlayerToken, offset: number): Promise<HistoryPage> =>
       serialized(async () => {
         if (!Number.isInteger(offset) || offset < 0) throw new SessionError(400, 'The offset is not a whole number of games.');
-        const tokens = listValue([...(await identityOf(token))]);
+        const tokens = [...(await identityOf(token))];
         // A seat that its player cleared (clearHistory) is not in the history.
         const found = await rows(
-          `FROM results ${SEAT_ACCOUNTS}
-           SELECT results.public_id, results.doc.mode::VARCHAR AS mode, results.doc.difficulty::VARCHAR AS difficulty,
+          `FROM ${seatedResults(tokens.length)} results ${SEAT_ACCOUNTS}
+           SELECT results.public_id, results.mode, results.level AS difficulty,
              results.winner, results.ending, CASE WHEN results.ending IS NULL THEN results.doc::JSON END AS old_doc,
-             len(results.doc.game.moves::INTEGER[]) AS moves, epoch_ms(results.finished_at) AS finished,
-             coalesce(list_contains($tokens, ${SEAT_X}), false) AS mine_x,
-             coalesce(list_contains($tokens, ${SEAT_O}), false) AS mine_o, ${SEAT_ACCOUNT_COLUMNS},
-             ${SEAT_X} AS token_x, ${SEAT_O} AS token_o
-           WHERE ((list_contains($tokens, ${SEAT_X}) AND results.hidden_x IS NOT TRUE)
-              OR (list_contains($tokens, ${SEAT_O}) AND results.hidden_o IS NOT TRUE))
+             len(results.moves) AS moves, epoch_ms(results.finished_at) AS finished,
+             coalesce(${inTokens('results.player_x', tokens.length)}, false) AS mine_x,
+             coalesce(${inTokens('results.player_o', tokens.length)}, false) AS mine_o, ${SEAT_ACCOUNT_COLUMNS},
+             results.player_x AS token_x, results.player_o AS token_o
+           WHERE ((mine_x AND results.hidden_x IS NOT TRUE) OR (mine_o AND results.hidden_o IS NOT TRUE))
              AND NOT ${HOST_HAS_GAME}
            ORDER BY results.finished_at DESC, results.id
            LIMIT $limit OFFSET $offset`,
-          { tokens, limit: HISTORY_PAGE_SIZE + 1, offset },
+          { ...tokenValues(tokens), limit: HISTORY_PAGE_SIZE + 1, offset },
           {
             public_id: nullable(gameId),
             mode: oneOf(SESSION_MODES),
@@ -1371,13 +1884,12 @@ export async function openStore(
     // of a game that the computer won. Same keys as the records on the device (src/records.ts).
     records: (token: PlayerToken): Promise<Records> =>
       serialized(async () => {
-        const tokens = listValue([...(await identityOf(token))]);
+        const tokens = [...(await identityOf(token))];
         // A cleared game still counts: a record is a best value per setup, not a history entry.
         // The replay below also reads rows from before game links, which have no winner column.
         const found = await rows(
-          `FROM results SELECT doc::JSON AS doc
-           WHERE doc.mode::VARCHAR = 'computer' AND (list_contains($tokens, ${SEAT_X}) OR list_contains($tokens, ${SEAT_O}))`,
-          { tokens },
+          `FROM ${seatedResults(tokens.length)} results SELECT doc::JSON AS doc WHERE mode = 'computer'`,
+          tokenValues(tokens),
           { doc: json },
         );
         let records: Records = {};
@@ -1395,17 +1907,21 @@ export async function openStore(
     // A cleared game still counts: an achievement stays once the player earned it.
     achievements: (token: PlayerToken): Promise<Achievements> => serialized(async () => achievementsOf(await ownerOf(token), [...(await identityOf(token))])),
 
+    // The public person id of this player: of the account when the device is linked (GET /api/me).
+    person: (token: PlayerToken): Promise<PersonId> => serialized(async () => personId(await ownerOf(token))),
+
     // "Reset achievements", on every device of the account: from now on, only new games count.
     // "Clear history" leaves the achievements alone.
     resetAchievements: (token: PlayerToken): Promise<void> =>
       serialized(async () => {
+        const owner = await ownerOf(token);
         await db.run(
           `INSERT INTO achievement_resets (owner, reset_at) VALUES ($owner, make_timestamptz($at * 1000))
            ON CONFLICT (owner) DO UPDATE SET reset_at = excluded.reset_at`,
-          { owner: await ownerOf(token), at: now() },
+          { owner, at: now() },
         );
         achievementCache.clear();
-        // The rarity counts this player's unlocks until it is computed again.
+        changedOwners.add(owner);
       }),
 
     // Hides every finished game of this player from their history, on all linked devices.
@@ -1413,12 +1929,12 @@ export async function openStore(
     // Returns how many seats it hid.
     clearHistory: (token: PlayerToken): Promise<number> =>
       serialized(async () => {
-        const tokens = listValue([...(await identityOf(token))]);
+        const tokens = [...(await identityOf(token))];
         let hidden = 0;
-        for (const [column, seat] of [['hidden_x', SEAT_X], ['hidden_o', SEAT_O]] as const) {
+        for (const [column, seat] of [['hidden_x', 'player_x'], ['hidden_o', 'player_o']] as const) {
           const changed = await rows(
-            `UPDATE results SET ${column} = true WHERE list_contains($tokens, ${seat}) AND ${column} IS NOT TRUE RETURNING id`,
-            { tokens },
+            `UPDATE results SET ${column} = true WHERE ${inTokens(seat, tokens.length)} AND ${column} IS NOT TRUE RETURNING id`,
+            tokenValues(tokens),
             { id: text },
           );
           hidden += changed.length;
@@ -1467,7 +1983,7 @@ export async function openStore(
         // The seats rotate between games: the report counts for the seat that this player held in that game.
         const seat = seatIn(row.doc.flipped, index, seatNow);
         const inserted = await rows(
-          `INSERT INTO seat_metrics (public_id, seat, metrics) VALUES ($id, $seat, $metrics::JSON::VARIANT)
+          `INSERT INTO seat_metrics (public_id, seat, metrics, ${METRIC_COLUMN_LIST}) VALUES ($id, $seat, $metrics::JSON::VARIANT, ${METRIC_VALUES})
            ON CONFLICT DO NOTHING RETURNING seat`,
           { id, seat, metrics: JSON.stringify(metrics) },
           { seat: text },
@@ -1487,6 +2003,107 @@ export async function openStore(
         return inserted.length > 0;
       }),
 
+    // Adds the codes that the table does not hold yet. A known code keeps its row and its claim. Returns how many are new.
+    addTesterCodes: (entries: readonly TesterCodeEntry[]): Promise<number> =>
+      serialized(async () => {
+        let added = 0;
+        for (const { code, name } of entries) {
+          const inserted = await rows(
+            `INSERT INTO tester_codes (code, name, claimed_at) VALUES ($code, $name, CASE WHEN $name IS NULL THEN NULL ELSE now() END)
+             ON CONFLICT DO NOTHING RETURNING id`,
+            { code, name },
+            { id: int },
+          );
+          added += inserted.length;
+        }
+        return added;
+      }),
+
+    // The public list: a hint of each code, and the name and Gravatar hash of a claim. Never a code or an email.
+    testerCodes: (): Promise<TesterCodes> =>
+      serialized(async () => {
+        const found = await rows('FROM tester_codes SELECT id, code, name, email ORDER BY id', {}, { id: int, code: text, name: nullable(text), email: nullable(text) });
+        return {
+          codes: found.map(({ id, code, name, email }) => ({
+            id,
+            hint: hintOf(code),
+            claimed: name !== null,
+            name,
+            gravatar: email === null ? null : gravatarOf(email),
+          })),
+        };
+      }),
+
+    // Gives the code to the tester once. 404 for an unknown id, 409 when somebody claimed it already.
+    // `token` is the player of the claimer. An invite from one of their own persons (a device or the account)
+    // is a self-invite, and counts for nobody.
+    // Limit: the server cannot tell an unknown person id from the id of a device that never played, so it keeps
+    // any well-formed `by`. Revisit this if fake invites show up in GET /api/testing/claims.
+    claimTesterCode: (id: number, { email, name, by }: ClaimRequest, token: PlayerToken): Promise<ClaimedCode> =>
+      serialized(async () => {
+        const own = await personsOfTokens([...(await identityOf(token))]);
+        const invitedBy = by !== null && !own.has(by) ? by : null;
+        const [claimed] = await rows(
+          `UPDATE tester_codes SET claimed_at = now(), name = $name, email = $email, invited_by = $invitedBy, claimed_token = $token, claimed_owner = $owner
+           WHERE id = $id AND claimed_at IS NULL RETURNING code`,
+          { id, name, email, invitedBy, token, owner: await ownerOf(token) },
+          { code: text },
+        );
+        if (claimed !== undefined) {
+          if (invitedBy !== null) {
+            achievementCache.clear();
+            for (const owner of await ownersOfPersons([invitedBy])) changedOwners.add(owner);
+          }
+          return claimed;
+        }
+        const [known] = await rows('FROM tester_codes SELECT id WHERE id = $id', { id }, { id: int });
+        if (known === undefined) throw new SessionError(404, 'No tester code has this id.');
+        throw new SessionError(409, 'Somebody else took this code a moment ago. Pick another one.');
+      }),
+
+    // The Android app opened on this device (POST /api/copies), with the inviter that /share kept, or null. The first
+    // open makes the copy of the device. Its owner then (an account or the device) stays for the invite events only:
+    // the copy itself follows the account that holds the device now (hasCopyOf). A later open only adds an inviter
+    // that the copy lacks; the first inviter wins. A self-invite counts for nobody. Answers whether the player holds a copy.
+    // Only a verified store proof sets proved. Old rows remain unproved.
+    reportAppOpen: (token: PlayerToken, by: PersonId | null, proof: boolean | ApplePurchase = false): Promise<boolean> =>
+      serialized(async () => {
+        if (typeof proof !== 'boolean') await takeAppleSlot(token, proof);
+        const invitedBy = by !== null && !(await personsOfTokens([...(await identityOf(token))])).has(by) ? by : null;
+        const changed = await rows(
+          `INSERT INTO app_copies (token, owner, invited_by, proved) VALUES ($token, $owner, $by, $proved)
+           ON CONFLICT (token) DO UPDATE SET invited_by = coalesce(app_copies.invited_by, excluded.invited_by), proved = app_copies.proved OR excluded.proved
+           RETURNING invited_by`,
+          { token, owner: await ownerOf(token), by: invitedBy, proved: proof !== false },
+          { invited_by: nullable(text) },
+        );
+        if (invitedBy !== null && changed[0]?.invited_by === invitedBy) {
+          achievementCache.clear();
+          for (const owner of await ownersOfPersons([invitedBy])) changedOwners.add(owner);
+        }
+        return hasCopyOf(token);
+      }),
+
+    // A valid, player-bound negative Play verdict revokes only this device, not its account's other devices.
+    // Limit: Apple refunds are not checked. Revisit when a player reports a refund.
+    revokePlayCopy: (token: PlayerToken): Promise<boolean> => serialized(async () => {
+      await db.run('UPDATE app_copies SET proved = false WHERE token = $token', { token });
+      return hasCopyOf(token);
+    }),
+
+    hasCopy: (token: PlayerToken): Promise<boolean> => serialized(() => hasCopyOf(token)),
+
+    // The claims with their emails, oldest first, for the maintainers (they add the emails to the Google Group).
+    testerClaims: (): Promise<TesterClaims> =>
+      serialized(async () => {
+        const found = await rows(
+          'FROM tester_codes SELECT code, name, email, epoch_ms(claimed_at) AS at, invited_by WHERE claimed_at IS NOT NULL ORDER BY claimed_at, id',
+          {},
+          { code: text, name: text, email: nullable(text), at: epoch, invited_by: nullable(personColumn) },
+        );
+        return { claims: found.map(({ code, name, email, at, invited_by }) => ({ hint: hintOf(code), name, email, claimedAt: at, invitedBy: invited_by })) };
+      }),
+
     addEvent: (event: ClientEvent): Promise<void> =>
       serialized(async () => {
         await db.run('INSERT INTO events (kind, message, version) VALUES ($kind, $message, $version)', event);
@@ -1496,57 +2113,77 @@ export async function openStore(
     // (`token` is the player) and a person answer have no cache, so a game shows at once.
     // A person filter answers 403 when that person hides their stats, except to the person.
     // Limit: each Mine or person call runs all queries. Revisit this when such a call takes more than about 200 ms.
-    stats: (filter: StatsFilter = ALL_STATS, token: PlayerToken | null = null): Promise<Stats> =>
-      serialized(async () => {
+    stats: (filter: StatsFilter = ALL_STATS, token: PlayerToken | null = null): Promise<Stats> => {
+      if (filter.scope === 'everyone' && filter.person === null) {
+        return snapshot(`stats ${statsQuery(filter)}`, async () => ({
+          ...(await computeStats(readRows, now(), filter, null)),
+          person: null,
+          practice: await practiceStats(readRows),
+          achievements: null,
+        }));
+      }
+      return serialized(async () => {
         if (filter.scope === 'mine') {
           if (token === null) throw new SessionError(400, 'Your stats need the X-Player header.');
           const tokens = [...(await identityOf(token))];
           return { ...(await computeStats(rows, now(), filter, tokens)), person: null, practice: await practiceStats(rows), achievements: await achievementsOf(await ownerOf(token), tokens) };
         }
         if (filter.person !== null) {
-          const hidden = await privateOwnerOf(filter.person);
-          if (hidden !== undefined && (token === null || (await ownerOf(token)) !== hidden)) throw new SessionError(403, STATS_PRIVATE_MESSAGE);
-          const found = await statsPersonOf(filter.person);
-          if (found === undefined) throw new SessionError(404, 'This player has no finished games yet.');
+          const found = await visiblePersonOf(filter.person, token);
           return {
             ...(await computeStats(rows, now(), filter, found.tokens)),
-            person: found.shown,
+            person: found.person,
             practice: await practiceStats(rows),
             achievements: await achievementsOf(found.owner, found.tokens),
           };
         }
-        const key = statsQuery(filter);
-        const cached = statsCache.get(key);
-        if (cached !== undefined && now() - cached.generatedAt < STATS_CACHE_MS) return cached;
-        const fresh = { ...(await computeStats(rows, now(), filter, null)), person: null, practice: await practiceStats(rows), achievements: null };
-        statsCache.set(key, fresh);
-        return fresh;
+        throw new Error('the Everyone stats come from a snapshot');
+      });
+    },
+
+    // The player card of a person view: the name, and the unlocks of achievement_players, newest first.
+    // It reads no game, so the card shows before the stats of the person. The same 403 and 404 as a person filter.
+    statsCard: (person: PersonId, token: PlayerToken | null): Promise<StatsCard> =>
+      serialized(async () => {
+        const found = await visiblePersonOf(person, token);
+        await refreshAchievements();
+        const [row] = await rows('FROM achievement_players SELECT to_json(unlocked) AS unlocked WHERE owner = $owner', { owner: found.owner }, { unlocked: json });
+        const unlocked = row === undefined ? [] : row.unlocked;
+        if (!Array.isArray(unlocked)) throw new Error('achievement_players holds a row that is not a list');
+        return { person: found.person, unlocked: unlocked.map((id) => oneOf(ACHIEVEMENT_IDS)(id)) };
       }),
 
-    // Every session and result of this player, on all their linked devices.
-    // Limit: the session query reads every document in the table, and other requests wait in the
-    // queue meanwhile. Revisit this when the sessions table holds about 100,000 rows, or when this
-    // call takes more than about 100 ms. A list of seat tokens in its own indexed table then helps.
+    // The leaderboard of a range, mode and level, from a snapshot (see snapshot). `you` is the person of the
+    // caller, when the X-Player header names one.
+    leaderboard: async (filter: StatsFilter, token: PlayerToken | undefined): Promise<Leaderboard> => {
+      const you = token === undefined ? null : await serialized(async () => personId(await ownerOf(token)));
+      return { ...(await snapshot(`leaderboard ${statsQuery(filter)}`, () => leaderboardOf(filter))), you };
+    },
+
+    // Every session and result of this player, on all their linked devices. It makes at most 6 queries, whatever
+    // the number of sessions: the seat indexes find the sessions and the results.
+    // Limit: it parses every result of the player in JS, and other requests wait in the queue meanwhile.
+    // Revisit this when one player has about 10,000 results. Counting the outcomes in SQL then helps.
     myGames: (token: PlayerToken): Promise<MyGames> =>
       serialized(async () => {
         const identity = await identityOf(token);
-        const tokens = listValue([...identity]);
+        const tokens = [...identity];
         const total = emptyTally();
         const byMode = Object.fromEntries(SESSION_MODES.map((mode) => [mode, emptyTally()])) as MyGames['byMode'];
         const byDifficulty = Object.fromEntries(DIFFICULTIES.map((level) => [level, emptyTally()])) as MyGames['byDifficulty'];
 
         const sessionRows = await rows(
-          `FROM sessions SELECT code, doc::JSON AS doc, epoch_ms(updated_at) AS updated
-           WHERE list_contains($tokens, doc.seats.X::VARCHAR) OR list_contains($tokens, doc.seats.O::VARCHAR)
+          `FROM ${seatedRows('sessions', 'seat_x', 'seat_o', tokens.length)} sessions SELECT code, doc::JSON AS doc, epoch_ms(updated_at) AS updated
            ORDER BY updated_at DESC`,
-          { tokens },
+          tokenValues(tokens),
           { code: codeColumn, doc: json, updated: epoch },
         );
-        const sessions: SessionSummary[] = [];
+        const seated: { code: Code; doc: SessionDoc; you: Player; updated: EpochMs }[] = [];
         for (const row of sessionRows) {
           const doc = parseDoc(row.doc);
           const you = core.seatsOf(doc, identity)[0];
           if (you === undefined) continue;
+          seated.push({ code: row.code, doc, you, updated: row.updated });
           for (const [index, record] of doc.games.entries()) {
             const game = toGame(record);
             if (game.status.kind === 'playing') continue;
@@ -1556,23 +2193,30 @@ export async function openStore(
             count(total, outcome);
             count(byMode.online, outcome);
           }
+        }
+        // One query for the accounts and one for the names of every opponent, not two per session.
+        const opponents = seated.map(({ doc, you }) => doc.seats[other(you)]);
+        const accountOf = await accountsOf(opponents);
+        const nameOf = await namesOf(opponents);
+        const sessions = seated.map(({ code, doc, you, updated }): SessionSummary => {
           const live = core.currentGame(doc);
-          sessions.push({
-            code: row.code,
+          const opponent = doc.seats[other(you)];
+          return {
+            code,
             name: doc.name,
             games: doc.games.filter((record) => record.moves.length > 0).length,
             you,
-            opponent: (await playersOf(doc))[other(you)],
-            opponentName: core.seatName(doc.seats[other(you)], await namesOf([doc.seats[other(you)]])),
-            yourTurn: live.status.kind === 'playing' && live.turn === you && doc.seats[other(you)] !== null,
-            updatedAt: row.updated,
-          });
-        }
+            opponent: accountOf(opponent),
+            opponentName: core.seatName(opponent, nameOf),
+            yourTurn: live.status.kind === 'playing' && live.turn === you && opponent !== null,
+            updatedAt: updated,
+          };
+        });
 
         // The online rows of results repeat the session games counted above, so they stay out.
         const resultRows = await rows(
-          "FROM results SELECT doc::JSON AS doc WHERE list_contains($tokens, token) AND doc.mode::VARCHAR <> 'online'",
-          { tokens },
+          `FROM ${seatedResults(tokens.length)} results SELECT doc::JSON AS doc WHERE ${inTokens('results.token', tokens.length)} AND mode <> 'online'`,
+          tokenValues(tokens),
           { doc: json },
         );
         for (const row of resultRows) {
@@ -1647,7 +2291,11 @@ export async function openStore(
         };
       }),
 
-    close(): void {
+    // Waits for the running work of both connections: closing a connection under a running query crashes the process.
+    async close(): Promise<void> {
+      closing = true;
+      await Promise.all([readQueue, queue]);
+      reader.closeSync();
       db.closeSync();
       instance.closeSync();
     },

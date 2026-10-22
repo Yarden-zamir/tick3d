@@ -13,7 +13,7 @@ const APP_VERSION = versionOfScript(new URL(import.meta.url).pathname);
 const thisDevice = detectDevice();
 
 type Counters = { key: string; input: Metrics['input']; refused: Metrics['refused']; undos: number; offline: boolean };
-const fresh = (key: string): Counters => ({ key, input: { board: 0, keypad: 0 }, refused: {}, undos: 0, offline: false });
+const fresh = (key: string): Counters => ({ key, input: { board: 0, keypad: 0, voice: 0 }, refused: {}, undos: 0, offline: false });
 
 // The counts of the live game only. A switch to another game starts new counts, so a return to an
 // earlier session counts from zero again. Revisit this if the stats page shows too few refusals.
@@ -27,8 +27,11 @@ function live(): Counters {
   return counters;
 }
 
+// A move of the voice is also a keypad move (Metrics['input']).
 export function countMove(via: keyof Metrics['input']): void {
-  live().input[via]++;
+  const { input } = live();
+  input[via]++;
+  if (via === 'voice') input.keypad++;
 }
 
 export function countUndo(): void {
@@ -62,7 +65,7 @@ export function gameMetrics(code: Code, index: number): Metrics {
     view: settings.view,
     layout: settings.layout,
     theme: settings.theme,
-    input: { board: cap(counted.input.board), keypad: cap(counted.input.keypad) },
+    input: { board: cap(counted.input.board), keypad: cap(counted.input.keypad), voice: cap(counted.input.voice) },
     refused,
     undos: cap(counted.undos),
     // A tab in the background can stretch a search far past its budget.

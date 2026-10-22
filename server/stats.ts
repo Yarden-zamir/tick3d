@@ -1,9 +1,9 @@
 // The aggregates of the public stats page (/stats), in DuckDB SQL. Everyone gets counts only: no
-// names, no page faults. Mine adds the names of your opponents. A person filter counts the games of one
-// person, without their opponents. The practice part (server/practice.ts)
+// names, no page faults. The leaderboard, which names players, is server/leaderboard.ts.
+// Mine adds the names of your opponents. A person filter counts the games of one person, without their opponents. The practice part (server/practice.ts)
 // adds the Voice room leaderboard, which GET /api/practice/best shows too. Never a token, a result id or a game id leaves this file.
 // An opponent without a login shows with a custom or a generated name.
-import { type DuckDBValue, listValue } from '@duckdb/node-api';
+import type { DuckDBValue } from '@duckdb/node-api';
 import { DIFFICULTIES } from '../src/ai.ts';
 import type { EpochMs } from '../src/epoch.ts';
 import { isUnknownArray } from '../src/guards.ts';
@@ -23,6 +23,7 @@ import {
   type Stats,
   type StatsFilter,
 } from '../src/protocol.ts';
+import { metricsStruct } from './fields.ts';
 import { type RowOf, type Rows, type Shape, bool, epoch, int, nullable, num, oneOf, text } from './sql.ts';
 
 // An ORDER BY term that lists a category in its fixed order, such as DIFFICULTIES or SESSION_MODES, so every
@@ -32,58 +33,99 @@ const inOrder = (column: string, order: readonly string[]): string =>
 const HIDE_SETTINGS = ['none', 'board', 'history', 'both'] as const;
 
 
-// The token of each seat of a result row. A row from before game links has no player columns:
-// its uploader (`token`) holds the seat `doc.you`, or both seats in a friend game.
-export const SEAT_X = `coalesce(results.player_x, CASE WHEN results.public_id IS NULL AND results.doc.you::VARCHAR IS DISTINCT FROM 'O' THEN results.token END)`;
-export const SEAT_O = `coalesce(results.player_o, CASE WHEN results.public_id IS NULL AND results.doc.you::VARCHAR IS DISTINCT FROM 'X' THEN results.token END)`;
+// player_x and player_o hold the token of each seat of a result, or null for the computer and for a seat
+// without a known player. Both columns have an index (server/store.ts), so the games of one player are a lookup.
+
+// The bound values $t0, $t1, … of the tokens of one player, for inTokens and seatedResults.
+export function tokenValues(tokens: readonly string[]): Record<string, string> {
+  if (tokens.length === 0) throw new Error('a player has at least one token');
+  return Object.fromEntries(tokens.map((token, index) => [`t${index}`, token]));
+}
+
+// `column IN ($t0, …)`. A list of bound values, not list_contains: then DuckDB uses the index of the column.
+export const inTokens = (column: string, count: number): string => {
+  if (count === 0) throw new Error('a player has at least one token');
+  return `${column} IN (${Array.from({ length: count }, (_, index) => `$t${index}`).join(', ')})`;
+};
+
+// The rows of `table` where one of `count` tokens ($t0, …) holds a seat, through the indexes of the two seat
+// columns. A row with the player on both seats (a friend game) comes once. Use it as `FROM ${...} <table>`.
+// At 5,000,000 results this takes about 50 ms, where list_contains over every row takes over 1 s.
+export const seatedRows = (table: string, seatX: string, seatO: string, count: number): string => `(FROM ${table} WHERE ${inTokens(seatX, count)}
+  UNION ALL FROM ${table} WHERE ${inTokens(seatO, count)} AND (${seatX} IS NULL OR NOT ${inTokens(seatX, count)}))`;
+export const seatedResults = (count: number): string => seatedRows('results', 'player_x', 'player_o', count);
 
 // One row per finished game that passes the filters, with the fields of its document as columns.
 // Both devices of a Nearby game send a result, so only the host's row counts.
-// The filters are bound parameters (filterValues): $since (epoch ms or null), $mode, $level, and
-// $tokens (the tokens of one player for Mine and a person filter, or null for Everyone). A null parameter filters nothing.
+// The filters are bound parameters (filterValues): $since (epoch ms or null), $mode and $level. A null parameter
+// filters nothing. `tokens`: the number of tokens of one player ($t0, …) for Mine and a person filter, else null.
 // `side` is the seat of the player whose results count: theirs for Mine and a person filter (null in a friend game, where
 // you hold both seats), and the player's seat in a computer game for Everyone.
-// computeStats copies these rows once into the temporary table stats_games, because each read of
-// the VARIANT document is slow. Every query then reads the copy through GAMES.
+// The fields come from the plain columns of results (server/fields.ts), not from the document.
+// computeStats reads these rows through stats_games and stats_sample (see STATS_SAMPLE).
 // A row from before game links has no winner, ending or line columns. The game ended with its last
 // move (a win) or on time, so the last mover won. Only a full cube can also be a draw: such an old
 // game counts as a draw, and its winning line has no kind.
-const FILTERED_GAMES = `FROM results SELECT
+// The filter values as SQL: bound values by default, or literals for a view (literalFilter).
+type FilterSql = { since: string; mode: string; level: string };
+const BOUND_FILTER: FilterSql = { since: '$since::BIGINT', mode: '$mode::VARCHAR', level: '$level::VARCHAR' };
+
+// The filters as SQL literals, for a view, which takes no bound values. Each value is a number or a checked name.
+function literalFilter(filter: StatsFilter, now: EpochMs): FilterSql {
+  const days = RANGE_DAYS[filter.range];
+  const since = days === null ? null : now - days * 86_400_000;
+  if (since !== null && !Number.isSafeInteger(since)) throw new Error('a stats filter time is not a whole number');
+  if (filter.mode !== null && !SESSION_MODES.includes(filter.mode)) throw new Error('unknown stats mode');
+  if (filter.level !== null && !DIFFICULTIES.includes(filter.level)) throw new Error('unknown stats level');
+  return {
+    since: since === null ? 'NULL::BIGINT' : `${since}::BIGINT`,
+    mode: filter.mode === null ? 'NULL::VARCHAR' : `'${filter.mode}'`,
+    level: filter.level === null ? 'NULL::VARCHAR' : `'${filter.level}'`,
+  };
+}
+
+export const filteredGames = (tokens: number | null, where: FilterSql = BOUND_FILTER): string => `FROM ${tokens === null ? 'results' : `${seatedResults(tokens)} results`} SELECT
     finished_at,
-    doc.mode::VARCHAR AS mode,
-    doc.difficulty::VARCHAR AS level,
-    doc.you::VARCHAR AS you,
-    CASE WHEN doc.mode::VARCHAR = 'computer' THEN (CASE doc.you::VARCHAR WHEN 'X' THEN 'O' ELSE 'X' END) END AS computer,
-    coalesce(doc.tuned::BOOLEAN, false) AS tuned,
-    coalesce(doc.options.hideBoard::BOOLEAN, false) AS hide_board,
-    coalesce(doc.options.hideHistory::BOOLEAN, false) AS hide_history,
-    coalesce(doc.options.hideCoordinates::BOOLEAN, false) AS hide_coordinates,
-    doc.game.moves::INTEGER[] AS moves,
-    doc.game.times::DOUBLE[] AS times,
-    doc.game.clock.perGame::INTEGER AS per_game,
-    doc.game.clock.perMove::INTEGER AS per_move,
-    coalesce(winner, CASE WHEN ending IS NULL AND (len(doc.game.moves::INTEGER[]) < 64 OR coalesce(doc.game.timedOut::BOOLEAN, false))
-      THEN (CASE WHEN len(doc.game.moves::INTEGER[]) % 2 = 1 THEN 'X' ELSE 'O' END) END) AS winner,
-    coalesce(ending, CASE WHEN coalesce(doc.game.timedOut::BOOLEAN, false) THEN 'timeout'
-      WHEN len(doc.game.moves::INTEGER[]) < 64 THEN 'won' ELSE 'draw' END) AS ending,
-    line, ${SEAT_X} AS player_x, ${SEAT_O} AS player_o, metrics, public_id,
-    $tokens::VARCHAR[] IS NOT NULL AS scoped,
-    coalesce(list_contains($tokens::VARCHAR[], ${SEAT_X}), false) AS mine_x,
-    coalesce(list_contains($tokens::VARCHAR[], ${SEAT_O}), false) AS mine_o,
-    coalesce(list_contains($tokens::VARCHAR[], results.token), false) AS mine_upload,
+    results.mode,
+    results.level,
+    results.you,
+    CASE WHEN results.mode = 'computer' THEN (CASE results.you WHEN 'X' THEN 'O' ELSE 'X' END) END AS computer,
+    coalesce(results.tuned, false) AS tuned,
+    coalesce(results.hide_board, false) AS hide_board,
+    coalesce(results.hide_history, false) AS hide_history,
+    coalesce(results.hide_coordinates, false) AS hide_coordinates,
+    results.moves,
+    results.times,
+    results.per_game,
+    results.per_move,
+    coalesce(winner, CASE WHEN ending IS NULL AND (len(results.moves) < 64 OR coalesce(results.timed_out, false))
+      THEN (CASE WHEN len(results.moves) % 2 = 1 THEN 'X' ELSE 'O' END) END) AS winner,
+    coalesce(ending, CASE WHEN coalesce(results.timed_out, false) THEN 'timeout'
+      WHEN len(results.moves) < 64 THEN 'won' ELSE 'draw' END) AS ending,
+    line, results.player_x, results.player_o, ${metricsStruct('results')} AS metrics, public_id,
+    ${tokens !== null} AS scoped,
+    ${tokens === null ? 'false' : `coalesce(${inTokens('results.player_x', tokens)}, false)`} AS mine_x,
+    ${tokens === null ? 'false' : `coalesce(${inTokens('results.player_o', tokens)}, false)`} AS mine_o,
+    ${tokens === null ? 'false' : inTokens('results.token', tokens)} AS mine_upload,
     CASE WHEN scoped THEN (CASE WHEN mine_x AND mine_o THEN NULL WHEN mine_x THEN 'X' WHEN mine_o THEN 'O' END)
       WHEN mode = 'computer' THEN you END AS side
-  WHERE metrics.nearby.role::VARCHAR IS DISTINCT FROM 'guest'
-    AND ($since::BIGINT IS NULL OR finished_at >= make_timestamptz($since::BIGINT * 1000))
-    AND ($mode::VARCHAR IS NULL OR doc.mode::VARCHAR = $mode::VARCHAR)
-    AND ($level::VARCHAR IS NULL OR doc.difficulty::VARCHAR = $level::VARCHAR)
-    AND ($tokens::VARCHAR[] IS NULL OR list_contains($tokens::VARCHAR[], ${SEAT_X}) OR list_contains($tokens::VARCHAR[], ${SEAT_O}))`;
-const GAMES_TABLE = 'stats_games';
-const GAMES = `WITH g AS (FROM ${GAMES_TABLE})`;
+  WHERE results.nearby_role IS DISTINCT FROM 'guest'
+    AND (${where.since} IS NULL OR finished_at >= make_timestamptz(${where.since} * 1000))
+    AND (${where.mode} IS NULL OR results.mode = ${where.mode})
+    AND (${where.level} IS NULL OR results.level = ${where.level})`;
+// Everyone: the exact counts read stats_games, a view over the columns of results. The charts of moves, times,
+// settings and devices read stats_sample, a copy of the newest STATS_SAMPLE games, so their cost stops growing.
+// Mine and a person filter: stats_games is a copy of the player's games, and stats_sample the same rows.
+// Measured at 5,000,000 results: a copy of every game took 16 s and the move-time charts over it 40 s.
+const STATS_SAMPLE = 100_000;
+const DAY_MS = 86_400_000;
+// NOT MATERIALIZED: a query that reads g twice must not copy the whole view of every game.
+const GAMES = 'WITH g AS NOT MATERIALIZED (FROM stats_games)';
+const SAMPLE = 'WITH g AS NOT MATERIALIZED (FROM stats_sample)';
 
 // The time between two moves, by the player who moved. X makes the odd moves (1-based).
 // The first move of a game has no time before it, so it is not here.
-const STEPS = `${GAMES}, steps AS (
+const STEPS = `${SAMPLE}, steps AS (
   SELECT mode, level, i, times[i] - times[i - 1] AS ms,
     CASE WHEN i % 2 = 1 THEN 'X' ELSE 'O' END AS mover,
     CASE WHEN (CASE WHEN i % 2 = 1 THEN 'X' ELSE 'O' END) = computer THEN 'computer' ELSE 'human' END AS who
@@ -93,10 +135,10 @@ const STEPS = `${GAMES}, steps AS (
 
 // The metrics of every game that has them: device results, and each player of an online game.
 // Mine keeps the reports of your own devices only. Every seat_metrics row has its game in results.
-const METRICS = `${GAMES}, m AS (
+const METRICS = `${SAMPLE}, m AS (
   SELECT metrics FROM g WHERE metrics IS NOT NULL AND (NOT scoped OR mine_upload)
   UNION ALL
-  SELECT sm.metrics FROM seat_metrics sm JOIN g USING (public_id)
+  SELECT ${metricsStruct('sm')} AS metrics FROM seat_metrics sm JOIN g USING (public_id)
   WHERE NOT g.scoped OR (sm.seat = 'X' AND g.mine_x) OR (sm.seat = 'O' AND g.mine_o)
 )`;
 
@@ -148,13 +190,13 @@ function streaksOf(outcomes: readonly SideOutcome[]): Pick<PersonalStats, 'bestS
 }
 
 // The bound values of the GAMES filters. `tokens` are the tokens of one player for Mine, else null.
-function filterValues(filter: StatsFilter, tokens: readonly string[] | null, now: EpochMs): Record<string, DuckDBValue> {
+export function filterValues(filter: StatsFilter, tokens: readonly string[] | null, now: EpochMs): Record<string, DuckDBValue> {
   const days = RANGE_DAYS[filter.range];
   return {
     since: days === null ? null : now - days * 86_400_000,
     mode: filter.mode,
     level: filter.level,
-    tokens: tokens === null ? null : listValue([...tokens]),
+    ...(tokens === null ? {} : tokenValues(tokens)),
   };
 }
 
@@ -162,20 +204,35 @@ function filterValues(filter: StatsFilter, tokens: readonly string[] | null, now
 // Limit: the streaks count inside these games only. Revisit this when one player has more games than this.
 const SIDED_GAMES = 5000;
 
-// One read of the stored documents into stats_games, then about 25 small queries over that copy,
-// while other requests wait in the store queue. The store keeps an Everyone answer for a minute.
-// Limit: revisit this when a call takes more than about 1 s: then keep the game columns in results itself.
+// About 25 queries over stats_games and stats_sample. Everyone runs on the reader connection of the store, in
+// the background (snapshot in server/store.ts); Mine and a person filter run on the store queue.
 // `tokens`: the tokens of one player for the Mine scope and a person filter, else null.
-// The caller runs one call at a time on the connection (the store queue), so one temporary table is enough.
+// The caller runs one call at a time on its connection, so one set of temporary tables is enough.
 // The practice part comes from server/practice.ts.
 export async function computeStats(rows: Rows, now: EpochMs, filter: StatsFilter, tokens: readonly string[] | null): Promise<Omit<Stats, 'practice' | 'person' | 'achievements'>> {
   const scoped = filter.scope === 'mine' || filter.person !== null;
   if (scoped !== (tokens !== null)) throw new Error('Mine and a person filter need the tokens of the player, and only they take them');
-  await rows(`CREATE OR REPLACE TEMP TABLE ${GAMES_TABLE} AS ${FILTERED_GAMES}`, filterValues(filter, tokens, now), {});
+  if (tokens === null) {
+    await rows(`CREATE OR REPLACE TEMP VIEW stats_games AS ${filteredGames(null, literalFilter(filter, now))}`, {}, {});
+    // The time of the oldest sampled game first, from a narrow scan of finished_at. As a literal, it lets the
+    // copy skip the old blocks of results and read the lists of the newest games only.
+    const [oldest] = await rows(
+      `SELECT epoch_ms(min(finished_at)) AS at FROM (SELECT finished_at FROM stats_games ORDER BY finished_at DESC LIMIT ${STATS_SAMPLE})`,
+      {},
+      { at: nullable(int) },
+    );
+    const since = oldest?.at ?? 0;
+    if (!Number.isSafeInteger(since)) throw new Error('the oldest sampled game has no whole time');
+    await rows(`CREATE OR REPLACE TEMP TABLE stats_sample AS FROM stats_games WHERE finished_at >= make_timestamptz(${since * 1000})`, {}, {});
+  } else {
+    await rows(`CREATE OR REPLACE TEMP TABLE stats_games AS ${filteredGames(tokens.length)}`, filterValues(filter, tokens, now), {});
+    await rows('CREATE OR REPLACE TEMP VIEW stats_sample AS FROM stats_games', {}, {});
+  }
   try {
     return await statsOfGames(rows, filter, scoped, now);
   } finally {
-    await rows(`DROP TABLE IF EXISTS ${GAMES_TABLE}`, {}, {});
+    await rows(tokens === null ? 'DROP TABLE IF EXISTS stats_sample' : 'DROP VIEW IF EXISTS stats_sample', {}, {});
+    await rows(tokens === null ? 'DROP VIEW IF EXISTS stats_games' : 'DROP TABLE IF EXISTS stats_games', {}, {});
   }
 }
 
@@ -197,21 +254,24 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, no
   );
   if (totals === undefined) throw new Error('the totals query returned no row');
 
-  // 60 days for all time.
+  // 60 days for all time. Days and hours come from epoch milliseconds in whole numbers: in UTC, and about
+  // 10 times faster than the time zone math of isodow, hour and a cast to DATE on every row.
   const days = RANGE_DAYS[filter.range] ?? 60;
+  const today = Math.floor(now / DAY_MS);
   const perDay = await rows(`${GAMES},
-    days AS (SELECT generate_series::DATE AS day FROM generate_series(current_date - to_days($days::INTEGER - 1), current_date::TIMESTAMP, INTERVAL 1 DAY)),
-    seats AS (SELECT finished_at::DATE AS day, unnest([player_x, player_o]) AS token FROM g),
-    people AS (SELECT day, count(DISTINCT ${PERSON}) AS players FROM seats LEFT JOIN player_tokens pt USING (token) WHERE token IS NOT NULL GROUP BY day),
-    played AS (SELECT finished_at::DATE AS day, count(*) AS games FROM g GROUP BY day)
-    SELECT strftime(day, '%Y-%m-%d') AS day, coalesce(played.games, 0)::INTEGER AS games, coalesce(people.players, 0)::INTEGER AS players
-    FROM days LEFT JOIN played USING (day) LEFT JOIN people USING (day) ORDER BY day`,
-    { days },
-    { day: text, games: int, players: int },
+    recent AS NOT MATERIALIZED (FROM g SELECT epoch_ms(finished_at) // ${DAY_MS} AS d, player_x, player_o WHERE finished_at >= make_timestamptz($first * ${DAY_MS * 1000})),
+    seats AS (SELECT d, unnest([player_x, player_o]) AS token FROM recent),
+    people AS (SELECT d, count(DISTINCT ${PERSON}) AS players FROM seats LEFT JOIN player_tokens pt USING (token) WHERE token IS NOT NULL GROUP BY d),
+    played AS (SELECT d, count(*) AS games FROM recent GROUP BY d)
+    SELECT range AS d, coalesce(played.games, 0)::INTEGER AS games, coalesce(people.players, 0)::INTEGER AS players
+    FROM range($first, $today + 1) LEFT JOIN played ON played.d = range LEFT JOIN people ON people.d = range ORDER BY range`,
+    { first: today - days + 1, today },
+    { d: int, games: int, players: int },
   );
 
-  const hours = await q(`${GAMES} SELECT (isodow(finished_at) - 1)::INTEGER AS day, hour(finished_at)::INTEGER AS hour,
-    count(*)::INTEGER AS games FROM g GROUP BY ALL`,
+  // 1970-01-01 was a Thursday, so day number + 3 counts the weekdays from Monday (0).
+  const hours = await q(`${GAMES} SELECT ((epoch_ms(finished_at) // ${DAY_MS} + 3) % 7)::INTEGER AS day,
+    ((epoch_ms(finished_at) // 3600000) % 24)::INTEGER AS hour, count(*)::INTEGER AS games FROM g GROUP BY ALL`,
     { day: int, hour: int, games: int },
   );
 
@@ -227,7 +287,7 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, no
     { level: oneOf(DIFFICULTIES), games: int, won: int, drawn: int, lost: int, avg_moves: num, median_moves: num, tuned: int },
   );
 
-  const lengthByMode = await q(`${GAMES} SELECT mode, count(*)::INTEGER AS games, avg(len(moves)) AS avg,
+  const lengthByMode = await q(`${SAMPLE} SELECT mode, count(*)::INTEGER AS games, avg(len(moves)) AS avg,
     median(len(moves)) AS median, quantile_cont(len(moves), 0.9) AS p90 FROM g GROUP BY mode ORDER BY ${inOrder('mode', SESSION_MODES)}`,
     { mode: oneOf(SESSION_MODES), games: int, avg: num, median: num, p90: num },
   );
@@ -257,24 +317,24 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, no
     { mode: oneOf(SESSION_MODES), x: int, o: int, draws: int },
   );
 
-  const openings = await q(`${GAMES} SELECT moves[1] AS cell, count(*)::INTEGER AS count, count(*) FILTER (winner = 'X')::INTEGER AS x_wins
+  const openings = await q(`${SAMPLE} SELECT moves[1] AS cell, count(*)::INTEGER AS count, count(*) FILTER (winner = 'X')::INTEGER AS x_wins
     FROM g WHERE len(moves) > 0 GROUP BY cell`,
     { cell: int, count: int, x_wins: int },
   );
-  const lengths = await q(`${GAMES} SELECT len(moves)::INTEGER AS moves, count(*)::INTEGER AS count FROM g GROUP BY ALL`, { moves: int, count: int });
-  const sided = await q(`${GAMES} SELECT epoch_ms(finished_at) AS at,
+  const lengths = await q(`${SAMPLE} SELECT len(moves)::INTEGER AS moves, count(*)::INTEGER AS count FROM g GROUP BY ALL`, { moves: int, count: int });
+  const sided = await q(`${SAMPLE} SELECT epoch_ms(finished_at) AS at,
       CASE WHEN winner IS NULL THEN 'drawn' WHEN winner = side THEN 'won' ELSE 'lost' END AS outcome
     FROM g WHERE side IS NOT NULL ORDER BY finished_at DESC LIMIT ${SIDED_GAMES}`,
     { at: epoch, outcome: oneOf(['won', 'drawn', 'lost'] as const) },
   );
   const sidedGames = sided.toReversed();
-  const cells = await q(`${GAMES} SELECT cell, count(*)::INTEGER AS count FROM (SELECT unnest(moves) AS cell FROM g) GROUP BY cell`, {
+  const cells = await q(`${SAMPLE} SELECT cell, count(*)::INTEGER AS count FROM (SELECT unnest(moves) AS cell FROM g) GROUP BY cell`, {
     cell: int,
     count: int,
   });
   const endings = await q(`${GAMES} SELECT coalesce(line, ending) AS key, count(*)::INTEGER AS count FROM g GROUP BY key ORDER BY count DESC`, COUNT);
 
-  const hide = await q(`${GAMES} SELECT
+  const hide = await q(`${SAMPLE} SELECT
       CASE WHEN hide_board AND hide_history THEN 'both' WHEN hide_board THEN 'board' WHEN hide_history THEN 'history' ELSE 'none' END AS setting,
       hide_coordinates AS coordinates,
       count(*)::INTEGER AS games,
@@ -284,12 +344,12 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, no
     { setting: oneOf(HIDE_SETTINGS), coordinates: bool, games: int, computer_games: int, human_wins: int },
   );
 
-  const timeLimits = await q(`${GAMES} SELECT per_game, per_move, count(*)::INTEGER AS games FROM g
+  const timeLimits = await q(`${SAMPLE} SELECT per_game, per_move, count(*)::INTEGER AS games FROM g
     GROUP BY per_game, per_move ORDER BY games DESC LIMIT 8`,
     { per_game: nullable(int), per_move: nullable(int), games: int },
   );
 
-  const tuned = await q(`${GAMES} SELECT tuned, count(*)::INTEGER AS games, count(*) FILTER (winner = you)::INTEGER AS human_wins
+  const tuned = await q(`${SAMPLE} SELECT tuned, count(*)::INTEGER AS games, count(*) FILTER (winner = you)::INTEGER AS human_wins
     FROM g WHERE mode = 'computer' GROUP BY tuned ORDER BY tuned`,
     { tuned: bool, games: int, human_wins: int },
   );
@@ -312,12 +372,14 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, no
   );
   if (usage === undefined) throw new Error('the usage query returned no row');
 
-  const nearbyMixes = await q(`${GAMES} SELECT
+  const nearbyMixes = await q(`${SAMPLE} SELECT
       array_to_string(list_sort([metrics.device::VARCHAR, coalesce(metrics.nearby.other::VARCHAR, 'unknown')]), ' + ') AS key,
       count(*)::INTEGER AS count
     FROM g WHERE mode = 'nearby' AND metrics.nearby.role::VARCHAR = 'host' GROUP BY key ORDER BY count DESC`,
     COUNT,
   );
+
+  const [sampled] = await q(`${SAMPLE} SELECT count(*)::INTEGER AS games FROM g`, { games: int });
 
   // A person filter shows no opponents: those players did not choose to show up on another person's page.
   const personal = !scoped ? null : await personalStats(q, sidedGames.map((game) => game.outcome), filter.scope === 'mine');
@@ -332,7 +394,7 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, no
       sessions: totals.sessions,
       gamesLast7Days: totals.last7,
     },
-    perDay,
+    perDay: perDay.map((row) => ({ day: new Date(row.d * DAY_MS).toISOString().slice(0, 10), games: row.games, players: row.players })),
     hours,
     byMode: counts(byMode),
     levels: levels.map((row) => ({
@@ -365,6 +427,7 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, no
     })),
     timeLimits: timeLimits.map((row) => ({ perGame: row.per_game, perMove: row.per_move, games: row.games })),
     tuned: tuned.map((row) => ({ tuned: row.tuned, games: row.games, humanWins: row.human_wins })),
+    sample: !scoped && totals.games > STATS_SAMPLE ? (sampled?.games ?? 0) : null,
     metricsGames: usage.games,
     devices: counts(await metricCounts('device')),
     views: counts(await metricCounts('view')),

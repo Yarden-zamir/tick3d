@@ -8,6 +8,8 @@ export const PAGES = {
   input: { file: 'sound-input.html', path: '/sound-input' },
   // The privacy policy. The Play listing of the Android app links here, so keep the address.
   privacy: { file: 'privacy.html', path: '/privacy' },
+  // Share tick3d: the invite link, the steps to join the closed test on Android or iPhone, and the Google Play promo codes.
+  share: { file: 'share.html', path: '/share' },
 } as const satisfies Record<string, { file: `${string}.html`; path: `/${string}` }>;
 
 export type PageName = keyof typeof PAGES;

@@ -1,4 +1,4 @@
-import { expect, marks, playComputerUntilEnd, status, test, toasts } from './fixtures.ts';
+import { expect, marks, openMore, playComputerUntilEnd, status, test, toasts } from './fixtures.ts';
 import type { Page } from '@playwright/test';
 
 const hardComputer = { mode: 'computer', difficulty: 'hard', human: 'X' };
@@ -34,7 +34,8 @@ test('a loss that beats the record shows it, stores it, and New game on the card
 
 test('the first loss of a setup sets its record without a message', async ({ open }) => {
   const { page } = await open({ settings: hardComputer, records: { [RECORD_KEY]: 1 } });
-  const toggle = page.locator('[data-toggle="hideHistory"]');
+  const toggle = page.locator('[data-hide-level="1"]');
+  await openMore(page);
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await loseToComputer(page);

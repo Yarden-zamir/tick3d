@@ -15,9 +15,18 @@ http:// {
 	# previous container, so no socat sidecar is needed. 0666 lets the host Caddy connect.
 	bind unix/{$KITSHN_DEFAULT_SOCKET}|0666
 
+	# The page /testing moved to /share. The redirect keeps the links sent before the rename working, with their query
+	# (an invite link keeps its "by"). Revisit: remove it when /testing gets no requests for a few months.
+	@testing path /testing /testing/ /testing.html
+	redir @testing /share{?query} 302
+
 	# Online sessions. Caddy flushes the text/event-stream responses at once, so live updates are not held back.
 	handle /api/* {
-		reverse_proxy api:8080
+		# A restart of `api` (a crash, or a deploy) holds the requests until the new process answers, without a 502.
+		reverse_proxy api:8080 {
+			lb_try_duration 30s
+			lb_try_interval 250ms
+		}
 	}
 
 	# The page. `encode` sits in this block only, so it never buffers the API event streams.
@@ -50,9 +59,9 @@ http:// {
 		rewrite @page {path}.html
 		header @page Cache-Control "no-cache"
 
-		# The service worker, its Workbox runtime and the manifest have fixed names. A browser must
+		# The service worker, its imported script, its Workbox runtime and the manifest have fixed names. A browser must
 		# check them on every visit, or a new version never reaches a player who has the old one.
-		@pwa path /sw.js /workbox-*.js /manifest.webmanifest
+		@pwa path /sw.js /sw-share-reminder.js /workbox-*.js /manifest.webmanifest
 		header @pwa Cache-Control "no-cache"
 
 		# Digital Asset Links of the Android app (src/assetlinks.ts). Android requires JSON, without a redirect.

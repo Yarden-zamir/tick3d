@@ -61,7 +61,7 @@ function selfPlay(): Game {
   const random = seededRandom(BEATS.game.seed);
   let game = newGame(BEATS.game.first);
   while (game.status.kind === 'playing') {
-    const result = play(game, chooseMove(game.board, game.turn, BEATS.game.levels[game.turn], random), NO_TIME);
+    const result = play(game, chooseMove(game, BEATS.game.levels[game.turn], random), NO_TIME);
     if (!result.ok) throw new Error(`self-play made an illegal move: ${result.error}`);
     game = result.game;
   }

@@ -1,4 +1,4 @@
-import { cell, expect, expectToast, marks, status, test } from './fixtures.ts';
+import { cell, expect, expectToast, marks, openMore, status, test } from './fixtures.ts';
 import { DB_NAME } from '../src/device-db.ts';
 import { STORAGE_KEYS } from '../src/storage-keys.ts';
 import type { Page } from '@playwright/test';
@@ -13,9 +13,14 @@ async function play(page: Page, cells: readonly number[]): Promise<void> {
 
 test('hide board: the keypad places a mark by coordinates', async ({ open }) => {
   const { page } = await open(friend);
-  await page.getByRole('button', { name: 'Hide board', exact: true }).click();
+  // The keypad shows only while the board is hidden.
+  await expect(page.locator('#keypad')).toBeHidden();
+  await openMore(page);
+  // Hide goes in steps: the board step also hides the history, so only the last move shows.
+  await page.getByRole('button', { name: 'Hide history and board', exact: true }).click();
   await expect(page.locator('#board')).toBeHidden();
   await expect(page.locator('#board-hidden')).toBeVisible();
+  await expect(page.locator('#keypad')).toBeVisible();
   const place = page.locator('#coords-place');
   const tap = async (...digits: number[]) => {
     for (const digit of digits) await page.locator(`[data-digit="${digit}"]`).click();
@@ -25,15 +30,31 @@ test('hide board: the keypad places a mark by coordinates', async ({ open }) => 
   await tap(1);
   await place.click();
   await expect(marks(page)).toHaveCount(1);
+  await expect(status(page)).toContainText('Player O to move');
+  await tap(2, 2, 2);
+  await place.click();
+  await expect(status(page)).toContainText('Player X to move');
+  // 1, 1, 1 is taken, and it is not the last move, so the press refuses and undoes nothing.
   await tap(1, 1, 1);
   await place.click();
   await expectToast(page, 'That cell is taken');
+  await expect(status(page)).toContainText('Player X to move');
+});
+
+test('a press on the own last move takes it back, as Undo does; an older move only refuses', async ({ open }) => {
+  const { page } = await open(friend);
+  await play(page, [0, 1]);
+  await cell(page, 0).click();
+  await expectToast(page, 'That cell is taken');
+  await expect(marks(page)).toHaveCount(2);
+  await cell(page, 1).click();
   await expect(marks(page)).toHaveCount(1);
 });
 
 test('hide history shows only the last move, and every mark when the game ends', async ({ open }) => {
   const { page } = await open(friend);
   const toggle = page.getByRole('button', { name: 'Hide history', exact: true });
+  await openMore(page);
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await play(page, X_WINS.slice(0, 2));
@@ -47,6 +68,7 @@ test('a game on one device has no lock; the local end card has no code', async (
   const { page } = await open(friend);
   await cell(page, 0).click();
   // The lock is a promise between two people, so a game on one device does not show it.
+  await openMore(page);
   await expect(page.locator('#lock')).toBeHidden();
   // Home asks first, as in any game with moves.
   await page.locator('#home-link').click();
@@ -74,6 +96,8 @@ test('My games lists the games of this session, with Replay and the result card'
   await page.locator('#end-card-close').click();
   await page.locator('#new-game').click();
   await page.locator('#account-button').click();
+  // This session starts folded.
+  await page.locator('#my-games-session-box > summary').click();
   const games = page.locator('#my-games-session li');
   await expect(games).toHaveCount(2);
   await expect(games.first()).toContainText('Player X won');
@@ -97,6 +121,7 @@ test('time limits: range check, presets, and a change during a game starts with 
     await box(kind).locator('[data-limit-value]').press('Tab');
   };
   const summary = page.locator('#clock-summary');
+  await openMore(page);
   await expect(summary).toContainText('No time limit');
   await expect(box('perMove').locator('.limit-options')).toBeHidden();
 
@@ -140,6 +165,10 @@ test('the seat lock shows its tooltip on a long press, and a short tap still cha
   // Against the computer, the seats stay by default: you start every game.
   const lock = page.locator('[data-show-mode="computer"] [data-seat-lock]');
   const tip = page.getByRole('tooltip');
+  await openMore(page);
+  // The press on More leaves the focus on its summary. The tap moves the focus at the end of the press,
+  // and that focusout hides the tooltip (src/tooltip.ts). Revisit when a focusout no longer hides a touch tooltip.
+  await page.locator('#more > summary').blur();
   await expect(lock).toBeEnabled();
   await lock.scrollIntoViewIfNeeded();
   const box = await lock.boundingBox();
@@ -197,7 +226,7 @@ test('a tab that holds the game data does not stop a new tab from starting', asy
   await page.evaluate(holdSessions, DB_NAME);
   const second = await context.newPage();
   await second.goto('/');
-  await expectToast(second, 'Another tick3d tab or app holds the game data');
+  await expectToast(second, 'tick3d is open in another tab or the app');
   await cell(second, 0).click();
   await expect(marks(second)).toHaveCount(1);
 });

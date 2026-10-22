@@ -1,4 +1,4 @@
-// jsQR reads the rendered code back, to prove the code is scannable. It is a test-only dependency.
+// The same decoder as the in-app camera reads the rendered code back, to prove it is scannable.
 import jsQR from 'jsqr';
 import { describe, expect, it } from 'vitest';
 import { qrModules } from './qr.ts';

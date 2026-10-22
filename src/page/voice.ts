@@ -2,6 +2,7 @@
 // held note places your move. The engine owns the microphone, the pitch, the range and the sticky cells,
 // so a calibration in the Voice room (/sound-input) applies here too. voice-gate.ts decides when it listens.
 import { toCoords } from '../game.ts';
+import { pairingSoundActive } from '../nearby/sound-audio.ts';
 import { MIC_ICON } from '../icons.ts';
 import { type VoiceClip, type VoiceClips, liveSoundUntil } from '../sound.ts';
 import { type Voice, type VoiceFrame, createVoice } from '../voice/engine.ts';
@@ -9,13 +10,13 @@ import { type Rail, buildRail, showRailPitch, showRailRange } from '../voice/rai
 import { type HoldFill, type VoiceCells, createVoiceCells } from '../voice/visuals.ts';
 import { withReturn } from '../return-path.ts';
 import { cells } from './board.ts';
-import { coordsPlace, voiceButton, voicePanel, voiceRailEl, voiceRecentre, voiceRoomLink, voiceStateEl } from './dom.ts';
+import { coordsPlace, stageEl, voiceButton, voiceControl, voiceOnlySwitch, voicePanel, voiceRailEl, voiceRecentre, voiceRoomLink, voiceStateEl } from './dom.ts';
 import { showProblem } from './feedback.ts';
 import { renderCoords } from './keypad.ts';
 import { render } from './render.ts';
 import { humanMove } from './sessions.ts';
 import { saveSettings, settings } from './settings.ts';
-import { current, isLive, page } from './state.ts';
+import { canVoice, current, isLive, page, tapsLocked } from './state.ts';
 import { HOLD_MS, type VoiceGate, type VoiceState, holdPlaces, voiceState } from './voice-gate.ts';
 
 const STATE_TEXT: Record<VoiceState, string> = {
@@ -87,7 +88,7 @@ function gate(): VoiceGate {
     live: isLive(),
     // In a friend game this screen plays both seats.
     myTurn: session !== undefined && (session.mode === 'friend' || current().turn === session.you),
-    waiting: page.busy || page.thinking || page.review !== undefined,
+    waiting: page.busy || page.thinking || page.review !== undefined || pairingSoundActive(),
     soundUntil: liveSoundUntil(),
     now: performance.now(),
   };
@@ -167,7 +168,7 @@ function onFrame(frame: VoiceFrame): void {
   const move = current().moves.length;
   // The clip comes before the move: a move that ends the game stops the engine, and the engine has no clip then.
   const clip = takeClip(frame);
-  humanMove(frame.cell, 'keypad');
+  humanMove(frame.cell, 'voice');
   if (clip !== undefined && page.games.at(-1)?.moves.length === move + 1) keepClip(clip, move);
   if (page.games.at(-1)?.moves.length === move + 1) voiceCells?.burst(frame.cell);
 }
@@ -201,9 +202,12 @@ export function syncVoice(): void {
     if (rail !== undefined) showRailPitch(rail, null, null, 0, null);
     aimAt(undefined);
   } else if (!voice.isListening() && !opening) void openVoice(voice);
-  voiceButton.hidden = page.viewing !== undefined || page.session === undefined || page.session.you === null;
+  voiceControl.hidden = !canVoice();
   voiceButton.setAttribute('aria-pressed', String(settings.voice));
-  voicePanel.hidden = !settings.voice || voiceButton.hidden;
+  voicePanel.hidden = !settings.voice || voiceControl.hidden;
+  voiceOnlySwitch.checked = settings.voiceOnly;
+  // Voice only tints the stage, so the player sees why a tap places nothing.
+  stageEl.classList.toggle('voice-only', tapsLocked());
   // With tilt on, a touch screen keeps the space of Recentre tilt (style.css). With tilt off, it keeps none.
   voicePanel.classList.toggle('tilt-on', voice.settings().tilt.on);
   // In a seated online game, the Voice room opens on its playoff for this game.
@@ -236,6 +240,11 @@ export function setupVoice(): void {
     settings.voice = !settings.voice;
     saveSettings();
     // The microphone opens during the tap, so the browser starts its audio.
+    render();
+  });
+  voiceOnlySwitch.addEventListener('change', () => {
+    settings.voiceOnly = voiceOnlySwitch.checked;
+    saveSettings();
     render();
   });
   // A tap: on iOS it also asks for the tilt sensor.

@@ -452,6 +452,61 @@ input:disabled {
   gap: 0.6rem;
 }
 
+/* kitshn and GitHub sit at the bottom of every page. */
+.site-footer {
+  display: flex;
+  justify-content: center;
+  padding: 0 1rem max(2rem, env(safe-area-inset-bottom));
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+/* One column: a gear at the right side of the screen points to the settings under the board (src/page/settings-hint.ts). */
+.settings-hint {
+  position: fixed;
+  right: max(0.9rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--shadow);
+  color: var(--ink);
+  cursor: pointer;
+  transition: translate 0.08s, box-shadow 0.08s;
+}
+
+.settings-hint:active {
+  translate: 3px 3px;
+  box-shadow: 0 0 0 var(--shadow);
+}
+
+@media (width > 52rem) {
+  .settings-hint {
+    display: none;
+  }
+}
+
+/* The game page in one column: half a screen of room under the footer. The gear never covers the footer links,
+   and the panel can sit in the middle of the screen at the end of the page. Without the room, a mode change
+   that hides a block (Friend hides Difficulty) shortens the page, and the browser pulls the scroll back by that
+   height. The other pages have no gear and no mode change, so they keep a plain footer. */
+@media (width <= 52rem) {
+  .app + .site-footer {
+    padding-bottom: max(50dvh, env(safe-area-inset-bottom));
+  }
+}
+
 /* The iOS app hides what the App Store does not allow: links to GitHub and to pull request previews (src/platform.ts). */
 [data-platform='ios'] [data-hide-in~='ios'] {
   display: none !important;
@@ -594,6 +649,175 @@ input:disabled {
 
 .info-close {
   justify-self: end;
+}
+
+/* The tutorial: the video, and a slider over its checkpoints. The headline of the checkpoint rides over the
+   thumb while it moves (src/page/tutorial.ts). */
+.tutorial {
+  --thumb: 1.5rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.tutorial-track {
+  position: relative;
+  padding-top: 2.4rem;
+}
+
+.tutorial-track input {
+  display: block;
+  width: 100%;
+  height: var(--thumb);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  appearance: none;
+  cursor: grab;
+}
+
+/* The outline of the track is a shadow, not a border: a border shrinks the path of the thumb in Chrome and
+   Safari (not in Firefox), so the thumb would miss the ticks under it. */
+.tutorial-track input::-webkit-slider-runnable-track {
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: inset 0 0 0 2px #000;
+}
+
+.tutorial-track input::-moz-range-track {
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: inset 0 0 0 2px #000;
+}
+
+/* border-box: the thumb is --thumb wide with its border, so it travels the same track as the ticks under it. */
+.tutorial-track input::-webkit-slider-thumb {
+  box-sizing: border-box;
+  width: var(--thumb);
+  height: var(--thumb);
+  margin-top: calc((0.55rem - var(--thumb)) / 2);
+  border: 2px solid #000;
+  border-radius: 6px;
+  background: var(--x);
+  box-shadow: 2px 2px 0 #000;
+  appearance: none;
+}
+
+.tutorial-track input::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--thumb);
+  height: var(--thumb);
+  border: 2px solid #000;
+  border-radius: 6px;
+  background: var(--x);
+  box-shadow: 2px 2px 0 #000;
+}
+
+/* One dot per step, under the track. */
+.tutorial-ticks {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 calc(var(--thumb) / 2 - 3px);
+}
+
+.tutorial-ticks > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #000;
+}
+
+/* --at runs from 0 at the first step to 1 at the last (src/page/tutorial.ts). The bubble slides from the left
+   edge of the track to the right edge with the thumb, so it never leaves the panel. */
+.tutorial-bubble {
+  position: absolute;
+  top: 0;
+  left: calc(var(--at, 0) * 100%);
+  translate: calc(var(--at, 0) * -100%) 0;
+  max-width: 14rem;
+  padding: 0.2rem 0.6rem;
+  border: 2px solid #000;
+  border-radius: 8px;
+  background: #fff;
+  color: #000;
+  font-size: 0.85rem;
+  font-weight: 800;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+
+.tutorial-bubble[data-dragging],
+.tutorial-track:has(input:focus-visible) .tutorial-bubble {
+  opacity: 1;
+}
+
+/* The video keeps a 16:9 box before it loads, so the slider under it never moves. */
+.tutorial-video {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 2px solid #000;
+  border-radius: 8px;
+  background: #15122b;
+  box-shadow: 3px 3px 0 #000;
+}
+
+.tutorial-video video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+}
+
+/* Play and the speaker of the video, in the corner, so the picture stays free. */
+.tutorial-buttons {
+  position: absolute;
+  left: 0.5rem;
+  bottom: 0.5rem;
+  display: flex;
+  gap: 0.4rem;
+}
+
+.tutorial-play {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  border: 2px solid #000;
+  border-radius: 8px;
+  background: #fff;
+  color: #000;
+  box-shadow: 2px 2px 0 #000;
+  cursor: pointer;
+  transition: translate 0.08s, box-shadow 0.08s;
+}
+
+.tutorial-play:active {
+  translate: 2px 2px;
+  box-shadow: 0 0 0 #000;
+}
+
+/* Muted: red, like the speaker of the game. */
+#tutorial-mute[aria-pressed='false'] {
+  background: #ff8a8a;
+}
+
+.tutorial-step h3 {
+  margin: 0;
+}
+
+.tutorial-step p {
+  margin: 0.2rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 /* Links to other pages, then Close at the end. */
@@ -764,6 +988,85 @@ input:disabled {
   box-shadow: 2px 2px 0 var(--shadow);
 }
 
+/* The turn: a soft frame around the screen in the color of the player to move during a game, from the
+   second move on (src/page/render.ts sets data-playing and data-my-turn). On the turn of this screen, the frame shows
+   for 1 s and fades out. After 11 s with no move it comes back and pulses slowly, as a reminder.
+   data-my-turn goes off and on between turns, so each turn starts the timing again. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s, box-shadow 0.4s;
+}
+
+body[data-playing]::after {
+  opacity: 0.55;
+}
+
+body[data-turn='X'][data-playing]::after {
+  box-shadow: inset 0 0 0 5px var(--x), inset 0 0 28px var(--x);
+}
+
+body[data-turn='O'][data-playing]::after {
+  box-shadow: inset 0 0 0 5px var(--o), inset 0 0 28px var(--o);
+}
+
+body[data-my-turn]::after {
+  animation:
+    turn-start 11s linear forwards,
+    turn-pulse 2.4s ease-in-out 11s infinite;
+}
+
+/* 1 s of 11 s is about 9 %. The fade takes half a second. */
+@keyframes turn-start {
+  0%,
+  9% {
+    opacity: 0.55;
+  }
+
+  14%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes turn-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+
+  50% {
+    opacity: 0.15;
+  }
+}
+
+/* The move up to medium after two wins against easy (src/page/level-up.ts): the Difficulty field pops and glows. */
+.field.level-up {
+  border-radius: 12px;
+  animation: level-up 1.6s ease-out 2;
+}
+
+@keyframes level-up {
+  0% {
+    scale: 1;
+    box-shadow: 0 0 0 0 var(--win);
+  }
+
+  25% {
+    scale: 1.06;
+    box-shadow: 0 0 0 8px var(--win);
+  }
+
+  100% {
+    scale: 1;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
 /* ---- Stage and board ---- */
 
 .stage {
@@ -908,6 +1211,13 @@ body[data-turn='O'] .status[data-state='playing'] {
   /* Touch: a sideways swipe turns the tower, a vertical one still scrolls the page, and a pinch still zooms. */
   touch-action: pan-y pinch-zoom;
   user-select: none;
+}
+
+.stage.voice-only {
+  border-radius: 14px;
+  outline: 3px dashed var(--toggle-on);
+  outline-offset: 6px;
+  background: color-mix(in srgb, var(--toggle-on) 14%, transparent);
 }
 
 .stage[data-dragging] {
@@ -1169,17 +1479,67 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 /* ---- Side panel ---- */
 
-.panel {
+/* The panel column holds the game actions, then two cards: the common settings, then More. */
+.panels {
   grid-area: panel;
   display: flex;
   flex-direction: column;
-  gap: 1.1rem;
+  gap: 1.25rem;
   align-self: start;
+  min-width: 0;
+}
+
+.game-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
   padding: 1.25rem;
   border: var(--border) solid var(--line);
   border-radius: 14px;
   background: var(--surface);
   box-shadow: 8px 8px 0 var(--shadow);
+}
+
+/* More: a card that starts closed. The closed card is one short row, so it shows that more settings exist. */
+.panel-more {
+  display: block;
+  padding: 0;
+}
+
+.panel-more summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.7rem 1.25rem;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.panel-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel-more summary svg {
+  transition: rotate 0.15s;
+}
+
+.panel-more[open] summary svg {
+  rotate: 180deg;
+}
+
+.panel-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: 0 1.25rem 1.25rem;
 }
 
 .field {
@@ -1260,14 +1620,19 @@ body[data-turn='O'] .status[data-state='playing'] {
   visibility: hidden;
 }
 
-/* New game has the first line. Under it, three equal slots: Undo or the result card (they take turns in one slot),
-   the sound control and the microphone of play by voice. One line for all four does not fit a 360 px phone or the desktop panel.
+/* New game has the first line. Under it, two equal slots: Undo or the result card (they take turns in one slot),
+   and the sound control. They are taller than a plain button, so Undo is easy to find and hit.
+   Play by voice sits in the More card (index.html).
    minmax(max-content, ...): a row that is too narrow overflows, and e2e/row-layout.spec.ts sees it. */
 .actions {
   grid-template-areas:
-    'new new new'
-    'swap sound voice';
-  grid-template-columns: repeat(3, minmax(max-content, 1fr));
+    'new new'
+    'swap sound';
+  grid-template-columns: repeat(2, minmax(max-content, 1fr));
+}
+
+.actions > :is(#undo, #show-card, .sound-control) {
+  min-height: 3.2rem;
 }
 
 #new-game {
@@ -1327,10 +1692,15 @@ body[data-turn='O'] .status[data-state='playing'] {
   grid-area: sound;
 }
 
+/* Muted: the speaker turns red, so a player who muted by mistake sees it. */
+#sound[aria-pressed='false'] {
+  background: var(--danger);
+  color: var(--on-color);
+}
+
 /* Play by voice. On, the button takes the toggle color. A dot in its corner shows the state: green and
    pulsing while the microphone listens, muted while it pauses. */
 #voice {
-  grid-area: voice;
   position: relative;
 }
 
@@ -1499,24 +1869,54 @@ body[data-turn='O'] .status[data-state='playing'] {
   height: auto;
 }
 
-.toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
+/* Hide in steps, in the look of .segmented. The slide pill (src/page/slide-pill.ts) draws the choice: the dark
+   pill on Off, or one bar in the toggle color from History to the chosen step, because each step hides what the
+   steps before it hide. Each column fits its label. data-level is the chosen step (src/page/render.ts). */
+.hide-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(max-content, 1fr));
+  padding: 0.25rem;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  box-shadow: 3px 3px 0 var(--shadow);
 }
 
-/* Three hide options share the row of the panel, so the sides are narrow. */
-.toggles .btn {
-  flex: 1;
-  padding-inline: 0.5rem;
+.hide-steps button {
+  padding: 0.45rem 0.4rem;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: transparent;
   color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
   font-weight: 600;
+  line-height: 1.15;
+  cursor: pointer;
+  transition: color 0.2s;
 }
 
-.toggles .btn[aria-pressed='true'] {
-  background: var(--toggle-on);
-  color: var(--on-color);
+.hide-steps button:hover:not(:disabled, [aria-pressed='true']) {
+  color: var(--ink);
+}
+
+.hide-steps button[aria-pressed='true'] {
   font-weight: 800;
+}
+
+.hide-steps button:disabled {
+  cursor: default;
+}
+
+/* The text on the pill takes the color of the pill. */
+.hide-steps[data-level='0'] [data-hide-level='0'] {
+  color: var(--surface);
+}
+
+.hide-steps[data-level='1'] [data-hide-level='1'],
+.hide-steps[data-level='2'] :is([data-hide-level='1'], [data-hide-level='2']),
+.hide-steps[data-level='3'] button:not([data-hide-level='0']) {
+  color: var(--on-color);
 }
 
 /* A label row with a small control at its end, such as Hide and the lock. */
@@ -1687,7 +2087,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: block;
   font-size: 2.2rem;
   font-weight: 800;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.1em;
   line-height: 1.1;
 }
 
@@ -1753,11 +2153,6 @@ body[data-turn='O'] .status[data-state='playing'] {
 .stage-controls > * {
   grid-area: 1 / 1;
   align-self: start;
-}
-
-.stage-controls:has(> .review:not([hidden])) > .coords[hidden] {
-  display: flex !important;
-  visibility: hidden;
 }
 
 .coords-head {
@@ -1916,13 +2311,6 @@ body[data-turn='O'] .status[data-state='playing'] {
   border-radius: 8px;
   background: var(--surface-2);
   list-style: none;
-}
-
-.chat-empty {
-  margin: auto;
-  text-align: center;
-  color: var(--muted);
-  font-weight: 600;
 }
 
 /* A change to the session (a new game, a setting, a seat change) between the messages. */
@@ -2694,6 +3082,133 @@ body[data-turn='O'] .status[data-state='playing'] {
   }
 }
 
+/* ---- Sliding choices ----
+   On the game page, the choice of a segmented control, the Hide steps and the time picks is one pill that
+   slides to the new choice (src/page/slide-pill.ts). The buttons sit over it with no background of their own.
+   Other pages have no pill, so their buttons keep the background of the choice. */
+.has-pill {
+  position: relative;
+}
+
+.has-pill > :is(button, .limit-custom) {
+  position: relative;
+  z-index: 1;
+}
+
+.has-pill > :is(button[aria-pressed='true'], .limit-custom.active),
+.has-pill.hide-steps > button {
+  border-color: transparent;
+  background: transparent;
+}
+
+.slide-pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 6px;
+  background: var(--ink);
+  pointer-events: none;
+  transition:
+    translate 0.24s cubic-bezier(0.3, 0.8, 0.3, 1),
+    width 0.24s cubic-bezier(0.3, 0.8, 0.3, 1),
+    height 0.24s,
+    background 0.2s,
+    box-shadow 0.2s;
+}
+
+.limit-options > .slide-pill {
+  border-radius: 5px;
+}
+
+.slide-pill[data-tone='toggle'] {
+  background: var(--toggle-on);
+  box-shadow: inset 0 0 0 2px var(--line);
+}
+
+.slide-pill[data-instant] {
+  transition: none;
+}
+
+/* A custom time that the player edits keeps its own light background over the pill, so its dark text reads. */
+.has-pill > .limit-custom:focus-within {
+  background: var(--peer);
+}
+
+/* ---- Press and toggle motion ----
+   Every control moves under a press. A .btn presses into its shadow (above). A free-standing control
+   without a shadow (a segmented choice, a time pick, a fold) shrinks a little.
+   A joined control (the Hide steps, a split control) moves as one piece: a part that shrank alone would
+   cut the bar or the box. So the whole control shrinks, and the pressed part only flashes brighter.
+   A control that turns on pops once, or flashes when it is part of a joined control. A choice with a slide pill
+   (see Sliding choices) slides instead.
+   data-ready on the root waits for the first press or key of the player (src/main.ts), so the saved
+   choices that start on do not all pop at load. */
+:is(.segmented button, .limit-options button, .panel-more summary, .theme-menu summary, .help summary):active:not(:disabled) {
+  scale: 0.94;
+}
+
+:is(.segmented button, .limit-options button, .panel-more summary, .theme-menu summary, .help summary) {
+  transition:
+    scale 0.08s,
+    background 0.15s,
+    color 0.15s;
+}
+
+:is(.hide-steps, .split-control):has(button:active:not(:disabled)) {
+  scale: 0.97;
+}
+
+:is(.hide-steps, .split-control) {
+  transition: scale 0.08s;
+}
+
+:is(.hide-steps, .split-control) button:active:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+/* The knob of a switch stretches while it is held, like a finger that pushes it. */
+.limit-switch input:active::after {
+  width: 20px;
+}
+
+.limit-switch input:checked:active::after {
+  translate: 16px 0;
+}
+
+:root[data-ready]
+  :is(
+    .segmented:not(.has-pill) button[aria-pressed='true'],
+    .limit-options:not(.has-pill) button[aria-pressed='true'],
+    .btn[aria-pressed='true'],
+    .limit-switch input:checked
+  ) {
+  animation: toggle-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+:root[data-ready] :is(#sound[aria-pressed='false'], #voice[aria-pressed='true']) {
+  animation: toggle-flash 0.4s ease-out;
+}
+
+@keyframes toggle-pop {
+  0% {
+    scale: 0.88;
+  }
+
+  100% {
+    scale: 1;
+  }
+}
+
+@keyframes toggle-flash {
+  0% {
+    filter: brightness(1.35);
+  }
+
+  100% {
+    filter: brightness(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2737,6 +3252,15 @@ body[data-turn='O'] .status[data-state='playing'] {
 .my-games h3 {
   margin-block: 0.4rem;
   font-size: 1rem;
+}
+
+.my-games-fold summary {
+  cursor: pointer;
+}
+
+/* Inline, so the heading stays on the line of the fold marker. */
+.my-games-fold h3 {
+  display: inline-block;
 }
 
 .account {
@@ -2784,16 +3308,20 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--muted);
 }
 
+/* minmax(0, 1fr): a long name never widens a row past the dialog. */
 .my-games-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.4rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* A narrow row wraps its badge and buttons below the text. */
 .my-games-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.6rem;
   padding: 0.4rem 0.6rem;
@@ -2804,8 +3332,9 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .my-games-list li > div {
   display: grid;
-  flex: 1;
+  flex: 1 1 8rem;
   min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .my-games-list .avatar {
@@ -2846,7 +3375,13 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* Achievements (src/page/achievements.ts), in the style of Steam: a list of rows with a badge, the
-   name and the description, and the unlock date. The badge has the color of the tier of the goal. */
+   name and the description, and the unlock date. The badge has the color of the tier of the goal.
+   TIER_COLORS in src/achievement-icons.ts has the same colors. */
+[data-tier='stone'] {
+  --tier: #d9d2c5;
+  --tier-deep: #8f8676;
+}
+
 [data-tier='bronze'] {
   --tier: #ffb36b;
   --tier-deep: #c7672a;
@@ -2860,6 +3395,11 @@ body[data-turn='O'] .status[data-state='playing'] {
 [data-tier='gold'] {
   --tier: #ffe14d;
   --tier-deep: #ff9d00;
+}
+
+[data-tier='mythic'] {
+  --tier: #e6b8ff;
+  --tier-deep: #6c5ce7;
 }
 
 .achievements-summary {
@@ -2911,6 +3451,39 @@ body[data-turn='O'] .status[data-state='playing'] {
   pointer-events: none;
 }
 
+/* Stone: matte, with no shine, so an easy goal looks plain. */
+.achievement-icon[data-tier='stone'] {
+  background: linear-gradient(145deg, var(--tier), var(--tier-deep));
+}
+
+.achievement-icon[data-tier='stone']::after {
+  display: none;
+}
+
+/* Mythic: a rainbow foil that turns, and a faster shine. */
+@property --foil-turn {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.achievement-icon[data-tier='mythic'] {
+  background:
+    radial-gradient(circle at 30% 25%, rgb(255 255 255 / 0.7), transparent 45%),
+    conic-gradient(from var(--foil-turn), #ff7ad9, #b98cff, #6be4ff, #7cff8a, #ffe14d, #ff9d6b, #ff7ad9);
+  animation: badge-foil 6s linear infinite;
+}
+
+.achievement-icon[data-tier='mythic']::after {
+  animation-duration: 2.6s;
+}
+
+@keyframes badge-foil {
+  to {
+    --foil-turn: 360deg;
+  }
+}
+
 @keyframes badge-shine {
   0%,
   70% {
@@ -2939,8 +3512,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   background: linear-gradient(90deg, color-mix(in srgb, var(--tier) 38%, var(--surface)), var(--surface) 70%);
 }
 
+/* minmax(0, 1fr): the progress row never makes the text wider than its card. */
 .achievement-text {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.1rem;
   min-width: 0;
 }
@@ -2983,11 +3558,27 @@ body[data-turn='O'] .status[data-state='playing'] {
   rotate: 4deg;
 }
 
-/* A locked badge is grey, with a small lock on its corner. */
+/* A locked badge is grey, with a small lock on its corner. A hidden one is a striped question mark. */
+.achievement[data-state='hidden'] .achievement-icon {
+  background: repeating-linear-gradient(45deg, var(--surface-2) 0 6px, var(--surface) 6px 12px);
+  box-shadow: none;
+  color: var(--muted);
+  animation: none;
+}
+
+.achievement[data-state='hidden'] .achievement-icon::after {
+  display: none;
+}
+
+.achievement[data-state='hidden'] .achievement-text b {
+  color: var(--muted);
+}
+
 .achievement[data-state='locked'] .achievement-icon {
   background: var(--surface);
   box-shadow: none;
   color: var(--muted);
+  animation: none;
 }
 
 .achievement[data-state='locked'] .achievement-icon > svg {
@@ -3037,8 +3628,10 @@ body[data-turn='O'] .status[data-state='playing'] {
   appearance: none;
 }
 
+/* min-width: a progress bar is about 10em wide by default, and a narrow row must not grow past its card. */
 .achievement-progress progress {
   flex: 1;
+  min-width: 2rem;
 }
 
 .achievements-bar {
@@ -3129,6 +3722,22 @@ body[data-turn='O'] .status[data-state='playing'] {
   box-shadow: 2px 2px 0 #000000;
   cursor: pointer;
   animation: medal-pop 0.55s calc(0.25s + var(--i) * 0.18s) cubic-bezier(0.34, 1.8, 0.64, 1) both;
+}
+
+/* The foil of a mythic badge keeps turning after the pop. */
+.unlock-medals .achievement-icon[data-tier='mythic'] {
+  animation:
+    medal-pop 0.55s calc(0.25s + var(--i) * 0.18s) cubic-bezier(0.34, 1.8, 0.64, 1) both,
+    badge-foil 6s linear infinite;
+}
+
+/* The count of the badges that the strip has no room for. */
+.unlock-more {
+  align-self: center;
+  margin-left: 0.3rem;
+  color: #ffffff;
+  font-size: 1.2rem;
+  font-weight: 800;
 }
 
 .unlock-medals .achievement-icon[aria-pressed='true'] {
@@ -3237,6 +3846,117 @@ body[data-turn='O'] .status[data-state='playing'] {
   }
 }
 
+/* The achievement popup (src/page/achievement-popup.ts): the dark band of the end card unlock, as a card at the
+   bottom of the screen. It lands like a sticker, and its badges pop in one after another. */
+.achievement-popup {
+  position: fixed;
+  z-index: 20;
+  left: 50%;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  translate: -50% 0;
+  display: grid;
+  gap: 0.6rem;
+  width: min(calc(100vw - 1.5rem), 24rem);
+  padding: 0.8rem;
+  border: var(--border) solid #000000;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 12% 20%, rgb(150 120 255 / 0.55), transparent 55%),
+    linear-gradient(120deg, #17122f, #2c2166);
+  box-shadow: 4px 4px 0 #000000;
+  color: #ffffff;
+}
+
+.achievement-popup[hidden] {
+  display: none;
+}
+
+.achievement-popup.pop {
+  animation: popup-land 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* As sticker-slap, from below: the card keeps its centring translate. */
+@keyframes popup-land {
+  from {
+    opacity: 0;
+    translate: -50% 120%;
+    rotate: -6deg;
+  }
+
+  70% {
+    opacity: 1;
+    rotate: 1deg;
+  }
+}
+
+.achievement-popup-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.achievement-popup-head h2 {
+  flex: 1;
+  margin: 0;
+  color: #ffe14d;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The popup is dark in every theme, so its buttons keep black borders. */
+.achievement-popup .btn {
+  border-color: #000000;
+}
+
+.achievement-popup-head .btn {
+  background: #ffffff;
+  color: #000000;
+}
+
+.achievement-popup-list {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The badge, its size and the gap to the text as on the unlock band of the end card (.unlock). */
+.achievement-popup-item {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.achievement-popup-item .achievement-icon {
+  flex-shrink: 0;
+  width: 3rem;
+  height: 3rem;
+  padding: 0.45rem;
+  border-color: #000000;
+  box-shadow: 2px 2px 0 #000000;
+}
+
+.achievement-popup.pop .achievement-popup-item .achievement-icon {
+  animation: medal-pop 0.55s calc(0.25s + var(--i) * 0.18s) cubic-bezier(0.34, 1.8, 0.64, 1) both;
+}
+
+.achievement-popup.pop .achievement-popup-item .achievement-icon[data-tier='mythic'] {
+  animation:
+    medal-pop 0.55s calc(0.25s + var(--i) * 0.18s) cubic-bezier(0.34, 1.8, 0.64, 1) both,
+    badge-foil 6s linear infinite;
+}
+
+.achievement-popup-item .unlock-text b {
+  font-size: 1rem;
+}
+
+.achievement-popup-more {
+  justify-self: start;
+}
+
 /* A player who closed an async game: dimmed, but the game goes on. */
 .tally.away {
   opacity: 0.6;
@@ -3268,6 +3988,8 @@ body[data-turn='O'] .status[data-state='playing'] {
   align-items: center;
   gap: 0.75rem;
   translate: -50% 0;
+  width: max-content;
+  max-width: calc(100vw - 1.5rem);
   padding: 0.55rem 0.75rem 0.55rem 1rem;
   border: var(--border) solid var(--line);
   border-radius: 10px;
@@ -3277,6 +3999,18 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* ---- Nearby ---- */
+
+.mode-note {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.here-icon {
+  display: inline-flex;
+  flex: none;
+}
 
 .nearby {
   display: grid;
@@ -3295,13 +4029,119 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 .nearby-me {
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 0.5rem;
+  margin-top: 0.6rem;
 }
 
-.nearby-me input {
-  flex: 1;
+.nearby-intro b {
+  display: block;
+}
+
+.nearby-identity summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  list-style: none;
+  cursor: pointer;
+}
+
+.nearby-identity summary::-webkit-details-marker {
+  display: none;
+}
+
+.nearby-identity b {
+  overflow-wrap: anywhere;
+}
+
+.nearby-edit {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-decoration: underline;
+}
+
+.nearby-online {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.7rem;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.nearby-online p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.nearby-progress {
+  margin: 0 0 0.4rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.nearby-step-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  line-height: 1.15;
+}
+
+.nearby-camera {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.nearby-viewfinder {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: #15122b;
+}
+
+.nearby-viewfinder video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.nearby-viewfinder span {
+  position: absolute;
+  inset: 12%;
+  border: 3px solid #ffe14d;
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.nearby-text > details,
+.nearby-text > .nearby-input {
+  margin-top: 0.6rem;
+}
+
+.nearby-sound {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.6rem;
+}
+
+.nearby-sound-link {
+  justify-self: start;
+  padding: 0.35rem 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
 }
 
 .device-icon {
@@ -3328,6 +4168,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .nearby .btn {
   flex: 1;
+  min-height: 44px;
 }
 
 .nearby-step {
@@ -3415,15 +4256,9 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
-.nearby-laptop summary,
 .nearby-text summary {
   cursor: pointer;
   font-weight: 700;
-}
-
-.nearby-laptop p {
-  margin: 0.4rem 0 0;
-  color: var(--muted);
 }
 
 .lan-host {
@@ -3464,6 +4299,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 .share-buttons {
   display: grid;
   gap: 0.4rem;
+  white-space: nowrap;
 }
 
 .online-qr {
@@ -3472,6 +4308,26 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.4rem;
   font-weight: 700;
   text-align: center;
+}
+
+/* The Share button of the game header sits with the header buttons, at the right. The header is the same on
+   every page (src/markup.test.ts), so the button stays outside .brand-links. A negative right margin turns the
+   gap of .brand (1rem) into the gap of .brand-links (0.6rem), so it looks like one more button of the group. */
+.brand > .game-share {
+  margin-left: auto;
+  margin-right: calc(0.6rem - 1rem);
+  anchor-name: --game-share;
+}
+
+@media (width < 64rem) {
+  .brand:has(> .status, > .page-title) > .game-share + .game-share-menu + .brand-links {
+    margin-left: 0;
+  }
+}
+
+/* The Share menu: under the Share button, at its right edge, as the link menu below. */
+.share-menu.game-share-menu {
+  position-anchor: --game-share;
 }
 
 /* The link menu: a popover under the caret of Link, at its right edge. It flips above when there is no room below.

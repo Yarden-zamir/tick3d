@@ -1,7 +1,7 @@
 #!/bin/bash
-# Renders every take of the spot and both paces of the tutorial on this machine, and publishes their previews to the pr-assets
-# branch in issue-119/renders/<sha7>/<take>/: a GIF, a stills sheet per crop and both MP4s, each named
-# tick3d-<take>-<sha7>-… so downloads never collide. Prints the base URL of the folder. Pull request previews
+# Renders every take of the spot, both paces of the basics tutorial and the strong cells tutorial on this machine,
+# and publishes their previews to the pr-assets branch in issue-119/renders/<sha7>/<take>/: a GIF, a stills sheet
+# per crop and both MP4s, each named tick3d-<take>-<sha7>-… so downloads never collide. Prints the base URL of the folder. Pull request previews
 # come from here, not from CI (maintainer decision on #119).
 # Needs ImageMagick and ffmpeg on PATH, and a committed, pushed HEAD: the folder name is the commit.
 # Usage: video/scripts/publish.sh    (PR_ASSETS=<dir> keeps the pr-assets checkout elsewhere)
@@ -18,6 +18,7 @@ folder=issue-119/renders/$sha
 for take in "${TAKES[@]}"; do VIDEO_VARIANT=$take npm run video; done
 npm run tutorial
 TUTORIAL_PACE=short npm run tutorial
+TUTORIAL=strong npm run tutorial
 
 # A sparse checkout of pr-assets that holds only the new folder, so it never downloads the older renders.
 if [ ! -d "$PR_ASSETS/.git" ]; then
@@ -45,14 +46,14 @@ for take in "${TAKES[@]}"; do
   cp "$out/tick3d-15s-portrait.mp4" "$dest/$name-portrait.mp4"
 done
 
-# The tutorial at both paces: one still per section, in order by their numbered names.
-for cut in tutorial tutorial-short; do
+# The tutorials: one still per section, in order by their numbered names.
+for cut in tutorial-basics tutorial-basics-short tutorial-strong; do
   out=out/$cut
   dest=$PR_ASSETS/$folder/$cut
   name=tick3d-$cut-$sha
   mkdir -p "$dest"
-  sheet "$dest/$name-stills.png" 5x3 400x225+4+4 "$out"/stills/landscape-*.png
-  sheet "$dest/$name-portrait-stills.png" 7x2 198x352+4+4 "$out"/stills/portrait-*.png
+  sheet "$dest/$name-stills.png" 6x 400x225+4+4 "$out"/stills/landscape-*.png
+  sheet "$dest/$name-portrait-stills.png" 9x 198x352+4+4 "$out"/stills/portrait-*.png
   gif "$out/tick3d-$cut-landscape.mp4" "$dest/$name.gif"
   cp "$out/tick3d-$cut-landscape.mp4" "$dest/$name-landscape.mp4"
   cp "$out/tick3d-$cut-portrait.mp4" "$dest/$name-portrait.mp4"

@@ -1,5 +1,5 @@
 import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { openDeviceDb } from '../device-db.ts';
 import { createLocalBackend } from '../local.ts';
 import { type PlayerToken, personId } from '../protocol.ts';
@@ -98,7 +98,7 @@ describe('Nearby host and guest', () => {
       expect(nearby.people.O).not.toContain(guest);
       expect(nearby.chat).toMatchObject([{ text: 'hi from the phone', by: online.people.X }]);
     } finally {
-      server.close();
+      await server.close();
     }
   });
 
@@ -140,5 +140,23 @@ describe('Nearby host and guest', () => {
     // A bad argument is refused, and an answer needs an open request.
     await expect(first.backend.seat(code, { action: 'kick' } as never)).rejects.toMatchObject({ status: 400 });
     await expect(first.backend.answerSeat(code, true)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('sends the first get again when the host never receives it', async () => {
+    const { nearby } = await setup();
+    const [hostSide, guestSide] = channelPair();
+    nearby.addGuest(hostSide, phone);
+    let sent = 0;
+    const lossy = { ...guestSide, send: (message: unknown) => (sent++ === 0 ? undefined : guestSide.send(message)) };
+    const backend = createNearbyGuest(lossy, guest, () => {});
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const loaded = backend.loadHosted();
+      await vi.advanceTimersByTimeAsync(3_001);
+      expect((await loaded).you).toBeNull();
+      expect(sent).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

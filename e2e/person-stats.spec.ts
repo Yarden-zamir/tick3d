@@ -19,7 +19,7 @@ test('the picture viewer links to the stats of the person, and "Hide my stats" c
   await bob.locator('#avatar-viewer').getByRole('link', { name: `Stats of ${aliceName}` }).click();
   await expect(bob).toHaveURL(/\/stats\?person=[0-9a-f]{16}$/);
   const statsAddress = bob.url();
-  await expect(bob.locator('#stats-person')).toHaveText(`Stats of ${aliceName}`);
+  await expect(bob.locator('#stats-person').getByRole('heading')).toHaveText(`Stats of ${aliceName}`);
   await expect(bob.locator('#stats-note')).toContainText(`the games of ${aliceName}`);
   // The results of the person, without the opponents card of Mine.
   await expect(bob.getByRole('heading', { name: 'Results', exact: true })).toBeVisible();
@@ -35,5 +35,5 @@ test('the picture viewer links to the stats of the person, and "Hide my stats" c
   await expect(bob.locator('#stats-note')).toHaveText('This player keeps their stats private.');
   await expect(bob.locator('#stats-person')).toBeHidden();
   await alice.goto(statsAddress);
-  await expect(alice.locator('#stats-person')).toHaveText(`Stats of ${aliceName}`);
+  await expect(alice.locator('#stats-person').getByRole('heading')).toHaveText(`Stats of ${aliceName}`);
 });

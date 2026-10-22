@@ -7,6 +7,7 @@ import {
   type GameId,
   HISTORY_PAGE_SIZE,
   type HistoryEntry,
+  type HistoryPage,
   type Outcome,
   type PlayerInfo,
   type SessionMode,
@@ -53,6 +54,7 @@ import {
   myGamesPrivateOption,
   myGamesSession,
   myGamesSessionBox,
+  myGamesSessionCount,
 } from './dom.ts';
 import { currentProgress, setupAchievements, showAchievements } from './achievements.ts';
 import { showError } from './feedback.ts';
@@ -142,7 +144,7 @@ const opponentText = (summary: SessionSummary) => {
 
 const gameCount = (count: number) => `${count} ${count === 1 ? 'game' : 'games'}`;
 
-const MODE_NAMES: Record<SessionMode, string> = { computer: 'Computer', friend: 'Friend', online: 'Online', nearby: 'Nearby' };
+const MODE_NAMES: Record<SessionMode, string> = { computer: 'Computer', friend: 'Same screen', online: 'Online', nearby: 'Wi-Fi' };
 const OUTCOME_NAMES: Record<Outcome, string> = { won: 'Won', lost: 'Lost', drawn: 'Draw', played: 'Played' };
 
 function viewGame(id: GameId): void {
@@ -188,13 +190,16 @@ function showHistory(entries: HistoryEntry[], append: boolean): void {
 
 let historyOffset = 0;
 
-// The next page of the history from the server.
-async function loadHistory(request: number, append: boolean): Promise<void> {
-  const next = await api.history(append ? historyOffset : 0);
-  if (request !== myGamesRequest) return;
+// A page of the history from the server: the first page, or the next one after `append`.
+function showHistoryPage(next: HistoryPage, append: boolean): void {
   historyOffset = (append ? historyOffset : 0) + next.games.length;
   showHistory(next.games, append);
   myGamesMore.hidden = !next.more;
+}
+
+async function loadMoreHistory(request: number): Promise<void> {
+  const next = await api.history(historyOffset);
+  if (request === myGamesRequest) showHistoryPage(next, true);
 }
 
 const ACCOUNT_AVATAR_PIXELS = 32;
@@ -231,14 +236,11 @@ async function loadAchievements(request: number): Promise<void> {
 // Opening the dialog again while a list loads starts over, so a late answer never adds a second copy.
 let myGamesRequest = 0;
 
-// `returnTo` is the page that a GitHub login returns to. Without it, the login returns to this page.
-export async function openMyGames(returnTo?: string): Promise<void> {
-  const request = ++myGamesRequest;
-  myGamesDialog.showModal();
-  renderBlockedList();
-  void loadStatsPrivacy(request).catch(showError);
-  void loadAchievements(request).catch(showError);
-  // Account
+// The page where a login returns, kept for a rebuild of the account box while My games is open.
+let accountReturnTo: string | undefined;
+
+// The account part of My games. refreshAccount rebuilds it when a slower /api/me answer changes the account.
+function renderAccountBox(): void {
   accountBox.replaceChildren();
   if (page.account.user) {
     const avatar = avatarFor({ player: page.account.user, name: page.account.user.login }, ACCOUNT_AVATAR_PIXELS, null);
@@ -263,11 +265,22 @@ export async function openMyGames(returnTo?: string): Promise<void> {
       text.append(' Log in with GitHub to use your GitHub name.');
       const login = document.createElement('a');
       login.className = 'btn btn-small btn-primary login-link';
-      login.href = api.loginUrl(returnTo);
+      login.href = api.loginUrl(accountReturnTo);
       login.textContent = 'Log in with GitHub';
       accountBox.append(login);
     }
   }
+}
+
+// `returnTo` is the page that a GitHub login returns to. Without it, the login returns to this page.
+export async function openMyGames(returnTo?: string): Promise<void> {
+  const request = ++myGamesRequest;
+  myGamesDialog.showModal();
+  renderBlockedList();
+  void loadStatsPrivacy(request).catch(showError);
+  void loadAchievements(request).catch(showError);
+  accountReturnTo = returnTo;
+  renderAccountBox();
   // Device sessions
   const deviceSessions = (await page.local?.list()) ?? [];
   if (request !== myGamesRequest) return;
@@ -275,7 +288,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     ...deviceSessions
       .filter((entry) => entry.mode !== 'nearby')
       .map((entry) =>
-        listItem(entry.name, `${entry.mode === 'computer' ? 'Computer' : 'Friend'} · ${gameCount(entry.games)} · ${ago(entry.updatedAt)}`, [
+        listItem(entry.name, `${entry.mode === 'computer' ? 'Computer' : 'Same screen'} · ${gameCount(entry.games)} · ${ago(entry.updatedAt)}`, [
           {
             label: 'Open',
             run: () => void openDeviceSession(entry.code).catch(showError),
@@ -289,15 +302,16 @@ export async function openMyGames(returnTo?: string): Promise<void> {
   myGamesOnline.replaceChildren();
   try {
     if (!navigator.onLine) throw new OnlineError('offline');
-    const mine = await api.myGames();
+    // Both requests start at once, so the history does not wait for the games.
+    const [mine, firstPage] = await Promise.all([api.myGames(), api.history(0)]);
     if (request !== myGamesRequest) return;
     myGamesNote.textContent = mine.user ? 'Your games on every device you logged in with.' : 'Your games on this browser.';
     myGamesStats.append(
       tallyBox('All games', mine.total),
       tallyBox('Online', mine.byMode.online),
       tallyBox('Computer', mine.byMode.computer),
-      tallyBox('Nearby', mine.byMode.nearby),
-      tallyBox('Friend', mine.byMode.friend),
+      tallyBox('Wi-Fi', mine.byMode.nearby),
+      tallyBox('Same screen', mine.byMode.friend),
     );
     myGamesOnline.append(
       ...mine.sessions.map((summary) =>
@@ -312,7 +326,7 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     );
     if (mine.sessions.length === 0) myGamesOnline.innerHTML = '<li class="empty">No online sessions yet.</li>';
     myGamesOnlineBox.hidden = false;
-    await loadHistory(request, false);
+    showHistoryPage(firstPage, false);
     myGamesClear.hidden = historyOffset === 0;
   } catch (error) {
     if (!(error instanceof OnlineError)) throw error;
@@ -412,6 +426,7 @@ async function deleteMyData(): Promise<void> {
 // so the list stays current while the dialog is open. A game from a link has no session here.
 export function renderSessionGames(): void {
   myGamesSessionBox.hidden = page.session === undefined;
+  myGamesSessionCount.textContent = gameCount(page.games.length);
   myGamesSession.replaceChildren(
     ...page.games.map((game, index) => {
       const actions: Action[] = [];
@@ -505,7 +520,10 @@ async function changeName(call: () => Promise<Me>, problem: HTMLElement): Promis
 export async function refreshAccount(): Promise<void> {
   if (!navigator.onLine) return;
   try {
+    const before = JSON.stringify(page.account);
     saveAccount(await api.me());
+    // Only on a change: a rebuild clears a rename that the player is typing.
+    if (myGamesDialog.open && JSON.stringify(page.account) !== before) renderAccountBox();
     void syncRecords();
     void syncDeletions().catch(showError);
     // The blocks follow a login, so they load after the account.
@@ -530,7 +548,7 @@ export function setupMyGames(): void {
   myGamesStatsLink.href = `/stats${statsQuery({ ...ALL_STATS, scope: 'mine' })}`;
   myGamesStatsLink.insertAdjacentHTML('afterbegin', STATS_ICON);
   myGamesPrivate.addEventListener('change', () => void changeStatsPrivacy().catch(showError));
-  myGamesMore.addEventListener('click', () => void loadHistory(myGamesRequest, true).catch(showError));
+  myGamesMore.addEventListener('click', () => void loadMoreHistory(myGamesRequest).catch(showError));
   myGamesClear.addEventListener('click', () => {
     clearConfirm.showModal();
     clearConfirmNo.focus();

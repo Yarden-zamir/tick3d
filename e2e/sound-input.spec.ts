@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { DEFAULT_RANGE, frequencyAt, stepOfCell } from '../src/voice/mapping.ts';
-import { createOnline, expect, joinAsO, test } from './fixtures.ts';
+import { createOnline, expect, joinAsO, openMore, test } from './fixtures.ts';
 
 // Chromium plays a WAV file as a fake microphone and grants the microphone without a prompt.
 // The file is a steady G5 (784 Hz). In the default range (150 to 2400 Hz, 64 steps) that is step 38:
@@ -253,6 +253,7 @@ test('a playoff: the other player gets an invite, both sing the same targets, an
   const bob = await joinAsO(open, `/?code=${code}`);
   await oscillatorMic(alice.page);
   await oscillatorMic(bob.page);
+  await openMore(alice.page);
   await alice.page.locator('#voice-room-link').click();
   await expect(alice.page).toHaveURL(new RegExp(`/sound-input\\?code=${code}`));
   await expect(alice.page.locator('#playoff')).toBeVisible();
@@ -276,13 +277,15 @@ test('a playoff: the other player gets an invite, both sing the same targets, an
 test('a typed range and a spread apply, the board previews the frequency of each cell, and both stay after a reload', async ({ page }) => {
   await page.goto('/sound-input');
   await page.locator('#range-low').fill('200');
-  await page.locator('#range-low').dispatchEvent('change');
+  await page.locator('#range-low').press('Tab');
   await page.locator('#range-high').fill('800');
-  await page.locator('#range-high').dispatchEvent('change');
+  await page.locator('#range-high').press('Tab');
   await expect(page.locator('#range-mode')).toHaveText('Your range: 200–800 Hz');
-  // Less than half an octave stays out, with a message.
+  // Less than half an octave stays out, with a message. Tab commits the value as a player does: a change event
+  // sent by hand leaves the field changed, so the browser sends one more change when the field loses the focus.
+  // That change clears the message, the page under the pointer moves up, and the next click misses its button.
   await page.locator('#range-high').fill('250');
-  await page.locator('#range-high').dispatchEvent('change');
+  await page.locator('#range-high').press('Tab');
   await expect(page.locator('#range-note')).toContainText('half an octave');
   await expect(page.locator('#range-high')).toHaveValue('800');
 

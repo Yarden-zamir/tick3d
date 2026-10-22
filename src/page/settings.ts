@@ -2,7 +2,7 @@
 import { type Difficulty, DIFFICULTIES } from '../ai.ts';
 import { type TimeControl, NO_LIMIT, parseClock } from '../clock.ts';
 import type { Player } from '../game.ts';
-import { LAYOUTS, type MATCH_OPTIONS, SESSION_MODES, THEMES, VIEWS } from '../protocol.ts';
+import { LAYOUTS, type MATCH_OPTIONS, type MatchOptions, SESSION_MODES, THEMES, VIEWS } from '../protocol.ts';
 import { SOUND_SET_IDS, type SoundSetId } from '../sound-sets.ts';
 import { STORAGE_KEYS } from '../storage-keys.ts';
 
@@ -44,12 +44,21 @@ export type Settings = {
   soundSet: SoundSetId;
   // Play by voice (src/page/voice.ts). Like the mute, it belongs to the screen.
   voice: boolean;
+  // While the voice listens, a tap on the board or the keypad places nothing.
+  voiceOnly: boolean;
 };
-export type Toggle = (typeof MATCH_OPTIONS)[number];
+// Hide goes in steps. Each step hides what the steps before it hide: the history, then the board, then the coordinates.
+export const HIDE_STEPS = ['hideHistory', 'hideBoard', 'hideCoordinates'] as const satisfies readonly (typeof MATCH_OPTIONS)[number][];
+
+// The step that the Hide control shows: the last option that is on. The API can still turn on a later
+// option alone, for example the board without the history. The control then shows that later step.
+export function hideLevel(options: MatchOptions): number {
+  return HIDE_STEPS.findLastIndex((option) => options[option]) + 1;
+}
 
 export const DEFAULTS: Settings = {
   mode: 'computer',
-  difficulty: 'medium',
+  difficulty: 'easy',
   human: 'X',
   view: 'tower',
   layout: 'grid',
@@ -59,6 +68,7 @@ export const DEFAULTS: Settings = {
   theme: 'light',
   soundSet: 'pitched',
   voice: false,
+  voiceOnly: false,
 };
 
 export function oneOf<T extends string>(options: readonly T[], value: unknown, fallback: T): T {
@@ -91,6 +101,7 @@ function loadSettings(): Settings {
     theme: oneOf(THEMES, stored.theme, DEFAULTS.theme),
     soundSet: oneOf(SOUND_SET_IDS, stored.soundSet, DEFAULTS.soundSet),
     voice: bool(stored.voice, DEFAULTS.voice),
+    voiceOnly: bool(stored.voiceOnly, DEFAULTS.voiceOnly),
   };
 }
 

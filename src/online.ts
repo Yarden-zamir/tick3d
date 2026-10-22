@@ -1,4 +1,4 @@
-import { type Achievements, parseAchievements } from './achievements.ts';
+import { ACHIEVEMENT_IDS, type Achievements, parseAchievements } from './achievements.ts';
 import type { TimeControl } from './clock.ts';
 import { parseDeletedPeople } from './deletions.ts';
 import type { EpochMs } from './epoch.ts';
@@ -27,21 +27,28 @@ import {
   type SeatAction,
   type SessionUpdate,
   type SessionView,
+  type Leaderboard,
+  type StatsCard,
   type StatsFilter,
   type StatsPrivacy,
+  isDisplayName,
   parseStatsPrivacy,
   asPlayerToken,
   parseBlocks,
   parseCustomName,
   parseDeviceGameId,
   parseHistoryPage,
+  parsePersonId,
   parsePlayerInfo,
   parsePreviews,
   parsePublicGame,
   parseSessionView,
+  parseLeaderboard,
   statsQuery,
 } from './protocol.ts';
 import { STORAGE_KEYS } from './storage-keys.ts';
+import { type ClaimRequest, type ClaimedCode, type TesterCodes, parseClaimedCode, parseTesterCodes } from './share/codes.ts';
+import { type AppOpen, parseCopyAnswer } from './copies.ts';
 
 
 // crypto.randomUUID exists only on HTTPS and localhost. A phone on the local network loads the dev
@@ -114,8 +121,10 @@ async function call(method: string, path: string, body?: unknown, signal?: Abort
 const request = async (method: string, path: string, body?: unknown): Promise<SessionView> =>
   parseSessionView(await call(method, `/sessions${path}`, body));
 
-// `name` is the custom name of a player without a GitHub login, or null.
-export type Me = { loginAvailable: boolean; user: PlayerInfo | null; name: string | null };
+// `name` is the custom name of a player without a GitHub login, or null. `person` is the public person id of
+// this player (of the account when logged in), and `hasCopy` whether the player holds a copy of the paid Android app
+// (src/copies.ts). The server always sends both; null means no answer came yet.
+export type Me = { loginAvailable: boolean; user: PlayerInfo | null; name: string | null; person: PersonId | null; hasCopy: boolean | null };
 
 export function parseMe(value: unknown): Me {
   if (typeof value !== 'object' || value === null) throw new Error('invalid answer from /api/me');
@@ -124,10 +133,19 @@ export function parseMe(value: unknown): Me {
   // An older server sends no name.
   const raw = (value as Record<string, unknown>).name;
   const name = raw === undefined || raw === null ? null : parseCustomName(raw);
-  if (typeof loginAvailable !== 'boolean' || info === undefined || name === undefined || (raw !== undefined && raw !== null && raw !== name)) {
+  const person = parsePersonId((value as Record<string, unknown>).person);
+  const { hasCopy } = value as Record<string, unknown>;
+  if (
+    typeof loginAvailable !== 'boolean' ||
+    info === undefined ||
+    name === undefined ||
+    (raw !== undefined && raw !== null && raw !== name) ||
+    person === undefined ||
+    typeof hasCopy !== 'boolean'
+  ) {
     throw new Error('invalid answer from /api/me');
   }
-  return { loginAvailable, user: info, name };
+  return { loginAvailable, user: info, name, person, hasCopy };
 }
 
 // The page reads "My games" only to display it, so a light shape check is enough here.
@@ -138,11 +156,28 @@ export function parseMyGames(value: unknown): MyGames {
   return value as MyGames;
 }
 
+export function parseStatsCard(value: unknown): StatsCard {
+  if (typeof value !== 'object' || value === null) throw new Error('invalid answer from /api/stats/card/{person}');
+  const { person, unlocked } = value as Record<string, unknown>;
+  if (typeof person !== 'object' || person === null || !Array.isArray(unlocked)) throw new Error('invalid answer from /api/stats/card/{person}');
+  const { name, player, you } = person as Record<string, unknown>;
+  const info = player === null ? null : parsePlayerInfo(player);
+  const ids = unlocked.map((id: unknown) => ACHIEVEMENT_IDS.find((known) => known === id));
+  if (!isDisplayName(name) || info === undefined || typeof you !== 'boolean' || ids.some((id) => id === undefined)) throw new Error('invalid answer from /api/stats/card/{person}');
+  return { person: { name, player: info, you }, unlocked: ids.filter((id) => id !== undefined) };
+}
+
 function requireStatsPrivacy(value: unknown): StatsPrivacy {
   const privacy = parseStatsPrivacy(value);
   if (privacy === undefined) throw new Error('invalid answer from /api/me/stats-privacy');
   return privacy;
 }
+
+// The wait before a new event stream: 1 s, then twice as long after each failure, at most 15 s.
+const STREAM_RETRY_FIRST_MS = 1000;
+const STREAM_RETRY_MAX_MS = 15_000;
+
+const streamRetryMs = (failures: number): number => Math.min(STREAM_RETRY_FIRST_MS * 2 ** failures, STREAM_RETRY_MAX_MS);
 
 export const api = {
   create: (name: string, clock: TimeControl) => request('POST', '', { name, clock }),
@@ -171,8 +206,32 @@ export const api = {
   setStatsPrivacy: async (hidden: boolean) => requireStatsPrivacy(await call('PUT', '/me/stats-privacy', { private: hidden })),
   block: async (person: PersonId, name: string) => parseBlocks(await call('PUT', `/me/blocks/${person}`, { name })),
   unblock: async (person: PersonId) => parseBlocks(await call('DELETE', `/me/blocks/${person}`)),
-  report: (report: { code: Code; reason: ReportReason; note: string } & ({ message: number } | { person: PersonId })) => call('POST', '/reports', report),
+  // A person of the stats page has no session, so the report has no code.
+  report: (report: { reason: ReportReason; note: string } & ({ code: Code; message: number } | { code?: Code; person: PersonId })) =>
+    call('POST', '/reports', report),
   previews: async (): Promise<Previews> => parsePreviews(await call('GET', '/previews')),
+  // The promo codes of the Android closed test (/share).
+  testerCodes: async (): Promise<TesterCodes> => {
+    const codes = parseTesterCodes(await call('GET', '/testing/codes'));
+    if (codes === undefined) throw new Error('invalid answer from /api/testing/codes');
+    return codes;
+  },
+  claimTesterCode: async (id: number, claim: ClaimRequest): Promise<ClaimedCode> => {
+    const claimed = parseClaimedCode(await call('POST', `/testing/codes/${id}/claim`, claim));
+    if (claimed === undefined) throw new Error('invalid answer from /api/testing/codes/{codeId}/claim');
+    return claimed;
+  },
+  // The paid Android app opened on this device, with the inviter that /share kept. Answers whether the player holds a copy.
+  purchaseNonce: async (): Promise<string> => {
+    const answer = await call('POST', '/copies/nonce');
+    if (typeof answer !== 'object' || answer === null || !('nonce' in answer) || typeof answer.nonce !== 'string') throw new Error('invalid answer from /api/copies/nonce');
+    return answer.nonce;
+  },
+  reportAppOpen: async (open: AppOpen): Promise<boolean> => {
+    const answer = parseCopyAnswer(await call('POST', '/copies', open));
+    if (answer === undefined) throw new Error('invalid answer from /api/copies');
+    return answer.hasCopy;
+  },
   logout: () => call('POST', '/auth/logout'),
   // Login is a full page visit to GitHub and back to `returnTo`, by default this page.
   loginUrl: (returnTo = location.href) => `/api/auth/login?return=${encodeURIComponent(returnTo)}`,
@@ -224,19 +283,47 @@ export const api = {
   event: (event: ClientEvent) => call('POST', '/events', event),
   // The aggregates of the stats page. The page checks the shape (src/stats/main.ts).
   stats: (filter: StatsFilter): Promise<unknown> => call('GET', `/stats${statsQuery(filter)}`),
+  // The player card of a person view. It reads no game, so it answers before api.stats.
+  statsCard: async (person: PersonId): Promise<StatsCard> => parseStatsCard(await call('GET', `/stats/card/${person}`)),
+  // The common stats of each player (GET /api/leaderboard). It takes the range, mode and level of `filter`.
+  leaderboard: async (filter: StatsFilter): Promise<Leaderboard> =>
+    parseLeaderboard(await call('GET', `/leaderboard${statsQuery({ ...filter, scope: 'everyone', person: null })}`)),
 
   // The Nearby lobby (server/lobby.ts). The server holds an announcement until a guest answers, or for about 25 s.
   announceNearby: async (offer: string, id: HostId | undefined, signal: AbortSignal): Promise<Announced> =>
     parseAnnounced(await call('POST', '/nearby/hosts', { offer, ...(id === undefined ? {} : { id }) }, signal)),
-  nearbyHosts: async (): Promise<LobbyHost[]> => parseLobbyHosts(await call('GET', '/nearby/hosts')),
+  nearbyHosts: async (signal?: AbortSignal): Promise<LobbyHost[]> => parseLobbyHosts(await call('GET', '/nearby/hosts', undefined, signal)),
   answerNearby: (id: HostId, offer: string, answer: string) => call('POST', `/nearby/hosts/${id}/answer`, { answer, offer }),
 
   // Calls onChange after every change, and after each reconnect in case a change was missed.
   // The token marks this page's seats as present, so the other player sees "here" or "away".
+  // The browser reconnects by itself after a network error, but it stops for good after an error status,
+  // such as the 502 of the proxy while a deploy replaces the API. Then this opens a new stream after a wait.
   subscribe(code: Code, onChange: () => void): () => void {
-    const source = new EventSource(`/api/sessions/${code}/events?player=${encodeURIComponent(token)}`);
-    source.onmessage = () => onChange();
-    source.onopen = () => onChange();
-    return () => source.close();
+    let source: EventSource | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let failures = 0;
+    // Set when the page leaves the session: an error of the closing stream must not open a new one.
+    let stopped = false;
+    const connect = () => {
+      const opened = new EventSource(`/api/sessions/${code}/events?player=${encodeURIComponent(token)}`);
+      source = opened;
+      opened.onmessage = () => onChange();
+      opened.onopen = () => {
+        failures = 0;
+        onChange();
+      };
+      opened.onerror = () => {
+        if (stopped || opened.readyState !== EventSource.CLOSED) return;
+        timer = setTimeout(connect, streamRetryMs(failures));
+        failures += 1;
+      };
+    };
+    connect();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      source?.close();
+    };
   },
 };

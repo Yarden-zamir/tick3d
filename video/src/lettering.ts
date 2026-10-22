@@ -9,13 +9,13 @@ import type { Rgba, Theme, Token } from './themes.ts';
 // Video pixels per CSS pixel: the video draws the game as a phone screen at 2x does.
 export const PX = 2;
 const FONT = '"Bricolage Grotesque"';
-const BORDER = 3 * PX;
-const SHADOW = 4 * PX;
-const SQUARE = 1080;
+export const BORDER = 3 * PX;
+export const SHADOW = 4 * PX;
+export const SQUARE = 1080;
 // The URL suffix against the wordmark: a little over half, so it reads on a phone in landscape too.
 const SUFFIX = 0.55;
 
-const css = ({ r, g, b, a }: Rgba) => `rgb(${Math.round(r * 255)} ${Math.round(g * 255)} ${Math.round(b * 255)} / ${a})`;
+export const css = ({ r, g, b, a }: Rgba) => `rgb(${Math.round(r * 255)} ${Math.round(g * 255)} ${Math.round(b * 255)} / ${a})`;
 
 export type Word = { text: string; at: number; badge?: Badge; note?: string };
 // A plain word: `--surface` letters with a thick `--line` outline and a hard shadow. A sticker: the "3d" of

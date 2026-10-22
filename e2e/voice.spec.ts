@@ -1,5 +1,5 @@
 import { DEFAULT_RANGE, frequencyAt, stepOfCell } from '../src/voice/mapping.ts';
-import { cell, expect, expectToast, marks, oscillatorMic, setTone, status, test, toasts } from './fixtures.ts';
+import { cell, expect, expectToast, marks, openMore, oscillatorMic, setTone, status, test, toasts } from './fixtures.ts';
 
 // The middle of the pitch band of a cell in the default range of /sound-input.
 const toneOf = (index: number) => frequencyAt(stepOfCell(index) + 0.5, { range: DEFAULT_RANGE, spread: 'log' });
@@ -13,6 +13,8 @@ test('a held note places the move on its cell, and the computer replies', async 
   await page.reload();
   await expect(status(page)).toContainText('Your move');
 
+  // Play by voice is a field of the More card.
+  await openMore(page);
   const voice = page.getByRole('button', { name: 'Play by voice' });
   await expect(voice).toHaveAttribute('aria-pressed', 'false');
   await voice.click();
@@ -40,6 +42,7 @@ test('a held note places the move on its cell, and the computer replies', async 
 
   // The setting stays after a reload.
   await page.reload();
+  await openMore(page);
   await expect(page.getByRole('button', { name: 'Play by voice' })).toHaveAttribute('aria-pressed', 'true');
 });
 
@@ -47,6 +50,7 @@ test('in a friend game the voice plays both seats, and a taken cell gives the no
   const { page, context } = await open({ settings: { mode: 'friend' } });
   await context.addInitScript(oscillatorMic);
   await page.reload();
+  await openMore(page);
   await page.getByRole('button', { name: 'Play by voice' }).click();
 
   await setTone(page, toneOf(TARGET));
@@ -56,16 +60,18 @@ test('in a friend game the voice plays both seats, and a taken cell gives the no
   await page.waitForTimeout(2500);
   expect((await toasts(page)).slice(before)).toEqual([]);
   await expect(marks(page)).toHaveCount(1);
-  // A new note on the taken cell, after a silence, gives the normal refusal and places nothing.
-  await setTone(page, null);
-  await page.waitForTimeout(1000);
-  await setTone(page, toneOf(TARGET));
-  await expectToast(page, 'That cell is taken');
-  await expect(marks(page)).toHaveCount(1);
 
   // O plays by voice on another cell.
   await setTone(page, toneOf(TARGET + 1));
   await expect(cell(page, TARGET + 1)).toHaveClass(/\bo\b/);
+  await expect(marks(page)).toHaveCount(2);
+
+  // A new note on a taken cell, after a silence, gives the normal refusal and places nothing.
+  // The cell of X is not the last move: a note on the last move would undo it, as a tap does.
+  await setTone(page, null);
+  await page.waitForTimeout(1000);
+  await setTone(page, toneOf(TARGET));
+  await expectToast(page, 'That cell is taken');
   await expect(marks(page)).toHaveCount(2);
 });
 
@@ -75,6 +81,7 @@ test('a blocked microphone shows what to do, and turns the voice off', async ({ 
     navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
   });
   await page.reload();
+  await openMore(page);
   const voice = page.getByRole('button', { name: 'Play by voice' });
   await voice.click();
   await expectToast(page, 'The mic is blocked');
@@ -93,6 +100,7 @@ test('on a touch screen, the voice panel keeps the space of Recentre tilt only w
     }, tilt);
     const page = await context.newPage();
     await page.goto('/');
+    await openMore(page);
     await page.getByRole('button', { name: 'Play by voice' }).click();
     await expect(page.locator('#voice-panel')).toBeVisible();
     const recentre = page.locator('#voice-recentre');
