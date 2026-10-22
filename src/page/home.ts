@@ -37,7 +37,7 @@ async function goHome(): Promise<void> {
   history.replaceState(null, '', location.pathname);
   settings.mode = 'computer';
   saveSettings();
-  render();
+  // openLocalSession draws the session, so the screen shows no empty board in between (see openMode).
   await openLocalSession('computer');
   const opened = page.session;
   if (opened === undefined || current().moves.length === 0) return;
