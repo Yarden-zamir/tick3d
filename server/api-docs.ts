@@ -962,6 +962,8 @@ const ACHIEVEMENTS_EXAMPLE = achievementProgress([
     finishedAt: toEpochMs(T0 + 70_000),
     opponent: null,
     input: null,
+    invitedOpponentAt: null,
+    invitedByOpponentAt: null,
   },
 ]);
 

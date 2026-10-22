@@ -70,6 +70,14 @@ export const ACHIEVEMENT_ICONS: Record<AchievementId, string> = {
   'invite-5': '<path d="M3 10v4h3l9 5V5L6 10Z"/><path d="M6 14l1.5 6h3L9 15.5"/><path d="M18.5 9a4 4 0 0 1 0 6M20.5 6.5a7.5 7.5 0 0 1 0 11" stroke-width="1.8"/>',
   'invite-25':
     '<rect x="1" y="10.5" width="15" height="3.5" rx="1.75" transform="rotate(-40 8.5 12.25)"/><circle cx="6.2" cy="14.2" r="0.7" fill="currentColor"/><circle cx="8.5" cy="12.25" r="0.7" fill="currentColor"/><circle cx="10.8" cy="10.3" r="0.7" fill="currentColor"/><path d="M16.5 8.5V3l4.5-1v5.5"/><circle cx="15.2" cy="8.7" r="1.5" fill="currentColor"/><circle cx="19.7" cy="7.7" r="1.5" fill="currentColor"/>',
+  // Three generations: one person, the person they invited, and the person that one invited.
+  'family-tree': '<circle cx="12" cy="4.5" r="2.5"/><circle cx="5.5" cy="12" r="2.5"/><circle cx="18.5" cy="12" r="2.5"/><circle cx="18.5" cy="19.5" r="2.5" fill="currentColor"/><path d="M10.3 6.3 7.2 10.1M13.7 6.3l3.1 3.8M18.5 14.5v2.5"/>',
+  // A small figure that grows into a big monster.
+  'beaten-by-invitee':
+    '<circle cx="4.5" cy="15" r="2"/><path d="M1.5 21.5a3 3 0 0 1 6 0"/><path d="M10.5 21.5V11a5.5 5.5 0 0 1 11 0v10.5l-1.8-1.5-1.9 1.5-1.8-1.5-1.8 1.5-1.8-1.5Z"/><path d="M12.5 6.5 11 3M19.5 6.5 21 3"/><circle cx="14" cy="11" r="1" fill="currentColor"/><circle cx="18" cy="11" r="1" fill="currentColor"/>',
+  // A small figure on the shoulders of a big one, with a raised arm.
+  'beat-inviter':
+    '<circle cx="12" cy="10.5" r="2.5"/><path d="M6 21.5V18a6 6 0 0 1 12 0v3.5"/><circle cx="12" cy="3" r="1.8"/><path d="M9 8.5 10.5 6h3L15 8.5M13.5 6l3-3.5"/>',
 };
 // A hidden achievement before its unlock.
 export const HIDDEN_ICON = '<path d="M8.5 9a3.5 3.5 0 1 1 5 3.2c-1 .5-1.5 1.2-1.5 2.3v.5"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/>';

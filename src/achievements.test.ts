@@ -42,6 +42,8 @@ function game(moves: number[], extra: Partial<AchievementGame> = {}): Achievemen
     finishedAt: ms(clock),
     opponent: null,
     input: null,
+    invitedOpponentAt: null,
+    invitedByOpponentAt: null,
     ...extra,
   };
 }
@@ -287,7 +289,7 @@ describe('parseAchievements', () => {
 describe('invite achievements', () => {
   it('unlock at the claim that reaches the goal, in any order, with no game', () => {
     const invites = [50, 10, 40, 30, 20].map(ms);
-    const progress = achievementProgress([game(X_ROW)], invites);
+    const progress = achievementProgress([game(X_ROW)], { direct: invites, second: [] });
     expect(progressOf(progress, 'invite-1')).toEqual({ id: 'invite-1', count: 1, unlockedAt: ms(10), unlockedBy: null });
     expect(progressOf(progress, 'invite-5')).toEqual({ id: 'invite-5', count: 5, unlockedAt: ms(50), unlockedBy: null });
     expect(progressOf(progress, 'invite-25')).toEqual({ id: 'invite-25', count: 5, unlockedAt: null, unlockedBy: null });
@@ -297,5 +299,39 @@ describe('invite achievements', () => {
 
   it('stay locked without invites, as on a device', () => {
     expect(unlocks(game(X_ROW)).filter((id) => id.startsWith('invite-'))).toEqual([]);
+  });
+});
+
+describe('the invite pair', () => {
+  // The player invited the opponent (or the opponent invited the player) at 1 s; the games finish after that.
+  const invite = ms(1);
+
+  it('unlock for the inviter who loses, and for the invited person who wins, online or over Wi-Fi', () => {
+    expect(unlocks(game(O_ROW, { ...online('bob'), invitedOpponentAt: invite }))).toContain('beaten-by-invitee');
+    expect(unlocks(game(X_ROW, { ...online('alice'), mode: 'nearby', invitedByOpponentAt: invite }))).toContain('beat-inviter');
+  });
+
+  it('need the right outcome: a win over your invitee or a loss to your inviter counts for neither', () => {
+    const ids = unlocks(game(X_ROW, { ...online('bob'), invitedOpponentAt: invite }), game(O_ROW, { ...online('alice'), invitedByOpponentAt: invite }));
+    expect(ids).not.toContain('beaten-by-invitee');
+    expect(ids).not.toContain('beat-inviter');
+  });
+
+  it('count no game before the invite', () => {
+    const early = game(X_ROW, online('alice'));
+    expect(unlocks({ ...early, invitedByOpponentAt: early.finishedAt })).not.toContain('beat-inviter');
+    expect(unlocks({ ...early, invitedByOpponentAt: ms(early.finishedAt + 1) })).not.toContain('beat-inviter');
+  });
+
+  it('count no friend game and no computer game', () => {
+    expect(unlocks(game(X_ROW, { ...friend, invitedByOpponentAt: invite }), game(X_ROW, { invitedByOpponentAt: invite }))).not.toContain('beat-inviter');
+  });
+});
+
+describe('Family tree', () => {
+  it('unlocks at the first person that an invitee of the player brings, and not for a direct invite', () => {
+    const progress = achievementProgress([], { direct: [ms(10)], second: [ms(30), ms(20)] });
+    expect(progressOf(progress, 'family-tree')).toEqual({ id: 'family-tree', count: 1, unlockedAt: ms(20), unlockedBy: null });
+    expect(unlocked(achievementProgress([], { direct: [ms(10), ms(20)], second: [] }))).not.toContain('family-tree');
   });
 });
