@@ -3270,6 +3270,13 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.6rem;
 }
 
+/* A long custom name or login wraps, so nothing is cut off at 390 px. */
+.account b,
+.connected-account {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Two classes, so the round avatar wins over `.end-card img` (My games is an end-card dialog). */
 .account .avatar {
   flex-shrink: 0;
