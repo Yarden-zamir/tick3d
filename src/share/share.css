@@ -20,6 +20,11 @@
   justify-self: start;
 }
 
+/* The header Share menu keeps the full-width buttons of the game page. */
+.share .share-menu .btn {
+  justify-self: stretch;
+}
+
 /* ---- The share button ---- */
 
 .share-page {

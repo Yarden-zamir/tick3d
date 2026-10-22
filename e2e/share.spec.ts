@@ -190,6 +190,25 @@ test('an invite link credits its first inviter in the claim, and the share butto
   expect((await claim).postDataJSON()).toEqual({ email: 'dana@example.com', name: 'Dana', by: INVITER });
 });
 
+test('the header Share menu shares the invite link, and Play online starts a game on the game page', async ({ open }) => {
+  const { page } = await open({ path: PAGES.share.path });
+  await page.evaluate(() => {
+    Object.assign(navigator, {
+      share: async (data: ShareData) => {
+        Object.assign(window, { e2eShared: data });
+      },
+    });
+  });
+  await page.getByRole('button', { name: 'Share', exact: true }).click();
+  await page.locator('#game-share-menu').getByRole('button', { name: 'Share tick3d' }).click();
+  await expect.poll(async () => (await page.evaluate(() => (window as unknown as { e2eShared?: ShareData }).e2eShared))?.url).toMatch(/\/share(\?by=[0-9a-f]{16})?$/);
+  await expect(page.locator('#game-share-menu')).toBeHidden();
+
+  await page.getByRole('button', { name: 'Share', exact: true }).click();
+  await page.locator('#game-share-menu').getByRole('button', { name: 'Play online with a friend' }).click();
+  await expect(page).toHaveURL(/^[^?]*\/\?(.*&)?code=[A-Z0-9]{4}/);
+});
+
 test('the old address /testing redirects to /share with its query', async ({ request }) => {
   const response = await request.get('/testing?by=0123456789abcdef', { maxRedirects: 0 });
   expect(response.status()).toBe(302);

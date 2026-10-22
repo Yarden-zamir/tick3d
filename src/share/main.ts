@@ -4,6 +4,7 @@ import '../style.css';
 import './share.css';
 import { element } from '../element.ts';
 import { setupPageHeader } from '../header/header.ts';
+import { PLAY_ONLINE_HREF } from '../header/play-online-link.ts';
 import { renderQr } from '../nearby/qr.ts';
 import { OnlineError, api } from '../online.ts';
 import { STORAGE_KEYS } from '../storage-keys.ts';
@@ -117,6 +118,15 @@ async function sharePage(): Promise<void> {
   }
 }
 shareButton.addEventListener('click', () => void sharePage());
+
+// The Share menu of the header, as on the game page (src/page/share-menu.ts). "Share tick3d" shares the same
+// link as the big button. "Play online with a friend" opens the game page, which starts the game.
+const headerShareMenu = element('#game-share-menu', HTMLDivElement);
+element('#game-share-play', HTMLButtonElement).addEventListener('click', () => location.assign(PLAY_ONLINE_HREF));
+element('#game-share-site', HTMLButtonElement).addEventListener('click', () => {
+  headerShareMenu.hidePopover();
+  void sharePage();
+});
 
 // ---- Storage ----
 

@@ -62,6 +62,12 @@ describe('page markup', () => {
     }
   });
 
+  // /share has the Share button and menu of the game header, with its own script (src/share/main.ts).
+  it('has the same Share menu on /share as on the game page', () => {
+    const menu = (html: string) => block(html, '<button type="button" class="info-button game-share"', '</div>');
+    expect(menu(read(`../${PAGES.share.file}`))).toBe(menu(read(GAME)));
+  });
+
   // The .modal class in style.css holds the page scroll and keeps the scroll inside the modal.
   it('gives every modal surface the modal class', () => {
     const openTags = (html: string) => html.split('<').slice(1).map((part) => part.slice(0, part.indexOf('>')));
