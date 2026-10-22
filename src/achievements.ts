@@ -631,7 +631,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'family-tree',
     name: 'Family tree',
-    description: 'Somebody you invited brings a new person, who gets the game through their invite link.',
+    description: 'Somebody you invited brings a new person who gets the game.',
     tier: 'gold',
     hidden: false,
     goal: 1,
