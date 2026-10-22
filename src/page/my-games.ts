@@ -23,7 +23,7 @@ import {
   statsQuery,
   toGame,
 } from '../protocol.ts';
-import { STATS_ICON } from '../icons.ts';
+import { GITHUB_ICON, STATS_ICON } from '../icons.ts';
 import { deviceDataKeys } from '../storage-keys.ts';
 import { syncDeletions } from './deletions.ts';
 import { accountLink } from '../header/header.ts';
@@ -255,9 +255,7 @@ function renderAccountBox(): void {
     logout.className = 'btn btn-small';
     logout.textContent = 'Log out';
     logout.addEventListener('click', () => void logOut().then(() => myGamesDialog.close(), showError));
-    accountBox.append(avatar, name);
-    if (user.name !== null) accountBox.append(` (GitHub: ${user.login})`);
-    accountBox.append(logout);
+    accountBox.append(avatar, name, logout, connectedAccounts([connectedAccount(GITHUB_ICON, 'GitHub', user.login)]));
     if (navigator.onLine) accountBox.append(renameControls({ current: user.name, fallback: user.login, reset: 'Use GitHub name' }), pictureControls(user));
   } else {
     // The same name that the server shows to the other players: the custom name, else the generated one (src/names.ts).
@@ -453,6 +451,32 @@ export function renderSessionGames(): void {
 
 // Rename for a player without a GitHub login: an inline form, and a reset to the generated name.
 // The dialog covers the toasts, so a refused name shows in the form.
+// The external accounts that the tick3d account is linked to, one row each. Today GitHub is the only one.
+function connectedAccounts(rows: readonly HTMLElement[]): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'connected-accounts';
+  const title = document.createElement('small');
+  title.textContent = 'Connected accounts';
+  box.append(title, ...rows);
+  return box;
+}
+
+// `icon` is the inline SVG of the provider mark (src/icons.ts).
+function connectedAccount(icon: string, provider: string, login: string): HTMLElement {
+  const row = document.createElement('span');
+  row.className = 'connected-account';
+  row.title = provider;
+  row.innerHTML = icon;
+  // The mark names the provider for a screen reader too.
+  const mark = row.querySelector('svg');
+  if (mark === null) throw new Error(`the ${provider} icon has no svg`);
+  mark.removeAttribute('aria-hidden');
+  mark.setAttribute('role', 'img');
+  mark.setAttribute('aria-label', provider);
+  row.append(login);
+  return row;
+}
+
 // `current` is the custom name or null, `fallback` the name without it, and `reset` the label of the button that clears it.
 type NameChoice = { current: string | null; fallback: string; reset: string };
 

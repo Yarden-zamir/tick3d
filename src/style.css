@@ -4713,6 +4713,25 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: none;
 }
 
+/* The linked external accounts in My games (src/page/my-games.ts connectedAccounts), one row each. */
+.connected-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+}
+
+.connected-accounts small {
+  color: var(--muted);
+}
+
+.connected-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 700;
+}
+
 /* Without a login, the picture buttons show grayed out with this hint (src/page/my-games.ts pictureControls). */
 .picture-hint {
   align-self: center;
