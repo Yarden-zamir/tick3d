@@ -66,14 +66,13 @@ function changeSetting(setting: string, value: string | undefined): void {
 function openMode(previousMode: Mode): Promise<void> {
   if (previousMode === 'nearby' && nearbyKind() !== 'idle') endNearby();
   leaveSession();
+  // A local session opens from the device store in a few milliseconds, and openLocalSession draws it.
+  // So the screen goes from the old session to the new one in one step, with no empty screen in between.
+  if (settings.mode === 'computer' || settings.mode === 'friend') return openLocalSession(settings.mode).catch(showError);
   render();
   if (settings.mode === 'online') return previousMode === 'online' ? Promise.resolve() : createSession();
-  if (settings.mode === 'nearby') {
-    openNearby();
-    return Promise.resolve();
-  }
-  // Each match-up continues its newest session on this device, or starts one.
-  return openLocalSession(settings.mode).catch(showError);
+  openNearby();
+  return Promise.resolve();
 }
 
 // "Play online with a friend" in the Share menu: a new online game, as the Online choice of the Opponent picker
