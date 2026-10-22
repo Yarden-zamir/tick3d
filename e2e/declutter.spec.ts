@@ -37,7 +37,8 @@ test('the tutorial slider snaps the video to the frame of a checkpoint and shows
 
 test('on a phone, the Settings button scrolls to the settings card and then hides', async ({ open }) => {
   const { page } = await open({ settings: { mode: 'computer' } });
-  await page.setViewportSize({ width: 390, height: 844 });
+  // A short phone: there the tower fills the screen. On a 390x844 phone the game actions show under the tower, so the button hides.
+  await page.setViewportSize({ width: 375, height: 667 });
   const hint = page.getByRole('button', { name: 'Settings', exact: true });
   await expect(hint).toBeVisible();
   await hint.click();
