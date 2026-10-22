@@ -4,7 +4,8 @@
 // The header setup also installs the click sound of every control (src/click-sound.ts).
 import { element } from '../element.ts';
 import { type Me, api, OnlineError } from '../online.ts';
-import type { PlayerInfo } from '../protocol.ts';
+import { type PlayerInfo, accountNameOf } from '../protocol.ts';
+import { avatarSrc } from '../avatar.ts';
 import { myGamesHref } from './my-games-link.ts';
 import { setupTooltips } from '../tooltip.ts';
 import { setupClickSound } from '../click-sound.ts';
@@ -18,8 +19,8 @@ const accountName = element('#account-name', HTMLSpanElement);
 
 export function showAccount(user: PlayerInfo | null): void {
   accountAvatar.hidden = user === null;
-  if (user !== null) accountAvatar.src = `${user.avatar}&s=48`;
-  accountName.textContent = user?.login ?? 'My games';
+  if (user !== null) accountAvatar.src = avatarSrc({ player: user, name: user.login }, 24);
+  accountName.textContent = accountNameOf(user) ?? 'My games';
   // On narrow phones only the icon shows, so the spoken name carries the login too.
   accountLink.setAttribute('aria-label', user === null ? 'My games' : `My games, logged in as ${user.login}`);
 }

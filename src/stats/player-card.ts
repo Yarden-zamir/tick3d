@@ -2,7 +2,7 @@
 // achievements in a row that scrolls, and Report or block (the Apple and Google Play rules for user content).
 import { badge } from '../achievement-list.ts';
 import { type AchievementId, achievementOf } from '../achievements.ts';
-import { avatarImage } from '../avatar.ts';
+import { avatarImage, hiddenLogin } from '../avatar.ts';
 import { changeBlock, isBlocked } from '../blocks.ts';
 import { api } from '../online.ts';
 import type { PersonId, StatsCard } from '../protocol.ts';
@@ -50,6 +50,8 @@ export function playerCard(box: HTMLElement, id: PersonId, { person, unlocked }:
   box.removeAttribute('aria-busy');
   const head = el('div', 'player-card-head');
   const title = el('h2', 'player-card-name', `Stats of ${person.name}`);
+  const login = hiddenLogin(person);
+  if (login !== null) title.append(' ', el('small', 'player-card-login', `GitHub: ${login}`));
   head.append(avatarImage(person, 48), title);
   const status = el('p', 'player-card-status');
   status.setAttribute('role', 'status');

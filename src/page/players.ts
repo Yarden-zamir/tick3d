@@ -3,7 +3,7 @@
 // A change of the other player's seat waits for that player: they get a prompt to accept or decline.
 import { avatarFor, avatarPlaceholder, type Person } from '../avatar.ts';
 import { type Player, other } from '../game.ts';
-import type { ConsentAction, PersonId, SeatAction, SeatRequestView, SessionView } from '../protocol.ts';
+import { type ConsentAction, type PersonId, type SeatAction, type SeatRequestView, type SessionView, accountNameOf } from '../protocol.ts';
 import { EYE_ICON } from '../icons.ts';
 import {
   playersBox,
@@ -26,7 +26,7 @@ import { nowMs, page, shared } from './state.ts';
 // A blocked player shows with a generated name and picture (src/page/safety.ts).
 export function seatPerson(view: SessionView, seat: Player): Person {
   const player = view.players[seat];
-  return shownPerson(view.people[seat], { player, name: player?.login ?? view.names[seat] ?? `Player ${seat}` });
+  return shownPerson(view.people[seat], { player, name: accountNameOf(player) ?? view.names[seat] ?? `Player ${seat}` });
 }
 
 // The name of the player on a seat, or null for an empty seat.
@@ -35,7 +35,7 @@ function seatHolder(view: SessionView, seat: Player): string | null {
 }
 
 // The watcher that a replace request seats.
-const requestWatcher = (request: SeatRequestView): string => request.watcher?.player?.login ?? request.watcher?.name ?? 'a watcher';
+const requestWatcher = (request: SeatRequestView): string => accountNameOf(request.watcher?.player ?? null) ?? request.watcher?.name ?? 'a watcher';
 
 function requestText(request: SeatRequestView, asker: string): string {
   const texts: Record<ConsentAction, string> = {
@@ -237,7 +237,7 @@ export function renderPlayers(): void {
     return row(seat, holder === null ? null : seatPerson(view, seat), holder ?? 'Empty seat', note, actions, you === seat ? null : view.people[seat]);
   });
   const watcherRows = view.watchers.map((watcher) => {
-    const person = shownPerson(watcher.person, { player: watcher.player, name: watcher.player?.login ?? watcher.name });
+    const person = shownPerson(watcher.person, { player: watcher.player, name: accountNameOf(watcher.player) ?? watcher.name });
     const name = person.name;
     const actions: HTMLButtonElement[] = [];
     if (you !== null) {

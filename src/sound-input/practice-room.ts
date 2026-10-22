@@ -24,7 +24,7 @@ import {
   targetSteps,
 } from '../practice/practice.ts';
 import { element } from '../element.ts';
-import type { Code, SessionView } from '../protocol.ts';
+import { type Code, type SessionView, accountNameOf } from '../protocol.ts';
 import { sounds } from '../sound.ts';
 import type { Board } from '../board/board.ts';
 import type { Voice, VoiceFrame } from '../voice/engine.ts';
@@ -439,7 +439,7 @@ export function createPracticeRoom({ voice, board, rail, cells, startMic, show }
   }
 
   function seatName(view: SessionView, seat: 'X' | 'O'): string {
-    return view.players[seat]?.login ?? view.names[seat] ?? seat;
+    return accountNameOf(view.players[seat]) ?? view.names[seat] ?? seat;
   }
 
   function playoffMessage(playoff: Playoff, you: 'X' | 'O', themName: string): string {

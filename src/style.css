@@ -3282,6 +3282,13 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.6rem;
 }
 
+/* A long custom name or login wraps, so nothing is cut off at 390 px. */
+.account b,
+.connected-account {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Two classes, so the round avatar wins over `.end-card img` (My games is an end-card dialog). */
 .account .avatar {
   flex-shrink: 0;
@@ -4819,6 +4826,31 @@ body[data-turn='O'] .status[data-state='playing'] {
 
 .rename-problem:empty {
   display: none;
+}
+
+/* The linked external accounts in My games (src/page/my-games.ts connectedAccounts), one row each. */
+.connected-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+}
+
+.connected-accounts small {
+  color: var(--muted);
+}
+
+.connected-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 700;
+}
+
+/* Without a login, the picture buttons show grayed out with this hint (src/page/my-games.ts pictureControls). */
+.picture-hint {
+  align-self: center;
+  color: var(--muted);
 }
 
 /* The tabs of My games (src/page/my-games-layout.ts). Nothing is wider than the dialog: every part

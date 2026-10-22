@@ -5,7 +5,7 @@ import { MAX_EPOCH_MS } from '../epoch.ts';
 import { type Player, other, winnerOf } from '../game.ts';
 import { nameOf } from '../names.ts';
 import { api, OnlineError, token } from '../online.ts';
-import { type GameId, type PublicGame, onlineGameParts, parseResultUpload, toGame } from '../protocol.ts';
+import { type GameId, accountNameOf, type PublicGame, onlineGameParts, parseResultUpload, toGame } from '../protocol.ts';
 import { cardFilename } from '../card.ts';
 import { lightSungCell } from './board.ts';
 import { gameViewEl, gameViewTitle, gameViewPlayers, gameViewDetails, gameViewPlay, gameViewSong, reviewExit } from './dom.ts';
@@ -82,7 +82,7 @@ export async function closeGameView(): Promise<void> {
 export function viewerName(shown: PublicGame, seat: Player): string {
   if (shown.computer === seat) return 'Computer';
   if (shown.mode === 'friend') return `Player ${seat}`;
-  return shown.players[seat]?.login ?? shown.names[seat] ?? `Player ${seat}`;
+  return accountNameOf(shown.players[seat]) ?? shown.names[seat] ?? `Player ${seat}`;
 }
 
 function modeLabel(shown: PublicGame): string {

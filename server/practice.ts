@@ -3,7 +3,7 @@
 import { listValue } from '@duckdb/node-api';
 import { PRACTICE_MODES, PRESET_IDS, type PracticeBoard, type PracticeLeader, type PracticeMode, type PracticeStats, type PresetId } from '../src/practice/practice.ts';
 import { type RowOf, type Rows, int, nullable, num, oneOf } from './sql.ts';
-import { PERSON, PERSON_COLUMNS, personName } from './stats.ts';
+import { ACCOUNT_NAME, PERSON, PERSON_COLUMNS, personName } from './stats.ts';
 
 // One row per run, with the person (the GitHub account, else the token), its custom name, and a sort
 // key: a target run by its total time, an echo run by its points (more first), then its time. The best
@@ -11,10 +11,10 @@ import { PERSON, PERSON_COLUMNS, personName } from './stats.ts';
 const RUNS = `WITH runs AS (
   FROM practice_runs LEFT JOIN player_tokens pt USING (token) LEFT JOIN users u ON u.github_id = pt.github_id
     LEFT JOIN player_names pn USING (token)
-  SELECT mode, preset, ${PERSON} AS person, u.login, pn.name AS custom, total_ms, score, round_ms,
+  SELECT mode, preset, ${PERSON} AS person, ${ACCOUNT_NAME} AS account, pn.name AS custom, total_ms, score, round_ms,
     CASE WHEN mode = 'echo' THEN (1000 - score)::BIGINT * 1000000000 + total_ms ELSE total_ms::BIGINT END AS key
 ), best AS (
-  SELECT mode, preset, person, any_value(login) AS login, any_value(custom) AS custom, min(key) AS key, arg_min(total_ms, key) AS total_ms, arg_min(score, key) AS score
+  SELECT mode, preset, person, any_value(account) AS account, any_value(custom) AS custom, min(key) AS key, arg_min(total_ms, key) AS total_ms, arg_min(score, key) AS score
   FROM runs GROUP BY mode, preset, person
 )`;
 
@@ -35,8 +35,8 @@ function leader(row: RowOf<typeof LEADER>): PracticeLeader {
 // `only` limits the list to one mode and preset.
 async function leaders(rows: Rows, limit: number, only?: { mode: PracticeMode; preset: PresetId }): Promise<PracticeLeader[]> {
   const found = await rows(
-    `${RUNS} SELECT mode, preset, row_number() OVER (PARTITION BY mode, preset ORDER BY key, login NULLS LAST, person)::INTEGER AS rank,
-       login, custom, person, total_ms, score
+    `${RUNS} SELECT mode, preset, row_number() OVER (PARTITION BY mode, preset ORDER BY key, account NULLS LAST, person)::INTEGER AS rank,
+       account, custom, person, total_ms, score
      FROM best ${only === undefined ? '' : 'WHERE mode = $mode AND preset = $preset'}
      QUALIFY rank <= $limit ORDER BY mode, preset, rank`,
     only === undefined ? { limit } : { limit, ...only },

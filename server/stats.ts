@@ -146,11 +146,15 @@ const METRICS = `${SAMPLE}, m AS (
 export const PERSON = `coalesce('github:' || pt.github_id, token)`;
 
 // The columns that personName reads.
-export const PERSON_COLUMNS = { login: nullable(text), custom: nullable(text), person: text };
+export const PERSON_COLUMNS = { account: nullable(text), custom: nullable(text), person: text };
 
-// The GitHub login of a person (PERSON), else their custom name, else the generated name of their token.
-// The token itself stays here. A query that uses it selects `login`, `custom` and `person`.
-export const personName = (row: RowOf<typeof PERSON_COLUMNS>) => row.login ?? row.custom ?? nameOf(row.person);
+// The name of the GitHub account of a person (PERSON, ACCOUNT_NAME), else the custom name of the device,
+// else the generated name of their token. The token itself stays here. A query that uses it selects
+// `account`, `custom` and `person`.
+export const personName = (row: RowOf<typeof PERSON_COLUMNS>) => row.account ?? row.custom ?? nameOf(row.person);
+
+// The name of an account (users u), as accountName in src/protocol.ts: the custom name, else the login.
+export const ACCOUNT_NAME = 'coalesce(u.name, u.login)';
 
 // The rows of a count by key. A null key counts as 'unknown'.
 const COUNT = { key: nullable(text), count: int };
@@ -479,13 +483,13 @@ async function personalStats(q: Query, outcomes: SideOutcome[], withOpponents: b
   const opponents = !withOpponents ? [] : await q(`${GAMES},
     other AS (SELECT CASE side WHEN 'X' THEN player_o ELSE player_x END AS token, winner, side
       FROM g WHERE side IS NOT NULL AND mode <> 'computer'),
-    people AS (SELECT ${PERSON} AS person, any_value(u.login) AS login, any_value(pn.name) AS custom, count(*)::INTEGER AS games,
+    people AS (SELECT ${PERSON} AS person, any_value(${ACCOUNT_NAME}) AS account, any_value(pn.name) AS custom, count(*)::INTEGER AS games,
         count(*) FILTER (winner = side)::INTEGER AS won, count(*) FILTER (winner IS NULL)::INTEGER AS drawn,
         count(*) FILTER (winner <> side)::INTEGER AS lost
       FROM other LEFT JOIN player_tokens pt USING (token) LEFT JOIN users u ON u.github_id = pt.github_id
         LEFT JOIN player_names pn USING (token)
       WHERE token IS NOT NULL GROUP BY person)
-    SELECT * FROM people ORDER BY games DESC, login NULLS LAST, person LIMIT 5`,
+    SELECT * FROM people ORDER BY games DESC, account NULLS LAST, person LIMIT 5`,
     { ...PERSON_COLUMNS, games: int, won: int, drawn: int, lost: int },
   );
   // Your survival records: per level, the most moves of a game that the default computer won.

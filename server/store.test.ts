@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.setConfig({ testTimeout: 20_000 });
 import { replay } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
-import { type Code, type DeviceGameId, type GameId, type Metrics, type PlayerToken, type ResultUpload, type StatsFilter, ACCOUNT_TOKEN_PREFIX, ALL_STATS, HISTORY_PAGE_SIZE, parseDeviceGameId, parseGameId, personId, toRecord } from '../src/protocol.ts';
+import { type Code, type DeviceGameId, type GameId, type Metrics, type PlayerToken, type ResultUpload, type StatsFilter, ACCOUNT_TOKEN_PREFIX, ALL_STATS, isAvatarSeed, HISTORY_PAGE_SIZE, parseDeviceGameId, parseGameId, personId, toRecord } from '../src/protocol.ts';
 import { PLAYOFF_COUNTDOWN_MS } from '../src/practice/playoff.ts';
 import type { PracticeRun } from '../src/practice/practice.ts';
 import { SessionError } from '../src/session/core.ts';
@@ -146,7 +146,7 @@ describe('accounts', () => {
     await store.linkToken(alicePhone, ALICE_GITHUB);
     const fromPhone = await store.get(code, alicePhone);
     expect(fromPhone.you).toBe('X');
-    expect(fromPhone.players).toEqual({ X: { login: 'alice', avatar: ALICE_GITHUB.avatar }, O: null });
+    expect(fromPhone.players).toEqual({ X: { login: 'alice', avatar: ALICE_GITHUB.avatar, name: null, seed: null }, O: null });
     await store.move(code, alicePhone, { game: 0, moveCount: 0, cell: 9 });
     expect((await store.get(code, bob)).games[0]?.moves).toEqual([9]);
   });
@@ -324,7 +324,7 @@ describe('my games', () => {
   it('gives each session its own opponent', async () => {
     store = await openStore(':memory:');
     await store.linkToken(alice, ALICE_GITHUB);
-    await store.setName(carol, 'Dana');
+    await store.setName(carol, 'Dana', null);
     const withAlice = (await store.create(bob, 'With Alice')).code;
     await store.join(withAlice, alice);
     const withCarol = (await store.create(carol, 'With Carol')).code;
@@ -986,7 +986,7 @@ describe('stats filters', () => {
     await store.linkToken(alice, ALICE_GITHUB);
     const alices = await store.stats({ ...all, person: await personId(`account-${String(ALICE_GITHUB.id).padStart(16, '0')}`) });
     expect(alices.totals.games).toBe(4);
-    expect(alices.person).toEqual({ name: 'alice', player: { login: 'alice', avatar: ALICE_GITHUB.avatar }, you: false });
+    expect(alices.person).toEqual({ name: 'alice', player: { login: 'alice', avatar: ALICE_GITHUB.avatar, name: null, seed: null }, you: false });
     expect(JSON.stringify(alices)).not.toContain(alice);
   });
 
@@ -1079,7 +1079,7 @@ describe('sound practice', () => {
 
   it('shows a custom name on the practice board and in the practice stats', async () => {
     store = await openStore(':memory:');
-    await store.setName(bob, 'Bea');
+    await store.setName(bob, 'Bea', null);
     await store.addPracticeRun(bob, run('run-bob-named', 25_000));
     expect((await store.practiceBoard('targets', 'normal', undefined)).top.map((entry) => entry.player)).toEqual(['Bea']);
     expect((await store.stats()).practice.best.map((entry) => entry.player)).toEqual(['Bea']);
@@ -1216,7 +1216,7 @@ describe('seat controls for an account without an account row', () => {
 describe('custom names', () => {
   it('shows a custom name in views, history, My games, game links and stats, and goes back on reset', async () => {
     const code = await session();
-    await store.setName(alice, 'Dana');
+    await store.setName(alice, 'Dana', null);
     await playMoves(code, X_WINS);
     expect((await store.get(code, bob)).names).toEqual({ X: 'Dana', O: nameOf(bob) });
     expect((await store.history(bob, 0)).games[0]).toMatchObject({ opponentName: 'Dana' });
@@ -1225,7 +1225,7 @@ describe('custom names', () => {
     // Bob's own stats name Alice as his opponent.
     expect((await store.stats({ ...ALL_STATS, scope: 'mine' }, bob)).personal?.opponents).toEqual([expect.objectContaining({ player: 'Dana' })]);
     expect(await store.customName(alice)).toBe('Dana');
-    await store.clearName(alice);
+    await store.clearName(alice, null);
     expect(await store.customName(alice)).toBeNull();
     expect((await store.get(code, bob)).names.X).toBe(nameOf(alice));
   });
@@ -1234,7 +1234,7 @@ describe('custom names', () => {
   // account token (unlinkToken), so they show the GitHub login, and the device keeps its own name.
   it('keeps a custom name with the device on logout, so the games that move to the account do not show it', async () => {
     const code = await session();
-    await store.setName(alice, 'Dana');
+    await store.setName(alice, 'Dana', null);
     await playMoves(code, X_WINS);
     await store.linkToken(alice, ALICE_GITHUB);
     await store.unlinkToken(alice);
@@ -1250,8 +1250,65 @@ describe('custom names', () => {
   it('refuses a name that equals a GitHub login, in any case', async () => {
     store = await openStore(':memory:');
     await store.linkToken(carol, ALICE_GITHUB);
-    expect(await status(() => store.setName(bob, 'ALICE'))).toBe(409);
+    expect(await status(() => store.setName(bob, 'ALICE', null))).toBe(409);
     expect(await store.customName(bob)).toBeNull();
+  });
+
+  it('gives an account a custom name on every device, in place of the login, and goes back on reset', async () => {
+    const code = await session();
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.setName(alicePhone, 'Dana', ALICE_GITHUB.id);
+    await playMoves(code, X_WINS);
+    expect((await store.get(code, bob)).players.X).toMatchObject({ login: 'alice', name: 'Dana' });
+    expect(await store.account(alice)).toMatchObject({ login: 'alice', name: 'Dana' });
+    expect((await store.history(bob, 0)).games[0]).toMatchObject({ opponent: { login: 'alice', name: 'Dana' } });
+    expect((await store.stats({ ...ALL_STATS, scope: 'mine' }, bob)).personal?.opponents).toEqual([expect.objectContaining({ player: 'Dana' })]);
+    // The account name does not touch the name of the device.
+    expect(await store.customName(alice)).toBeNull();
+    // An account may take its own login as its name, never the login of another account.
+    await store.setName(alice, 'ALICE', ALICE_GITHUB.id);
+    await store.linkToken(carol, { id: 102, login: 'carol', avatar: 'https://avatars.githubusercontent.com/u/102?v=4' });
+    expect(await status(() => store.setName(alice, 'carol', ALICE_GITHUB.id))).toBe(409);
+    await store.clearName(alice, ALICE_GITHUB.id);
+    expect((await store.get(code, bob)).players.X?.name).toBeNull();
+  });
+
+  it('lets a maintainer clear the custom name of an account', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.setName(alice, 'Rude Name', ALICE_GITHUB.id);
+    const person = await store.person(alice);
+    expect(await store.clearNameOf(person, 'TomCohenDev')).toContain(alice);
+    expect((await store.account(alice))?.name).toBeNull();
+    expect(await status(() => store.clearNameOf(person, 'TomCohenDev'))).toBe(404);
+  });
+});
+
+describe('account pictures', () => {
+  it('gives each new picture a new seed on every device, and goes back to the GitHub picture', async () => {
+    const code = await session();
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.setAvatar(ALICE_GITHUB.id, 'generated');
+    const first = (await store.account(alicePhone))?.seed;
+    expect(isAvatarSeed(first)).toBe(true);
+    expect((await store.get(code, bob)).players.X?.seed).toBe(first);
+    await store.setAvatar(ALICE_GITHUB.id, 'generated');
+    const second = (await store.account(alice))?.seed;
+    expect(isAvatarSeed(second) && second !== first).toBe(true);
+    await store.setAvatar(ALICE_GITHUB.id, 'github');
+    expect((await store.account(alice))?.seed).toBeNull();
+  });
+
+  it('forgets the picture and the name of an account on Delete my data', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.setAvatar(ALICE_GITHUB.id, 'generated');
+    await store.setName(alice, 'Dana', ALICE_GITHUB.id);
+    await store.deleteData(alice);
+    await store.linkToken(alice, ALICE_GITHUB);
+    expect(await store.account(alice)).toMatchObject({ name: null, seed: null });
   });
 });
 
@@ -1342,7 +1399,7 @@ describe('report and block', () => {
   it('lets a maintainer hide a message for everyone and clear a custom name, and logs both', async () => {
     const code = await session();
     await store.chat(code, bob, 'spam spam');
-    await store.setName(bob, 'Rude Name');
+    await store.setName(bob, 'Rude Name', null);
     await store.hideMessage(code, 1, 'Yarden-zamir');
     expect((await store.get(code, alice)).chat).toMatchObject([{ id: 1, text: REMOVED_MESSAGE }]);
     expect(await store.clearNameOf(await personId(bob), 'TomCohenDev')).toEqual([bob]);
@@ -1406,8 +1463,8 @@ describe('delete my data', () => {
     await store.addResults(alice, [result('eeeeeeee-1111-4000-8000-000000000001')]);
     const nearby = deviceGameId('NEARBY99');
     await store.addResults(bob, [result('eeeeeeee-1111-4000-8000-000000000002', { mode: 'nearby', difficulty: null, you: 'X', publicId: nearby, guest: alicePhone })]);
-    await store.setName(alicePhone, 'Phone Alice');
-    await store.setName(bob, 'Bob B');
+    await store.setName(alicePhone, 'Phone Alice', null);
+    await store.setName(bob, 'Bob B', null);
     await store.block(alice, await personId(bob), 'Bob B');
     await store.block(bob, await personId(ALICE_ACCOUNT), 'alice');
     await store.setStatsPrivate(alicePhone, true);
@@ -1488,7 +1545,7 @@ describe('delete my data', () => {
     await store.join(code, bob);
     await store.addResults(alice, [result('eeeeeeee-2222-4000-8000-000000000001')]);
     await store.addResults(carol, [result('eeeeeeee-2222-4000-8000-000000000002')]);
-    await store.setName(alice, 'Ali');
+    await store.setName(alice, 'Ali', null);
     expect(await store.deleteData(alice)).toMatchObject({
       sessions: { deleted: 0, anonymised: 1 },
       results: { deleted: 1, anonymised: 0 },
@@ -1505,7 +1562,7 @@ describe('delete my data', () => {
 
   it('runs the same deletion for a maintainer, by person id or by GitHub login, and refuses an unknown one', async () => {
     store = await openStore(':memory:');
-    await store.setName(bob, 'Bob B');
+    await store.setName(bob, 'Bob B', null);
     await store.addResults(bob, [result('eeeeeeee-3333-4000-8000-000000000001')]);
     expect(await store.deleteDataOf({ person: await personId(bob) })).toMatchObject({ results: { deleted: 1 }, player_names: { deleted: 1 } });
     expect(await store.customName(bob)).toBeNull();

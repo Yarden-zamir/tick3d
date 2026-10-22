@@ -1,7 +1,7 @@
 // The sound playoff on the game page: the prompt when the other player starts one, and the link to the
 // Voice room that brings the other player along. The playoff itself runs in the Voice room (/sound-input).
 import { OnlineError, api } from '../online.ts';
-import type { SessionView } from '../protocol.ts';
+import { type SessionView, accountNameOf } from '../protocol.ts';
 import { withReturn } from '../return-path.ts';
 import { element } from './dom.ts';
 import { showToast } from './feedback.ts';
@@ -34,7 +34,7 @@ export function checkPlayoffInvite(view: SessionView): void {
   }
   if (asked?.code === view.code && asked.id === playoff.id) return;
   asked = { code: view.code, id: playoff.id };
-  const name = view.players[playoff.by]?.login ?? view.names[playoff.by] ?? 'The other player';
+  const name = accountNameOf(view.players[playoff.by]) ?? view.names[playoff.by] ?? 'The other player';
   text.textContent = `${name} started a sound playoff. Join to sing to the same targets at the same time.`;
   if (!dialog.open) dialog.showModal();
 }

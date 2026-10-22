@@ -10,6 +10,8 @@ const LEADER = {
   owner: text,
   login: nullable(text),
   avatar: nullable(text),
+  name: nullable(text),
+  seed: nullable(text),
   games: int,
   won: int,
   drawn: int,
@@ -54,7 +56,7 @@ const LEADERBOARD = `WITH g AS (${filteredGames(null)}),
       min(moves) FILTER (won AND ending = 'won')::INTEGER AS fastest_win, avg(moves) AS avg_moves, epoch_ms(max(finished_at)) AS last_played
     FROM shown GROUP BY owner
   )
-SELECT owner, u.login, u.avatar, games, won, drawn, lost, fastest_win, avg_moves, best_streak, last_played,
+SELECT owner, u.login, u.avatar, u.name, u.seed, games, won, drawn, lost, fastest_win, avg_moves, best_streak, last_played,
   coalesce(len(ap.unlocked), 0)::INTEGER AS achievements
 FROM totals JOIN streaks USING (owner) LEFT JOIN users u USING (github_id) LEFT JOIN achievement_players ap USING (owner)
 ORDER BY games DESC, won DESC, owner

@@ -32,8 +32,13 @@ describe('generated player pictures', () => {
   });
 
   it('shows the GitHub avatar of a logged-in player', () => {
-    const player = { login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4' };
+    const player = { login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', name: null, seed: null };
     const image = avatarFor({ player, name: 'octocat' }, 24, null);
     expect(image.src.startsWith(player.avatar)).toBe(true);
+  });
+
+  it('shows the generated picture that an account chose, from its seed and not its name', () => {
+    const player = { login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', name: 'Dana', seed: '0123456789ab' };
+    expect(avatarImage({ player, name: 'Dana' }, 24).src).toBe(`data:image/svg+xml,${encodeURIComponent(avatarSvg('0123456789ab'))}`);
   });
 });

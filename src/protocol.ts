@@ -60,7 +60,15 @@ export type ChatEvent = { id: number; event: SessionEvent };
 export type ChatEntry = ChatMessage | ChatEvent;
 export const isChatEvent = (entry: ChatEntry): entry is ChatEvent => 'event' in entry;
 // A GitHub account linked to a seat. Shown next to the seat, never required to play.
-export type PlayerInfo = { login: string; avatar: string };
+// `name`: the custom name of the account (PUT /api/me/name), or null for the login.
+// `seed`: the seed of a generated picture (PUT /api/me/avatar), or null for the GitHub picture.
+export type PlayerInfo = { login: string; avatar: string; name: string | null; seed: string | null };
+// The name that every screen shows for an account: the custom name, else the login. Null without an account.
+export function accountNameOf(player: PlayerInfo): string;
+export function accountNameOf(player: PlayerInfo | null): string | null;
+export function accountNameOf(player: PlayerInfo | null): string | null {
+  return player === null ? null : (player.name ?? player.login);
+}
 // The generated name of each seat's player (src/names.ts). The server computes it from the seat's
 // token, so the token never leaves the server. Null for an empty seat, the computer, or an unknown player.
 type SeatNames = Record<Player, string | null>;
@@ -275,6 +283,20 @@ export function parseCustomName(value: unknown): string | undefined {
   const length = [...name].length;
   if (length < CUSTOM_NAME_MIN_LENGTH || length > CUSTOM_NAME_MAX_LENGTH) return undefined;
   return /^[\p{L}\p{M}\p{Nd} _-]+$/u.test(name) && /[\p{L}\p{Nd}]/u.test(name) ? name : undefined;
+}
+
+// The picture of an account (PUT /api/me/avatar): the GitHub picture, or a new generated one.
+// A seed is random hex that the server makes, so each "generated" gives another picture.
+export const AVATAR_PICTURES = ['github', 'generated'] as const;
+export type AvatarPicture = (typeof AVATAR_PICTURES)[number];
+export const AVATAR_SEED_LENGTH = 12;
+const AVATAR_SEED_CHARS = '0123456789abcdef';
+export const isAvatarSeed = (value: unknown): value is string =>
+  typeof value === 'string' && value.length === AVATAR_SEED_LENGTH && [...value].every((char) => AVATAR_SEED_CHARS.includes(char));
+
+// The body of PUT /api/me/avatar.
+export function parseAvatarRequest(value: unknown): AvatarPicture | undefined {
+  return isRecord(value) && hasOnlyKeys(value, ['picture']) ? oneOf(AVATAR_PICTURES, value.picture) : undefined;
 }
 
 export type SessionUpdate = { name?: string; clock?: TimeControl; fixedSeats?: boolean; watcherChat?: boolean } & Partial<MatchOptions>;
@@ -562,7 +584,11 @@ export function parsePlayerInfo(value: unknown): PlayerInfo | undefined {
   if (typeof login !== 'string' || !isGitHubLogin(login)) return undefined;
   // Avatars come from GitHub only, so a page never loads an image from an address a player chose.
   if (typeof avatar !== 'string' || !avatar.startsWith('https://avatars.githubusercontent.com/')) return undefined;
-  return { login, avatar };
+  // An older server or Nearby device sends no name and no seed.
+  const name = value.name === undefined || value.name === null ? null : parseCustomName(value.name);
+  const seed = value.seed === undefined || value.seed === null ? null : isAvatarSeed(value.seed) ? value.seed : undefined;
+  if (name === undefined || name !== (value.name ?? null) || seed === undefined) return undefined;
+  return { login, avatar, name, seed };
 }
 
 // ---- Game links ----
@@ -1202,7 +1228,7 @@ export function outcomeOf(winner: Player | null, you: Player | null): Outcome {
 // ---- Previews ----
 
 // GET /api/previews: the open pull requests with a live preview (server/previews.ts).
-export type Contributor = PlayerInfo & { url: string };
+export type Contributor = Pick<PlayerInfo, 'login' | 'avatar'> & { url: string };
 // An image from the pull request description, such as a screenshot of the change.
 export type PreviewImage = { src: string; alt: string };
 export type Preview = {
@@ -1251,7 +1277,7 @@ function parsePreviewImage(value: unknown): PreviewImage | undefined {
 function parseContributor(value: unknown): Contributor | undefined {
   const info = parsePlayerInfo(value);
   if (info === undefined || !isRecord(value) || value.url !== `https://github.com/${info.login}`) return undefined;
-  return { ...info, url: value.url };
+  return { login: info.login, avatar: info.avatar, url: value.url };
 }
 
 function parsePreview(value: unknown): Preview | undefined {

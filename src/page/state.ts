@@ -6,7 +6,7 @@ import { type Game, type Player, newGame } from '../game.ts';
 import type { LocalBackend } from '../local.ts';
 import { nameOf } from '../names.ts';
 import { type Me, token } from '../online.ts';
-import { parseCustomName } from '../protocol.ts';
+import { accountNameOf, parseCustomName } from '../protocol.ts';
 import type { SessionView, MatchOptions, Code, MoveRequest, SeatAction, SessionUpdate, PublicGame } from '../protocol.ts';
 import { type Mode, settings } from './settings.ts';
 import { STORAGE_KEYS } from '../storage-keys.ts';
@@ -137,7 +137,7 @@ export function saveAccount(account: Me): void {
 }
 
 // The name that other players see for this player: the GitHub login, the custom name, or the generated name.
-export const ownName = (): string => page.account.user?.login ?? page.account.name ?? nameOf(token);
+export const ownName = (): string => accountNameOf(page.account.user) ?? page.account.name ?? nameOf(token);
 
 export const page: PageState = {
   games: [newGame('X', settings.clock)],
