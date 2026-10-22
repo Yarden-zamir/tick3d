@@ -3080,6 +3080,18 @@ body[data-turn='O'] .status[data-state='playing'] {
   :root {
     --cell: clamp(30px, 11.5vw, 50px);
   }
+
+  /* The phone tower is tall, so it keeps only a small margin around its planes. At the tallest turn (45deg) the top
+     plane leaves about 0.18 of a side free above it, and the lowest plane about 0.08 of a side below it.
+     The empty board before the build keeps the same height (see .stage > .board:empty). */
+  .board.tower {
+    margin-top: calc(var(--side) * -0.12);
+    padding-bottom: calc(var(--side) * 0.25);
+  }
+
+  .stage > .board:empty {
+    min-height: calc(var(--side) * (0.72 * 4 + 0.25 - 0.12) + 0.5rem * 3);
+  }
 }
 
 /* ---- Sliding choices ----
