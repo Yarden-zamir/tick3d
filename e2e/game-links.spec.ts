@@ -41,8 +41,9 @@ test('a computer loss gets a link, a server record and a History entry', async (
   await expect.poll(() => callApi(page, '/api/me/records')).toEqual({ records: { [RECORD_KEY]: moves } });
 
   await page.locator('#account-button').click();
-  const entry = page.locator('#my-games-history li').first();
-  await expect(entry).toContainText('Lost · Computer, hard');
+  const entry = page.locator('#my-games-history li[data-kind="game"]').first();
+  await expect(entry).toContainText('Lost');
+  await expect(entry).toContainText('Computer · hard');
   await entry.getByRole('button', { name: 'View' }).click();
   await expect(page.locator('#game-view')).toBeVisible();
 

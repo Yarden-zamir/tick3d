@@ -64,10 +64,10 @@ test('a computer game plays and finishes offline, and its result uploads after a
   await context.setOffline(false);
   await expect.poll(() => resultsSent(page)).toEqual([true]);
   await page.locator('#account-button').click();
-  const computer = page.locator('#my-games-stats .my-tally', { hasText: 'Computer' }).locator('span');
+  const computer = page.locator('#my-games-stats [data-mode="computer"]');
   await expect(computer).toBeVisible();
-  await expect(computer).not.toHaveText('0 won · 0 lost · 0 drawn');
-  await expect(page.locator('#my-games-device li').first()).toBeVisible();
+  await expect(computer).not.toHaveText('Computer 0');
+  await expect(page.locator('#my-games-history li[data-kind="session"]').first()).toBeVisible();
   // Login shows only when the deployment has the GitHub app settings.
   await expect(page.locator('.login-link')).toHaveCount(1);
 });

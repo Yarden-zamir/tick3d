@@ -13,8 +13,9 @@ test('Delete my data empties My games on the server and on this device, and keep
   const token = await playerToken(page);
 
   await page.locator('#account-button').click();
-  await expect(page.locator('#my-games-history li:not(.empty)')).toHaveCount(1);
-  await expect(page.locator('#my-games-device')).toContainText('1 game');
+  // One list: the finished game, and the session on this device.
+  await expect(page.locator('#my-games-history li[data-kind="game"]')).toHaveCount(1);
+  await expect(page.locator('#my-games-history li[data-kind="session"]')).toContainText('1 game');
   await page.getByRole('tab', { name: 'Account' }).click();
   await page.locator('#my-games-delete').click();
   const dialog = page.locator('#delete-confirm');
@@ -31,9 +32,7 @@ test('Delete my data empties My games on the server and on this device, and keep
   // Closing the dialog starts the page fresh.
   await Promise.all([page.waitForEvent('load'), page.locator('#delete-confirm-no').click()]);
   await page.locator('#account-button').click();
-  await expect(page.locator('#my-games-history')).toHaveText('No finished games yet.');
-  await expect(page.locator('#my-games-online')).toHaveText('No online sessions yet.');
-  await expect(page.locator('#my-games-device')).not.toContainText(/[1-9] games?/);
+  await expect(page.locator('#my-games-history')).toHaveText('No games yet.');
   await expect(page.locator('#my-games-stats').first()).toContainText('0 won · 0 lost · 0 drawn');
   await expect(page.locator('#my-games-stats')).not.toContainText(/[1-9]/);
   expect(await callApi(page, '/api/me/history')).toEqual({ games: [], more: false });

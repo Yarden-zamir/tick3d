@@ -34,7 +34,7 @@ type NewLocalSession = {
   difficulty?: Difficulty;
 };
 
-type LocalSummary = { code: Code; mode: LocalMode; name: string; games: number; updatedAt: number; doc: SessionDoc };
+export type LocalSummary = { code: Code; mode: LocalMode; name: string; games: number; updatedAt: number; doc: SessionDoc };
 
 // Undefined for an online document: the device does not hold online sessions in this store.
 function summaryOf(row: DeviceSession, doc: SessionDoc): LocalSummary | undefined {

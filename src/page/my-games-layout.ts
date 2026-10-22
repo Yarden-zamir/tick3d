@@ -6,11 +6,9 @@ import {
   accountBox,
   myGamesAchievements,
   myGamesBlockedBox,
-  myGamesDevice,
   myGamesDialog,
   myGamesHistory,
   myGamesNote,
-  myGamesOnlineBox,
   myGamesPrivateOption,
   myGamesSessionBox,
   myGamesStats,
@@ -53,7 +51,7 @@ export function setupMyGamesTabs(): void {
   const data = myGamesDialog.querySelector('.my-games-data');
   if (head === null || data === null) throw new Error('the My games dialog changed');
   const panels = [
-    panel([myGamesOnlineBox, sectionOf(myGamesHistory), myGamesSessionBox, sectionOf(myGamesDevice), myGamesNote, myGamesStats]),
+    panel([myGamesStats, sectionOf(myGamesHistory), myGamesSessionBox, myGamesNote]),
     panel([sectionOf(myGamesAchievements)]),
     panel([accountBox, myGamesPrivateOption, myGamesBlockedBox, data]),
   ];
@@ -83,9 +81,4 @@ export function setupMyGamesTabs(): void {
   bar.append(...tabs);
   head.after(bar, ...panels);
   show('Games');
-  // The achievements show as a grid of badges. A tap on a badge opens its row in place.
-  myGamesAchievements.addEventListener('click', (event) => {
-    const item = event.target instanceof Element ? event.target.closest('li') : null;
-    if (item !== null) item.toggleAttribute('data-expanded');
-  });
 }

@@ -23,7 +23,7 @@ import { openGameView, setupGameView } from './page/game-view.ts';
 import { setupHome } from './page/home.ts';
 import { renderCoords, setupKeypad } from './page/keypad.ts';
 import { setupReports } from './page/metrics.ts';
-import { openMyGames, refreshAccount, setupMyGames } from './page/my-games.ts';
+import { openMyGames, refreshAccount, setupMyGames, preloadMyGames } from './page/my-games.ts';
 import { setupGameHeader } from './header/header.ts';
 import { readMyGamesRequest, withoutMyGamesRequest } from './header/my-games-link.ts';
 import { setupMyGamesTabs } from './page/my-games-layout.ts';
@@ -147,6 +147,8 @@ async function start(): Promise<void> {
   void account.then(checkUnlocks).catch(showError);
   // The Android app reports its open: the copy of this device, and the invite of the inviter. A login links this browser first.
   void account.then(reportAppOpen).catch(showError);
+  // My games loads in the background when the page is idle, so the dialog opens with its lists.
+  void account.then(() => (window.requestIdleCallback === undefined ? setTimeout(preloadMyGames, 2000) : requestIdleCallback(preloadMyGames, { timeout: 5000 })));
   // The account button of another page asks to open My games. The dialog opens after the account
   // is known, so it shows the right login.
   const myGamesRequest = readMyGamesRequest(new URL(location.href));

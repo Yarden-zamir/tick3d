@@ -18,7 +18,7 @@ import { showError } from './feedback.ts';
 import { page } from './state.ts';
 
 // The progress, and the rarity when the server answered. Without the server, the games on this device count.
-type ShownAchievements = { achievements: AchievementProgress[]; rarity: AchievementRarity | null };
+export type ShownAchievements = { achievements: AchievementProgress[]; rarity: AchievementRarity | null };
 
 async function deviceProgress(): Promise<ShownAchievements> {
   const results = (await page.deviceDb?.all('results')) ?? [];
