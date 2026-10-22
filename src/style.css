@@ -3289,23 +3289,59 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 600;
 }
 
+/* The totals in one line, and a chip per mode that filters the games list. The chips wrap. */
 .my-games-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
   gap: 0.5rem;
 }
 
-.my-tally {
-  display: grid;
-  padding: 0.45rem 0.6rem;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-2);
+.my-games-total {
+  margin: 0;
+  font-weight: 800;
 }
 
-.my-tally span {
-  font-size: 0.85rem;
-  color: var(--muted);
+.my-games-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.my-games-chips .btn[aria-pressed='true'] {
+  background: var(--primary);
+  color: var(--on-color);
+}
+
+/* The tags of a row in the games list, such as "Online" or "Won", on their own line under the title. */
+.my-games-list .tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-block: 0.1rem;
+}
+
+.my-games-list .tag {
+  padding: 0 0.4rem;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.my-games-list .tag[data-kind='won'] {
+  background: var(--win);
+  color: var(--on-color);
+}
+
+.my-games-list .tag[data-kind='lost'] {
+  background: var(--danger);
+  color: var(--on-color);
+}
+
+.my-games-list .tag[data-kind='turn'] {
+  background: var(--primary);
+  color: var(--on-color);
 }
 
 /* minmax(0, 1fr): a long name never widens a row past the dialog. */
@@ -4744,26 +4780,4 @@ body[data-turn='O'] .status[data-state='playing'] {
 .my-games-tabs .btn[aria-selected='true'] {
   background: var(--primary);
   color: var(--on-color);
-}
-
-/* The achievements as a grid of badges. A tapped badge opens its row across the grid. */
-.my-games .achievements {
-  grid-template-columns: repeat(auto-fill, minmax(3.9rem, 1fr));
-}
-
-.my-games .achievement:not([data-expanded]) {
-  display: block;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-}
-
-.my-games .achievement:not([data-expanded]) > :not(.achievement-icon) {
-  display: none;
-}
-
-.my-games .achievement[data-expanded] {
-  grid-column: 1 / -1;
-  cursor: pointer;
 }
