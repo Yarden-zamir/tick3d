@@ -224,31 +224,43 @@ function renderGamesList(): void {
 
 const tallyText = (tally: Tally) => (tally.won + tally.lost + tally.drawn === 0 ? `${tally.played}` : `${tally.won}–${tally.lost}`);
 
-// The totals in one line, and a chip per mode that shows only that mode. Without `byMode` (offline), no chips.
-function renderSummary(total: Tally, byMode: Record<SessionMode, Tally> | undefined): void {
-  const line = document.createElement('p');
-  line.className = 'my-games-total';
-  line.textContent = `${gameCount(total.played)} · ${total.won} won · ${total.lost} lost · ${total.drawn} drawn`;
-  myGamesStats.replaceChildren(line);
-  if (byMode === undefined) return;
-  const chips = document.createElement('div');
-  chips.className = 'my-games-chips';
-  const chip = (mode: SessionMode | 'all', label: string) => {
+// The totals in one line, and a chip per mode that shows only the rows of that mode. The chips show
+// with the dialog and work at once; the counts of a chip fill in when the server answers.
+const totalLine = document.createElement('p');
+totalLine.className = 'my-games-total';
+const chips = document.createElement('div');
+chips.className = 'my-games-chips';
+const chipOf = new Map<SessionMode | 'all', HTMLButtonElement>();
+
+function showMode(mode: SessionMode | 'all'): void {
+  shownMode = mode;
+  for (const [other, button] of chipOf) button.setAttribute('aria-pressed', String(other === mode));
+  renderGamesList();
+}
+
+function setupChips(): void {
+  for (const mode of ['all', ...SESSION_MODES] as const) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn btn-small';
     button.dataset.mode = mode;
+    button.textContent = mode === 'all' ? 'All' : MODE_NAMES[mode];
     button.setAttribute('aria-pressed', String(mode === shownMode));
-    button.textContent = label;
-    button.addEventListener('click', () => {
-      shownMode = mode;
-      for (const other of chips.children) other.setAttribute('aria-pressed', String(other === button));
-      renderGamesList();
-    });
-    return button;
-  };
-  chips.append(chip('all', 'All'), ...SESSION_MODES.map((mode) => chip(mode, `${MODE_NAMES[mode]} ${tallyText(byMode[mode])}`)));
-  myGamesStats.append(chips);
+    button.addEventListener('click', () => showMode(mode));
+    chipOf.set(mode, button);
+    chips.append(button);
+  }
+  myGamesStats.replaceChildren(totalLine, chips);
+}
+
+// Without `byMode` (offline), the chips show only the mode names.
+function renderSummary(total: Tally, byMode: Record<SessionMode, Tally> | undefined): void {
+  totalLine.textContent = `${gameCount(total.played)} · ${total.won} won · ${total.lost} lost · ${total.drawn} drawn`;
+  for (const mode of SESSION_MODES) {
+    const button = chipOf.get(mode);
+    if (button === undefined) throw new Error('a mode has no chip');
+    button.textContent = byMode === undefined ? MODE_NAMES[mode] : `${MODE_NAMES[mode]} ${tallyText(byMode[mode])}`;
+  }
 }
 
 let historyOffset = 0;
@@ -438,7 +450,6 @@ export async function openMyGames(returnTo?: string): Promise<void> {
     const history = await deviceHistory();
     if (request !== myGamesRequest) return;
     myGamesNote.textContent = 'You are offline. These are the games on this device.';
-    shownMode = 'all';
     renderSummary(tallies, undefined);
     sessionRows = deviceRows;
     gameRows = history.map(historyRow);
@@ -707,6 +718,7 @@ export async function refreshAccount(): Promise<void> {
 
 export function setupMyGames(): void {
   setupAchievements();
+  setupChips();
   onMyGamesTabShown((tab) => {
     if (myGamesDialog.open) loadTab(myGamesRequest, tab);
   });

@@ -14,7 +14,6 @@ import { showError } from './feedback.ts';
 import { homeLink } from '../header/header.ts';
 import { previewsDialog } from '../header/previews.ts';
 import { nearbyKind, endNearby } from './nearby.ts';
-import { render } from './render.ts';
 import { leaveSession, openLocalSession, applyView } from './sessions.ts';
 import { settings, saveSettings } from './settings.ts';
 import { page, isLive, current, newRound, setThinking } from './state.ts';
@@ -37,7 +36,7 @@ async function goHome(): Promise<void> {
   history.replaceState(null, '', location.pathname);
   settings.mode = 'computer';
   saveSettings();
-  render();
+  // openLocalSession draws the session, so the screen shows no empty board in between (see openMode).
   await openLocalSession('computer');
   const opened = page.session;
   if (opened === undefined || current().moves.length === 0) return;

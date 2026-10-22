@@ -66,7 +66,9 @@ test('a computer game plays and finishes offline, and its result uploads after a
   await page.locator('#account-button').click();
   const computer = page.locator('#my-games-stats [data-mode="computer"]');
   await expect(computer).toBeVisible();
-  await expect(computer).not.toHaveText('Computer 0');
+  // The chip shows the counts when the server answers: the uploaded game counts.
+  await expect(computer).toHaveText(/^Computer \d+–\d+$/);
+  await expect(computer).not.toHaveText('Computer 0–0');
   await expect(page.locator('#my-games-history li[data-kind="session"]').first()).toBeVisible();
   // Login shows only when the deployment has the GitHub app settings.
   await expect(page.locator('.login-link')).toHaveCount(1);
