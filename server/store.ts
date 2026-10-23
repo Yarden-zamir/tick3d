@@ -1186,8 +1186,9 @@ export async function openStore(
   // custom name. The devices of `from` and its account token point to `into`, so its seats, games, stats,
   // records and practice runs follow through player_tokens (canonical). The rows that name the account token
   // of `from` as their owner move: blocks, Hide my stats, the achievement reset, app copies and tester claims.
-  // Limit: a block or a report by another player names the old person id of `from`, so it no longer matches.
-  // Revisit this when a merged player reports a block that stopped working.
+  // A block by another player of `from` moves to `into`, so it keeps working. A report keeps the person id of its time.
+  // Limit: a chat message from before the merge names the old person id, so it shows again to a player who blocked `from`.
+  // Revisit this when a player reports such a message.
   async function mergeAccounts(into: bigint, from: bigint): Promise<void> {
     const [conflict] = await rows(
       'FROM logins a JOIN logins b USING (provider) SELECT provider WHERE a.github_id = $into AND b.github_id = $from',
@@ -1220,6 +1221,9 @@ export async function openStore(
       await db.run('DELETE FROM achievement_players WHERE owner = $from', source);
       await db.run('UPDATE app_copies SET owner = $into WHERE owner = $from', owners);
       await db.run('UPDATE tester_codes SET claimed_owner = $into WHERE claimed_owner = $from', owners);
+      const persons = { into: await personId(intoToken), from: await personId(fromToken) };
+      await db.run('INSERT INTO blocks SELECT * REPLACE ($into AS person) FROM blocks WHERE person = $from ON CONFLICT DO NOTHING', persons);
+      await db.run('DELETE FROM blocks WHERE person = $from', { from: persons.from });
       await db.run('COMMIT');
     } catch (error) {
       await db.run('ROLLBACK');

@@ -1367,6 +1367,10 @@ describe('GitHub and Google logins', () => {
     await playMoves(code, X_WINS);
     await store.block(alice, await personId(bob), 'bob');
     await store.setStatsPrivate(alice, true);
+    // Bob blocked the Google account, by its person id from the game.
+    const googlePerson = (await store.get(code, bob)).people.X;
+    if (googlePerson === null) throw new Error('the game has no person for X');
+    await store.block(bob, googlePerson, 'Alice Levi');
     // A GitHub account on her phone connects the Google login.
     await store.linkToken(alicePhone, ALICE_GITHUB);
     await store.connectLogin(ALICE_GITHUB, ALICE_GOOGLE);
@@ -1378,6 +1382,8 @@ describe('GitHub and Google logins', () => {
     expect((await store.get(code, alicePhone)).you).toBe('X');
     expect(await store.blocks(alicePhone)).toMatchObject([{ name: 'bob' }]);
     expect(await store.statsPrivate(alicePhone)).toBe(true);
+    // Bob's block moved to the merged account.
+    expect(await store.blocks(bob)).toMatchObject([{ person: await personId(`account-${String(ALICE_ID).padStart(16, '0')}`), name: 'Alice Levi' }]);
   });
 
   it('refuses to merge two accounts that both have a login of one provider, and a second login of one provider', async () => {
