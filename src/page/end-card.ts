@@ -29,7 +29,8 @@ import { noteAchievements, showUnlocks, unlockLabel, unlockToast, unlockedBy } f
 import { showError, showToast } from './feedback.ts';
 import { previewsDialog } from '../header/previews.ts';
 import { type GameId, onlineGameId } from '../protocol.ts';
-import { noteComputerResult, runLevelUp } from './level-up.ts';
+import { runIdentityNudge } from './identity-nudge.ts';
+import { noteResult, runLevelUp } from './level-up.ts';
 import { nearbyKind, shareGameLink } from './nearby.ts';
 import { recordResult, noteSurvival, recordNews, hideLabel, gameIdOf, sendOnlineMetrics, hostLinkOf, setHostLink, gameTuning } from './results.ts';
 import { changesSent, setUrlGame, startNewGame } from './sessions.ts';
@@ -65,7 +66,7 @@ export function finish(game: Game): void {
   }
   const index = page.games.length - 1;
   if (page.session !== undefined) void linkGame(page.session, game, index);
-  if (page.session?.mode === 'computer' && mine !== null) noteComputerResult(settings.difficulty, winner === mine);
+  if (mine !== null) noteResult(winner === mine, page.session?.mode === 'computer' ? settings.difficulty : undefined);
   if (page.session?.mode === 'computer' && winner !== null && mine !== null && winner !== mine) {
     // A failed record shows its error, and the card still opens.
     survival = noteSurvival(page.session, game, index).catch(showError);
@@ -236,7 +237,8 @@ export function setupEndCard(): void {
     return { game, filename: cardFilename('wav'), text: `${input.title}: ${input.subtitle} on tick3d, as a song.`, light, clips: voiceClips(card.index), shareVoice: cardVoice.checked };
   });
   cardDialog.addEventListener('close', song.stop);
-  cardDialog.addEventListener('close', runLevelUp);
+  // The move up to medium first, then the prompt for a name, so they never show together.
+  cardDialog.addEventListener('close', () => void runLevelUp().then(runIdentityNudge));
   cardShareButton.addEventListener('click', () => {
     if (card === undefined) return;
     const { canvas, index, gameId, tuned } = card;
