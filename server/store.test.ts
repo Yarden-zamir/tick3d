@@ -1305,6 +1305,8 @@ describe('Google accounts', () => {
     expect(await store.customName(alicePhone)).toBe('Dana');
     expect(await store.account(alice)).toBeNull();
     expect(await store.hasGoogle(alicePhone)).toBe(true);
+    // Without GitHub, there is no GitHub picture to choose against.
+    expect(await status(() => store.setAvatar(id, 'generated'))).toBe(403);
     // A rename is the account's, on every device; a reset goes back to the generated name of the account.
     await store.setName(alicePhone, 'Dina', id);
     expect(await store.customName(alice)).toBe('Dina');
@@ -1336,6 +1338,9 @@ describe('Google accounts', () => {
     // The GitHub account keeps its name in users, so the device name stays apart.
     await store.setName(alicePhone, 'Dana', BigInt(ALICE_GITHUB.id));
     expect(await store.account(alice)).toMatchObject({ name: 'Dana' });
+    // The Google login can choose the picture of the GitHub account.
+    await store.setAvatar(await store.linkToken(alicePhone, ALICE_GOOGLE), 'generated');
+    expect(isAvatarSeed((await store.account(alice))?.seed)).toBe(true);
   });
 
   it('refuses to connect a Google login that has its own account, or a second Google login', async () => {

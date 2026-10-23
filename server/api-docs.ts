@@ -1693,7 +1693,7 @@ export const ROUTES = {
     operationId: 'setAvatar',
     tag: 'Account',
     summary: 'Choose your picture: your GitHub picture, or a new generated one.',
-    description: 'Only with a GitHub login. The choice belongs to the account, on every device, and other players see it.',
+    description: 'Only for an account with GitHub, also through a Google login that is connected to it. The choice belongs to the account, on every device, and other players see it.',
     player: 'required',
     body: { schema: 'AvatarRequest', example: { picture: 'generated' } },
     response: {
@@ -1702,7 +1702,12 @@ export const ROUTES = {
       schema: 'Me',
       example: { ...ME_EXAMPLE, user: { login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', name: null, seed: '3f9a0c12b7e4' } },
     },
-    errors: [BAD_PLAYER, { status: 400, when: 'picture is not "github" or "generated".' }, { status: 401, when: 'The request has no GitHub login.' }],
+    errors: [
+      BAD_PLAYER,
+      { status: 400, when: 'picture is not "github" or "generated".' },
+      { status: 401, when: 'The request has no login.' },
+      { status: 403, when: 'The account has no GitHub login: a Google login without GitHub.' },
+    ],
     examplePlayer: AGENT_A,
   },
   'GET /api/me/games': {

@@ -224,7 +224,7 @@ describe('Google login routes', () => {
     expect((await call('GET', '/me', { player: erinPhone, cookie })).body).toMatchObject({ name: 'Erin E', googleConnected: true });
     // A device without the cookie is a device of its own.
     expect((await call('GET', '/me', { player: bob })).body).toMatchObject({ googleConnected: false });
-    expect((await call('PUT', '/me/avatar', { player: erin, cookie, body: { picture: 'generated' } })).status).toBe(401);
+    expect((await call('PUT', '/me/avatar', { player: erin, cookie, body: { picture: 'generated' } })).status).toBe(403);
     expect((await call('GET', '/reports', { player: erin, cookie })).status).toBe(401);
   });
 

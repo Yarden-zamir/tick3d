@@ -520,10 +520,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const picture = parseAvatarRequest(await readJson(req));
       if (picture === undefined) throw new HttpError(400, 'picture is "github" or "generated".');
       const user = auth?.user(req);
-      // The picture choice is between the GitHub picture and a generated one, so it needs GitHub.
-      if (user === undefined || 'google' in user) throw new HttpError(401, 'Log in with GitHub first.');
-      await store.linkToken(token, user);
-      await store.setAvatar(user.id, picture);
+      if (user === undefined) throw new HttpError(401, 'Log in with GitHub first.');
+      // The picture choice is between the GitHub picture and a generated one, so the account needs GitHub.
+      await store.setAvatar(await store.linkToken(token, user), picture);
       notifyPlayer(token);
       return send(res, 200, await me(token, user, originOf(req)));
     }

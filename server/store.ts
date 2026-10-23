@@ -1720,10 +1720,12 @@ export async function openStore(
         await db.run('DELETE FROM player_names WHERE token = $token', { token: account === null ? token : accountToken(account) });
       }),
     // The picture of an account. Each "generated" makes a new seed, so it also rerolls a generated picture.
-    setAvatar: (account: number, picture: AvatarPicture): Promise<void> =>
+    // An account without GitHub (a Google login) has no GitHub picture to choose against: 403.
+    setAvatar: (account: number | bigint, picture: AvatarPicture): Promise<void> =>
       serialized(async () => {
         const seed = picture === 'generated' ? randomBytes(AVATAR_SEED_LENGTH / 2).toString('hex') : null;
-        await db.run('UPDATE users SET seed = $seed WHERE github_id = $account', { seed, account });
+        const updated = await rows('UPDATE users SET seed = $seed WHERE github_id = $account RETURNING github_id', { seed, account }, { github_id: bigId });
+        if (updated.length === 0) throw new SessionError(403, 'A picture choice needs an account with GitHub.');
       }),
 
     // ---- Report and block ----
