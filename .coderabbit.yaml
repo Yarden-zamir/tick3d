@@ -1,0 +1,6 @@
+# CodeRabbit settings: https://docs.coderabbit.ai/configuration/auto-review
+# Agents open draft pull requests while they wait on maintainer answers, so the review runs on drafts too.
+reviews:
+  auto_review:
+    enabled: true
+    drafts: true
