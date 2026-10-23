@@ -156,19 +156,20 @@ export function storedMe(): Me | null {
 // GET /api/me that left before a change is older than it, so it does not replace the stored account.
 let accountGeneration = 0;
 
-// Calls a route that answers with the account, and keeps the answer as the stored account (storedMe).
-// `changes`: the call changes the account, so its answer is the newest one.
-async function remembered(request: () => Promise<unknown>, changes: boolean): Promise<Me> {
-  const generation = accountGeneration;
-  const me = parseMe(await request());
-  if (changes) accountGeneration++;
-  else if (generation !== accountGeneration) return me;
+function remember(me: Me): Me {
   try {
     localStorage.setItem(STORAGE_KEYS.account, JSON.stringify(me));
   } catch {
     // Storage is blocked. The page asks the server again on the next visit.
   }
   return me;
+}
+
+// Calls a route that changes the account. Its answer is the newest account, so it counts up and is stored.
+async function changed(request: () => Promise<unknown>): Promise<Me> {
+  const me = parseMe(await request());
+  accountGeneration++;
+  return remember(me);
 }
 
 // After a logout or a deletion: the stored account is gone, also when the next answer does not come.
@@ -267,10 +268,16 @@ export const api = {
   seat: (code: Code, action: SeatAction) => request('POST', `/${code}/seats`, action),
   answerSeat: (code: Code, accept: boolean) => request('POST', `/${code}/seats/answer`, { accept }),
 
-  me: () => remembered(() => call('GET', '/me'), false),
-  setName: (name: string) => remembered(() => call('PUT', '/me/name', { name }), true),
-  clearName: () => remembered(() => call('DELETE', '/me/name'), true),
-  setAvatar: (picture: AvatarPicture) => remembered(() => call('PUT', '/me/avatar', { picture }), true),
+  // The account, or null when a change of the account came while this answer was on its way: the answer
+  // is older than that change, so the caller keeps the account that it has.
+  me: async (): Promise<Me | null> => {
+    const generation = accountGeneration;
+    const me = parseMe(await call('GET', '/me'));
+    return generation === accountGeneration ? remember(me) : null;
+  },
+  setName: (name: string) => changed(() => call('PUT', '/me/name', { name })),
+  clearName: () => changed(() => call('DELETE', '/me/name')),
+  setAvatar: (picture: AvatarPicture) => changed(() => call('PUT', '/me/avatar', { picture })),
   myGames: async () => parseMyGames(await call('GET', '/me/games')),
   blocks: async () => parseBlocks(await call('GET', '/me/blocks')),
   statsPrivacy: async () => requireStatsPrivacy(await call('GET', '/me/stats-privacy')),
@@ -309,7 +316,7 @@ export const api = {
   // The same for Google. With a GitHub login, it connects Google to the account.
   googleLoginUrl: (returnTo = location.href) => `/api/auth/google/login?return=${encodeURIComponent(returnTo)}`,
   // Logs in with the ID token of Google One Tap (src/page/google-one-tap.ts).
-  googleOneTap: (credential: string): Promise<Me> => remembered(() => call('POST', '/auth/google/one-tap', { credential }), true),
+  googleOneTap: (credential: string): Promise<Me> => changed(() => call('POST', '/auth/google/one-tap', { credential })),
 
   // Sends finished games in batches. Returns the public id of each result (by result id) that
   // the server keeps under another public id than the device sent.

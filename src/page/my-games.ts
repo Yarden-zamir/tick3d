@@ -752,7 +752,9 @@ export async function refreshAccount(): Promise<void> {
   if (!navigator.onLine) return;
   try {
     const before = JSON.stringify(page.account);
-    saveAccount(await api.me());
+    const me = await api.me();
+    // Null: an older answer than a change that came meanwhile, so the page keeps the newer account.
+    if (me !== null) saveAccount(me);
     if (JSON.stringify(page.account) !== before) {
       forgetMyGames();
       // Only on a change: a rebuild clears a rename that the player is typing.

@@ -48,6 +48,8 @@ export function setupPageHeader(onAccount?: (me: Me) => void): void {
   api
     .me()
     .then((me) => {
+      // Null: a newer change of the account came meanwhile, and the header shows it already.
+      if (me === null) return;
       showAccount(me.user);
       onAccount?.(me);
     })

@@ -28,7 +28,8 @@ describe('the remembered account', () => {
     await Promise.resolve();
     await api.logout();
     answer(new Response(JSON.stringify(me), { headers: { 'content-type': 'application/json' } }));
-    await pending;
+    // The older answer comes back as null, so the page keeps the logged-out state.
+    expect(await pending).toBeNull();
     expect(storedMe()).toBeNull();
   });
 
@@ -43,7 +44,7 @@ describe('the remembered account', () => {
     await Promise.resolve();
     await api.googleOneTap('credential');
     answer(new Response(JSON.stringify(me), { headers: { 'content-type': 'application/json' } }));
-    await pending;
+    expect(await pending).toBeNull();
     expect(storedMe()).toEqual(signedIn);
   });
 
