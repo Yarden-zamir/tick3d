@@ -32,6 +32,21 @@ describe('the remembered account', () => {
     expect(storedMe()).toBeNull();
   });
 
+  it('keeps the One Tap account when an older answer of /api/me comes after it', async () => {
+    const signedIn = { ...me, user: { provider: 'google', login: 'Dana Levi', avatar: null, name: null, seed: null }, googleConnected: true };
+    let answer: (response: Response) => void = () => undefined;
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (url.endsWith('/me')) return new Promise<Response>((resolve) => (answer = resolve));
+      return new Response(JSON.stringify(signedIn), { headers: { 'content-type': 'application/json' } });
+    });
+    const pending = api.me();
+    await Promise.resolve();
+    await api.googleOneTap('credential');
+    answer(new Response(JSON.stringify(me), { headers: { 'content-type': 'application/json' } }));
+    await pending;
+    expect(storedMe()).toEqual(signedIn);
+  });
+
   it('counts a stored answer that does not parse as none', () => {
     localStorage.setItem(STORAGE_KEYS.account, JSON.stringify({ ...me, googleConnected: 'yes' }));
     expect(storedMe()).toBeNull();
