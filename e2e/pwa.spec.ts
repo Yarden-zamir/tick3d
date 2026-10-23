@@ -70,8 +70,8 @@ test('a computer game plays and finishes offline, and its result uploads after a
   await expect(computer).toHaveText(/^Computer \d+–\d+$/);
   await expect(computer).not.toHaveText('Computer 0–0');
   await expect(page.locator('#my-games-history li[data-kind="session"]').first()).toBeVisible();
-  // Login shows again online. The deployment's settings decide which logins: GitHub, and Google too.
-  await expect(page.locator('.login-link').first()).toBeVisible();
+  // Login is offered again online, on the Account tab. The deployment's settings decide which logins: GitHub, and Google too.
+  await expect(page.locator('.login-link').first()).toBeAttached();
 });
 
 test('with the offline cache in charge, an old /testing link still reaches the redirect to /share', async ({ open }) => {
