@@ -152,13 +152,32 @@ export function storedMe(): Me | null {
   }
 }
 
-function rememberMe(me: Me): Me {
+// A logout and a deletion count up, so an answer of /api/me that left before them stores no old account.
+let accountGeneration = 0;
+
+// Calls an /api/me route and keeps its answer as the stored account (storedMe).
+async function remembered(request: () => Promise<unknown>): Promise<Me> {
+  const generation = accountGeneration;
+  const me = parseMe(await request());
+  if (generation !== accountGeneration) return me;
   try {
     localStorage.setItem(STORAGE_KEYS.account, JSON.stringify(me));
   } catch {
     // Storage is blocked. The page asks the server again on the next visit.
   }
   return me;
+}
+
+// After a logout or a deletion: the stored account is gone, also when the next answer does not come.
+async function forgetting<T>(request: () => Promise<T>): Promise<T> {
+  const answer = await request();
+  accountGeneration++;
+  try {
+    localStorage.removeItem(STORAGE_KEYS.account);
+  } catch {
+    // Storage is blocked, so it holds no account either.
+  }
+  return answer;
 }
 
 export function parseMe(value: unknown): Me {
@@ -245,10 +264,10 @@ export const api = {
   seat: (code: Code, action: SeatAction) => request('POST', `/${code}/seats`, action),
   answerSeat: (code: Code, accept: boolean) => request('POST', `/${code}/seats/answer`, { accept }),
 
-  me: async () => rememberMe(parseMe(await call('GET', '/me'))),
-  setName: async (name: string) => rememberMe(parseMe(await call('PUT', '/me/name', { name }))),
-  clearName: async () => rememberMe(parseMe(await call('DELETE', '/me/name'))),
-  setAvatar: async (picture: AvatarPicture) => rememberMe(parseMe(await call('PUT', '/me/avatar', { picture }))),
+  me: () => remembered(() => call('GET', '/me')),
+  setName: (name: string) => remembered(() => call('PUT', '/me/name', { name })),
+  clearName: () => remembered(() => call('DELETE', '/me/name')),
+  setAvatar: (picture: AvatarPicture) => remembered(() => call('PUT', '/me/avatar', { picture })),
   myGames: async () => parseMyGames(await call('GET', '/me/games')),
   blocks: async () => parseBlocks(await call('GET', '/me/blocks')),
   statsPrivacy: async () => requireStatsPrivacy(await call('GET', '/me/stats-privacy')),
@@ -281,13 +300,13 @@ export const api = {
     if (answer === undefined) throw new Error('invalid answer from /api/copies');
     return answer.hasCopy;
   },
-  logout: () => call('POST', '/auth/logout'),
+  logout: () => forgetting(() => call('POST', '/auth/logout')),
   // Login is a full page visit to GitHub and back to `returnTo`, by default this page.
   loginUrl: (returnTo = location.href) => `/api/auth/login?return=${encodeURIComponent(returnTo)}`,
   // The same for Google. With a GitHub login, it connects Google to the account.
   googleLoginUrl: (returnTo = location.href) => `/api/auth/google/login?return=${encodeURIComponent(returnTo)}`,
   // Logs in with the ID token of Google One Tap (src/page/google-one-tap.ts).
-  googleOneTap: async (credential: string): Promise<Me> => rememberMe(parseMe(await call('POST', '/auth/google/one-tap', { credential }))),
+  googleOneTap: (credential: string): Promise<Me> => remembered(() => call('POST', '/auth/google/one-tap', { credential })),
 
   // Sends finished games in batches. Returns the public id of each result (by result id) that
   // the server keeps under another public id than the device sent.
@@ -327,7 +346,7 @@ export const api = {
   // Hides every finished game of this player from their history on the server.
   clearHistory: () => call('DELETE', '/me/history'),
   // Deletes the data of this player on the server, and of the account when this browser is logged in. It logs out.
-  deleteData: () => call('DELETE', '/me'),
+  deleteData: () => forgetting(() => call('DELETE', '/me')),
   // The person ids of the players who deleted their data since `since`, and the server time for the next call.
   deletedPeople: async (since: EpochMs) => parseDeletedPeople(await call('GET', `/deleted?since=${since}`)),
   // The metrics of this device for a finished online game that it played.
