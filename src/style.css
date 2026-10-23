@@ -4081,10 +4081,15 @@ body[data-turn='O'] .status[data-state='playing'] {
   line-height: 1.35;
 }
 
-.identity-nudge-body img {
+.identity-nudge-body .avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-color: #000000;
+}
+
+#identity-nudge-avatar {
   flex: none;
-  border: 2px solid #000000;
-  border-radius: 50%;
+  display: flex;
 }
 
 .identity-nudge > .btn-primary {

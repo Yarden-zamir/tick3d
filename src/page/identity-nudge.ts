@@ -12,7 +12,8 @@ import { showMyGamesTab } from './my-games-layout.ts';
 import { ownName, page } from './state.ts';
 
 const WINS_TO_ASK = 2;
-const AVATAR_PIXELS = 40;
+// 2.5rem in src/style.css, sharp on a screen with two device pixels per CSS pixel.
+const AVATAR_PIXELS = 80;
 
 const nudge = element('#identity-nudge', HTMLElement);
 const avatarSlot = element('#identity-nudge-avatar', HTMLSpanElement);
