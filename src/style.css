@@ -4068,6 +4068,29 @@ body[data-turn='O'] .status[data-state='playing'] {
   justify-self: start;
 }
 
+/* The prompt for a name (src/page/identity-nudge.ts): the card of the achievement popup, with the player's
+   picture next to the text. */
+.identity-nudge-body {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.identity-nudge-body p {
+  margin: 0;
+  line-height: 1.35;
+}
+
+.identity-nudge-body img {
+  flex: none;
+  border: 2px solid #000000;
+  border-radius: 50%;
+}
+
+.identity-nudge > .btn-primary {
+  justify-self: start;
+}
+
 /* A player who closed an async game: dimmed, but the game goes on. */
 .tally.away {
   opacity: 0.6;

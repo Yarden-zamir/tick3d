@@ -26,6 +26,8 @@ export const STORAGE_KEYS = {
   testerInvitedBy: 'tick3d.tester-invited-by',
   // The achievements that this device showed already, in a popup or on an end card (src/page/achievement-popup.ts).
   achievementsSeen: 'tick3d.achievements-seen',
+  // Set once the prompt for a name or a login showed on this device (src/page/identity-nudge.ts).
+  identityNudge: 'tick3d.identity-nudge',
 } as const;
 
 // The keys that hold settings, not game data. 'tick3d.voice' is the key of src/voice/settings.ts
