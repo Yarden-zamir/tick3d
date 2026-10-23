@@ -4856,6 +4856,12 @@ body[data-turn='O'] .status[data-state='playing'] {
   border: var(--border) solid var(--line);
 }
 
+/* Before the first answer of the server: a grey circle in the size of the picture. */
+.account-header .avatar-pending {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
 /* The name: a tap opens the rename form. The pencil says so. */
 .account-name {
   display: inline-flex;

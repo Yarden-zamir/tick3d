@@ -1,7 +1,7 @@
 // The account button and the My games dialog.
 import { winnerOf } from '../game.ts';
 import type { LocalSummary } from '../local.ts';
-import { avatarFor, avatarImage, type Person } from '../avatar.ts';
+import { avatarFor, avatarImage, avatarPlaceholder, type Person } from '../avatar.ts';
 import { nameOf } from '../names.ts';
 import { type Me, api, OnlineError, token } from '../online.ts';
 import {
@@ -376,6 +376,17 @@ let accountReturnTo: string | undefined;
 // The account part of My games. refreshAccount rebuilds it when a slower /api/me answer changes the account.
 function renderAccountBox(): void {
   accountBox.replaceChildren();
+  myGamesLogout.hidden = page.account.user === null;
+  // Before the first answer of the server on this device, a guest name could be wrong: show a placeholder.
+  if (!page.accountKnown) {
+    const header = document.createElement('div');
+    header.className = 'account-header';
+    const line = document.createElement('small');
+    line.textContent = navigator.onLine ? 'Loading your account…' : 'Your account shows when the device is online.';
+    header.append(avatarPlaceholder(), line);
+    accountBox.append(header);
+    return;
+  }
   const { user, githubLogin, googleConnected, googleLogin } = page.account;
   // The iOS app offers no login: App Store rule 4.8 asks for Sign in with Apple next to GitHub and Google.
   const canLogIn = page.account.loginAvailable && navigator.onLine && platform() === 'web';
@@ -403,8 +414,6 @@ function renderAccountBox(): void {
     list.append(...rows);
     accountBox.append(title, list);
   }
-  // Log out sits next to Delete my data at the bottom of the tab.
-  myGamesLogout.hidden = user === null;
 }
 
 // The picture, the name and one line about the login. A tap on the picture opens it large, with the

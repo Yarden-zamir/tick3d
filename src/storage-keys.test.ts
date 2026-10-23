@@ -9,7 +9,7 @@ describe('delete my data on this device', () => {
 
   it('removes the game data, keeps the player token and the settings, and leaves other keys alone', () => {
     const removed = deviceDataKeys(keys, false);
-    expect(removed).toEqual(expect.arrayContaining([STORAGE_KEYS.records, STORAGE_KEYS.name, STORAGE_KEYS.blocks, STORAGE_KEYS.reported, STORAGE_KEYS.soundTraining, 'tick3d.voice-practice']));
+    expect(removed).toEqual(expect.arrayContaining([STORAGE_KEYS.records, STORAGE_KEYS.account, STORAGE_KEYS.blocks, STORAGE_KEYS.reported, STORAGE_KEYS.soundTraining, 'tick3d.voice-practice']));
     for (const kept of [STORAGE_KEYS.player, STORAGE_KEYS.settings, STORAGE_KEYS.tuning, 'tick3d.voice', 'other-site.key']) expect(removed).not.toContain(kept);
   });
 

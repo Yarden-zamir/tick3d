@@ -140,6 +140,27 @@ export type Me = {
   hasCopy: boolean | null;
 };
 
+// The last answer of GET /api/me on this device, or null before the first one. A page shows the
+// account from it at once, and the next answer replaces it. A stored answer of an older page version
+// does not parse, so it counts as none.
+export function storedMe(): Me | null {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.account);
+    return stored === null ? null : parseMe(JSON.parse(stored));
+  } catch {
+    return null;
+  }
+}
+
+function rememberMe(me: Me): Me {
+  try {
+    localStorage.setItem(STORAGE_KEYS.account, JSON.stringify(me));
+  } catch {
+    // Storage is blocked. The page asks the server again on the next visit.
+  }
+  return me;
+}
+
 export function parseMe(value: unknown): Me {
   if (typeof value !== 'object' || value === null) throw new Error('invalid answer from /api/me');
   const { loginAvailable, user } = value as Record<string, unknown>;
@@ -224,10 +245,10 @@ export const api = {
   seat: (code: Code, action: SeatAction) => request('POST', `/${code}/seats`, action),
   answerSeat: (code: Code, accept: boolean) => request('POST', `/${code}/seats/answer`, { accept }),
 
-  me: async () => parseMe(await call('GET', '/me')),
-  setName: async (name: string) => parseMe(await call('PUT', '/me/name', { name })),
-  clearName: async () => parseMe(await call('DELETE', '/me/name')),
-  setAvatar: async (picture: AvatarPicture) => parseMe(await call('PUT', '/me/avatar', { picture })),
+  me: async () => rememberMe(parseMe(await call('GET', '/me'))),
+  setName: async (name: string) => rememberMe(parseMe(await call('PUT', '/me/name', { name }))),
+  clearName: async () => rememberMe(parseMe(await call('DELETE', '/me/name'))),
+  setAvatar: async (picture: AvatarPicture) => rememberMe(parseMe(await call('PUT', '/me/avatar', { picture }))),
   myGames: async () => parseMyGames(await call('GET', '/me/games')),
   blocks: async () => parseBlocks(await call('GET', '/me/blocks')),
   statsPrivacy: async () => requireStatsPrivacy(await call('GET', '/me/stats-privacy')),
@@ -266,7 +287,7 @@ export const api = {
   // The same for Google. With a GitHub login, it connects Google to the account.
   googleLoginUrl: (returnTo = location.href) => `/api/auth/google/login?return=${encodeURIComponent(returnTo)}`,
   // Logs in with the ID token of Google One Tap (src/page/google-one-tap.ts).
-  googleOneTap: async (credential: string): Promise<Me> => parseMe(await call('POST', '/auth/google/one-tap', { credential })),
+  googleOneTap: async (credential: string): Promise<Me> => rememberMe(parseMe(await call('POST', '/auth/google/one-tap', { credential }))),
 
   // Sends finished games in batches. Returns the public id of each result (by result id) that
   // the server keeps under another public id than the device sent.

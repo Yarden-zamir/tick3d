@@ -7,7 +7,8 @@ export const STORAGE_KEYS = {
   player: 'tick3d.player',
   records: 'tick3d.records',
   tuning: 'tick3d.tuning',
-  name: 'tick3d.name',
+  // The last answer of GET /api/me, so a page shows the account at once, also offline (src/online.ts).
+  account: 'tick3d.account',
   soundTraining: 'tick3d.sound-training',
   // The last block list from the server, so a game without a network still hides blocked people.
   blocks: 'tick3d.blocks',

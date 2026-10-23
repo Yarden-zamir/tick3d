@@ -5,11 +5,10 @@ import { type EpochMs, toEpochMs } from '../epoch.ts';
 import { type Game, type Player, newGame } from '../game.ts';
 import type { LocalBackend } from '../local.ts';
 import { nameOf } from '../names.ts';
-import { type Me, token } from '../online.ts';
-import { accountNameOf, parseCustomName } from '../protocol.ts';
+import { type Me, storedMe, token } from '../online.ts';
+import { accountNameOf } from '../protocol.ts';
 import type { SessionView, MatchOptions, Code, MoveRequest, SeatAction, SessionUpdate, PublicGame } from '../protocol.ts';
 import { type Mode, settings } from './settings.ts';
-import { STORAGE_KEYS } from '../storage-keys.ts';
 
 // The open session: its latest view, the backend that holds it, and its mode.
 export type Session = SessionView & { backend: SessionBackend; mode: Mode; unsubscribe: () => void };
@@ -99,8 +98,12 @@ type PageState = {
   // Storage on this device, and the backend for computer, friend and hosted Nearby games.
   deviceDb: DeviceDb | undefined;
   local: LocalBackend | undefined;
-  // Login state from the server. Without a network or on a LAN host, login is not available.
+  // Login state from the server: the last answer of GET /api/me on this device (storedMe), until a new one
+  // comes. Without a network or on a LAN host, login is not available.
   account: Me;
+  // False until this device has any answer of GET /api/me. Until then the page shows no name or picture,
+  // so it never shows a guest for a player who is logged in.
+  accountKnown: boolean;
   readonly thinking: boolean;
   // An action waits for its backend. Also before a session is open, such as the first online game.
   busy: boolean;
@@ -116,30 +119,17 @@ type PageState = {
   readonly viewing: PublicGame | undefined;
 };
 
-// The custom name from the last /api/me answer, so the page shows it offline too.
-
-function storedName(): string | null {
-  try {
-    return parseCustomName(localStorage.getItem(STORAGE_KEYS.name)) ?? null;
-  } catch {
-    return null; // Storage is blocked. The name comes with the next /api/me answer.
-  }
-}
-
 export function saveAccount(account: Me): void {
   page.account = account;
-  try {
-    if (account.name === null) localStorage.removeItem(STORAGE_KEYS.name);
-    else localStorage.setItem(STORAGE_KEYS.name, account.name);
-  } catch {
-    // Storage is blocked. The page keeps the name for this visit.
-  }
+  page.accountKnown = true;
 }
 
 // The name that other players see for this player: the GitHub name, the custom name, or the generated name.
 export const ownName = (): string => accountNameOf(page.account.user) ?? page.account.name ?? nameOf(token);
 // Logged in with GitHub, or with Google: either one gives an account.
 export const loggedIn = (): boolean => page.account.user !== null;
+
+const stored = storedMe();
 
 export const page: PageState = {
   games: [newGame('X', settings.clock)],
@@ -151,7 +141,8 @@ export const page: PageState = {
   },
   deviceDb: undefined,
   local: undefined,
-  account: { loginAvailable: false, user: null, name: storedName(), googleLogin: false, googleOneTapClient: null, githubLogin: null, googleConnected: false, person: null, hasCopy: null },
+  account: stored ?? { loginAvailable: false, user: null, name: null, googleLogin: false, googleOneTapClient: null, githubLogin: null, googleConnected: false, person: null, hasCopy: null },
+  accountKnown: stored !== null,
   get thinking() {
     return screen.kind === 'session' && screen.thinking;
   },
