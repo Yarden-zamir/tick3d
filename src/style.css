@@ -3283,8 +3283,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* A long custom name or login wraps, so nothing is cut off at 390 px. */
-.account b,
-.connected-account {
+.account b {
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -4828,37 +4827,93 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: none;
 }
 
-/* The linked external accounts in My games (src/page/my-games.ts connectedAccounts), one row each. */
-.connected-accounts {
+/* The account part of My games (src/page/my-games.ts renderAccountBox): the picture and name, then
+   the sign-in list with one row per login. Each part takes the full width of the box. */
+.account > .account-header,
+.account > .sign-in-title,
+.account > .sign-in-list {
+  flex: 1 1 100%;
+}
+
+.account-header {
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  width: 100%;
+  align-items: center;
+  gap: 0.8rem;
 }
 
-.connected-accounts small {
+.account .account-header .avatar {
+  width: 3.4rem;
+  height: 3.4rem;
+  border: var(--border) solid var(--line);
+}
+
+.account-header b {
+  display: block;
+  font-size: 1.25rem;
+  line-height: 1.1;
+}
+
+.account-header small {
+  display: block;
+  margin-top: 0.15rem;
   color: var(--muted);
 }
 
-.connected-account {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-weight: 700;
-}
-
-/* The Google login button: the four-color Google mark before the text, as the Google branding asks
-   (src/page/my-games.ts googleLink). */
-.google-login {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-/* Without a login, the picture buttons show grayed out with this hint (src/page/my-games.ts pictureControls). */
-.picture-hint {
-  align-self: center;
+.sign-in-title {
+  margin: 0.6rem 0 0;
   color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sign-in-list {
+  overflow: hidden;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+.sign-in-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.75rem;
+}
+
+.sign-in-row + .sign-in-row {
+  border-top: 1px solid color-mix(in srgb, var(--line) 25%, transparent);
+}
+
+.sign-in-row svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
+.sign-in-row > div {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sign-in-row b {
+  display: block;
+}
+
+.sign-in-row small {
+  color: var(--muted);
+}
+
+.sign-in-row .btn {
+  white-space: nowrap;
+}
+
+.sign-in-check {
+  color: var(--ink);
+  font-size: 1.2rem;
+  font-weight: 800;
 }
 
 /* The tabs of My games (src/page/my-games-layout.ts). Nothing is wider than the dialog: every part

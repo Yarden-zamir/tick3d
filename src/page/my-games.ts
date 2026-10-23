@@ -68,7 +68,7 @@ import { render, resultText } from './render.ts';
 import { loadBlocks, renderBlockedList } from './safety.ts';
 import { deleteSentResults, flushResults, forgetRecords, syncRecords } from './results.ts';
 import { openDeviceSession, joinSession, refresh } from './sessions.ts';
-import { ownName, page, current, saveAccount } from './state.ts';
+import { loggedIn, ownName, page, current, saveAccount } from './state.ts';
 
 // A button of a list item. A click closes the dialog first.
 type Action = { label: string; run: () => void };
@@ -372,60 +372,99 @@ let accountReturnTo: string | undefined;
 // The account part of My games. refreshAccount rebuilds it when a slower /api/me answer changes the account.
 function renderAccountBox(): void {
   accountBox.replaceChildren();
-  const { user, googleConnected } = page.account;
+  const { user, googleConnected, googleLogin } = page.account;
   // The iOS app offers no login: App Store rule 4.8 asks for Sign in with Apple next to GitHub and Google.
   const canLogIn = page.account.loginAvailable && navigator.onLine && platform() === 'web';
-  const googleRow = () => connectedAccount(GOOGLE_ICON, 'Google', 'Google');
-  if (user !== null) {
-    const shown = accountNameOf(user);
-    const avatar = avatarFor({ player: user, name: shown }, ACCOUNT_AVATAR_PIXELS, null);
-    const name = document.createElement('b');
-    name.textContent = shown;
-    const rows = [connectedAccount(GITHUB_ICON, 'GitHub', user.login), ...(googleConnected ? [googleRow()] : [])];
-    accountBox.append(avatar, name, logoutButton(), connectedAccounts(rows));
-    if (navigator.onLine) accountBox.append(renameControls({ current: user.name, fallback: user.login, reset: 'Use GitHub name' }), pictureControls(user));
-    if (canLogIn && page.account.googleLogin && !googleConnected) accountBox.append(googleLink('Connect Google'));
-    return;
+  const shown = ownName();
+  const status = user !== null ? 'Signed in with GitHub' : googleConnected ? 'Signed in with Google' : 'You play as a guest on this device';
+  accountBox.append(accountHeader(avatarFor({ player: user, name: shown }, ACCOUNT_AVATAR_PIXELS, null), shown, status));
+  if (navigator.onLine) {
+    const nameChoice: NameChoice =
+      user === null
+        ? { current: page.account.name, fallback: page.account.generatedName, reset: 'Reset to generated name' }
+        : { current: user.name, fallback: user.login, reset: 'Use GitHub name' };
+    accountBox.append(renameControls(nameChoice));
+    if (user !== null) accountBox.append(pictureControls(user));
   }
-  // The same name that the server shows to the other players: the custom name, else the generated one (src/names.ts).
-  // A Google login without GitHub shows like a device too, with a name of its own on every device.
-  const text = document.createElement('span');
+  // One row per login. A Google login without GitHub has no GitHub row: GitHub cannot join it.
+  const rows: HTMLElement[] = [];
+  if (user !== null) rows.push(signInRow(GITHUB_ICON, 'GitHub', user.login, null));
+  else if (!googleConnected && canLogIn) rows.push(signInRow(GITHUB_ICON, 'GitHub', 'Uses your GitHub name and picture', loginLink(api.loginUrl(accountReturnTo), 'Log in', true)));
+  if (googleConnected) rows.push(signInRow(GOOGLE_ICON, 'Google', 'Signed in', null));
+  else if (googleLogin && canLogIn) {
+    const action = user === null ? loginLink(api.googleLoginUrl(accountReturnTo), 'Sign in', false) : loginLink(api.googleLoginUrl(accountReturnTo), 'Connect', false);
+    rows.push(signInRow(GOOGLE_ICON, 'Google', user === null ? 'Only the name that you choose here shows' : 'Also sign in with Google', action));
+  }
+  if (rows.length > 0) {
+    const title = document.createElement('h4');
+    title.className = 'sign-in-title';
+    title.textContent = loggedIn() ? 'Sign-in methods' : 'Log in to keep your games on every device';
+    const list = document.createElement('div');
+    list.className = 'sign-in-list';
+    list.append(...rows);
+    accountBox.append(title, list);
+  }
+  if (loggedIn()) accountBox.append(logoutButton());
+}
+
+// The picture, the shown name and one line about the login.
+function accountHeader(avatar: HTMLElement, name: string, status: string): HTMLElement {
+  const header = document.createElement('div');
+  header.className = 'account-header';
+  const text = document.createElement('div');
+  const bold = document.createElement('b');
+  bold.textContent = name;
+  const line = document.createElement('small');
+  line.textContent = status;
+  text.append(bold, line);
+  header.append(avatar, text);
+  return header;
+}
+
+// One login in the sign-in list: the mark, the name and a line, and a button, or a check mark when it is in use.
+function signInRow(icon: string, provider: string, detail: string, action: HTMLElement | null): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'sign-in-row';
+  row.innerHTML = icon;
+  // The mark names the provider for a screen reader too.
+  const mark = row.querySelector('svg');
+  if (mark === null) throw new Error(`the ${provider} icon has no svg`);
+  mark.removeAttribute('aria-hidden');
+  mark.setAttribute('role', 'img');
+  mark.setAttribute('aria-label', provider);
+  const text = document.createElement('div');
   const name = document.createElement('b');
-  name.textContent = ownName();
-  text.append('You play as ', name, '.');
-  accountBox.append(avatarFor({ player: null, name: ownName() }, ACCOUNT_AVATAR_PIXELS, null), text);
-  if (googleConnected) accountBox.append(logoutButton(), connectedAccounts([googleRow()]));
-  if (navigator.onLine) accountBox.append(renameControls({ current: page.account.name, fallback: page.account.generatedName, reset: 'Reset to generated name' }));
-  if (canLogIn && !googleConnected) {
-    // The picture buttons show grayed out, so a player sees what a login adds.
-    accountBox.append(pictureControls(null));
-    text.append(' Log in with GitHub to use your GitHub name.');
-    const login = document.createElement('a');
-    login.className = 'btn btn-small btn-primary login-link';
-    login.href = api.loginUrl(accountReturnTo);
-    login.textContent = 'Log in with GitHub';
-    accountBox.append(login);
-    if (page.account.googleLogin) accountBox.append(googleLink('Sign in with Google'));
+  name.textContent = provider;
+  const line = document.createElement('small');
+  line.textContent = detail;
+  text.append(name, line);
+  row.append(text);
+  if (action !== null) row.append(action);
+  else {
+    const check = document.createElement('span');
+    check.className = 'sign-in-check';
+    check.textContent = '✓';
+    check.setAttribute('aria-label', 'In use');
+    row.append(check);
   }
+  return row;
+}
+
+function loginLink(href: string, label: string, primary: boolean): HTMLAnchorElement {
+  const link = document.createElement('a');
+  link.className = primary ? 'btn btn-small btn-primary login-link' : 'btn btn-small login-link';
+  link.href = href;
+  link.textContent = label;
+  return link;
 }
 
 function logoutButton(): HTMLButtonElement {
   const logout = document.createElement('button');
   logout.type = 'button';
-  logout.className = 'btn btn-small';
+  logout.className = 'btn btn-small account-logout';
   logout.textContent = 'Log out';
   logout.addEventListener('click', () => void logOut().then(() => myGamesDialog.close(), showError));
   return logout;
-}
-
-// The Google login button, with the Google mark as the Google branding asks. With a GitHub login, it connects Google.
-function googleLink(label: string): HTMLAnchorElement {
-  const link = document.createElement('a');
-  link.className = 'btn btn-small login-link google-login';
-  link.href = api.googleLoginUrl(accountReturnTo);
-  link.innerHTML = GOOGLE_ICON;
-  link.append(label);
-  return link;
 }
 
 // `returnTo` is the page that a GitHub login returns to. Without it, the login returns to this page.
@@ -595,31 +634,6 @@ export function renderSessionGames(): void {
 // Rename for a player without a GitHub login: an inline form, and a reset to the generated name.
 // The dialog covers the toasts, so a refused name shows in the form.
 // The external accounts that the tick3d account is linked to, one row each. Today GitHub is the only one.
-function connectedAccounts(rows: readonly HTMLElement[]): HTMLElement {
-  const box = document.createElement('div');
-  box.className = 'connected-accounts';
-  const title = document.createElement('small');
-  title.textContent = 'Connected accounts';
-  box.append(title, ...rows);
-  return box;
-}
-
-// `icon` is the inline SVG of the provider mark (src/icons.ts).
-function connectedAccount(icon: string, provider: string, login: string): HTMLElement {
-  const row = document.createElement('span');
-  row.className = 'connected-account';
-  row.title = provider;
-  row.innerHTML = icon;
-  // The mark names the provider for a screen reader too.
-  const mark = row.querySelector('svg');
-  if (mark === null) throw new Error(`the ${provider} icon has no svg`);
-  mark.removeAttribute('aria-hidden');
-  mark.setAttribute('role', 'img');
-  mark.setAttribute('aria-label', provider);
-  row.append(login);
-  return row;
-}
-
 // `current` is the custom name or null, `fallback` the name without it, and `reset` the label of the button that clears it.
 type NameChoice = { current: string | null; fallback: string; reset: string };
 
@@ -681,8 +695,8 @@ function renameControls({ current, fallback, reset: resetLabel }: NameChoice): H
   return box;
 }
 
-// New picture and Use GitHub picture. Without an account (`user` null) both show grayed out, with a hint.
-function pictureControls(user: PlayerInfo | null): HTMLElement {
+// New picture and Use GitHub picture, for an account with GitHub.
+function pictureControls(user: PlayerInfo): HTMLElement {
   const box = document.createElement('div');
   box.className = 'rename';
   const problem = document.createElement('small');
@@ -692,19 +706,12 @@ function pictureControls(user: PlayerInfo | null): HTMLElement {
     element.className = 'btn btn-small';
     element.type = 'button';
     element.textContent = label;
-    element.disabled = user === null;
     element.addEventListener('click', () => void changeAccount(() => api.setAvatar(picture), problem));
     return element;
   };
   box.append(button('New picture', 'generated'));
   // A GitHub picture is the default, so the button shows only when a generated picture replaces it.
-  if (user !== null && user.seed !== null) box.append(button('Use GitHub picture', 'github'));
-  if (user === null) {
-    const hint = document.createElement('small');
-    hint.className = 'picture-hint';
-    hint.textContent = 'Log in to change your avatar.';
-    box.append(hint);
-  }
+  if (user.seed !== null) box.append(button('Use GitHub picture', 'github'));
   box.append(problem);
   return box;
 }
