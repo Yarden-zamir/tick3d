@@ -67,9 +67,10 @@ export async function offerGoogleOneTap(onError: (error: unknown) => void): Prom
   identity.prompt();
 }
 
-// Call it before the logout of a Google login: after it, One Tap asks again and does not sign the
-// player in by itself. Google keeps this choice in a cookie of its own.
+// Call it before every logout: after it, One Tap asks again and does not sign the player in by itself.
+// Every logout, because this browser may have signed in with Google before, also with another account.
+// Google keeps this choice in a cookie of its own.
 export async function stopGoogleAutoSelect(): Promise<void> {
-  if (!page.account.googleConnected || page.account.googleOneTapClient === null) return;
+  if (page.account.googleOneTapClient === null) return;
   (await loadScript()).disableAutoSelect();
 }

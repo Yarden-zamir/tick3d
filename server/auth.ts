@@ -9,7 +9,7 @@
 import { isRecord } from '../src/guards.ts';
 import { createHmac, createPublicKey, randomBytes, timingSafeEqual, verify as verifySignature } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
-import { PICTURE_HOSTS, parseCustomName, parsePlayerInfo } from '../src/protocol.ts';
+import { PICTURE_HOSTS, parseCustomName, parsePlayerInfo, withoutGoogleSize } from '../src/protocol.ts';
 import type { GitHubUser, GoogleSignIn, GoogleUser } from './store.ts';
 
 const USER_COOKIE = 't3_user';
@@ -37,16 +37,19 @@ export function authConfigFromEnv(env: NodeJS.ProcessEnv): AuthConfig | undefine
   // The three secrets switch login on. The origin and cookie domain are plain settings that a deploy
   // always sets, so they alone do not turn login on.
   const secrets = [GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, AUTH_SECRET];
-  if (secrets.every((value) => !value)) return undefined;
+  const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = env;
+  if (Boolean(GOOGLE_CLIENT_ID) !== Boolean(GOOGLE_CLIENT_SECRET)) {
+    throw new Error('Google login needs both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET');
+  }
+  if (secrets.every((value) => !value)) {
+    if (GOOGLE_CLIENT_ID) throw new Error('Google login needs the GitHub login settings too');
+    return undefined;
+  }
   // Some but not all settings is a deploy mistake, so it stops the server instead of silently disabling login.
   if (![...secrets, AUTH_ORIGIN, COOKIE_DOMAIN].every((value) => value)) {
     throw new Error('GitHub login needs all of GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, AUTH_SECRET, AUTH_ORIGIN and COOKIE_DOMAIN');
   }
   if ((AUTH_SECRET ?? '').length < 32) throw new Error('AUTH_SECRET needs at least 32 characters');
-  const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = env;
-  if (Boolean(GOOGLE_CLIENT_ID) !== Boolean(GOOGLE_CLIENT_SECRET)) {
-    throw new Error('Google login needs both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET');
-  }
   return {
     clientId: GITHUB_CLIENT_ID ?? '',
     clientSecret: GITHUB_CLIENT_SECRET ?? '',
@@ -123,9 +126,7 @@ const googleName = (claims: Record<string, unknown>): string | null => parseCust
 
 // The Google photo without its size, or null. avatarSrc in src/avatar.ts adds the size, as "=s<pixels>-c".
 function googlePicture(value: unknown): string | null {
-  if (typeof value !== 'string' || !value.startsWith(PICTURE_HOSTS.google)) return null;
-  const size = value.lastIndexOf('=');
-  return size === -1 ? value : value.slice(0, size);
+  return typeof value === 'string' && value.startsWith(PICTURE_HOSTS.google) ? withoutGoogleSize(value) : null;
 }
 
 // Google's sign-in addresses (OpenID Connect discovery: https://accounts.google.com/.well-known/openid-configuration).

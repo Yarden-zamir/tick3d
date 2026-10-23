@@ -365,6 +365,13 @@ const SCHEMA = [
 // through identityOf, and a device that logs out does not. It passes the token checks of a stored
 // document, so the format does not change. asPlayerToken refuses it as an X-Player value.
 const accountToken = (githubId: number | bigint): string => `${ACCOUNT_TOKEN_PREFIX}${String(githubId).padStart(16, '0')}`;
+// The account id in an account token. The padding is the same as lpad in SQL, so the sign of a negative id
+// (an account that a Google login made) sits after the zeros: "00000000000000-5". The leaderboard reads it the same way.
+function accountIdOf(token: string): bigint {
+  const digits = token.slice(ACCOUNT_TOKEN_PREFIX.length);
+  const start = [...digits].findIndex((char) => char !== '0');
+  return BigInt(start === -1 ? '0' : digits.slice(start));
+}
 
 export type GitHubUser = { id: number; login: string; avatar: string };
 // A Google login: Google's subject id of the account. It stays the same when the player changes the
@@ -1139,6 +1146,16 @@ export async function openStore(
       ? { provider: 'google' as const, subject: user.google, label: null }
       : { provider: 'github' as const, subject: String(user.id), label: user.login };
 
+  // True when `name` is the GitHub login of an account other than `account` (GitHub logins ignore case).
+  async function isGitHubLoginOfOther(name: string, account: bigint | null): Promise<boolean> {
+    const [clash] = await rows(
+      "FROM logins SELECT label WHERE provider = 'github' AND lower(label) = lower($name) AND github_id IS DISTINCT FROM $account",
+      { name, account },
+      { label: text },
+    );
+    return clash !== undefined;
+  }
+
   // The account of a login, or undefined when the login has none yet.
   async function knownAccountOf(user: LoginUser): Promise<bigint | undefined> {
     const { provider, subject } = loginKey(user);
@@ -1163,9 +1180,11 @@ export async function openStore(
     }
     // A Google cookie has no profile. Its account keeps the name and photo of the last sign-in, or gets
     // a generated name when it has no users row: an account deleted on another device while this cookie lived.
+    // A Google name that is the GitHub login of another account would pose as that player: it gets a generated name.
+    const googleName = 'profile' in user && user.profile.name !== null && !(await isGitHubLoginOfOther(user.profile.name, id)) ? user.profile.name : null;
     const profile =
       'profile' in user
-        ? { login: user.profile.name ?? nameOf(accountToken(id)), avatar: user.profile.picture }
+        ? { login: googleName ?? nameOf(accountToken(id)), avatar: user.profile.picture }
         : 'google' in user
           ? undefined
           : { login: user.login, avatar: user.avatar };
@@ -1443,7 +1462,7 @@ export async function openStore(
       const { watchers } = await audience(code, row.doc);
       // A rule can seat a logged-in watcher by its account token, so its row must exist first.
       for (const watcher of watchers) {
-        if (watcher.token.startsWith(ACCOUNT_TOKEN_PREFIX)) await ensureAccountRow(BigInt(watcher.token.slice(ACCOUNT_TOKEN_PREFIX.length)));
+        if (watcher.token.startsWith(ACCOUNT_TOKEN_PREFIX)) await ensureAccountRow(accountIdOf(watcher.token));
       }
       const doc = rule(row.doc, identity, watchers);
       return view(doc === row.doc ? row : await save(row, doc), identity);
@@ -1794,12 +1813,7 @@ export async function openStore(
     // Revisit this if two players with one name confuse people in practice.
     setName: (token: PlayerToken, name: string, account: bigint | null): Promise<void> =>
       serialized(async () => {
-        const [clash] = await rows(
-          "FROM logins SELECT label WHERE provider = 'github' AND lower(label) = lower($name) AND github_id IS DISTINCT FROM $account",
-          { name, account },
-          { label: text },
-        );
-        if (clash !== undefined) throw new SessionError(409, 'That name is a GitHub login. Choose another name.');
+        if (await isGitHubLoginOfOther(name, account)) throw new SessionError(409, 'That name is a GitHub login. Choose another name.');
         if (account !== null) {
           await db.run('UPDATE users SET name = $name WHERE github_id = $account', { name, account });
           return;

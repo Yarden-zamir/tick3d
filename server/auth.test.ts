@@ -197,6 +197,9 @@ describe('login settings', () => {
     expect(authConfigFromEnv(github)?.google).toBeUndefined();
     expect(authConfigFromEnv({ ...github, GOOGLE_CLIENT_ID: 'g', GOOGLE_CLIENT_SECRET: 's' })?.google).toEqual({ clientId: 'g', clientSecret: 's' });
     expect(() => authConfigFromEnv({ ...github, GOOGLE_CLIENT_ID: 'g' })).toThrow();
+    // Google login needs the GitHub login settings too, so Google alone stops the server.
+    expect(() => authConfigFromEnv({ GOOGLE_CLIENT_ID: 'g', GOOGLE_CLIENT_SECRET: 's' })).toThrow();
+    expect(() => authConfigFromEnv({ GOOGLE_CLIENT_ID: 'g' })).toThrow();
   });
 
   it('turns login off without settings, and stops on half the settings', () => {

@@ -154,7 +154,7 @@ A mode change moves neither the board nor the Opponent picker:
 - Connect in the sign-in list of My games adds the other login to the account, in both directions, so either login opens it. A login that already has its own account brings it along: the logged-in account takes in its devices, games, stats, achievements, records, blocks, Hide my stats and app copies, and keeps its own name and picture. Two accounts that both have a login of one provider cannot become one.
 - A login lets a player continue a game on every device of the account.
 - Every player can choose a name in My games. With a login, the name belongs to the account and shows in place of the GitHub login.
-- With a login, New picture in My games swaps the GitHub picture for a generated one, and each press gives another. Use GitHub picture goes back. Without a login, these buttons show grayed out.
+- With a login, a tap on the own picture in My games opens it large. New picture there swaps the login's picture for a generated one, and each press gives another. Use GitHub picture or Use Google picture goes back, when the login has a picture. Without a login, the picture view says to log in.
 - My games shows the account, the stats, the games of the open session, the match history and the online sessions. Stats in its head opens your own stats.
 
 <img src="docs/screenshots/my-games.png" alt="My games: stats and sessions" width="480">

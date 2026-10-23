@@ -40,6 +40,8 @@ describe('generated player pictures', () => {
   it('shows the Google photo of a Google account at twice the size, and a generated picture without a photo', () => {
     const player = { provider: 'google' as const, login: 'Dana Levi', avatar: 'https://lh3.googleusercontent.com/a/abc', name: null, seed: null };
     expect(avatarImage({ player, name: 'Dana Levi' }, 24).src).toBe('https://lh3.googleusercontent.com/a/abc=s48-c');
+    // A Nearby device may send the photo with a size: the page takes its own size.
+    expect(avatarImage({ player: { ...player, avatar: 'https://lh3.googleusercontent.com/a/abc=s96-c' }, name: 'Dana Levi' }, 24).src).toBe('https://lh3.googleusercontent.com/a/abc=s48-c');
     expect(avatarImage({ player: { ...player, avatar: null }, name: 'Dana Levi' }, 24).src).toBe(`data:image/svg+xml,${encodeURIComponent(avatarSvg('Dana Levi'))}`);
   });
 

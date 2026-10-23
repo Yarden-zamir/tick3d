@@ -8,7 +8,7 @@
 // player token. Limit: a rename gives a new picture, and two players with one name share a picture.
 // Revisit when the view sends a public player id.
 import { hash } from './names.ts';
-import type { PersonId, PlayerInfo } from './protocol.ts';
+import { type PersonId, type PlayerInfo, withoutGoogleSize } from './protocol.ts';
 
 // Each palette has its own dark background, so the picture reads the same in every theme.
 type Palette = { background: string; top: string; side: string; lit: string; litSide: string };
@@ -128,7 +128,8 @@ export function avatarSrc({ player, name }: Person, pixels: number): string {
   if (player === null) return generated(name);
   if (player.seed !== null) return generated(player.seed);
   if (player.avatar === null) return generated(player.login);
-  return player.provider === 'github' ? `${player.avatar}&s=${pixels * 2}` : `${player.avatar}=s${pixels * 2}-c`;
+  // The server stores a Google photo without a size, but a Nearby device may send one.
+  return player.provider === 'github' ? `${player.avatar}&s=${pixels * 2}` : `${withoutGoogleSize(player.avatar)}=s${pixels * 2}-c`;
 }
 
 // The picture of one person. The alt text is empty, because the name is always next to the picture.

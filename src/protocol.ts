@@ -591,6 +591,12 @@ export const PICTURE_HOSTS: Record<LoginProvider, string> = {
   google: 'https://lh3.googleusercontent.com/',
 };
 
+// A Google photo address without its size suffix ("=s96-c"), so a page can add the size that it shows.
+export function withoutGoogleSize(url: string): string {
+  const size = url.lastIndexOf('=');
+  return size === -1 ? url : url.slice(0, size);
+}
+
 export function parsePlayerInfo(value: unknown): PlayerInfo | undefined {
   if (!isRecord(value)) return undefined;
   const { login, avatar } = value;

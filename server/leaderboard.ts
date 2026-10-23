@@ -40,7 +40,7 @@ const LEADERBOARD = `WITH g AS (${filteredGames(null)}),
   played AS (
     -- A seat can hold the account token itself, which has no player_tokens row.
     SELECT coalesce($account || lpad(pt.github_id::VARCHAR, 16, '0'), token) AS owner,
-      coalesce(pt.github_id, CASE WHEN starts_with(token, $account) THEN substr(token, length($account) + 1)::BIGINT END) AS github_id,
+      coalesce(pt.github_id, CASE WHEN starts_with(token, $account) THEN ltrim(substr(token, length($account) + 1), '0')::BIGINT END) AS github_id,
       finished_at, moves, ending,
       coalesce(winner = seat, false) AS won, winner IS NULL AS drawn
     FROM seats LEFT JOIN player_tokens pt USING (token)

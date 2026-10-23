@@ -1309,6 +1309,32 @@ describe('GitHub and Google logins', () => {
     expect(await store.account(alice)).toMatchObject({ login: 'Alice Cohen', avatar: null });
   });
 
+  it('lets the players move while a Google account watches, and puts a Google account on the leaderboard', async () => {
+    let open: PlayerToken[] = [];
+    store = await openStore(':memory:', { open: () => open });
+    const { code } = await store.create(alice, 'Watched');
+    await store.join(code, bob);
+    // A negative account id: its account token holds the sign after the zeros.
+    await store.linkToken(carol, aliceSignIn);
+    open = [alice, bob, carol];
+    expect((await store.get(code, carol)).watchers).toMatchObject([{ player: { provider: 'google', login: 'Alice Levi' } }]);
+    await playMoves(code, X_WINS);
+    expect((await store.get(code, bob)).games[0]?.moves).toEqual(X_WINS);
+    // A Google account plays a game, so it gets a leaderboard row with its account.
+    const second = await store.create(carol, 'Google plays');
+    await store.join(second.code, bob);
+    for (const [moveCount, cell] of X_WINS.entries()) await store.move(second.code, moveCount % 2 === 0 ? carol : bob, { game: 0, moveCount, cell });
+    const board = await store.leaderboard(ALL_STATS, undefined);
+    expect(board.rows).toEqual(expect.arrayContaining([expect.objectContaining({ player: expect.objectContaining({ provider: 'google', login: 'Alice Levi' }) })]));
+  });
+
+  it('gives a Google account a generated name when its Google name is the GitHub login of another account', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    const id = await store.linkToken(bob, { google: '1000000000000000000009', profile: { name: 'ALICE', picture: null } });
+    expect(await store.account(bob)).toMatchObject({ provider: 'google', login: nameOf(`account-${String(id).padStart(16, '0')}`) });
+  });
+
   it('hides the Google name behind a custom name, and lets the account choose and reset its picture', async () => {
     store = await openStore(':memory:');
     const id = await store.linkToken(alice, aliceSignIn);
