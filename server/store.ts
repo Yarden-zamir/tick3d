@@ -136,7 +136,8 @@ const SCHEMA = [
      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
      seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
-  // The devices of an account. A token is the random id one browser keeps.
+  // The devices of an account. A token is the random id one browser keeps. github_id is the account
+  // id: a GitHub id, or the negative id of a Google account (google_accounts).
   `CREATE TABLE IF NOT EXISTS player_tokens (
      token VARCHAR PRIMARY KEY,
      github_id BIGINT NOT NULL,
@@ -334,6 +335,16 @@ const SCHEMA = [
   // the seed of a generated picture in place of the GitHub picture. Null keeps the GitHub value.
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR',
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS seed VARCHAR',
+  // Google logins. github_id is the account: the GitHub account that the player connected Google to,
+  // or a negative id from google_account_ids for an account without GitHub. A negative id never
+  // equals a GitHub id. An account without GitHub has no users row, so it shows like a device: the
+  // name in player_names under the account token, else the generated name of the account token.
+  'CREATE SEQUENCE IF NOT EXISTS google_account_ids',
+  `CREATE TABLE IF NOT EXISTS google_accounts (
+     sub VARCHAR PRIMARY KEY,
+     github_id BIGINT NOT NULL UNIQUE,
+     linked_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
 ];
 
 // The token that a seat holds when a logged-in player takes it. The account has a player_tokens row
@@ -344,6 +355,9 @@ const SCHEMA = [
 const accountToken = (githubId: number | bigint): string => `${ACCOUNT_TOKEN_PREFIX}${String(githubId).padStart(16, '0')}`;
 
 export type GitHubUser = { id: number; login: string; avatar: string };
+// A Google login: Google's subject id of the account. It stays the same when the player changes the
+// Google name or address. The game keeps nothing else from Google, so a Google account shows like a device.
+export type GoogleUser = { google: string };
 
 // A stored report as a maintainer reads it (GET /api/reports). It holds person ids, never a token.
 export type StoredReport = {
@@ -1091,6 +1105,35 @@ export async function openStore(
     return row.stale ? save(row, row.doc) : row;
   }
 
+  // The token that holds the custom name of a device in player_names: the account token for an account
+  // without GitHub (a Google login), else the device token. A GitHub account keeps its name in users.
+  async function nameTokenOf(token: PlayerToken): Promise<string> {
+    const [row] = await rows(
+      'FROM player_tokens p LEFT JOIN users u ON u.github_id = p.github_id SELECT p.github_id, u.github_id IS NULL AS bare WHERE p.token = $token',
+      { token },
+      { github_id: bigId, bare: bool },
+    );
+    return row !== undefined && row.bare ? accountToken(row.github_id) : token;
+  }
+
+  // The account id of a Google login (google_accounts). A new Google login makes an account without
+  // GitHub. It keeps the custom name of the device that made it, so the player keeps the name.
+  async function googleAccountOf(user: GoogleUser, token: PlayerToken): Promise<bigint> {
+    const [found] = await rows('FROM google_accounts SELECT github_id WHERE sub = $sub', { sub: user.google }, { github_id: bigId });
+    if (found !== undefined) return found.github_id;
+    const [made] = await rows(
+      "INSERT INTO google_accounts (sub, github_id) VALUES ($sub, -nextval('google_account_ids')) RETURNING github_id",
+      { sub: user.google },
+      { github_id: bigId },
+    );
+    if (made === undefined) throw new Error('the Google account row is missing');
+    await db.run('INSERT INTO player_names (token, name) SELECT $account, name FROM player_names WHERE token = $token ON CONFLICT DO NOTHING', {
+      account: accountToken(made.github_id),
+      token,
+    });
+    return made.github_id;
+  }
+
   // Adds the player_tokens row of an account token, for an account that linked before account seats.
   async function ensureAccountRow(githubId: number | bigint): Promise<string> {
     const account = accountToken(githubId);
@@ -1549,6 +1592,7 @@ export async function openStore(
       );
       if (account !== null) {
         counts.users.deleted = (await changedIds('DELETE FROM users WHERE github_id = $account RETURNING login AS id', { account })).length;
+        counts.google_accounts.deleted = (await changedIds('DELETE FROM google_accounts WHERE github_id = $account RETURNING sub AS id', { account })).length;
       }
       await db.run('COMMIT');
     } catch (error) {
@@ -1633,20 +1677,22 @@ export async function openStore(
     // The custom name of a player without a GitHub login, or null. `name` passed parseCustomName.
     customName: (token: PlayerToken): Promise<string | null> =>
       serialized(async () => {
-        const [row] = await rows('FROM player_names SELECT name WHERE token = $token', { token }, { name: text });
+        const [row] = await rows('FROM player_names SELECT name WHERE token = $token', { token: await nameTokenOf(token) }, { name: text });
         return row?.name ?? null;
       }),
+    // The generated name that other players see for a player without a custom name and without GitHub.
+    generatedName: (token: PlayerToken): Promise<string> => serialized(async () => nameOf(await nameTokenOf(token))),
     // The account of a linked device, with its name and picture choices, or null.
     account: (token: PlayerToken): Promise<PlayerInfo | null> =>
       serialized(async () => {
         const [row] = await rows('FROM player_tokens JOIN users USING (github_id) SELECT login, avatar, name, seed WHERE token = $token', { token }, ACCOUNT_COLUMNS);
         return row === undefined ? null : accountOf(row);
       }),
-    // The name of a device, or of the account when `account` is the GitHub id of the caller's login.
+    // The name of a device, or of the account when `account` is the account id of the caller's login.
     // Refuses a name that equals the login of another GitHub account, so nobody can pose as a logged-in player.
     // Limit: a GitHub account that logs in later with the same login does not rename the player.
     // Revisit this if two players with one name confuse people in practice.
-    setName: (token: PlayerToken, name: string, account: number | null): Promise<void> =>
+    setName: (token: PlayerToken, name: string, account: number | bigint | null): Promise<void> =>
       serialized(async () => {
         const [clash] = await rows(
           'FROM users SELECT login WHERE lower(login) = lower($name) AND github_id IS DISTINCT FROM $account',
@@ -1655,19 +1701,23 @@ export async function openStore(
         );
         if (clash !== undefined) throw new SessionError(409, 'That name is a GitHub login. Choose another name.');
         if (account !== null) {
-          await db.run('UPDATE users SET name = $name WHERE github_id = $account', { name, account });
-          return;
+          const updated = await rows('UPDATE users SET name = $name WHERE github_id = $account RETURNING github_id', { name, account }, { github_id: bigId });
+          if (updated.length > 0) return;
         }
+        // A device, or an account without GitHub (a Google login): see google_accounts.
         await db.run(
           `INSERT INTO player_names (token, name) VALUES ($token, $name)
            ON CONFLICT (token) DO UPDATE SET name = excluded.name, updated_at = now()`,
-          { token, name },
+          { token: account === null ? token : accountToken(account), name },
         );
       }),
-    clearName: (token: PlayerToken, account: number | null): Promise<void> =>
+    clearName: (token: PlayerToken, account: number | bigint | null): Promise<void> =>
       serialized(async () => {
-        if (account !== null) await db.run('UPDATE users SET name = NULL WHERE github_id = $account', { account });
-        else await db.run('DELETE FROM player_names WHERE token = $token', { token });
+        if (account !== null) {
+          const updated = await rows('UPDATE users SET name = NULL WHERE github_id = $account RETURNING github_id', { account }, { github_id: bigId });
+          if (updated.length > 0) return;
+        }
+        await db.run('DELETE FROM player_names WHERE token = $token', { token: account === null ? token : accountToken(account) });
       }),
     // The picture of an account. Each "generated" makes a new seed, so it also rerolls a generated picture.
     setAvatar: (account: number, picture: AvatarPicture): Promise<void> =>
@@ -1829,13 +1879,15 @@ export async function openStore(
         return cleared.map((row) => row.token);
       }),
 
-    // Links this browser to a GitHub account, and refreshes the account's name and picture.
-    linkToken: (token: PlayerToken, user: GitHubUser): Promise<void> =>
+    // Links this browser to the account of a login, and returns the account id. A GitHub login also
+    // refreshes the account's GitHub name and picture.
+    linkToken: (token: PlayerToken, user: GitHubUser | GoogleUser): Promise<bigint> =>
       serialized(async () => {
+        const id = 'google' in user ? await googleAccountOf(user, token) : BigInt(user.id);
         // The games of the device move to the account, also from an account that the device was linked to before.
         changedOwners.add(await ownerOf(token));
         changedOwners.add(token);
-        changedOwners.add(accountToken(user.id));
+        changedOwners.add(accountToken(id));
         // The players who met this device now meet the account, so the opponent of their games changes.
         // An achievement about different people can lock again: two devices of one person count once.
         const met = await rows(`FROM ${seatedResults(1)} results SELECT results.player_x AS x, results.player_o AS o`, tokenValues([token]), {
@@ -1845,17 +1897,44 @@ export async function openStore(
         const others = met.flatMap((row) => [row.x, row.o]).filter((seat): seat is string => seat !== null && seat !== token && seat !== core.COMPUTER_TOKEN);
         for (const owner of (await canonical(others)).values()) changedOwners.add(owner);
         achievementCache.clear();
-        await db.run(
-          `INSERT INTO users (github_id, login, avatar) VALUES ($id, $login, $avatar)
-           ON CONFLICT (github_id) DO UPDATE SET login = excluded.login, avatar = excluded.avatar, seen_at = now()`,
-          { id: user.id, login: user.login, avatar: user.avatar },
-        );
+        if (!('google' in user)) {
+          await db.run(
+            `INSERT INTO users (github_id, login, avatar) VALUES ($id, $login, $avatar)
+             ON CONFLICT (github_id) DO UPDATE SET login = excluded.login, avatar = excluded.avatar, seen_at = now()`,
+            { id, login: user.login, avatar: user.avatar },
+          );
+        }
         await db.run(
           `INSERT INTO player_tokens (token, github_id) VALUES ($token, $id)
            ON CONFLICT (token) DO UPDATE SET github_id = excluded.github_id, linked_at = now()`,
-          { token, id: user.id },
+          { token, id },
         );
-        await ensureAccountRow(user.id);
+        await ensureAccountRow(id);
+        return id;
+      }),
+
+    // Connects a Google login to a GitHub account, so both logins open the same account.
+    // Limit: a Google login that already has its own account cannot join, because the two accounts
+    // would need a merge of their games. Revisit this when players ask to merge two accounts.
+    connectGoogle: (user: GoogleUser, account: GitHubUser): Promise<void> =>
+      serialized(async () => {
+        const [found] = await rows('FROM google_accounts SELECT github_id WHERE sub = $sub', { sub: user.google }, { github_id: bigId });
+        if (found?.github_id === BigInt(account.id)) return;
+        if (found !== undefined) throw new SessionError(409, 'This Google account already has its own tick3d account.');
+        const [other] = await rows('FROM google_accounts SELECT sub WHERE github_id = $id', { id: account.id }, { sub: text });
+        if (other !== undefined) throw new SessionError(409, 'This account already has another Google account.');
+        await db.run('INSERT INTO google_accounts (sub, github_id) VALUES ($sub, $id)', { sub: user.google, id: account.id });
+      }),
+
+    // True when the account of this device has a Google login.
+    hasGoogle: (token: PlayerToken): Promise<boolean> =>
+      serialized(async () => {
+        const found = await rows(
+          'FROM player_tokens JOIN google_accounts USING (github_id) SELECT sub WHERE token = $token',
+          { token },
+          { sub: text },
+        );
+        return found.length > 0;
       }),
 
     // Logout: this browser no longer acts for its account. The other devices of the account stay linked.

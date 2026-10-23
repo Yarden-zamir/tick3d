@@ -51,7 +51,7 @@ import {
   matchRoute,
 } from './api-docs.ts';
 import { openApi, swaggerHtml } from './api-docs-render.ts';
-import { type Auth, TooManyRequests, authConfigFromEnv, clientOf, createAuth, createLimiter, isMaintainer } from './auth.ts';
+import { type Auth, TooManyRequests, authConfigFromEnv, clientOf, createAuth, createLimiter, isMaintainer, parseGoogleCredential } from './auth.ts';
 import { IDEMPOTENCY_TTL_MS, type StoredAnswer, createIdempotency, parseIdempotencyKey } from './idempotency.ts';
 import { LobbyError, createLobby, networkOf } from './lobby.ts';
 import { type PreviewList, createPreviews, previewsConfigFromEnv } from './previews.ts';
@@ -346,18 +346,24 @@ function requireMaintainer(req: IncomingMessage): string {
   requirePlayer(req);
   if (auth === undefined) throw new HttpError(404, 'Login is not available on this server.');
   const user = auth.user(req);
-  if (user === undefined) throw new HttpError(401, 'Log in with GitHub first.');
+  if (user === undefined || 'google' in user) throw new HttpError(401, 'Log in with GitHub first.');
   if (!isMaintainer(user.login)) throw new HttpError(403, 'Only the maintainers can do this.');
   return user.login;
 }
 
 // The answer of GET /api/me: the login state, the custom name and the public person id.
-async function me(token: PlayerToken, user: ReturnType<Auth['user']>) {
+// `origin` is the origin of the page, for Google One Tap.
+async function me(token: PlayerToken, user: ReturnType<Auth['user']>, origin: string) {
   return {
     loginAvailable: auth !== undefined,
     // The stored account holds the name and picture choices. A device that is not linked yet has none.
-    user: user === undefined ? null : ((await store.account(token)) ?? { login: user.login, avatar: user.avatar, name: null, seed: null }),
+    // A Google login shows the GitHub account that it is connected to, else no user: it shows like a device.
+    user: user === undefined ? null : ((await store.account(token)) ?? ('google' in user ? null : { login: user.login, avatar: user.avatar, name: null, seed: null })),
     name: await store.customName(token),
+    generatedName: await store.generatedName(token),
+    googleLogin: auth?.google !== undefined,
+    googleOneTapClient: auth?.google?.oneTapClient(origin) ?? null,
+    googleConnected: user === undefined ? false : await store.hasGoogle(token),
     hasCopy: await store.hasCopy(token),
     person: await store.person(token),
   };
@@ -402,6 +408,43 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         return redirect(res, '/?login=failed', []);
       }
     }
+    case 'GET /api/auth/google/login': {
+      const google = auth?.google;
+      if (google === undefined) throw new HttpError(404, 'Google login is not available on this server.');
+      const { location, cookies } = google.start(originOf(req), url.searchParams.get('return'));
+      return redirect(res, location, cookies);
+    }
+    case 'GET /api/auth/google/callback': {
+      const google = auth?.google;
+      if (auth === undefined || google === undefined) throw new HttpError(404, 'Google login is not available on this server.');
+      try {
+        const { user, location } = await google.finish(req, url.searchParams.get('code'), url.searchParams.get('state'));
+        // With a GitHub login, Google joins that account, and the GitHub cookie stays.
+        const current = auth.user(req);
+        if (current === undefined || 'google' in current) return redirect(res, location, auth.googleCookies(user));
+        await store.connectGoogle(user, current);
+        return redirect(res, location, [auth.clearState()]);
+      } catch (error) {
+        console.error('Google login failed:', error instanceof Error ? error.message : error);
+        const taken = error instanceof SessionError && error.status === 409;
+        return redirect(res, taken ? '/?login=google-taken' : '/?login=failed', []);
+      }
+    }
+    // A cross-site form cannot send the X-Player header, so another site cannot log a player in.
+    case 'POST /api/auth/google/one-tap': {
+      const google = auth?.google;
+      if (auth === undefined || google === undefined) throw new HttpError(404, 'Google login is not available on this server.');
+      const token = requirePlayer(req);
+      const body = await readJson(req);
+      const credential = parseGoogleCredential(body);
+      if (credential === undefined) throw new HttpError(400, 'The body needs the credential of Google One Tap.');
+      const user = await google.oneTap(credential).catch((error: unknown) => {
+        console.error('Google One Tap failed:', error instanceof Error ? error.message : error);
+        throw new HttpError(401, 'Google did not confirm this login.');
+      });
+      await store.linkToken(token, user);
+      return send(res, 200, await me(token, user, originOf(req)), { 'set-cookie': auth.googleCookies(user) });
+    }
     case 'POST /api/auth/logout': {
       if (auth === undefined) throw new HttpError(404, 'Login is not available on this server.');
       // A cross-site form cannot send the X-Player header, so another site cannot log a player out.
@@ -434,7 +477,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       }
       if (match.route === 'GET /api/me/records') return send(res, 200, { records: await store.records(token) });
       if (match.route === 'GET /api/me/achievements') return send(res, 200, await store.achievements(token));
-      return send(res, 200, await me(token, user));
+      return send(res, 200, await me(token, user, originOf(req)));
     }
     // A cross-site form cannot send the X-Player header, so another site cannot delete a player's data.
     case 'DELETE /api/me': {
@@ -459,29 +502,30 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       if (name === undefined) throw new HttpError(400, 'A name needs 2 to 24 letters, digits, spaces, "-" or "_".');
       // With a login, the name is the account's, on every device.
       const user = auth?.user(req);
-      if (user !== undefined) await store.linkToken(token, user);
-      await store.setName(token, name, user?.id ?? null);
+      const account = user === undefined ? null : await store.linkToken(token, user);
+      await store.setName(token, name, account);
       notifyPlayer(token);
-      return send(res, 200, await me(token, user));
+      return send(res, 200, await me(token, user, originOf(req)));
     }
     case 'DELETE /api/me/name': {
       const token = requirePlayer(req);
       const user = auth?.user(req);
-      if (user !== undefined) await store.linkToken(token, user);
-      await store.clearName(token, user?.id ?? null);
+      const account = user === undefined ? null : await store.linkToken(token, user);
+      await store.clearName(token, account);
       notifyPlayer(token);
-      return send(res, 200, await me(token, user));
+      return send(res, 200, await me(token, user, originOf(req)));
     }
     case 'PUT /api/me/avatar': {
       const token = requirePlayer(req);
       const picture = parseAvatarRequest(await readJson(req));
       if (picture === undefined) throw new HttpError(400, 'picture is "github" or "generated".');
       const user = auth?.user(req);
-      if (user === undefined) throw new HttpError(401, 'Log in with GitHub first.');
+      // The picture choice is between the GitHub picture and a generated one, so it needs GitHub.
+      if (user === undefined || 'google' in user) throw new HttpError(401, 'Log in with GitHub first.');
       await store.linkToken(token, user);
       await store.setAvatar(user.id, picture);
       notifyPlayer(token);
-      return send(res, 200, await me(token, user));
+      return send(res, 200, await me(token, user, originOf(req)));
     }
 
     case 'GET /api/me/stats-privacy':

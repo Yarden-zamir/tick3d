@@ -148,7 +148,9 @@ A mode change moves neither the board nor the Opponent picker:
 
 ## Accounts and My games
 
-- Login with GitHub is optional. Without a login, every browser plays with a random token and a generated name, such as "braveOtter".
+- Login with GitHub or Google is optional. Without a login, every browser plays with a random token and a generated name, such as "braveOtter".
+- Google login keeps only Google's account id. Other players see a Google account like a device: the custom name, else a generated name and picture. On the main site and in the Android app, Google One Tap offers the sign-in and signs a returning player in by itself. Log out stops the automatic sign-in. The Android app is the site in Chrome, so this is the same web sign-in, without Play Games.
+- With a GitHub login, Connect Google in My games adds Google to the account, so both logins open it. A Google login that already has its own account cannot join another account.
 - A login lets a player continue a game on every device of the account.
 - Every player can choose a name in My games. With a login, the name belongs to the account and shows in place of the GitHub login.
 - With a login, New picture in My games swaps the GitHub picture for a generated one, and each press gives another. Use GitHub picture goes back. Without a login, these buttons show grayed out.
@@ -174,7 +176,7 @@ A mode change moves neither the board nor the Opponent picker:
 - `stats.html`, `src/stats/`: the stats page. `sound-training.html`, `src/sound-training/`: the ear trainer.
 - `share.html`, `src/share/`: the share page. `server/tester-codes.ts`: the codes from `TESTER_CODES`.
 - `src/pwa.ts`, `vite.config.ts`: the service worker and the manifest.
-- `server/main.ts`: the HTTP API. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub login.
+- `server/main.ts`: the HTTP API. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub and Google login.
 - `server/api-docs.ts`: every API route with its docs. The server finds routes in this list.
 
 To add a route, add one entry to `ROUTES` in `server/api-docs.ts` and one case to the switch in `server/main.ts`. The type check fails when one of the two is missing.
@@ -331,7 +333,7 @@ The iOS app wraps the production site the same way, with [Capacitor](https://cap
 - The App Store account comes from repository settings only: the variables `APPLE_TEAM_ID` and `IOS_BUNDLE_ID`, and the secrets `APP_STORE_CONNECT_KEY` (the `.p8` text of an Admin key), `APP_STORE_CONNECT_KEY_ID` and `APP_STORE_CONNECT_ISSUER_ID`. Xcode signs with the key (cloud signing). Without them, the workflow builds for the simulator only.
 - The native purchase proof needs iOS 16 or later. The project installer raises the generated app target from iOS 15 to iOS 16.
 - A pull request that touches `apple/` or `ios.yml` runs the workflow's `lint` job: `actionlint` on the workflow itself, and the same Capacitor project generation as the real build, with no Xcode and no macOS runner. It catches a bad `apple/capacitor.config.json` or a broken install in well under a minute, before a change reaches the 45-minute macOS build.
-- The app adds `tick3dApp/ios` to the user agent. The page then sets `<html data-platform="ios">` (`src/platform.ts`) and hides what the App Store does not allow: the GitHub link and the previews button (`data-hide-in="ios"`), and the GitHub login (App Store rule 4.8). `e2e/ios.spec.ts` checks this on every preview.
+- The app adds `tick3dApp/ios` to the user agent. The page then sets `<html data-platform="ios">` (`src/platform.ts`) and hides what the App Store does not allow: the GitHub link and the previews button (`data-hide-in="ios"`), and the GitHub and Google login (App Store rule 4.8). `e2e/ios.spec.ts` checks this on every preview.
 - `WKAppBoundDomains` lets the web view run the service worker, so the game plays offline after one start online. Without a network at the first start, the app shows `apple/www/index.html`.
 - `apple/icon.png` (1024 × 1024, no transparency) is the App Store icon. `uv run branding/icon/icon.py export` writes it with the other icon files. Without it, the workflow scales up the Play icon.
 - Every real upload of an `ios-v*` tag also runs the workflow's `distribute` job: `apple/scripts/testflight-distribute.py` calls the App Store Connect API directly (a JWT signed with the same Admin key, no Xcode needed) to add the new build to the external "Testers" group and submit it for Beta App Review, so a tagged build reaches external testers with no manual step. A run by hand with "upload" only uploads to TestFlight. The group itself and its Beta App Review contact information (App Store Connect's TestFlight tab, Test Information) are a one-time setup; the job only looks the group up by name.

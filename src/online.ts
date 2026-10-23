@@ -125,7 +125,19 @@ const request = async (method: string, path: string, body?: unknown): Promise<Se
 // `name` is the custom name of a player without a GitHub login, or null. `person` is the public person id of
 // this player (of the account when logged in), and `hasCopy` whether the player holds a copy of the paid Android app
 // (src/copies.ts). The server always sends both; null means no answer came yet.
-export type Me = { loginAvailable: boolean; user: PlayerInfo | null; name: string | null; person: PersonId | null; hasCopy: boolean | null };
+// `user` is the GitHub account. A Google login without GitHub has no user: it shows like a device, with
+// `name`, else `generatedName`. `googleOneTapClient` is the Google client for One Tap on this page, or null.
+export type Me = {
+  loginAvailable: boolean;
+  user: PlayerInfo | null;
+  name: string | null;
+  generatedName: string;
+  googleLogin: boolean;
+  googleOneTapClient: string | null;
+  googleConnected: boolean;
+  person: PersonId | null;
+  hasCopy: boolean | null;
+};
 
 export function parseMe(value: unknown): Me {
   if (typeof value !== 'object' || value === null) throw new Error('invalid answer from /api/me');
@@ -135,9 +147,13 @@ export function parseMe(value: unknown): Me {
   const raw = (value as Record<string, unknown>).name;
   const name = raw === undefined || raw === null ? null : parseCustomName(raw);
   const person = parsePersonId((value as Record<string, unknown>).person);
-  const { hasCopy } = value as Record<string, unknown>;
+  const { hasCopy, generatedName, googleLogin, googleOneTapClient, googleConnected } = value as Record<string, unknown>;
   if (
     typeof loginAvailable !== 'boolean' ||
+    typeof generatedName !== 'string' ||
+    typeof googleLogin !== 'boolean' ||
+    (googleOneTapClient !== null && typeof googleOneTapClient !== 'string') ||
+    typeof googleConnected !== 'boolean' ||
     info === undefined ||
     name === undefined ||
     (raw !== undefined && raw !== null && raw !== name) ||
@@ -146,7 +162,7 @@ export function parseMe(value: unknown): Me {
   ) {
     throw new Error('invalid answer from /api/me');
   }
-  return { loginAvailable, user: info, name, person, hasCopy };
+  return { loginAvailable, user: info, name, generatedName, googleLogin, googleOneTapClient, googleConnected, person, hasCopy };
 }
 
 // The page reads "My games" only to display it, so a light shape check is enough here. The accounts
@@ -246,6 +262,10 @@ export const api = {
   logout: () => call('POST', '/auth/logout'),
   // Login is a full page visit to GitHub and back to `returnTo`, by default this page.
   loginUrl: (returnTo = location.href) => `/api/auth/login?return=${encodeURIComponent(returnTo)}`,
+  // The same for Google. With a GitHub login, it connects Google to the account.
+  googleLoginUrl: (returnTo = location.href) => `/api/auth/google/login?return=${encodeURIComponent(returnTo)}`,
+  // Logs in with the ID token of Google One Tap (src/page/google-one-tap.ts).
+  googleOneTap: async (credential: string): Promise<Me> => parseMe(await call('POST', '/auth/google/one-tap', { credential })),
 
   // Sends finished games in batches. Returns the public id of each result (by result id) that
   // the server keeps under another public id than the device sent.

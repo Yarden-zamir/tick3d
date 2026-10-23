@@ -2,8 +2,7 @@
 import { winnerOf } from '../game.ts';
 import type { LocalSummary } from '../local.ts';
 import { avatarFor, type Person } from '../avatar.ts';
-import { nameOf } from '../names.ts';
-import { type Me, api, OnlineError, token } from '../online.ts';
+import { type Me, api, OnlineError } from '../online.ts';
 import {
   type GameId,
   HISTORY_PAGE_SIZE,
@@ -26,7 +25,8 @@ import {
   statsQuery,
   toGame,
 } from '../protocol.ts';
-import { GITHUB_ICON, STATS_ICON } from '../icons.ts';
+import { GITHUB_ICON, GOOGLE_ICON, STATS_ICON } from '../icons.ts';
+import { stopGoogleAutoSelect } from './google-one-tap.ts';
 import { deviceDataKeys } from '../storage-keys.ts';
 import { syncDeletions } from './deletions.ts';
 import { accountLink } from '../header/header.ts';
@@ -372,39 +372,60 @@ let accountReturnTo: string | undefined;
 // The account part of My games. refreshAccount rebuilds it when a slower /api/me answer changes the account.
 function renderAccountBox(): void {
   accountBox.replaceChildren();
-  const user = page.account.user;
+  const { user, googleConnected } = page.account;
+  // The iOS app offers no login: App Store rule 4.8 asks for Sign in with Apple next to GitHub and Google.
+  const canLogIn = page.account.loginAvailable && navigator.onLine && platform() === 'web';
+  const googleRow = () => connectedAccount(GOOGLE_ICON, 'Google', 'Google');
   if (user !== null) {
     const shown = accountNameOf(user);
     const avatar = avatarFor({ player: user, name: shown }, ACCOUNT_AVATAR_PIXELS, null);
     const name = document.createElement('b');
     name.textContent = shown;
-    const logout = document.createElement('button');
-    logout.type = 'button';
-    logout.className = 'btn btn-small';
-    logout.textContent = 'Log out';
-    logout.addEventListener('click', () => void logOut().then(() => myGamesDialog.close(), showError));
-    accountBox.append(avatar, name, logout, connectedAccounts([connectedAccount(GITHUB_ICON, 'GitHub', user.login)]));
+    const rows = [connectedAccount(GITHUB_ICON, 'GitHub', user.login), ...(googleConnected ? [googleRow()] : [])];
+    accountBox.append(avatar, name, logoutButton(), connectedAccounts(rows));
     if (navigator.onLine) accountBox.append(renameControls({ current: user.name, fallback: user.login, reset: 'Use GitHub name' }), pictureControls(user));
-  } else {
-    // The same name that the server shows to the other players: the custom name, else the generated one (src/names.ts).
-    const text = document.createElement('span');
-    const name = document.createElement('b');
-    name.textContent = ownName();
-    text.append('You play as ', name, '.');
-    accountBox.append(avatarFor({ player: null, name: ownName() }, ACCOUNT_AVATAR_PIXELS, null), text);
-    if (navigator.onLine) accountBox.append(renameControls({ current: page.account.name, fallback: nameOf(token), reset: 'Reset to generated name' }));
-    // The iOS app offers no GitHub login: App Store rule 4.8 asks for Sign in with Apple next to it.
-    if (page.account.loginAvailable && navigator.onLine && platform() === 'web') {
-      // The picture buttons show grayed out, so a player sees what a login adds.
-      accountBox.append(pictureControls(null));
-      text.append(' Log in with GitHub to use your GitHub name.');
-      const login = document.createElement('a');
-      login.className = 'btn btn-small btn-primary login-link';
-      login.href = api.loginUrl(accountReturnTo);
-      login.textContent = 'Log in with GitHub';
-      accountBox.append(login);
-    }
+    if (canLogIn && page.account.googleLogin && !googleConnected) accountBox.append(googleLink('Connect Google'));
+    return;
   }
+  // The same name that the server shows to the other players: the custom name, else the generated one (src/names.ts).
+  // A Google login without GitHub shows like a device too, with a name of its own on every device.
+  const text = document.createElement('span');
+  const name = document.createElement('b');
+  name.textContent = ownName();
+  text.append('You play as ', name, '.');
+  accountBox.append(avatarFor({ player: null, name: ownName() }, ACCOUNT_AVATAR_PIXELS, null), text);
+  if (googleConnected) accountBox.append(logoutButton(), connectedAccounts([googleRow()]));
+  if (navigator.onLine) accountBox.append(renameControls({ current: page.account.name, fallback: page.account.generatedName, reset: 'Reset to generated name' }));
+  if (canLogIn && !googleConnected) {
+    // The picture buttons show grayed out, so a player sees what a login adds.
+    accountBox.append(pictureControls(null));
+    text.append(' Log in with GitHub to use your GitHub name.');
+    const login = document.createElement('a');
+    login.className = 'btn btn-small btn-primary login-link';
+    login.href = api.loginUrl(accountReturnTo);
+    login.textContent = 'Log in with GitHub';
+    accountBox.append(login);
+    if (page.account.googleLogin) accountBox.append(googleLink('Sign in with Google'));
+  }
+}
+
+function logoutButton(): HTMLButtonElement {
+  const logout = document.createElement('button');
+  logout.type = 'button';
+  logout.className = 'btn btn-small';
+  logout.textContent = 'Log out';
+  logout.addEventListener('click', () => void logOut().then(() => myGamesDialog.close(), showError));
+  return logout;
+}
+
+// The Google login button, with the Google mark as the Google branding asks. With a GitHub login, it connects Google.
+function googleLink(label: string): HTMLAnchorElement {
+  const link = document.createElement('a');
+  link.className = 'btn btn-small login-link google-login';
+  link.href = api.googleLoginUrl(accountReturnTo);
+  link.innerHTML = GOOGLE_ICON;
+  link.append(label);
+  return link;
 }
 
 // `returnTo` is the page that a GitHub login returns to. Without it, the login returns to this page.
@@ -490,6 +511,8 @@ async function clearHistory(): Promise<void> {
 // Revisit this if players report a logged-in game in the stats of a logged-out browser.
 async function logOut(): Promise<void> {
   await flushResults();
+  // A blocked Google script must not block the logout. One Tap then may sign the player in again.
+  await stopGoogleAutoSelect().catch((error: unknown) => console.warn('Google sign-in did not load:', error));
   await api.logout();
   await deleteSentResults();
   forgetRecords();
@@ -509,7 +532,11 @@ let dataDeleted = false;
 function openDeleteConfirm(): void {
   const user = page.account.user;
   deleteConfirmScope.textContent =
-    user === null ? 'This deletes the data of this device, on the server and here:' : `This deletes the data of the GitHub account ${user.login} on every device, and of this device:`;
+    user !== null
+      ? `This deletes the data of the GitHub account ${user.login} on every device, and of this device:`
+      : page.account.googleConnected
+        ? 'This deletes the data of your Google login on every device, and of this device:'
+        : 'This deletes the data of this device, on the server and here:';
   deleteConfirmSettings.checked = false;
   deleteConfirmStatus.hidden = true;
   deleteConfirm.showModal();
@@ -519,6 +546,7 @@ function openDeleteConfirm(): void {
 async function deleteMyData(): Promise<void> {
   deleteConfirmYes.disabled = true;
   try {
+    await stopGoogleAutoSelect().catch((error: unknown) => console.warn('Google sign-in did not load:', error));
     await api.deleteData();
   } catch (error) {
     if (!(error instanceof OnlineError)) throw error;

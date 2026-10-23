@@ -4,7 +4,7 @@ import { describeClock } from '../clock.ts';
 import { MAX_EPOCH_MS } from '../epoch.ts';
 import { type Player, other, winnerOf } from '../game.ts';
 import { nameOf } from '../names.ts';
-import { api, OnlineError, token } from '../online.ts';
+import { api, OnlineError } from '../online.ts';
 import { type GameId, accountNameOf, type PublicGame, onlineGameParts, parseResultUpload, toGame } from '../protocol.ts';
 import { cardFilename } from '../card.ts';
 import { lightSungCell } from './board.ts';
@@ -29,7 +29,7 @@ async function deviceCopy(id: GameId): Promise<PublicGame | undefined> {
     const mine = (seat: Player) => result.you === null || result.you === seat;
     const seatInfo = (seat: Player) => (mine(seat) ? page.account.user : null);
     // A Nearby host also knows the guest on the other seat.
-    const seatName = (seat: Player) => (mine(seat) ? (page.account.name ?? nameOf(token)) : result.guest === null ? null : nameOf(result.guest));
+    const seatName = (seat: Player) => (mine(seat) ? (page.account.name ?? page.account.generatedName) : result.guest === null ? null : nameOf(result.guest));
     return {
       id: result.publicId,
       mode: result.mode,

@@ -4847,6 +4847,14 @@ body[data-turn='O'] .status[data-state='playing'] {
   font-weight: 700;
 }
 
+/* The Google login button: the four-color Google mark before the text, as the Google branding asks
+   (src/page/my-games.ts googleLink). */
+.google-login {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 /* Without a login, the picture buttons show grayed out with this hint (src/page/my-games.ts pictureControls). */
 .picture-hint {
   align-self: center;

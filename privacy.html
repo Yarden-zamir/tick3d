@@ -60,12 +60,13 @@
           <li><b>Games:</b> moves, results, chat (the last 50 messages of a session), and how a game was played (device kind, theme, view, board or keypad).</li>
           <li><b>Custom name</b>, if you set one.</li>
           <li><b>GitHub login</b>, if you log in: id, login and picture address. The login cookie lasts 90 days. With a login, also the name and the generated picture that you choose in My games, for every device of the account.</li>
+          <li><b>Google login</b>, if you sign in with Google: only the account id that Google gives to this game. No name, email or photo. The login cookie lasts 90 days. Other players see your custom name, else a generated name. On this site and in the Android app, Google can offer the sign-in, and sign you in again by itself after a first sign-in. Log out stops that.</li>
           <li><b>Voice room runs:</b> mode, times and score. No audio.</li>
           <li><b>Reports and blocks</b> that you make, with a copy of the reported message. A log keeps each moderator action.</li>
           <li><b>Error reports:</b> the error, the file and the app version, without your token.</li>
           <li><b>Tester codes:</b> when you claim a code on the <a href="/share">share page</a>, the email and the name that you type, your player token and the person id of the friend whose invite link you used. The page shows your name, and your Gravatar picture if you have one, never the email. To remove them, email <a href="mailto:dev@yarden-zamir.com">dev@yarden-zamir.com</a>.</li>
           <li><b>iPhone app:</b> for a bought app, the App Store purchase id, the App Store id of the device, its player token, and when it last opened. One purchase covers at most five devices. Delete my data frees the device, and a device unused for 90 days drops out when another device needs its place.</li>
-          <li><b>Android app:</b> which device (player token) opened the paid Android app, the person id of the friend whose invite link brought it, and when it first opened. The GitHub account that is logged in on that device holds the copy.</li>
+          <li><b>Android app:</b> which device (player token) opened the paid Android app, the person id of the friend whose invite link brought it, and when it first opened. The account (GitHub or Google) that is logged in on that device holds the copy.</li>
         </ul>
         <p>Wi-Fi games (Nearby) use your network address to find devices on your Wi-Fi when the server is reachable. It stays in memory and is never saved. The in-app QR scanner reads camera images locally and does not save or upload them.</p>
         <p>Optional sound pairing sends a connection reply as audible tones. Nearby people or devices can hear them. The microphone opens only when you choose to listen for a reply; its audio is decoded on your device and is not saved or uploaded.</p>
@@ -89,7 +90,7 @@
 
         <h2 id="delete">Delete your data</h2>
         <ul>
-          <li><b>Delete my data</b> in My games deletes your data at once (on every device of a GitHub account). It logs you out. Games with other players stay for them, without you. Your chat messages read "Deleted by its author."</li>
+          <li><b>Delete my data</b> in My games deletes your data at once (on every device of a GitHub or Google account). It logs you out. Games with other players stay for them, without you. Your chat messages read "Deleted by its author."</li>
           <li>A deletion notice removes your name and chat lines from other players' devices when they next go online.</li>
           <li>Your device keeps a random id with no data attached, so that blocks by other players keep working. Your settings stay unless you reset them.</li>
           <li>The button cannot reach: devices not logged in to the same account (press the button on each), devices that stay offline for a year, links and pictures already shared, and reports about you (kept 90 days for safety).</li>

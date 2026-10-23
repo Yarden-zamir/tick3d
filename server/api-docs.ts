@@ -79,7 +79,7 @@ export const APP_OPENS_PER_HOUR = 60;
 // The other tables hold no player data: events, and moderation_log (kept for moderation). tester_codes holds
 // the email and the name that a tester typed, without a player token: a maintainer deletes them on an email
 // request. Delete my data only removes the person ids of the player from it.
-export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'app_copies', 'apple_slots', 'player_tokens', 'users'] as const;
+export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'app_copies', 'apple_slots', 'player_tokens', 'users', 'google_accounts'] as const;
 export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number; anonymised: number }>;
 // The previews list on production is at most this old. server/previews.ts enforces it.
 // Only production calls GitHub, without a token: 60 calls per hour, 5 of them kept in reserve, so 55.
@@ -140,6 +140,7 @@ export type SchemaName =
   | 'SeatAction'
   | 'SeatAnswer'
   | 'NameRequest'
+  | 'GoogleCredential'
   | 'AvatarRequest'
   | 'NewSession'
   | 'SessionUpdate'
@@ -444,6 +445,10 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     loginAvailable: { type: 'boolean' },
     user: nullable(ref('PlayerInfo')),
     name: { ...nullable(displayName), description: 'The name that you chose with PUT /api/me/name, or null.' },
+    generatedName: { ...displayName, description: 'The name that other players see without a custom name and without GitHub: generated from your player id, or from your Google account.' },
+    googleLogin: { type: 'boolean', description: 'This server has Google login.' },
+    googleOneTapClient: { type: ['string', 'null'], description: 'The Google sign-in client for Google One Tap on this page. null without Google login, and on an origin that Google does not accept, such as a preview.' },
+    googleConnected: { type: 'boolean', description: 'Your account has a Google login.' },
     hasCopy,
     person: { ...person, description: 'Your public person id: of the GitHub account when you are logged in, else of your player id. The /share page and the Share menu of the game put it in the invite link.' },
   }),
@@ -498,6 +503,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     },
   }),
   Ok: object('Done.', { ok: { const: true } }),
+  GoogleCredential: object('The ID token that Google One Tap gave the page.', { credential: { type: 'string', description: 'A JWT that Google signed for the Google client of this server.' } }),
   GameId: {
     type: 'string',
     pattern: `^([${CODE_ALPHABET}]{${DEVICE_GAME_ID_LENGTH}}|[${CODE_ALPHABET}]{${CODE_LENGTH}}-[1-9][0-9]*)$`,
@@ -915,6 +921,8 @@ const EXAMPLE_ANSWER =
 const EXAMPLE_HOST = 'q8Zr2Lx0Vb7Nc4Mw';
 const EXAMPLE_PERSON = '3f9a0c27d84be615';
 const OTHER_PERSON = 'b71e4d0a92c3f856';
+// The answer of GET /api/me for a guest on a server with GitHub and Google login.
+const ME_EXAMPLE = { loginAvailable: true, user: null, name: null, generatedName: 'Agent Smith', googleLogin: true, googleOneTapClient: '123-abc.apps.googleusercontent.com', googleConnected: false, hasCopy: false, person: OTHER_PERSON };
 
 // A view of the example session. Each route changes only the fields that its call changes.
 // A taken seat has a generated name.
@@ -1629,10 +1637,10 @@ export const ROUTES = {
   'GET /api/me': {
     operationId: 'me',
     tag: 'Account',
-    summary: 'Your GitHub login state. The page uses it.',
+    summary: 'Your login state (GitHub or Google). The page uses it.',
     description: 'A login cookie from the page links your player id to a GitHub account. A client without a page login gets null.',
     player: 'required',
-    response: { status: 200, description: 'Your login state.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith', hasCopy: false, person: OTHER_PERSON } },
+    response: { status: 200, description: 'Your login state.', schema: 'Me', example: { ...ME_EXAMPLE, name: 'Agent Smith' } },
     errors: [BAD_PLAYER],
     examplePlayer: AGENT_A,
   },
@@ -1640,7 +1648,7 @@ export const ROUTES = {
     operationId: 'deleteMyData',
     tag: 'Account',
     summary: 'Delete your data on the server, at once. This logs you out.',
-    description: `With a GitHub login on the page, this deletes the data of the account on every device, else the data of your player id. It deletes your uploaded games, custom name, blocks, practice runs, game metrics and the account. A game with another player stays for that player, without your id. Your seats in online sessions become free, and a session without a player and without a move goes. Your chat messages keep their place, with the text "Deleted by its author." in place of yours. A report that you filed stays without your id, and reports about you stay for the maintainers. A second call deletes nothing. One address can call this ${DATA_DELETES_PER_HOUR} times per hour.`,
+    description: `With a GitHub or Google login on the page, this deletes the data of the account on every device, else the data of your player id. It deletes your uploaded games, custom name, blocks, practice runs, game metrics and the account. A game with another player stays for that player, without your id. Your seats in online sessions become free, and a session without a player and without a move goes. Your chat messages keep their place, with the text "Deleted by its author." in place of yours. A report that you filed stays without your id, and reports about you stay for the maintainers. A second call deletes nothing. One address can call this ${DATA_DELETES_PER_HOUR} times per hour.`,
     player: 'required',
     response: {
       status: 200,
@@ -1668,7 +1676,7 @@ export const ROUTES = {
     description: 'Other players see this name in place of your generated name. With a GitHub login, the name belongs to the account, on every device, and shows in place of the login.',
     player: 'required',
     body: { schema: 'NameRequest', example: { name: 'Agent Smith' } },
-    response: { status: 200, description: 'Your login state with the new name.', schema: 'Me', example: { loginAvailable: true, user: null, name: 'Agent Smith', hasCopy: false, person: OTHER_PERSON } },
+    response: { status: 200, description: 'Your login state with the new name.', schema: 'Me', example: { ...ME_EXAMPLE, name: 'Agent Smith' } },
     errors: [BAD_PLAYER, { status: 400, when: 'The name is not valid.' }, { status: 409, when: 'The name is the login of a GitHub account.' }],
     examplePlayer: AGENT_A,
   },
@@ -1677,7 +1685,7 @@ export const ROUTES = {
     tag: 'Account',
     summary: 'Go back to your generated name, or to your GitHub login.',
     player: 'required',
-    response: { status: 200, description: 'Your login state without a custom name.', schema: 'Me', example: { loginAvailable: true, user: null, name: null, hasCopy: false, person: OTHER_PERSON } },
+    response: { status: 200, description: 'Your login state without a custom name.', schema: 'Me', example: ME_EXAMPLE },
     errors: [BAD_PLAYER],
     examplePlayer: AGENT_A,
   },
@@ -1692,13 +1700,7 @@ export const ROUTES = {
       status: 200,
       description: 'Your login state with the new picture.',
       schema: 'Me',
-      example: {
-        loginAvailable: true,
-        user: { login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', name: null, seed: '3f9a0c12b7e4' },
-        name: null,
-        hasCopy: false,
-        person: OTHER_PERSON,
-      },
+      example: { ...ME_EXAMPLE, user: { login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', name: null, seed: '3f9a0c12b7e4' } },
     },
     errors: [BAD_PLAYER, { status: 400, when: 'picture is not "github" or "generated".' }, { status: 401, when: 'The request has no GitHub login.' }],
     examplePlayer: AGENT_A,
@@ -1794,6 +1796,34 @@ export const ROUTES = {
     player: 'none',
     response: { status: 302, description: 'A redirect back to the page, with a login cookie.', contentType: null },
     errors: [{ status: 404, when: 'This server has no GitHub login.' }],
+  },
+  'GET /api/auth/google/login': {
+    operationId: 'googleLogin',
+    tag: 'Account',
+    summary: 'Start a Google login in a browser.',
+    description: 'With a GitHub login on the page, this connects the Google account to the GitHub account, so both logins open the same account.',
+    player: 'none',
+    query: { return: { description: 'The page to return to after the login.', required: false, schema: { type: 'string' }, example: 'https://tick3d.yarden-zamir.com/' } },
+    response: { status: 302, description: 'A redirect to Google.', contentType: null },
+    errors: [{ status: 404, when: 'This server has no Google login.' }],
+  },
+  'GET /api/auth/google/callback': {
+    operationId: 'googleLoginCallback',
+    tag: 'Account',
+    summary: 'Google returns the browser here after a login.',
+    player: 'none',
+    response: { status: 302, description: 'A redirect back to the page, with a login cookie.', contentType: null },
+    errors: [{ status: 404, when: 'This server has no Google login.' }],
+  },
+  'POST /api/auth/google/one-tap': {
+    operationId: 'googleOneTap',
+    tag: 'Account',
+    summary: 'Log in with the ID token of Google One Tap. The page uses it.',
+    player: 'required',
+    body: { schema: 'GoogleCredential', example: { credential: 'eyJhbGciOiJSUzI1NiJ9.e30.c2lnbmF0dXJl' } },
+    response: { status: 200, description: 'Your login state, logged in.', schema: 'Me', example: { ...ME_EXAMPLE, googleConnected: true } },
+    errors: [BAD_PLAYER, { status: 401, when: 'Google did not sign the token for this server, or it expired.' }, { status: 404, when: 'This server has no Google login.' }],
+    examplePlayer: AGENT_A,
   },
   'POST /api/auth/logout': {
     operationId: 'logout',

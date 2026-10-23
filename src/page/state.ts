@@ -136,8 +136,10 @@ export function saveAccount(account: Me): void {
   }
 }
 
-// The name that other players see for this player: the GitHub login, the custom name, or the generated name.
-export const ownName = (): string => accountNameOf(page.account.user) ?? page.account.name ?? nameOf(token);
+// The name that other players see for this player: the GitHub name, the custom name, or the generated name.
+export const ownName = (): string => accountNameOf(page.account.user) ?? page.account.name ?? page.account.generatedName;
+// Logged in with GitHub, or with Google.
+export const loggedIn = (): boolean => page.account.user !== null || page.account.googleConnected;
 
 export const page: PageState = {
   games: [newGame('X', settings.clock)],
@@ -149,7 +151,7 @@ export const page: PageState = {
   },
   deviceDb: undefined,
   local: undefined,
-  account: { loginAvailable: false, user: null, name: storedName(), person: null, hasCopy: null },
+  account: { loginAvailable: false, user: null, name: storedName(), generatedName: nameOf(token), googleLogin: false, googleOneTapClient: null, googleConnected: false, person: null, hasCopy: null },
   get thinking() {
     return screen.kind === 'session' && screen.thinking;
   },

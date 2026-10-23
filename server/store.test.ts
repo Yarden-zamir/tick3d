@@ -1285,6 +1285,80 @@ describe('custom names', () => {
   });
 });
 
+describe('Google accounts', () => {
+  const ALICE_GOOGLE = { google: '1000000000000000000001' };
+  const accountOf = (id: bigint) => `${ACCOUNT_TOKEN_PREFIX}${String(id).padStart(16, '0')}`;
+
+  it('makes an account without GitHub that shows like a device, keeps the device name, and shares it on every device', async () => {
+    store = await openStore(':memory:');
+    await store.setName(alice, 'Dana', null);
+    const id = await store.linkToken(alice, ALICE_GOOGLE);
+    expect(id < 0n).toBe(true);
+    expect(await store.linkToken(alicePhone, ALICE_GOOGLE)).toBe(id);
+    const { code } = await store.create(alicePhone, 'From the phone');
+    await store.join(code, bob);
+    // Both devices hold the seat, and the other player sees no GitHub account, only the name.
+    expect((await store.get(code, alice)).you).toBe('X');
+    const fromBob = await store.get(code, bob);
+    expect(fromBob.players.X).toBeNull();
+    expect(fromBob.names.X).toBe('Dana');
+    expect(await store.customName(alicePhone)).toBe('Dana');
+    expect(await store.account(alice)).toBeNull();
+    expect(await store.hasGoogle(alicePhone)).toBe(true);
+    // A rename is the account's, on every device; a reset goes back to the generated name of the account.
+    await store.setName(alicePhone, 'Dina', id);
+    expect(await store.customName(alice)).toBe('Dina');
+    expect((await store.get(code, bob)).names.X).toBe('Dina');
+    await store.clearName(alice, id);
+    expect(await store.customName(alicePhone)).toBeNull();
+    expect(await store.generatedName(alice)).toBe(nameOf(accountOf(id)));
+    expect(await store.generatedName(alicePhone)).toBe(nameOf(accountOf(id)));
+    expect((await store.get(code, bob)).names.X).toBe(nameOf(accountOf(id)));
+    // A device without a login keeps its own generated name.
+    expect(await store.generatedName(bob)).toBe(nameOf(bob));
+  });
+
+  it('gives two Google logins two accounts', async () => {
+    store = await openStore(':memory:');
+    const first = await store.linkToken(alice, ALICE_GOOGLE);
+    const second = await store.linkToken(bob, { google: '1000000000000000000002' });
+    expect(first).not.toBe(second);
+  });
+
+  it('connects Google to a GitHub account, so a Google login opens the GitHub account', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.connectGoogle(ALICE_GOOGLE, ALICE_GITHUB);
+    await store.connectGoogle(ALICE_GOOGLE, ALICE_GITHUB);
+    expect(await store.linkToken(alicePhone, ALICE_GOOGLE)).toBe(BigInt(ALICE_GITHUB.id));
+    expect(await store.account(alicePhone)).toMatchObject({ login: 'alice' });
+    expect(await store.hasGoogle(alice)).toBe(true);
+    // The GitHub account keeps its name in users, so the device name stays apart.
+    await store.setName(alicePhone, 'Dana', BigInt(ALICE_GITHUB.id));
+    expect(await store.account(alice)).toMatchObject({ name: 'Dana' });
+  });
+
+  it('refuses to connect a Google login that has its own account, or a second Google login', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(bob, ALICE_GOOGLE);
+    await store.linkToken(alice, ALICE_GITHUB);
+    expect(await status(() => store.connectGoogle(ALICE_GOOGLE, ALICE_GITHUB))).toBe(409);
+    await store.connectGoogle({ google: '1000000000000000000002' }, ALICE_GITHUB);
+    expect(await status(() => store.connectGoogle({ google: '1000000000000000000003' }, ALICE_GITHUB))).toBe(409);
+  });
+
+  it('deletes the Google login with the account, so the next login makes a new account', async () => {
+    store = await openStore(':memory:');
+    const before = await store.linkToken(alice, ALICE_GOOGLE);
+    await store.setName(alice, 'Dana', before);
+    expect(await store.deleteData(alice)).toMatchObject({ google_accounts: { deleted: 1 }, player_names: { deleted: 1 } });
+    expect(await store.hasGoogle(alice)).toBe(false);
+    const after = await store.linkToken(alicePhone, ALICE_GOOGLE);
+    expect(after).not.toBe(before);
+    expect(await store.customName(alicePhone)).toBeNull();
+  });
+});
+
 describe('account pictures', () => {
   it('gives each new picture a new seed on every device, and goes back to the GitHub picture', async () => {
     const code = await session();
@@ -1416,7 +1490,7 @@ describe('report and block', () => {
 describe('delete my data', () => {
   const ALICE_ACCOUNT = `${ACCOUNT_TOKEN_PREFIX}${String(ALICE_GITHUB.id).padStart(16, '0')}`;
   const aliceTokens = [alice, alicePhone, ALICE_ACCOUNT];
-  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'app_copies', 'player_tokens', 'users', 'events', 'moderation_log', 'deleted_people'];
+  const TABLES = ['sessions', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'app_copies', 'player_tokens', 'users', 'google_accounts', 'events', 'moderation_log', 'deleted_people'];
 
   // Per group of needles: the rows of each table whose text holds one of them. The store closes for the check and opens again.
   async function rowsHolding(path: string, groups: readonly (readonly string[])[]): Promise<Record<string, number>[]> {
@@ -1502,6 +1576,7 @@ describe('delete my data', () => {
       apple_slots: { deleted: 0, anonymised: 0 },
       player_tokens: { deleted: 3, anonymised: 0 },
       users: { deleted: 1, anonymised: 0 },
+      google_accounts: { deleted: 0, anonymised: 0 },
     });
 
     // No token of Alice is left anywhere. Her person id stays only where others reported or blocked
@@ -1552,6 +1627,7 @@ describe('delete my data', () => {
       player_names: { deleted: 1, anonymised: 0 },
       player_tokens: { deleted: 0, anonymised: 0 },
       users: { deleted: 0, anonymised: 0 },
+      google_accounts: { deleted: 0, anonymised: 0 },
     });
     // Bob holds the session alone now, and a third player can take the free seat.
     expect((await store.get(code, bob)).you).toBe('O');
