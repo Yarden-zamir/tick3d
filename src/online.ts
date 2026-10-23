@@ -165,9 +165,13 @@ function remember(me: Me): Me {
   return me;
 }
 
-// Calls a route that changes the account. Its answer is the newest account, so it counts up and is stored.
+// Calls a route that changes the account. Its answer is newer than every answer that left before it, so
+// it counts up and is stored. When another change, a logout or a deletion came while it was on its way, the
+// answer is older than that one, and only the caller gets it.
 async function changed(request: () => Promise<unknown>): Promise<Me> {
+  const generation = accountGeneration;
   const me = parseMe(await request());
+  if (generation !== accountGeneration) return me;
   accountGeneration++;
   return remember(me);
 }

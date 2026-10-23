@@ -48,6 +48,21 @@ describe('the remembered account', () => {
     expect(storedMe()).toEqual(signedIn);
   });
 
+  it('keeps the account forgotten when a rename answers after a deletion', async () => {
+    let answer: (response: Response) => void = () => undefined;
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/me/name')) return new Promise<Response>((resolve) => (answer = resolve));
+      expect(init?.method).toBe('DELETE');
+      return new Response('{}', { headers: { 'content-type': 'application/json' } });
+    });
+    const pending = api.setName('Dana');
+    await Promise.resolve();
+    await api.deleteData();
+    answer(new Response(JSON.stringify(me), { headers: { 'content-type': 'application/json' } }));
+    await pending;
+    expect(storedMe()).toBeNull();
+  });
+
   it('counts a stored answer that does not parse as none', () => {
     localStorage.setItem(STORAGE_KEYS.account, JSON.stringify({ ...me, googleConnected: 'yes' }));
     expect(storedMe()).toBeNull();
