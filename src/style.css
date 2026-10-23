@@ -3082,15 +3082,15 @@ body[data-turn='O'] .status[data-state='playing'] {
   }
 
   /* The phone tower is tall, so it keeps only a small margin around its planes. At the tallest turn (45deg) the top
-     plane leaves about 0.18 of a side free above it, and the lowest plane about 0.08 of a side below it.
-     The empty board before the build keeps the same height (see .stage > .board:empty). */
+     plane leaves about 0.08 of a side free above it. The lowest plane draws about 0.1 of a side past the padding,
+     into the gap above the controls. The empty board before the build keeps the same height (see .stage > .board:empty). */
   .board.tower {
-    margin-top: calc(var(--side) * -0.12);
-    padding-bottom: calc(var(--side) * 0.25);
+    margin-top: calc(var(--side) * -0.22);
+    padding-bottom: calc(var(--side) * 0.12);
   }
 
   .stage > .board:empty {
-    min-height: calc(var(--side) * (0.72 * 4 + 0.25 - 0.12) + 0.5rem * 3);
+    min-height: calc(var(--side) * (0.72 * 4 + 0.12 - 0.22) + 0.5rem * 3);
   }
 }
 
