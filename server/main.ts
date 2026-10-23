@@ -57,7 +57,7 @@ import { LobbyError, createLobby, networkOf } from './lobby.ts';
 import { type PreviewList, createPreviews, previewsConfigFromEnv } from './previews.ts';
 import { parsePlayoffRequest } from '../src/practice/playoff.ts';
 import { parseBoardQuery, parsePracticeRun } from '../src/practice/practice.ts';
-import { openStore } from './store.ts';
+import { type LoginUser, openStore } from './store.ts';
 import { createWaiters } from './waiters.ts';
 import { testerCodesFromEnv } from './tester-codes.ts';
 import { TESTER_NAME_MAX_LENGTH, parseClaimRequest } from '../src/share/codes.ts';
@@ -351,19 +351,41 @@ function requireMaintainer(req: IncomingMessage): string {
   return user.login;
 }
 
+// The end of a login callback. A browser that holds a login of the other provider connects the new
+// login to that account, and keeps its cookie. Else the new login opens its account, with its cookie.
+async function afterLogin(req: IncomingMessage, res: ServerResponse, auth: Auth, user: LoginUser, location: string, cookies: string[]): Promise<void> {
+  const current = auth.user(req);
+  if (current === undefined || ('google' in current) === ('google' in user)) {
+    await store.signIn(user);
+    return redirect(res, location, cookies);
+  }
+  await store.connectLogin(current, user);
+  return redirect(res, location, [auth.clearState()]);
+}
+
+// A failed login returns to the page with a reason: `taken` when the login already has its own account.
+function loginFailed(res: ServerResponse, provider: string, error: unknown): void {
+  console.error(`${provider} login failed:`, error instanceof Error ? error.message : error);
+  const taken = error instanceof SessionError && error.status === 409;
+  return redirect(res, taken ? '/?login=taken' : '/?login=failed', []);
+}
+
 // The answer of GET /api/me: the login state, the custom name and the public person id.
 // `origin` is the origin of the page, for Google One Tap.
 async function me(token: PlayerToken, user: ReturnType<Auth['user']>, origin: string) {
+  const logins = user === undefined ? { github: null, google: false } : await store.loginsOf(token);
   return {
     loginAvailable: auth !== undefined,
     // The stored account holds the name and picture choices. A device that is not linked yet has none.
-    // A Google login shows the GitHub account that it is connected to, else no user: it shows like a device.
-    user: user === undefined ? null : ((await store.account(token)) ?? ('google' in user ? null : { login: user.login, avatar: user.avatar, name: null, seed: null })),
+    user:
+      user === undefined
+        ? null
+        : ((await store.account(token)) ?? ('google' in user ? null : { provider: 'github' as const, login: user.login, avatar: user.avatar, name: null, seed: null })),
     name: await store.customName(token),
-    generatedName: await store.generatedName(token),
     googleLogin: auth?.google !== undefined,
     googleOneTapClient: auth?.google?.oneTapClient(origin) ?? null,
-    googleConnected: user === undefined ? false : await store.hasGoogle(token),
+    githubLogin: logins.github,
+    googleConnected: logins.google,
     hasCopy: await store.hasCopy(token),
     person: await store.person(token),
   };
@@ -401,11 +423,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     case 'GET /api/auth/github/callback': {
       if (auth === undefined) throw new HttpError(404, 'Login is not available on this server.');
       try {
-        const { location, cookies } = await auth.finish(req, url.searchParams.get('code'), url.searchParams.get('state'));
-        return redirect(res, location, cookies);
+        const { user, location, cookies } = await auth.finish(req, url.searchParams.get('code'), url.searchParams.get('state'));
+        return await afterLogin(req, res, auth, user, location, cookies);
       } catch (error) {
-        console.error('login failed:', error instanceof Error ? error.message : error);
-        return redirect(res, '/?login=failed', []);
+        return loginFailed(res, 'GitHub', error);
       }
     }
     case 'GET /api/auth/google/login': {
@@ -419,15 +440,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       if (auth === undefined || google === undefined) throw new HttpError(404, 'Google login is not available on this server.');
       try {
         const { user, location } = await google.finish(req, url.searchParams.get('code'), url.searchParams.get('state'));
-        // With a GitHub login, Google joins that account, and the GitHub cookie stays.
-        const current = auth.user(req);
-        if (current === undefined || 'google' in current) return redirect(res, location, auth.googleCookies(user));
-        await store.connectGoogle(user, current);
-        return redirect(res, location, [auth.clearState()]);
+        return await afterLogin(req, res, auth, user, location, auth.googleCookies(user));
       } catch (error) {
-        console.error('Google login failed:', error instanceof Error ? error.message : error);
-        const taken = error instanceof SessionError && error.status === 409;
-        return redirect(res, taken ? '/?login=google-taken' : '/?login=failed', []);
+        return loginFailed(res, 'Google', error);
       }
     }
     // A cross-site form cannot send the X-Player header, so another site cannot log a player in.
@@ -520,7 +535,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const picture = parseAvatarRequest(await readJson(req));
       if (picture === undefined) throw new HttpError(400, 'picture is "github" or "generated".');
       const user = auth?.user(req);
-      if (user === undefined) throw new HttpError(401, 'Log in with GitHub first.');
+      if (user === undefined) throw new HttpError(401, 'Log in first.');
       // The picture choice is between the GitHub picture and a generated one, so the account needs GitHub.
       await store.setAvatar(await store.linkToken(token, user), picture);
       notifyPlayer(token);

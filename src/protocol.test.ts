@@ -70,7 +70,7 @@ describe('parseSessionView', () => {
     version: 2,
     chat: [{ id: 7, from: 'O', text: 'good luck', at: 1_700_000_000_000, by: '00112233445566ff' }, { id: 8, from: 'X', text: 'thanks', at: 1_700_000_000_001 }],
     presence: { X: true, O: false },
-    players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4', name: null, seed: null }, O: null },
+    players: { X: { provider: 'github', login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4', name: null, seed: null }, O: null },
     names: { X: 'braveOtter', O: null },
     people: { X: '0123456789abcdef', O: null },
     watchers: [{ id: '0123456789abcdef', name: 'Carol', player: null, person: 'fedcba9876543210' }],
@@ -192,7 +192,7 @@ describe('normalizeChat', () => {
 describe('parsePlayerInfo', () => {
   it('accepts a GitHub login with a GitHub avatar only', () => {
     const avatar = 'https://avatars.githubusercontent.com/u/7?v=4';
-    expect(parsePlayerInfo({ login: 'octo-cat', avatar })).toEqual({ login: 'octo-cat', avatar, name: null, seed: null });
+    expect(parsePlayerInfo({ login: 'octo-cat', avatar })).toEqual({ provider: 'github', login: 'octo-cat', avatar, name: null, seed: null });
     expect(parsePlayerInfo({ login: 'octo', avatar: 'https://evil.example.org/a.png' })).toBeUndefined();
     expect(parsePlayerInfo({ login: '<script>', avatar })).toBeUndefined();
     expect(parsePlayerInfo({ login: 'x'.repeat(40), avatar })).toBeUndefined();
@@ -200,13 +200,25 @@ describe('parsePlayerInfo', () => {
 
   it('accepts a custom name and a generated picture seed, and refuses bad ones', () => {
     const avatar = 'https://avatars.githubusercontent.com/u/7?v=4';
-    const player = { login: 'octo', avatar, name: 'Dana', seed: '0123456789ab' };
+    const player = { provider: 'github' as const, login: 'octo', avatar, name: 'Dana', seed: '0123456789ab' };
     expect(parsePlayerInfo(player)).toEqual(player);
+    // An older server or Nearby device sends no provider: a GitHub account.
+    expect(parsePlayerInfo({ login: 'octo', avatar, name: 'Dana', seed: '0123456789ab' })).toEqual(player);
     expect(accountNameOf(player)).toBe('Dana');
     expect(accountNameOf({ ...player, name: null })).toBe('octo');
     expect(parsePlayerInfo({ ...player, name: ' Dana ' })).toBeUndefined();
     expect(parsePlayerInfo({ ...player, seed: 'ABCDEF012345' })).toBeUndefined();
     expect(parsePlayerInfo({ ...player, seed: '0123' })).toBeUndefined();
+  });
+
+  it('checks each provider by its own rules: a GitHub handle and picture, or a Google name and photo', () => {
+    const google = { provider: 'google' as const, login: 'Dana Levi', avatar: 'https://lh3.googleusercontent.com/a/abc', name: null, seed: null };
+    expect(parsePlayerInfo(google)).toEqual(google);
+    expect(parsePlayerInfo({ ...google, avatar: null })).toEqual({ ...google, avatar: null });
+    expect(parsePlayerInfo({ ...google, avatar: 'https://avatars.githubusercontent.com/u/7?v=4' })).toBeUndefined();
+    expect(parsePlayerInfo({ ...google, login: 'Dana <b>' })).toBeUndefined();
+    expect(parsePlayerInfo({ ...google, provider: 'github' })).toBeUndefined();
+    expect(parsePlayerInfo({ ...google, provider: 'apple' })).toBeUndefined();
   });
 });
 
@@ -385,7 +397,7 @@ describe('parsePublicGame', () => {
     difficulty: 'hard',
     tuned: false,
     computer: 'O',
-    players: { X: { login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4', name: null, seed: null }, O: null },
+    players: { X: { provider: 'github', login: 'octo', avatar: 'https://avatars.githubusercontent.com/u/7?v=4', name: null, seed: null }, O: null },
     names: { X: 'braveOtter', O: null },
     finishedAt: 1_700_000_000_000,
   };

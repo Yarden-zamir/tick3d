@@ -37,6 +37,7 @@ import {
   LEADERBOARD_ROWS,
   LAYOUTS,
   REFUSALS,
+  LOGIN_PROVIDERS,
   RELEASE_ROWS,
   RESULTS_PER_UPLOAD,
   SEAT_ACTIONS,
@@ -79,7 +80,7 @@ export const APP_OPENS_PER_HOUR = 60;
 // The other tables hold no player data: events, and moderation_log (kept for moderation). tester_codes holds
 // the email and the name that a tester typed, without a player token: a maintainer deletes them on an email
 // request. Delete my data only removes the person ids of the player from it.
-export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'app_copies', 'apple_slots', 'player_tokens', 'users', 'google_accounts'] as const;
+export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'app_copies', 'apple_slots', 'player_tokens', 'users', 'logins'] as const;
 export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number; anonymised: number }>;
 // The previews list on production is at most this old. server/previews.ts enforces it.
 // Only production calls GitHub, without a token: 60 calls per hour, 5 of them kept in reserve, so 55.
@@ -308,9 +309,13 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       ],
     },
   }),
-  PlayerInfo: object('The GitHub account of a seat, when its player logged in on the page.', {
-    login: { type: 'string', minLength: 1, maxLength: 39 },
-    avatar: { type: 'string', pattern: '^https://avatars\\.githubusercontent\\.com/' },
+  PlayerInfo: object('The account of a seat, when its player logged in on the page with GitHub or Google.', {
+    provider: { type: 'string', enum: [...LOGIN_PROVIDERS], description: 'The login that made the account. `login` and `avatar` come from it.' },
+    login: { type: 'string', minLength: 1, maxLength: 39, description: 'The GitHub login, or the Google name. After a rename, a Google account shows its custom name here too.' },
+    avatar: {
+      ...nullable({ type: 'string', pattern: '^https://(avatars\\.githubusercontent\\.com|lh3\\.googleusercontent\\.com)/' }),
+      description: 'The GitHub picture (add "&s=<pixels>"), or the Google photo (add "=s<pixels>-c"). null: a Google account without a photo.',
+    },
     name: {
       ...nullable({ type: 'string', minLength: CUSTOM_NAME_MIN_LENGTH, maxLength: CUSTOM_NAME_MAX_LENGTH }),
       description: 'The name that the account chose with PUT /api/me/name. Show it in place of the login. null: show the login.',
@@ -419,7 +424,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     accept: { type: 'boolean', description: 'true applies the change. false declines it, or cancels your own request.' },
   }),
   AvatarRequest: object('Your picture.', {
-    picture: strings(AVATAR_PICTURES, 'github: the picture of your GitHub account. generated: a new generated picture, so a second call gives another one.'),
+    picture: strings(AVATAR_PICTURES, 'github or google: the picture of the login that made your account. generated: a new generated picture, so a second call gives another one.'),
   }),
   NameRequest: object('Your display name.', {
     name: {
@@ -445,12 +450,12 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     loginAvailable: { type: 'boolean' },
     user: nullable(ref('PlayerInfo')),
     name: { ...nullable(displayName), description: 'The name that you chose with PUT /api/me/name, or null.' },
-    generatedName: { ...displayName, description: 'The name that other players see without a custom name and without GitHub: generated from your player id, or from your Google account.' },
     googleLogin: { type: 'boolean', description: 'This server has Google login.' },
     googleOneTapClient: { type: ['string', 'null'], description: 'The Google sign-in client for Google One Tap on this page. null without Google login, and on an origin that Google does not accept, such as a preview.' },
+    githubLogin: { type: ['string', 'null'], description: 'The GitHub login of your account, or null without one.' },
     googleConnected: { type: 'boolean', description: 'Your account has a Google login.' },
     hasCopy,
-    person: { ...person, description: 'Your public person id: of the GitHub account when you are logged in, else of your player id. The /share page and the Share menu of the game put it in the invite link.' },
+    person: { ...person, description: 'Your public person id: of the account when you are logged in, else of your player id. The /share page and the Share menu of the game put it in the invite link.' },
   }),
   Tally: object('Game counts.', {
     played: { type: 'integer', minimum: 0 },
@@ -922,7 +927,9 @@ const EXAMPLE_HOST = 'q8Zr2Lx0Vb7Nc4Mw';
 const EXAMPLE_PERSON = '3f9a0c27d84be615';
 const OTHER_PERSON = 'b71e4d0a92c3f856';
 // The answer of GET /api/me for a guest on a server with GitHub and Google login.
-const ME_EXAMPLE = { loginAvailable: true, user: null, name: null, generatedName: 'Agent Smith', googleLogin: true, googleOneTapClient: '123-abc.apps.googleusercontent.com', googleConnected: false, hasCopy: false, person: OTHER_PERSON };
+const ME_EXAMPLE = { loginAvailable: true, user: null, name: null, githubLogin: null, googleLogin: true, googleOneTapClient: '123-abc.apps.googleusercontent.com', googleConnected: false, hasCopy: false, person: OTHER_PERSON };
+// A Google account, for the example answers of a Google login.
+const GOOGLE_USER_EXAMPLE = { provider: 'google', login: 'Dana Levi', avatar: 'https://lh3.googleusercontent.com/a/ACg8ocJ2', name: null, seed: null };
 
 // A view of the example session. Each route changes only the fields that its call changes.
 // A taken seat has a generated name.
@@ -1692,21 +1699,21 @@ export const ROUTES = {
   'PUT /api/me/avatar': {
     operationId: 'setAvatar',
     tag: 'Account',
-    summary: 'Choose your picture: your GitHub picture, or a new generated one.',
-    description: 'Only for an account with GitHub, also through a Google login that is connected to it. The choice belongs to the account, on every device, and other players see it.',
+    summary: 'Choose your picture: the picture of your login, or a new generated one.',
+    description: 'Only with a login (GitHub or Google). "github" or "google" goes back to the picture of the login that made the account (`provider` in PlayerInfo). The choice belongs to the account, on every device, and other players see it.',
     player: 'required',
     body: { schema: 'AvatarRequest', example: { picture: 'generated' } },
     response: {
       status: 200,
       description: 'Your login state with the new picture.',
       schema: 'Me',
-      example: { ...ME_EXAMPLE, user: { login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', name: null, seed: '3f9a0c12b7e4' } },
+      example: { ...ME_EXAMPLE, user: { provider: 'github', login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', name: null, seed: '3f9a0c12b7e4' }, githubLogin: 'octocat' },
     },
     errors: [
       BAD_PLAYER,
-      { status: 400, when: 'picture is not "github" or "generated".' },
+      { status: 400, when: 'picture is not "github", "google" or "generated".' },
       { status: 401, when: 'The request has no login.' },
-      { status: 403, when: 'The account has no GitHub login: a Google login without GitHub.' },
+      { status: 409, when: 'The picture is of another provider than the login that made the account.' },
     ],
     examplePlayer: AGENT_A,
   },
@@ -1826,7 +1833,7 @@ export const ROUTES = {
     summary: 'Log in with the ID token of Google One Tap. The page uses it.',
     player: 'required',
     body: { schema: 'GoogleCredential', example: { credential: 'eyJhbGciOiJSUzI1NiJ9.e30.c2lnbmF0dXJl' } },
-    response: { status: 200, description: 'Your login state, logged in.', schema: 'Me', example: { ...ME_EXAMPLE, googleConnected: true } },
+    response: { status: 200, description: 'Your login state, logged in.', schema: 'Me', example: { ...ME_EXAMPLE, user: GOOGLE_USER_EXAMPLE, googleConnected: true } },
     errors: [BAD_PLAYER, { status: 401, when: 'Google did not sign the token for this server, or it expired.' }, { status: 404, when: 'This server has no Google login.' }],
     examplePlayer: AGENT_A,
   },

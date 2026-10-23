@@ -2,7 +2,8 @@
 import { winnerOf } from '../game.ts';
 import type { LocalSummary } from '../local.ts';
 import { avatarFor, avatarImage, type Person } from '../avatar.ts';
-import { type Me, api, OnlineError } from '../online.ts';
+import { nameOf } from '../names.ts';
+import { type Me, api, OnlineError, token } from '../online.ts';
 import {
   type GameId,
   HISTORY_PAGE_SIZE,
@@ -18,6 +19,7 @@ import {
   CUSTOM_NAME_MAX_LENGTH,
   CUSTOM_NAME_MIN_LENGTH,
   ALL_STATS,
+  PROVIDER_NAMES,
   SESSION_MODES,
   accountNameOf,
   outcomeOf,
@@ -69,7 +71,7 @@ import { render, resultText } from './render.ts';
 import { loadBlocks, renderBlockedList } from './safety.ts';
 import { deleteSentResults, flushResults, forgetRecords, syncRecords } from './results.ts';
 import { openDeviceSession, joinSession, refresh } from './sessions.ts';
-import { loggedIn, ownName, page, current, saveAccount } from './state.ts';
+import { ownName, page, current, saveAccount } from './state.ts';
 
 // A button of a list item. A click closes the dialog first.
 type Action = { label: string; run: () => void };
@@ -374,36 +376,35 @@ let accountReturnTo: string | undefined;
 // The account part of My games. refreshAccount rebuilds it when a slower /api/me answer changes the account.
 function renderAccountBox(): void {
   accountBox.replaceChildren();
-  const { user, googleConnected, googleLogin } = page.account;
+  const { user, githubLogin, googleConnected, googleLogin } = page.account;
   // The iOS app offers no login: App Store rule 4.8 asks for Sign in with Apple next to GitHub and Google.
   const canLogIn = page.account.loginAvailable && navigator.onLine && platform() === 'web';
   const shown = ownName();
-  const status = user !== null ? 'Signed in with GitHub' : googleConnected ? 'Signed in with Google' : 'You play as a guest on this device';
+  const status = user === null ? 'You play as a guest on this device' : `Account from ${PROVIDER_NAMES[user.provider]}`;
   const nameChoice: NameChoice =
     user === null
-      ? { current: page.account.name, fallback: page.account.generatedName, reset: 'Reset to generated name' }
-      : { current: user.name, fallback: user.login, reset: 'Use GitHub name' };
+      ? { current: page.account.name, fallback: nameOf(token), reset: 'Reset to generated name' }
+      : { current: user.name, fallback: user.login, reset: `Use ${PROVIDER_NAMES[user.provider]} name` };
   accountBox.append(accountHeader({ player: user, name: shown }, status, nameChoice));
-  // One row per login. A Google login without GitHub has no GitHub row: GitHub cannot join it.
+  // One row per login. GitHub and Google work the same way: a guest logs in with either one, and an
+  // account connects the other one, so both open it.
+  const action = (href: string, primary: boolean) => loginLink(href, user === null ? 'Log in' : 'Connect', primary);
   const rows: HTMLElement[] = [];
-  if (user !== null) rows.push(signInRow(GITHUB_ICON, 'GitHub', user.login, null));
-  else if (!googleConnected && canLogIn) rows.push(signInRow(GITHUB_ICON, 'GitHub', 'Uses your GitHub name and picture', loginLink(api.loginUrl(accountReturnTo), 'Log in', true)));
-  if (googleConnected) rows.push(signInRow(GOOGLE_ICON, 'Google', 'Signed in', null));
-  else if (googleLogin && canLogIn) {
-    const action = loginLink(api.googleLoginUrl(accountReturnTo), user === null ? 'Sign in' : 'Connect', false);
-    rows.push(signInRow(GOOGLE_ICON, 'Google', user === null ? 'Only the name that you choose here shows' : 'Also sign in with Google', action));
-  }
+  if (githubLogin !== null) rows.push(signInRow(GITHUB_ICON, 'GitHub', githubLogin, null));
+  else if (canLogIn) rows.push(signInRow(GITHUB_ICON, 'GitHub', user === null ? 'Your GitHub name and picture' : 'Also log in with GitHub', action(api.loginUrl(accountReturnTo), user === null)));
+  if (googleConnected) rows.push(signInRow(GOOGLE_ICON, 'Google', 'Connected', null));
+  else if (googleLogin && canLogIn) rows.push(signInRow(GOOGLE_ICON, 'Google', user === null ? 'Your Google name and photo' : 'Also log in with Google', action(api.googleLoginUrl(accountReturnTo), false)));
   if (rows.length > 0) {
     const title = document.createElement('h4');
     title.className = 'sign-in-title';
-    title.textContent = loggedIn() ? 'Sign-in methods' : 'Log in to keep your games on every device';
+    title.textContent = user === null ? 'Log in to keep your games on every device' : 'Sign-in methods';
     const list = document.createElement('div');
     list.className = 'sign-in-list';
     list.append(...rows);
     accountBox.append(title, list);
   }
   // Log out sits next to Delete my data at the bottom of the tab.
-  myGamesLogout.hidden = !loggedIn();
+  myGamesLogout.hidden = user === null;
 }
 
 // The picture, the name and one line about the login. A tap on the picture opens it large, with the
@@ -576,10 +577,8 @@ function openDeleteConfirm(): void {
   const user = page.account.user;
   deleteConfirmScope.textContent =
     user !== null
-      ? `This deletes the data of the GitHub account ${user.login} on every device, and of this device:`
-      : page.account.googleConnected
-        ? 'This deletes the data of your Google login on every device, and of this device:'
-        : 'This deletes the data of this device, on the server and here:';
+      ? `This deletes the data of your account ${accountNameOf(user)} on every device, and of this device:`
+      : 'This deletes the data of this device, on the server and here:';
   deleteConfirmSettings.checked = false;
   deleteConfirmStatus.hidden = true;
   deleteConfirm.showModal();
@@ -694,15 +693,15 @@ function renameForm({ current, fallback, reset: resetLabel }: NameChoice, opener
   return form;
 }
 
-// The choices under the player's own picture in the viewer: New picture and Use GitHub picture.
-// Only an account with GitHub has them: the choice is between the GitHub picture and a generated one.
+// The choices under the player's own picture in the viewer: New picture, and Use GitHub picture or Use
+// Google picture. Only an account has them: a guest's picture comes from the name.
 function pictureChoices(user: PlayerInfo | null): HTMLElement[] {
   const problem = document.createElement('small');
   problem.className = 'rename-problem';
   if (user === null || !navigator.onLine) {
     const note = document.createElement('small');
     note.className = 'picture-note';
-    note.textContent = user === null ? 'A GitHub login can change the picture.' : 'Connect to the internet to change the picture.';
+    note.textContent = user === null ? 'Log in to change the picture.' : 'Connect to the internet to change the picture.';
     return [note];
   }
   const button = (label: string, picture: AvatarPicture) => {
@@ -717,8 +716,10 @@ function pictureChoices(user: PlayerInfo | null): HTMLElement[] {
     });
     return element;
   };
-  // A GitHub picture is the default, so its button shows only when a generated picture replaces it.
-  return [button('New picture', 'generated'), ...(user.seed === null ? [] : [button('Use GitHub picture', 'github')]), problem];
+  // The login's picture is the default, so its button shows only when a generated picture replaces it.
+  // A Google account without a photo has no picture to go back to.
+  const back = user.seed === null || user.avatar === null ? [] : [button(`Use ${PROVIDER_NAMES[user.provider]} picture`, user.provider)];
+  return [button('New picture', 'generated'), ...back, problem];
 }
 
 // True when the server took the change. Else `problem` shows why.

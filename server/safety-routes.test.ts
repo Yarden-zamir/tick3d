@@ -215,16 +215,18 @@ describe('Google login routes', () => {
   // The account cookie of a Google login. The server checks only the signature, so no Google call is needed.
   const googleCookie = (sub: string) => (createAuth(config).googleCookies({ google: sub })[0] ?? '').split(';')[0] ?? '';
 
-  it('shares a Google account and its name between devices, without GitHub rights', async () => {
+  it('shares a Google account and its name and picture choices between devices, without maintainer rights', async () => {
     const cookie = googleCookie('2000000000000000000001');
     const me = await call('GET', '/me', { player: erin, cookie });
     // The test server is not on the login origin, so it offers the login button and no One Tap.
-    expect(me.body).toMatchObject({ user: null, googleLogin: true, googleOneTapClient: null, googleConnected: true });
-    expect((await call('PUT', '/me/name', { player: erin, cookie, body: { name: 'Erin E' } })).body).toMatchObject({ name: 'Erin E' });
-    expect((await call('GET', '/me', { player: erinPhone, cookie })).body).toMatchObject({ name: 'Erin E', googleConnected: true });
+    // A cookie without a sign-in has no Google profile, so the account has a generated name and no photo.
+    expect(me.body).toMatchObject({ user: { provider: 'google', avatar: null }, googleLogin: true, googleOneTapClient: null, githubLogin: null, googleConnected: true });
+    expect((await call('PUT', '/me/name', { player: erin, cookie, body: { name: 'Erin E' } })).body).toMatchObject({ user: { name: 'Erin E' } });
+    expect((await call('GET', '/me', { player: erinPhone, cookie })).body).toMatchObject({ user: { login: 'Erin E', name: 'Erin E' }, googleConnected: true });
     // A device without the cookie is a device of its own.
-    expect((await call('GET', '/me', { player: bob })).body).toMatchObject({ googleConnected: false });
-    expect((await call('PUT', '/me/avatar', { player: erin, cookie, body: { picture: 'generated' } })).status).toBe(403);
+    expect((await call('GET', '/me', { player: bob })).body).toMatchObject({ user: null, googleConnected: false });
+    expect((await call('PUT', '/me/avatar', { player: erin, cookie, body: { picture: 'generated' } })).status).toBe(200);
+    expect((await call('PUT', '/me/avatar', { player: erin, cookie, body: { picture: 'github' } })).status).toBe(409);
     expect((await call('GET', '/reports', { player: erin, cookie })).status).toBe(401);
   });
 

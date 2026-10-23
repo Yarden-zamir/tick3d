@@ -149,8 +149,9 @@ A mode change moves neither the board nor the Opponent picker:
 ## Accounts and My games
 
 - Login with GitHub or Google is optional. Without a login, every browser plays with a random token and a generated name, such as "braveOtter".
-- Google login keeps only Google's account id. Other players see a Google account like a device: the custom name, else a generated name and picture. On the main site and in the Android app, Google One Tap offers the sign-in and signs a returning player in by itself. Log out stops the automatic sign-in. The Android app is the site in Chrome, so this is the same web sign-in, without Play Games.
-- With a GitHub login, Connect Google in My games adds Google to the account, so both logins open it. A Google login that already has its own account cannot join another account.
+- GitHub and Google work the same way. An account shows the name and picture of the login that made it: the GitHub login and picture, or the Google name and photo. Rename and New picture work the same for both. After a rename, other players no longer see the Google name; a GitHub login stays visible as a public handle.
+- On the main site and in the Android app, Google One Tap offers the sign-in and signs a returning player in by itself. Log out stops the automatic sign-in. The Android app is the site in Chrome, so this is the same web sign-in, without Play Games.
+- Connect in the sign-in list of My games adds the other login to the account, in both directions, so either login opens it. A login that already has its own account cannot join yet: the merge of two accounts comes next.
 - A login lets a player continue a game on every device of the account.
 - Every player can choose a name in My games. With a login, the name belongs to the account and shows in place of the GitHub login.
 - With a login, New picture in My games swaps the GitHub picture for a generated one, and each press gives another. Use GitHub picture goes back. Without a login, these buttons show grayed out.

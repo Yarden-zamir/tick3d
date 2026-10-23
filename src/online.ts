@@ -126,14 +126,15 @@ const request = async (method: string, path: string, body?: unknown): Promise<Se
 // this player (of the account when logged in), and `hasCopy` whether the player holds a copy of the paid Android app
 // (src/copies.ts). The server always sends both; null means no answer came yet.
 // `user` is the GitHub account. A Google login without GitHub has no user: it shows like a device, with
-// `name`, else `generatedName`. `googleOneTapClient` is the Google client for One Tap on this page, or null.
+// `googleOneTapClient` is the Google client for One Tap on this page, or null. `githubLogin` and
+// `googleConnected` are the logins of the account: either one opens it.
 export type Me = {
   loginAvailable: boolean;
   user: PlayerInfo | null;
   name: string | null;
-  generatedName: string;
   googleLogin: boolean;
   googleOneTapClient: string | null;
+  githubLogin: string | null;
   googleConnected: boolean;
   person: PersonId | null;
   hasCopy: boolean | null;
@@ -147,10 +148,10 @@ export function parseMe(value: unknown): Me {
   const raw = (value as Record<string, unknown>).name;
   const name = raw === undefined || raw === null ? null : parseCustomName(raw);
   const person = parsePersonId((value as Record<string, unknown>).person);
-  const { hasCopy, generatedName, googleLogin, googleOneTapClient, googleConnected } = value as Record<string, unknown>;
+  const { hasCopy, githubLogin, googleLogin, googleOneTapClient, googleConnected } = value as Record<string, unknown>;
   if (
     typeof loginAvailable !== 'boolean' ||
-    typeof generatedName !== 'string' ||
+    (githubLogin !== null && typeof githubLogin !== 'string') ||
     typeof googleLogin !== 'boolean' ||
     (googleOneTapClient !== null && typeof googleOneTapClient !== 'string') ||
     typeof googleConnected !== 'boolean' ||
@@ -162,7 +163,7 @@ export function parseMe(value: unknown): Me {
   ) {
     throw new Error('invalid answer from /api/me');
   }
-  return { loginAvailable, user: info, name, generatedName, googleLogin, googleOneTapClient, googleConnected, person, hasCopy };
+  return { loginAvailable, user: info, name, googleLogin, googleOneTapClient, githubLogin, googleConnected, person, hasCopy };
 }
 
 // The page reads "My games" only to display it, so a light shape check is enough here. The accounts

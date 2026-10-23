@@ -9,8 +9,8 @@
 import { isRecord } from '../src/guards.ts';
 import { createHmac, createPublicKey, randomBytes, timingSafeEqual, verify as verifySignature } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
-import { type PlayerInfo, parsePlayerInfo } from '../src/protocol.ts';
-import type { GitHubUser, GoogleUser } from './store.ts';
+import { PICTURE_HOSTS, parseCustomName, parsePlayerInfo } from '../src/protocol.ts';
+import type { GitHubUser, GoogleSignIn, GoogleUser } from './store.ts';
 
 const USER_COOKIE = 't3_user';
 const STATE_COOKIE = 't3_oauth';
@@ -30,7 +30,7 @@ export type AuthConfig = {
 };
 
 // The account of an account cookie: GitHub or Google.
-export type Login = (GitHubUser & PlayerInfo) | GoogleUser;
+export type Login = GitHubUser | GoogleUser;
 
 export function authConfigFromEnv(env: NodeJS.ProcessEnv): AuthConfig | undefined {
   const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, AUTH_SECRET, AUTH_ORIGIN, COOKIE_DOMAIN } = env;
@@ -111,6 +111,23 @@ function safeReturn(config: AuthConfig, value: string | null): string {
 
 export type Redirect = { location: string; cookies: string[] };
 
+// The GitHub login and picture of a cookie or a GitHub profile, checked as a PlayerInfo.
+function githubInfoOf(value: object): { login: string; avatar: string } | undefined {
+  const info = parsePlayerInfo({ ...value, provider: 'github' });
+  return info === undefined || info.avatar === null ? undefined : { login: info.login, avatar: info.avatar };
+}
+
+// The Google name as a custom name (parseCustomName): the full name, else the first name, else null.
+// A name with other characters, or a longer one, does not pass. The account then shows a generated name.
+const googleName = (claims: Record<string, unknown>): string | null => parseCustomName(claims.name) ?? parseCustomName(claims.given_name) ?? null;
+
+// The Google photo without its size, or null. avatarSrc in src/avatar.ts adds the size, as "=s<pixels>-c".
+function googlePicture(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.startsWith(PICTURE_HOSTS.google)) return null;
+  const size = value.lastIndexOf('=');
+  return size === -1 ? value : value.slice(0, size);
+}
+
 // Google's sign-in addresses (OpenID Connect discovery: https://accounts.google.com/.well-known/openid-configuration).
 const GOOGLE_AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
@@ -169,7 +186,7 @@ export function createAuth(config: AuthConfig, fetchImpl: typeof fetch = fetch, 
   }
 
   // The Google account of an ID token: Google signed it for our client, and it has not expired.
-  async function googleUserOf(idToken: unknown, clientId: string): Promise<GoogleUser> {
+  async function googleUserOf(idToken: unknown, clientId: string): Promise<GoogleSignIn> {
     if (typeof idToken !== 'string') throw new Error('Google sent no ID token');
     const [head, body, signature, ...rest] = idToken.split('.');
     if (head === undefined || body === undefined || signature === undefined || rest.length > 0) throw new Error('the ID token is not a JWT');
@@ -191,7 +208,7 @@ export function createAuth(config: AuthConfig, fetchImpl: typeof fetch = fetch, 
     if (typeof claims.exp !== 'number' || claims.exp * 1000 <= now()) throw new Error('the ID token expired');
     // Google documents the subject id as at most 255 ASCII characters.
     if (typeof claims.sub !== 'string' || claims.sub.length === 0 || claims.sub.length > 255) throw new Error('the ID token has no subject');
-    return { google: claims.sub };
+    return { google: claims.sub, profile: { name: googleName(claims), picture: googlePicture(claims.picture) } };
   }
 
   // Google login with the server's Google client.
@@ -200,7 +217,7 @@ export function createAuth(config: AuthConfig, fetchImpl: typeof fetch = fetch, 
     // of the client (Authorized JavaScript origins), so a preview gets only the login button.
     oneTapClient: (requestOrigin: string): string | null => (requestOrigin === config.origin ? clientId : null),
 
-    // Starts a Google login. Only the openid scope: the game keeps Google's account id and nothing else.
+    // Starts a Google login. The profile scope gives the name and photo, which show like a GitHub login and picture.
     start(requestOrigin: string, returnTo: string | null): Redirect {
       if (requestOrigin !== config.origin) return viaLoginOrigin('/api/auth/google/login', returnTo);
       const { state, cookie: stateCookie } = newState(returnTo);
@@ -208,14 +225,14 @@ export function createAuth(config: AuthConfig, fetchImpl: typeof fetch = fetch, 
       url.searchParams.set('client_id', clientId);
       url.searchParams.set('redirect_uri', googleCallbackUrl);
       url.searchParams.set('response_type', 'code');
-      url.searchParams.set('scope', 'openid');
+      url.searchParams.set('scope', 'openid profile');
       url.searchParams.set('state', state);
       return { location: url.toString(), cookies: [stateCookie] };
     },
 
     // Finishes a Google login: checks the state and asks Google who the player is. The caller sets
     // the account cookie, because connecting Google to a GitHub login keeps the GitHub cookie.
-    async finish(req: IncomingMessage, code: string | null, state: string | null): Promise<{ user: GoogleUser; location: string }> {
+    async finish(req: IncomingMessage, code: string | null, state: string | null): Promise<{ user: GoogleSignIn; location: string }> {
       const location = checkState(req, state);
       if (code === null) throw new Error('Google sent no code');
       const response = await fetchImpl(GOOGLE_TOKEN, {
@@ -230,7 +247,7 @@ export function createAuth(config: AuthConfig, fetchImpl: typeof fetch = fetch, 
     // The account of a One Tap sign-in: the page sends the ID token that Google gave it.
     // Limit: no nonce, so a stolen ID token works until it expires (one hour). The X-Player header
     // keeps other sites out. Revisit this if a token leak becomes possible, for example through logs.
-    oneTap: (credential: unknown): Promise<GoogleUser> => googleUserOf(credential, clientId),
+    oneTap: (credential: unknown): Promise<GoogleSignIn> => googleUserOf(credential, clientId),
   });
 
   return {
@@ -243,8 +260,8 @@ export function createAuth(config: AuthConfig, fetchImpl: typeof fetch = fetch, 
       if (payload === undefined) return undefined;
       if (typeof payload.google === 'string') return { google: payload.google };
       if (typeof payload.id !== 'number') return undefined;
-      const info = parsePlayerInfo(payload);
-      return info === undefined ? undefined : { ...info, id: payload.id };
+      const info = githubInfoOf(payload);
+      return info === undefined ? undefined : { id: payload.id, login: info.login, avatar: info.avatar };
     },
 
     // Starts a GitHub login. A preview sends the player to the login origin first.
@@ -278,7 +295,7 @@ export function createAuth(config: AuthConfig, fetchImpl: typeof fetch = fetch, 
       });
       const body: unknown = await userResponse.json();
       const fields = isRecord(body) ? body : {};
-      const info = parsePlayerInfo({ login: fields.login, avatar: fields.avatar_url });
+      const info = githubInfoOf({ login: fields.login, avatar: fields.avatar_url });
       if (typeof fields.id !== 'number' || info === undefined) throw new Error('GitHub sent an unexpected profile');
       const user: GitHubUser = { id: fields.id, login: info.login, avatar: info.avatar };
       return {
@@ -289,7 +306,8 @@ export function createAuth(config: AuthConfig, fetchImpl: typeof fetch = fetch, 
     },
 
     // The cookies after a Google login: the account cookie, and the cleared login state.
-    googleCookies: (user: GoogleUser): string[] => [accountCookie(user), clearState()],
+    // The cookie holds only the subject id: the profile is stored at the sign-in.
+    googleCookies: (user: GoogleUser): string[] => [accountCookie({ google: user.google }), clearState()],
     // The cookie after Google was connected to a GitHub login: the GitHub cookie stays.
     clearState,
 

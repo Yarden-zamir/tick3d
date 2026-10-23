@@ -119,8 +119,8 @@ describe('Google login', () => {
     expect(createAuth(config, fakeGoogle().impl).google).toBeUndefined();
   });
 
-  it('logs in through the login origin, asks only for openid, and keeps only the subject id', async () => {
-    const google = fakeGoogle();
+  it('logs in through the login origin, asks for the profile, and keeps only the subject id in the cookie', async () => {
+    const google = fakeGoogle(idToken({ name: 'Dana Levi', picture: 'https://lh3.googleusercontent.com/a/dana=s96-c' }));
     const auth = createAuth(googleConfig, google.impl, () => NOW);
     expect(googleOf(auth).start('https://pr-5.tick3d.example.com', null).location).toBe(
       'https://tick3d.example.com/api/auth/google/login?return=https%3A%2F%2Ftick3d.example.com%2F',
@@ -128,11 +128,13 @@ describe('Google login', () => {
     const start = googleOf(auth).start(config.origin, 'https://pr-5.tick3d.example.com/');
     const url = new URL(start.location);
     expect(url.origin + url.pathname).toBe('https://accounts.google.com/o/oauth2/v2/auth');
-    expect(url.searchParams.get('scope')).toBe('openid');
+    expect(url.searchParams.get('scope')).toBe('openid profile');
     expect(url.searchParams.get('redirect_uri')).toBe('https://tick3d.example.com/api/auth/google/callback');
     const nonce = cookieValue(start.cookies[0] ?? '');
     const done = await googleOf(auth).finish(request({ t3_oauth: nonce }), 'the-code', url.searchParams.get('state'));
-    expect(done).toEqual({ user: { google: '1234567890' }, location: 'https://pr-5.tick3d.example.com/' });
+    // The photo loses its size: the page adds the size that it shows.
+    const profile = { name: 'Dana Levi', picture: 'https://lh3.googleusercontent.com/a/dana' };
+    expect(done).toEqual({ user: { google: '1234567890', profile }, location: 'https://pr-5.tick3d.example.com/' });
     const account = auth.googleCookies(done.user).find((c) => c.startsWith('t3_user='));
     expect(account).toContain('Domain=tick3d.example.com');
     expect(auth.user(request({ t3_user: cookieValue(account ?? '') }))).toEqual({ google: '1234567890' });
@@ -146,7 +148,13 @@ describe('Google login', () => {
 
   it('accepts a One Tap token that Google signed for this client', async () => {
     const auth = createAuth(googleConfig, fakeGoogle().impl, () => NOW);
-    await expect(googleOf(auth).oneTap(idToken())).resolves.toEqual({ google: '1234567890' });
+    await expect(googleOf(auth).oneTap(idToken())).resolves.toEqual({ google: '1234567890', profile: { name: null, picture: null } });
+  });
+
+  it('takes the first name when the full name does not pass as a name, and refuses a photo from elsewhere', async () => {
+    const auth = createAuth(googleConfig, fakeGoogle().impl, () => NOW);
+    const token = idToken({ name: 'Dana <Levi>', given_name: 'Dana', picture: 'https://evil.example.org/a.png' });
+    await expect(googleOf(auth).oneTap(token)).resolves.toMatchObject({ profile: { name: 'Dana', picture: null } });
   });
 
   it.each([

@@ -125,8 +125,8 @@ describe('parseMyGames', () => {
   const avatar = 'https://avatars.githubusercontent.com/u/7?v=4';
   const answer = (opponent: unknown) => ({ user: null, total: {}, byMode: {}, byDifficulty: {}, sessions: [{ code: 'AB3K', opponent }] });
 
-  it('fills the name and seed that an older server leaves out, so a picture never draws from a missing seed', () => {
-    expect(parseMyGames(answer({ login: 'octo', avatar })).sessions[0]?.opponent).toEqual({ login: 'octo', avatar, name: null, seed: null });
+  it('fills the provider, name and seed that an older server leaves out, so a picture never draws from a missing seed', () => {
+    expect(parseMyGames(answer({ login: 'octo', avatar })).sessions[0]?.opponent).toEqual({ provider: 'github', login: 'octo', avatar, name: null, seed: null });
   });
 
   it('refuses an account with a picture from another host', () => {
