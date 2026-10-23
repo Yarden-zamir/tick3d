@@ -1360,12 +1360,34 @@ describe('GitHub and Google logins', () => {
     expect(await store.deleteDataOf({ login: 'ALICE' })).toMatchObject({ users: { deleted: 1 }, logins: { deleted: 2 } });
   });
 
-  it('refuses to connect a login that has its own account, or a second login of one provider', async () => {
+  it('merges a login that has its own account into the logged-in account, with its games, blocks and settings', async () => {
+    // A Google account on Alice's desktop with a finished online game against Bob, a block and hidden stats.
+    const code = await session();
+    await store.linkToken(alice, aliceSignIn);
+    await playMoves(code, X_WINS);
+    await store.block(alice, await personId(bob), 'bob');
+    await store.setStatsPrivate(alice, true);
+    // A GitHub account on her phone connects the Google login.
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.connectLogin(ALICE_GITHUB, ALICE_GOOGLE);
+    // Both devices act for the GitHub account, with its name, and see the game, the block and the setting.
+    expect(await store.linkToken(alice, ALICE_GOOGLE)).toBe(ALICE_ID);
+    expect(await store.account(alice)).toMatchObject({ provider: 'github', login: 'alice' });
+    expect(await store.loginsOf(alicePhone)).toEqual({ github: 'alice', google: true });
+    expect((await store.history(alicePhone, 0)).games).toHaveLength(1);
+    expect((await store.get(code, alicePhone)).you).toBe('X');
+    expect(await store.blocks(alicePhone)).toMatchObject([{ name: 'bob' }]);
+    expect(await store.statsPrivate(alicePhone)).toBe(true);
+  });
+
+  it('refuses to merge two accounts that both have a login of one provider, and a second login of one provider', async () => {
     store = await openStore(':memory:');
     await store.linkToken(bob, aliceSignIn);
+    await store.connectLogin(ALICE_GOOGLE, { id: 102, login: 'carol', avatar: 'https://avatars.githubusercontent.com/u/102?v=4' });
     await store.linkToken(alice, ALICE_GITHUB);
-    expect(await status(() => store.connectLogin(ALICE_GITHUB, aliceSignIn))).toBe(409);
-    expect(await status(() => store.connectLogin(ALICE_GOOGLE, ALICE_GITHUB))).toBe(409);
+    // Both accounts have a GitHub login, so they cannot become one.
+    expect(await status(() => store.connectLogin(ALICE_GITHUB, ALICE_GOOGLE))).toBe(409);
+    expect(await store.linkToken(bob, ALICE_GOOGLE)).not.toBe(ALICE_ID);
     await store.connectLogin(ALICE_GITHUB, { google: '1000000000000000000002' });
     expect(await status(() => store.connectLogin(ALICE_GITHUB, { google: '1000000000000000000003' }))).toBe(409);
   });

@@ -1182,6 +1182,54 @@ export async function openStore(
     return id;
   }
 
+  // Moves the account `from` into the account `into`, in one transaction. `into` keeps its name, picture and
+  // custom name. The devices of `from` and its account token point to `into`, so its seats, games, stats,
+  // records and practice runs follow through player_tokens (canonical). The rows that name the account token
+  // of `from` as their owner move: blocks, Hide my stats, the achievement reset, app copies and tester claims.
+  // Limit: a block or a report by another player names the old person id of `from`, so it no longer matches.
+  // Revisit this when a merged player reports a block that stopped working.
+  async function mergeAccounts(into: bigint, from: bigint): Promise<void> {
+    const [conflict] = await rows(
+      'FROM logins a JOIN logins b USING (provider) SELECT provider WHERE a.github_id = $into AND b.github_id = $from',
+      { into, from },
+      { provider: oneOf(LOGIN_PROVIDERS) },
+    );
+    if (conflict !== undefined) throw new SessionError(409, `Both accounts have a ${PROVIDER_NAMES[conflict.provider]} login, so they cannot become one.`);
+    const intoToken = accountToken(into);
+    const fromToken = accountToken(from);
+    const owners = { into: intoToken, from: fromToken };
+    const source = { from: fromToken };
+    await db.run('BEGIN TRANSACTION');
+    try {
+      await db.run('UPDATE logins SET github_id = $into WHERE github_id = $from', { into, from });
+      await db.run('UPDATE player_tokens SET github_id = $into WHERE github_id = $from', { into, from });
+      await db.run('DELETE FROM users WHERE github_id = $from', { from });
+      // A block of either account stays, once.
+      await db.run('INSERT INTO blocks SELECT * REPLACE ($into AS owner) FROM blocks WHERE owner = $from ON CONFLICT DO NOTHING', owners);
+      await db.run('DELETE FROM blocks WHERE owner = $from', source);
+      // Hidden stats stay hidden when either account hid them.
+      await db.run('INSERT INTO private_stats SELECT * REPLACE ($into AS owner) FROM private_stats WHERE owner = $from ON CONFLICT DO NOTHING', owners);
+      await db.run('DELETE FROM private_stats WHERE owner = $from', source);
+      // The later reset wins, so no game counts that a reset of either account dropped.
+      await db.run(
+        `INSERT INTO achievement_resets SELECT * REPLACE ($into AS owner) FROM achievement_resets WHERE owner = $from
+         ON CONFLICT (owner) DO UPDATE SET reset_at = greatest(achievement_resets.reset_at, excluded.reset_at)`,
+        owners,
+      );
+      await db.run('DELETE FROM achievement_resets WHERE owner = $from', source);
+      await db.run('DELETE FROM achievement_players WHERE owner = $from', source);
+      await db.run('UPDATE app_copies SET owner = $into WHERE owner = $from', owners);
+      await db.run('UPDATE tester_codes SET claimed_owner = $into WHERE claimed_owner = $from', owners);
+      await db.run('COMMIT');
+    } catch (error) {
+      await db.run('ROLLBACK');
+      throw error;
+    }
+    changedOwners.add(intoToken);
+    changedOwners.add(fromToken);
+    achievementCache.clear();
+  }
+
   // Adds the player_tokens row of an account token, for an account that linked before account seats.
   async function ensureAccountRow(githubId: number | bigint): Promise<string> {
     const account = accountToken(githubId);
@@ -1959,8 +2007,7 @@ export async function openStore(
     signIn: (user: LoginUser): Promise<bigint> => serialized(() => accountOfLogin(user)),
 
     // Adds a login of the other provider to the account of `current`, so both logins open the same account.
-    // Limit: a login that already has its own account cannot join, because the two accounts need a merge of
-    // their games. Revisit this with the account merge (issue #230).
+    // A login that already has its own account brings it along: mergeAccounts moves it into this one.
     connectLogin: (current: LoginUser, adding: LoginUser): Promise<void> =>
       serialized(async () => {
         const { provider, subject, label } = loginKey(adding);
@@ -1968,11 +2015,10 @@ export async function openStore(
         const account = await accountOfLogin(current);
         const found = await knownAccountOf(adding);
         if (found === account) return;
-        const shown = PROVIDER_NAMES[provider];
-        if (found !== undefined) throw new SessionError(409, `This ${shown} login already has its own tick3d account.`);
         const [other] = await rows('FROM logins SELECT subject WHERE provider = $provider AND github_id = $account', { provider, account }, { subject: text });
-        if (other !== undefined) throw new SessionError(409, `This account already has another ${shown} login.`);
-        await db.run('INSERT INTO logins (provider, subject, github_id, label) VALUES ($provider, $subject, $account, $label)', { provider, subject, account, label });
+        if (other !== undefined) throw new SessionError(409, `This account already has another ${PROVIDER_NAMES[provider]} login.`);
+        if (found !== undefined) await mergeAccounts(account, found);
+        else await db.run('INSERT INTO logins (provider, subject, github_id, label) VALUES ($provider, $subject, $account, $label)', { provider, subject, account, label });
       }),
 
     // The logins of the account of this device: the GitHub login, and whether it has Google.

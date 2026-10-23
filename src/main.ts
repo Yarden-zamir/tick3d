@@ -168,7 +168,7 @@ async function start(): Promise<void> {
   const params = new URLSearchParams(location.search);
   const loginProblem = new Map([
     ['failed', 'The login did not work. Try again.'],
-    ['taken', 'That login already has its own tick3d account. Joining two accounts with games comes soon.'],
+    ['taken', 'That login cannot join this account: one of them already has a login of the same kind.'],
   ]).get(params.get('login') ?? '');
   if (loginProblem !== undefined) {
     showProblem(loginProblem);
