@@ -123,7 +123,7 @@ test('a second win in a row against easy moves the player up to medium; the body
   // The two wins in a row also earn the prompt for a name. It waits for the move up, so the two never show together.
   const nudge = page.locator('#identity-nudge');
   await expect(nudge).toBeVisible();
-  await nudge.getByRole('button', { name: 'Pick a name' }).click();
+  await nudge.getByRole('button', { name: 'Make them mine' }).click();
   await expect(nudge).toBeHidden();
   await expect(page.getByRole('tab', { name: 'Account' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('#my-games').getByRole('button', { name: 'Rename' })).toBeVisible();

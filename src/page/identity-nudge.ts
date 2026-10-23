@@ -48,7 +48,7 @@ export function runIdentityNudge(): void {
   const name = ownName();
   const bold = document.createElement('b');
   bold.textContent = name;
-  text.replaceChildren('You are on a roll, ', bold, '! Pick a name of your own, so your wins and achievements stay yours.');
+  text.replaceChildren('Your wins and achievements sit under ', bold, ', a name we picked. Choose your own, or log in.');
   avatarSlot.replaceChildren(avatarFor({ player: null, name }, AVATAR_PIXELS, null));
   nudge.hidden = false;
   // The same entrance as the achievement popup (.achievement-popup.pop in src/style.css).
