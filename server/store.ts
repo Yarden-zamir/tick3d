@@ -371,7 +371,7 @@ export type GitHubUser = { id: number; login: string; avatar: string };
 // Google name or address. The account cookie holds only this id.
 export type GoogleUser = { google: string };
 // A Google sign-in: the subject id with the name and photo from Google (see googleName in server/auth.ts).
-export type GoogleProfile = { name: string | null; picture: string | null };
+type GoogleProfile = { name: string | null; picture: string | null };
 export type GoogleSignIn = GoogleUser & { profile: GoogleProfile };
 // A login of an account. The cookie gives a GitHubUser or a GoogleUser, a sign-in a GoogleSignIn.
 export type LoginUser = GitHubUser | GoogleUser | GoogleSignIn;
