@@ -4797,14 +4797,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 
-/* Rename in My games: Rename opens an inline form. */
-.rename {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  width: 100%;
-}
-
+/* Rename in My games: a tap on the name opens this form in its place. */
 .rename-form {
   display: flex;
   flex-wrap: wrap;
@@ -4841,16 +4834,61 @@ body[data-turn='O'] .status[data-state='playing'] {
   gap: 0.8rem;
 }
 
-.account .account-header .avatar {
-  width: 3.4rem;
-  height: 3.4rem;
+.account-header > div {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The own picture: a tap opens it large, with the picture choices (src/page/avatar-viewer.ts). */
+.account-picture {
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.account .account-picture .avatar {
+  display: block;
+  width: 3.5rem;
+  height: 3.5rem;
   border: var(--border) solid var(--line);
 }
 
-.account-header b {
-  display: block;
+/* The name: a tap opens the rename form. The pencil says so. */
+.account-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.account-name b {
   font-size: 1.25rem;
   line-height: 1.1;
+}
+
+.account-name svg {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted);
+}
+
+.account-name:disabled {
+  cursor: default;
+}
+
+.account-name:disabled svg {
+  display: none;
 }
 
 .account-header small {
@@ -4914,6 +4952,32 @@ body[data-turn='O'] .status[data-state='playing'] {
   color: var(--ink);
   font-size: 1.2rem;
   font-weight: 800;
+}
+
+/* The picture choices under the own picture in the viewer (src/page/my-games.ts pictureChoices). */
+.avatar-viewer-own {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.8rem;
+}
+
+.picture-note {
+  color: var(--muted);
+}
+
+/* Log out and Delete my data, side by side at the bottom of the Account tab. */
+.my-games-data-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+/* Hide my stats shows at once, grayed out until the server answers. */
+.end-card .include:has(input:disabled) {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* The tabs of My games (src/page/my-games-layout.ts). Nothing is wider than the dialog: every part

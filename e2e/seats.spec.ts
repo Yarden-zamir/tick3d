@@ -20,7 +20,7 @@ test('players change seats, with the other player asked first, and a custom name
   await bob.locator('#account-box').getByRole('button', { name: 'Rename' }).click();
   await bob.locator('#account-box input').fill('  Bob   Builder ');
   await bob.locator('#account-box').getByRole('button', { name: 'Save' }).click();
-  await expect(bob.locator('#account-box b')).toHaveText('Bob Builder');
+  await expect(bob.locator('#account-box .account-name')).toHaveText('Bob Builder');
   await bob.locator('#my-games-close').click();
   await expect(alice.locator('.tally.O')).toContainText('Bob Builder');
   await bob.locator('#chat-input').fill('hello');
