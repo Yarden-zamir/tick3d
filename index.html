@@ -528,9 +528,9 @@
       <div class="account" id="account-box"></div>
       <p class="my-games-note" id="my-games-note"></p>
       <div class="my-games-stats" id="my-games-stats"></div>
-      <!-- "Hide my stats": src/page/my-games.ts shows it when the server answers. -->
-      <label class="include" id="my-games-private-option" hidden>
-        <input type="checkbox" role="switch" id="my-games-private" />
+      <!-- "Hide my stats": src/page/my-games.ts turns it on when the server answers. -->
+      <label class="include" id="my-games-private-option">
+        <input type="checkbox" role="switch" id="my-games-private" disabled />
         Hide my stats from other players
       </label>
       <!-- The games of the open session, folded by default. src/page/my-games.ts fills the list and the count on every render. -->
@@ -562,7 +562,10 @@
       <section class="my-games-data">
         <h3>Your data</h3>
         <p class="my-games-note">Delete your games, name and account from the server and from this device, at once. See the <a href="/privacy">privacy policy</a>.</p>
-        <button type="button" class="btn btn-small" id="my-games-delete">Delete my data</button>
+        <div class="my-games-data-actions">
+          <button type="button" class="btn btn-small" id="my-games-logout" hidden>Log out</button>
+          <button type="button" class="btn btn-small" id="my-games-delete">Delete my data</button>
+        </div>
       </section>
     </dialog>
     <dialog class="modal end-card my-games" id="previews" aria-labelledby="previews-title">
@@ -629,6 +632,8 @@
     <dialog class="modal end-card home-confirm avatar-viewer" id="avatar-viewer" aria-labelledby="avatar-viewer-name">
       <div class="avatar-viewer-picture" id="avatar-viewer-picture"></div>
       <p id="avatar-viewer-name"></p>
+      <!-- The picture choices of the player's own picture (src/page/my-games.ts). -->
+      <div class="avatar-viewer-own" id="avatar-viewer-own" hidden></div>
       <div class="avatar-viewer-actions">
         <a class="btn" id="avatar-viewer-stats" hidden>Stats</a>
         <button type="button" class="btn" id="avatar-viewer-close">Close</button>

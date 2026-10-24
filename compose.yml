@@ -60,6 +60,10 @@ services:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       AUTH_SECRET: ${AUTH_SECRET:-}
+      # Google login, from the KITSHN_GOOGLE_CLIENT_ID variable and the KITSHN_GOOGLE_CLIENT_SECRET secret.
+      # Without both, the page offers only GitHub. With one of them, api stops at start.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       AUTH_ORIGIN: https://tick3d.yarden-zamir.com
       COOKIE_DOMAIN: tick3d.yarden-zamir.com
       # The kitshn button lists the open pull requests of this repository that have a live preview at pr-<n>.<domain>.

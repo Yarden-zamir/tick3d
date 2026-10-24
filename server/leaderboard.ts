@@ -1,13 +1,14 @@
 // The SQL of the leaderboard (GET /api/leaderboard): the common stats of each person, from their side of
 // each game. The store adds the names and the person ids, so no token leaves the server.
-import { ACCOUNT_TOKEN_PREFIX, LEADERBOARD_ROWS, type StatsFilter } from '../src/protocol.ts';
+import { ACCOUNT_TOKEN_PREFIX, LEADERBOARD_ROWS, LOGIN_PROVIDERS, type StatsFilter } from '../src/protocol.ts';
 import type { EpochMs } from '../src/epoch.ts';
 import { COMPUTER_TOKEN } from '../src/session/core.ts';
-import { type RowOf, type Rows, epoch, int, nullable, num, text } from './sql.ts';
+import { type RowOf, type Rows, epoch, int, nullable, num, oneOf, text } from './sql.ts';
 import { filterValues, filteredGames } from './stats.ts';
 
 const LEADER = {
   owner: text,
+  provider: nullable(oneOf(LOGIN_PROVIDERS)),
   login: nullable(text),
   avatar: nullable(text),
   name: nullable(text),
@@ -39,7 +40,7 @@ const LEADERBOARD = `WITH g AS (${filteredGames(null)}),
   played AS (
     -- A seat can hold the account token itself, which has no player_tokens row.
     SELECT coalesce($account || lpad(pt.github_id::VARCHAR, 16, '0'), token) AS owner,
-      coalesce(pt.github_id, CASE WHEN starts_with(token, $account) THEN substr(token, length($account) + 1)::BIGINT END) AS github_id,
+      coalesce(pt.github_id, CASE WHEN starts_with(token, $account) THEN ltrim(substr(token, length($account) + 1), '0')::BIGINT END) AS github_id,
       finished_at, moves, ending,
       coalesce(winner = seat, false) AS won, winner IS NULL AS drawn
     FROM seats LEFT JOIN player_tokens pt USING (token)
@@ -56,7 +57,7 @@ const LEADERBOARD = `WITH g AS (${filteredGames(null)}),
       min(moves) FILTER (won AND ending = 'won')::INTEGER AS fastest_win, avg(moves) AS avg_moves, epoch_ms(max(finished_at)) AS last_played
     FROM shown GROUP BY owner
   )
-SELECT owner, u.login, u.avatar, u.name, u.seed, games, won, drawn, lost, fastest_win, avg_moves, best_streak, last_played,
+SELECT owner, u.provider, u.login, u.avatar, u.name, u.seed, games, won, drawn, lost, fastest_win, avg_moves, best_streak, last_played,
   coalesce(len(ap.unlocked), 0)::INTEGER AS achievements
 FROM totals JOIN streaks USING (owner) LEFT JOIN users u USING (github_id) LEFT JOIN achievement_players ap USING (owner)
 ORDER BY games DESC, won DESC, owner

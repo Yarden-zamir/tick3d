@@ -3,11 +3,14 @@
 // so it never also opens the viewer here. A right-click and Shift+F10 send no click.
 import { VIEW_PIXELS, type Viewable, avatarImage, hiddenLogin, viewablePerson } from '../avatar.ts';
 import { ALL_STATS, statsQuery } from '../protocol.ts';
-import { avatarViewer, avatarViewerClose, avatarViewerName, avatarViewerPicture, avatarViewerStats } from './dom.ts';
+import { avatarViewer, avatarViewerClose, avatarViewerName, avatarViewerOwn, avatarViewerPicture, avatarViewerStats } from './dom.ts';
 
 // The stats page shows the message of a person who hides their stats (GET /api/stats answers 403).
-function openViewer({ person, id }: Viewable): void {
+// `own` holds the picture choices when the picture is the player's own (src/page/my-games.ts).
+function openViewer({ person, id }: Viewable, own: readonly HTMLElement[] = []): void {
   if (avatarViewer.open) return;
+  avatarViewerOwn.replaceChildren(...own);
+  avatarViewerOwn.hidden = own.length === 0;
   avatarViewerPicture.replaceChildren(avatarImage(person, VIEW_PIXELS));
   avatarViewerName.textContent = person.name;
   const login = hiddenLogin(person);
@@ -23,6 +26,11 @@ function openViewer({ person, id }: Viewable): void {
   avatarViewer.showModal();
   avatarViewerClose.focus();
 }
+
+// The player's own picture, large, with the picture choices below it.
+export const openOwnPicture = (viewable: Viewable, choices: readonly HTMLElement[]): void => openViewer(viewable, choices);
+
+export const closeAvatarViewer = (): void => avatarViewer.close();
 
 export function setupAvatarViewer(): void {
   avatarViewerClose.addEventListener('click', () => avatarViewer.close());

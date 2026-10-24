@@ -4,6 +4,7 @@ import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import { parseAnnounce, parseAnnounced, parseAnswerRequest, parseLobbyHosts } from '../src/nearby/lobby.ts';
 import { parseMe, parseMyGames, parseStatsCard } from '../src/online.ts';
+import { parseGoogleCredential } from './auth.ts';
 import {
   ALL_STATS,
   type PlayerToken,
@@ -82,6 +83,7 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   SeatAnswer: parseSeatAnswer,
   // server/main.ts reads `name` and checks it with parseCustomName.
   NameRequest: (value) => (isRecord(value) ? parseCustomName(value.name) : undefined),
+  GoogleCredential: parseGoogleCredential,
   AvatarRequest: parseAvatarRequest,
   BlockRequest: parseBlockRequest,
   StatsPrivacy: parseStatsPrivacy,

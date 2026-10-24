@@ -16,7 +16,7 @@ beforeEach(() => {
   localStorage.clear();
   history.replaceState(null, '', '/?playProof=signed-proof');
   vi.mocked(api.reportAppOpen).mockReset();
-  page.account = { loginAvailable: false, user: null, name: null, person: null, hasCopy: true };
+  page.account = { loginAvailable: false, user: null, name: null, googleLogin: false, googleOneTapClient: null, githubLogin: null, googleConnected: false, person: null, hasCopy: true };
 });
 
 describe('app open purchase errors', () => {

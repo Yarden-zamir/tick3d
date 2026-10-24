@@ -125,7 +125,68 @@ const request = async (method: string, path: string, body?: unknown): Promise<Se
 // `name` is the custom name of a player without a GitHub login, or null. `person` is the public person id of
 // this player (of the account when logged in), and `hasCopy` whether the player holds a copy of the paid Android app
 // (src/copies.ts). The server always sends both; null means no answer came yet.
-export type Me = { loginAvailable: boolean; user: PlayerInfo | null; name: string | null; person: PersonId | null; hasCopy: boolean | null };
+// `user` is the GitHub account. A Google login without GitHub has no user: it shows like a device, with
+// `googleOneTapClient` is the Google client for One Tap on this page, or null. `githubLogin` and
+// `googleConnected` are the logins of the account: either one opens it.
+export type Me = {
+  loginAvailable: boolean;
+  user: PlayerInfo | null;
+  name: string | null;
+  googleLogin: boolean;
+  googleOneTapClient: string | null;
+  githubLogin: string | null;
+  googleConnected: boolean;
+  person: PersonId | null;
+  hasCopy: boolean | null;
+};
+
+// The last answer of GET /api/me on this device, or null before the first one. A page shows the
+// account from it at once, and the next answer replaces it. A stored answer of an older page version
+// does not parse, so it counts as none.
+export function storedMe(): Me | null {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.account);
+    return stored === null ? null : parseMe(JSON.parse(stored));
+  } catch {
+    return null;
+  }
+}
+
+// Every change of the account counts up: a login, a rename, a picture, a logout, a deletion. An answer of
+// GET /api/me that left before a change is older than it, so it does not replace the stored account.
+let accountGeneration = 0;
+
+function remember(me: Me): Me {
+  try {
+    localStorage.setItem(STORAGE_KEYS.account, JSON.stringify(me));
+  } catch {
+    // Storage is blocked. The page asks the server again on the next visit.
+  }
+  return me;
+}
+
+// Calls a route that changes the account. Its answer is newer than every answer that left before it, so
+// it counts up and is stored. When another change, a logout or a deletion came while it was on its way, the
+// answer is older than that one, and only the caller gets it.
+async function changed(request: () => Promise<unknown>): Promise<Me> {
+  const generation = accountGeneration;
+  const me = parseMe(await request());
+  if (generation !== accountGeneration) return me;
+  accountGeneration++;
+  return remember(me);
+}
+
+// After a logout or a deletion: the stored account is gone, also when the next answer does not come.
+async function forgetting<T>(request: () => Promise<T>): Promise<T> {
+  const answer = await request();
+  accountGeneration++;
+  try {
+    localStorage.removeItem(STORAGE_KEYS.account);
+  } catch {
+    // Storage is blocked, so it holds no account either.
+  }
+  return answer;
+}
 
 export function parseMe(value: unknown): Me {
   if (typeof value !== 'object' || value === null) throw new Error('invalid answer from /api/me');
@@ -135,9 +196,13 @@ export function parseMe(value: unknown): Me {
   const raw = (value as Record<string, unknown>).name;
   const name = raw === undefined || raw === null ? null : parseCustomName(raw);
   const person = parsePersonId((value as Record<string, unknown>).person);
-  const { hasCopy } = value as Record<string, unknown>;
+  const { hasCopy, githubLogin, googleLogin, googleOneTapClient, googleConnected } = value as Record<string, unknown>;
   if (
     typeof loginAvailable !== 'boolean' ||
+    (githubLogin !== null && typeof githubLogin !== 'string') ||
+    typeof googleLogin !== 'boolean' ||
+    (googleOneTapClient !== null && typeof googleOneTapClient !== 'string') ||
+    typeof googleConnected !== 'boolean' ||
     info === undefined ||
     name === undefined ||
     (raw !== undefined && raw !== null && raw !== name) ||
@@ -146,7 +211,7 @@ export function parseMe(value: unknown): Me {
   ) {
     throw new Error('invalid answer from /api/me');
   }
-  return { loginAvailable, user: info, name, person, hasCopy };
+  return { loginAvailable, user: info, name, googleLogin, googleOneTapClient, githubLogin, googleConnected, person, hasCopy };
 }
 
 // The page reads "My games" only to display it, so a light shape check is enough here. The accounts
@@ -207,10 +272,16 @@ export const api = {
   seat: (code: Code, action: SeatAction) => request('POST', `/${code}/seats`, action),
   answerSeat: (code: Code, accept: boolean) => request('POST', `/${code}/seats/answer`, { accept }),
 
-  me: async () => parseMe(await call('GET', '/me')),
-  setName: async (name: string) => parseMe(await call('PUT', '/me/name', { name })),
-  clearName: async () => parseMe(await call('DELETE', '/me/name')),
-  setAvatar: async (picture: AvatarPicture) => parseMe(await call('PUT', '/me/avatar', { picture })),
+  // The account, or null when a change of the account came while this answer was on its way: the answer
+  // is older than that change, so the caller keeps the account that it has.
+  me: async (): Promise<Me | null> => {
+    const generation = accountGeneration;
+    const me = parseMe(await call('GET', '/me'));
+    return generation === accountGeneration ? remember(me) : null;
+  },
+  setName: (name: string) => changed(() => call('PUT', '/me/name', { name })),
+  clearName: () => changed(() => call('DELETE', '/me/name')),
+  setAvatar: (picture: AvatarPicture) => changed(() => call('PUT', '/me/avatar', { picture })),
   myGames: async () => parseMyGames(await call('GET', '/me/games')),
   blocks: async () => parseBlocks(await call('GET', '/me/blocks')),
   statsPrivacy: async () => requireStatsPrivacy(await call('GET', '/me/stats-privacy')),
@@ -243,9 +314,13 @@ export const api = {
     if (answer === undefined) throw new Error('invalid answer from /api/copies');
     return answer.hasCopy;
   },
-  logout: () => call('POST', '/auth/logout'),
+  logout: () => forgetting(() => call('POST', '/auth/logout')),
   // Login is a full page visit to GitHub and back to `returnTo`, by default this page.
   loginUrl: (returnTo = location.href) => `/api/auth/login?return=${encodeURIComponent(returnTo)}`,
+  // The same for Google. With a GitHub login, it connects Google to the account.
+  googleLoginUrl: (returnTo = location.href) => `/api/auth/google/login?return=${encodeURIComponent(returnTo)}`,
+  // Logs in with the ID token of Google One Tap (src/page/google-one-tap.ts).
+  googleOneTap: (credential: string): Promise<Me> => changed(() => call('POST', '/auth/google/one-tap', { credential })),
 
   // Sends finished games in batches. Returns the public id of each result (by result id) that
   // the server keeps under another public id than the device sent.
@@ -285,7 +360,7 @@ export const api = {
   // Hides every finished game of this player from their history on the server.
   clearHistory: () => call('DELETE', '/me/history'),
   // Deletes the data of this player on the server, and of the account when this browser is logged in. It logs out.
-  deleteData: () => call('DELETE', '/me'),
+  deleteData: () => forgetting(() => call('DELETE', '/me')),
   // The person ids of the players who deleted their data since `since`, and the server time for the next call.
   deletedPeople: async (since: EpochMs) => parseDeletedPeople(await call('GET', `/deleted?since=${since}`)),
   // The metrics of this device for a finished online game that it played.

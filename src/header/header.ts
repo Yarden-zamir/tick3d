@@ -3,7 +3,7 @@
 // #info-panel popover of the page, so each page writes its own Info text, and Info needs no script.
 // The header setup also installs the click sound of every control (src/click-sound.ts).
 import { element } from '../element.ts';
-import { type Me, api, OnlineError } from '../online.ts';
+import { type Me, api, OnlineError, storedMe } from '../online.ts';
 import { type PlayerInfo, accountNameOf } from '../protocol.ts';
 import { avatarSrc } from '../avatar.ts';
 import { myGamesHref } from './my-games-link.ts';
@@ -34,7 +34,7 @@ export function setupGameHeader(): void {
 }
 
 // A page other than the game: the account button opens My games on the game page, and a login there
-// returns here. Offline, the button shows "My games" without the login.
+// returns here. The button shows the account of the last answer at once, also offline, or "My games" before any answer.
 // `onAccount` gets the answer of GET /api/me, when one comes.
 export function setupPageHeader(onAccount?: (me: Me) => void): void {
   markPlatform();
@@ -42,10 +42,14 @@ export function setupPageHeader(onAccount?: (me: Me) => void): void {
   setupTooltips();
   setupPreviews();
   accountLink.href = myGamesHref(`${location.pathname}${location.search}`);
+  // The last answer shows at once, also offline. The new answer replaces it.
+  showAccount(storedMe()?.user ?? null);
   if (!navigator.onLine) return;
   api
     .me()
     .then((me) => {
+      // Null: a newer change of the account came meanwhile, and the header shows it already.
+      if (me === null) return;
       showAccount(me.user);
       onAccount?.(me);
     })

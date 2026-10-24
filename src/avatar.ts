@@ -8,7 +8,7 @@
 // player token. Limit: a rename gives a new picture, and two players with one name share a picture.
 // Revisit when the view sends a public player id.
 import { hash } from './names.ts';
-import type { PersonId, PlayerInfo } from './protocol.ts';
+import { type PersonId, type PlayerInfo, withoutGoogleSize } from './protocol.ts';
 
 // Each palette has its own dark background, so the picture reads the same in every theme.
 type Palette = { background: string; top: string; side: string; lit: string; litSide: string };
@@ -105,11 +105,13 @@ export function avatarSvg(seed: string): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}"><rect width="${SIZE}" height="${SIZE}" fill="${palette.background}"/>${body}</svg>`;
 }
 
-// A person as every screen shows them: the GitHub account, else null, and the shown name without "You".
+// A person as every screen shows them: the account, else null, and the shown name without "You".
 export type Person = { player: PlayerInfo | null; name: string };
 
 // The GitHub login of a person whose shown name is another name, for the player cards. Else null.
-export const hiddenLogin = ({ player, name }: Person): string | null => (player === null || player.login === name ? null : player.login);
+// A GitHub login is a public handle. A Google name is often a real name, and a rename hides it.
+export const hiddenLogin = ({ player, name }: Person): string | null =>
+  player === null || player.provider !== 'github' || player.login === name ? null : player.login;
 
 // A picture in the viewer (src/page/avatar-viewer.ts). `id` is the public person id, for the Stats
 // link of the viewer, or null when the screen has no id for the person.
@@ -119,11 +121,15 @@ const viewable = new WeakMap<HTMLImageElement, Viewable>();
 // The size of the picture in the viewer.
 export const VIEW_PIXELS = 240;
 
-// The address of the picture of one person. `pixels` is the shown size: GitHub sends twice that, for
-// sharp pictures on high-density screens.
+// The address of the picture of one person. `pixels` is the shown size: GitHub and Google send twice
+// that, for sharp pictures on high-density screens. Each one takes the size in its own form.
 export function avatarSrc({ player, name }: Person, pixels: number): string {
   const generated = (seed: string) => `data:image/svg+xml,${encodeURIComponent(avatarSvg(seed))}`;
-  return player === null ? generated(name) : player.seed === null ? `${player.avatar}&s=${pixels * 2}` : generated(player.seed);
+  if (player === null) return generated(name);
+  if (player.seed !== null) return generated(player.seed);
+  if (player.avatar === null) return generated(player.login);
+  // The server stores a Google photo without a size, but a Nearby device may send one.
+  return player.provider === 'github' ? `${player.avatar}&s=${pixels * 2}` : `${withoutGoogleSize(player.avatar)}=s${pixels * 2}-c`;
 }
 
 // The picture of one person. The alt text is empty, because the name is always next to the picture.

@@ -1,3 +1,4 @@
+import { createSign, generateKeyPairSync } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { describe, expect, it } from 'vitest';
 import { PRACTICE_RUNS_PER_10_MINUTES } from './api-docs.ts';
@@ -9,6 +10,7 @@ const config: AuthConfig = {
   secret: 'x'.repeat(40),
   origin: 'https://tick3d.example.com',
   cookieDomain: 'tick3d.example.com',
+  google: undefined,
 };
 
 const request = (cookies: Record<string, string> = {}) =>
@@ -54,7 +56,7 @@ describe('GitHub login', () => {
     expect(account).toContain('Domain=tick3d.example.com');
     expect(account).toContain('HttpOnly');
     expect(github.calls).toEqual(['https://github.com/login/oauth/access_token', 'https://api.github.com/user']);
-    expect(auth.user(request({ t3_user: cookieValue(account ?? '') }))?.login).toBe('octo');
+    expect(auth.user(request({ t3_user: cookieValue(account ?? '') }))).toMatchObject({ id: 7, login: 'octo' });
   });
 
   it('never returns to a foreign site', async () => {
@@ -84,7 +86,122 @@ describe('GitHub login', () => {
   });
 });
 
+// A fake Google: signs ID tokens with its own key, answers the code exchange and publishes the key.
+const GOOGLE_CLIENT = 'google-client.apps.googleusercontent.com';
+const googleConfig: AuthConfig = { ...config, google: { clientId: GOOGLE_CLIENT, clientSecret: 'google-secret' } };
+const googleKey = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const NOW = 1_000_000;
+
+function idToken(claims: Record<string, unknown> = {}, key = googleKey.privateKey, kid = 'key-1'): string {
+  const part = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const body = `${part({ alg: 'RS256', kid, typ: 'JWT' })}.${part({ iss: 'https://accounts.google.com', aud: GOOGLE_CLIENT, sub: '1234567890', exp: NOW / 1000 + 3600, ...claims })}`;
+  return `${body}.${createSign('RSA-SHA256').update(body).sign(key).toString('base64url')}`;
+}
+
+function fakeGoogle(token = idToken()) {
+  const calls: string[] = [];
+  const impl = (async (url: string) => {
+    calls.push(url);
+    const jwk = { ...googleKey.publicKey.export({ format: 'jwk' }), kid: 'key-1', alg: 'RS256', use: 'sig' };
+    const body = url.includes('certs') ? { keys: [jwk] } : { id_token: token };
+    return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+  return { impl, calls };
+}
+
+describe('Google login', () => {
+  const googleOf = (auth: ReturnType<typeof createAuth>) => {
+    if (auth.google === undefined) throw new Error('Google login is off');
+    return auth.google;
+  };
+
+  it('is off without a Google client', () => {
+    expect(createAuth(config, fakeGoogle().impl).google).toBeUndefined();
+  });
+
+  it('logs in through the login origin, asks for the profile, and keeps only the subject id in the cookie', async () => {
+    const google = fakeGoogle(idToken({ name: 'Dana Levi', picture: 'https://lh3.googleusercontent.com/a/dana=s96-c' }));
+    const auth = createAuth(googleConfig, google.impl, () => NOW);
+    expect(googleOf(auth).start('https://pr-5.tick3d.example.com', null).location).toBe(
+      'https://tick3d.example.com/api/auth/google/login?return=https%3A%2F%2Ftick3d.example.com%2F',
+    );
+    const start = googleOf(auth).start(config.origin, 'https://pr-5.tick3d.example.com/');
+    const url = new URL(start.location);
+    expect(url.origin + url.pathname).toBe('https://accounts.google.com/o/oauth2/v2/auth');
+    expect(url.searchParams.get('scope')).toBe('openid profile');
+    expect(url.searchParams.get('redirect_uri')).toBe('https://tick3d.example.com/api/auth/google/callback');
+    const nonce = cookieValue(start.cookies[0] ?? '');
+    const done = await googleOf(auth).finish(request({ t3_oauth: nonce }), 'the-code', url.searchParams.get('state'));
+    // The photo loses its size: the page adds the size that it shows.
+    const profile = { name: 'Dana Levi', picture: 'https://lh3.googleusercontent.com/a/dana' };
+    expect(done).toEqual({ user: { google: '1234567890', profile }, location: 'https://pr-5.tick3d.example.com/' });
+    const account = auth.googleCookies(done.user).find((c) => c.startsWith('t3_user='));
+    expect(account).toContain('Domain=tick3d.example.com');
+    expect(auth.user(request({ t3_user: cookieValue(account ?? '') }))).toEqual({ google: '1234567890' });
+  });
+
+  it('refuses a Google login without the matching state cookie', async () => {
+    const auth = createAuth(googleConfig, fakeGoogle().impl, () => NOW);
+    const state = new URL(googleOf(auth).start(config.origin, null).location).searchParams.get('state');
+    await expect(googleOf(auth).finish(request({ t3_oauth: 'someone-else' }), 'code', state)).rejects.toThrow();
+  });
+
+  it('accepts a One Tap token that Google signed for this client', async () => {
+    const auth = createAuth(googleConfig, fakeGoogle().impl, () => NOW);
+    await expect(googleOf(auth).oneTap(idToken())).resolves.toEqual({ google: '1234567890', profile: { name: null, picture: null } });
+  });
+
+  it('takes the first name when the full name does not pass as a name, and refuses a photo from elsewhere', async () => {
+    const auth = createAuth(googleConfig, fakeGoogle().impl, () => NOW);
+    const token = idToken({ name: 'Dana <Levi>', given_name: 'Dana', picture: 'https://evil.example.org/a.png' });
+    await expect(googleOf(auth).oneTap(token)).resolves.toMatchObject({ profile: { name: 'Dana', picture: null } });
+  });
+
+  it.each([
+    ['another client', idToken({ aud: 'other.apps.googleusercontent.com' })],
+    ['another issuer', idToken({ iss: 'https://evil.example.org' })],
+    ['an expired token', idToken({ exp: NOW / 1000 - 1 })],
+    ['no subject', idToken({ sub: '' })],
+    ['another key', idToken({}, generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey)],
+    ['an unknown key id', idToken({}, googleKey.privateKey, 'key-2')],
+    ['no JWT', 'not-a-token'],
+    ['no string', 42],
+  ])('refuses a One Tap token with %s', async (_, token) => {
+    const auth = createAuth(googleConfig, fakeGoogle().impl, () => NOW);
+    await expect(googleOf(auth).oneTap(token)).rejects.toThrow();
+  });
+
+  it('offers One Tap only on the login origin', () => {
+    const auth = createAuth(googleConfig, fakeGoogle().impl);
+    expect(googleOf(auth).oneTapClient(config.origin)).toBe(GOOGLE_CLIENT);
+    expect(googleOf(auth).oneTapClient('https://pr-5.tick3d.example.com')).toBeNull();
+  });
+
+  it('reads the Google keys once, and again for an unknown key at most once a minute', async () => {
+    let now = NOW;
+    const google = fakeGoogle();
+    const auth = createAuth(googleConfig, google.impl, () => now);
+    await googleOf(auth).oneTap(idToken());
+    await googleOf(auth).oneTap(idToken());
+    await expect(googleOf(auth).oneTap(idToken({}, googleKey.privateKey, 'key-2'))).rejects.toThrow();
+    expect(google.calls).toHaveLength(1);
+    now += 61_000;
+    await expect(googleOf(auth).oneTap(idToken({ exp: now / 1000 + 60 }, googleKey.privateKey, 'key-2'))).rejects.toThrow();
+    expect(google.calls).toHaveLength(2);
+  });
+});
+
 describe('login settings', () => {
+  it('turns Google login on with both Google settings, and stops on one of them', () => {
+    const github = { GITHUB_CLIENT_ID: 'a', GITHUB_CLIENT_SECRET: 'b', AUTH_SECRET: 'x'.repeat(32), AUTH_ORIGIN: 'https://x', COOKIE_DOMAIN: 'x' };
+    expect(authConfigFromEnv(github)?.google).toBeUndefined();
+    expect(authConfigFromEnv({ ...github, GOOGLE_CLIENT_ID: 'g', GOOGLE_CLIENT_SECRET: 's' })?.google).toEqual({ clientId: 'g', clientSecret: 's' });
+    expect(() => authConfigFromEnv({ ...github, GOOGLE_CLIENT_ID: 'g' })).toThrow();
+    // Google login needs the GitHub login settings too, so Google alone stops the server.
+    expect(() => authConfigFromEnv({ GOOGLE_CLIENT_ID: 'g', GOOGLE_CLIENT_SECRET: 's' })).toThrow();
+    expect(() => authConfigFromEnv({ GOOGLE_CLIENT_ID: 'g' })).toThrow();
+  });
+
   it('turns login off without settings, and stops on half the settings', () => {
     expect(authConfigFromEnv({})).toBeUndefined();
     expect(authConfigFromEnv({ AUTH_ORIGIN: 'https://x', COOKIE_DOMAIN: 'x' })).toBeUndefined();

@@ -1,7 +1,7 @@
 // The account button and the My games dialog.
 import { winnerOf } from '../game.ts';
 import type { LocalSummary } from '../local.ts';
-import { avatarFor, type Person } from '../avatar.ts';
+import { avatarFor, avatarImage, avatarPlaceholder, type Person } from '../avatar.ts';
 import { nameOf } from '../names.ts';
 import { type Me, api, OnlineError, token } from '../online.ts';
 import {
@@ -19,6 +19,7 @@ import {
   CUSTOM_NAME_MAX_LENGTH,
   CUSTOM_NAME_MIN_LENGTH,
   ALL_STATS,
+  PROVIDER_NAMES,
   SESSION_MODES,
   accountNameOf,
   outcomeOf,
@@ -26,7 +27,9 @@ import {
   statsQuery,
   toGame,
 } from '../protocol.ts';
-import { GITHUB_ICON, STATS_ICON } from '../icons.ts';
+import { GITHUB_ICON, GOOGLE_ICON, PENCIL_ICON, STATS_ICON } from '../icons.ts';
+import { closeAvatarViewer, openOwnPicture } from './avatar-viewer.ts';
+import { stopGoogleAutoSelect } from './google-one-tap.ts';
 import { deviceDataKeys } from '../storage-keys.ts';
 import { syncDeletions } from './deletions.ts';
 import { accountLink } from '../header/header.ts';
@@ -48,12 +51,12 @@ import {
   deleteConfirmStatus,
   deleteConfirmYes,
   myGamesDelete,
+  myGamesLogout,
   myGamesStats,
   myGamesNote,
   myGamesClose,
   myGamesStatsLink,
   myGamesPrivate,
-  myGamesPrivateOption,
   myGamesSession,
   myGamesSessionBox,
   myGamesSessionCount,
@@ -318,17 +321,18 @@ function showServerGames({ mine, firstPage }: ServerGames): void {
   myGamesClear.hidden = historyOffset === 0;
 }
 
-const ACCOUNT_AVATAR_PIXELS = 32;
+const ACCOUNT_PICTURE_PIXELS = 56;
 
-// "Hide my stats" (StatsPrivacy in src/protocol.ts). Without a network or an answer, the switch stays hidden.
+// "Hide my stats" (StatsPrivacy in src/protocol.ts). It shows at once, grayed out until the server answers,
+// so it does not jump into place. Without a network or an answer, it stays grayed out.
 async function loadStatsPrivacy(request: number): Promise<void> {
-  myGamesPrivateOption.hidden = true;
+  myGamesPrivate.disabled = true;
   if (!navigator.onLine) return;
   try {
     const privacy = await api.statsPrivacy();
     if (request !== myGamesRequest) return;
     myGamesPrivate.checked = privacy.private;
-    myGamesPrivateOption.hidden = false;
+    myGamesPrivate.disabled = false;
   } catch (error) {
     if (!(error instanceof OnlineError)) throw error;
   }
@@ -372,39 +376,109 @@ let accountReturnTo: string | undefined;
 // The account part of My games. refreshAccount rebuilds it when a slower /api/me answer changes the account.
 function renderAccountBox(): void {
   accountBox.replaceChildren();
-  const user = page.account.user;
-  if (user !== null) {
-    const shown = accountNameOf(user);
-    const avatar = avatarFor({ player: user, name: shown }, ACCOUNT_AVATAR_PIXELS, null);
-    const name = document.createElement('b');
-    name.textContent = shown;
-    const logout = document.createElement('button');
-    logout.type = 'button';
-    logout.className = 'btn btn-small';
-    logout.textContent = 'Log out';
-    logout.addEventListener('click', () => void logOut().then(() => myGamesDialog.close(), showError));
-    accountBox.append(avatar, name, logout, connectedAccounts([connectedAccount(GITHUB_ICON, 'GitHub', user.login)]));
-    if (navigator.onLine) accountBox.append(renameControls({ current: user.name, fallback: user.login, reset: 'Use GitHub name' }), pictureControls(user));
-  } else {
-    // The same name that the server shows to the other players: the custom name, else the generated one (src/names.ts).
-    const text = document.createElement('span');
-    const name = document.createElement('b');
-    name.textContent = ownName();
-    text.append('You play as ', name, '.');
-    accountBox.append(avatarFor({ player: null, name: ownName() }, ACCOUNT_AVATAR_PIXELS, null), text);
-    if (navigator.onLine) accountBox.append(renameControls({ current: page.account.name, fallback: nameOf(token), reset: 'Reset to generated name' }));
-    // The iOS app offers no GitHub login: App Store rule 4.8 asks for Sign in with Apple next to it.
-    if (page.account.loginAvailable && navigator.onLine && platform() === 'web') {
-      // The picture buttons show grayed out, so a player sees what a login adds.
-      accountBox.append(pictureControls(null));
-      text.append(' Log in with GitHub to use your GitHub name.');
-      const login = document.createElement('a');
-      login.className = 'btn btn-small btn-primary login-link';
-      login.href = api.loginUrl(accountReturnTo);
-      login.textContent = 'Log in with GitHub';
-      accountBox.append(login);
-    }
+  myGamesLogout.hidden = page.account.user === null;
+  // Before the first answer of the server on this device, a guest name could be wrong: show a placeholder.
+  if (!page.accountKnown) {
+    const header = document.createElement('div');
+    header.className = 'account-header';
+    const line = document.createElement('small');
+    line.textContent = navigator.onLine ? 'Loading your account…' : 'Your account shows when the device is online.';
+    header.append(avatarPlaceholder(), line);
+    accountBox.append(header);
+    return;
   }
+  const { user, githubLogin, googleConnected, googleLogin } = page.account;
+  // The iOS app offers no login: App Store rule 4.8 asks for Sign in with Apple next to GitHub and Google.
+  const canLogIn = page.account.loginAvailable && navigator.onLine && platform() === 'web';
+  const shown = ownName();
+  const status = user === null ? 'You play as a guest on this device' : `Account from ${PROVIDER_NAMES[user.provider]}`;
+  const nameChoice: NameChoice =
+    user === null
+      ? { current: page.account.name, fallback: nameOf(token), reset: 'Reset to generated name' }
+      : { current: user.name, fallback: user.login, reset: `Use ${PROVIDER_NAMES[user.provider]} name` };
+  accountBox.append(accountHeader({ player: user, name: shown }, status, nameChoice));
+  // One row per login. GitHub and Google work the same way: a guest logs in with either one, and an
+  // account connects the other one, so both open it.
+  const action = (href: string, primary: boolean) => loginLink(href, user === null ? 'Log in' : 'Connect', primary);
+  const rows: HTMLElement[] = [];
+  if (githubLogin !== null) rows.push(signInRow(GITHUB_ICON, 'GitHub', githubLogin, null));
+  else if (canLogIn) rows.push(signInRow(GITHUB_ICON, 'GitHub', user === null ? 'Your GitHub name and picture' : 'Also log in with GitHub', action(api.loginUrl(accountReturnTo), user === null)));
+  if (googleConnected) rows.push(signInRow(GOOGLE_ICON, 'Google', 'Connected', null));
+  else if (googleLogin && canLogIn) rows.push(signInRow(GOOGLE_ICON, 'Google', user === null ? 'Your Google name and photo' : 'Also log in with Google', action(api.googleLoginUrl(accountReturnTo), false)));
+  if (rows.length > 0) {
+    const title = document.createElement('h4');
+    title.className = 'sign-in-title';
+    title.textContent = user === null ? 'Log in to keep your games on every device' : 'Sign-in methods';
+    const list = document.createElement('div');
+    list.className = 'sign-in-list';
+    list.append(...rows);
+    accountBox.append(title, list);
+  }
+}
+
+// The picture, the name and one line about the login. A tap on the picture opens it large, with the
+// picture choices. A tap on the name opens the rename form in its place.
+function accountHeader(person: Person, status: string, nameChoice: NameChoice): HTMLElement {
+  const header = document.createElement('div');
+  header.className = 'account-header';
+  const picture = document.createElement('button');
+  picture.type = 'button';
+  picture.className = 'account-picture';
+  picture.setAttribute('aria-label', 'Your picture');
+  picture.append(avatarImage(person, ACCOUNT_PICTURE_PIXELS));
+  picture.addEventListener('click', () => openOwnPicture({ person, id: page.account.person }, pictureChoices(person.player)));
+  const text = document.createElement('div');
+  const name = document.createElement('button');
+  name.type = 'button';
+  name.className = 'account-name';
+  name.setAttribute('aria-label', `Rename ${person.name}`);
+  name.disabled = !navigator.onLine;
+  const shown = document.createElement('b');
+  shown.textContent = person.name;
+  name.innerHTML = PENCIL_ICON;
+  name.prepend(shown);
+  const line = document.createElement('small');
+  line.textContent = status;
+  text.append(name, renameForm(nameChoice, name), line);
+  header.append(picture, text);
+  return header;
+}
+
+// One login in the sign-in list: the mark, the name and a line, and a button, or a check mark when it is in use.
+function signInRow(icon: string, provider: string, detail: string, action: HTMLElement | null): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'sign-in-row';
+  row.innerHTML = icon;
+  // The mark names the provider for a screen reader too.
+  const mark = row.querySelector('svg');
+  if (mark === null) throw new Error(`the ${provider} icon has no svg`);
+  mark.removeAttribute('aria-hidden');
+  mark.setAttribute('role', 'img');
+  mark.setAttribute('aria-label', provider);
+  const text = document.createElement('div');
+  const name = document.createElement('b');
+  name.textContent = provider;
+  const line = document.createElement('small');
+  line.textContent = detail;
+  text.append(name, line);
+  row.append(text);
+  if (action !== null) row.append(action);
+  else {
+    const check = document.createElement('span');
+    check.className = 'sign-in-check';
+    check.textContent = '✓';
+    check.setAttribute('aria-label', 'In use');
+    row.append(check);
+  }
+  return row;
+}
+
+function loginLink(href: string, label: string, primary: boolean): HTMLAnchorElement {
+  const link = document.createElement('a');
+  link.className = primary ? 'btn btn-small btn-primary login-link' : 'btn btn-small login-link';
+  link.href = href;
+  link.textContent = label;
+  return link;
 }
 
 // `returnTo` is the page that a GitHub login returns to. Without it, the login returns to this page.
@@ -490,6 +564,8 @@ async function clearHistory(): Promise<void> {
 // Revisit this if players report a logged-in game in the stats of a logged-out browser.
 async function logOut(): Promise<void> {
   await flushResults();
+  // A blocked Google script must not block the logout. One Tap then may sign the player in again.
+  await stopGoogleAutoSelect().catch((error: unknown) => console.warn('Google sign-in did not load:', error));
   await api.logout();
   await deleteSentResults();
   forgetRecords();
@@ -509,7 +585,9 @@ let dataDeleted = false;
 function openDeleteConfirm(): void {
   const user = page.account.user;
   deleteConfirmScope.textContent =
-    user === null ? 'This deletes the data of this device, on the server and here:' : `This deletes the data of the GitHub account ${user.login} on every device, and of this device:`;
+    user !== null
+      ? `This deletes the data of your account ${accountNameOf(user)} on every device, and of this device:`
+      : 'This deletes the data of this device, on the server and here:';
   deleteConfirmSettings.checked = false;
   deleteConfirmStatus.hidden = true;
   deleteConfirm.showModal();
@@ -519,6 +597,7 @@ function openDeleteConfirm(): void {
 async function deleteMyData(): Promise<void> {
   deleteConfirmYes.disabled = true;
   try {
+    await stopGoogleAutoSelect().catch((error: unknown) => console.warn('Google sign-in did not load:', error));
     await api.deleteData();
   } catch (error) {
     if (!(error instanceof OnlineError)) throw error;
@@ -567,41 +646,11 @@ export function renderSessionGames(): void {
 // Rename for a player without a GitHub login: an inline form, and a reset to the generated name.
 // The dialog covers the toasts, so a refused name shows in the form.
 // The external accounts that the tick3d account is linked to, one row each. Today GitHub is the only one.
-function connectedAccounts(rows: readonly HTMLElement[]): HTMLElement {
-  const box = document.createElement('div');
-  box.className = 'connected-accounts';
-  const title = document.createElement('small');
-  title.textContent = 'Connected accounts';
-  box.append(title, ...rows);
-  return box;
-}
-
-// `icon` is the inline SVG of the provider mark (src/icons.ts).
-function connectedAccount(icon: string, provider: string, login: string): HTMLElement {
-  const row = document.createElement('span');
-  row.className = 'connected-account';
-  row.title = provider;
-  row.innerHTML = icon;
-  // The mark names the provider for a screen reader too.
-  const mark = row.querySelector('svg');
-  if (mark === null) throw new Error(`the ${provider} icon has no svg`);
-  mark.removeAttribute('aria-hidden');
-  mark.setAttribute('role', 'img');
-  mark.setAttribute('aria-label', provider);
-  row.append(login);
-  return row;
-}
-
 // `current` is the custom name or null, `fallback` the name without it, and `reset` the label of the button that clears it.
 type NameChoice = { current: string | null; fallback: string; reset: string };
 
-function renameControls({ current, fallback, reset: resetLabel }: NameChoice): HTMLElement {
-  const box = document.createElement('div');
-  box.className = 'rename';
-  const open = document.createElement('button');
-  open.className = 'btn btn-small';
-  open.type = 'button';
-  open.textContent = 'Rename';
+// The rename form. It shows in place of `opener` (the name), and Cancel brings the name back.
+function renameForm({ current, fallback, reset: resetLabel }: NameChoice, opener: HTMLButtonElement): HTMLFormElement {
   const form = document.createElement('form');
   form.className = 'rename-form';
   form.hidden = true;
@@ -621,24 +670,24 @@ function renameControls({ current, fallback, reset: resetLabel }: NameChoice): H
   cancel.textContent = 'Cancel';
   const problem = document.createElement('small');
   problem.className = 'rename-problem';
-  form.append(input, save, cancel, problem);
-  box.append(open, form);
+  form.append(input, save, cancel);
   if (current !== null) {
     const reset = document.createElement('button');
     reset.className = 'btn btn-small';
     reset.type = 'button';
     reset.textContent = resetLabel;
     reset.addEventListener('click', () => void changeAccount(() => api.clearName(), problem));
-    box.append(reset);
+    form.append(reset);
   }
-  open.addEventListener('click', () => {
+  form.append(problem);
+  opener.addEventListener('click', () => {
     form.hidden = false;
-    open.hidden = true;
+    opener.hidden = true;
     input.focus();
   });
   cancel.addEventListener('click', () => {
     form.hidden = true;
-    open.hidden = false;
+    opener.hidden = false;
     problem.textContent = '';
   });
   form.addEventListener('submit', (event) => {
@@ -650,49 +699,52 @@ function renameControls({ current, fallback, reset: resetLabel }: NameChoice): H
     }
     void changeAccount(() => api.setName(name), problem);
   });
-  return box;
+  return form;
 }
 
-// New picture and Use GitHub picture. Without an account (`user` null) both show grayed out, with a hint.
-function pictureControls(user: PlayerInfo | null): HTMLElement {
-  const box = document.createElement('div');
-  box.className = 'rename';
+// The choices under the player's own picture in the viewer: New picture, and Use GitHub picture or Use
+// Google picture. Only an account has them: a guest's picture comes from the name.
+function pictureChoices(user: PlayerInfo | null): HTMLElement[] {
   const problem = document.createElement('small');
   problem.className = 'rename-problem';
+  if (user === null || !navigator.onLine) {
+    const note = document.createElement('small');
+    note.className = 'picture-note';
+    note.textContent = user === null ? 'Log in to change the picture.' : 'Connect to the internet to change the picture.';
+    return [note];
+  }
   const button = (label: string, picture: AvatarPicture) => {
     const element = document.createElement('button');
     element.className = 'btn btn-small';
     element.type = 'button';
     element.textContent = label;
-    element.disabled = user === null;
-    element.addEventListener('click', () => void changeAccount(() => api.setAvatar(picture), problem));
+    element.addEventListener('click', () => {
+      void changeAccount(() => api.setAvatar(picture), problem).then((changed) => {
+        if (changed) closeAvatarViewer();
+      });
+    });
     return element;
   };
-  box.append(button('New picture', 'generated'));
-  // A GitHub picture is the default, so the button shows only when a generated picture replaces it.
-  if (user !== null && user.seed !== null) box.append(button('Use GitHub picture', 'github'));
-  if (user === null) {
-    const hint = document.createElement('small');
-    hint.className = 'picture-hint';
-    hint.textContent = 'Log in to change your avatar.';
-    box.append(hint);
-  }
-  box.append(problem);
-  return box;
+  // The login's picture is the default, so its button shows only when a generated picture replaces it.
+  // A Google account without a photo has no picture to go back to.
+  const back = user.seed === null || user.avatar === null ? [] : [button(`Use ${PROVIDER_NAMES[user.provider]} picture`, user.provider)];
+  return [button('New picture', 'generated'), ...back, problem];
 }
 
-async function changeAccount(call: () => Promise<Me>, problem: HTMLElement): Promise<void> {
+// True when the server took the change. Else `problem` shows why.
+async function changeAccount(call: () => Promise<Me>, problem: HTMLElement): Promise<boolean> {
   try {
     saveAccount(await call());
   } catch (error) {
     if (!(error instanceof OnlineError)) throw error;
     problem.textContent = error.message;
-    return;
+    return false;
   }
   // The open game shows the new name at once. The server tells the other screens of the game.
   if (page.session?.mode === 'online') await refresh(page.session.code);
   render();
   await openMyGames();
+  return true;
 }
 
 // Asks the server who is logged in. Without a network the page keeps the last answer.
@@ -700,7 +752,9 @@ export async function refreshAccount(): Promise<void> {
   if (!navigator.onLine) return;
   try {
     const before = JSON.stringify(page.account);
-    saveAccount(await api.me());
+    const me = await api.me();
+    // Null: an older answer than a change that came meanwhile, so the page keeps the newer account.
+    if (me !== null) saveAccount(me);
     if (JSON.stringify(page.account) !== before) {
       forgetMyGames();
       // Only on a change: a rebuild clears a rename that the player is typing.
@@ -747,6 +801,7 @@ export function setupMyGames(): void {
     if (event.target === clearConfirm) clearConfirm.close();
   });
   myGamesDelete.addEventListener('click', openDeleteConfirm);
+  myGamesLogout.addEventListener('click', () => void logOut().then(() => myGamesDialog.close(), showError));
   deleteConfirmNo.addEventListener('click', () => deleteConfirm.close());
   deleteConfirmYes.addEventListener('click', () => void deleteMyData().catch(showError));
   deleteConfirm.addEventListener('click', (event) => {

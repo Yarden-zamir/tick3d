@@ -3283,8 +3283,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 /* A long custom name or login wraps, so nothing is cut off at 390 px. */
-.account b,
-.connected-account {
+.account b {
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -4826,14 +4825,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 }
 
 
-/* Rename in My games: Rename opens an inline form. */
-.rename {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  width: 100%;
-}
-
+/* Rename in My games: a tap on the name opens this form in its place. */
 .rename-form {
   display: flex;
   flex-wrap: wrap;
@@ -4856,29 +4848,170 @@ body[data-turn='O'] .status[data-state='playing'] {
   display: none;
 }
 
-/* The linked external accounts in My games (src/page/my-games.ts connectedAccounts), one row each. */
-.connected-accounts {
+/* The account part of My games (src/page/my-games.ts renderAccountBox): the picture and name, then
+   the sign-in list with one row per login. Each part takes the full width of the box. */
+.account > .account-header,
+.account > .sign-in-title,
+.account > .sign-in-list {
+  flex: 1 1 100%;
+}
+
+.account-header {
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  width: 100%;
+  align-items: center;
+  gap: 0.8rem;
 }
 
-.connected-accounts small {
-  color: var(--muted);
+.account-header > div {
+  flex: 1;
+  min-width: 0;
 }
 
-.connected-account {
+/* The own picture: a tap opens it large, with the picture choices (src/page/avatar-viewer.ts). */
+.account-picture {
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.account .account-picture .avatar {
+  display: block;
+  width: 3.5rem;
+  height: 3.5rem;
+  border: var(--border) solid var(--line);
+}
+
+/* Before the first answer of the server: a grey circle in the size of the picture. */
+.account-header .avatar-pending {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
+/* The name: a tap opens the rename form. The pencil says so. */
+.account-name {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-weight: 700;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
 }
 
-/* Without a login, the picture buttons show grayed out with this hint (src/page/my-games.ts pictureControls). */
-.picture-hint {
-  align-self: center;
+.account-name b {
+  font-size: 1.25rem;
+  line-height: 1.1;
+}
+
+.account-name svg {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
   color: var(--muted);
+}
+
+.account-name:disabled {
+  cursor: default;
+}
+
+.account-name:disabled svg {
+  display: none;
+}
+
+.account-header small {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--muted);
+}
+
+.sign-in-title {
+  margin: 0.6rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sign-in-list {
+  overflow: hidden;
+  border: var(--border) solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+.sign-in-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.75rem;
+}
+
+.sign-in-row + .sign-in-row {
+  border-top: 1px solid color-mix(in srgb, var(--line) 25%, transparent);
+}
+
+.sign-in-row svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
+.sign-in-row > div {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sign-in-row b {
+  display: block;
+}
+
+.sign-in-row small {
+  color: var(--muted);
+}
+
+.sign-in-row .btn {
+  white-space: nowrap;
+}
+
+.sign-in-check {
+  color: var(--ink);
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+/* The picture choices under the own picture in the viewer (src/page/my-games.ts pictureChoices). */
+.avatar-viewer-own {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.8rem;
+}
+
+.picture-note {
+  color: var(--muted);
+}
+
+/* Log out and Delete my data, side by side at the bottom of the Account tab. */
+.my-games-data-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+/* Hide my stats shows at once, grayed out until the server answers. */
+.end-card .include:has(input:disabled) {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* The tabs of My games (src/page/my-games-layout.ts). Nothing is wider than the dialog: every part

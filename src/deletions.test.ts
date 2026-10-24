@@ -23,7 +23,7 @@ async function cachedView() {
     identity: new Set([host]),
     now: ms(3),
     audience: { presence: { X: true, O: true }, watchers: [], name: nameOf, person: () => null },
-    players: { X: null, O: { login: 'guesty', avatar: 'https://avatars.githubusercontent.com/u/2?v=4', name: null, seed: null } },
+    players: { X: null, O: { provider: 'github', login: 'guesty', avatar: 'https://avatars.githubusercontent.com/u/2?v=4', name: null, seed: null } },
   });
   return { ...view, people: { X: await personId(host), O: await personId(guest) } };
 }

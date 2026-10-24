@@ -18,6 +18,9 @@ import { type LineKind, type Player, lineKind, other, winnerOf } from '../src/ga
 import { nameOf } from '../src/names.ts';
 import {
   ACCOUNT_TOKEN_PREFIX,
+  LOGIN_PROVIDERS,
+  type LoginProvider,
+  PROVIDER_NAMES,
   AVATAR_SEED_LENGTH,
   type AvatarPicture,
   CODE_ALPHABET,
@@ -128,7 +131,9 @@ const SCHEMA = [
      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
-  // GitHub accounts. The id is GitHub's, which stays the same when a player renames the account.
+  // Accounts, with the name and picture of the login that made them (provider). github_id is the
+  // account id (see logins): GitHub's id, which stays the same when a player renames the account, or a
+  // negative id for an account that a Google login made.
   `CREATE TABLE IF NOT EXISTS users (
      github_id BIGINT PRIMARY KEY,
      login VARCHAR NOT NULL,
@@ -136,7 +141,7 @@ const SCHEMA = [
      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
      seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
-  // The devices of an account. A token is the random id one browser keeps.
+  // The devices of an account. A token is the random id one browser keeps. github_id is the account id (see logins).
   `CREATE TABLE IF NOT EXISTS player_tokens (
      token VARCHAR PRIMARY KEY,
      github_id BIGINT NOT NULL,
@@ -334,6 +339,24 @@ const SCHEMA = [
   // the seed of a generated picture in place of the GitHub picture. Null keeps the GitHub value.
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR',
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS seed VARCHAR',
+  // The logins of each account: GitHub and Google work the same way (LOGIN_PROVIDERS in src/protocol.ts).
+  // github_id is the account id. An account that a GitHub login made has the GitHub id. An account that
+  // a Google login made has a negative id from account_ids, so it never equals a GitHub id.
+  // subject: the GitHub id, or Google's subject id. label: the GitHub login, or null for Google.
+  // An account has at most one login of each provider.
+  'CREATE SEQUENCE IF NOT EXISTS account_ids',
+  `CREATE TABLE IF NOT EXISTS logins (
+     provider VARCHAR NOT NULL,
+     subject VARCHAR NOT NULL,
+     github_id BIGINT NOT NULL,
+     label VARCHAR,
+     linked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     PRIMARY KEY (provider, subject),
+     UNIQUE (provider, github_id)
+   )`,
+  // The login that made the account: users.login and users.avatar come from it. A Google account may have no photo.
+  "ALTER TABLE users ADD COLUMN IF NOT EXISTS provider VARCHAR DEFAULT 'github'",
+  'ALTER TABLE users ALTER COLUMN avatar DROP NOT NULL',
 ];
 
 // The token that a seat holds when a logged-in player takes it. The account has a player_tokens row
@@ -342,8 +365,23 @@ const SCHEMA = [
 // through identityOf, and a device that logs out does not. It passes the token checks of a stored
 // document, so the format does not change. asPlayerToken refuses it as an X-Player value.
 const accountToken = (githubId: number | bigint): string => `${ACCOUNT_TOKEN_PREFIX}${String(githubId).padStart(16, '0')}`;
+// The account id in an account token. The padding is the same as lpad in SQL, so the sign of a negative id
+// (an account that a Google login made) sits after the zeros: "00000000000000-5". The leaderboard reads it the same way.
+function accountIdOf(token: string): bigint {
+  const digits = token.slice(ACCOUNT_TOKEN_PREFIX.length);
+  const start = [...digits].findIndex((char) => char !== '0');
+  return BigInt(start === -1 ? '0' : digits.slice(start));
+}
 
 export type GitHubUser = { id: number; login: string; avatar: string };
+// A Google login: Google's subject id of the account. It stays the same when the player changes the
+// Google name or address. The account cookie holds only this id.
+export type GoogleUser = { google: string };
+// A Google sign-in: the subject id with the name and photo from Google (see googleName in server/auth.ts).
+type GoogleProfile = { name: string | null; picture: string | null };
+export type GoogleSignIn = GoogleUser & { profile: GoogleProfile };
+// A login of an account. The cookie gives a GitHubUser or a GoogleUser, a sign-in a GoogleSignIn.
+export type LoginUser = GitHubUser | GoogleUser | GoogleSignIn;
 
 // A stored report as a maintainer reads it (GET /api/reports). It holds person ids, never a token.
 export type StoredReport = {
@@ -460,15 +498,18 @@ const seatTokens = (token: string, you: Player | null, guest: string | null): Re
   O: you === 'X' ? guest : token,
 });
 
-// The columns of users that make a PlayerInfo, and their shape.
-const ACCOUNT_COLUMNS = { login: text, avatar: text, name: nullable(text), seed: nullable(text) };
-type AccountRow = { login: string | null; avatar: string | null; name: string | null; seed: string | null };
+// The columns of users that make a PlayerInfo, and their shape. All are nullable for a LEFT JOIN.
+const ACCOUNT_COLUMN_LIST = 'provider, login, avatar, name, seed';
+const ACCOUNT_COLUMNS = { provider: nullable(oneOf(LOGIN_PROVIDERS)), login: nullable(text), avatar: nullable(text), name: nullable(text), seed: nullable(text) };
+type AccountRow = { provider: LoginProvider | null; login: string | null; avatar: string | null; name: string | null; seed: string | null };
 
 // The account of a seat from a LEFT JOIN of users: no login means no account.
-function accountOf({ login, avatar, name, seed }: AccountRow): PlayerInfo | null {
+// A Google name is often a real name, so after a rename the custom name takes its place: nobody else sees it.
+function accountOf({ provider, login, avatar, name, seed }: AccountRow): PlayerInfo | null {
   if (login === null) return null;
-  if (avatar === null) throw new Error('a stored account has no avatar');
-  return { login, avatar, name, seed };
+  if (provider === null) throw new Error('a stored account has no provider');
+  if (provider === 'github' && avatar === null) throw new Error('a stored GitHub account has no avatar');
+  return { provider, login: provider === 'google' && name !== null ? name : login, avatar, name, seed };
 }
 
 // True for the result of a Nearby guest when the host's result of the same game names the guest.
@@ -484,19 +525,21 @@ const guestCopies = (seat: 'player_x' | 'player_o') => `SELECT guest.id FROM res
     AND host.moves = guest.moves AND abs(epoch_ms(host.finished_at) - epoch_ms(guest.finished_at)) < 600000`;
 const HOST_HAS_GAME = `(results.nearby_role IS NOT DISTINCT FROM 'guest' AND results.id IN (${guestCopies('player_x')} UNION ${guestCopies('player_o')}))`;
 
-// Joins the GitHub account of each seat of a result row: x_login, x_avatar, x_name, x_seed, and the same for o.
+// Joins the account of each seat of a result row: x_provider, x_login, x_avatar, x_name, x_seed, and the same for o.
 const SEAT_ACCOUNTS = `
   LEFT JOIN player_tokens tx ON tx.token = results.player_x LEFT JOIN users ux ON ux.github_id = tx.github_id
   LEFT JOIN player_tokens t_o ON t_o.token = results.player_o LEFT JOIN users uo ON uo.github_id = t_o.github_id`;
 const SEAT_ACCOUNT_COLUMNS =
-  'ux.login AS x_login, ux.avatar AS x_avatar, ux.name AS x_name, ux.seed AS x_seed, uo.login AS o_login, uo.avatar AS o_avatar, uo.name AS o_name, uo.seed AS o_seed';
+  'ux.provider AS x_provider, ux.login AS x_login, ux.avatar AS x_avatar, ux.name AS x_name, ux.seed AS x_seed, uo.provider AS o_provider, uo.login AS o_login, uo.avatar AS o_avatar, uo.name AS o_name, uo.seed AS o_seed';
 // The shape of SEAT_ACCOUNT_COLUMNS, and of the seat tokens (player_x AS token_x, player_o AS token_o).
 // A seat token is null for a seat without a known player.
 const SEAT_SHAPE = {
+  x_provider: nullable(oneOf(LOGIN_PROVIDERS)),
   x_login: nullable(text),
   x_avatar: nullable(text),
   x_name: nullable(text),
   x_seed: nullable(text),
+  o_provider: nullable(oneOf(LOGIN_PROVIDERS)),
   o_login: nullable(text),
   o_avatar: nullable(text),
   o_name: nullable(text),
@@ -557,6 +600,12 @@ export async function openStore(
     await db.run("UPDATE tester_codes SET invited_by = $person WHERE claimed_at IS NOT NULL AND invited_by IS NULL AND NOT (email IS NULL AND name = 'Yarden')", {
       person: await personId(accountToken(YARDEN_GITHUB_ID)),
     });
+  });
+
+  // The GitHub accounts from before the logins table get their GitHub login row, once.
+  await runOnce('github-logins', async () => {
+    await db.run("UPDATE users SET provider = 'github' WHERE provider IS NULL");
+    await db.run("INSERT INTO logins (provider, subject, github_id, label) SELECT 'github', github_id::VARCHAR, github_id, login FROM users ON CONFLICT DO NOTHING");
   });
 
   // DuckDB calls are async, so two requests could interleave a read and a write. A queue runs
@@ -1091,6 +1140,119 @@ export async function openStore(
     return row.stale ? save(row, row.doc) : row;
   }
 
+  // The provider, subject id and label of a login (see logins).
+  const loginKey = (user: LoginUser) =>
+    'google' in user
+      ? { provider: 'google' as const, subject: user.google, label: null }
+      : { provider: 'github' as const, subject: String(user.id), label: user.login };
+
+  // True when `name` is the GitHub login of an account other than `account` (GitHub logins ignore case).
+  async function isGitHubLoginOfOther(name: string, account: bigint | null): Promise<boolean> {
+    const [clash] = await rows(
+      "FROM logins SELECT label WHERE provider = 'github' AND lower(label) = lower($name) AND github_id IS DISTINCT FROM $account",
+      { name, account },
+      { label: text },
+    );
+    return clash !== undefined;
+  }
+
+  // The account of a login, or undefined when the login has none yet.
+  async function knownAccountOf(user: LoginUser): Promise<bigint | undefined> {
+    const { provider, subject } = loginKey(user);
+    const [found] = await rows('FROM logins SELECT github_id WHERE provider = $provider AND subject = $subject', { provider, subject }, { github_id: bigId });
+    return found?.github_id;
+  }
+
+  // The account of a login. A login without an account makes one: a GitHub login with its GitHub id, a
+  // Google login with a new negative id. The login that made the account gives it its name and picture,
+  // and refreshes them: a GitHub login on every request, a Google login at each sign-in. A connected
+  // login of the other provider leaves them.
+  async function accountOfLogin(user: LoginUser): Promise<bigint> {
+    const { provider, subject, label } = loginKey(user);
+    let id = await knownAccountOf(user);
+    if (id === undefined) {
+      const [next] = 'google' in user ? await rows("SELECT -nextval('account_ids') AS id", {}, { id: bigId }) : [{ id: BigInt(user.id) }];
+      if (next === undefined) throw new Error('the account id sequence answered nothing');
+      id = next.id;
+      await db.run('INSERT INTO logins (provider, subject, github_id, label) VALUES ($provider, $subject, $id, $label)', { provider, subject, id, label });
+    } else if (label !== null) {
+      await db.run('UPDATE logins SET label = $label WHERE provider = $provider AND subject = $subject', { provider, subject, label });
+    }
+    // A Google cookie has no profile. Its account keeps the name and photo of the last sign-in, or gets
+    // a generated name when it has no users row: an account deleted on another device while this cookie lived.
+    // A Google name that is the GitHub login of another account would pose as that player: it gets a generated name.
+    const googleName = 'profile' in user && user.profile.name !== null && !(await isGitHubLoginOfOther(user.profile.name, id)) ? user.profile.name : null;
+    const profile =
+      'profile' in user
+        ? { login: googleName ?? nameOf(accountToken(id)), avatar: user.profile.picture }
+        : 'google' in user
+          ? undefined
+          : { login: user.login, avatar: user.avatar };
+    await db.run('INSERT INTO users (github_id, provider, login, avatar) VALUES ($id, $provider, $login, $avatar) ON CONFLICT DO NOTHING', {
+      id,
+      provider,
+      login: profile?.login ?? nameOf(accountToken(id)),
+      avatar: profile?.avatar ?? null,
+    });
+    if (profile !== undefined) {
+      await db.run('UPDATE users SET login = $login, avatar = $avatar WHERE github_id = $id AND provider = $provider', { id, provider, ...profile });
+    }
+    await db.run('UPDATE users SET seen_at = now() WHERE github_id = $id', { id });
+    return id;
+  }
+
+  // Moves the account `from` into the account `into`, in one transaction. `into` keeps its name, picture and
+  // custom name. The devices of `from` and its account token point to `into`, so its seats, games, stats,
+  // records and practice runs follow through player_tokens (canonical). The rows that name the account token
+  // of `from` as their owner move: blocks, Hide my stats, the achievement reset, app copies and tester claims.
+  // A block by another player of `from` moves to `into`, so it keeps working. A report keeps the person id of its time.
+  // Limit: a chat message from before the merge names the old person id, so it shows again to a player who blocked `from`.
+  // Revisit this when a player reports such a message.
+  async function mergeAccounts(into: bigint, from: bigint): Promise<void> {
+    const [conflict] = await rows(
+      'FROM logins a JOIN logins b USING (provider) SELECT provider WHERE a.github_id = $into AND b.github_id = $from',
+      { into, from },
+      { provider: oneOf(LOGIN_PROVIDERS) },
+    );
+    if (conflict !== undefined) throw new SessionError(409, `Both accounts have a ${PROVIDER_NAMES[conflict.provider]} login, so they cannot become one.`);
+    const intoToken = accountToken(into);
+    const fromToken = accountToken(from);
+    const owners = { into: intoToken, from: fromToken };
+    const source = { from: fromToken };
+    await db.run('BEGIN TRANSACTION');
+    try {
+      await db.run('UPDATE logins SET github_id = $into WHERE github_id = $from', { into, from });
+      await db.run('UPDATE player_tokens SET github_id = $into WHERE github_id = $from', { into, from });
+      await db.run('DELETE FROM users WHERE github_id = $from', { from });
+      // A block of either account stays, once.
+      await db.run('INSERT INTO blocks SELECT * REPLACE ($into AS owner) FROM blocks WHERE owner = $from ON CONFLICT DO NOTHING', owners);
+      await db.run('DELETE FROM blocks WHERE owner = $from', source);
+      // Hidden stats stay hidden when either account hid them.
+      await db.run('INSERT INTO private_stats SELECT * REPLACE ($into AS owner) FROM private_stats WHERE owner = $from ON CONFLICT DO NOTHING', owners);
+      await db.run('DELETE FROM private_stats WHERE owner = $from', source);
+      // The later reset wins, so no game counts that a reset of either account dropped.
+      await db.run(
+        `INSERT INTO achievement_resets SELECT * REPLACE ($into AS owner) FROM achievement_resets WHERE owner = $from
+         ON CONFLICT (owner) DO UPDATE SET reset_at = greatest(achievement_resets.reset_at, excluded.reset_at)`,
+        owners,
+      );
+      await db.run('DELETE FROM achievement_resets WHERE owner = $from', source);
+      await db.run('DELETE FROM achievement_players WHERE owner = $from', source);
+      await db.run('UPDATE app_copies SET owner = $into WHERE owner = $from', owners);
+      await db.run('UPDATE tester_codes SET claimed_owner = $into WHERE claimed_owner = $from', owners);
+      const persons = { into: await personId(intoToken), from: await personId(fromToken) };
+      await db.run('INSERT INTO blocks SELECT * REPLACE ($into AS person) FROM blocks WHERE person = $from ON CONFLICT DO NOTHING', persons);
+      await db.run('DELETE FROM blocks WHERE person = $from', { from: persons.from });
+      await db.run('COMMIT');
+    } catch (error) {
+      await db.run('ROLLBACK');
+      throw error;
+    }
+    changedOwners.add(intoToken);
+    changedOwners.add(fromToken);
+    achievementCache.clear();
+  }
+
   // Adds the player_tokens row of an account token, for an account that linked before account seats.
   async function ensureAccountRow(githubId: number | bigint): Promise<string> {
     const account = accountToken(githubId);
@@ -1127,7 +1289,7 @@ export async function openStore(
     const known = [...new Set(tokens.filter((token) => token !== null))];
     if (known.length === 0) return () => null;
     const found = await rows(
-      `FROM player_tokens JOIN users USING (github_id) SELECT token, login, avatar, name, seed
+      `FROM player_tokens JOIN users USING (github_id) SELECT token, ${ACCOUNT_COLUMN_LIST}
        WHERE list_contains($tokens, token)`,
       { tokens: listValue(known) },
       { token: text, ...ACCOUNT_COLUMNS },
@@ -1173,10 +1335,10 @@ export async function openStore(
   // An account: DuckDB's sha256 over the accounts finds it, as in clearPersonName. A device: seat_people.
   async function statsPersonOf(person: PersonId): Promise<{ owner: string; tokens: string[]; shown: Omit<StatsPerson, 'you'> } | undefined> {
     const [account] = await rows(
-      `FROM (SELECT DISTINCT github_id FROM player_tokens) LEFT JOIN users USING (github_id) SELECT github_id, login, avatar, name, seed
+      `FROM (SELECT DISTINCT github_id FROM player_tokens) LEFT JOIN users USING (github_id) SELECT github_id, ${ACCOUNT_COLUMN_LIST}
        WHERE left(sha256($prefix || $account || lpad(github_id::VARCHAR, 16, '0')), ${PERSON_ID_LENGTH}) = $person`,
       { prefix: PERSON_ID_PREFIX, account: ACCOUNT_TOKEN_PREFIX, person },
-      { github_id: bigId, login: nullable(text), avatar: nullable(text), name: nullable(text), seed: nullable(text) },
+      { github_id: bigId, ...ACCOUNT_COLUMNS },
     );
     if (account !== undefined) {
       const owner = accountToken(account.github_id);
@@ -1255,13 +1417,14 @@ export async function openStore(
         ? []
         : await rows(
             `FROM player_tokens a JOIN player_tokens b USING (github_id) JOIN users u USING (github_id)
-             SELECT a.token AS token, b.token AS linked, u.github_id, u.login, u.avatar, u.name, u.seed WHERE list_contains($tokens, a.token)`,
+             SELECT a.token AS token, b.token AS linked, u.github_id, u.provider, u.login, u.avatar, u.name, u.seed WHERE list_contains($tokens, a.token)`,
             { tokens: listValue(tokens) },
             { token: text, linked: text, github_id: bigId, ...ACCOUNT_COLUMNS },
           );
     const presence = { X: false, O: false };
     const watchers: core.OpenWatcher[] = [];
-    const logins = new Set<string>();
+    // One watcher per account: two Google players can have the same name, so the account id tells them apart.
+    const accounts = new Set<bigint>();
     for (const token of tokens) {
       const own = linked.filter((row) => row.token === token);
       const seats = core.seatsOf(doc, new Set([token, ...own.map((row) => row.linked)]));
@@ -1269,8 +1432,8 @@ export async function openStore(
       if (seats.length > 0) continue;
       const account = own[0];
       const player = account === undefined ? null : accountOf(account);
-      if (player !== null && logins.has(player.login)) continue;
-      if (player !== null) logins.add(player.login);
+      if (account !== undefined && accounts.has(account.github_id)) continue;
+      if (account !== undefined) accounts.add(account.github_id);
       // A logged-in watcher takes a seat for the account, like a join. The id stays from the device token.
       watchers.push({ id: watcherId(code, token), token: account === undefined ? token : accountToken(account.github_id), player });
     }
@@ -1299,7 +1462,7 @@ export async function openStore(
       const { watchers } = await audience(code, row.doc);
       // A rule can seat a logged-in watcher by its account token, so its row must exist first.
       for (const watcher of watchers) {
-        if (watcher.token.startsWith(ACCOUNT_TOKEN_PREFIX)) await ensureAccountRow(BigInt(watcher.token.slice(ACCOUNT_TOKEN_PREFIX.length)));
+        if (watcher.token.startsWith(ACCOUNT_TOKEN_PREFIX)) await ensureAccountRow(accountIdOf(watcher.token));
       }
       const doc = rule(row.doc, identity, watchers);
       return view(doc === row.doc ? row : await save(row, doc), identity);
@@ -1549,6 +1712,7 @@ export async function openStore(
       );
       if (account !== null) {
         counts.users.deleted = (await changedIds('DELETE FROM users WHERE github_id = $account RETURNING login AS id', { account })).length;
+        counts.logins.deleted = (await changedIds('DELETE FROM logins WHERE github_id = $account RETURNING subject AS id', { account })).length;
       }
       await db.run('COMMIT');
     } catch (error) {
@@ -1630,7 +1794,7 @@ export async function openStore(
     answerSeat: (code: Code, token: PlayerToken, accept: boolean) =>
       change(code, token, (doc, identity, watchers) => core.answerSeat(doc, identity, accept, watchers, now())),
 
-    // The custom name of a player without a GitHub login, or null. `name` passed parseCustomName.
+    // The custom name of a player without a login, or null. `name` passed parseCustomName.
     customName: (token: PlayerToken): Promise<string | null> =>
       serialized(async () => {
         const [row] = await rows('FROM player_names SELECT name WHERE token = $token', { token }, { name: text });
@@ -1639,21 +1803,17 @@ export async function openStore(
     // The account of a linked device, with its name and picture choices, or null.
     account: (token: PlayerToken): Promise<PlayerInfo | null> =>
       serialized(async () => {
-        const [row] = await rows('FROM player_tokens JOIN users USING (github_id) SELECT login, avatar, name, seed WHERE token = $token', { token }, ACCOUNT_COLUMNS);
+        const [row] = await rows(`FROM player_tokens JOIN users USING (github_id) SELECT ${ACCOUNT_COLUMN_LIST} WHERE token = $token`, { token }, ACCOUNT_COLUMNS);
         return row === undefined ? null : accountOf(row);
       }),
-    // The name of a device, or of the account when `account` is the GitHub id of the caller's login.
+    // The name of a device, or of the account when `account` is the account id of the caller's login.
     // Refuses a name that equals the login of another GitHub account, so nobody can pose as a logged-in player.
+    // A Google name is not unique, so a custom name may equal one, as two custom names may be equal.
     // Limit: a GitHub account that logs in later with the same login does not rename the player.
     // Revisit this if two players with one name confuse people in practice.
-    setName: (token: PlayerToken, name: string, account: number | null): Promise<void> =>
+    setName: (token: PlayerToken, name: string, account: bigint | null): Promise<void> =>
       serialized(async () => {
-        const [clash] = await rows(
-          'FROM users SELECT login WHERE lower(login) = lower($name) AND github_id IS DISTINCT FROM $account',
-          { name, account },
-          { login: text },
-        );
-        if (clash !== undefined) throw new SessionError(409, 'That name is a GitHub login. Choose another name.');
+        if (await isGitHubLoginOfOther(name, account)) throw new SessionError(409, 'That name is a GitHub login. Choose another name.');
         if (account !== null) {
           await db.run('UPDATE users SET name = $name WHERE github_id = $account', { name, account });
           return;
@@ -1664,16 +1824,22 @@ export async function openStore(
           { token, name },
         );
       }),
-    clearName: (token: PlayerToken, account: number | null): Promise<void> =>
+    clearName: (token: PlayerToken, account: bigint | null): Promise<void> =>
       serialized(async () => {
         if (account !== null) await db.run('UPDATE users SET name = NULL WHERE github_id = $account', { account });
         else await db.run('DELETE FROM player_names WHERE token = $token', { token });
       }),
     // The picture of an account. Each "generated" makes a new seed, so it also rerolls a generated picture.
-    setAvatar: (account: number, picture: AvatarPicture): Promise<void> =>
+    // "github" and "google" go back to the picture of the login that made the account, so only that one fits: 409.
+    setAvatar: (account: bigint, picture: AvatarPicture): Promise<void> =>
       serialized(async () => {
         const seed = picture === 'generated' ? randomBytes(AVATAR_SEED_LENGTH / 2).toString('hex') : null;
-        await db.run('UPDATE users SET seed = $seed WHERE github_id = $account', { seed, account });
+        const updated = await rows(
+          "UPDATE users SET seed = $seed WHERE github_id = $account AND ($picture = 'generated' OR provider = $picture) RETURNING github_id",
+          { seed, account, picture },
+          { github_id: bigId },
+        );
+        if (updated.length === 0) throw new SessionError(409, `This account has no ${picture === 'generated' ? 'row' : PROVIDER_NAMES[picture]} picture.`);
       }),
 
     // ---- Report and block ----
@@ -1829,13 +1995,14 @@ export async function openStore(
         return cleared.map((row) => row.token);
       }),
 
-    // Links this browser to a GitHub account, and refreshes the account's name and picture.
-    linkToken: (token: PlayerToken, user: GitHubUser): Promise<void> =>
+    // Links this browser to the account of a login, and returns the account id.
+    linkToken: (token: PlayerToken, user: LoginUser): Promise<bigint> =>
       serialized(async () => {
+        const id = await accountOfLogin(user);
         // The games of the device move to the account, also from an account that the device was linked to before.
         changedOwners.add(await ownerOf(token));
         changedOwners.add(token);
-        changedOwners.add(accountToken(user.id));
+        changedOwners.add(accountToken(id));
         // The players who met this device now meet the account, so the opponent of their games changes.
         // An achievement about different people can lock again: two devices of one person count once.
         const met = await rows(`FROM ${seatedResults(1)} results SELECT results.player_x AS x, results.player_o AS o`, tokenValues([token]), {
@@ -1846,16 +2013,41 @@ export async function openStore(
         for (const owner of (await canonical(others)).values()) changedOwners.add(owner);
         achievementCache.clear();
         await db.run(
-          `INSERT INTO users (github_id, login, avatar) VALUES ($id, $login, $avatar)
-           ON CONFLICT (github_id) DO UPDATE SET login = excluded.login, avatar = excluded.avatar, seen_at = now()`,
-          { id: user.id, login: user.login, avatar: user.avatar },
-        );
-        await db.run(
           `INSERT INTO player_tokens (token, github_id) VALUES ($token, $id)
            ON CONFLICT (token) DO UPDATE SET github_id = excluded.github_id, linked_at = now()`,
-          { token, id: user.id },
+          { token, id },
         );
-        await ensureAccountRow(user.id);
+        await ensureAccountRow(id);
+        return id;
+      }),
+
+    // A sign-in without a device, at the login callback: makes the account, or refreshes its name and picture.
+    signIn: (user: LoginUser): Promise<bigint> => serialized(() => accountOfLogin(user)),
+
+    // Adds a login of the other provider to the account of `current`, so both logins open the same account.
+    // A login that already has its own account brings it along: mergeAccounts moves it into this one.
+    connectLogin: (current: LoginUser, adding: LoginUser): Promise<void> =>
+      serialized(async () => {
+        const { provider, subject, label } = loginKey(adding);
+        if (provider === loginKey(current).provider) throw new Error('a login connects only a login of the other provider');
+        const account = await accountOfLogin(current);
+        const found = await knownAccountOf(adding);
+        if (found === account) return;
+        const [other] = await rows('FROM logins SELECT subject WHERE provider = $provider AND github_id = $account', { provider, account }, { subject: text });
+        if (other !== undefined) throw new SessionError(409, `This account already has another ${PROVIDER_NAMES[provider]} login.`);
+        if (found !== undefined) await mergeAccounts(account, found);
+        else await db.run('INSERT INTO logins (provider, subject, github_id, label) VALUES ($provider, $subject, $account, $label)', { provider, subject, account, label });
+      }),
+
+    // The logins of the account of this device: the GitHub login, and whether it has Google.
+    loginsOf: (token: PlayerToken): Promise<{ github: string | null; google: boolean }> =>
+      serialized(async () => {
+        const found = await rows(
+          'FROM player_tokens JOIN logins USING (github_id) SELECT provider, label WHERE token = $token',
+          { token },
+          { provider: oneOf(LOGIN_PROVIDERS), label: nullable(text) },
+        );
+        return { github: found.find((row) => row.provider === 'github')?.label ?? null, google: found.some((row) => row.provider === 'google') };
       }),
 
     // Logout: this browser no longer acts for its account. The other devices of the account stay linked.
@@ -1949,7 +2141,7 @@ export async function openStore(
           difficulty: stored.difficulty,
           tuned: stored.tuned,
           computer: stored.mode === 'computer' && stored.you !== null ? other(stored.you) : null,
-          players: { X: accountOf({ login: row.x_login, avatar: row.x_avatar, name: row.x_name, seed: row.x_seed }), O: accountOf({ login: row.o_login, avatar: row.o_avatar, name: row.o_name, seed: row.o_seed }) },
+          players: { X: accountOf({ provider: row.x_provider, login: row.x_login, avatar: row.x_avatar, name: row.x_name, seed: row.x_seed }), O: accountOf({ provider: row.o_provider, login: row.o_login, avatar: row.o_avatar, name: row.o_name, seed: row.o_seed }) },
           names: await seatNames(row.token_x, row.token_o),
           finishedAt: row.finished,
         });
@@ -2001,7 +2193,7 @@ export async function openStore(
             difficulty: row.difficulty,
             result: outcomeOf(winner, you),
             moves: row.moves,
-            opponent: you === 'X' ? accountOf({ login: row.o_login, avatar: row.o_avatar, name: row.o_name, seed: row.o_seed }) : you === 'O' ? accountOf({ login: row.x_login, avatar: row.x_avatar, name: row.x_name, seed: row.x_seed }) : null,
+            opponent: you === 'X' ? accountOf({ provider: row.o_provider, login: row.o_login, avatar: row.o_avatar, name: row.o_name, seed: row.o_seed }) : you === 'O' ? accountOf({ provider: row.x_provider, login: row.x_login, avatar: row.x_avatar, name: row.x_name, seed: row.x_seed }) : null,
             opponentName: you === 'X' ? core.seatName(row.token_o, name) : you === 'O' ? core.seatName(row.token_x, name) : null,
             finishedAt: row.finished,
           };
@@ -2083,7 +2275,11 @@ export async function openStore(
       serialized(async () => {
         let token: string | undefined;
         if ('login' in target) {
-          const [user] = await rows('FROM users SELECT github_id WHERE lower(login) = lower($login)', { login: target.login }, { github_id: bigId });
+          const [user] = await rows(
+            "FROM logins SELECT github_id WHERE provider = 'github' AND lower(label) = lower($login)",
+            { login: target.login },
+            { github_id: bigId },
+          );
           if (user !== undefined) token = await ensureAccountRow(user.github_id);
         } else {
           const [found] = await rows(
@@ -2359,7 +2555,7 @@ export async function openStore(
         }
 
         const [user] = await rows(
-          'FROM player_tokens JOIN users USING (github_id) SELECT login, avatar, name, seed WHERE token = $token',
+          `FROM player_tokens JOIN users USING (github_id) SELECT ${ACCOUNT_COLUMN_LIST} WHERE token = $token`,
           { token },
           ACCOUNT_COLUMNS,
         );

@@ -1,5 +1,5 @@
 /Caddyfile
-node_modules/
+node_modules
 dist/
 dev.duckdb*
 e2e/test-results/

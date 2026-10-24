@@ -18,11 +18,14 @@ const config: AuthConfig = {
   secret: 's'.repeat(40),
   origin: 'https://tick3d.example.com',
   cookieDomain: 'tick3d.example.com',
+  google: undefined,
 };
 const alice = 'aaaaaaaa-0000-4000-8000-00000000a11c';
 const bob = 'bbbbbbbb-0000-4000-8000-0000000000b0';
 const dave = 'dddddddd-0000-4000-8000-00000000da7e';
-const tokens = [alice, bob, dave];
+const erin = 'eeeeeeee-0000-4000-8000-00000000e1e1';
+const erinPhone = 'eeeeeeee-0000-4000-8000-00000000e2e2';
+const tokens = [alice, bob, dave, erin, erinPhone];
 
 let server: ChildProcess;
 
@@ -64,6 +67,8 @@ beforeAll(async () => {
       AUTH_SECRET: config.secret,
       AUTH_ORIGIN: config.origin,
       COOKIE_DOMAIN: config.cookieDomain,
+      GOOGLE_CLIENT_ID: 'google-client.apps.googleusercontent.com',
+      GOOGLE_CLIENT_SECRET: 'google-secret',
     },
     stdio: 'inherit',
   });
@@ -205,3 +210,28 @@ describe('delete my data route', () => {
   });
 });
 
+
+describe('Google login routes', () => {
+  // The account cookie of a Google login. The server checks only the signature, so no Google call is needed.
+  const googleCookie = (sub: string) => (createAuth(config).googleCookies({ google: sub })[0] ?? '').split(';')[0] ?? '';
+
+  it('shares a Google account and its name and picture choices between devices, without maintainer rights', async () => {
+    const cookie = googleCookie('2000000000000000000001');
+    const me = await call('GET', '/me', { player: erin, cookie });
+    // The test server is not on the login origin, so it offers the login button and no One Tap.
+    // A cookie without a sign-in has no Google profile, so the account has a generated name and no photo.
+    expect(me.body).toMatchObject({ user: { provider: 'google', avatar: null }, googleLogin: true, googleOneTapClient: null, githubLogin: null, googleConnected: true });
+    expect((await call('PUT', '/me/name', { player: erin, cookie, body: { name: 'Erin E' } })).body).toMatchObject({ user: { name: 'Erin E' } });
+    expect((await call('GET', '/me', { player: erinPhone, cookie })).body).toMatchObject({ user: { login: 'Erin E', name: 'Erin E' }, googleConnected: true });
+    // A device without the cookie is a device of its own.
+    expect((await call('GET', '/me', { player: bob })).body).toMatchObject({ user: null, googleConnected: false });
+    expect((await call('PUT', '/me/avatar', { player: erin, cookie, body: { picture: 'generated' } })).status).toBe(200);
+    expect((await call('PUT', '/me/avatar', { player: erin, cookie, body: { picture: 'github' } })).status).toBe(409);
+    expect((await call('GET', '/reports', { player: erin, cookie })).status).toBe(401);
+  });
+
+  it('refuses a One Tap token that Google did not sign', async () => {
+    expect((await call('POST', '/auth/google/one-tap', { player: erin, body: { credential: 'not-a-token' } })).status).toBe(401);
+    expect((await call('POST', '/auth/google/one-tap', { body: { credential: 'not-a-token' } })).status).toBe(400);
+  });
+});

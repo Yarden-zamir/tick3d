@@ -25,6 +25,7 @@ import { setupHome } from './page/home.ts';
 import { renderCoords, setupKeypad } from './page/keypad.ts';
 import { setupReports } from './page/metrics.ts';
 import { openMyGames, refreshAccount, setupMyGames, preloadMyGames } from './page/my-games.ts';
+import { offerGoogleOneTap } from './page/google-one-tap.ts';
 import { setupGameHeader } from './header/header.ts';
 import { readMyGamesRequest, withoutMyGamesRequest } from './header/my-games-link.ts';
 import { takePlayOnlineRequest } from './header/play-online-link.ts';
@@ -148,6 +149,7 @@ async function start(): Promise<void> {
   void checkLanHost();
   // The unlocks that this device did not show yet, such as an invite on /share. A login links this browser first.
   void account.then(checkUnlocks).catch(showError);
+  void account.then(() => offerGoogleOneTap(showError)).catch(showError);
   // The Android app reports its open: the copy of this device, and the invite of the inviter. A login links this browser first.
   void account.then(reportAppOpen).catch(showError);
   // My games loads in the background when the page is idle, so the dialog opens with its lists.
@@ -166,8 +168,12 @@ async function start(): Promise<void> {
     void account.then(playWithFriend).catch(showError);
   }
   const params = new URLSearchParams(location.search);
-  if (params.get('login') === 'failed') {
-    showProblem('The GitHub login did not work. Try again.');
+  const loginProblem = new Map([
+    ['failed', 'The login did not work. Try again.'],
+    ['taken', 'That login cannot join this account: one of them already has a login of the same kind.'],
+  ]).get(params.get('login') ?? '');
+  if (loginProblem !== undefined) {
+    showProblem(loginProblem);
     const url = new URL(location.href);
     url.searchParams.delete('login');
     history.replaceState(null, '', url);

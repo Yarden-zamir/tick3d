@@ -134,7 +134,7 @@ export async function createOnline(page: Page): Promise<string> {
 export async function ownName(page: Page): Promise<string> {
   await page.locator('#account-button').click();
   await expect(page.locator('#account-box')).toContainText('You play as');
-  const name = await page.locator('#account-box b').innerText();
+  const name = await page.locator('#account-box .account-name').innerText();
   await page.locator('#my-games-close').click();
   expect(name).toMatch(/^[a-z]+[A-Z][a-z]+$/);
   return name;
