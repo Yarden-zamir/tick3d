@@ -26,22 +26,23 @@ export function cropsOf(option: string | undefined): readonly Crop[] {
   return [option];
 }
 
-type Render = {
+// A crop is a landscape or portrait crop of the spot and the tutorial, or a format of an ad (src/memory/formats.ts).
+type Render<C extends string> = {
   // For the log: the name of the cut.
   name: string;
-  crops: readonly Crop[];
-  composition: (crop: Crop) => string;
+  crops: readonly C[];
+  composition: (crop: C) => string;
   // The stills of a crop: the frame and the output path of each (relative to video/scripts/).
-  stills: (crop: Crop) => readonly { frame: number; output: string }[];
+  stills: (crop: C) => readonly { frame: number; output: string }[];
   // Half-size JPEG stills.
   draft: boolean;
   // The output path of the MP4 of a crop, or undefined for the stills only.
-  video: (crop: Crop) => string | undefined;
+  video: (crop: C) => string | undefined;
   envVariables?: Record<string, string>;
   inputProps?: Record<string, unknown>;
 };
 
-export async function render({ name, crops, composition: idOf, stills, draft, video, envVariables = {}, inputProps = {} }: Render): Promise<void> {
+export async function render<C extends string>({ name, crops, composition: idOf, stills, draft, video, envVariables = {}, inputProps = {} }: Render<C>): Promise<void> {
   const serveUrl = await bundle({ entryPoint: path('../src/index.ts'), publicDir: path('../public') });
   // One browser for the whole run: without it, every still starts its own browser.
   const puppeteerInstance = await openBrowser('chrome', { chromiumOptions });
