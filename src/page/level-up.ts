@@ -1,3 +1,5 @@
+// The runs of wins of this device. Two wins in a row against any opponent earn the name prompt
+// (src/page/identity-nudge.ts).
 // The first time a player wins twice in a row against easy, the page moves them up to medium, once.
 // It scrolls to Difficulty, presses Medium as the player would, and makes the field pop, so the change is clear.
 // Then it scrolls back to where the player was, unless the player scrolled, pressed or typed meanwhile.
@@ -18,9 +20,10 @@ const POP_MS = 3200;
 // this module sends scroll events too.
 const TAKE_OVER_EVENTS = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const;
 
+// `wins`: wins in a row against any opponent: the computer at any level, online or Nearby.
 // `easyWins`: wins in a row against easy so far. `earned`: two wins came, and the move up waits.
 // `done`: this device moved up once (or the player left easy by choice), so it never moves up again.
-type LevelUp = { easyWins: number; earned: boolean; done: boolean };
+type LevelUp = { wins: number; easyWins: number; earned: boolean; done: boolean };
 
 const difficultyField = element('#difficulty-field', HTMLDivElement);
 
@@ -31,14 +34,17 @@ function load(): LevelUp {
       const { easyWins, done } = raw;
       // A value from before `earned` existed reads as not earned yet.
       const earned = 'earned' in raw ? raw.earned : false;
-      if (Number.isInteger(easyWins) && typeof easyWins === 'number' && easyWins >= 0 && typeof done === 'boolean' && typeof earned === 'boolean') {
-        return { easyWins, earned, done };
+      // A value from before `wins` existed starts the run at none.
+      const wins = 'wins' in raw ? raw.wins : 0;
+      const count = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0;
+      if (count(wins) && count(easyWins) && typeof done === 'boolean' && typeof earned === 'boolean') {
+        return { wins, easyWins, earned, done };
       }
     }
   } catch {
     // A broken value starts over.
   }
-  return { easyWins: 0, earned: false, done: false };
+  return { wins: 0, easyWins: 0, earned: false, done: false };
 }
 
 function save(state: LevelUp): void {
@@ -49,18 +55,25 @@ function save(state: LevelUp): void {
   }
 }
 
-// A finished game against the computer. A loss, a draw or another level ends the run of wins.
-export function noteComputerResult(difficulty: Difficulty, won: boolean): void {
+// A finished game where this screen held a seat. `computer` is the level of a game against the computer.
+// A loss or a draw ends both runs. A game that is not against easy ends the run against easy.
+export function noteResult(won: boolean, computer: Difficulty | undefined): void {
   const state = load();
-  if (state.done) return;
-  const easyWins = difficulty === 'easy' && won ? state.easyWins + 1 : 0;
-  save({ easyWins, earned: state.earned || easyWins >= WINS_TO_MOVE_UP, done: false });
+  const wins = won ? state.wins + 1 : 0;
+  if (state.done) return save({ ...state, wins });
+  const easyWins = computer === 'easy' && won ? state.easyWins + 1 : 0;
+  save({ wins, easyWins, earned: state.earned || easyWins >= WINS_TO_MOVE_UP, done: false });
 }
+
+export const winsInARow = (): number => load().wins;
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 let running = false;
 
 // An end card closed. When the move up is earned and the player is on easy against the computer, it runs now.
-export function runLevelUp(): void {
+// The promise settles when the move up is over (or did not run), so a later prompt does not cover it.
+export async function runLevelUp(): Promise<void> {
   const state = load();
   if (!state.earned || state.done || running || settings.mode !== 'computer') return;
   // The player left easy by choice: the move up has no point any more.
@@ -74,25 +87,21 @@ export function runLevelUp(): void {
   for (const type of TAKE_OVER_EVENTS) addEventListener(type, takeOver, { capture: true, passive: true });
   difficultyField.scrollIntoView({ behavior: scrollMotion(), block: 'center' });
   // The press waits for the scroll, so the player sees the switch move to Medium.
-  setTimeout(() => {
-    const stillThere = !tookOver && settings.mode === 'computer' && settings.difficulty === 'easy';
-    if (stillThere) {
-      const medium = difficultyField.querySelector('[data-value="medium"]');
-      if (!(medium instanceof HTMLButtonElement)) throw new Error('the Difficulty field has no Medium button');
-      medium.click();
-      save({ ...state, done: true });
-      difficultyField.classList.remove('level-up');
-      void difficultyField.offsetWidth; // restart the animation
-      difficultyField.classList.add('level-up');
-      showToast('Two wins in a row against Easy. Up to Medium!');
-    }
-    setTimeout(
-      () => {
-        running = false;
-        for (const type of TAKE_OVER_EVENTS) removeEventListener(type, takeOver, { capture: true });
-        if (!tookOver) scrollTo({ top: startY, behavior: scrollMotion() });
-      },
-      stillThere ? POP_MS : 0,
-    );
-  }, SCROLL_MS);
+  await wait(SCROLL_MS);
+  const stillThere = !tookOver && settings.mode === 'computer' && settings.difficulty === 'easy';
+  if (stillThere) {
+    const medium = difficultyField.querySelector('[data-value="medium"]');
+    if (!(medium instanceof HTMLButtonElement)) throw new Error('the Difficulty field has no Medium button');
+    medium.click();
+    // A game can end during the wait, so the save reads the runs again.
+    save({ ...load(), done: true });
+    difficultyField.classList.remove('level-up');
+    void difficultyField.offsetWidth; // restart the animation
+    difficultyField.classList.add('level-up');
+    showToast('Two wins in a row against Easy. Up to Medium!');
+    await wait(POP_MS);
+  }
+  running = false;
+  for (const type of TAKE_OVER_EVENTS) removeEventListener(type, takeOver, { capture: true });
+  if (!tookOver) scrollTo({ top: startY, behavior: scrollMotion() });
 }

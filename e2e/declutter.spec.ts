@@ -75,7 +75,7 @@ test('a second win in a row against easy moves the player up to medium; the body
   const { page, context } = await open({ settings: { mode: 'computer', difficulty: 'easy', human: 'X' } });
   await context.addInitScript(
     ({ keys, tuning }) => {
-      if (localStorage.getItem(keys.levelUp) === null) localStorage.setItem(keys.levelUp, JSON.stringify({ easyWins: 1, done: false }));
+      if (localStorage.getItem(keys.levelUp) === null) localStorage.setItem(keys.levelUp, JSON.stringify({ wins: 1, easyWins: 1, done: false }));
       if (localStorage.getItem(keys.tuning) === null) localStorage.setItem(keys.tuning, JSON.stringify(tuning));
     },
     { keys: STORAGE_KEYS, tuning: SURE_WIN_TUNING },
@@ -116,7 +116,17 @@ test('a second win in a row against easy moves the player up to medium; the body
   await expect(page.locator('[data-setting="difficulty"] [data-value="medium"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#difficulty-field')).toHaveClass(/level-up/);
   await expectToast(page, 'Two wins in a row against Easy. Up to Medium!');
-  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null') as unknown, STORAGE_KEYS.levelUp)).toEqual({ easyWins: 2, earned: true, done: true });
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null') as unknown, STORAGE_KEYS.levelUp)).toEqual({ wins: 2, easyWins: 2, earned: true, done: true });
   // The player did not take over, so the page scrolls back to the top after the pop.
   await expect.poll(() => page.evaluate(() => scrollY), { message: 'the page scrolled back', timeout: 8000 }).toBe(0);
+
+  // The two wins in a row also earn the prompt for a name. It waits for the move up, so the two never show together.
+  const nudge = page.locator('#identity-nudge');
+  await expect(nudge).toBeVisible();
+  await nudge.getByRole('button', { name: 'Make them mine' }).click();
+  await expect(nudge).toBeHidden();
+  await expect(page.getByRole('tab', { name: 'Account' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#my-games').getByRole('button', { name: 'Rename' })).toBeVisible();
+  // It shows once per device.
+  expect(await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEYS.identityNudge)).toBe('shown');
 });
