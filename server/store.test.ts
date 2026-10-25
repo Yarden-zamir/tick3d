@@ -1827,3 +1827,50 @@ describe('the account and name cache', () => {
     expect((await store.get(after.code, bob)).players.X).toBeNull();
   });
 });
+
+// The store keeps the last row of each session in memory (#228). Each test reads first, so the row is in
+// memory, then changes the session through one path, and expects the next read to show the change.
+describe('the session cache', () => {
+  it('keeps the same session after a write as a fresh read of the file finds', async () => {
+    const path = `${await mkdtemp('/tmp/tick3d-store-')}/cache.duckdb`;
+    store = await openStore(path);
+    const { code } = await store.create(alice, 'Cached');
+    await store.join(code, bob);
+    await store.chat(code, bob, 'hello');
+    await playMoves(code, X_WINS);
+    const cached = await store.get(code, bob);
+    await store.close();
+    store = await openStore(path);
+    const fresh = await store.get(code, bob);
+    expect({ ...cached, now: 0 }).toEqual({ ...fresh, now: 0 });
+  });
+
+  it('forgets a session that the pruning deletes', async () => {
+    let later = 0;
+    store = await openStore(':memory:', { now: () => ms(Date.now() + later) });
+    const { code } = await store.create(alice, 'Never played');
+    expect((await store.get(code, alice)).code).toBe(code);
+    later = 10 * 3_600_000;
+    expect(await store.pruneEmpty(3_600_000)).toEqual([code]);
+    expect(await status(() => store.get(code, alice))).toBe(404);
+  });
+
+  it('forgets a session that Delete my data deletes', async () => {
+    store = await openStore(':memory:');
+    const { code } = await store.create(alice, 'Alone');
+    expect((await store.get(code, bob)).seats).toEqual({ X: true, O: false });
+    await store.deleteData(alice);
+    expect(await status(() => store.get(code, bob))).toBe(404);
+  });
+
+  it('shows the freed seat after Delete my data, and the other player can still act', async () => {
+    const code = await session();
+    await store.move(code, alice, { game: 0, moveCount: 0, cell: 0 });
+    expect((await store.get(code, bob)).seats).toEqual({ X: true, O: true });
+    await store.deleteData(alice);
+    expect((await store.get(code, bob)).seats).toEqual({ X: false, O: true });
+    // A wrong version in memory would refuse the next write.
+    await store.chat(code, bob, 'still here');
+    expect((await store.get(code, bob)).chat.at(-1)).toMatchObject({ text: 'still here' });
+  });
+});

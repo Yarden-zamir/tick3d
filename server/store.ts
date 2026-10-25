@@ -424,6 +424,7 @@ type Row = { code: Code; doc: SessionDoc; version: number; stale: boolean };
 // The tables of accounts, devices and names. The store caches lookups in them (accountRows in openStore).
 const ACCOUNT_TABLES = ['player_tokens', 'player_names', 'users', 'logins'];
 const MAX_ACCOUNT_ANSWERS = 10_000;
+const MAX_SESSION_ROWS = 2_000;
 
 // A text key for the values of a query: text, numbers, booleans, null, bigints and lists of them.
 function valuesKey(values: Record<string, DuckDBValue>): string {
@@ -438,6 +439,12 @@ function valuesKey(values: Record<string, DuckDBValue>): string {
 
 // Every write passes the same check as every read, so the table never holds a document that cannot
 // be read back. This replaces the column CHECK constraints that a document column cannot have.
+// A session row from its stored document. `stale` marks a document in an older format.
+function rowOf(code: Code, stored: unknown, version: number): Row {
+  const format = typeof stored === 'object' && stored !== null && 'format' in stored ? stored.format : undefined;
+  return { code, doc: parseDoc(stored), version, stale: format !== CURRENT_FORMAT };
+}
+
 function serialize(doc: SessionDoc): string {
   const text = JSON.stringify(doc);
   parseDoc(JSON.parse(text));
@@ -596,10 +603,22 @@ export async function openStore(
   const accountAnswers = new Map<string, readonly Record<string, unknown>[]>();
   // Counts the changes, so a lookup that ran during a change does not keep its answer.
   let accountChanges = 0;
-  const onWrite: OnWrite = (sql) => {
-    if (sql.trim().toUpperCase().startsWith('ROLLBACK') || ACCOUNT_TABLES.some((table) => sql.includes(table))) {
+  // The last known row of each session, so a read needs no query. A write to `sessions` drops the row of its
+  // $code, or every row when it has none. save then keeps the row that it wrote. Same one-process rule as above.
+  // Limit: beyond MAX_SESSION_ROWS the least recently used row goes. Revisit if the API memory grows with it.
+  const sessionRows = new Map<string, Row>();
+  let sessionChanges = 0;
+  const onWrite: OnWrite = (sql, values) => {
+    const rollback = sql.trim().toUpperCase().startsWith('ROLLBACK');
+    if (rollback || ACCOUNT_TABLES.some((table) => sql.includes(table))) {
       accountAnswers.clear();
       accountChanges++;
+    }
+    if (rollback || sql.includes('sessions')) {
+      const code = values?.code;
+      if (!rollback && typeof code === 'string') sessionRows.delete(code);
+      else sessionRows.clear();
+      sessionChanges++;
     }
   };
   const db = statements(await instance.connect(), onWrite);
@@ -677,12 +696,24 @@ export async function openStore(
     return run;
   }
 
+  // Keeps `row` as the most recently used row of its session.
+  function keepRow(row: Row): Row {
+    sessionRows.delete(row.code);
+    sessionRows.set(row.code, row);
+    const oldest = sessionRows.keys().next();
+    if (sessionRows.size > MAX_SESSION_ROWS && oldest.done !== true) sessionRows.delete(oldest.value);
+    return row;
+  }
+
   async function loadRaw(code: Code): Promise<Row> {
-    const [row] = await rows('FROM sessions SELECT doc::JSON AS doc, version WHERE code = $code', { code }, { doc: json, version: int });
-    if (row === undefined) throw new SessionError(404, `No game with code ${code}.`);
-    const stored = row.doc;
-    const format = typeof stored === 'object' && stored !== null && 'format' in stored ? stored.format : undefined;
-    return { code, doc: parseDoc(stored), version: row.version, stale: format !== CURRENT_FORMAT };
+    const known = sessionRows.get(code);
+    if (known !== undefined) return keepRow(known);
+    const changes = sessionChanges;
+    const [found] = await rows('FROM sessions SELECT doc::JSON AS doc, version WHERE code = $code', { code }, { doc: json, version: int });
+    if (found === undefined) throw new SessionError(404, `No game with code ${code}.`);
+    const row = rowOf(code, found.doc, found.version);
+    // A write during the read can make this row old.
+    return changes === sessionChanges ? keepRow(row) : row;
   }
 
   // The achievements of each player, by their sorted tokens. A new or deleted result clears it all.
@@ -1158,10 +1189,13 @@ export async function openStore(
   }
 
   async function save(row: Row, doc: SessionDoc): Promise<Row> {
+    const text = serialize(doc);
     await db.run(
       `UPDATE sessions SET doc = $doc::JSON::VARIANT, ${SESSION_SEAT_SET}, version = version + 1, updated_at = now() WHERE code = $code`,
-      { code: row.code, doc: serialize(doc) },
+      { code: row.code, doc: text },
     );
+    // The row as a read would find it now, without the read.
+    const saved = keepRow(rowOf(row.code, JSON.parse(text), row.version + 1));
     // Only the live game can end, by a move or by a timeout.
     const index = doc.games.length - 1;
     const live = doc.games[index];
@@ -1170,7 +1204,7 @@ export async function openStore(
       await recordOnline(row.code, doc, index, live.timedOut ? now() : (live.times.at(-1) ?? now()));
     }
     onChange(row.code);
-    return loadRaw(row.code);
+    return saved;
   }
 
   // Loads a session, records a timeout that happened since the last write, and writes a document
