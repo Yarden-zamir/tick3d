@@ -1751,3 +1751,126 @@ describe('delete my data', () => {
   });
 });
 
+
+// The store keeps account and name lookups in memory (#228). Each test reads first, so the lookups are
+// in memory, then writes through one path, and expects the next read to show the change.
+describe('the account and name cache', () => {
+  const DANA_GOOGLE = { google: '1000000000000000000011', profile: { name: 'Dana Levi', picture: null } };
+
+  it('shows a new custom name of a device, and the generated name after a reset', async () => {
+    const code = await session();
+    expect((await store.get(code, bob)).names.X).toBe(nameOf(alice));
+    await store.setName(alice, 'Dana', null);
+    expect((await store.get(code, bob)).names.X).toBe('Dana');
+    await store.clearName(alice, null);
+    expect((await store.get(code, bob)).names.X).toBe(nameOf(alice));
+  });
+
+  it('shows the custom name, the reset and the picture of an account', async () => {
+    const code = await session();
+    await store.linkToken(alice, ALICE_GITHUB);
+    expect((await store.get(code, bob)).players.X).toMatchObject({ name: null, seed: null });
+    await store.setName(alice, 'Dana', ALICE_ID);
+    expect((await store.get(code, bob)).players.X?.name).toBe('Dana');
+    await store.clearName(alice, ALICE_ID);
+    expect((await store.get(code, bob)).players.X?.name).toBeNull();
+    await store.setAvatar(ALICE_ID, 'generated');
+    expect(isAvatarSeed((await store.get(code, bob)).players.X?.seed)).toBe(true);
+  });
+
+  it('gives a device its seat after a login and takes it away after a logout', async () => {
+    const code = await session();
+    await store.linkToken(alice, ALICE_GITHUB);
+    expect((await store.get(code, alicePhone)).you).toBeNull();
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    expect((await store.get(code, alicePhone)).you).toBe('X');
+    await store.unlinkToken(alicePhone);
+    expect((await store.get(code, alicePhone)).you).toBeNull();
+  });
+
+  it('shows the new profile after a sign-in', async () => {
+    const code = await session();
+    await store.linkToken(alice, DANA_GOOGLE);
+    expect((await store.get(code, bob)).players.X?.login).toBe('Dana Levi');
+    await store.signIn({ ...DANA_GOOGLE, profile: { name: 'Dana Cohen', picture: null } });
+    expect((await store.get(code, bob)).players.X?.login).toBe('Dana Cohen');
+  });
+
+  it('shows the merged account after a login with its own account joins another account', async () => {
+    const code = await session();
+    await store.linkToken(alice, DANA_GOOGLE);
+    expect((await store.get(code, bob)).players.X?.provider).toBe('google');
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.connectLogin(ALICE_GITHUB, DANA_GOOGLE);
+    expect((await store.get(code, bob)).players.X).toMatchObject({ provider: 'github', login: 'alice' });
+  });
+
+  it('shows the generated name after a maintainer clears a custom name', async () => {
+    const code = await session();
+    await store.setName(alice, 'Rude Name', null);
+    expect((await store.get(code, bob)).names.X).toBe('Rude Name');
+    await store.clearNameOf(await store.person(alice), 'TomCohenDev');
+    expect((await store.get(code, bob)).names.X).toBe(nameOf(alice));
+  });
+
+  it('forgets the account of a player who deleted their data', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    const { code } = await store.create(alice, 'Before');
+    expect((await store.get(code, alicePhone)).you).toBe('X');
+    await store.deleteData(alice);
+    // The devices are no longer linked: a new game of the desktop is not a game of the phone.
+    const after = await store.create(alice, 'After');
+    expect(after.you).toBe('X');
+    expect((await store.get(after.code, alicePhone)).you).toBeNull();
+    expect((await store.get(after.code, bob)).players.X).toBeNull();
+  });
+});
+
+// The store keeps the last row of each session in memory (#228). Each test reads first, so the row is in
+// memory, then changes the session through one path, and expects the next read to show the change.
+describe('the session cache', () => {
+  it('keeps the same session after a write as a fresh read of the file finds', async () => {
+    const path = `${await mkdtemp('/tmp/tick3d-store-')}/cache.duckdb`;
+    store = await openStore(path);
+    const { code } = await store.create(alice, 'Cached');
+    await store.join(code, bob);
+    await store.chat(code, bob, 'hello');
+    await playMoves(code, X_WINS);
+    const cached = await store.get(code, bob);
+    await store.close();
+    store = await openStore(path);
+    const fresh = await store.get(code, bob);
+    expect({ ...cached, now: 0 }).toEqual({ ...fresh, now: 0 });
+  });
+
+  it('forgets a session that the pruning deletes', async () => {
+    let later = 0;
+    store = await openStore(':memory:', { now: () => ms(Date.now() + later) });
+    const { code } = await store.create(alice, 'Never played');
+    expect((await store.get(code, alice)).code).toBe(code);
+    later = 10 * 3_600_000;
+    expect(await store.pruneEmpty(3_600_000)).toEqual([code]);
+    expect(await status(() => store.get(code, alice))).toBe(404);
+  });
+
+  it('forgets a session that Delete my data deletes', async () => {
+    store = await openStore(':memory:');
+    const { code } = await store.create(alice, 'Alone');
+    expect((await store.get(code, bob)).seats).toEqual({ X: true, O: false });
+    await store.deleteData(alice);
+    expect(await status(() => store.get(code, bob))).toBe(404);
+  });
+
+  it('shows the freed seat after Delete my data, and the other player can still act', async () => {
+    const code = await session();
+    await store.move(code, alice, { game: 0, moveCount: 0, cell: 0 });
+    expect((await store.get(code, bob)).seats).toEqual({ X: true, O: true });
+    await store.deleteData(alice);
+    expect((await store.get(code, bob)).seats).toEqual({ X: false, O: true });
+    // A wrong version in memory would refuse the next write.
+    await store.chat(code, bob, 'still here');
+    expect((await store.get(code, bob)).chat.at(-1)).toMatchObject({ text: 'still here' });
+  });
+});
