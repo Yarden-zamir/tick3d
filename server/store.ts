@@ -97,6 +97,7 @@ import { leaderRows } from './leaderboard.ts';
 import { type InviteEvent, peopleOf } from './invite-people.ts';
 import { type ClaimRequest, type ClaimedCode, type TesterCodeEntry, type TesterCodes, hintOf } from '../src/share/codes.ts';
 import { gravatarOf } from './tester-codes.ts';
+import { statements } from './statements.ts';
 
 // The claims of tester codes with their emails, for the maintainers only (GET /api/testing/claims).
 // `invitedBy` is the person id of the inviter, or null for a claim without an invite.
@@ -573,7 +574,7 @@ export async function openStore(
     threads: '2',
     storage_compatibility_version: 'v1.5.0',
   });
-  const db = await instance.connect();
+  const db = statements(await instance.connect());
   for (const statement of SCHEMA) await db.run(statement);
   // DuckDB 1.5.6 cannot replay ALTER ... DROP NOT NULL on `reports` (its id defaults to nextval) from the
   // write-ahead log. SCHEMA runs that ALTER on every start, so a crash before the next checkpoint leaves a file
@@ -623,7 +624,7 @@ export async function openStore(
   // A second connection for the answers about every player (the Everyone stats and the leaderboard). They read
   // every game, so they run here, one at a time, and the store queue never waits for them. Each query reads a
   // consistent view of the data while the main connection writes.
-  const reader = await instance.connect();
+  const reader = statements(await instance.connect());
   const readRows: Rows = async (sql, values, shape) => (await reader.runAndReadAll(sql, values)).getRowObjectsJS().map((row) => readRow(row, shape));
   let readQueue: Promise<unknown> = Promise.resolve();
   // Set by close: no new background work starts.
