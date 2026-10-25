@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomInt } from 'node:crypto';
 import type { ApplePurchase } from './apple-proof.ts';
-import { type DuckDBValue, DuckDBInstance, listValue } from '@duckdb/node-api';
+import { type DuckDBValue, DuckDBInstance, DuckDBListValue, listValue } from '@duckdb/node-api';
 import {
   ACHIEVEMENT_IDS,
   type AchievementGame,
@@ -97,7 +97,7 @@ import { leaderRows } from './leaderboard.ts';
 import { type InviteEvent, peopleOf } from './invite-people.ts';
 import { type ClaimRequest, type ClaimedCode, type TesterCodeEntry, type TesterCodes, hintOf } from '../src/share/codes.ts';
 import { gravatarOf } from './tester-codes.ts';
-import { statements } from './statements.ts';
+import { type OnWrite, statements } from './statements.ts';
 
 // The claims of tester codes with their emails, for the maintainers only (GET /api/testing/claims).
 // `invitedBy` is the person id of the inviter, or null for a claim without an invite.
@@ -421,6 +421,21 @@ const BLOCKS_KEPT = 500;
 
 type Row = { code: Code; doc: SessionDoc; version: number; stale: boolean };
 
+// The tables of accounts, devices and names. The store caches lookups in them (accountRows in openStore).
+const ACCOUNT_TABLES = ['player_tokens', 'player_names', 'users', 'logins'];
+const MAX_ACCOUNT_ANSWERS = 10_000;
+
+// A text key for the values of a query: text, numbers, booleans, null, bigints and lists of them.
+function valuesKey(values: Record<string, DuckDBValue>): string {
+  return JSON.stringify(values, (key, value: unknown) => {
+    if (key === '' || value === null || Array.isArray(value) || ['string', 'number', 'boolean'].includes(typeof value)) return value;
+    // An object, so a bigint never gets the key of a text value.
+    if (typeof value === 'bigint') return { bigint: String(value) };
+    if (value instanceof DuckDBListValue) return value.items;
+    throw new Error(`no cache key for the value of ${key}`);
+  });
+}
+
 // Every write passes the same check as every read, so the table never holds a document that cannot
 // be read back. This replaces the column CHECK constraints that a document column cannot have.
 function serialize(doc: SessionDoc): string {
@@ -574,7 +589,20 @@ export async function openStore(
     threads: '2',
     storage_compatibility_version: 'v1.5.0',
   });
-  const db = statements(await instance.connect());
+  // The rows of the account and name lookups (accountRows), by query and values. Only this store writes those
+  // tables, so a write that names one of them, or a rollback, empties the map. This holds while one process
+  // uses the file, as the store queue already assumes.
+  // Limit: the map empties at MAX_ACCOUNT_ANSWERS entries. Revisit if a profile shows these lookups missing often.
+  const accountAnswers = new Map<string, readonly Record<string, unknown>[]>();
+  // Counts the changes, so a lookup that ran during a change does not keep its answer.
+  let accountChanges = 0;
+  const onWrite: OnWrite = (sql) => {
+    if (sql.trim().toUpperCase().startsWith('ROLLBACK') || ACCOUNT_TABLES.some((table) => sql.includes(table))) {
+      accountAnswers.clear();
+      accountChanges++;
+    }
+  };
+  const db = statements(await instance.connect(), onWrite);
   for (const statement of SCHEMA) await db.run(statement);
   // DuckDB 1.5.6 cannot replay ALTER ... DROP NOT NULL on `reports` (its id defaults to nextval) from the
   // write-ahead log. SCHEMA runs that ALTER on every start, so a crash before the next checkpoint leaves a file
@@ -620,6 +648,19 @@ export async function openStore(
   }
 
   const rows: Rows = async (sql, values, shape) => (await db.runAndReadAll(sql, values)).getRowObjectsJS().map((row) => readRow(row, shape));
+
+  // `rows` for a lookup that reads only ACCOUNT_TABLES. Most store calls repeat the same few lookups.
+  const accountRows: Rows = async (sql, values, shape) => {
+    const key = `${sql}\n${valuesKey(values)}`;
+    let found = accountAnswers.get(key);
+    if (found === undefined) {
+      const changes = accountChanges;
+      found = (await db.runAndReadAll(sql, values)).getRowObjectsJS();
+      if (accountAnswers.size >= MAX_ACCOUNT_ANSWERS) accountAnswers.clear();
+      if (changes === accountChanges) accountAnswers.set(key, found);
+    }
+    return found.map((row) => readRow(row, shape));
+  };
 
   // A second connection for the answers about every player (the Everyone stats and the leaderboard). They read
   // every game, so they run here, one at a time, and the store queue never waits for them. Each query reads a
@@ -1257,6 +1298,9 @@ export async function openStore(
   // Adds the player_tokens row of an account token, for an account that linked before account seats.
   async function ensureAccountRow(githubId: number | bigint): Promise<string> {
     const account = accountToken(githubId);
+    // A lookup first: the insert is a write, and each write empties the account cache.
+    const [known] = await accountRows('FROM player_tokens SELECT github_id WHERE token = $token', { token: account }, { github_id: bigId });
+    if (known !== undefined) return account;
     await db.run('INSERT INTO player_tokens (token, github_id) VALUES ($token, $id) ON CONFLICT (token) DO NOTHING', {
       token: account,
       id: githubId,
@@ -1266,7 +1310,7 @@ export async function openStore(
 
   // The token that a new seat of this device holds: the account token when the device is logged in.
   async function seatTokenOf(token: PlayerToken): Promise<string> {
-    const [linked] = await rows('FROM player_tokens SELECT github_id WHERE token = $token', { token }, { github_id: bigId });
+    const [linked] = await accountRows('FROM player_tokens SELECT github_id WHERE token = $token', { token }, { github_id: bigId });
     return linked === undefined ? token : ensureAccountRow(linked.github_id);
   }
 
@@ -1274,7 +1318,7 @@ export async function openStore(
   // logged-in player holds their seats on every device.
   async function identityOf(token: PlayerToken | undefined): Promise<core.Identity> {
     if (token === undefined) return new Set();
-    const linked = await rows(
+    const linked = await accountRows(
       `FROM player_tokens SELECT token, github_id
        WHERE github_id = (FROM player_tokens SELECT github_id WHERE token = $token)`,
       { token },
@@ -1289,7 +1333,7 @@ export async function openStore(
   async function accountsOf(tokens: readonly (string | null)[]): Promise<(token: string | null) => PlayerInfo | null> {
     const known = [...new Set(tokens.filter((token) => token !== null))];
     if (known.length === 0) return () => null;
-    const found = await rows(
+    const found = await accountRows(
       `FROM player_tokens JOIN users USING (github_id) SELECT token, ${ACCOUNT_COLUMN_LIST}
        WHERE list_contains($tokens, token)`,
       { tokens: listValue(known) },
@@ -1313,7 +1357,7 @@ export async function openStore(
     const linked =
       known.length === 0
         ? []
-        : await rows('FROM player_tokens SELECT token, github_id WHERE list_contains($tokens, token)', { tokens: listValue(known) }, { token: text, github_id: bigId });
+        : await accountRows('FROM player_tokens SELECT token, github_id WHERE list_contains($tokens, token)', { tokens: listValue(known) }, { token: text, github_id: bigId });
     const accounts = new Map(linked.map((row) => [row.token, accountToken(row.github_id)]));
     return new Map(known.map((token) => [token, accounts.get(token) ?? token]));
   }
@@ -1404,7 +1448,7 @@ export async function openStore(
     const found =
       known.length === 0
         ? []
-        : await rows('FROM player_names SELECT token, name WHERE list_contains($tokens, token)', { tokens: listValue(known) }, { token: text, name: text });
+        : await accountRows('FROM player_names SELECT token, name WHERE list_contains($tokens, token)', { tokens: listValue(known) }, { token: text, name: text });
     const custom = new Map(found.map((row) => [row.token, row.name]));
     return (token) => custom.get(token) ?? nameOf(token);
   }
@@ -1416,7 +1460,7 @@ export async function openStore(
     const linked =
       tokens.length === 0
         ? []
-        : await rows(
+        : await accountRows(
             `FROM player_tokens a JOIN player_tokens b USING (github_id) JOIN users u USING (github_id)
              SELECT a.token AS token, b.token AS linked, u.github_id, u.provider, u.login, u.avatar, u.name, u.seed WHERE list_contains($tokens, a.token)`,
             { tokens: listValue(tokens) },

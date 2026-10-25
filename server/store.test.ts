@@ -1751,3 +1751,79 @@ describe('delete my data', () => {
   });
 });
 
+
+// The store keeps account and name lookups in memory (#228). Each test reads first, so the lookups are
+// in memory, then writes through one path, and expects the next read to show the change.
+describe('the account and name cache', () => {
+  const DANA_GOOGLE = { google: '1000000000000000000011', profile: { name: 'Dana Levi', picture: null } };
+
+  it('shows a new custom name of a device, and the generated name after a reset', async () => {
+    const code = await session();
+    expect((await store.get(code, bob)).names.X).toBe(nameOf(alice));
+    await store.setName(alice, 'Dana', null);
+    expect((await store.get(code, bob)).names.X).toBe('Dana');
+    await store.clearName(alice, null);
+    expect((await store.get(code, bob)).names.X).toBe(nameOf(alice));
+  });
+
+  it('shows the custom name, the reset and the picture of an account', async () => {
+    const code = await session();
+    await store.linkToken(alice, ALICE_GITHUB);
+    expect((await store.get(code, bob)).players.X).toMatchObject({ name: null, seed: null });
+    await store.setName(alice, 'Dana', ALICE_ID);
+    expect((await store.get(code, bob)).players.X?.name).toBe('Dana');
+    await store.clearName(alice, ALICE_ID);
+    expect((await store.get(code, bob)).players.X?.name).toBeNull();
+    await store.setAvatar(ALICE_ID, 'generated');
+    expect(isAvatarSeed((await store.get(code, bob)).players.X?.seed)).toBe(true);
+  });
+
+  it('gives a device its seat after a login and takes it away after a logout', async () => {
+    const code = await session();
+    await store.linkToken(alice, ALICE_GITHUB);
+    expect((await store.get(code, alicePhone)).you).toBeNull();
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    expect((await store.get(code, alicePhone)).you).toBe('X');
+    await store.unlinkToken(alicePhone);
+    expect((await store.get(code, alicePhone)).you).toBeNull();
+  });
+
+  it('shows the new profile after a sign-in', async () => {
+    const code = await session();
+    await store.linkToken(alice, DANA_GOOGLE);
+    expect((await store.get(code, bob)).players.X?.login).toBe('Dana Levi');
+    await store.signIn({ ...DANA_GOOGLE, profile: { name: 'Dana Cohen', picture: null } });
+    expect((await store.get(code, bob)).players.X?.login).toBe('Dana Cohen');
+  });
+
+  it('shows the merged account after a login with its own account joins another account', async () => {
+    const code = await session();
+    await store.linkToken(alice, DANA_GOOGLE);
+    expect((await store.get(code, bob)).players.X?.provider).toBe('google');
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    await store.connectLogin(ALICE_GITHUB, DANA_GOOGLE);
+    expect((await store.get(code, bob)).players.X).toMatchObject({ provider: 'github', login: 'alice' });
+  });
+
+  it('shows the generated name after a maintainer clears a custom name', async () => {
+    const code = await session();
+    await store.setName(alice, 'Rude Name', null);
+    expect((await store.get(code, bob)).names.X).toBe('Rude Name');
+    await store.clearNameOf(await store.person(alice), 'TomCohenDev');
+    expect((await store.get(code, bob)).names.X).toBe(nameOf(alice));
+  });
+
+  it('forgets the account of a player who deleted their data', async () => {
+    store = await openStore(':memory:');
+    await store.linkToken(alice, ALICE_GITHUB);
+    await store.linkToken(alicePhone, ALICE_GITHUB);
+    const { code } = await store.create(alice, 'Before');
+    expect((await store.get(code, alicePhone)).you).toBe('X');
+    await store.deleteData(alice);
+    // The devices are no longer linked: a new game of the desktop is not a game of the phone.
+    const after = await store.create(alice, 'After');
+    expect(after.you).toBe('X');
+    expect((await store.get(after.code, alicePhone)).you).toBeNull();
+    expect((await store.get(after.code, bob)).players.X).toBeNull();
+  });
+});
