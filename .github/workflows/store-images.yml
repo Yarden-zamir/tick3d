@@ -62,7 +62,7 @@ jobs:
             sh -c 'npm ci --no-audit --no-fund && npx playwright test -c store-images/playwright.config.ts'
           sudo chown -R "$(id -u):$(id -g)" .
 
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
 
       - name: Convert and check
         run: uv run store-images/convert.py "$RUNNER_TEMP/shots"
