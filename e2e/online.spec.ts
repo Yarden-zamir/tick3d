@@ -164,7 +164,9 @@ test('an away player keeps the seat, and the game waits for the move', async ({ 
   await cell(alice, 0).click();
   await expect(marks(bob.page)).toHaveCount(1);
   const storageState = await bob.context.storageState();
-  await bob.context.close();
+  // Bob closes the tab. Its pagehide beacon tells the server at once; a lost connection alone reaches the server
+  // late behind the Cloudflare tunnel.
+  await bob.page.close();
 
   await expect(status(alice)).toContainText('away');
   await expect(alice.locator('.tally.O.away')).toHaveCount(1);
