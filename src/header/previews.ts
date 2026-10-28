@@ -1,7 +1,7 @@
 // The kitshn button and the Previews dialog: the production site and the open pull requests with a live preview.
 // A stacked pull request shows in a nested list inside the card of its parent. Toys sit at the bottom (preview-tree.ts).
 import { api, OnlineError } from '../online.ts';
-import type { PreviewImage } from '../protocol.ts';
+import { type PreviewImage, previewNumberOfHost } from '../protocol.ts';
 import { element } from '../element.ts';
 import { type PreviewNode, previewTree } from './preview-tree.ts';
 
@@ -10,16 +10,6 @@ export const previewsDialog = element('#previews', HTMLDialogElement);
 const previewsClose = element('#previews-close', HTMLButtonElement);
 const previewsNote = element('#previews-note', HTMLParagraphElement);
 const previewsList = element('#previews-list', HTMLUListElement);
-
-// The pull request number of this page, when the page itself is a preview (pr-<n>.<domain>).
-function previewNumberOf(hostname: string): number | undefined {
-  const label = hostname.split('.')[0] ?? '';
-  if (!label.startsWith('pr-')) return undefined;
-  const digits = label.slice('pr-'.length);
-  if (digits === '' || ![...digits].every((char) => char >= '0' && char <= '9')) return undefined;
-  const value = Number(digits);
-  return Number.isSafeInteger(value) && value > 0 ? value : undefined;
-}
 
 const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ['year', 365 * 86_400_000],
@@ -167,7 +157,8 @@ async function openPreviews(): Promise<void> {
       previewsNote.textContent = error;
       previewsNote.classList.add('error');
     }
-    const here = previewNumberOf(location.hostname);
+    // The pull request number of this page, when the page itself is a preview.
+    const here = previewNumberOfHost(location.hostname);
     const items = previewTree(previews).map((node) => previewItem(node, here));
     if (main !== null) items.unshift(mainItem(main));
     previewsList.replaceChildren(...items);

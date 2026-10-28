@@ -1288,6 +1288,24 @@ export const PREVIEW_IMAGE_SOURCES = [
   'https://user-images.githubusercontent.com/',
 ] as const;
 
+// A pull request preview lives one level under the zone of production, so the free certificate covers it:
+// production tick3d.yarden-zamir.com has the previews tick3d-pr-<n>.yarden-zamir.com (kitshn 2).
+export function previewHost(domain: string, number: number): string {
+  const dot = domain.indexOf('.');
+  return dot < 0 ? `${domain}-pr-${number}` : `${domain.slice(0, dot)}-pr-${number}${domain.slice(dot)}`;
+}
+
+// The pull request number of a preview host: its first label is pr-<n> (KitSHn 1) or ends in -pr-<n> (kitshn 2).
+export function previewNumberOfHost(hostname: string): number | undefined {
+  const label = hostname.split('.')[0] ?? '';
+  const at = label.lastIndexOf('pr-');
+  if (at < 0 || (at > 0 && label[at - 1] !== '-')) return undefined;
+  const digits = label.slice(at + 'pr-'.length);
+  if (digits === '' || ![...digits].every((char) => char >= '0' && char <= '9')) return undefined;
+  const value = Number(digits);
+  return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
 export const isPreviewImageSource = (src: string): boolean => PREVIEW_IMAGE_SOURCES.some((prefix) => src.startsWith(prefix));
 
 function parsePreviewImage(value: unknown): PreviewImage | undefined {
@@ -1314,7 +1332,8 @@ function parsePreview(value: unknown): Preview | undefined {
   if (typeof title !== 'string' || typeof description !== 'string' || description.length > PREVIEW_DESCRIPTION_LENGTH) return undefined;
   // The page puts both addresses in links, so each must go to the expected kind of site.
   if (typeof url !== 'string' || !url.startsWith('https://github.com/')) return undefined;
-  if (typeof previewUrl !== 'string' || !previewUrl.startsWith(`https://pr-${number}.`)) return undefined;
+  if (typeof previewUrl !== 'string' || !previewUrl.startsWith('https://')) return undefined;
+  if (previewNumberOfHost(previewUrl.slice('https://'.length).split('/')[0] ?? '') !== number) return undefined;
   if (!isEpochMs(updatedAt) || typeof draft !== 'boolean' || !Array.isArray(contributors)) return undefined;
   const people = contributors.map(parseContributor);
   if (!people.every((person) => person !== undefined)) return undefined;

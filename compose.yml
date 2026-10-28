@@ -66,7 +66,7 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       AUTH_ORIGIN: https://tick3d.yarden-zamir.com
       COOKIE_DOMAIN: tick3d.yarden-zamir.com
-      # The kitshn button lists the open pull requests of this repository that have a live preview at pr-<n>.<domain>.
+      # The kitshn button lists the open pull requests of this repository that have a live preview at tick3d-pr-<n>.yarden-zamir.com.
       PREVIEWS_REPO: Yarden-zamir/tick3d
       PREVIEWS_DOMAIN: tick3d.yarden-zamir.com
       # prod or pr-<n>. Only prod calls GitHub; every other environment reads the list from production.
