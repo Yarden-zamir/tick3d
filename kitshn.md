@@ -16,7 +16,7 @@ This repository deploys with kitshn 2 (https://kit.yarden-zamir.com). GitHub Act
 - Production and previews run in the rootless Docker of the kitshn daemon user: `DOCKER_HOST=unix:///run/user/1000/docker.sock`. Each environment is a Compose project with the name `app-…` of its kitshn card. Find it with `docker ps`.
 - The KitSHn 1 commands (`kitshn diagnose`, `kitshn status`, `kitshn params`) do not know these apps.
 - Services publish no host ports. Reach them through the public address, or with `docker compose -p <project> exec`.
-- The KitSHn 1 project `yarden-zamir-tick3d-prod` on system Docker is stopped. Its data stays in `/persistent/Yarden-zamir/tick3d/prod` and in its `sessions` volume, for a rollback.
+- The KitSHn 1 project `yarden-zamir-tick3d-prod` on system Docker is stopped. Its data stays in `/persistent/Yarden-zamir/tick3d/prod` and in its `sessions` volume, for a rollback. That copy stops at the takeover (2026-10-28 10:56 UTC). A rollback to it loses every game played on kitshn 2 since then. Before a rollback, copy the kitshn 2 `sessions` volume aside, so those games stay recoverable.
 
 ## This Recipe
 
