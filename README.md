@@ -1,6 +1,6 @@
 # tick3d
 
-[![kitshn](https://kitshn.yarden-zamir.com/b/Yarden-zamir/tick3d.svg)](https://tick3d.yarden-zamir.com)
+[![kitshn](https://kit.yarden-zamir.com/public/badges/Yarden-zamir/tick3d.svg)](https://tick3d.yarden-zamir.com)
 
 3D tic-tac-toe on a 4×4×4 cube, at [tick3d.yarden-zamir.com](https://tick3d.yarden-zamir.com).
 
