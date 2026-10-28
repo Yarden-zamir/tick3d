@@ -164,8 +164,9 @@ test('an away player keeps the seat, and the game waits for the move', async ({ 
   await cell(alice, 0).click();
   await expect(marks(bob.page)).toHaveCount(1);
   const storageState = await bob.context.storageState();
-  // Bob closes the tab. Its pagehide beacon tells the server at once; a lost connection alone reaches the server
-  // late behind the Cloudflare tunnel.
+  // Bob closes the tab. Its pagehide beacon tells the server at once. Limit: a crash or a lost connection sends no
+  // beacon, and behind the Cloudflare tunnel the server then sees "away" only after about 12 to 15 s. Revisit with a
+  // heartbeat from the page if players ask for a faster "away" after a crash.
   await bob.page.close();
 
   await expect(status(alice)).toContainText('away');
