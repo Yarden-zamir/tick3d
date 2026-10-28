@@ -2,14 +2,12 @@ on:
   push:
   pull_request:
     types: [opened, synchronize, reopened, closed]
+  # kitshn 2 agent keys start a build of one branch (K-718); the dispatch has no inputs.
   workflow_dispatch:
-    inputs:
-      environment: { required: true, type: string }
-      ref: { required: false, type: string }
 
 permissions:
   contents: read
-  deployments: write
+  id-token: write
 
 jobs:
   # The type check, the linters, the unit tests and the build, in about half a minute.
@@ -22,8 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref || '' }}
       - uses: actions/setup-node@v7
         with:
           node-version: 26
@@ -38,19 +34,18 @@ jobs:
     if: >-
       always() && needs.check.result == 'success' &&
       github.event_name != 'pull_request'
-    uses: Yarden-zamir/kitshn/.github/workflows/deploy.yml@main
+    uses: Yarden-zamir/kitshn/.github/workflows/kitshn2-deploy.yml@main
     secrets: inherit
 
   # A PR preview (and its teardown) starts at once, next to the check, so it is ready sooner.
   # A failing check still marks the PR red. Pushes to other branches deploy nothing (kitshn resolves that).
   # Dependabot runs get no deploy secrets, so they skip the preview.
   # An open PR with the label no-preview builds no preview. Its close still runs the teardown. A preview that
-  # exists before the label stays until the PR closes: kitshn tears down only on close. Revisit if a labelled PR
-  # must lose its preview at once (that needs a teardown input in kitshn's deploy.yml).
+  # exists before the label stays until the PR closes: kitshn tears down only on close.
   preview:
     if: >-
       github.actor != 'dependabot[bot]' &&
       !(github.event_name == 'pull_request' && github.event.action != 'closed' && contains(github.event.pull_request.labels.*.name, 'no-preview')) &&
       (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main'))
-    uses: Yarden-zamir/kitshn/.github/workflows/deploy.yml@main
+    uses: Yarden-zamir/kitshn/.github/workflows/kitshn2-deploy.yml@main
     secrets: inherit
