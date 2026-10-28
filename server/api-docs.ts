@@ -1151,6 +1151,8 @@ const KEY_ERRORS = [
   { status: 422, when: 'This Idempotency-Key came with another request before.' },
 ];
 
+const STREAM_EXAMPLE = '5f0c2a8e-7d1b-4c3a-9e6f-2b8d4a1c7e90';
+
 export const ROUTES = {
   'POST /api/sessions': {
     operationId: 'createSession',
@@ -1365,9 +1367,24 @@ export const ROUTES = {
     player: 'none',
     query: {
       player: { description: 'Your player id. A browser EventSource cannot send headers.', required: false, schema: { type: 'string' }, example: AGENT_A },
+      stream: { description: 'An id for this stream, so POST /api/sessions/{code}/leave can close it.', required: false, schema: { type: 'string' }, example: STREAM_EXAMPLE },
     },
     response: { status: 200, description: 'A text/event-stream that stays open.', contentType: 'text/event-stream' },
     errors: [BAD_CODE, NO_GAME, { status: 503, when: 'Too many open streams.' }],
+  },
+  'POST /api/sessions/{code}/leave': {
+    operationId: 'leaveSessionEvents',
+    tag: 'Play',
+    summary: 'Close an event stream of the page now.',
+    description:
+      'The page sends this with navigator.sendBeacon when it closes or leaves the game, so the other player sees "away" at once. Behind some proxies the server learns late that a stream closed. An unknown stream is not an error.',
+    player: 'none',
+    query: {
+      player: { description: 'The player id of the stream.', required: true, schema: { type: 'string' }, example: AGENT_A },
+      stream: { description: 'The stream id of GET /api/sessions/{code}/events.', required: true, schema: { type: 'string' }, example: STREAM_EXAMPLE },
+    },
+    response: { status: 200, description: 'Empty. The stream is closed, or it was not open.', contentType: null },
+    errors: [BAD_CODE, { status: 400, when: 'player or stream is missing.' }],
   },
   'GET /api/games/{id}': {
     operationId: 'getGame',

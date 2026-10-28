@@ -46,10 +46,15 @@ const last = (): FakeSource => {
 };
 
 describe('api.subscribe', () => {
+  const sendBeacon = vi.fn((_url: string) => true);
   beforeEach(() => {
     vi.useFakeTimers();
     FakeSource.opened = [];
+    sendBeacon.mockClear();
     vi.stubGlobal('EventSource', FakeSource);
+    vi.stubGlobal('navigator', { sendBeacon });
+    vi.stubGlobal('addEventListener', vi.fn());
+    vi.stubGlobal('removeEventListener', vi.fn());
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -103,12 +108,14 @@ describe('api.subscribe', () => {
     expect(FakeSource.opened).toHaveLength(11);
   });
 
-  it('opens no stream after the page leaves the session', () => {
+  it('opens no stream after the page leaves the session, and tells the server which stream left', () => {
     const unsubscribe = api.subscribe(code, () => undefined);
+    const query = new URL(last().url, 'https://tick3d.test').search;
     last().fail();
     unsubscribe();
     vi.advanceTimersByTime(60_000);
     expect(FakeSource.opened).toHaveLength(1);
+    expect(sendBeacon).toHaveBeenCalledWith(`/api/sessions/${code}/leave${query}`);
   });
 
   it('opens no stream when the closed stream reports its error after the page left', () => {
