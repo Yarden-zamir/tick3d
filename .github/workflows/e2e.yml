@@ -25,7 +25,8 @@ jobs:
       cancel-in-progress: true
     env:
       CI: 'true'
-      E2E_BASE_URL: ${{ github.event.deployment_status.environment_url || inputs.url }}
+      # kitshn 2 records the deployment of a preview without its address, so the name pr-<n> gives it (previewHost).
+      E2E_BASE_URL: ${{ github.event.deployment_status.environment_url || (github.event.deployment.environment && format('https://tick3d-{0}.yarden-zamir.com', github.event.deployment.environment)) || inputs.url }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
