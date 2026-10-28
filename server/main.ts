@@ -264,7 +264,7 @@ function requirePlayer(req: IncomingMessage): PlayerToken {
   return player;
 }
 
-// The host Caddy terminates TLS and keeps the Host header, so every public request is https.
+// Cloudflare terminates TLS, and the kitshn tunnel keeps the Host header, so every public request is https.
 const originOf = (req: IncomingMessage) => `https://${req.headers.host ?? ''}`;
 // The address that the docs show. A LAN host (compose.lan.yml) serves plain HTTP, and its Caddy says so.
 const docsOrigin = (req: IncomingMessage) =>
