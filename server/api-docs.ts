@@ -781,7 +781,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     title: { type: 'string' },
     description: { type: 'string', maxLength: PREVIEW_DESCRIPTION_LENGTH, description: 'The first paragraph of the pull request text, without Markdown.' },
     url: { type: 'string', pattern: '^https://github\\.com/', description: 'The pull request on GitHub.' },
-    previewUrl: { type: 'string', pattern: '^https://pr-[0-9]+\\.', description: 'The preview site: https://pr-<number>.<domain>.' },
+    previewUrl: { type: 'string', pattern: '^https://([a-z0-9-]+-)?pr-[0-9]+\\.', description: 'The preview site: https://tick3d-pr-<number>.yarden-zamir.com.' },
     updatedAt: { type: 'number', description: 'The last change of the pull request, in epoch milliseconds.' },
     draft: { type: 'boolean' },
     contributors: list('The author of the pull request and the commit authors with a GitHub account, most commits first. No bots.', ref('Contributor')),
@@ -1043,7 +1043,7 @@ const PREVIEWS_EXAMPLE = {
       title: 'feat: a sound set menu',
       description: 'A sound set menu next to the Sound button. The default stays Cells.',
       url: 'https://github.com/Yarden-zamir/tick3d/pull/17',
-      previewUrl: 'https://pr-17.tick3d.yarden-zamir.com',
+      previewUrl: 'https://tick3d-pr-17.yarden-zamir.com',
       updatedAt: T0,
       draft: false,
       contributors: [{ login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', url: 'https://github.com/octocat' }],
@@ -1056,7 +1056,7 @@ const PREVIEWS_EXAMPLE = {
       title: 'feat: a sound set preview',
       description: 'Plays a short sample of each set. It builds on the sound set menu.',
       url: 'https://github.com/Yarden-zamir/tick3d/pull/18',
-      previewUrl: 'https://pr-18.tick3d.yarden-zamir.com',
+      previewUrl: 'https://tick3d-pr-18.yarden-zamir.com',
       updatedAt: T0,
       draft: true,
       contributors: [{ login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4', url: 'https://github.com/octocat' }],
@@ -1150,6 +1150,8 @@ const KEY_ERRORS = [
   { status: 409, when: 'The first request with this Idempotency-Key still runs.' },
   { status: 422, when: 'This Idempotency-Key came with another request before.' },
 ];
+
+const STREAM_EXAMPLE = '5f0c2a8e-7d1b-4c3a-9e6f-2b8d4a1c7e90';
 
 export const ROUTES = {
   'POST /api/sessions': {
@@ -1365,9 +1367,24 @@ export const ROUTES = {
     player: 'none',
     query: {
       player: { description: 'Your player id. A browser EventSource cannot send headers.', required: false, schema: { type: 'string' }, example: AGENT_A },
+      stream: { description: 'An id for this stream, so POST /api/sessions/{code}/leave can close it.', required: false, schema: { type: 'string' }, example: STREAM_EXAMPLE },
     },
     response: { status: 200, description: 'A text/event-stream that stays open.', contentType: 'text/event-stream' },
     errors: [BAD_CODE, NO_GAME, { status: 503, when: 'Too many open streams.' }],
+  },
+  'POST /api/sessions/{code}/leave': {
+    operationId: 'leaveSessionEvents',
+    tag: 'Play',
+    summary: 'Close an event stream of the page now.',
+    description:
+      'The page sends this with navigator.sendBeacon when it closes or leaves the game, so the other player sees "away" at once. Behind some proxies the server learns late that a stream closed. An unknown stream is not an error.',
+    player: 'none',
+    query: {
+      player: { description: 'The player id of the stream.', required: true, schema: { type: 'string' }, example: AGENT_A },
+      stream: { description: 'The stream id of GET /api/sessions/{code}/events.', required: true, schema: { type: 'string' }, example: STREAM_EXAMPLE },
+    },
+    response: { status: 200, description: 'Empty. The stream is closed, or it was not open.', contentType: null },
+    errors: [BAD_CODE, { status: 400, when: 'player or stream is missing.' }],
   },
   'GET /api/games/{id}': {
     operationId: 'getGame',
