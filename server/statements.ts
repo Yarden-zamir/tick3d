@@ -1,18 +1,22 @@
 // A database connection that tells the store about each statement that can change data, so the
 // store caches can drop what a write changed. It keeps one prepared statement per SQL text: a store call runs
 // several small statements, and DuckDB spends about as long to parse and plan each one as to run it (#228).
-import type { DuckDBConnection, DuckDBPreparedStatement, DuckDBResultReader, DuckDBValue } from '@duckdb/node-api';
+import type { DuckDBAppender, DuckDBConnection, DuckDBPreparedStatement, DuckDBResultReader, DuckDBValue } from '@duckdb/node-api';
 
 type Values = Record<string, DuckDBValue>;
 
 export type Statements = {
   run(sql: string, values?: Values): Promise<void>;
   runAndReadAll(sql: string, values?: Values): Promise<DuckDBResultReader>;
+  // Bulk rows into a temporary table, past the hooks: the statement that moves them on runs through them.
+  appendTo(table: string): Promise<DuckDBAppender>;
   closeSync(): void;
 };
 
 // Runs after each statement that can change data: anything but a plain read, also a ROLLBACK.
 export type OnWrite = (sql: string, values: Values | undefined) => void;
+// Runs before each statement, and can refuse it with an error.
+export type BeforeStatement = (sql: string, values: Values | undefined) => void;
 
 const WRITE_WORDS = ['INSERT ', 'UPDATE ', 'DELETE ', 'ALTER ', 'DROP ', 'CREATE '];
 
@@ -31,7 +35,7 @@ function changesSchema(sql: string): boolean {
   return ['CREATE ', 'DROP ', 'ALTER '].some((word) => upper.startsWith(word));
 }
 
-export function statements(connection: DuckDBConnection, onWrite: OnWrite = () => undefined): Statements {
+export function statements(connection: DuckDBConnection, onWrite: OnWrite = () => undefined, before: BeforeStatement = () => undefined): Statements {
   // Limit: one entry per distinct SQL text. Some queries put values into their SQL text (the stats filters), so the
   // map empties at MAX_PREPARED entries. Revisit if a profile shows that the hot statements keep missing.
   const prepared = new Map<string, DuckDBPreparedStatement>();
@@ -65,6 +69,7 @@ export function statements(connection: DuckDBConnection, onWrite: OnWrite = () =
   }
 
   async function execute(sql: string, values: Values | undefined): Promise<DuckDBResultReader> {
+    before(sql, values);
     try {
       // Without values, the SQL can hold several statements (the schema), which a prepared statement cannot.
       // A kept statement without parameters is never run again: on DuckDB 1.5.6 a second run of one returned
@@ -84,6 +89,7 @@ export function statements(connection: DuckDBConnection, onWrite: OnWrite = () =
       await execute(sql, values);
     },
     runAndReadAll: execute,
+    appendTo: (table) => connection.createAppender(table, 'main', 'temp'),
     closeSync: () => {
       for (const statement of prepared.values()) statement.destroySync();
       prepared.clear();

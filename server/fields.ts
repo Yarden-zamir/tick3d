@@ -62,17 +62,15 @@ const values = (fields: readonly Field[], source: string) => fields.map((field) 
 
 export const GAME_COLUMN_LIST = GAME_FIELDS.map((field) => field.column).join(', ');
 export const METRIC_COLUMN_LIST = METRIC_COLUMNS.join(', ');
-// The values for an INSERT, from the bound JSON text parameters $doc and $metrics.
-export const GAME_VALUES = values(GAME_FIELDS, '$doc::JSON').join(', ');
-export const METRIC_VALUES = values(METRIC_FIELDS, '$metrics::JSON').join(', ');
+// The values for an INSERT, from the JSON text of the game and of its metrics: bound parameters ($doc and
+// $metrics), or the columns of a batch table.
+export const gameValues = (doc: string) => values(GAME_FIELDS, `${doc}::JSON`).join(', ');
+export const metricValues = (metrics: string) => values(METRIC_FIELDS, `${metrics}::JSON`).join(', ');
+export const METRIC_VALUES = metricValues('$metrics');
 
-// The seats of a session, as plain columns: My games and a logout find the sessions of a player through them.
-// The values for an INSERT or an UPDATE, from the bound JSON text parameter $doc.
-export const SESSION_SEAT_VALUES = `json_extract_string($doc::JSON, '$.seats.X'), json_extract_string($doc::JSON, '$.seats.O')`;
-export const SESSION_SEAT_SET = `seat_x = json_extract_string($doc::JSON, '$.seats.X'), seat_o = json_extract_string($doc::JSON, '$.seats.O')`;
-
-// Schema statements: the columns and their indexes. Every write fills the columns (GAME_VALUES, METRIC_VALUES,
-// SESSION_SEAT_SET), so a row never lacks them.
+// Schema statements: the columns and their indexes. Every write fills the columns (gameValues, metricValues, and
+// the session seats in writeSessions of server/store.ts), so a row never lacks them. My games and a logout find
+// the sessions of a player through the seat columns.
 export const FIELD_SCHEMA = [
   ...addColumns('results', GAME_FIELDS),
   ...addColumns('results', METRIC_FIELDS),

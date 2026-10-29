@@ -1874,3 +1874,73 @@ describe('the session cache', () => {
     expect((await store.get(code, bob)).chat.at(-1)).toMatchObject({ text: 'still here' });
   });
 });
+
+// A running game lives in memory: the file gets it on close, and a finished game reaches the file before its
+// answer (#228). The lookups of the sessions of a player read both, so a change since the start counts.
+describe('live sessions in memory', () => {
+  it('has a finished online game in the file when the last move is answered', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    expect((await store.history(alice, 0)).games).toMatchObject([{ id: `${code}-1`, result: 'won' }]);
+  });
+
+  it('keeps a running game across a restart, and play goes on', async () => {
+    const path = `${await mkdtemp('/tmp/tick3d-store-')}/live.duckdb`;
+    store = await openStore(path);
+    const { code } = await store.create(alice, 'Across a deploy');
+    await store.join(code, bob);
+    await playMoves(code, X_WINS.slice(0, 3));
+    const before = await store.get(code, bob);
+    await store.close();
+    store = await openStore(path);
+    expect(await store.get(code, bob)).toMatchObject({ version: before.version, you: 'O', games: [{ moves: X_WINS.slice(0, 3) }] });
+    await store.move(code, bob, { game: 0, moveCount: 3, cell: X_WINS[3] ?? 0 });
+    expect((await store.get(code, alice)).games[0]?.moves).toHaveLength(4);
+  });
+
+  it('lists a session that the player joined since the start in My games', async () => {
+    const code = await session();
+    expect((await store.myGames(bob)).sessions).toMatchObject([{ code, you: 'O' }]);
+  });
+
+  it('frees a seat taken since the start on Delete my data', async () => {
+    const code = await session();
+    await store.move(code, alice, { game: 0, moveCount: 0, cell: 0 });
+    await store.deleteData(bob);
+    expect((await store.get(code, alice)).seats).toEqual({ X: true, O: false });
+  });
+
+  it('finds a player by person id when only a seat taken since the start names them', async () => {
+    const code = await session();
+    await store.move(code, alice, { game: 0, moveCount: 0, cell: 0 });
+    await store.deleteDataOf({ person: await personId(bob) });
+    expect((await store.get(code, alice)).seats).toEqual({ X: true, O: false });
+  });
+
+  it('moves a seat taken since the start to the account on logout', async () => {
+    const code = await session();
+    await store.linkToken(bob, ALICE_GITHUB);
+    await store.unlinkToken(bob);
+    expect((await store.get(code, bob)).you).toBeNull();
+    expect((await store.get(code, alice)).players.O?.login).toBe('alice');
+  });
+
+  it('stores two copies of one game in one batch once', async () => {
+    store = await openStore(':memory:');
+    const upload = result('66666666-0000-4000-8000-000000000001');
+    const [first, second] = await Promise.all([store.addResults(alice, [upload]), store.addResults(alice, [upload])]);
+    expect(first.stored + second.stored).toBe(1);
+    expect((await store.history(alice, 0)).games).toHaveLength(1);
+  });
+
+  it('gives two games of one batch that ask for one link two links', async () => {
+    store = await openStore(':memory:');
+    const link = deviceGameId('SAME2345');
+    const [first, second] = await Promise.all([
+      store.addResults(alice, [result('66666666-0000-4000-8000-000000000002', { publicId: link })]),
+      store.addResults(bob, [result('66666666-0000-4000-8000-000000000003', { publicId: link })]),
+    ]);
+    expect(first.stored + second.stored).toBe(2);
+    expect(Object.keys(first.renamed).length + Object.keys(second.renamed).length).toBe(1);
+  });
+});
