@@ -72,9 +72,9 @@ const MAX_BODY_BYTES = 4096;
 const MAX_RESULTS_BODY_BYTES = 256 * 1024;
 // An event is a short message, its kind and the app version.
 const MAX_EVENT_BODY_BYTES = 1024;
-// Each open page holds one event stream. This cap keeps a flood of streams from exhausting memory. The store no
-// longer limits the online games to about 1,000 (2 streams each), so the cap allows far more pages than that.
-const MAX_STREAMS = 50_000;
+// Each open page holds one event stream. This cap keeps a flood of streams from exhausting memory. Two cores carry
+// about 1,000 to 1,250 online games (#253), two pages each, so the cap leaves room for watchers and spare games.
+const MAX_STREAMS = 10_000;
 // Each long poll (GET /api/sessions/{code}?wait=) holds one request. The same reason caps them.
 const MAX_WAITERS = 2000;
 const waiters = createWaiters(MAX_WAITERS);

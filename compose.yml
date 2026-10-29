@@ -81,7 +81,7 @@ services:
     volumes:
       - sessions:/data
     # On SIGTERM the API writes the running games, which live in memory, to the database file (server/store.ts).
-    # That takes about 1 s per 1,000 running games, so a deploy waits up to this long before it kills the process.
+    # 10,000 running games took about 1.1 s. A deploy waits up to this long before it kills the process.
     stop_grace_period: 60s
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/health"]
