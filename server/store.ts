@@ -428,6 +428,11 @@ const MAX_ACCOUNT_ANSWERS = 10_000;
 const MAX_SESSION_ROWS = 100_000;
 // A finished game waits at most this long for the batch that writes it (writeResults in openStore).
 const RESULT_BATCH_MS = 200;
+// The changed sessions in memory reach the file this often, so a crash loses at most about this much play
+// (writeChangedSessions in openStore). Each task on the store queue writes at most SESSION_WRITE_CHUNK of them,
+// about 0.1 to 0.5 s, so a move waits for one chunk at most.
+const SESSION_WRITE_MS = 60_000;
+const SESSION_WRITE_CHUNK = 500;
 
 // A text key for the values of a query: text, numbers, booleans, null, bigints and lists of them.
 function valuesKey(values: Record<string, DuckDBValue>): string {
@@ -580,11 +585,13 @@ type StoreOptions = {
   // Runs after every write to a session, also a write during a read (a timeout, a format upgrade).
   // The HTTP layer tells the open pages of the session to fetch it again.
   onChange?: (code: Code) => void;
+  // How often the changed sessions in memory go to the file: SESSION_WRITE_MS, shorter in tests.
+  sessionWriteMs?: number;
 };
 
 export async function openStore(
   path: string,
-  { now = epochNow, open = () => [], onChange = () => undefined }: StoreOptions = {},
+  { now = epochNow, open = () => [], onChange = () => undefined, sessionWriteMs = SESSION_WRITE_MS }: StoreOptions = {},
 ) {
   // Watcher ids hide the token behind a keyed hash. The key lives in this process only, so the ids
   // change on a restart. That is fine: pages read the list again with every change.
@@ -606,9 +613,9 @@ export async function openStore(
   // Counts the changes, so a lookup that ran during a change does not keep its answer.
   let accountChanges = 0;
   // The live sessions. Memory holds the current row of each live session, and the file holds the rest. A move
-  // changes the row here only (save) and marks it in dirtySessions. writeSessions writes the marked rows on close,
-  // so a deploy keeps the running games, and before memory lets a marked row go. A crash loses the running games
-  // since the last start. A finished game is safe: its result reaches the file before its answer (writeResults).
+  // changes the row here only (save) and marks it in dirtySessions. writeSessions writes the marked rows every
+  // SESSION_WRITE_MS and on close, so a deploy keeps the running games and a crash loses about the last minute of
+  // play. A finished game is safe: its result reaches the file before its answer (writeResults).
   // The lookups of the sessions of a player read both (sessionsWhere). Same one-process rule as above.
   // Limit: beyond MAX_SESSION_ROWS the least recently used saved row goes. Revisit if the API memory grows with it.
   const sessionRows = new Map<string, Row>();
@@ -758,10 +765,11 @@ export async function openStore(
   // A delete and an insert: an UPDATE of the document and the indexed seats cost about 2.5 to 3.5 ms per session,
   // these two about 0.2 to 0.9 ms. A saved row keeps its seq and created_at. A session made since the start gets
   // the time of this write as created_at, which no query reads.
-  async function writeSessions(): Promise<void> {
-    if (dirtySessions.size === 0) return;
+  async function writeSessions(codes: Iterable<string> = dirtySessions): Promise<void> {
+    const written = [...codes].filter((code) => dirtySessions.has(code));
+    if (written.length === 0) return;
     const batch = await db.appendTo('session_batch');
-    for (const code of dirtySessions) {
+    for (const code of written) {
       const row = sessionRows.get(code);
       if (row === undefined) throw new Error(`session ${code} has unsaved changes but no row in memory`);
       batch.appendVarchar(code);
@@ -788,13 +796,35 @@ export async function openStore(
         await db.run('ROLLBACK');
         throw error;
       }
-      dirtySessions.clear();
+      for (const code of written) dirtySessions.delete(code);
     } finally {
       writingSessions = false;
       await db.run('DELETE FROM session_batch');
       await db.run('DELETE FROM session_kept');
     }
   }
+
+  // Writes the sessions that changed since the last run, a chunk per task on the store queue, so the moves of other
+  // players wait for one chunk at a time. A session that changes again meanwhile goes in its chunk as it is then.
+  let writingChanged = false;
+  async function writeChangedSessions(): Promise<void> {
+    if (writingChanged) return;
+    writingChanged = true;
+    try {
+      const changed = [...dirtySessions];
+      for (let start = 0; start < changed.length; start += SESSION_WRITE_CHUNK) {
+        // close writes the rest.
+        if (closing) break;
+        await serialized(() => writeSessions(changed.slice(start, start + SESSION_WRITE_CHUNK)));
+      }
+    } finally {
+      writingChanged = false;
+    }
+  }
+  const sessionTimer = setInterval(() => {
+    writeChangedSessions().catch((error: unknown) => console.error('session write:', error instanceof Error ? error.message : String(error)));
+  }, sessionWriteMs);
+  sessionTimer.unref();
 
   // The sessions that `picks` keeps: the rows in memory, and the rows of `saved`, the codes that SQL found in the
   // file. A session in memory counts by its memory row, which can be newer than the file.
@@ -2929,6 +2959,7 @@ export async function openStore(
     // Writes the waiting results and the sessions in memory first, so a deploy keeps the running games.
     async close(): Promise<void> {
       closing = true;
+      clearInterval(sessionTimer);
       clearTimeout(resultTimer);
       await serialized(async () => {
         await writeResults();

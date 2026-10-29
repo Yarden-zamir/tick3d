@@ -1,4 +1,5 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, open, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import { toEpochMs as ms } from '../src/epoch.ts';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -1942,5 +1943,58 @@ describe('live sessions in memory', () => {
     ]);
     expect(first.stored + second.stored).toBe(2);
     expect(Object.keys(first.renamed).length + Object.keys(second.renamed).length).toBe(1);
+  });
+});
+
+// A crash (a kill, out of memory) skips close. The changed sessions go to the file every sessionWriteMs, and a
+// finished game before its answer, so the file has both. The test kills a child process that runs a store.
+describe('a crash', () => {
+  it('keeps the finished games and the running games of the last periodic write', async () => {
+    const dir = await mkdtemp('/tmp/tick3d-crash-');
+    const path = `${dir}/crash.duckdb`;
+    const script = `${dir}/crash.mjs`;
+    await writeFile(
+      script,
+      `const { openStore } = await import(${JSON.stringify(new URL('./store.ts', import.meta.url).pathname)});
+       const store = await openStore(${JSON.stringify(path)}, { sessionWriteMs: 100 });
+       const [a, b] = [${JSON.stringify(alice)}, ${JSON.stringify(bob)}];
+       const { code } = await store.create(a, 'Before a crash');
+       await store.join(code, b);
+       for (const [moveCount, cell] of ${JSON.stringify(X_WINS)}.entries()) await store.move(code, moveCount % 2 === 0 ? a : b, { game: 0, moveCount, cell });
+       await store.newGame(code, a);
+       await store.move(code, b, { game: 1, moveCount: 0, cell: 5 });
+       await store.move(code, a, { game: 1, moveCount: 1, cell: 6 });
+       await new Promise((resolve) => setTimeout(resolve, 500));
+       console.log(code);
+       process.kill(process.pid, 'SIGKILL');`,
+    );
+    const child = spawn(process.execPath, [script], { stdio: ['ignore', 'pipe', 'inherit'] });
+    let output = '';
+    child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()));
+    const signal = await new Promise<NodeJS.Signals | null>((resolve) => child.on('exit', (_, killed) => resolve(killed)));
+    expect(signal).toBe('SIGKILL');
+    const code = output.trim() as Code;
+    store = await openStore(path);
+    expect((await store.history(alice, 0)).games).toMatchObject([{ id: `${code}-1`, result: 'won' }]);
+    expect((await store.get(code, bob)).games.map((game) => game.moves)).toEqual([X_WINS, [5, 6]]);
+  });
+});
+
+// DuckDB 2.0 writes the file in the storage format of DuckDB 1.5 (storage_compatibility_version), so a rollback to
+// 1.5 can open it after a clean stop. The main header keeps the storage version at byte 12, little endian.
+describe('the database file', () => {
+  it('stays in the DuckDB 1.5 storage format (version 68)', async () => {
+    const path = `${await mkdtemp('/tmp/tick3d-store-')}/format.duckdb`;
+    store = await openStore(path);
+    const { code } = await store.create(alice, 'Format');
+    await store.join(code, bob);
+    await playMoves(code, X_WINS);
+    await store.close();
+    const file = await open(path, 'r');
+    const header = Buffer.alloc(8);
+    await file.read(header, 0, 8, 12);
+    await file.close();
+    expect(header.readBigUInt64LE()).toBe(68n);
+    store = await openStore(path);
   });
 });
