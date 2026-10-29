@@ -53,7 +53,8 @@
     "ignore": [
       "kitshn.config.ts",
       "public/sw-share-reminder.js",
-      "video/{src,scripts,out}/**"
+      "video/{src,scripts,out}/**",
+      "factory/**"
     ]
   }
 }
