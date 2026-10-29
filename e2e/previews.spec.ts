@@ -1,13 +1,9 @@
 import { PREVIEWS_CACHE_MS, PREVIEWS_RELAY_CACHE_MS } from '../server/api-docs.ts';
+import { previewNumberOfHost } from '../src/protocol.ts';
 import { expect, test } from './fixtures.ts';
 
-// The pull request number of the site under test, when it is a preview (pr-<n>.<domain>).
-function previewNumberOf(baseURL: string): number | undefined {
-  const label = new URL(baseURL).hostname.split('.')[0] ?? '';
-  const digits = label.slice('pr-'.length);
-  if (!label.startsWith('pr-') || digits === '' || ![...digits].every((char) => char >= '0' && char <= '9')) return undefined;
-  return Number(digits);
-}
+// The pull request number of the site under test, when it is a preview.
+const previewNumberOf = (baseURL: string): number | undefined => previewNumberOfHost(new URL(baseURL).hostname);
 
 // Production reads GitHub once per PREVIEWS_CACHE_MS, and a preview keeps that list for PREVIEWS_RELAY_CACHE_MS.
 // So a preview that was just deployed shows up in the list at most this long after the deploy.

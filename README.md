@@ -1,6 +1,6 @@
 # tick3d
 
-[![kitshn](https://kitshn.yarden-zamir.com/b/Yarden-zamir/tick3d.svg)](https://tick3d.yarden-zamir.com)
+[![kitshn](https://kit.yarden-zamir.com/public/badges/Yarden-zamir/tick3d.svg)](https://tick3d.yarden-zamir.com)
 
 3D tic-tac-toe on a 4×4×4 cube, at [tick3d.yarden-zamir.com](https://tick3d.yarden-zamir.com).
 
@@ -219,7 +219,7 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 
 ## Share page
 
-`/share` holds the invite link and the steps to join the closed test: Android (Google Group, Play testing, a free Google Play promo code, install) and iPhone (TestFlight). The page was `/testing` before: `/testing` redirects to `/share` (`container/Caddyfile`), and `testing.tick3d.yarden-zamir.com` redirects there on production (`Caddyfile.j2`), both with the query, so the links sent before the rename keep working.
+`/share` holds the invite link and the steps to join the closed test: Android (Google Group, Play testing, a free Google Play promo code, install) and iPhone (TestFlight). The page was `/testing` before: `/testing` redirects to `/share` (`container/Caddyfile`), and `testing.tick3d.yarden-zamir.com` redirects there on production (the KitSHn 1 host Caddy, see `kitshn.md`), both with the query, so the links sent before the rename keep working.
 
 - The codes come from the GitHub secret `KITSHN_TESTER_CODES` in the Environment `prod`, never from git: one entry per line or comma. `CODE` is a free code, and `CODE=Name` is a code that Name has already. A code has 10 to 30 characters from A-Z and 0-9.
 - At start, the API adds the codes that it does not hold yet. A known code keeps its row and its claim. A bad entry stops the start. Only production reads the secret, so a preview shows no codes.
@@ -260,7 +260,7 @@ docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:26-alpine npx vite 
 `npm run e2e` runs the Playwright tests in `e2e/` against a deployed site. Set `E2E_BASE_URL` to the site, for example a pull request preview:
 
 ```sh
-docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://pr-17.tick3d.yarden-zamir.com mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'npm ci && npm run e2e'
+docker run --rm --ipc=host -v "$PWD":/app -w /app -e E2E_BASE_URL=https://tick3d-pr-17.yarden-zamir.com mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'npm ci && npm run e2e'
 ```
 
 - Keep the image tag equal to the `@playwright/test` version in `package.json`.

@@ -1,9 +1,9 @@
-# Caddy inside the container. The host Caddy (Caddyfile.j2) terminates TLS and proxies
-# the public hostname to this Unix socket, so this file serves plain HTTP on the socket.
+# Caddy inside the container. Cloudflare terminates TLS, and the kitshn tunnel sends the public
+# hostname to this Unix socket, so this file serves plain HTTP on the socket.
 {
 	auto_https off
 	admin off
-	# Only the host Caddy reaches the socket, so its X-Forwarded-For is true. Without this, Caddy
+	# Only the kitshn tunnel reaches the socket, so its X-Forwarded-For is true. Without this, Caddy
 	# drops the header on a socket connection, and the API sees one address for every player.
 	servers {
 		trusted_proxies_unix
@@ -12,7 +12,7 @@
 
 http:// {
 	# Caddy binds the KitSHn socket directly and removes a stale socket file left by a
-	# previous container, so no socat sidecar is needed. 0666 lets the host Caddy connect.
+	# previous container, so no socat sidecar is needed. 0666 lets the kitshn tunnel connect.
 	bind unix/{$KITSHN_DEFAULT_SOCKET}|0666
 
 	# The page /testing moved to /share. The redirect keeps the links sent before the rename working, with their query

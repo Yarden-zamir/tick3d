@@ -137,7 +137,8 @@ const previews: PreviewList | undefined = previewsConfig === undefined ? undefin
 // Event streams per session code, with the player token of each. They live in this process only,
 // which is fine for one API container. A seat with an open stream is "present", and a token without
 // a seat is a watcher. Long polls do not count: an API client shows as away, as before.
-type Stream = { res: ServerResponse; token: PlayerToken | undefined };
+// `id` lets POST /leave close one stream: behind a proxy the close of a browser can reach this server late.
+type Stream = { res: ServerResponse; token: PlayerToken | undefined; id: string | null; drop: () => void };
 const streams = new Map<Code, Set<Stream>>();
 let streamCount = 0;
 
@@ -264,7 +265,7 @@ function requirePlayer(req: IncomingMessage): PlayerToken {
   return player;
 }
 
-// The host Caddy terminates TLS and keeps the Host header, so every public request is https.
+// Cloudflare terminates TLS, and the kitshn tunnel keeps the Host header, so every public request is https.
 const originOf = (req: IncomingMessage) => `https://${req.headers.host ?? ''}`;
 // The address that the docs show. A LAN host (compose.lan.yml) serves plain HTTP, and its Caddy says so.
 const docsOrigin = (req: IncomingMessage) =>
@@ -313,19 +314,24 @@ async function waitForChange(res: ServerResponse, code: Code, wait: string, toke
 
 // EventSource cannot send headers, so the stream takes the player token from the query string.
 // Caddy keeps no access log for this site; revisit this if logging is ever turned on.
-async function openStream(req: IncomingMessage, res: ServerResponse, code: Code, token: PlayerToken | undefined): Promise<void> {
+async function openStream(req: IncomingMessage, res: ServerResponse, code: Code, token: PlayerToken | undefined, id: string | null): Promise<void> {
   await store.get(code, token); // 404 before the stream opens
   // The client can leave during the await. Its close event is then already past, so no handler runs.
   if (req.destroyed || res.destroyed) return;
   if (streamCount >= MAX_STREAMS) throw new HttpError(503, 'Too many live connections. Try again later.');
   const set = streams.get(code) ?? new Set();
-  const stream: Stream = { res, token };
-  req.on('close', () => {
-    set.delete(stream);
-    streamCount--;
-    if (set.size === 0) streams.delete(code);
-    if (token !== undefined) notify(code);
-  });
+  const stream: Stream = {
+    res,
+    token,
+    id,
+    drop: () => {
+      if (!set.delete(stream)) return;
+      streamCount--;
+      if (set.size === 0) streams.delete(code);
+      if (token !== undefined) notify(code);
+    },
+  };
+  req.on('close', stream.drop);
   streams.set(code, set);
   set.add(stream);
   streamCount++;
@@ -333,6 +339,15 @@ async function openStream(req: IncomingMessage, res: ServerResponse, code: Code,
   res.write('retry: 3000\n\n');
   // A player or a watcher arriving changes what the others see ("away" turns into "here", a new watcher).
   if (token !== undefined) notify(code);
+}
+
+function leaveStream(code: Code, token: PlayerToken | undefined, id: string | null): void {
+  if (token === undefined || id === null || id === '') throw new HttpError(400, 'player or stream is missing.');
+  for (const stream of streams.get(code) ?? []) {
+    if (stream.token !== token || stream.id !== id) continue;
+    stream.drop();
+    stream.res.end();
+  }
 }
 
 function requirePerson(value: string | undefined): PersonId {
@@ -735,7 +750,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return send(res, 200, await store.get(code(), token));
     }
     case 'GET /api/sessions/{code}/events':
-      return openStream(req, res, code(), asPlayerToken(url.searchParams.get('player')));
+      return openStream(req, res, code(), asPlayerToken(url.searchParams.get('player')), url.searchParams.get('stream'));
+    case 'POST /api/sessions/{code}/leave':
+      leaveStream(code(), asPlayerToken(url.searchParams.get('player')), url.searchParams.get('stream'));
+      res.writeHead(200, { 'cache-control': 'no-store' });
+      return void res.end();
     case 'PATCH /api/sessions/{code}': {
       const changes = parseSessionUpdate(await readJson(req));
       if (changes === undefined) {

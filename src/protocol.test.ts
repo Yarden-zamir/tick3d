@@ -11,6 +11,8 @@ import {
   PREVIEW_IMAGE_ALT_LENGTH,
   PREVIEW_IMAGES,
   parsePreviews,
+  previewHost,
+  previewNumberOfHost,
   parseResultUpload,
   parseClientEvent,
   isOnlineGameId,
@@ -519,7 +521,7 @@ describe('parsePreviews', () => {
     title: `Pull ${number}`,
     description: '',
     url: `https://github.com/octo/game/pull/${number}`,
-    previewUrl: `https://pr-${number}.game.example.com`,
+    previewUrl: `https://game-pr-${number}.example.com`,
     updatedAt: 0,
     draft: false,
     contributors: [],
@@ -546,6 +548,28 @@ describe('parsePreviews', () => {
 
   it.each([0, -1, 1.5, '1', 2])('refuses the parent %j', (parent) => {
     expect(() => parsePreviews(answer([preview(2, parent)]))).toThrow();
+  });
+
+  it.each([
+    ['another pull request', 'https://game-pr-7.example.com'],
+    ['a site that is not https', 'http://game-pr-1.example.com'],
+    ['a label that only ends in pr-1', 'https://gamepr-1.example.com'],
+  ])('refuses a preview address of %s', (_, previewUrl) => {
+    expect(() => parsePreviews(answer([{ ...preview(1, null), previewUrl }]))).toThrow();
+  });
+});
+
+describe('preview hosts', () => {
+  it('puts a preview one level under the zone of production', () => {
+    expect(previewHost('tick3d.yarden-zamir.com', 17)).toBe('tick3d-pr-17.yarden-zamir.com');
+  });
+
+  it('reads the number of a kitshn 2 and of a KitSHn 1 preview host, and of no other host', () => {
+    expect(previewNumberOfHost('tick3d-pr-17.yarden-zamir.com')).toBe(17);
+    expect(previewNumberOfHost('pr-17.tick3d.yarden-zamir.com')).toBe(17);
+    expect(previewNumberOfHost('tick3d.yarden-zamir.com')).toBeUndefined();
+    expect(previewNumberOfHost('tick3dpr-17.yarden-zamir.com')).toBeUndefined();
+    expect(previewNumberOfHost('tick3d-pr-0.yarden-zamir.com')).toBeUndefined();
   });
 });
 

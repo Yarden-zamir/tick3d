@@ -385,14 +385,18 @@ export const api = {
   // The token marks this page's seats as present, so the other player sees "here" or "away".
   // The browser reconnects by itself after a network error, but it stops for good after an error status,
   // such as the 502 of the proxy while a deploy replaces the API. Then this opens a new stream after a wait.
+  // Behind Cloudflare over HTTP/3 the server learns late that a stream closed, so leaving sends a beacon.
   subscribe(code: Code, onChange: () => void): () => void {
+    const stream = crypto.randomUUID();
+    const query = `player=${encodeURIComponent(token)}&stream=${stream}`;
+    const leave = () => navigator.sendBeacon(`/api/sessions/${code}/leave?${query}`);
     let source: EventSource | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
     // Set when the page leaves the session: an error of the closing stream must not open a new one.
     let stopped = false;
     const connect = () => {
-      const opened = new EventSource(`/api/sessions/${code}/events?player=${encodeURIComponent(token)}`);
+      const opened = new EventSource(`/api/sessions/${code}/events?${query}`);
       source = opened;
       opened.onmessage = () => onChange();
       opened.onopen = () => {
@@ -406,10 +410,13 @@ export const api = {
       };
     };
     connect();
+    addEventListener('pagehide', leave);
     return () => {
       stopped = true;
       clearTimeout(timer);
+      removeEventListener('pagehide', leave);
       source?.close();
+      leave();
     };
   },
 };

@@ -55,7 +55,7 @@ services:
     # GitHub login. KitSHn passes the repository's KITSHN_GITHUB_CLIENT_ID variable and the
     # KITSHN_GITHUB_CLIENT_SECRET and KITSHN_AUTH_SECRET secrets without their prefix.
     # Without the three, login stays off and the page hides it.
-    # Every environment shares the cookie domain, so pull request previews see the production login.
+    # Known limit: previews (tick3d-pr-<n>.yarden-zamir.com) are outside the cookie domain, so they have no login.
     environment:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
@@ -66,7 +66,7 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       AUTH_ORIGIN: https://tick3d.yarden-zamir.com
       COOKIE_DOMAIN: tick3d.yarden-zamir.com
-      # The kitshn button lists the open pull requests of this repository that have a live preview at pr-<n>.<domain>.
+      # The kitshn button lists the open pull requests of this repository that have a live preview at tick3d-pr-<n>.yarden-zamir.com.
       PREVIEWS_REPO: Yarden-zamir/tick3d
       PREVIEWS_DOMAIN: tick3d.yarden-zamir.com
       # prod or pr-<n>. Only prod calls GitHub; every other environment reads the list from production.
