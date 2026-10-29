@@ -1,8 +1,8 @@
 name: video
 
 # Checks the video code on every pull request that touches it. Renders the 15 s spot (issue #119), every variant
-# in both crops, and both tutorials ("How to play" and "Strong cells") at both paces in both crops, by hand, on a push to
-# main that touches the video, and on a tag. Pull request previews are rendered on a Mac and published with
+# in both crops, both tutorials ("How to play" and "Strong cells") at both paces in both crops, and the smart-memory
+# ad (issue #130) in both cuts and all three formats, by hand, on a push to main that touches the video, and on a tag. Pull request previews are rendered on a Mac and published with
 # video/scripts/publish.sh, because a CI render round takes about 5 minutes (maintainer decision on #119). A tag
 # such as video-v1 also attaches the spot files to a GitHub Release. No secrets.
 # A new variant in video/creative/variants/ goes into the matrix below and into publish.sh.
@@ -147,6 +147,58 @@ jobs:
             video/out/${{ env.CUT }}/tick3d-${{ env.CUT }}-${{ matrix.crop }}.mp4
             video/out/${{ env.CUT }}/soundtrack.wav
             video/out/${{ env.CUT }}/stills/${{ matrix.crop }}-*.png
+          if-no-files-found: error
+
+  # The smart-memory ad (video/src/memory/, issue #130), one job per cut and format: the MP4, the soundtrack and the
+  # stills, with the 'threat' still as the cover image of the format. The full cut lasts 13.5 s, the short one 8.0 s.
+  ad:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        plan: [full, short]
+        format: [4x5, 1x1, 9x16]
+    env:
+      MEMORY_PLAN: ${{ matrix.plan }}
+      # The file names of a cut (scripts/memory.ts), and its length in seconds.
+      CUT: smart-memory${{ matrix.plan == 'short' && '-short' || '' }}
+      SECONDS_WANTED: ${{ matrix.plan == 'full' && '13.5' || '8.0' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: video/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: video
+      - name: Cache Chrome Headless Shell
+        uses: actions/cache@v6
+        with:
+          path: video/node_modules/.remotion
+          key: chrome-headless-shell-${{ runner.os }}-${{ hashFiles('video/package-lock.json') }}
+      - name: Render the ad, ${{ matrix.plan }}, ${{ matrix.format }}
+        working-directory: video
+        run: npm run memory -- --format ${{ matrix.format }}
+      - name: Check the length and the size of the MP4
+        working-directory: video/out
+        run: |
+          case "${{ matrix.format }}" in 4x5) size=1080x1350 ;; 1x1) size=1080x1080 ;; 9x16) size=1080x1920 ;; esac
+          file=$CUT-${{ matrix.format }}.mp4
+          got=$(npx remotion ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$file")
+          seconds=$(npx remotion ffprobe -v error -show_entries format=duration -of csv=p=0 "$file")
+          echo "$file: $got, $seconds s"
+          [ "$got" = "$size" ] || { echo "$file is $got, not $size" >&2; exit 1; }
+          awk -v s="$seconds" -v w="$SECONDS_WANTED" 'BEGIN { exit !(s >= w - 0.1 && s <= w + 0.1) }' || { echo "$file lasts $seconds s, not $SECONDS_WANTED s" >&2; exit 1; }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tick3d-${{ env.CUT }}-${{ matrix.format }}
+          path: |
+            video/out/${{ env.CUT }}-${{ matrix.format }}.mp4
+            video/out/${{ env.CUT }}/soundtrack.wav
+            video/out/${{ env.CUT }}/stills/${{ matrix.format }}-*.png
           if-no-files-found: error
 
   release:
