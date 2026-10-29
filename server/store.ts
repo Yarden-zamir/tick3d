@@ -45,7 +45,7 @@ import {
   type ReportRequest,
   accountNameOf,
   parsePersonId,
-  personId,
+  personId as hashPersonId,
   type PlayerInfo,
   type PlayerToken,
   type PublicGame,
@@ -89,7 +89,7 @@ import type { PracticeBoard, PracticeMode, PracticeRun, PresetId } from '../src/
 import { DELETED_NAME } from '../src/deletions.ts';
 import type { Release } from '../src/release.ts';
 import { DATA_TABLES, type DeletedData, STATS_CACHE_MS } from './api-docs.ts';
-import { FIELD_SCHEMA, GAME_COLUMN_LIST, GAME_VALUES, METRIC_COLUMN_LIST, METRIC_VALUES, SESSION_SEAT_SET, SESSION_SEAT_VALUES } from './fields.ts';
+import { FIELD_SCHEMA, GAME_COLUMN_LIST, METRIC_COLUMN_LIST, METRIC_VALUES, gameValues, metricValues } from './fields.ts';
 import { practiceBoard, practiceStats } from './practice.ts';
 import { type Rows, bigId, bool, code as codeColumn, deviceGameId, epoch, gameId, int, json, nullable, oneOf, readRow, text } from './sql.ts';
 import { computeStats, inTokens, seatedResults, seatedRows, tokenValues } from './stats.ts';
@@ -97,7 +97,7 @@ import { leaderRows } from './leaderboard.ts';
 import { type InviteEvent, peopleOf } from './invite-people.ts';
 import { type ClaimRequest, type ClaimedCode, type TesterCodeEntry, type TesterCodes, hintOf } from '../src/share/codes.ts';
 import { gravatarOf } from './tester-codes.ts';
-import { type OnWrite, statements } from './statements.ts';
+import { type BeforeStatement, type OnWrite, isRead, statements } from './statements.ts';
 
 // The claims of tester codes with their emails, for the maintainers only (GET /api/testing/claims).
 // `invitedBy` is the person id of the inviter, or null for a claim without an invite.
@@ -419,12 +419,34 @@ export const REPORTS_KEPT_MS = 90 * 24 * 3_600_000;
 export const DELETION_NOTICES_KEPT_MS = 365 * 24 * 3_600_000;
 const BLOCKS_KEPT = 500;
 
-type Row = { code: Code; doc: SessionDoc; version: number; stale: boolean };
+// updatedAt: the time of the last change, for the pruning and My games.
+type Row = { code: Code; doc: SessionDoc; version: number; stale: boolean; updatedAt: EpochMs };
+
+// personId hashes with WebCrypto, an async job that took about a fifth of the busy CPU of the API under load (#253).
+// A token keeps its person id, so the store keeps each one.
+// Limit: the map empties at MAX_PERSON_IDS entries. Revisit if a profile shows the hash again.
+const MAX_PERSON_IDS = 200_000;
+const personIds = new Map<string, PersonId>();
+async function personId(token: string): Promise<PersonId> {
+  const known = personIds.get(token);
+  if (known !== undefined) return known;
+  const id = await hashPersonId(token);
+  if (personIds.size >= MAX_PERSON_IDS) personIds.clear();
+  personIds.set(token, id);
+  return id;
+}
 
 // The tables of accounts, devices and names. The store caches lookups in them (accountRows in openStore).
 const ACCOUNT_TABLES = ['player_tokens', 'player_names', 'users', 'logins'];
 const MAX_ACCOUNT_ANSWERS = 10_000;
-const MAX_SESSION_ROWS = 2_000;
+const MAX_SESSION_ROWS = 100_000;
+// A finished game waits at most this long for the batch that writes it (writeResults in openStore).
+const RESULT_BATCH_MS = 200;
+// The changed sessions in memory reach the file this often, so a crash loses at most about this much play
+// (writeChangedSessions in openStore). Each task on the store queue writes at most SESSION_WRITE_CHUNK of them,
+// about 0.1 to 0.5 s, so a move waits for one chunk at most.
+const SESSION_WRITE_MS = 60_000;
+const SESSION_WRITE_CHUNK = 500;
 
 // A text key for the values of a query: text, numbers, booleans, null, bigints and lists of them.
 function valuesKey(values: Record<string, DuckDBValue>): string {
@@ -440,9 +462,9 @@ function valuesKey(values: Record<string, DuckDBValue>): string {
 // Every write passes the same check as every read, so the table never holds a document that cannot
 // be read back. This replaces the column CHECK constraints that a document column cannot have.
 // A session row from its stored document. `stale` marks a document in an older format.
-function rowOf(code: Code, stored: unknown, version: number): Row {
+function rowOf(code: Code, stored: unknown, version: number, updatedAt: EpochMs): Row {
   const format = typeof stored === 'object' && stored !== null && 'format' in stored ? stored.format : undefined;
-  return { code, doc: parseDoc(stored), version, stale: format !== CURRENT_FORMAT };
+  return { code, doc: parseDoc(stored), version, stale: format !== CURRENT_FORMAT, updatedAt };
 }
 
 function serialize(doc: SessionDoc): string {
@@ -463,7 +485,6 @@ function count(tally: Tally, outcome: 'won' | 'lost' | 'drawn' | 'played'): void
 }
 
 const isFinished = (record: GameRecord) => toGame(record).status.kind !== 'playing';
-const isDuplicateKey = (error: unknown) => error instanceof Error && error.message.includes('Duplicate key');
 // A unique id is a few random tries away. Twenty failures mean a bug, not bad luck.
 const MAX_ID_ATTEMPTS = 20;
 // Raise it when a rule in src/achievements.ts changes: every row of achievement_players then fills again.
@@ -578,11 +599,13 @@ type StoreOptions = {
   // Runs after every write to a session, also a write during a read (a timeout, a format upgrade).
   // The HTTP layer tells the open pages of the session to fetch it again.
   onChange?: (code: Code) => void;
+  // How often the changed sessions in memory go to the file: SESSION_WRITE_MS, shorter in tests.
+  sessionWriteMs?: number;
 };
 
 export async function openStore(
   path: string,
-  { now = epochNow, open = () => [], onChange = () => undefined }: StoreOptions = {},
+  { now = epochNow, open = () => [], onChange = () => undefined, sessionWriteMs = SESSION_WRITE_MS }: StoreOptions = {},
 ) {
   // Watcher ids hide the token behind a keyed hash. The key lives in this process only, so the ids
   // change on a restart. That is fine: pages read the list again with every change.
@@ -603,31 +626,62 @@ export async function openStore(
   const accountAnswers = new Map<string, readonly Record<string, unknown>[]>();
   // Counts the changes, so a lookup that ran during a change does not keep its answer.
   let accountChanges = 0;
-  // The last known row of each session, so a read needs no query. A write to `sessions` drops the row of its
-  // $code, or every row when it has none. save then keeps the row that it wrote. Same one-process rule as above.
-  // Limit: beyond MAX_SESSION_ROWS the least recently used row goes. Revisit if the API memory grows with it.
+  // The live sessions. Memory holds the current row of each live session, and the file holds the rest. A move
+  // changes the row here only (save) and marks it in dirtySessions. writeSessions writes the marked rows every
+  // SESSION_WRITE_MS and on close, so a deploy keeps the running games and a crash loses about the last minute of
+  // play. A finished game is safe: its result reaches the file before its answer (writeResults).
+  // The lookups of the sessions of a player read both (sessionsWhere). Same one-process rule as above.
+  // Limit: beyond MAX_SESSION_ROWS the least recently used saved row goes. Revisit if the API memory grows with it.
   const sessionRows = new Map<string, Row>();
+  // The sessions with changes that the file does not have yet.
+  const dirtySessions = new Set<string>();
+  // Set while writeSessions writes: its own statements must not drop the rows that it saves.
+  let writingSessions = false;
   let sessionChanges = 0;
+  // The tokens with a row in player_tokens (a login) and in player_names (a custom name), read on demand
+  // (tokenSets). Most players have neither, and their lookups need no SQL. A write on either table, or a rollback,
+  // marks the sets old, and the next lookup reads them again: two small queries.
+  // Limit: one string per linked device and per custom name, read again after each such write. Revisit if logins
+  // and renames reach about one per second.
+  let linkedTokens = new Set<string>();
+  let namedTokens = new Set<string>();
+  let tokenSetsOld = true;
   const onWrite: OnWrite = (sql, values) => {
     const rollback = sql.trim().toUpperCase().startsWith('ROLLBACK');
     if (rollback || ACCOUNT_TABLES.some((table) => sql.includes(table))) {
       accountAnswers.clear();
       accountChanges++;
     }
-    if (rollback || sql.includes('sessions')) {
+    if (rollback || sql.includes('player_tokens') || sql.includes('player_names')) tokenSetsOld = true;
+    // Other SQL writes on `sessions` change rows without unsaved changes (beforeStatement), so the file has the row that goes.
+    if (sql.includes('sessions') && !writingSessions) {
       const code = values?.code;
-      if (!rollback && typeof code === 'string') sessionRows.delete(code);
+      if (typeof code === 'string') sessionRows.delete(code);
       else sessionRows.clear();
       sessionChanges++;
     }
   };
-  const db = statements(await instance.connect(), onWrite);
+  // An SQL write on `sessions` must not overwrite or lose unsaved moves: it may change one session ($code) without
+  // unsaved changes, and nothing else while any session has some. A read may run: sessionsWhere adds the memory rows.
+  const beforeStatement: BeforeStatement = (sql, values) => {
+    if (writingSessions || dirtySessions.size === 0 || isRead(sql) || !sql.includes('sessions')) return;
+    const code = values?.code;
+    if (typeof code === 'string' && !dirtySessions.has(code)) return;
+    throw new Error('an SQL write on sessions while sessions in memory have unsaved changes');
+  };
+  const db = statements(await instance.connect(), onWrite, beforeStatement);
   for (const statement of SCHEMA) await db.run(statement);
   // DuckDB 1.5.6 cannot replay ALTER ... DROP NOT NULL on `reports` (its id defaults to nextval) from the
   // write-ahead log. SCHEMA runs that ALTER on every start, so a crash before the next checkpoint leaves a file
   // that does not open. A checkpoint right after SCHEMA keeps those statements out of the log.
   // Revisit when a DuckDB release replays it, or when SCHEMA no longer runs ALTER statements on each start.
   await db.run('CHECKPOINT');
+  // The batch tables of writeResults and writeSessions: the Appender fills one, one statement moves its rows on.
+  await db.run(`CREATE TEMP TABLE result_batch (id VARCHAR, token VARCHAR, doc VARCHAR, finished BIGINT, public_id VARCHAR,
+    player_x VARCHAR, player_o VARCHAR, winner VARCHAR, ending VARCHAR, line VARCHAR, metrics VARCHAR)`);
+  await db.run('CREATE TEMP TABLE seat_batch (person VARCHAR, token VARCHAR)');
+  await db.run('CREATE TEMP TABLE session_batch (code VARCHAR, doc VARCHAR, version INTEGER, changed BIGINT)');
+  await db.run('CREATE TEMP TABLE session_kept (code VARCHAR, seq BIGINT, created_at TIMESTAMPTZ)');
 
   // Runs `task` once per database: the migrations table keeps the name, so a later start skips it.
   // The task and the name go in one transaction, so a failed task runs again on the next start.
@@ -659,14 +713,43 @@ export async function openStore(
   // DuckDB calls are async, so two requests could interleave a read and a write. A queue runs
   // store operations one at a time, which keeps each read-check-write atomic in this process.
   // Revisit this if the API ever runs more than one process against the same file.
+  // A task that ends a game or takes an upload adds the wait for its result batch here (queueResult). The
+  // caller hears back once the batch is in the file, so no result that a player saw can get lost.
+  let currentWrites: Promise<unknown>[] | undefined;
   let queue: Promise<unknown> = Promise.resolve();
   function serialized<T>(task: () => Promise<T>): Promise<T> {
-    const run = queue.then(task, task);
+    const writes: Promise<unknown>[] = [];
+    const runTask = async () => {
+      currentWrites = writes;
+      try {
+        return await task();
+      } finally {
+        currentWrites = undefined;
+      }
+    };
+    const run = queue.then(runTask, runTask);
     queue = run.catch(() => undefined);
-    return run;
+    // The wait is outside the queue: the batch itself runs on the queue.
+    return run.then(async (value) => {
+      await Promise.all(writes);
+      return value;
+    });
   }
 
   const rows: Rows = async (sql, values, shape) => (await db.runAndReadAll(sql, values)).getRowObjectsJS().map((row) => readRow(row, shape));
+
+  // The code of every session, in memory and in the file: a new code must be free, and an unknown code needs no read.
+  // Limit: one string per session that the file keeps, read on start. Revisit at about 1,000,000 sessions.
+  const knownCodes = new Set((await rows('FROM sessions SELECT code', {}, { code: text })).map((row) => row.code));
+
+  async function tokenSets(): Promise<{ linked: ReadonlySet<string>; named: ReadonlySet<string> }> {
+    if (tokenSetsOld) {
+      tokenSetsOld = false;
+      linkedTokens = new Set((await rows('FROM player_tokens SELECT token', {}, { token: text })).map((row) => row.token));
+      namedTokens = new Set((await rows('FROM player_names SELECT token', {}, { token: text })).map((row) => row.token));
+    }
+    return { linked: linkedTokens, named: namedTokens };
+  }
 
   // `rows` for a lookup that reads only ACCOUNT_TABLES. Most store calls repeat the same few lookups.
   const accountRows: Rows = async (sql, values, shape) => {
@@ -700,18 +783,110 @@ export async function openStore(
   function keepRow(row: Row): Row {
     sessionRows.delete(row.code);
     sessionRows.set(row.code, row);
-    const oldest = sessionRows.keys().next();
-    if (sessionRows.size > MAX_SESSION_ROWS && oldest.done !== true) sessionRows.delete(oldest.value);
+    if (sessionRows.size > MAX_SESSION_ROWS) {
+      // The oldest saved row goes. A row with unsaved changes stays until writeSessions saves it.
+      for (const code of sessionRows.keys()) {
+        if (dirtySessions.has(code)) continue;
+        sessionRows.delete(code);
+        break;
+      }
+    }
     return row;
+  }
+
+  // Writes the sessions with unsaved changes in one transaction. It runs on the store queue.
+  // A delete and an insert: an UPDATE of the document and the indexed seats cost about 2.5 to 3.5 ms per session,
+  // these two about 0.2 to 0.9 ms. A saved row keeps its seq and created_at. A session made since the start gets
+  // the time of this write as created_at, which no query reads.
+  async function writeSessions(codes: Iterable<string> = dirtySessions): Promise<void> {
+    const written = [...codes].filter((code) => dirtySessions.has(code));
+    if (written.length === 0) return;
+    const batch = await db.appendTo('session_batch');
+    for (const code of written) {
+      const row = sessionRows.get(code);
+      if (row === undefined) throw new Error(`session ${code} has unsaved changes but no row in memory`);
+      batch.appendVarchar(code);
+      batch.appendVarchar(JSON.stringify(row.doc));
+      batch.appendInteger(row.version);
+      batch.appendBigInt(BigInt(Math.round(row.updatedAt)));
+      batch.endRow();
+    }
+    batch.closeSync();
+    writingSessions = true;
+    try {
+      await db.run('BEGIN TRANSACTION');
+      try {
+        await db.run('INSERT INTO session_kept SELECT code, seq, created_at FROM sessions WHERE code IN (SELECT code FROM session_batch)');
+        await db.run('DELETE FROM sessions WHERE code IN (SELECT code FROM session_batch)');
+        await db.run(
+          `INSERT INTO sessions (code, seq, doc, version, created_at, updated_at, seat_x, seat_o)
+           SELECT b.code, coalesce(k.seq, nextval('session_order')), b.doc::JSON::VARIANT, b.version, coalesce(k.created_at, now()),
+             make_timestamptz(b.changed * 1000), json_extract_string(b.doc::JSON, '$.seats.X'), json_extract_string(b.doc::JSON, '$.seats.O')
+           FROM session_batch b LEFT JOIN session_kept k USING (code)`,
+        );
+        await db.run('COMMIT');
+      } catch (error) {
+        await db.run('ROLLBACK');
+        throw error;
+      }
+      for (const code of written) dirtySessions.delete(code);
+    } finally {
+      writingSessions = false;
+      await db.run('DELETE FROM session_batch');
+      await db.run('DELETE FROM session_kept');
+    }
+  }
+
+  // Writes the sessions that changed since the last run, a chunk per task on the store queue, so the moves of other
+  // players wait for one chunk at a time. A session that changes again meanwhile goes in its chunk as it is then.
+  let writingChanged = false;
+  async function writeChangedSessions(): Promise<void> {
+    if (writingChanged) return;
+    writingChanged = true;
+    try {
+      const changed = [...dirtySessions];
+      for (let start = 0; start < changed.length; start += SESSION_WRITE_CHUNK) {
+        // close writes the rest.
+        if (closing) break;
+        await serialized(() => writeSessions(changed.slice(start, start + SESSION_WRITE_CHUNK)));
+      }
+    } finally {
+      writingChanged = false;
+    }
+  }
+  const sessionTimer = setInterval(() => {
+    writeChangedSessions().catch((error: unknown) => console.error('session write:', error instanceof Error ? error.message : String(error)));
+  }, sessionWriteMs);
+  sessionTimer.unref();
+
+  // The sessions that `picks` keeps: the rows in memory, and the rows of `saved`, the codes that SQL found in the
+  // file. A session in memory counts by its memory row, which can be newer than the file.
+  async function sessionsWhere(saved: readonly { code: Code }[], picks: (doc: SessionDoc) => boolean): Promise<Row[]> {
+    const found = [...sessionRows.values()].filter((row) => picks(row.doc));
+    for (const { code } of saved) {
+      if (sessionRows.has(code)) continue;
+      const row = await loadRaw(code);
+      if (picks(row.doc)) found.push(row);
+    }
+    return found;
+  }
+
+  // Deletes a session from memory and from the file.
+  async function deleteSession(code: Code): Promise<void> {
+    sessionRows.delete(code);
+    dirtySessions.delete(code);
+    knownCodes.delete(code);
+    await db.run('DELETE FROM sessions WHERE code = $code', { code });
   }
 
   async function loadRaw(code: Code): Promise<Row> {
     const known = sessionRows.get(code);
     if (known !== undefined) return keepRow(known);
+    if (!knownCodes.has(code)) throw new SessionError(404, `No game with code ${code}.`);
     const changes = sessionChanges;
-    const [found] = await rows('FROM sessions SELECT doc::JSON AS doc, version WHERE code = $code', { code }, { doc: json, version: int });
+    const [found] = await rows('FROM sessions SELECT doc::JSON AS doc, version, epoch_ms(updated_at) AS updated WHERE code = $code', { code }, { doc: json, version: int, updated: epoch });
     if (found === undefined) throw new SessionError(404, `No game with code ${code}.`);
-    const row = rowOf(code, found.doc, found.version);
+    const row = rowOf(code, found.doc, found.version, found.updated);
     // A write during the read can make this row old.
     return changes === sessionChanges ? keepRow(row) : row;
   }
@@ -1127,81 +1302,190 @@ export async function openStore(
     return { achievements, rarity: await everyonesRarity() };
   }
 
-  type NewResult = {
+  // A finished game that waits for the next batch (writeResults). `doc` builds the stored game for its link.
+  // `publicId` is the link that it asks for, or null for a new one. An upload can get another link when the
+  // asked one is taken (renameable). An online game keeps its link, which its code and number make unique.
+  type QueuedResult = {
     id: string;
     token: string;
-    doc: object;
+    doc: (publicId: GameId) => object;
     finishedAt: EpochMs;
-    publicId: GameId;
+    publicId: GameId | null;
+    renameable: boolean;
     seats: Record<Player, string | null>;
     game: GameRecord;
     metrics: Metrics | null;
   };
+  // What the batch did with a game: stored now, or there before. A row from before game links has no link.
+  type ResultOutcome = { stored: boolean; publicId: GameId | null };
+  type WaitingResult = { result: QueuedResult; done: (outcome: ResultOutcome) => void; failed: (error: unknown) => void };
+  // By result id: two copies of one game in one batch wait for the same row.
+  const waitingResults = new Map<string, WaitingResult[]>();
+  let resultTimer: ReturnType<typeof setTimeout> | undefined;
 
-  // Stores a finished game. Returns false when a row with this id exists already.
-  // Throws a duplicate key error when another row holds the public id.
-  async function insertResult(result: NewResult): Promise<boolean> {
-    const { winner, ending, line } = endingOf(result.game);
-    const inserted = await rows(
-      `INSERT INTO results (id, token, doc, finished_at, public_id, player_x, player_o, winner, ending, line, metrics, ${GAME_COLUMN_LIST}, ${METRIC_COLUMN_LIST})
-       VALUES ($id, $token, $doc::JSON::VARIANT, make_timestamptz($finished * 1000), $publicId, $x, $o, $winner, $ending, $line, $metrics::JSON::VARIANT, ${GAME_VALUES}, ${METRIC_VALUES})
-       ON CONFLICT (id) DO NOTHING RETURNING id`,
-      {
-        id: result.id,
-        token: result.token,
-        doc: JSON.stringify(result.doc),
-        finished: result.finishedAt,
-        publicId: result.publicId,
-        x: result.seats.X,
-        o: result.seats.O,
-        winner,
-        ending,
-        line,
-        metrics: result.metrics === null ? null : JSON.stringify(result.metrics),
-      },
-      { id: text },
+  // Adds a finished game to the next batch. The task on the store queue that adds it answers after the batch.
+  function queueResult(result: QueuedResult): Promise<ResultOutcome> {
+    const writes = currentWrites;
+    if (writes === undefined) throw new Error('only a task on the store queue can add a result');
+    const outcome = new Promise<ResultOutcome>((done, failed) => {
+      const waiting = waitingResults.get(result.id) ?? [];
+      waiting.push({ result, done, failed });
+      waitingResults.set(result.id, waiting);
+    });
+    // serialized awaits it. This handler keeps the failure of a batch after a failed task from stopping the process.
+    outcome.catch(() => undefined);
+    writes.push(outcome);
+    resultTimer ??= setTimeout(() => {
+      resultTimer = undefined;
+      serialized(writeResults).catch((error: unknown) => console.error('result batch:', error instanceof Error ? error.message : String(error)));
+    }, RESULT_BATCH_MS);
+    return outcome;
+  }
+
+  // Writes the waiting games in one transaction. It runs on the store queue.
+  async function writeResults(): Promise<void> {
+    if (waitingResults.size === 0) return;
+    const batch = [...waitingResults.values()];
+    waitingResults.clear();
+    try {
+      const outcomes = await storeResults(batch.map(([first]) => {
+        if (first === undefined) throw new Error('a waiting result list is empty');
+        return first.result;
+      }));
+      for (const waiting of batch) {
+        waiting.forEach(({ result, done }, index) => {
+          const outcome = outcomes.get(result.id);
+          if (outcome === undefined) throw new Error(`the batch has no outcome for result ${result.id}`);
+          // A second copy of a game in the batch finds the row of the first.
+          done(index === 0 ? outcome : { ...outcome, stored: false });
+        });
+      }
+    } catch (error) {
+      for (const waiting of batch) for (const { failed } of waiting) failed(error);
+      throw error;
+    }
+  }
+
+  async function storeResults(results: readonly QueuedResult[]): Promise<Map<string, ResultOutcome>> {
+    const outcomes = new Map<string, ResultOutcome>();
+    // A game that the file has already keeps its row and its link.
+    const known = await rows(
+      'FROM results SELECT id, public_id WHERE id IN (SELECT unnest($ids))',
+      { ids: listValue(results.map((result) => result.id)) },
+      { id: text, public_id: nullable(gameId) },
     );
+    for (const row of known) outcomes.set(row.id, { stored: false, publicId: row.public_id });
+    const fresh = results.filter((result) => !outcomes.has(result.id));
+    if (fresh.length === 0) return outcomes;
+
+    // Each new game gets a free link: the one it asks for, else a new one. Two games of one batch can ask for one link too.
+    const links = new Map<string, GameId>(fresh.map((result) => [result.id, result.publicId ?? newGameId()]));
+    for (let attempt = 1; ; attempt++) {
+      const takenRows = await rows('FROM results SELECT public_id WHERE public_id IN (SELECT unnest($links))', { links: listValue([...links.values()]) }, { public_id: text });
+      const taken = new Set(takenRows.map((row) => row.public_id));
+      const used = new Set<string>();
+      let clashes = 0;
+      for (const result of fresh) {
+        const link = links.get(result.id);
+        if (link === undefined) throw new Error(`no link for result ${result.id}`);
+        if (!taken.has(link) && !used.has(link)) {
+          used.add(link);
+          continue;
+        }
+        if (!result.renameable) throw new Error(`the game link ${link} of result ${result.id} is taken`);
+        links.set(result.id, newGameId());
+        clashes++;
+      }
+      if (clashes === 0) break;
+      if (attempt >= MAX_ID_ATTEMPTS) throw new Error(`no free game links after ${MAX_ID_ATTEMPTS} attempts`);
+    }
+
+    const batch = await db.appendTo('result_batch');
+    const seatBatch = await db.appendTo('seat_batch');
+    const seats: string[] = [];
+    const appendText = (value: string | null) => (value === null ? batch.appendNull() : batch.appendVarchar(value));
+    for (const result of fresh) {
+      const link = links.get(result.id);
+      if (link === undefined) throw new Error(`no link for result ${result.id}`);
+      const { winner, ending, line } = endingOf(result.game);
+      appendText(result.id);
+      appendText(result.token);
+      appendText(JSON.stringify(result.doc(link)));
+      batch.appendBigInt(BigInt(Math.round(result.finishedAt)));
+      for (const value of [link, result.seats.X, result.seats.O, winner, ending, line]) appendText(value);
+      appendText(result.metrics === null ? null : JSON.stringify(result.metrics));
+      batch.endRow();
+      for (const seat of [result.seats.X, result.seats.O]) {
+        if (seat === null || seat === core.COMPUTER_TOKEN) continue;
+        seatBatch.appendVarchar(await personId(seat));
+        seatBatch.appendVarchar(seat);
+        seatBatch.endRow();
+        seats.push(seat);
+      }
+    }
+    batch.closeSync();
+    seatBatch.closeSync();
+
+    let stored: Set<string>;
+    await db.run('BEGIN TRANSACTION');
+    try {
+      const inserted = await rows(
+        `INSERT INTO results (id, token, doc, finished_at, public_id, player_x, player_o, winner, ending, line, metrics, ${GAME_COLUMN_LIST}, ${METRIC_COLUMN_LIST})
+         SELECT id, token, doc::JSON::VARIANT, make_timestamptz(finished * 1000), public_id, player_x, player_o, winner, ending, line, metrics::JSON::VARIANT,
+           ${gameValues('doc')}, ${metricValues('metrics')}
+         FROM result_batch
+         ON CONFLICT (id) DO NOTHING RETURNING id`,
+        {},
+        { id: text },
+      );
+      stored = new Set(inserted.map((row) => row.id));
+      await db.run('INSERT OR IGNORE INTO seat_people (person, token) SELECT person, token FROM seat_batch');
+      await db.run('COMMIT');
+    } catch (error) {
+      await db.run('ROLLBACK');
+      throw error;
+    } finally {
+      await db.run('DELETE FROM result_batch');
+      await db.run('DELETE FROM seat_batch');
+    }
     achievementCache.clear();
-    const seats = [result.seats.X, result.seats.O].filter((seat): seat is string => seat !== null && seat !== core.COMPUTER_TOKEN);
-    for (const seat of seats) await db.run('INSERT OR IGNORE INTO seat_people (person, token) VALUES ($person, $token)', { person: await personId(seat), token: seat });
     for (const owner of (await canonical(seats)).values()) changedOwners.add(owner);
-    return inserted.length > 0;
+    for (const result of fresh) outcomes.set(result.id, { stored: stored.has(result.id), publicId: links.get(result.id) ?? null });
+    return outcomes;
   }
 
   // Records a finished game of an online session in `results`, so every mode has rows in one table.
   // A second call for the same game changes nothing.
-  async function recordOnline(code: Code, doc: SessionDoc, index: number, finishedAt: EpochMs): Promise<void> {
+  function recordOnline(code: Code, doc: SessionDoc, index: number, finishedAt: EpochMs): void {
     const game = doc.games[index];
     if (game === undefined || !isFinished(game)) throw new Error(`game ${index} of ${code} is not finished`);
     const token = doc.seats.X ?? doc.seats.O;
     if (token === null) throw new Error(`a finished game in ${code} without players`);
-    await insertResult({
+    void queueResult({
       // ':' is not a character of an uploaded result id, so the two kinds never meet.
       id: `online:${code}:${index}`,
       token,
-      doc: { mode: 'online', code, number: index + 1, name: doc.name, game, options: doc.options, finishedAt },
+      doc: () => ({ mode: 'online', code, number: index + 1, name: doc.name, game, options: doc.options, finishedAt }),
       finishedAt,
       publicId: onlineGameId(code, index),
+      renameable: false,
       seats: doc.seats,
       game,
       metrics: null,
     });
   }
 
+  // Keeps the new document in memory. writeSessions writes it to the file later.
   async function save(row: Row, doc: SessionDoc): Promise<Row> {
-    const text = serialize(doc);
-    await db.run(
-      `UPDATE sessions SET doc = $doc::JSON::VARIANT, ${SESSION_SEAT_SET}, version = version + 1, updated_at = now() WHERE code = $code`,
-      { code: row.code, doc: text },
-    );
-    // The row as a read would find it now, without the read.
-    const saved = keepRow(rowOf(row.code, JSON.parse(text), row.version + 1));
+    // The same check and form as the file: serialize refuses a document that cannot be read back.
+    const saved = keepRow(rowOf(row.code, JSON.parse(serialize(doc)), row.version + 1, now()));
+    dirtySessions.add(row.code);
     // Only the live game can end, by a move or by a timeout.
     const index = doc.games.length - 1;
     const live = doc.games[index];
     const before = row.doc.games[index];
     if (doc.mode === 'online' && live !== undefined && isFinished(live) && !(before !== undefined && isFinished(before))) {
-      await recordOnline(row.code, doc, index, live.timedOut ? now() : (live.times.at(-1) ?? now()));
+      recordOnline(row.code, doc, index, live.timedOut ? now() : (live.times.at(-1) ?? now()));
     }
     onChange(row.code);
     return saved;
@@ -1344,6 +1628,7 @@ export async function openStore(
 
   // The token that a new seat of this device holds: the account token when the device is logged in.
   async function seatTokenOf(token: PlayerToken): Promise<string> {
+    if (!(await tokenSets()).linked.has(token)) return token;
     const [linked] = await accountRows('FROM player_tokens SELECT github_id WHERE token = $token', { token }, { github_id: bigId });
     return linked === undefined ? token : ensureAccountRow(linked.github_id);
   }
@@ -1352,6 +1637,7 @@ export async function openStore(
   // logged-in player holds their seats on every device.
   async function identityOf(token: PlayerToken | undefined): Promise<core.Identity> {
     if (token === undefined) return new Set();
+    if (!(await tokenSets()).linked.has(token)) return new Set([token]);
     const linked = await accountRows(
       `FROM player_tokens SELECT token, github_id
        WHERE github_id = (FROM player_tokens SELECT github_id WHERE token = $token)`,
@@ -1365,7 +1651,8 @@ export async function openStore(
 
   // The GitHub account of each token, in one query. A token without an account, or null, has none.
   async function accountsOf(tokens: readonly (string | null)[]): Promise<(token: string | null) => PlayerInfo | null> {
-    const known = [...new Set(tokens.filter((token) => token !== null))];
+    const { linked } = await tokenSets();
+    const known = [...new Set(tokens.filter((token) => token !== null && linked.has(token)))];
     if (known.length === 0) return () => null;
     const found = await accountRows(
       `FROM player_tokens JOIN users USING (github_id) SELECT token, ${ACCOUNT_COLUMN_LIST}
@@ -1388,10 +1675,12 @@ export async function openStore(
   // Blocks and person ids use it, so they follow a logged-in account across devices.
   async function canonical(tokens: readonly string[]): Promise<Map<string, string>> {
     const known = [...new Set(tokens)];
+    const { linked: withRow } = await tokenSets();
+    const asked = known.filter((token) => withRow.has(token));
     const linked =
-      known.length === 0
+      asked.length === 0
         ? []
-        : await accountRows('FROM player_tokens SELECT token, github_id WHERE list_contains($tokens, token)', { tokens: listValue(known) }, { token: text, github_id: bigId });
+        : await accountRows('FROM player_tokens SELECT token, github_id WHERE list_contains($tokens, token)', { tokens: listValue(asked) }, { token: text, github_id: bigId });
     const accounts = new Map(linked.map((row) => [row.token, accountToken(row.github_id)]));
     return new Map(known.map((token) => [token, accounts.get(token) ?? token]));
   }
@@ -1478,7 +1767,8 @@ export async function openStore(
   // The display name of each token: the custom name (player_names), else the generated name.
   // A GitHub account (its custom name, else its login) goes before both, through `players` or `player` in the view.
   async function namesOf(tokens: readonly (string | null)[]): Promise<core.NameOf> {
-    const known = [...new Set(tokens.filter((token): token is string => token !== null && token !== core.COMPUTER_TOKEN))];
+    const { named } = await tokenSets();
+    const known = [...new Set(tokens.filter((token): token is string => token !== null && token !== core.COMPUTER_TOKEN && named.has(token)))];
     const found =
       known.length === 0
         ? []
@@ -1491,13 +1781,15 @@ export async function openStore(
   // seat on another device counts for that seat. Two devices of one account watch as one watcher.
   async function audience(code: Code, doc: SessionDoc): Promise<core.Audience> {
     const tokens = [...new Set(open(code))];
+    const { linked: withRow } = await tokenSets();
+    const withLogin = tokens.filter((token) => withRow.has(token));
     const linked =
-      tokens.length === 0
+      withLogin.length === 0
         ? []
         : await accountRows(
             `FROM player_tokens a JOIN player_tokens b USING (github_id) JOIN users u USING (github_id)
              SELECT a.token AS token, b.token AS linked, u.github_id, u.provider, u.login, u.avatar, u.name, u.seed WHERE list_contains($tokens, a.token)`,
-            { tokens: listValue(tokens) },
+            { tokens: listValue(withLogin) },
             { token: text, linked: text, github_id: bigId, ...ACCOUNT_COLUMNS },
           );
     const presence = { X: false, O: false };
@@ -1520,15 +1812,16 @@ export async function openStore(
     return { presence, watchers, name: await namesOf(everyone), person: await personsOf(everyone) };
   }
 
+  // The view of each identity. The audience and the players are the same for all, so they load once.
+  async function viewsOf(row: Row, identities: readonly core.Identity[]): Promise<SessionView[]> {
+    const shared = { code: row.code, version: row.version, now: now(), audience: await audience(row.code, row.doc), players: await playersOf(row.doc) };
+    return identities.map((identity) => core.viewOf(row.doc, { ...shared, identity }));
+  }
+
   async function view(row: Row, identity: core.Identity): Promise<SessionView> {
-    return core.viewOf(row.doc, {
-      code: row.code,
-      version: row.version,
-      identity,
-      now: now(),
-      audience: await audience(row.code, row.doc),
-      players: await playersOf(row.doc),
-    });
+    const [only] = await viewsOf(row, [identity]);
+    if (only === undefined) throw new Error('viewsOf returned no view');
+    return only;
   }
 
   type Rule = (doc: SessionDoc, identity: core.Identity, watchers: readonly core.OpenWatcher[]) => SessionDoc;
@@ -1677,18 +1970,24 @@ export async function openStore(
     // The ids of the rows that a statement with `RETURNING ... AS id` changed.
     const changedIds = async (sql: string, values: Record<string, DuckDBValue>) => (await rows(sql, values, { id: text })).map((row) => row.id);
     const changed: Code[] = [];
+    const wrote = (doc: SessionDoc) => doc.chat.some((message) => !isChatEvent(message) && message.by !== undefined && ownPersons.has(message.by));
     await db.run('BEGIN TRANSACTION');
     try {
-      const held = await rows(
-        `FROM sessions SELECT code
-         WHERE list_contains($ids, doc.seats.X::VARCHAR) OR list_contains($ids, doc.seats.O::VARCHAR)
-           OR list_contains($ids, doc.seatRequest.watcher::VARCHAR)
-           OR list_has_any($persons, json_extract_string(doc::JSON, '$.chat[*].by'))`,
-        { ids, persons },
-        { code: codeColumn },
+      // The sessions change in memory, outside the transaction: a rollback after them keeps the session changes,
+      // which only take this player out, and a new request finds nothing more to change there.
+      const held = await sessionsWhere(
+        await rows(
+          `FROM sessions SELECT code
+           WHERE list_contains($ids, doc.seats.X::VARCHAR) OR list_contains($ids, doc.seats.O::VARCHAR)
+             OR list_contains($ids, doc.seatRequest.watcher::VARCHAR)
+             OR list_has_any($persons, json_extract_string(doc::JSON, '$.chat[*].by'))`,
+          { ids, persons },
+          { code: codeColumn },
+        ),
+        (doc) => mine(doc.seats.X) || mine(doc.seats.O) || mine(doc.seatRequest?.watcher ?? null) || wrote(doc),
       );
-      for (const { code } of held) {
-        const { doc } = await loadRaw(code);
+      for (const row of held) {
+        const { code, doc } = row;
         const seats = { X: mine(doc.seats.X) ? null : doc.seats.X, O: mine(doc.seats.O) ? null : doc.seats.O };
         const freed = seats.X !== doc.seats.X || seats.O !== doc.seats.O;
         const seatRequest = freed || mine(doc.seatRequest?.watcher ?? null) ? null : doc.seatRequest;
@@ -1700,14 +1999,11 @@ export async function openStore(
         });
         changed.push(code);
         if (seats.X === null && seats.O === null && core.isEmptySession(doc)) {
-          await db.run('DELETE FROM sessions WHERE code = $code', { code });
+          await deleteSession(code);
           counts.sessions.deleted++;
           continue;
         }
-        await db.run(`UPDATE sessions SET doc = $doc::JSON::VARIANT, ${SESSION_SEAT_SET}, version = version + 1, updated_at = now() WHERE code = $code`, {
-          code,
-          doc: serialize({ ...doc, seats, seatRequest, chat }),
-        });
+        await save(row, { ...doc, seats, seatRequest, chat });
         counts.sessions.anonymised++;
       }
 
@@ -1812,12 +2108,11 @@ export async function openStore(
         const doc = core.createDoc({ name, mode: 'online', clock, seats: { X: await seatTokenOf(token), O: null } });
         for (let attempt = 0; attempt < 20; attempt++) {
           const code = newCode();
-          try {
-            await db.run(`INSERT INTO sessions (code, doc, seat_x, seat_o) VALUES ($code, $doc::JSON::VARIANT, ${SESSION_SEAT_VALUES})`, { code, doc: serialize(doc) });
-          } catch (error) {
-            if (error instanceof Error && error.message.includes('Duplicate key')) continue;
-            throw error;
-          }
+          if (knownCodes.has(code)) continue;
+          // A new session lives in memory: writeSessions inserts it with the other changed sessions.
+          knownCodes.add(code);
+          keepRow(rowOf(code, JSON.parse(serialize(doc)), 1, now()));
+          dirtySessions.add(code);
           return view(await load(code), await identityOf(token));
         }
         throw new Error('could not find a free session code after 20 attempts');
@@ -1825,6 +2120,15 @@ export async function openStore(
 
     get: (code: Code, token: PlayerToken | undefined): Promise<SessionView> =>
       serialized(async () => view(await load(code), await identityOf(token))),
+
+    // The view of each token in one store task, for the live streams of the open pages.
+    views: (code: Code, tokens: readonly (PlayerToken | undefined)[]): Promise<SessionView[]> =>
+      serialized(async () => {
+        const row = await load(code);
+        const identities: core.Identity[] = [];
+        for (const token of tokens) identities.push(await identityOf(token));
+        return viewsOf(row, identities);
+      }),
 
     join: async (code: Code, token: PlayerToken) => {
       const seatToken = await serialized(() => seatTokenOf(token));
@@ -2144,13 +2448,11 @@ export async function openStore(
         const [linked] = await rows('FROM player_tokens SELECT github_id WHERE token = $token', { token }, { github_id: bigId });
         if (linked === undefined) return;
         const account = await ensureAccountRow(linked.github_id);
-        const held = await rows(
-          `FROM ${seatedRows('sessions', 'seat_x', 'seat_o', 1)} sessions SELECT code`,
-          tokenValues([token]),
-          { code: codeColumn },
+        const held = await sessionsWhere(
+          await rows(`FROM ${seatedRows('sessions', 'seat_x', 'seat_o', 1)} sessions SELECT code`, tokenValues([token]), { code: codeColumn }),
+          (doc) => doc.seats.X === token || doc.seats.O === token,
         );
-        for (const { code } of held) {
-          const row = await loadRaw(code);
+        for (const row of held) {
           const seats = { X: row.doc.seats.X === token ? account : row.doc.seats.X, O: row.doc.seats.O === token ? account : row.doc.seats.O };
           await save(row, { ...row.doc, seats });
         }
@@ -2164,40 +2466,42 @@ export async function openStore(
     // device can send again after a lost answer. Returns how many results were new, and the
     // public id of each result that has another public id on the server than the device sent:
     // a result without one, or one whose id another game holds already.
-    addResults: (token: PlayerToken, uploads: readonly unknown[]): Promise<{ stored: number; renamed: Record<string, DeviceGameId> }> =>
-      serialized(async () => {
+    addResults: async (token: PlayerToken, uploads: readonly unknown[]): Promise<{ stored: number; renamed: Record<string, DeviceGameId> }> => {
+      // serialized answers after the batch that writes these games.
+      const queued = await serialized(async () => {
         const results = uploads.map((upload) => parseResultUpload(upload, now()));
         if (!results.every((result): result is ResultUpload => result !== undefined)) {
           throw new SessionError(400, 'A result is not a valid finished game.');
         }
         if (results.some((result) => result.guest === token)) throw new SessionError(400, 'The guest of a Nearby game needs its own player token.');
-        let stored = 0;
-        const renamed: Record<string, DeviceGameId> = {};
-        for (const result of results) {
+        return results.map((result) => {
+          // The metrics go to their own column, and the guest's token to its seat column, not into the stored game.
+          const { metrics, guest, ...upload } = result;
           // An uploaded result id never holds ':', so this row is an upload and not an online game (see recordOnline).
-          const [existing] = await rows('FROM results SELECT public_id WHERE id = $id', { id: result.id }, { public_id: nullable(deviceGameId) });
-          // A row from before game links has no public id. The device then keeps the id it has.
-          if (existing?.public_id === null) continue;
-          let publicId = existing?.public_id ?? result.publicId ?? newGameId();
-          if (existing === undefined) {
-            // The metrics go to their own column, and the guest's token to its seat column, not into the stored game.
-            const { metrics, guest, ...upload } = result;
-            for (let attempt = 1; ; attempt++) {
-              try {
-                const doc = { ...upload, publicId };
-                await insertResult({ id: result.id, token, doc, finishedAt: result.finishedAt, publicId, seats: seatTokens(token, result.you, guest), game: result.game, metrics });
-                break;
-              } catch (error) {
-                if (!isDuplicateKey(error) || attempt >= MAX_ID_ATTEMPTS) throw error;
-                publicId = newGameId();
-              }
-            }
-            stored++;
-          }
-          if (publicId !== result.publicId) renamed[result.id] = publicId;
-        }
-        return { stored, renamed };
-      }),
+          const outcome = queueResult({
+            id: result.id,
+            token,
+            doc: (publicId) => ({ ...upload, publicId }),
+            finishedAt: result.finishedAt,
+            publicId: result.publicId,
+            renameable: true,
+            seats: seatTokens(token, result.you, guest),
+            game: result.game,
+            metrics,
+          });
+          return { result, outcome };
+        });
+      });
+      let stored = 0;
+      const renamed: Record<string, DeviceGameId> = {};
+      for (const { result, outcome } of queued) {
+        const { stored: isNew, publicId } = await outcome;
+        if (isNew) stored++;
+        // A row from before game links has no public id. The device then keeps the id it has.
+        if (publicId !== null && publicId !== result.publicId) renamed[result.id] = deviceGameId(publicId);
+      }
+      return { stored, renamed };
+    },
 
     // One finished game for its read-only link. 404 for an unknown id.
     game: (id: GameId): Promise<PublicGame> =>
@@ -2371,6 +2675,12 @@ export async function openStore(
             { token: text },
           );
           token = found?.token;
+          // A seat that only memory has: a player who joined a running game and has no other row yet.
+          for (const row of token === undefined ? sessionRows.values() : []) {
+            for (const seat of [row.doc.seats.X, row.doc.seats.O]) {
+              if (token === undefined && seat !== null && (await personId(seat)) === target.person) token = seat;
+            }
+          }
         }
         if (token === undefined) throw new SessionError(404, 'Nobody has that person id or GitHub login.');
         // An account token is not a valid X-Player value, but identityOf reads it like a device token of the account.
@@ -2519,7 +2829,7 @@ export async function openStore(
     stats: (filter: StatsFilter = ALL_STATS, token: PlayerToken | null = null): Promise<Stats> => {
       if (filter.scope === 'everyone' && filter.person === null) {
         return snapshot(`stats ${statsQuery(filter)}`, async () => ({
-          ...(await computeStats(readRows, now(), filter, null)),
+          ...(await computeStats(readRows, now(), filter, null, knownCodes.size)),
           person: null,
           practice: await practiceStats(readRows),
           achievements: null,
@@ -2529,12 +2839,12 @@ export async function openStore(
         if (filter.scope === 'mine') {
           if (token === null) throw new SessionError(400, 'Your stats need the X-Player header.');
           const tokens = [...(await identityOf(token))];
-          return { ...(await computeStats(rows, now(), filter, tokens)), person: null, practice: await practiceStats(rows), achievements: await achievementsOf(await ownerOf(token), tokens) };
+          return { ...(await computeStats(rows, now(), filter, tokens, knownCodes.size)), person: null, practice: await practiceStats(rows), achievements: await achievementsOf(await ownerOf(token), tokens) };
         }
         if (filter.person !== null) {
           const found = await visiblePersonOf(filter.person, token);
           return {
-            ...(await computeStats(rows, now(), filter, found.tokens)),
+            ...(await computeStats(rows, now(), filter, found.tokens, knownCodes.size)),
             person: found.person,
             practice: await practiceStats(rows),
             achievements: await achievementsOf(found.owner, found.tokens),
@@ -2575,18 +2885,17 @@ export async function openStore(
         const byMode = Object.fromEntries(SESSION_MODES.map((mode) => [mode, emptyTally()])) as MyGames['byMode'];
         const byDifficulty = Object.fromEntries(DIFFICULTIES.map((level) => [level, emptyTally()])) as MyGames['byDifficulty'];
 
-        const sessionRows = await rows(
-          `FROM ${seatedRows('sessions', 'seat_x', 'seat_o', tokens.length)} sessions SELECT code, doc::JSON AS doc, epoch_ms(updated_at) AS updated
-           ORDER BY updated_at DESC`,
-          tokenValues(tokens),
-          { code: codeColumn, doc: json, updated: epoch },
+        const held = await sessionsWhere(
+          await rows(`FROM ${seatedRows('sessions', 'seat_x', 'seat_o', tokens.length)} sessions SELECT code`, tokenValues(tokens), { code: codeColumn }),
+          (doc) => core.seatsOf(doc, identity).length > 0,
         );
+        held.sort((a, b) => b.updatedAt - a.updatedAt);
         const seated: { code: Code; doc: SessionDoc; you: Player; updated: EpochMs }[] = [];
-        for (const row of sessionRows) {
-          const doc = parseDoc(row.doc);
+        for (const row of held) {
+          const { doc } = row;
           const you = core.seatsOf(doc, identity)[0];
           if (you === undefined) continue;
-          seated.push({ code: row.code, doc, you, updated: row.updated });
+          seated.push({ code: row.code, doc, you, updated: row.updatedAt });
           for (const [index, record] of doc.games.entries()) {
             const game = toGame(record);
             if (game.status.kind === 'playing') continue;
@@ -2652,18 +2961,21 @@ export async function openStore(
     pruneEmpty: (ageMs: number) =>
       serialized(async () => {
         const cutoff = toEpochMs(now() - ageMs);
-        const old = await rows(
+        const saved = await rows(
           'FROM sessions SELECT code, doc::JSON AS doc WHERE updated_at < make_timestamptz($cutoff * 1000)',
           { cutoff },
           { code: codeColumn, doc: json },
         );
+        // A row in memory counts by its own time: it can be newer than the file.
+        const old = [
+          ...saved.filter((row) => !sessionRows.has(row.code)).map((row) => ({ code: row.code, doc: parseDoc(row.doc) })),
+          ...[...sessionRows.values()].filter((row) => row.updatedAt < cutoff),
+        ];
         const deleted: Code[] = [];
-        for (const row of old) {
-          const { code } = row;
-          const doc = parseDoc(row.doc);
+        for (const { code, doc } of old) {
           const live = (await audience(code, doc)).presence;
           if (live.X || live.O || !core.isEmptySession(doc)) continue;
-          await db.run('DELETE FROM sessions WHERE code = $code', { code });
+          await deleteSession(code);
           deleted.push(code);
         }
         return deleted;
@@ -2695,8 +3007,15 @@ export async function openStore(
       }),
 
     // Waits for the running work of both connections: closing a connection under a running query crashes the process.
+    // Writes the waiting results and the sessions in memory first, so a deploy keeps the running games.
     async close(): Promise<void> {
       closing = true;
+      clearInterval(sessionTimer);
+      clearTimeout(resultTimer);
+      await serialized(async () => {
+        await writeResults();
+        await writeSessions();
+      });
       await Promise.all([readQueue, queue]);
       reader.closeSync();
       db.closeSync();

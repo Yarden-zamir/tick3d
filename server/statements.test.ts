@@ -5,8 +5,8 @@ import { type Statements, isRead, statements } from './statements.ts';
 let db: Statements | undefined;
 afterEach(() => db?.closeSync());
 
-async function open(onWrite: (sql: string) => void = () => undefined): Promise<Statements> {
-  db = statements(await (await DuckDBInstance.create(':memory:')).connect(), onWrite);
+async function open(onWrite: (sql: string) => void = () => undefined, before: (sql: string) => void = () => undefined): Promise<Statements> {
+  db = statements(await (await DuckDBInstance.create(':memory:')).connect(), onWrite, before);
   await db.run('CREATE TABLE names (token VARCHAR PRIMARY KEY, name VARCHAR)');
   return db;
 }
@@ -72,5 +72,26 @@ describe('statements', () => {
     expect(await names()).toEqual([{ name: null }, { name: 'Tom' }]);
     await store.run('UPDATE names SET name = $name WHERE token = $token', { name: 'Dana Levi with a longer name', token: 'a' });
     expect(await names()).toEqual([{ name: 'Dana Levi with a longer name' }, { name: 'Tom' }]);
+  });
+
+  it('runs no statement that the before hook refuses', async () => {
+    const store = await open(undefined, (sql) => {
+      if (sql.startsWith('DELETE')) throw new Error('refused');
+    });
+    await store.run("INSERT INTO names VALUES ('a', 'Ann')");
+    await expect(store.run('DELETE FROM names')).rejects.toThrow('refused');
+    expect((await store.runAndReadAll('SELECT count(*)::INTEGER AS n FROM names')).getRowObjectsJS()).toEqual([{ n: 1 }]);
+  });
+
+  it('appends rows to a temporary table', async () => {
+    const store = await open();
+    await store.run('CREATE TEMP TABLE batch (token VARCHAR, name VARCHAR)');
+    const batch = await store.appendTo('batch');
+    batch.appendVarchar('a');
+    batch.appendVarchar('Ann');
+    batch.endRow();
+    batch.closeSync();
+    await store.run('INSERT INTO names SELECT * FROM batch');
+    expect((await store.runAndReadAll('FROM names SELECT name')).getRowObjectsJS()).toEqual([{ name: 'Ann' }]);
   });
 });

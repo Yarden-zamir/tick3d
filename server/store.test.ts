@@ -1,4 +1,5 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, open, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import { toEpochMs as ms } from '../src/epoch.ts';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -1872,5 +1873,128 @@ describe('the session cache', () => {
     // A wrong version in memory would refuse the next write.
     await store.chat(code, bob, 'still here');
     expect((await store.get(code, bob)).chat.at(-1)).toMatchObject({ text: 'still here' });
+  });
+});
+
+// A running game lives in memory: the file gets it on close, and a finished game reaches the file before its
+// answer (#228). The lookups of the sessions of a player read both, so a change since the start counts.
+describe('live sessions in memory', () => {
+  it('has a finished online game in the file when the last move is answered', async () => {
+    const code = await session();
+    await playMoves(code, X_WINS);
+    expect((await store.history(alice, 0)).games).toMatchObject([{ id: `${code}-1`, result: 'won' }]);
+  });
+
+  it('keeps a running game across a restart, and play goes on', async () => {
+    const path = `${await mkdtemp('/tmp/tick3d-store-')}/live.duckdb`;
+    store = await openStore(path);
+    const { code } = await store.create(alice, 'Across a deploy');
+    await store.join(code, bob);
+    await playMoves(code, X_WINS.slice(0, 3));
+    const before = await store.get(code, bob);
+    await store.close();
+    store = await openStore(path);
+    expect(await store.get(code, bob)).toMatchObject({ version: before.version, you: 'O', games: [{ moves: X_WINS.slice(0, 3) }] });
+    await store.move(code, bob, { game: 0, moveCount: 3, cell: X_WINS[3] ?? 0 });
+    expect((await store.get(code, alice)).games[0]?.moves).toHaveLength(4);
+  });
+
+  it('lists a session that the player joined since the start in My games', async () => {
+    const code = await session();
+    expect((await store.myGames(bob)).sessions).toMatchObject([{ code, you: 'O' }]);
+  });
+
+  it('frees a seat taken since the start on Delete my data', async () => {
+    const code = await session();
+    await store.move(code, alice, { game: 0, moveCount: 0, cell: 0 });
+    await store.deleteData(bob);
+    expect((await store.get(code, alice)).seats).toEqual({ X: true, O: false });
+  });
+
+  it('finds a player by person id when only a seat taken since the start names them', async () => {
+    const code = await session();
+    await store.move(code, alice, { game: 0, moveCount: 0, cell: 0 });
+    await store.deleteDataOf({ person: await personId(bob) });
+    expect((await store.get(code, alice)).seats).toEqual({ X: true, O: false });
+  });
+
+  it('moves a seat taken since the start to the account on logout', async () => {
+    const code = await session();
+    await store.linkToken(bob, ALICE_GITHUB);
+    await store.unlinkToken(bob);
+    expect((await store.get(code, bob)).you).toBeNull();
+    expect((await store.get(code, alice)).players.O?.login).toBe('alice');
+  });
+
+  it('stores two copies of one game in one batch once', async () => {
+    store = await openStore(':memory:');
+    const upload = result('66666666-0000-4000-8000-000000000001');
+    const [first, second] = await Promise.all([store.addResults(alice, [upload]), store.addResults(alice, [upload])]);
+    expect(first.stored + second.stored).toBe(1);
+    expect((await store.history(alice, 0)).games).toHaveLength(1);
+  });
+
+  it('gives two games of one batch that ask for one link two links', async () => {
+    store = await openStore(':memory:');
+    const link = deviceGameId('SAME2345');
+    const [first, second] = await Promise.all([
+      store.addResults(alice, [result('66666666-0000-4000-8000-000000000002', { publicId: link })]),
+      store.addResults(bob, [result('66666666-0000-4000-8000-000000000003', { publicId: link })]),
+    ]);
+    expect(first.stored + second.stored).toBe(2);
+    expect(Object.keys(first.renamed).length + Object.keys(second.renamed).length).toBe(1);
+  });
+});
+
+// A crash (a kill, out of memory) skips close. The changed sessions go to the file every sessionWriteMs, and a
+// finished game before its answer, so the file has both. The test kills a child process that runs a store.
+describe('a crash', () => {
+  it('keeps the finished games and the running games of the last periodic write', async () => {
+    const dir = await mkdtemp('/tmp/tick3d-crash-');
+    const path = `${dir}/crash.duckdb`;
+    const script = `${dir}/crash.mjs`;
+    await writeFile(
+      script,
+      `const { openStore } = await import(${JSON.stringify(new URL('./store.ts', import.meta.url).pathname)});
+       const store = await openStore(${JSON.stringify(path)}, { sessionWriteMs: 100 });
+       const [a, b] = [${JSON.stringify(alice)}, ${JSON.stringify(bob)}];
+       const { code } = await store.create(a, 'Before a crash');
+       await store.join(code, b);
+       for (const [moveCount, cell] of ${JSON.stringify(X_WINS)}.entries()) await store.move(code, moveCount % 2 === 0 ? a : b, { game: 0, moveCount, cell });
+       await store.newGame(code, a);
+       await store.move(code, b, { game: 1, moveCount: 0, cell: 5 });
+       await store.move(code, a, { game: 1, moveCount: 1, cell: 6 });
+       await new Promise((resolve) => setTimeout(resolve, 500));
+       console.log(code);
+       process.kill(process.pid, 'SIGKILL');`,
+    );
+    const child = spawn(process.execPath, [script], { stdio: ['ignore', 'pipe', 'inherit'] });
+    let output = '';
+    child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()));
+    const signal = await new Promise<NodeJS.Signals | null>((resolve) => child.on('exit', (_, killed) => resolve(killed)));
+    expect(signal).toBe('SIGKILL');
+    const code = output.trim() as Code;
+    store = await openStore(path);
+    expect((await store.history(alice, 0)).games).toMatchObject([{ id: `${code}-1`, result: 'won' }]);
+    expect((await store.get(code, bob)).games.map((game) => game.moves)).toEqual([X_WINS, [5, 6]]);
+  });
+});
+
+// DuckDB 2.0 writes the file in the storage format of DuckDB 1.5 (storage_compatibility_version), so a rollback to
+// 1.5 can open it after a clean stop. The main header keeps the storage version at byte 12, little endian.
+describe('the database file', () => {
+  it('stays in the DuckDB 1.5 storage format (version 68)', async () => {
+    const path = `${await mkdtemp('/tmp/tick3d-store-')}/format.duckdb`;
+    store = await openStore(path);
+    const { code } = await store.create(alice, 'Format');
+    await store.join(code, bob);
+    await playMoves(code, X_WINS);
+    await store.close();
+    const file = await open(path, 'r');
+    const header = Buffer.alloc(8);
+    await file.read(header, 0, 8, 12);
+    await file.close();
+    expect(header.readBigUInt64LE()).toBe(68n);
+    store = await openStore(path);
   });
 });
