@@ -45,7 +45,7 @@ import {
   type ReportRequest,
   accountNameOf,
   parsePersonId,
-  personId,
+  personId as hashPersonId,
   type PlayerInfo,
   type PlayerToken,
   type PublicGame,
@@ -421,6 +421,20 @@ const BLOCKS_KEPT = 500;
 
 // updatedAt: the time of the last change, for the pruning and My games.
 type Row = { code: Code; doc: SessionDoc; version: number; stale: boolean; updatedAt: EpochMs };
+
+// personId hashes with WebCrypto, an async job that took about a fifth of the busy CPU of the API under load (#253).
+// A token keeps its person id, so the store keeps each one.
+// Limit: the map empties at MAX_PERSON_IDS entries. Revisit if a profile shows the hash again.
+const MAX_PERSON_IDS = 200_000;
+const personIds = new Map<string, PersonId>();
+async function personId(token: string): Promise<PersonId> {
+  const known = personIds.get(token);
+  if (known !== undefined) return known;
+  const id = await hashPersonId(token);
+  if (personIds.size >= MAX_PERSON_IDS) personIds.clear();
+  personIds.set(token, id);
+  return id;
+}
 
 // The tables of accounts, devices and names. The store caches lookups in them (accountRows in openStore).
 const ACCOUNT_TABLES = ['player_tokens', 'player_names', 'users', 'logins'];
