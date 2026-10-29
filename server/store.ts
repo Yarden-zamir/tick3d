@@ -624,11 +624,21 @@ export async function openStore(
   // Set while writeSessions writes: its own statements must not drop the rows that it saves.
   let writingSessions = false;
   let sessionChanges = 0;
+  // The tokens with a row in player_tokens (a login) and in player_names (a custom name), read on demand
+  // (tokenSets). Most players have neither, and their lookups need no SQL. A write on either table, or a rollback,
+  // marks the sets old, and the next lookup reads them again: two small queries.
+  // Limit: one string per linked device and per custom name, read again after each such write. Revisit if logins
+  // and renames reach about one per second.
+  let linkedTokens = new Set<string>();
+  let namedTokens = new Set<string>();
+  let tokenSetsOld = true;
   const onWrite: OnWrite = (sql, values) => {
-    if (sql.trim().toUpperCase().startsWith('ROLLBACK') || ACCOUNT_TABLES.some((table) => sql.includes(table))) {
+    const rollback = sql.trim().toUpperCase().startsWith('ROLLBACK');
+    if (rollback || ACCOUNT_TABLES.some((table) => sql.includes(table))) {
       accountAnswers.clear();
       accountChanges++;
     }
+    if (rollback || sql.includes('player_tokens') || sql.includes('player_names')) tokenSetsOld = true;
     // Other SQL writes on `sessions` change rows without unsaved changes (beforeStatement), so the file has the row that goes.
     if (sql.includes('sessions') && !writingSessions) {
       const code = values?.code;
@@ -717,6 +727,15 @@ export async function openStore(
   // The code of every session, in memory and in the file: a new code must be free, and an unknown code needs no read.
   // Limit: one string per session that the file keeps, read on start. Revisit at about 1,000,000 sessions.
   const knownCodes = new Set((await rows('FROM sessions SELECT code', {}, { code: text })).map((row) => row.code));
+
+  async function tokenSets(): Promise<{ linked: ReadonlySet<string>; named: ReadonlySet<string> }> {
+    if (tokenSetsOld) {
+      tokenSetsOld = false;
+      linkedTokens = new Set((await rows('FROM player_tokens SELECT token', {}, { token: text })).map((row) => row.token));
+      namedTokens = new Set((await rows('FROM player_names SELECT token', {}, { token: text })).map((row) => row.token));
+    }
+    return { linked: linkedTokens, named: namedTokens };
+  }
 
   // `rows` for a lookup that reads only ACCOUNT_TABLES. Most store calls repeat the same few lookups.
   const accountRows: Rows = async (sql, values, shape) => {
@@ -1595,6 +1614,7 @@ export async function openStore(
 
   // The token that a new seat of this device holds: the account token when the device is logged in.
   async function seatTokenOf(token: PlayerToken): Promise<string> {
+    if (!(await tokenSets()).linked.has(token)) return token;
     const [linked] = await accountRows('FROM player_tokens SELECT github_id WHERE token = $token', { token }, { github_id: bigId });
     return linked === undefined ? token : ensureAccountRow(linked.github_id);
   }
@@ -1603,6 +1623,7 @@ export async function openStore(
   // logged-in player holds their seats on every device.
   async function identityOf(token: PlayerToken | undefined): Promise<core.Identity> {
     if (token === undefined) return new Set();
+    if (!(await tokenSets()).linked.has(token)) return new Set([token]);
     const linked = await accountRows(
       `FROM player_tokens SELECT token, github_id
        WHERE github_id = (FROM player_tokens SELECT github_id WHERE token = $token)`,
@@ -1616,7 +1637,8 @@ export async function openStore(
 
   // The GitHub account of each token, in one query. A token without an account, or null, has none.
   async function accountsOf(tokens: readonly (string | null)[]): Promise<(token: string | null) => PlayerInfo | null> {
-    const known = [...new Set(tokens.filter((token) => token !== null))];
+    const { linked } = await tokenSets();
+    const known = [...new Set(tokens.filter((token) => token !== null && linked.has(token)))];
     if (known.length === 0) return () => null;
     const found = await accountRows(
       `FROM player_tokens JOIN users USING (github_id) SELECT token, ${ACCOUNT_COLUMN_LIST}
@@ -1639,10 +1661,12 @@ export async function openStore(
   // Blocks and person ids use it, so they follow a logged-in account across devices.
   async function canonical(tokens: readonly string[]): Promise<Map<string, string>> {
     const known = [...new Set(tokens)];
+    const { linked: withRow } = await tokenSets();
+    const asked = known.filter((token) => withRow.has(token));
     const linked =
-      known.length === 0
+      asked.length === 0
         ? []
-        : await accountRows('FROM player_tokens SELECT token, github_id WHERE list_contains($tokens, token)', { tokens: listValue(known) }, { token: text, github_id: bigId });
+        : await accountRows('FROM player_tokens SELECT token, github_id WHERE list_contains($tokens, token)', { tokens: listValue(asked) }, { token: text, github_id: bigId });
     const accounts = new Map(linked.map((row) => [row.token, accountToken(row.github_id)]));
     return new Map(known.map((token) => [token, accounts.get(token) ?? token]));
   }
@@ -1729,7 +1753,8 @@ export async function openStore(
   // The display name of each token: the custom name (player_names), else the generated name.
   // A GitHub account (its custom name, else its login) goes before both, through `players` or `player` in the view.
   async function namesOf(tokens: readonly (string | null)[]): Promise<core.NameOf> {
-    const known = [...new Set(tokens.filter((token): token is string => token !== null && token !== core.COMPUTER_TOKEN))];
+    const { named } = await tokenSets();
+    const known = [...new Set(tokens.filter((token): token is string => token !== null && token !== core.COMPUTER_TOKEN && named.has(token)))];
     const found =
       known.length === 0
         ? []
@@ -1742,13 +1767,15 @@ export async function openStore(
   // seat on another device counts for that seat. Two devices of one account watch as one watcher.
   async function audience(code: Code, doc: SessionDoc): Promise<core.Audience> {
     const tokens = [...new Set(open(code))];
+    const { linked: withRow } = await tokenSets();
+    const withLogin = tokens.filter((token) => withRow.has(token));
     const linked =
-      tokens.length === 0
+      withLogin.length === 0
         ? []
         : await accountRows(
             `FROM player_tokens a JOIN player_tokens b USING (github_id) JOIN users u USING (github_id)
              SELECT a.token AS token, b.token AS linked, u.github_id, u.provider, u.login, u.avatar, u.name, u.seed WHERE list_contains($tokens, a.token)`,
-            { tokens: listValue(tokens) },
+            { tokens: listValue(withLogin) },
             { token: text, linked: text, github_id: bigId, ...ACCOUNT_COLUMNS },
           );
     const presence = { X: false, O: false };
