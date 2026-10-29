@@ -207,7 +207,7 @@ export function openSession(view: SessionView, backend: SessionBackend, mode: Mo
   page.serverOffset = view.now - Date.now();
   followSeat(session);
   const code = view.code;
-  session.unsubscribe = backend.subscribe(code, () => void refresh(code));
+  session.unsubscribe = backend.subscribe(code, (pushed) => void refresh(code, pushed));
   setUrlCode(mode === 'online' ? code : undefined);
   setUrlGame(undefined);
   if (mode === 'online') void page.deviceDb?.put('remote', { code, view, savedAt: Date.now() });
@@ -231,11 +231,12 @@ export function leaveSession(): void {
 let shownChanges = 0;
 let refreshOwed = false;
 
-export async function refresh(code: Code): Promise<void> {
+// `pushed` is a view that the event stream sent along. Without one, this loads the session.
+export async function refresh(code: Code, pushed?: SessionView): Promise<void> {
   const open = page.session;
   if (open === undefined || open.code !== code) return;
   try {
-    const view = await open.backend.load(code);
+    const view = pushed ?? (await open.backend.load(code));
     if (shownChanges > 0) {
       refreshOwed = true;
       return;

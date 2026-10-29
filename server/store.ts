@@ -1812,15 +1812,16 @@ export async function openStore(
     return { presence, watchers, name: await namesOf(everyone), person: await personsOf(everyone) };
   }
 
+  // The view of each identity. The audience and the players are the same for all, so they load once.
+  async function viewsOf(row: Row, identities: readonly core.Identity[]): Promise<SessionView[]> {
+    const shared = { code: row.code, version: row.version, now: now(), audience: await audience(row.code, row.doc), players: await playersOf(row.doc) };
+    return identities.map((identity) => core.viewOf(row.doc, { ...shared, identity }));
+  }
+
   async function view(row: Row, identity: core.Identity): Promise<SessionView> {
-    return core.viewOf(row.doc, {
-      code: row.code,
-      version: row.version,
-      identity,
-      now: now(),
-      audience: await audience(row.code, row.doc),
-      players: await playersOf(row.doc),
-    });
+    const [only] = await viewsOf(row, [identity]);
+    if (only === undefined) throw new Error('viewsOf returned no view');
+    return only;
   }
 
   type Rule = (doc: SessionDoc, identity: core.Identity, watchers: readonly core.OpenWatcher[]) => SessionDoc;
@@ -2119,6 +2120,15 @@ export async function openStore(
 
     get: (code: Code, token: PlayerToken | undefined): Promise<SessionView> =>
       serialized(async () => view(await load(code), await identityOf(token))),
+
+    // The view of each token in one store task, for the live streams of the open pages.
+    views: (code: Code, tokens: readonly (PlayerToken | undefined)[]): Promise<SessionView[]> =>
+      serialized(async () => {
+        const row = await load(code);
+        const identities: core.Identity[] = [];
+        for (const token of tokens) identities.push(await identityOf(token));
+        return viewsOf(row, identities);
+      }),
 
     join: async (code: Code, token: PlayerToken) => {
       const seatToken = await serialized(() => seatTokenOf(token));

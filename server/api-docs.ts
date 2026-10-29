@@ -1363,7 +1363,7 @@ export const ROUTES = {
     operationId: 'sessionEvents',
     tag: 'Play',
     summary: 'A server-sent event stream for the page.',
-    description: 'Each "data: changed" event means: read the session again. The page uses this stream. An open stream marks its seat as present, or lists its player in `watchers`. An agent can use ?wait on GET /api/sessions/{code} instead.',
+    description: 'Each event holds the new session view of this player, the same as GET /api/sessions/{code} answers. An event "data: changed" means: read the session again. The page uses this stream. An open stream marks its seat as present, or lists its player in `watchers`. An agent can use ?wait on GET /api/sessions/{code} instead.',
     player: 'none',
     query: {
       player: { description: 'Your player id. A browser EventSource cannot send headers.', required: false, schema: { type: 'string' }, example: AGENT_A },

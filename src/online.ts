@@ -119,6 +119,16 @@ async function call(method: string, path: string, body?: unknown, signal?: Abort
   return data;
 }
 
+// The view in a message of the event stream, or undefined for "changed" and for a view that this page cannot read.
+function pushedView(data: unknown): SessionView | undefined {
+  if (typeof data !== 'string' || data === 'changed') return undefined;
+  try {
+    return parseSessionView(JSON.parse(data));
+  } catch {
+    return undefined;
+  }
+}
+
 const request = async (method: string, path: string, body?: unknown): Promise<SessionView> =>
   parseSessionView(await call(method, `/sessions${path}`, body));
 
@@ -382,11 +392,13 @@ export const api = {
   answerNearby: (id: HostId, offer: string, answer: string) => call('POST', `/nearby/hosts/${id}/answer`, { answer, offer }),
 
   // Calls onChange after every change, and after each reconnect in case a change was missed.
+  // The server sends the new view with a change. An old server sends "changed", and a view that this page cannot
+  // read comes from a newer server: in both cases onChange gets undefined, and the page loads the session.
   // The token marks this page's seats as present, so the other player sees "here" or "away".
   // The browser reconnects by itself after a network error, but it stops for good after an error status,
   // such as the 502 of the proxy while a deploy replaces the API. Then this opens a new stream after a wait.
   // Behind Cloudflare over HTTP/3 the server learns late that a stream closed, so leaving sends a beacon.
-  subscribe(code: Code, onChange: () => void): () => void {
+  subscribe(code: Code, onChange: (view: SessionView | undefined) => void): () => void {
     const stream = crypto.randomUUID();
     const query = `player=${encodeURIComponent(token)}&stream=${stream}`;
     const leave = () => navigator.sendBeacon(`/api/sessions/${code}/leave?${query}`);
@@ -398,10 +410,10 @@ export const api = {
     const connect = () => {
       const opened = new EventSource(`/api/sessions/${code}/events?${query}`);
       source = opened;
-      opened.onmessage = () => onChange();
+      opened.onmessage = (event: MessageEvent<unknown>) => onChange(pushedView(event.data));
       opened.onopen = () => {
         failures = 0;
-        onChange();
+        onChange(undefined);
       };
       opened.onerror = () => {
         if (stopped || opened.readyState !== EventSource.CLOSED) return;
