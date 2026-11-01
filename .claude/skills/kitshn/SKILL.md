@@ -3,13 +3,13 @@ name: kitshn
 description: Deploy an app repo with kitshn 2, publish pages and files as an agent, or debug a failed kitshn deploy. Use when a repo has or needs kitshn.config.ts, when a task names kitshn, kit.yarden-zamir.com or a kitshn card, circle or deploy. Not for KitSHn 1 repos with .kitshn.yaml.
 license: MIT
 ---
-<!-- kitshn edge-0f6f4f103c31. Update it with: kitshn skill install --repo -->
+<!-- kitshn edge-ca317de866cc. Update it with: kitshn skill install --repo -->
 
 # kitshn
 
 kitshn 2 deploys apps from GitHub to Cloudflare and to the owner's machines. A map decides who can open each app: a card inside a circle is shared with that circle. The admin and the map are at `kit.<zone>`, for Yarden `https://kit.yarden-zamir.com`.
 
-The source of truth is [SPEC.md](https://github.com/Yarden-zamir/kitshn/blob/main/SPEC.md). Its `K-` numbers name each rule. Read the requirement before you rely on a detail here. `kitshn --help` lists the commands of the CLI that you have.
+The source of truth is the [kitshn docs](https://github.com/Yarden-zamir/kitshn/blob/main/docs/README.md). Their `K-` numbers name each rule, and the index names the file of each number. Read the requirement before you rely on a detail here. `kitshn --help` lists the commands of the CLI that you have.
 
 A repo with `.kitshn.yaml` and `Caddyfile.j2` is a KitSHn 1 repo. Do not mix the two. To move one, see "Move from KitSHn 1" at the end.
 
@@ -80,18 +80,28 @@ The daemon carries the skill of its release (K-618). The line under the front ma
 
 A Compose app listens on the Unix socket `$KITSHN_DEFAULT_SOCKET` and publishes no ports (K-607). Only safe Compose keys pass; the deploy output names each refused setting, and only the owner can allow one on a machine (K-818).
 
+An app that needs the user identity checks the `Cf-Access-Jwt-Assertion` header itself, never the unsigned email header. kitshn gives it `KITSHN_ACCESS_TEAM_DOMAIN` and `KITSHN_ACCESS_AUDIENCES` (K-822). Verify the token with the keys of `https://$KITSHN_ACCESS_TEAM_DOMAIN/cdn-cgi/access/certs`, check that `iss` is `https://$KITSHN_ACCESS_TEAM_DOMAIN` and that `aud` holds one tag of the comma list. A site in Everyone gets no token: treat that request as a visitor with no identity.
+
 ## As an agent: call `kitshn`
 
 Call `kitshn` on the machine where you run. kitshn knows the machine and your thread, and gives you the access that the owner gave them. You set nothing yourself.
 
-- `kitshn agent state`: the cards that you manage, with the newest deploy, backup and uptime of each, and your rights.
+- `kitshn agent state`: the cards that you manage, each with its circles by name, its newest deploy, backup and uptime, and your rights with their mode (`automatic`, `ask` with its circle, or `off`). On a machine, `health` lists the health cells from and to this machine (K-631). `--body '{"all":true}'` adds the servers and link events. `kitshn status` shows the map name, the server and the rights of this machine.
+- `kitshn health [--now] [--json]`: what this machine's daemon found at its last check of its providers and links (K-630).
 - `kitshn agent deploy <card> --body '{"mode":"redeploy"}'`: redeploy a card (`"build"` runs its workflow again). `kitshn agent backup <card>` backs it up now.
-- `kitshn agent job <machine> --body '{"command": ...}'` runs a job; `kitshn agent history t3.thread.id=<id>` lists what a thread asked.
-- `kitshn publish <file|folder> [--name <name>] [--address <name>] [--circle <circle>] [--public]` puts a page, a file or a folder site on the map (K-1116, K-1123). The same name again updates its card.
+- `kitshn agent organize` puts the cards that you manage in a tidy grid, each in its own circles, as one Undo (K-532). No share changes.
+- `kitshn agent job <machine> --body '{"command": ...}'` runs a job. A job or a deploy outside the cards that you manage waits for the owner. `kitshn agent history t3.thread.id=<id>` lists what a thread asked.
+- `kitshn publish <file|folder> [--name <name>] [--address <name>] [--circle <circle>] [--public]` puts a page, a file or a folder site on the map (K-1116, K-1123). The same name again updates its card. `kitshn publish --previous <card>` goes back one version; `kitshn unpublish <card>` removes it (K-1117).
+- Each `publish` and `expose` line ends with who opens the link: its circles, or "private: only you". Before you give a private link to someone else, publish with `--circle <circle>`, or ask the owner to share the card.
+- `kitshn servers` lists the servers that listen on this machine, dev servers first, with the name that each is exposed as (K-619). `kitshn expose <port> --name <name> --circle <circle> --time 1h` shares one with a circle for an hour: the port may also be `localhost:5173` or `http://127.0.0.1:5173/` (K-1131). Without `--circle`, its card waits private in the tray until the owner places it. It prints the address; "address pending" means that kitshn has not made the card yet. Add `--new` so kitshn never points a name that it shares already at another server. `kitshn unexpose <name>` stops it.
+- `kitshn port add --machine <machine> --name <name> --port 25565/tcp` adds a port card; players open their own door on its connect page (K-2001). `kitshn port doors|close|remove` manage it (K-2007).
+- `kitshn time <card> 1h` shares a card only for a while: at the end it leaves every circle and goes to the tray (K-212). Use it for a preview of a local server. `4h`, `1d` and `30m` work too; `stop` keeps the card, `now` ends it at once. `kitshn agent state` shows each `endsAt`.
 - `kitshn address <card> <name>`, `kitshn redirect <card> <address> [--remove]`, `kitshn logs <card> [text] [--since 1h] [--deploys]` and `kitshn repo <card> --repo <owner/name>` do what their names say (K-1120, K-1128, K-1809, K-1127).
-- `git push` to github.com works after `kitshn setup-git` once on the machine (K-1763).
+- `git push` to github.com works after `kitshn setup-git` on the machine (K-1763). Run it again after a kitshn update that says so; without its push mark, kitshn grants only read.
 
-When a call needs the owner, kitshn asks the owner and prints `waiting:`; the call ends when the owner answers. `--reason <text>` tells the owner why. When kitshn says no, its one line names the right and what to ask the owner.
+When a call needs an approval, kitshn prints `waiting: <circle> must approve proposal <id> (expires in N h)` on stderr and waits. After the approval, the command runs the call and prints its result; "denied" or "expired" ends it with one line. If your shell stops the command first, run the same command again from the same thread within 1 hour after the approval (K-1776). An approved `kitshn agent` ask runs without you; `kitshn agent history t3.thread.id=<id>` shows it (K-1722). `--reason <text>` tells the owner why. When kitshn says no, its one line names the right and the next step.
+
+`kitshn <command> --help` shows one command; `kitshn agent --help` lists the actions. Bad arguments exit 2, a refusal exits 1.
 
 If `kitshn` says that no daemon runs, the machine is not joined: tell the user.
 
@@ -118,4 +128,4 @@ Read the Actions log first: the deploy step prints the job output and the final 
 
 ## Move from KitSHn 1
 
-Replace `.kitshn.yaml` with `kitshn.config.ts`, and point the workflow at `kitshn2-deploy.yml`. Delete `Caddyfile.j2` and the `KITSHN_SSH_KEY` secret; kitshn 2 needs neither. The first deploy on the same machine takes over the KitSHn 1 data once (K-1404). Then move the DNS record of the address to kitshn.
+Replace `.kitshn.yaml` with `kitshn.config.ts`, and point the workflow at `kitshn2-deploy.yml`. Delete `Caddyfile.j2` and the `KITSHN_SSH_KEY` secret; kitshn 2 needs neither. The app starts with an empty data folder; kitshn moves no KitSHn 1 data. Then move the DNS record of the address to kitshn.
