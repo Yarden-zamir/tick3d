@@ -2988,16 +2988,19 @@ export async function openStore(
       }),
 
     // Ends each live game that nobody changed for `ageMs` with no winner (core.abandonLive). Its replay stays, and it
-    // gets no result. A timeout that happened first counts as the timeout. Returns the codes of the sessions it changed.
+    // gets no result. A timeout that happened first counts as the timeout, and gets saved with its result.
+    // Returns the codes of the sessions with an abandoned game.
     // Limit: each run reads every older session of the file, as pruneEmpty does. Revisit if a run takes more than about a second.
     abandonStale: (ageMs: number) =>
       serialized(async () => {
         const ended: Code[] = [];
         for (const { code, doc } of await sessionsOlderThan(ageMs)) {
-          const abandoned = core.abandonLive(core.settle(doc, now()) ?? doc);
-          if (abandoned === undefined) continue;
-          await save(await loadRaw(code), abandoned);
-          ended.push(code);
+          const settled = core.settle(doc, now());
+          const abandoned = core.abandonLive(settled ?? doc);
+          const next = abandoned ?? settled;
+          if (next === undefined) continue;
+          await save(await loadRaw(code), next);
+          if (abandoned !== undefined) ended.push(code);
         }
         return ended;
       }),

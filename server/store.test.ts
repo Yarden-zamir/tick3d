@@ -313,6 +313,9 @@ describe('abandoning stale games', () => {
     await store.join(between, bob);
     await playMoves(between, X_WINS);
     await store.newGame(between, bob);
+    const blitz = (await store.create(alice, 'Blitz', { perMove: 3, perGame: null })).code;
+    await store.join(blitz, bob);
+    await playMoves(blitz, X_WINS.slice(0, 3));
     // A restart: the stale game is in the file only, as after a deploy.
     await store.close();
     store = await openStore(path, options);
@@ -322,7 +325,9 @@ describe('abandoning stale games', () => {
     expect(await store.abandonStale(7 * day)).toEqual([stale]);
     expect((await store.get(stale, alice)).games).toMatchObject([{ moves: X_WINS.slice(0, 3), abandoned: true }]);
     expect(await status(() => store.move(stale, bob, { game: 0, moveCount: 3, cell: 63 }))).toBe(409);
-    expect((await store.myGames(alice)).byMode.online).toEqual({ played: 1, won: 1, lost: 0, drawn: 0 });
+    // The won game counts, and so does the timeout of the timed game, which happened before the abandon. O ran out of time.
+    expect((await store.myGames(alice)).byMode.online).toEqual({ played: 2, won: 2, lost: 0, drawn: 0 });
+    expect((await store.get(blitz, alice)).games).toMatchObject([{ timedOut: true }]);
     expect(await store.abandonStale(7 * day)).toEqual([]);
   });
 });
