@@ -83,6 +83,8 @@ export function resultText(game: Game, index: number): string {
       return `${playerName(seatNow(index, game.status.winner))} won on time`;
     case 'draw':
       return 'Draw';
+    case 'abandoned':
+      return 'Abandoned';
     case 'playing':
       return game === current() ? 'Live' : 'Not finished';
   }
@@ -119,6 +121,8 @@ function statusText(): string {
     }
     case 'draw':
       return 'Draw. The cube is full.';
+    case 'abandoned':
+      return 'This game ended. Nobody moved for a week.';
     case 'playing':
       if (page.thinking) return 'Computer is thinking…';
       if (settings.mode === 'friend') return `Player ${game.turn} to move`;

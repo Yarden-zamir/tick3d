@@ -14,7 +14,7 @@ import {
 import { DIFFICULTIES } from '../src/ai.ts';
 import { NO_LIMIT, type TimeControl } from '../src/clock.ts';
 import { type EpochMs, MAX_EPOCH_MS, epochNow, toEpochMs } from '../src/epoch.ts';
-import { type LineKind, type Player, lineKind, other, winnerOf } from '../src/game.ts';
+import { type LineKind, type Player, hasResult, lineKind, other, winnerOf } from '../src/game.ts';
 import { nameOf } from '../src/names.ts';
 import {
   ACCOUNT_TOKEN_PREFIX,
@@ -120,8 +120,8 @@ const SEATS = ['X', 'O'] as const satisfies readonly Player[];
 // statement such as `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ... DEFAULT ...`. Never edit one.
 // A session is a VARIANT document (see src/session/format.ts), so most format changes need no SQL at all.
 // pruneEmpty deletes sessions where no game has a move, pruneOld deletes old reports, moderation log,
-// page faults and deletion notices, and deleteFor deletes the data of one player. Games and results
-// have no limit until storage calls for one.
+// page faults and deletion notices, and deleteFor deletes the data of one player. abandonStale ends a live
+// game that nobody changed for a week, and keeps it. Games and results have no limit until storage calls for one.
 const SCHEMA = [
   'CREATE SEQUENCE IF NOT EXISTS session_order',
   `CREATE TABLE IF NOT EXISTS sessions (
@@ -484,7 +484,7 @@ function count(tally: Tally, outcome: 'won' | 'lost' | 'drawn' | 'played'): void
   if (outcome !== 'played') tally[outcome]++;
 }
 
-const isFinished = (record: GameRecord) => toGame(record).status.kind !== 'playing';
+const isFinished = (record: GameRecord) => hasResult(toGame(record).status);
 // A unique id is a few random tries away. Twenty failures mean a bug, not bad luck.
 const MAX_ID_ATTEMPTS = 20;
 // Raise it when a rule in src/achievements.ts changes: every row of achievement_players then fills again.
@@ -513,7 +513,8 @@ function endingOf(record: GameRecord): Ending {
     case 'draw':
       return { winner: null, ending: 'draw', line: null };
     case 'playing':
-      throw new Error('only a finished game has an ending');
+    case 'abandoned':
+      throw new Error('only a game with a result has an ending');
   }
 }
 
@@ -869,6 +870,20 @@ export async function openStore(
       if (picks(row.doc)) found.push(row);
     }
     return found;
+  }
+
+  // The sessions that nobody changed for `ageMs`. A row in memory counts by its own time: it can be newer than the file.
+  async function sessionsOlderThan(ageMs: number): Promise<{ code: Code; doc: SessionDoc }[]> {
+    const cutoff = toEpochMs(now() - ageMs);
+    const saved = await rows(
+      'FROM sessions SELECT code, doc::JSON AS doc WHERE updated_at < make_timestamptz($cutoff * 1000)',
+      { cutoff },
+      { code: codeColumn, doc: json },
+    );
+    return [
+      ...saved.filter((row) => !sessionRows.has(row.code)).map((row) => ({ code: row.code, doc: parseDoc(row.doc) })),
+      ...[...sessionRows.values()].filter((row) => row.updatedAt < cutoff),
+    ];
   }
 
   // Deletes a session from memory and from the file.
@@ -2900,7 +2915,7 @@ export async function openStore(
           seated.push({ code: row.code, doc, you, updated: row.updatedAt });
           for (const [index, record] of doc.games.entries()) {
             const game = toGame(record);
-            if (game.status.kind === 'playing') continue;
+            if (!hasResult(game.status)) continue;
             const winner = winnerOf(game.status);
             // The seats rotate between games, so the seat of this player in that game can differ from now.
             const outcome = winner === null ? 'drawn' : winner === seatIn(doc.flipped, index, you) ? 'won' : 'lost';
@@ -2962,25 +2977,32 @@ export async function openStore(
     // player on the page stays, so an open page never loses its game. Returns the codes it deleted.
     pruneEmpty: (ageMs: number) =>
       serialized(async () => {
-        const cutoff = toEpochMs(now() - ageMs);
-        const saved = await rows(
-          'FROM sessions SELECT code, doc::JSON AS doc WHERE updated_at < make_timestamptz($cutoff * 1000)',
-          { cutoff },
-          { code: codeColumn, doc: json },
-        );
-        // A row in memory counts by its own time: it can be newer than the file.
-        const old = [
-          ...saved.filter((row) => !sessionRows.has(row.code)).map((row) => ({ code: row.code, doc: parseDoc(row.doc) })),
-          ...[...sessionRows.values()].filter((row) => row.updatedAt < cutoff),
-        ];
         const deleted: Code[] = [];
-        for (const { code, doc } of old) {
+        for (const { code, doc } of await sessionsOlderThan(ageMs)) {
           const live = (await audience(code, doc)).presence;
           if (live.X || live.O || !core.isEmptySession(doc)) continue;
           await deleteSession(code);
           deleted.push(code);
         }
         return deleted;
+      }),
+
+    // Ends each live game that nobody changed for `ageMs` with no winner (core.abandonLive). Its replay stays, and it
+    // gets no result. A timeout that happened first counts as the timeout, and gets saved with its result.
+    // Returns the codes of the sessions with an abandoned game.
+    // Limit: each run reads every older session of the file, as pruneEmpty does. Revisit if a run takes more than about a second.
+    abandonStale: (ageMs: number) =>
+      serialized(async () => {
+        const ended: Code[] = [];
+        for (const { code, doc } of await sessionsOlderThan(ageMs)) {
+          const settled = core.settle(doc, now());
+          const abandoned = core.abandonLive(settled ?? doc);
+          const next = abandoned ?? settled;
+          if (next === undefined) continue;
+          await save(await loadRaw(code), next);
+          if (abandoned !== undefined) ended.push(code);
+        }
+        return ended;
       }),
 
     // The deletion notices since `since` (epoch ms), and the server time of the answer for the next call.

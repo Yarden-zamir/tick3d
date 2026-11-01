@@ -4,7 +4,7 @@
 import { DIFFICULTIES, type Difficulty } from './ai.ts';
 import { hasLimit, remaining } from './clock.ts';
 import { type EpochMs, isEpochMs } from './epoch.ts';
-import { CELL_COUNT, type Game, type Player, emptyCells, lineKind, replay, toCoords, winningLine } from './game.ts';
+import { CELL_COUNT, type Game, type Player, emptyCells, hasResult, lineKind, replay, toCoords, winningLine } from './game.ts';
 import { isCount, isRecord, isUnknownArray } from './guards.ts';
 import { type GameId, type GameRecord, type MatchOptions, type Metrics, type Outcome, type SessionMode, outcomeOf, parseGameId, toGame } from './protocol.ts';
 
@@ -677,7 +677,7 @@ export function achievementProgress(games: readonly AchievementGame[], invites: 
     .toSorted((a, b) => a.finishedAt - b.finishedAt)
     .map((game): PlayedGame => {
       const end = toGame(game.game);
-      if (end.status.kind === 'playing') throw new Error('an achievement game is not finished');
+      if (!hasResult(end.status)) throw new Error('an achievement game has no result');
       const winner = end.status.kind === 'draw' ? null : end.status.winner;
       // The player of a friend game held both seats, so a win of either seat is their win.
       const outcome = game.you === null ? (winner === null ? 'drawn' : 'won') : outcomeOf(winner, game.you);

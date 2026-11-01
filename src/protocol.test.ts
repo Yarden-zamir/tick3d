@@ -248,6 +248,7 @@ describe('parseResultUpload', () => {
 
   it.each([
     ['an unfinished game', { ...valid, game: toRecord(replay([0, 1])) }],
+    ['an abandoned game', { ...valid, game: { ...toRecord(replay([0, 1])), abandoned: true } }],
     ['an illegal game', { ...valid, game: { ...finished, moves: [0, 0, 1, 2, 3, 4, 5] } }],
     ['a friend game with a seat', { ...valid, mode: 'friend', you: 'X', difficulty: null }],
     ['a computer game without a level', { ...valid, difficulty: null }],

@@ -18,7 +18,9 @@ export type Status =
   | { kind: 'won'; winner: Player; line: Line }
   // The other player ran out of time.
   | { kind: 'timeout'; winner: Player }
-  | { kind: 'draw' };
+  | { kind: 'draw' }
+  // Nobody moved for a long time, so the server ended the game (abandonStale in server/store.ts). It has no result.
+  | { kind: 'abandoned' };
 
 export type Game = {
   board: Board;
@@ -40,6 +42,10 @@ export const other = (player: Player): Player => (player === 'X' ? 'O' : 'X');
 export function winnerOf(status: Status): Player | null {
   return status.kind === 'won' || status.kind === 'timeout' ? status.winner : null;
 }
+
+// False for a live or an abandoned game: only a result counts in the stats and achievements.
+export const hasResult = (status: Status): status is Exclude<Status, { kind: 'playing' | 'abandoned' }> =>
+  status.kind !== 'playing' && status.kind !== 'abandoned';
 
 function assertCell(cell: number): void {
   if (!Number.isInteger(cell) || cell < 0 || cell >= CELL_COUNT) {
@@ -149,6 +155,12 @@ export function play(game: Game, cell: number, at: EpochMs = epochNow()): MoveRe
 export function timeOut(game: Game): Game {
   if (game.status.kind !== 'playing') throw new Error('only a live game can time out');
   return { ...game, status: { kind: 'timeout', winner: other(game.turn) } };
+}
+
+// Ends a live game with no winner.
+export function abandon(game: Game): Game {
+  if (game.status.kind !== 'playing') throw new Error('only a live game can be abandoned');
+  return { ...game, status: { kind: 'abandoned' } };
 }
 
 type ReplayOptions = { first?: Player; times?: readonly EpochMs[]; clock?: TimeControl };

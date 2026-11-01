@@ -89,8 +89,9 @@ describe('parseDoc', () => {
   it('refuses a stored game that does not replay, so it never breaks every later load', () => {
     const doc = formatOne as { games: object[] };
     const [won, ...rest] = doc.games;
-    // The first game of the fixture is won by X. A timeout after the end is impossible.
+    // The first game of the fixture is won by X. A timeout or an abandon after the end is impossible.
     expect(() => parseDoc({ ...doc, games: [{ ...won, timedOut: true }, ...rest] })).toThrow(FormatError);
+    expect(() => parseDoc({ ...doc, games: [{ ...won, abandoned: true }, ...rest] })).toThrow(FormatError);
   });
 
   it.each([

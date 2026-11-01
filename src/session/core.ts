@@ -4,7 +4,7 @@
 import type { Difficulty } from '../ai.ts';
 import { NO_LIMIT, type TimeControl, isFlagged, sameClock } from '../clock.ts';
 import { type EpochMs, toEpochMs } from '../epoch.ts';
-import { type Game, type Player, other, play, timeOut, undo as undoGame } from '../game.ts';
+import { type Game, type Player, abandon, other, play, timeOut, undo as undoGame } from '../game.ts';
 import { nameOf } from '../names.ts';
 import {
   CHAT_KEEP,
@@ -193,6 +193,15 @@ export const isEmptySession = (doc: SessionDoc): boolean => doc.games.every((gam
 
 // How long an empty session stays: a session someone made and never played is gone after this.
 export const EMPTY_SESSION_TTL_MS = 9 * 3_600_000;
+// A live game with no change for this long ends with no winner (abandonStale in server/store.ts).
+export const STALE_GAME_MS = 7 * 24 * 3_600_000;
+
+// Ends the live game with no winner. Undefined when the live game has no move or is over: then nothing waits.
+export function abandonLive(doc: SessionDoc): SessionDoc | undefined {
+  const game = currentGame(doc);
+  if (game.status.kind !== 'playing' || game.moves.length === 0) return undefined;
+  return replaceCurrent(doc, abandon(game));
+}
 
 // A session holds any number of games: the same players can keep playing for as long as they like.
 export function newGame(doc: SessionDoc, identity: Identity): SessionDoc {
