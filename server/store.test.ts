@@ -299,6 +299,34 @@ describe('results', () => {
   });
 });
 
+describe('abandoning stale games', () => {
+  it('ends a live game with no change for the given time with no winner and no result, and keeps it', async () => {
+    const day = 24 * 3_600_000;
+    let later = 0;
+    const path = `${await mkdtemp('/tmp/tick3d-store-')}/stale.duckdb`;
+    const options = { now: () => ms(Date.now() + later) };
+    store = await openStore(path, options);
+    const stale = (await store.create(alice, 'Stale')).code;
+    await store.join(stale, bob);
+    await playMoves(stale, X_WINS.slice(0, 3));
+    const between = (await store.create(alice, 'Between games')).code;
+    await store.join(between, bob);
+    await playMoves(between, X_WINS);
+    await store.newGame(between, bob);
+    // A restart: the stale game is in the file only, as after a deploy.
+    await store.close();
+    store = await openStore(path, options);
+
+    expect(await store.abandonStale(7 * day)).toEqual([]);
+    later = 8 * day;
+    expect(await store.abandonStale(7 * day)).toEqual([stale]);
+    expect((await store.get(stale, alice)).games).toMatchObject([{ moves: X_WINS.slice(0, 3), abandoned: true }]);
+    expect(await status(() => store.move(stale, bob, { game: 0, moveCount: 3, cell: 63 }))).toBe(409);
+    expect((await store.myGames(alice)).byMode.online).toEqual({ played: 1, won: 1, lost: 0, drawn: 0 });
+    expect(await store.abandonStale(7 * day)).toEqual([]);
+  });
+});
+
 describe('my games', () => {
   it('counts online games and uploaded results for the player across linked devices', async () => {
     const code = await session();

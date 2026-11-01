@@ -1,7 +1,7 @@
 // The end of a game: sounds, confetti, and the end card.
 import { type CardInput, cardCellBox, cardFilename, drawCard, shareImage, saveImage } from '../card.ts';
 import { formatClock, describeClock } from '../clock.ts';
-import { type Game, other, winnerOf } from '../game.ts';
+import { type Game, hasResult, other, winnerOf } from '../game.ts';
 import { sounds } from '../sound.ts';
 import {
   cardDialog,
@@ -182,7 +182,7 @@ function cardInput(game: Game, index: number, gameId: GameId | undefined, tuned:
 
 export async function openCard(index: number): Promise<void> {
   const game = page.games[index];
-  if (game === undefined || game.status.kind === 'playing') throw new Error(`game ${index} has no result to show`);
+  if (game === undefined || !hasResult(game.status)) throw new Error(`game ${index} has no result to show`);
   // A local game has no code, so only the link option applies.
   cardCodeOption.hidden = page.session?.mode !== 'online';
   cardVoiceOption.hidden = voiceClips(index).size === 0;

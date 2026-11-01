@@ -92,7 +92,7 @@ function readGame(value: unknown, index: number): GameRecord {
   }
   const clock = value.clock === undefined ? NO_LIMIT : parseClock(value.clock);
   if (clock === undefined) throw new FormatError(`game ${index} has an invalid clock`);
-  const record: GameRecord = { moves, times, clock, timedOut: value.timedOut === true };
+  const record: GameRecord = { moves, times, clock, timedOut: value.timedOut === true, ...(value.abandoned === true ? { abandoned: true } : {}) };
   // Replay the game, so a stored game with an illegal move or a timeout after its end never loads.
   try {
     toGame(record);

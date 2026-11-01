@@ -30,7 +30,7 @@ import {
 } from '../src/protocol.ts';
 import { asHostId, parseAnnounce, parseAnswerRequest } from '../src/nearby/lobby.ts';
 import { type Hello, decodeSignal } from '../src/nearby/signal.ts';
-import { EMPTY_SESSION_TTL_MS, SessionError } from '../src/session/core.ts';
+import { EMPTY_SESSION_TTL_MS, STALE_GAME_MS, SessionError } from '../src/session/core.ts';
 import { isEpochMs } from '../src/epoch.ts';
 import { RELEASE_FILE, parseRelease } from '../src/release.ts';
 import {
@@ -889,9 +889,12 @@ const server = createServer((req, res) => {
 
 // Sessions that nobody played go after a while, at start and then every hour. So do old reports,
 // moderation log entries, page faults and deletion notices (pruneOld in server/store.ts).
+// A live game with no change for STALE_GAME_MS ends with no winner (abandonStale).
 async function pruneEmptySessions(): Promise<void> {
   const deleted = await store.pruneEmpty(EMPTY_SESSION_TTL_MS);
   if (deleted.length > 0) console.log(`pruned ${deleted.length} empty sessions`);
+  const abandoned = await store.abandonStale(STALE_GAME_MS);
+  if (abandoned.length > 0) console.log(`abandoned ${abandoned.length} stale games`);
   const old = await store.pruneOld();
   if (Object.values(old).some((count) => count > 0)) console.log('pruned old rows', old);
 }

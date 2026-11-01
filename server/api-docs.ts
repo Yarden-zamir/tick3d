@@ -273,7 +273,8 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
     times: { type: 'array', items: { type: 'number' }, description: 'The server time of each move, in epoch milliseconds.' },
     clock: ref('TimeControl'),
     timedOut: { type: 'boolean', description: 'True when the player to move ran out of time.' },
-  }),
+    abandoned: { const: true, description: 'Set when nobody moved for a week, so the server ended the game. It has no winner and no result.' },
+  }, ['abandoned']),
   Status: {
     description: 'The state of the live game.',
     oneOf: [
@@ -285,6 +286,7 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       }),
       object('The other player ran out of time.', { kind: { const: 'timeout' }, winner: ref('Player') }),
       object('The cube is full and no player has a line.', { kind: { const: 'draw' } }),
+      object('Nobody moved for a week, so the server ended the game. It has no winner and no result.', { kind: { const: 'abandoned' } }),
     ],
   },
   ChatMessage: object('A chat message.', {

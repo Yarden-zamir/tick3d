@@ -1,5 +1,5 @@
 // The account button and the My games dialog.
-import { winnerOf } from '../game.ts';
+import { hasResult, winnerOf } from '../game.ts';
 import type { LocalSummary } from '../local.ts';
 import { avatarFor, avatarImage, avatarPlaceholder, type Person } from '../avatar.ts';
 import { nameOf } from '../names.ts';
@@ -635,7 +635,7 @@ export function renderSessionGames(): void {
       if (game !== current() || game.status.kind !== 'playing') {
         actions.push({ label: page.review?.game === index ? 'Viewing' : 'Replay', run: () => startReview(index) });
       }
-      if (game.status.kind !== 'playing') actions.push({ label: 'Card', run: () => void openCard(index).catch(showError) });
+      if (hasResult(game.status)) actions.push({ label: 'Card', run: () => void openCard(index).catch(showError) });
       const item = listItem(`Game ${index + 1}`, `${resultText(game, index)} · ${game.moves.length} ${game.moves.length === 1 ? 'move' : 'moves'}`, actions);
       item.classList.toggle('active', page.review?.game === index);
       return item;

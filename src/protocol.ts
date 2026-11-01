@@ -3,7 +3,7 @@ import type { AchievementId, Achievements } from './achievements.ts';
 import { DIFFICULTIES, type Difficulty } from './ai.ts';
 import { NO_LIMIT, type TimeControl, parseClock } from './clock.ts';
 import { type EpochMs, isEpochMs } from './epoch.ts';
-import { CELL_COUNT, type Game, type Player, type Status, other, replay, timeOut } from './game.ts';
+import { CELL_COUNT, type Game, type Player, type Status, abandon, hasResult, other, replay, timeOut } from './game.ts';
 import type { DeviceKind } from './nearby/device.ts';
 import { type Tuning, isTuning, parseTuning } from './tuning.ts';
 import { type Playoff, parsePlayoff } from './practice/playoff.ts';
@@ -82,7 +82,8 @@ type SeatNames = Record<Player, string | null>;
 export const SESSION_MODES = ['computer', 'friend', 'online', 'nearby'] as const;
 export type SessionMode = (typeof SESSION_MODES)[number];
 // One game as stored: moves, the time of each move, its time limit, and whether the player to move ran out of time.
-export type GameRecord = { moves: number[]; times: EpochMs[]; clock: TimeControl; timedOut: boolean };
+// `abandoned` is set only on a game that the server ended for no change (abandon in src/game.ts).
+export type GameRecord = { moves: number[]; times: EpochMs[]; clock: TimeControl; timedOut: boolean; abandoned?: true };
 
 // The seat in game `index` of the player on `seat` now, and the reverse: a swap is its own inverse.
 // `flipped` has one entry per game: true when the two players sat the other way round in that game.
@@ -310,11 +311,13 @@ export type SessionUpdate = { name?: string; clock?: TimeControl; fixedSeats?: b
 
 export function toGame(record: GameRecord): Game {
   const game = replay(record.moves, { times: record.times, clock: record.clock });
-  return record.timedOut ? timeOut(game) : game;
+  const ended = record.timedOut ? timeOut(game) : game;
+  return record.abandoned === true ? abandon(ended) : ended;
 }
 
 export function toRecord(game: Game): GameRecord {
-  return { moves: [...game.moves], times: [...game.times], clock: game.clock, timedOut: game.status.kind === 'timeout' };
+  const record: GameRecord = { moves: [...game.moves], times: [...game.times], clock: game.clock, timedOut: game.status.kind === 'timeout' };
+  return game.status.kind === 'abandoned' ? { ...record, abandoned: true } : record;
 }
 
 export type MoveRequest = { game: number; moveCount: number; cell: number };
@@ -413,13 +416,14 @@ export function isMoveList(value: unknown): value is number[] {
 
 export function isGameRecord(value: unknown): value is GameRecord {
   if (!isRecord(value)) return false;
-  const { moves, times, timedOut, clock } = value;
+  const { moves, times, timedOut, abandoned, clock } = value;
   return (
     isMoveList(moves) &&
     Array.isArray(times) &&
     times.length === moves.length &&
     times.every(isEpochMs) &&
     typeof timedOut === 'boolean' &&
+    (abandoned === undefined || abandoned === true) &&
     parseClock(clock) !== undefined
   );
 }
@@ -829,14 +833,14 @@ export function parseResultUpload(value: unknown, now: EpochMs): ResultUpload | 
   }
   if (mode !== 'computer' && mode !== 'friend' && mode !== 'nearby') return undefined;
   if (!isGameRecord(game)) return undefined;
-  // Only finished games count. Replaying also proves every move is legal.
+  // Only games with a result count. Replaying also proves every move is legal.
   let finished: Game;
   try {
     finished = toGame(game);
   } catch {
     return undefined;
   }
-  if (finished.status.kind === 'playing') return undefined;
+  if (!hasResult(finished.status)) return undefined;
   if (you !== null && you !== 'X' && you !== 'O') return undefined;
   if (mode === 'friend' ? you !== null : you === null) return undefined;
   const level = difficulty === null ? null : DIFFICULTIES.find((d) => d === difficulty);
@@ -904,7 +908,7 @@ export function parsePublicGame(value: unknown): PublicGame {
   const difficulty = value.difficulty === null ? null : oneOf(DIFFICULTIES, value.difficulty);
   if (id === undefined || id !== value.id) return fail('id');
   if (mode === undefined) return fail('mode');
-  if (!isGameRecord(game) || toGame(game).status.kind === 'playing') return fail('game');
+  if (!isGameRecord(game) || !hasResult(toGame(game).status)) return fail('game');
   const matchOptions = parseMatchOptions(options);
   if (matchOptions === undefined) return fail('options');
   if (difficulty === undefined || (mode === 'computer') !== (difficulty !== null)) return fail('difficulty');
