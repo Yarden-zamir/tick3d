@@ -1965,13 +1965,13 @@ describe('a crash', () => {
        await store.move(code, b, { game: 1, moveCount: 0, cell: 5 });
        await store.move(code, a, { game: 1, moveCount: 1, cell: 6 });
        await new Promise((resolve) => setTimeout(resolve, 500));
-       console.log(code);
-       process.kill(process.pid, 'SIGKILL');`,
+       process.stdout.write(code + '\\n', () => process.kill(process.pid, 'SIGKILL'));`,
     );
     const child = spawn(process.execPath, [script], { stdio: ['ignore', 'pipe', 'inherit'] });
     let output = '';
     child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()));
-    const signal = await new Promise<NodeJS.Signals | null>((resolve) => child.on('exit', (_, killed) => resolve(killed)));
+    // 'close' comes after the last stdout data, unlike 'exit'.
+    const signal = await new Promise<NodeJS.Signals | null>((resolve) => child.on('close', (_, killed) => resolve(killed)));
     expect(signal).toBe('SIGKILL');
     const code = output.trim() as Code;
     store = await openStore(path);

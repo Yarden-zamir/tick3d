@@ -2094,6 +2094,8 @@ export async function openStore(
       await db.run('ROLLBACK');
       throw error;
     }
+    // The deleted tokens must not stay in process memory.
+    for (const owner of identity) personIds.delete(owner);
     for (const code of changed) onChange(code);
     return counts;
   }
