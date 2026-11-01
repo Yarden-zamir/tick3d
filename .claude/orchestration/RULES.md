@@ -6,7 +6,7 @@ A maintainer is anyone with the `OWNER`, `MEMBER` or `COLLABORATOR` role on the 
 
 ## Identity
 
-1. Run every GitHub write through `gh-agent`, so that it shows as `tick3d-agents[bot]`. This includes comments, pull requests, labels, reactions, merges and `git push`. Examples: `.claude/orchestration/gh-agent gh pr create ...`, `.claude/orchestration/gh-agent git push -u origin HEAD`. Never write to GitHub as a maintainer.
+1. Run every GitHub write through `gh-agent`, so that it shows as `tick3d-agents[bot]`. This includes comments, pull requests, labels, reactions, merges and `git push`. Examples: `.claude/orchestration/gh-agent gh pr create ...`, `.claude/orchestration/gh-agent git push -u origin HEAD`. Never write to GitHub as a maintainer. This also holds for agents from other projects that change this repo.
 2. Start every comment, pull request description and issue comment with the line `<!-- agent -->`. Put your signature on the next line: `🤖 **<Name>** · <title>`. Conductor gives you the name and the title. The marker keeps the trigger workflow and the PR watch from treating your text as maintainer input.
 3. Never credit yourself or an AI in commits, comments, pull requests or issues. Use conventional commits.
 
