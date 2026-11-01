@@ -219,7 +219,7 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 
 ## Share page
 
-`/share` holds the invite link and the steps to join the closed test: Android (Google Group, Play testing, a free Google Play promo code, install) and iPhone (TestFlight). The page was `/testing` before: `/testing` redirects to `/share` (`container/Caddyfile`), and `testing.tick3d.yarden-zamir.com` redirects there on production (the KitSHn 1 host Caddy, see `kitshn.md`), both with the query, so the links sent before the rename keep working.
+`/share` holds the invite link and the steps to join the closed test: Android (Google Group, Play testing, a free Google Play promo code, install) and iPhone (TestFlight). The page was `/testing` before: `/testing` redirects to `/share` with the query (`container/Caddyfile`), so the links sent before the rename keep working. The old host `testing.tick3d.yarden-zamir.com` is gone (see `kitshn.md`): use `https://tick3d.yarden-zamir.com/share`.
 
 - The codes come from the GitHub secret `KITSHN_TESTER_CODES` in the Environment `prod`, never from git: one entry per line or comma. `CODE` is a free code, and `CODE=Name` is a code that Name has already. A code has 10 to 30 characters from A-Z and 0-9.
 - At start, the API adds the codes that it does not hold yet. A known code keeps its row and its claim. A bad entry stops the start. Only production reads the secret, so a preview shows no codes.
