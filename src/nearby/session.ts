@@ -224,7 +224,7 @@ export function createNearbyGuest(channel: Channel, token: PlayerToken, onBye: (
     seat: (_code: Code, action: SeatAction) => view('seat', action),
     answerSeat: (_code: Code, accept: boolean) => view('answerSeat', { accept }),
     // One channel carries one session, so every change notice is for this session.
-    subscribe: (_code: Code, onChange: () => void): (() => void) => rpc.onChanged(() => onChange()),
+    subscribe: (_code: Code, onChange: (view: undefined) => void): (() => void) => rpc.onChanged(() => onChange(undefined)),
     onLink: (handler: (game: number, id: DeviceGameId) => void) => rpc.onLink(handler),
     // A guest that leaves on purpose gets no goodbye message.
     close(): void {

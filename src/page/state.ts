@@ -226,5 +226,6 @@ export type SessionBackend = {
   chat(code: Code, text: string): Promise<SessionView>;
   seat(code: Code, action: SeatAction): Promise<SessionView>;
   answerSeat(code: Code, accept: boolean): Promise<SessionView>;
-  subscribe(code: Code, onChange: () => void): () => void;
+  // `view` is the new view when the backend sends it along, or undefined when the page must load it.
+  subscribe(code: Code, onChange: (view: SessionView | undefined) => void): () => void;
 };

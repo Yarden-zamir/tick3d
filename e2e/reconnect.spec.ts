@@ -89,7 +89,10 @@ test('after a new game swapped the seats behind a dead stream, the page shows th
   await dropStreams(alice);
   await bob.locator('#new-game').click();
   await expect(status(bob)).toContainText('Your move (X)');
+  // The page shows the move before the server has it. Alice must read the session after the server stored it.
+  const moved = bob.waitForResponse((response) => response.url().endsWith(`/api/sessions/${code}/moves`) && response.ok());
   await cell(bob, 5).click();
+  await moved;
 
   // Alice comes back. The page reads the session again: she plays O now, and sees Bob's move.
   await hideAndShow(alice);

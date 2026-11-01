@@ -60,7 +60,7 @@ export function createLocalBackend(
   // The account of this device's player, shown on its seats. Null without a login.
   account: () => PlayerInfo | null,
 ) {
-  const listeners = new Map<Code, Set<() => void>>();
+  const listeners = new Map<Code, Set<(view: undefined) => void>>();
   // A Nearby host reports which seats are connected, its watchers and their names.
   // Other sessions on this device have both seats present, no watchers, and no other person to block.
   const audiences = new Map<Code, (doc: SessionDoc) => core.Audience>();
@@ -68,7 +68,7 @@ export function createLocalBackend(
     audiences.get(code)?.(doc) ?? { presence: { X: doc.seats.X !== null, O: doc.seats.O !== null }, watchers: [], name: nameOf, person: () => null };
   // Other tabs of this device hear about changes, so two open tabs show the same game.
   const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel('tick3d-local');
-  const fire = (code: Code) => listeners.get(code)?.forEach((listener) => listener());
+  const fire = (code: Code) => listeners.get(code)?.forEach((listener) => listener(undefined));
   if (channel) channel.onmessage = (event: MessageEvent<unknown>) => {
     // This file posts a valid code. A tab of another version can post something else, so a bad message is ignored.
     const code = typeof event.data === 'string' ? normalizeCode(event.data) : undefined;
@@ -197,7 +197,7 @@ export function createLocalBackend(
     },
     notify: (code: Code) => fire(code),
 
-    subscribe(code: Code, onChange: () => void): () => void {
+    subscribe(code: Code, onChange: (view: undefined) => void): () => void {
       const set = listeners.get(code) ?? new Set();
       listeners.set(code, set);
       set.add(onChange);

@@ -213,7 +213,8 @@ const SIDED_GAMES = 5000;
 // `tokens`: the tokens of one player for the Mine scope and a person filter, else null.
 // The caller runs one call at a time on its connection, so one set of temporary tables is enough.
 // The practice part comes from server/practice.ts.
-export async function computeStats(rows: Rows, now: EpochMs, filter: StatsFilter, tokens: readonly string[] | null): Promise<Omit<Stats, 'practice' | 'person' | 'achievements'>> {
+// `sessions`: how many sessions exist. The live ones are in memory only (server/store.ts), so the store counts them.
+export async function computeStats(rows: Rows, now: EpochMs, filter: StatsFilter, tokens: readonly string[] | null, sessions: number): Promise<Omit<Stats, 'practice' | 'person' | 'achievements'>> {
   const scoped = filter.scope === 'mine' || filter.person !== null;
   if (scoped !== (tokens !== null)) throw new Error('Mine and a person filter need the tokens of the player, and only they take them');
   if (tokens === null) {
@@ -233,7 +234,7 @@ export async function computeStats(rows: Rows, now: EpochMs, filter: StatsFilter
     await rows('CREATE OR REPLACE TEMP VIEW stats_sample AS FROM stats_games', {}, {});
   }
   try {
-    return await statsOfGames(rows, filter, scoped, now);
+    return await statsOfGames(rows, filter, scoped, now, sessions);
   } finally {
     await rows(tokens === null ? 'DROP TABLE IF EXISTS stats_sample' : 'DROP VIEW IF EXISTS stats_sample', {}, {});
     await rows(tokens === null ? 'DROP VIEW IF EXISTS stats_games' : 'DROP TABLE IF EXISTS stats_games', {}, {});
@@ -243,7 +244,7 @@ export async function computeStats(rows: Rows, now: EpochMs, filter: StatsFilter
 // A query without bound values.
 type Query = <S extends Shape>(sql: string, shape: S) => Promise<RowOf<S>[]>;
 
-async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, now: EpochMs): Promise<Omit<Stats, 'practice' | 'person' | 'achievements'>> {
+async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, now: EpochMs, sessions: number): Promise<Omit<Stats, 'practice' | 'person' | 'achievements'>> {
   const q: Query = (sql, shape) => rows(sql, {}, shape);
 
   const [totals] = await q(`${GAMES}, seats AS (SELECT unnest([player_x, player_o]) AS token FROM g)
@@ -252,9 +253,8 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, no
       (SELECT coalesce(sum(len(moves)), 0) FROM g)::INTEGER AS moves,
       (SELECT count(DISTINCT ${PERSON}) FROM seats LEFT JOIN player_tokens pt USING (token) WHERE token IS NOT NULL)::INTEGER AS players,
       (SELECT count(*) FROM users)::INTEGER AS accounts,
-      (SELECT count(*) FROM sessions)::INTEGER AS sessions,
       (SELECT count(*) FROM g WHERE finished_at >= now() - INTERVAL 7 DAY)::INTEGER AS last7`,
-    { games: int, moves: int, players: int, accounts: int, sessions: int, last7: int },
+    { games: int, moves: int, players: int, accounts: int, last7: int },
   );
   if (totals === undefined) throw new Error('the totals query returned no row');
 
@@ -395,7 +395,7 @@ async function statsOfGames(rows: Rows, filter: StatsFilter, scoped: boolean, no
       moves: totals.moves,
       players: totals.players,
       accounts: totals.accounts,
-      sessions: totals.sessions,
+      sessions,
       gamesLast7Days: totals.last7,
     },
     perDay: perDay.map((row) => ({ day: new Date(row.d * DAY_MS).toISOString().slice(0, 10), games: row.games, players: row.players })),

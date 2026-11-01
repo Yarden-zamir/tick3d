@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { toEpochMs } from './epoch.ts';
+import { nameOf } from './names.ts';
 import { api, parseMyGames } from './online.ts';
-import { normalizeCode } from './protocol.ts';
+import { type SessionView, normalizeCode } from './protocol.ts';
+import * as core from './session/core.ts';
 
 // A stand-in for the browser EventSource. The test opens, fails and closes each stream by hand.
 class FakeSource {
@@ -10,7 +13,7 @@ class FakeSource {
   static opened: FakeSource[] = [];
   readyState = FakeSource.CONNECTING;
   onopen: (() => void) | null = null;
-  onmessage: (() => void) | null = null;
+  onmessage: ((event: { data: unknown }) => void) | null = null;
   onerror: (() => void) | null = null;
   readonly url: string;
   constructor(url: string) {
@@ -61,13 +64,38 @@ describe('api.subscribe', () => {
     vi.unstubAllGlobals();
   });
 
-  it('loads the session on each open and each change', () => {
+  it('loads the session on each open and each change without a view', () => {
     const onChange = vi.fn();
     api.subscribe(code, onChange);
     expect(last().url).toContain(`/api/sessions/${code}/events?player=`);
     last().open();
-    last().onmessage?.();
-    expect(onChange).toHaveBeenCalledTimes(2);
+    last().onmessage?.({ data: 'changed' });
+    expect(onChange.mock.calls).toEqual([[undefined], [undefined]]);
+  });
+
+  it('passes on the view that the server sends with a change', () => {
+    const doc = core.createDoc({ name: 'Match', mode: 'online', seats: { X: 'aaaaaaaa-0000-4000-8000-000000000001', O: null } });
+    const view: SessionView = core.viewOf(doc, {
+      code,
+      version: 3,
+      identity: new Set(),
+      now: toEpochMs(0),
+      audience: { presence: { X: true, O: false }, watchers: [], name: nameOf, person: () => null },
+      players: { X: null, O: null },
+    });
+    const onChange = vi.fn();
+    api.subscribe(code, onChange);
+    last().onmessage?.({ data: JSON.stringify(view) });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ code, version: 3 }));
+  });
+
+  // A newer server can send a view that this page cannot read. The page then loads the session, which shows the problem.
+  it('asks the page to load the session for a view that it cannot read', () => {
+    const onChange = vi.fn();
+    api.subscribe(code, onChange);
+    last().onmessage?.({ data: '{"code":"AB23"}' });
+    last().onmessage?.({ data: 'not json' });
+    expect(onChange.mock.calls).toEqual([[undefined], [undefined]]);
   });
 
   it('leaves a dropped stream to the browser', () => {

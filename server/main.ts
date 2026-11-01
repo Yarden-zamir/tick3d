@@ -6,6 +6,7 @@ import {
   type Code,
   type PersonId,
   type PlayerToken,
+  type SessionView,
   RESULTS_PER_UPLOAD,
   asPlayerToken,
   isGitHubLogin,
@@ -72,8 +73,9 @@ const MAX_BODY_BYTES = 4096;
 const MAX_RESULTS_BODY_BYTES = 256 * 1024;
 // An event is a short message, its kind and the app version.
 const MAX_EVENT_BODY_BYTES = 1024;
-// Each open page holds one event stream. This cap keeps a flood of streams from exhausting memory.
-const MAX_STREAMS = 2000;
+// Each open page holds one event stream. This cap keeps a flood of streams from exhausting memory. Two cores carried
+// 800 online games well and 1,600 slowly (#253), two pages each, so the cap leaves room for watchers and spare games.
+const MAX_STREAMS = 10_000;
 // Each long poll (GET /api/sessions/{code}?wait=) holds one request. The same reason caps them.
 const MAX_WAITERS = 2000;
 const waiters = createWaiters(MAX_WAITERS);
@@ -167,10 +169,47 @@ function notifyPlayer(token: PlayerToken): void {
   for (const [code, set] of streams) if ([...set].some((stream) => stream.token === token)) notify(code);
 }
 
-// Tells every open page of a session to fetch it again, and wakes its long polls.
+// Sends the new view to every open page of a session, and wakes its long polls. Each page then needs no
+// GET of its own (#253). While a push runs, more changes of the session lead to one more push, not one each.
+// Codes with a push running; true when a change came during the push.
+const pushing = new Map<Code, boolean>();
+
 function notify(code: Code): void {
-  for (const stream of streams.get(code) ?? []) stream.res.write('data: changed\n\n');
   waiters.wake(code);
+  if (!streams.has(code)) return;
+  if (pushing.has(code)) {
+    pushing.set(code, true);
+    return;
+  }
+  void push(code);
+}
+
+async function push(code: Code): Promise<void> {
+  try {
+    do {
+      pushing.set(code, false);
+      const open = [...(streams.get(code) ?? [])];
+      const tokens = [...new Set(open.map((stream) => stream.token))];
+      const views = new Map<PlayerToken | undefined, SessionView>();
+      try {
+        const built = await store.views(code, tokens);
+        tokens.forEach((token, i) => {
+          const view = built[i];
+          if (view !== undefined) views.set(token, view);
+        });
+      } catch (error) {
+        // A deleted session ends in a 404 on the fetch of each page, which shows it. Anything else is a fault.
+        if (!(error instanceof SessionError)) console.error(`push of ${code} failed`, error);
+      }
+      // A stream that opened during the push has no view yet: "changed" makes its page fetch one.
+      for (const stream of streams.get(code) ?? []) {
+        const view = views.get(stream.token);
+        stream.res.write(view === undefined ? 'data: changed\n\n' : `data: ${JSON.stringify(view)}\n\n`);
+      }
+    } while (pushing.get(code) === true);
+  } finally {
+    pushing.delete(code);
+  }
 }
 
 function send(res: ServerResponse, status: number, body: unknown, headers: Record<string, string | string[]> = {}): void {
