@@ -165,6 +165,7 @@ A mode change moves neither the board nor the Opponent picker:
 - `src/ai.ts`, `src/ai-worker.ts`, `src/move-search.ts`: the computer levels, in a Web Worker.
 - `src/session/core.ts`: the session rules. The server, the device and the Nearby host all run them.
 - `src/session/format.ts`: the stored session format.
+- `rust/core/`: a Rust copy of the online session rules, for the Rust server ([#265](https://github.com/Yarden-zamir/tick3d/issues/265)). It must pass every case in `src/session/rule-cases.json`. After a rule change in TypeScript, run `UPDATE_RULE_CASES=1 npx vitest run src/session/rule-cases.test.ts`, then change the Rust copy until `cargo test` in `rust/` passes.
 - `src/protocol.ts`: the contract between the page and the API.
 - `src/online.ts`: the API client. `src/local.ts` and `src/device-db.ts`: the device backend on IndexedDB.
 - `src/nearby/`: WebRTC, QR codes and the host and guest sessions.
@@ -254,6 +255,7 @@ docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:26-alpine npx vite 
 
 - `npm run check` runs the type check, the linters (`npm run lint`) and the unit tests.
 - `npm run build` runs the type check and the Vite build.
+- `cargo test` in `rust/` runs the Rust rules against the rule cases. `rust/rust-toolchain.toml` sets the Rust version.
 - `npm run api` starts the API on port 8080 with `./dev.duckdb`.
 - `npm run dev` starts the Vite dev server on port 5173. It sends `/api` calls to `npm run api`, so run both for Online games.
 
