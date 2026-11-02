@@ -1,0 +1,36 @@
+name: rust
+
+# Runs the tests and the lints of the Rust rules (rust/). The tests replay src/session/rule-cases.json,
+# so a change of the TypeScript rules that regenerates that file runs this job too.
+# rust/rust-toolchain.toml pins the Rust version: rustup installs it at the first cargo command.
+on:
+  push:
+    branches: [main]
+    paths: [rust/**, src/session/rule-cases.json, .github/workflows/rust.yml]
+  pull_request:
+    paths: [rust/**, src/session/rule-cases.json, .github/workflows/rust.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      # Cargo runs build scripts and tests from the pull request, so the token does not stay on disk.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
