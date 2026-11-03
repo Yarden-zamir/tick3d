@@ -485,6 +485,22 @@ impl Db {
         Ok(outcomes)
     }
 
+    /// The sessions that `picks` keeps: the rows in memory, and the rows of `saved`, the codes that SQL found in the
+    /// file. A session in memory counts by its memory row, which can be newer than the file.
+    pub(super) fn sessions_where(&mut self, saved: Vec<String>, picks: impl Fn(&SessionDoc) -> bool) -> ApiResult<Vec<Row>> {
+        let mut found: Vec<Row> = self.sessions.rows.values().filter(|(row, _)| picks(&row.doc)).map(|(row, _)| row.clone()).collect();
+        for code in saved {
+            if self.sessions.rows.contains_key(&code) {
+                continue;
+            }
+            let row = self.load_raw(&code)?;
+            if picks(&row.doc) {
+                found.push(row);
+            }
+        }
+        Ok(found)
+    }
+
     // ---- Pruning ----
 
     /// The sessions that nobody changed for `age_ms`. A row in memory counts by its own time: it can be newer than the file.

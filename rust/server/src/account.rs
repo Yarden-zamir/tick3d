@@ -1,7 +1,9 @@
 //! The routes of the player's own account (server/main.ts: GET /api/me, name, avatar, stats-privacy, blocks).
 //! A cross-site form cannot send the X-Player header, so another site cannot change a player's account.
 use axum::body::Body;
-use axum::extract::{Path, State};
+use std::net::SocketAddr;
+
+use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
 use serde_json::{Value, json};
@@ -10,9 +12,14 @@ use tick3d_core::session::{LoginProvider, PlayerInfo};
 use crate::App;
 use crate::auth::{Login, is_maintainer};
 use crate::error::{ApiError, ApiResult};
+use crate::limits::{Limiter, client_of};
 use crate::protocol::{parse_avatar_request, parse_block_request, parse_custom_name, parse_person_id, parse_stats_privacy};
 use crate::sessions::{MAX_BODY_BYTES, ok_json, read_json, require_player};
 use crate::store::now_ms;
+
+/// Delete my data per address: a player needs it once, so 10 per hour leaves room for a family on one address
+/// (DATA_DELETES_PER_HOUR).
+static ALLOW_DATA_DELETE: Limiter = Limiter::new(10, 3_600_000, 10_000, "Too many data deletions from this address. Try again later.");
 
 /// The origin of the page, for Google One Tap.
 fn origin_of(headers: &HeaderMap) -> String {
@@ -191,4 +198,37 @@ pub async fn unblock(State(app): State<App>, Path(person): Path<String>, headers
         })
         .await?;
     Ok(ok_json(StatusCode::OK, &json!({ "blocked": blocked })))
+}
+
+/// Delete my data. A login cookie links this browser first, so the account goes with it.
+pub async fn delete_me(State(app): State<App>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> ApiResult<Response> {
+    ALLOW_DATA_DELETE.allow(&client_of(&headers, peer), now_ms())?;
+    let token = require_player(&headers)?;
+    let user = app.user(&headers);
+    app.link(&token, &user).await?;
+    let deleted = app.store.call(move |db| db.delete_for(&token)).await?;
+    let mut response = ok_json(StatusCode::OK, &deleted);
+    if let Some(auth) = &app.auth {
+        let cookie = header::HeaderValue::from_str(&auth.logout_cookie()).map_err(ApiError::fault)?;
+        response.headers_mut().insert(header::SET_COOKIE, cookie);
+    }
+    Ok(response)
+}
+
+#[derive(serde::Deserialize)]
+pub struct Since {
+    since: Option<String>,
+}
+
+/// The deletion notices since `since`. `Number(text)` in JavaScript: a missing or empty value counts as 0.
+/// Limit: hex, octal and binary texts ("0x10") are refused here, and JavaScript reads them. Revisit if a client sends one.
+pub async fn deleted(State(app): State<App>, Query(query): Query<Since>) -> ApiResult<Response> {
+    let text = query.since.unwrap_or_default();
+    let text = crate::protocol::js_trim(&text);
+    let since = if text.is_empty() { Some(0.0) } else { text.parse::<f64>().ok() };
+    let since = since
+        .filter(|since| since.fract() == 0.0 && (0.0..=9_007_199_254_740_991.0).contains(since))
+        .ok_or_else(|| ApiError::bad_request("since is not a whole number of 0 or more."))?;
+    let found = app.store.call(move |db| db.deleted_since(since as i64)).await?;
+    Ok(ok_json(StatusCode::OK, &found))
 }

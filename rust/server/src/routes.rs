@@ -36,6 +36,8 @@ static ROUTES: &[Entry] = &[
     ("POST /api/sessions/{code}/chat", |method| on(method, sessions::chat)),
     ("POST /api/sessions/{code}/playoff", |method| on(method, sessions::playoff)),
     ("GET /api/me", |method| on(method, account::get_me)),
+    ("DELETE /api/me", |method| on(method, account::delete_me)),
+    ("GET /api/deleted", |method| on(method, account::deleted)),
     ("PUT /api/me/name", |method| on(method, account::set_name)),
     ("DELETE /api/me/name", |method| on(method, account::clear_name)),
     ("PUT /api/me/avatar", |method| on(method, account::set_avatar)),
