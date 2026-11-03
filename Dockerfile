@@ -38,6 +38,29 @@ USER node
 ENV DB_PATH=/data/tick3d.duckdb
 CMD ["node", "server/main.ts"]
 
+# The Rust API (rust/server, issue #265). No compose file names these stages, so production, previews and LAN hosts do
+# not build or run them. Build by hand: docker build --target rust-api --build-context git=.git .
+# The duckdb crate downloads libduckdb.so for glibc at build time, so these stages use Debian, not Alpine.
+FROM rust:1.99.1-slim-trixie AS rust-build
+WORKDIR /src
+COPY rust rust
+RUN cd rust && cargo build --release --locked -p tick3d-server \
+  && mkdir /out && cp target/release/tick3d-server /out/ && cp target/release/build/libduckdb-sys-*/out/libduckdb.so /out/
+
+FROM debian:trixie-slim AS rust-api
+# The logins call GitHub and Google over TLS.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=rust-build /out/libduckdb.so /usr/local/lib/
+RUN ldconfig
+COPY --from=rust-build /out/tick3d-server /usr/local/bin/
+WORKDIR /app
+# The release of this build: the API reads release.json in its working directory at start (rust/server/src/main.rs).
+COPY --from=build /app/dist/release.json release.json
+RUN useradd --system --uid 1000 tick3d && mkdir /data && chown tick3d:tick3d /data
+USER tick3d
+ENV DB_PATH=/data/tick3d.duckdb
+CMD ["tick3d-server"]
+
 # Toys (container/build-toys.sh), served at /toys/. Only a pull request preview (pr-<n>) builds them: production,
 # manual deploys and LAN hosts serve no toys. A toy reads the whole committed tree from .git, because .dockerignore
 # keeps out files that it can need, such as *.md.
