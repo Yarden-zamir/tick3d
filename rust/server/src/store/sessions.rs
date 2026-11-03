@@ -65,14 +65,20 @@ impl Sessions {
     }
 
     fn keep(&mut self, row: Row) -> Row {
+        self.keep_within(row, MAX_SESSION_ROWS)
+    }
+
+    /// `keep` with a cap of `max_rows`. The row just stored never goes: its caller can mark it dirty after this call, and a
+    /// dirty code without a row would stop every later session write.
+    fn keep_within(&mut self, row: Row, max_rows: usize) -> Row {
         self.uses += 1;
         self.rows.insert(row.code.clone(), (row.clone(), self.uses));
-        if self.rows.len() > MAX_SESSION_ROWS {
+        if self.rows.len() > max_rows {
             // A row with unsaved changes stays until the next session write saves it.
             let oldest = self
                 .rows
                 .iter()
-                .filter(|(code, _)| !self.dirty.contains(*code))
+                .filter(|(code, _)| **code != row.code && !self.dirty.contains(*code))
                 .min_by_key(|(_, (_, used))| *used)
                 .map(|(code, _)| code.clone());
             if let Some(code) = oldest {
@@ -306,7 +312,9 @@ impl Db {
     /// Records a finished game of an online session in `results`, so every mode has rows in one table.
     fn record_online(&mut self, code: &str, doc: &SessionDoc, index: usize, finished_at: i64) {
         let game = doc.games[index].clone();
-        let token = doc.seats.x.clone().or_else(|| doc.seats.o.clone()).expect("a finished game has players");
+        // Both players can leave a timed game, and then its clock still ends it. Such a game belongs to nobody: it has no
+        // result row. Node threw here, and a panic would stop this process with the sessions in memory.
+        let Some(token) = doc.seats.x.clone().or_else(|| doc.seats.o.clone()) else { return };
         let stored = json!({ "mode": "online", "code": code, "number": index + 1, "name": doc.name, "game": game, "options": doc.options, "finishedAt": finished_at });
         // The answer waits for the batch, as in server/store.ts, but nothing reads its outcome.
         drop(self.queue_result(QueuedResult {
@@ -563,6 +571,16 @@ impl Db {
         self.sessions.rows.get_mut(code).expect("the session is in memory").0.updated_at -= ms;
     }
 
+    /// Moves the move times of the live game `ms` into the past, so its clock runs out (test only).
+    #[cfg(test)]
+    pub(super) fn age_game(&mut self, code: &str, ms: i64) {
+        let row = &mut self.sessions.rows.get_mut(code).expect("the session is in memory").0;
+        let game = row.doc.games.last_mut().expect("a session has a game");
+        for at in &mut game.times {
+            *at -= ms;
+        }
+    }
+
     // ---- Session writes ----
 
     /// The codes with unsaved changes now.
@@ -609,5 +627,36 @@ impl Db {
             self.sessions.dirty.remove(code);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod keep_tests {
+    use super::*;
+
+    fn row(code: &str) -> Row {
+        let doc = tick3d_core::session::create_doc(
+            "t",
+            tick3d_core::clock::NO_LIMIT,
+            PerPlayer { x: Some("0123456789abcdef-a".into()), o: None },
+        )
+        .expect("a new session");
+        Row { code: code.into(), doc, version: 1, updated_at: 0, stale: false }
+    }
+
+    #[test]
+    fn never_evicts_the_row_it_just_stored() {
+        let mut sessions = Sessions::default();
+        for code in ["AAAA", "BBBB"] {
+            sessions.keep_within(row(code), 2);
+            sessions.dirty.insert(code.into());
+        }
+        // Every other row is dirty, so the new row is the only clean one. It must stay, so its caller can mark it dirty.
+        sessions.keep_within(row("CCCC"), 2);
+        assert!(sessions.rows.contains_key("CCCC"));
+        assert!(["AAAA", "BBBB"].iter().all(|code| sessions.rows.contains_key(*code)), "dirty rows stay too");
+        // With a clean older row, that one goes.
+        sessions.keep_within(row("DDDD"), 3);
+        assert!(!sessions.rows.contains_key("CCCC") && sessions.rows.contains_key("DDDD"));
     }
 }

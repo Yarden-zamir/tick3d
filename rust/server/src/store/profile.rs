@@ -138,8 +138,17 @@ impl Db {
     }
 
     /// Links this browser to the account of a login, and returns the account id.
+    /// Every logged-in visit calls it, so a device that already holds this account changes nothing: no write, which would
+    /// drop the token sets, and no achievement refresh.
     pub fn link_token(&mut self, token: &str, login: &Login, profile: Option<&GoogleProfile>) -> ApiResult<i64> {
         let id = self.account_of_login(login, profile)?;
+        let linked: Option<i64> = self
+            .query("FROM player_tokens SELECT github_id WHERE token = $token", &[("token", &token)], |row| row.get(0))?
+            .into_iter()
+            .next();
+        if linked == Some(id) {
+            return Ok(id);
+        }
         // The games of the device move to the account, also from an account that the device was linked to before.
         let mut changed = vec![self.owner_of(token)?, token.to_owned(), account_token(id)];
         // The players who met this device now meet the account, so the opponent of their games changes.

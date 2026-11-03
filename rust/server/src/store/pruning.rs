@@ -128,4 +128,42 @@ mod tests {
         assert!(kept, "the stale game ends with no winner, and the fresh session stays");
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    /// Both players leave a timed game, then its clock runs out. The game ends with no player on a seat: it must not
+    /// stop the server (a panicked store job exits the process and loses the sessions in memory), and it has no result.
+    #[tokio::test]
+    async fn a_timed_game_that_both_players_left_times_out_without_a_result() {
+        use tick3d_core::clock::TimeControl;
+        use tick3d_core::session::{SeatAction, join, seat};
+        const OTHER: &str = "fedcba9876543210-pruning";
+        let dir = std::env::temp_dir().join(format!("tick3d-seatless-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.duckdb");
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(path.to_str().unwrap(), Arc::new(NoPages)).unwrap();
+        let (status, seats, results) = store
+            .call(|db| {
+                let clock = TimeControl { per_move: Some(5), per_game: None };
+                let code = db.create(TOKEN, "seatless", clock)?.code;
+                db.change(&code, OTHER, |doc, identity, _| join(doc, identity, OTHER))?;
+                for (n, (token, cell)) in [(TOKEN, 0u8), (OTHER, 16), (TOKEN, 1)].into_iter().enumerate() {
+                    let request = MoveRequest { game: 0, move_count: n, cell: Cell::try_from(cell).unwrap() };
+                    db.change(&code, token, |doc, identity, _| tick3d_core::session::play_move(doc, identity, &request, super::now_ms()))?;
+                }
+                for token in [TOKEN, OTHER] {
+                    db.change(&code, token, |doc, identity, watchers| seat(doc, identity, &SeatAction::Leave, watchers, super::now_ms()))?;
+                }
+                // The move clock ran out a minute ago: the next read settles the game.
+                db.age_game(&code, 60_000);
+                let row = db.load(&code)?;
+                let results: i64 = db.query("SELECT count(*) FROM results", &[], |row| row.get(0))?.into_iter().next().unwrap_or(-1);
+                Ok((row.doc.current_game().status, row.doc.seats.clone(), results))
+            })
+            .await
+            .unwrap();
+        assert!(matches!(status, Status::Timeout { .. }), "the clock ended the game");
+        assert_eq!((seats.x, seats.o), (None, None));
+        assert_eq!(results, 0, "a game without players records no result");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

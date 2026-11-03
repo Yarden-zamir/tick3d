@@ -81,6 +81,15 @@ pub enum Login {
     },
 }
 
+/// The client of the login calls to GitHub and Google. ureq sets no timeout by default: without one, a provider that
+/// accepts the connection and sends nothing holds a blocking thread for ever.
+fn http() -> &'static ureq::Agent {
+    static AGENT: std::sync::LazyLock<ureq::Agent> = std::sync::LazyLock::new(|| {
+        ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(10))).build().new_agent()
+    });
+    &AGENT
+}
+
 fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
 }
@@ -258,7 +267,8 @@ impl Auth {
     pub fn finish(&self, headers: &HeaderMap, code: Option<&str>, state: Option<&str>, now: i64) -> Result<(Login, Redirect), String> {
         let location = self.check_state(headers, state, now)?;
         let code = code.ok_or("GitHub sent no code")?;
-        let token: Value = ureq::post("https://github.com/login/oauth/access_token")
+        let token: Value = http()
+            .post("https://github.com/login/oauth/access_token")
             .header("accept", "application/json")
             .send_json(serde_json::json!({
                 "client_id": self.config.client_id,
@@ -269,7 +279,8 @@ impl Auth {
             .and_then(|mut response| response.body_mut().read_json())
             .map_err(|error| error.to_string())?;
         let access = token.get("access_token").and_then(Value::as_str).ok_or("GitHub refused the login code")?;
-        let profile: Value = ureq::get("https://api.github.com/user")
+        let profile: Value = http()
+            .get("https://api.github.com/user")
             .header("authorization", &format!("Bearer {access}"))
             .header("accept", "application/vnd.github+json")
             .header("user-agent", "tick3d")
@@ -317,7 +328,8 @@ impl Auth {
         let location = self.check_state(headers, state, now)?;
         let code = code.ok_or("Google sent no code")?;
         let redirect = format!("{}/api/auth/google/callback", self.config.origin);
-        let body: Value = ureq::post(GOOGLE_TOKEN)
+        let body: Value = http()
+            .post(GOOGLE_TOKEN)
             .header("accept", "application/json")
             .send_form([
                 ("code", code),
@@ -339,17 +351,20 @@ impl Auth {
     }
 
     fn google_key(&self, kid: &str, now: i64) -> Result<Option<RsaKey>, String> {
-        let mut keys = self.google_keys.lock().expect("the Google keys lock is not poisoned");
-        let cached = keys.as_ref().and_then(|(known, _)| known.get(kid).cloned());
-        let age = keys.as_ref().map_or(i64::MAX, |(_, fetched)| now - fetched);
-        if cached.is_some() && age < GOOGLE_KEYS_MS {
-            return Ok(cached);
+        {
+            let keys = self.google_keys.lock().expect("the Google keys lock is not poisoned");
+            let cached = keys.as_ref().and_then(|(known, _)| known.get(kid).cloned());
+            let age = keys.as_ref().map_or(i64::MAX, |(_, fetched)| now - fetched);
+            if cached.is_some() && age < GOOGLE_KEYS_MS {
+                return Ok(cached);
+            }
+            if cached.is_none() && age < GOOGLE_KEYS_RETRY_MS {
+                return Ok(None);
+            }
         }
-        if cached.is_none() && age < GOOGLE_KEYS_RETRY_MS {
-            return Ok(None);
-        }
+        // The lock is free during the fetch, so a slow Google answer holds up no other login. Two logins can fetch at once.
         let body: Value =
-            ureq::get(GOOGLE_KEYS).call().and_then(|mut response| response.body_mut().read_json()).map_err(|error| error.to_string())?;
+            http().get(GOOGLE_KEYS).call().and_then(|mut response| response.body_mut().read_json()).map_err(|error| error.to_string())?;
         let mut found = HashMap::new();
         for key in body.get("keys").and_then(Value::as_array).into_iter().flatten() {
             let (Some(id), Some("RSA"), Some(n), Some(e)) = (
@@ -368,7 +383,7 @@ impl Auth {
             return Err("Google sent no signing keys".into());
         }
         let key = found.get(kid).cloned();
-        *keys = Some((found, now));
+        *self.google_keys.lock().expect("the Google keys lock is not poisoned") = Some((found, now));
         Ok(key)
     }
 
@@ -424,10 +439,12 @@ pub fn cookie(name: &str, value: &str, max_age: i64, domain: Option<&str>, path:
 }
 
 /// The GitHub logins that can read reports and moderate. GitHub logins ignore case.
-const MAINTAINERS: [&str; 2] = ["yarden-zamir", "tomcohendev"];
+/// The GitHub account ids of the maintainers: Yarden-zamir and TomCohenDev. Change from Node: Node matched the login,
+/// which an account can rename, and GitHub can give a freed login to another account. The id never changes.
+const MAINTAINERS: [i64; 2] = [8178413, 104437144];
 
-pub fn is_maintainer(login: &str) -> bool {
-    MAINTAINERS.contains(&login.to_lowercase().as_str())
+pub fn is_maintainer(github_id: i64) -> bool {
+    MAINTAINERS.contains(&github_id)
 }
 
 #[cfg(test)]
@@ -464,6 +481,18 @@ mod tests {
         assert_eq!(auth.user(&with_cookie(&github), 2000), None);
         let google = auth.sign(&json!({ "google": "123", "exp": 2000 }));
         assert_eq!(auth.user(&with_cookie(&google), 1000), Some(Login::Google { google: "123".into() }));
+    }
+
+    #[test]
+    fn a_maintainer_is_an_account_id_not_a_login() {
+        assert!(is_maintainer(8178413), "Yarden-zamir");
+        assert!(is_maintainer(104437144), "TomCohenDev");
+        // Another account that took a freed maintainer login keeps its own id.
+        let auth = auth();
+        let renamed =
+            auth.sign(&json!({ "id": 99, "login": "Yarden-zamir", "avatar": "https://avatars.githubusercontent.com/u/99", "exp": 2000 }));
+        let Some(Login::GitHub { id, .. }) = auth.user(&with_cookie(&renamed), 1000) else { panic!("a valid GitHub cookie") };
+        assert!(!is_maintainer(id));
     }
 
     #[test]

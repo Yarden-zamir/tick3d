@@ -36,15 +36,15 @@ impl App {
         self.auth.as_ref()?.user(headers, now_ms())
     }
 
-    /// A maintainer, by the GitHub login of the account cookie. The X-Player header is also required, so another
+    /// A maintainer, by the GitHub account id of the account cookie. The answer is the login, for the moderation log. The X-Player header is also required, so another
     /// site cannot send a moderation request with the cookie of a maintainer.
     pub fn require_maintainer(&self, headers: &HeaderMap) -> ApiResult<String> {
         require_player(headers)?;
         let auth = self.auth.as_ref().ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "Login is not available on this server."))?;
-        let Some(Login::GitHub { login, .. }) = auth.user(headers, now_ms()) else {
+        let Some(Login::GitHub { id, login, .. }) = auth.user(headers, now_ms()) else {
             return Err(ApiError::new(StatusCode::UNAUTHORIZED, "Log in with GitHub first."));
         };
-        if !is_maintainer(&login) {
+        if !is_maintainer(id) {
             return Err(ApiError::new(StatusCode::FORBIDDEN, "Only the maintainers can do this."));
         }
         Ok(login)
