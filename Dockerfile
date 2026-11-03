@@ -46,8 +46,11 @@ WORKDIR /src
 COPY rust rust
 # The Apple root certificate goes into the binary (rust/server/src/apple_proof.rs).
 COPY server/apple-roots server/apple-roots
-RUN cd rust && cargo build --release --locked -p tick3d-server \
-  && mkdir /out && cp target/release/tick3d-server /out/ && cp target/release/build/libduckdb-sys-*/out/libduckdb.so /out/
+# The cache mounts keep the crates and the build between deploys, so a deploy compiles only what changed. A cold build
+# takes about 9 minutes on the VPS; without the caches every deploy would pay that.
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/rust/target \
+  cd rust && cargo build --release --locked -p tick3d-server \
+  && mkdir /out && cp target/release/tick3d-server /out/ && cp "$(ls -t target/release/build/libduckdb-sys-*/out/libduckdb.so | head -1)" /out/
 
 FROM debian:trixie-slim AS rust-api
 # The logins and purchase checks call GitHub, Google and Apple over TLS. The compose health check runs wget.
