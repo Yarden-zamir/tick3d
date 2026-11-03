@@ -353,5 +353,320 @@
     "gameValuesOfDoc": "json_extract_string(doc::JSON, '$.mode'), json_extract_string(doc::JSON, '$.difficulty'), json_extract_string(doc::JSON, '$.you'), json_extract(doc::JSON, '$.tuned')::BOOLEAN, json_extract(doc::JSON, '$.options.hideBoard')::BOOLEAN, json_extract(doc::JSON, '$.options.hideHistory')::BOOLEAN, json_extract(doc::JSON, '$.options.hideCoordinates')::BOOLEAN, json_extract(doc::JSON, '$.game.moves')::INTEGER[], json_extract(doc::JSON, '$.game.times')::DOUBLE[], json_extract(doc::JSON, '$.game.clock.perGame')::INTEGER, json_extract(doc::JSON, '$.game.clock.perMove')::INTEGER, json_extract(doc::JSON, '$.game.timedOut')::BOOLEAN",
     "metricValuesOfMetrics": "json_extract_string(metrics::JSON, '$.device'), json_extract_string(metrics::JSON, '$.view'), json_extract_string(metrics::JSON, '$.layout'), json_extract_string(metrics::JSON, '$.theme'), json_extract(metrics::JSON, '$.input.board')::INTEGER, json_extract(metrics::JSON, '$.input.keypad')::INTEGER, json_transform(json_extract(metrics::JSON, '$.refused'), '{\"occupied\":\"INTEGER\",\"game-over\":\"INTEGER\",\"wait\":\"INTEGER\",\"not-your-turn\":\"INTEGER\",\"spectator\":\"INTEGER\",\"reviewing\":\"INTEGER\",\"viewing\":\"INTEGER\",\"no-session\":\"INTEGER\",\"locked\":\"INTEGER\"}'), json_extract(metrics::JSON, '$.undos')::INTEGER, json_extract(metrics::JSON, '$.thinkMs')::DOUBLE[], json_extract(metrics::JSON, '$.offline')::BOOLEAN, json_extract_string(metrics::JSON, '$.version'), json_extract_string(metrics::JSON, '$.nearby.role'), json_extract_string(metrics::JSON, '$.nearby.other')",
     "metricValuesOfParameter": "json_extract_string($metrics::JSON, '$.device'), json_extract_string($metrics::JSON, '$.view'), json_extract_string($metrics::JSON, '$.layout'), json_extract_string($metrics::JSON, '$.theme'), json_extract($metrics::JSON, '$.input.board')::INTEGER, json_extract($metrics::JSON, '$.input.keypad')::INTEGER, json_transform(json_extract($metrics::JSON, '$.refused'), '{\"occupied\":\"INTEGER\",\"game-over\":\"INTEGER\",\"wait\":\"INTEGER\",\"not-your-turn\":\"INTEGER\",\"spectator\":\"INTEGER\",\"reviewing\":\"INTEGER\",\"viewing\":\"INTEGER\",\"no-session\":\"INTEGER\",\"locked\":\"INTEGER\"}'), json_extract($metrics::JSON, '$.undos')::INTEGER, json_extract($metrics::JSON, '$.thinkMs')::DOUBLE[], json_extract($metrics::JSON, '$.offline')::BOOLEAN, json_extract_string($metrics::JSON, '$.version'), json_extract_string($metrics::JSON, '$.nearby.role'), json_extract_string($metrics::JSON, '$.nearby.other')"
+  },
+  "metrics": {
+    "views": [
+      "tower",
+      "flat"
+    ],
+    "layouts": [
+      "grid",
+      "row",
+      "column",
+      "steps"
+    ],
+    "themes": [
+      "light",
+      "dark",
+      "snow",
+      "candy",
+      "mint",
+      "retro",
+      "midnight",
+      "synthwave",
+      "bloodmoon",
+      "coffee",
+      "batman",
+      "mono"
+    ],
+    "refusals": [
+      "occupied",
+      "game-over",
+      "wait",
+      "not-your-turn",
+      "spectator",
+      "reviewing",
+      "viewing",
+      "no-session",
+      "locked"
+    ],
+    "tuningFields": [
+      {
+        "path": [
+          "easy",
+          "fresh",
+          "block"
+        ],
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "path": [
+          "easy",
+          "fresh",
+          "fork"
+        ],
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "path": [
+          "easy",
+          "fresh",
+          "forkBlock"
+        ],
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "path": [
+          "easy",
+          "fresh",
+          "temperature"
+        ],
+        "min": 1,
+        "max": 60,
+        "step": 1
+      },
+      {
+        "path": [
+          "easy",
+          "tired",
+          "block"
+        ],
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "path": [
+          "easy",
+          "tired",
+          "fork"
+        ],
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "path": [
+          "easy",
+          "tired",
+          "forkBlock"
+        ],
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "path": [
+          "easy",
+          "tired",
+          "temperature"
+        ],
+        "min": 1,
+        "max": 60,
+        "step": 1
+      },
+      {
+        "path": [
+          "easy",
+          "tireFrom"
+        ],
+        "min": 0,
+        "max": 64,
+        "step": 1
+      },
+      {
+        "path": [
+          "easy",
+          "tireTo"
+        ],
+        "min": 0,
+        "max": 64,
+        "step": 1
+      },
+      {
+        "path": [
+          "easy",
+          "defense"
+        ],
+        "min": 0,
+        "max": 2,
+        "step": 0.01
+      },
+      {
+        "path": [
+          "easy",
+          "candidates"
+        ],
+        "min": 1,
+        "max": 64,
+        "step": 1
+      },
+      {
+        "path": [
+          "medium",
+          "fresh",
+          "block"
+        ],
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "path": [
+          "medium",
+          "fresh",
+          "fork"
+        ],
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "path": [
+          "medium",
+          "fresh",
+          "forkBlock"
+        ],
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "path": [
+          "medium",
+          "fresh",
+          "temperature"
+        ],
+        "min": 1,
+        "max": 60,
+        "step": 1
+      },
+      {
+        "path": [
+          "medium",
+          "tired",
+          "block"
+        ],
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "path": [
+          "medium",
+          "tired",
+          "fork"
+        ],
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "path": [
+          "medium",
+          "tired",
+          "forkBlock"
+        ],
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "path": [
+          "medium",
+          "tired",
+          "temperature"
+        ],
+        "min": 1,
+        "max": 60,
+        "step": 1
+      },
+      {
+        "path": [
+          "medium",
+          "tireFrom"
+        ],
+        "min": 0,
+        "max": 64,
+        "step": 1
+      },
+      {
+        "path": [
+          "medium",
+          "tireTo"
+        ],
+        "min": 0,
+        "max": 64,
+        "step": 1
+      },
+      {
+        "path": [
+          "medium",
+          "defense"
+        ],
+        "min": 0,
+        "max": 2,
+        "step": 0.01
+      },
+      {
+        "path": [
+          "medium",
+          "candidates"
+        ],
+        "min": 1,
+        "max": 64,
+        "step": 1
+      },
+      {
+        "path": [
+          "hard",
+          "budgetMs"
+        ],
+        "min": 50,
+        "max": 1000,
+        "step": 50
+      },
+      {
+        "path": [
+          "hard",
+          "branching"
+        ],
+        "min": 2,
+        "max": 30,
+        "step": 1
+      },
+      {
+        "path": [
+          "hard",
+          "threatDepth"
+        ],
+        "min": 1,
+        "max": 12,
+        "step": 1
+      },
+      {
+        "path": [
+          "hard",
+          "nearBest"
+        ],
+        "min": 0,
+        "max": 100,
+        "step": 1
+      },
+      {
+        "path": [
+          "strongCellBonus"
+        ],
+        "min": 0,
+        "max": 20,
+        "step": 1
+      }
+    ]
   }
 }

@@ -8,6 +8,8 @@ import { ROUTES, ROUTE_NAMES } from './api-docs.ts';
 import { openApi, swaggerHtml } from './api-docs-render.ts';
 import { GAME_COLUMN_LIST, METRIC_COLUMN_LIST, METRIC_VALUES, gameValues, metricValues } from './fields.ts';
 import { SCHEMA } from './store.ts';
+import { LAYOUTS, REFUSALS, THEMES, VIEWS } from '../src/protocol.ts';
+import { TUNING_FIELDS } from '../src/tuning.ts';
 
 const FILE = new URL('../rust/server/from-node.json', import.meta.url);
 
@@ -25,6 +27,14 @@ function fromNode() {
       gameValuesOfDoc: gameValues('doc'),
       metricValuesOfMetrics: metricValues('metrics'),
       metricValuesOfParameter: METRIC_VALUES,
+    },
+    // The lists and ranges that parseMetrics checks (src/protocol.ts, src/tuning.ts).
+    metrics: {
+      views: VIEWS,
+      layouts: LAYOUTS,
+      themes: THEMES,
+      refusals: REFUSALS,
+      tuningFields: TUNING_FIELDS.map(({ path, min, max, step }) => ({ path, min, max, step })),
     },
   };
 }

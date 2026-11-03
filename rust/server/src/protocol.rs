@@ -6,9 +6,9 @@ use regex::Regex;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use tick3d_core::clock::{NO_LIMIT, TimeControl};
-use tick3d_core::game::Cell;
+use tick3d_core::game::{Cell, EpochMs, Player, Status, replay};
 use tick3d_core::playoff::{MAX_ROUND_MS, PLAYOFF_TARGETS, PlayoffRequest, PresetId};
-use tick3d_core::session::{MoveRequest, NAME_MAX_LENGTH, SeatAction, SessionUpdate};
+use tick3d_core::session::{GameRecord, MatchOptions, MoveRequest, NAME_MAX_LENGTH, SeatAction, SessionUpdate};
 
 use crate::ids::{ACCOUNT_TOKEN_PREFIX, PERSON_ID_LENGTH};
 
@@ -207,6 +207,341 @@ pub fn parse_playoff_request(value: &Value) -> Option<PlayoffRequest> {
         }),
         _ => None,
     }
+}
+
+// ---- Game links ----
+
+pub const DEVICE_GAME_ID_LENGTH: usize = 8;
+/// Game numbers above this are not real: a session of a million games has never happened.
+const MAX_GAME_NUMBER: u64 = 1_000_000;
+
+/// A game id: a device id (8 code characters) or an online id ("<CODE>-<n>").
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GameId {
+    Device(String),
+    Online { code: String, index: usize },
+}
+
+impl GameId {
+    pub fn text(&self) -> String {
+        match self {
+            GameId::Device(id) => id.clone(),
+            GameId::Online { code, index } => format!("{code}-{}", index + 1),
+        }
+    }
+}
+
+/// parseGameId: either form in any case, trimmed and in upper case. `String(n) === number` refuses leading zeros and signs.
+pub fn parse_game_id(input: &str) -> Option<GameId> {
+    let id = js_trim(input).to_uppercase();
+    if id.chars().count() == DEVICE_GAME_ID_LENGTH && id.chars().all(|char| CODE_ALPHABET.contains(char)) {
+        return Some(GameId::Device(id));
+    }
+    let (code, number) = id.split_once('-')?;
+    if number.contains('-') || normalize_code(code).as_deref() != Some(code) {
+        return None;
+    }
+    let n = number.parse::<u64>().ok().filter(|n| (1..=MAX_GAME_NUMBER).contains(n) && n.to_string() == number)?;
+    Some(GameId::Online { code: code.to_owned(), index: usize::try_from(n - 1).expect("a game number fits in usize") })
+}
+
+/// parseDeviceGameId: only the exact form that newGameId makes.
+fn parse_device_game_id(input: &str) -> Option<String> {
+    match parse_game_id(input)? {
+        GameId::Device(id) if id == input => Some(id),
+        _ => None,
+    }
+}
+
+// ---- Games and metrics ----
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Difficulty {
+    Easy,
+    Medium,
+    Hard,
+}
+
+impl Difficulty {
+    pub fn parse(text: &str) -> Option<Difficulty> {
+        [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard].into_iter().find(|level| level.as_str() == text)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Difficulty::Easy => "easy",
+            Difficulty::Medium => "medium",
+            Difficulty::Hard => "hard",
+        }
+    }
+}
+
+/// The mode of a finished game. A session document is always online; a result can be any of these.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GameMode {
+    Computer,
+    Friend,
+    Online,
+    Nearby,
+}
+
+/// isGameRecord, then the replay of toGame: None for a record that does not replay. Extra keys are allowed there, so here too.
+pub fn parse_game_record(value: &Value) -> Option<(GameRecord, Status)> {
+    let value = value.as_object()?;
+    let moves = value.get("moves")?.as_array()?;
+    let times = value.get("times")?.as_array()?;
+    if moves.len() > 64 || times.len() != moves.len() {
+        return None;
+    }
+    let moves = moves.iter().map(|cell| Cell::try_from(u8::try_from(whole(cell, 63)?).ok()?).ok()).collect::<Option<Vec<Cell>>>()?;
+    let times = times.iter().map(|at| whole(at, MAX_SAFE_INTEGER).map(|at| at as EpochMs)).collect::<Option<Vec<EpochMs>>>()?;
+    let timed_out = value.get("timedOut")?.as_bool()?;
+    let abandoned = match value.get("abandoned") {
+        None => false,
+        Some(Value::Bool(true)) => true,
+        Some(_) => return None,
+    };
+    let clock = parse_clock(value.get("clock")?)?;
+    let game = replay(&moves, Player::X, Some(&times), clock).ok()?;
+    // timeOut and abandon throw for a game that is over: the record then does not parse.
+    if (timed_out || abandoned) && !game.is_playing() {
+        return None;
+    }
+    let ended = if timed_out { game.time_out() } else { game };
+    let status = if abandoned { ended.abandon().status } else { ended.status };
+    Some((GameRecord { moves, times, clock, timed_out, abandoned }, status))
+}
+
+/// hasResult: a won, timed out or drawn game.
+pub fn has_result(status: &Status) -> bool {
+    matches!(status, Status::Won { .. } | Status::Timeout { .. } | Status::Draw)
+}
+
+/// parseMatchOptions: a sender or a stored value from before hideCoordinates has no such field, and it reads as false.
+pub fn parse_match_options(value: &Value) -> Option<MatchOptions> {
+    let value = value.as_object()?;
+    let hide_coordinates = match value.get("hideCoordinates") {
+        None | Some(Value::Null) => false,
+        Some(flag) => flag.as_bool()?,
+    };
+    Some(MatchOptions {
+        hide_board: value.get("hideBoard")?.as_bool()?,
+        hide_history: value.get("hideHistory")?.as_bool()?,
+        hide_coordinates,
+    })
+}
+
+/// The lists and ranges of parseMetrics, from TypeScript (rust/server/from-node.json).
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetricLists {
+    views: Vec<String>,
+    layouts: Vec<String>,
+    themes: Vec<String>,
+    refusals: Vec<String>,
+    tuning_fields: Vec<TuningField>,
+}
+
+#[derive(serde::Deserialize)]
+struct TuningField {
+    path: Vec<String>,
+    min: f64,
+    max: f64,
+    step: f64,
+}
+
+/// Size limits. A game has at most 64 moves, so no honest count comes near these.
+const MAX_COUNT: u64 = 10_000;
+const MAX_THINK_MS: f64 = 120_000.0;
+const DEVICE_KINDS: [&str; 3] = ["phone", "tablet", "computer"];
+const METRIC_KEYS: [&str; 12] =
+    ["device", "view", "layout", "theme", "input", "refused", "undos", "thinkMs", "offline", "version", "tuning", "nearby"];
+
+fn one_of<'a>(options: &[String], value: Option<&'a Value>) -> Option<&'a str> {
+    value?.as_str().filter(|text| options.iter().any(|option| option == text))
+}
+
+/// isTuning, then parseTuning: every field holds a number in its range (a whole number for a whole step).
+/// The answer holds only the fields, so extra keys drop out.
+fn parse_tuning(lists: &MetricLists, value: &Value) -> Option<Value> {
+    let mut tuning = Value::Object(Map::new());
+    for field in &lists.tuning_fields {
+        let found = field.path.iter().try_fold(value, |at, key| at.as_object()?.get(key))?;
+        let number = found.as_f64().filter(|number| number.is_finite() && (field.min..=field.max).contains(number))?;
+        if field.step.fract() == 0.0 && number.fract() != 0.0 {
+            return None;
+        }
+        let (last, parents) = field.path.split_last().expect("a tuning path has a key");
+        let mut at = &mut tuning;
+        for key in parents {
+            at = at.as_object_mut().expect("a tuning group is an object").entry(key.clone()).or_insert_with(|| Value::Object(Map::new()));
+        }
+        at.as_object_mut().expect("a tuning group is an object").insert(last.clone(), found.clone());
+    }
+    Some(tuning)
+}
+
+/// parseMetrics: refuses an unknown key, a missing key, a wrong type or a value out of range. The answer is the
+/// checked object that the server stores.
+pub fn parse_metrics(lists: &MetricLists, value: &Value) -> Option<Value> {
+    let value = value.as_object()?;
+    if !has_only_keys(value, &METRIC_KEYS) || !METRIC_KEYS.iter().all(|key| value.contains_key(*key)) {
+        return None;
+    }
+    let device = value.get("device")?.as_str().filter(|device| DEVICE_KINDS.contains(device))?;
+    let view = one_of(&lists.views, value.get("view"))?;
+    let layout = one_of(&lists.layouts, value.get("layout"))?;
+    let theme = one_of(&lists.themes, value.get("theme"))?;
+    let input = value.get("input")?.as_object().filter(|input| has_only_keys(input, &["board", "keypad", "voice"]))?;
+    let board = whole(input.get("board")?, MAX_COUNT)?;
+    let keypad = whole(input.get("keypad")?, MAX_COUNT)?;
+    // Limit: a page from before the voice count sends none, and a result that waits on such a device must still upload,
+    // so a missing count is 0. Remove this when no result from before the count can wait anymore.
+    let voice = match input.get("voice") {
+        None | Some(Value::Null) => 0,
+        Some(voice) => whole(voice, MAX_COUNT)?,
+    };
+    if voice > keypad {
+        return None;
+    }
+    let mut refused = Map::new();
+    for (key, count) in value.get("refused")?.as_object()? {
+        if !lists.refusals.contains(key) {
+            return None;
+        }
+        refused.insert(key.clone(), Value::from(whole(count, MAX_COUNT)?));
+    }
+    let undos = whole(value.get("undos")?, MAX_COUNT)?;
+    let offline = value.get("offline")?.as_bool()?;
+    let version = value.get("version")?.as_str().filter(|version| is_version(version))?;
+    let think = value.get("thinkMs")?.as_array().filter(|times| times.len() <= 64)?;
+    if !think.iter().all(|time| time.as_f64().is_some_and(|time| time.is_finite() && (0.0..=MAX_THINK_MS).contains(&time))) {
+        return None;
+    }
+    let tuning = match value.get("tuning")? {
+        Value::Null => Value::Null,
+        tuning => parse_tuning(lists, tuning)?,
+    };
+    let nearby = match value.get("nearby")? {
+        Value::Null => Value::Null,
+        nearby => {
+            let nearby = nearby.as_object().filter(|nearby| has_only_keys(nearby, &["role", "other"]))?;
+            let role = nearby.get("role")?.as_str().filter(|role| ["host", "guest"].contains(role))?;
+            let other = match nearby.get("other") {
+                Some(Value::Null) => Value::Null,
+                other => Value::from(other?.as_str().filter(|other| DEVICE_KINDS.contains(other))?),
+            };
+            serde_json::json!({ "role": role, "other": other })
+        }
+    };
+    Some(serde_json::json!({
+        "device": device, "view": view, "layout": layout, "theme": theme,
+        "input": { "board": board, "keypad": keypad, "voice": voice },
+        "refused": refused, "undos": undos, "thinkMs": think, "offline": offline, "version": version,
+        "tuning": tuning, "nearby": nearby,
+    }))
+}
+
+// ---- Results ----
+
+/// A finished computer, friend or Nearby game, sent by the device that played it. `id` holds the player token, so it
+/// never leaves the server. `guest` is the player token of the guest of a Nearby host.
+#[derive(Clone, Debug)]
+pub struct ResultUpload {
+    pub id: String,
+    pub mode: GameMode,
+    pub game: GameRecord,
+    /// The seat of this device's player. None for a friend game, where one device plays both seats.
+    pub you: Option<Player>,
+    pub difficulty: Option<Difficulty>,
+    pub finished_at: i64,
+    pub public_id: Option<String>,
+    pub options: MatchOptions,
+    pub tuned: bool,
+    pub metrics: Option<Value>,
+    pub guest: Option<String>,
+}
+
+/// One upload carries at most this many results (RESULTS_PER_UPLOAD).
+pub const RESULTS_PER_UPLOAD: usize = 100;
+const RESULT_ID_CHARS: &str = "abcdefghijklmnopqrstuvwxyz0123456789-";
+/// A result can finish at most this far in the future, to allow for a device clock that runs fast.
+const FUTURE_SLACK_MS: i64 = 86_400_000;
+const RESULT_KEYS: [&str; 11] =
+    ["id", "mode", "game", "you", "difficulty", "finishedAt", "publicId", "options", "tuned", "metrics", "guest"];
+
+fn player_of(value: &Value) -> Option<Option<Player>> {
+    match value {
+        Value::Null => Some(None),
+        Value::String(seat) if seat == "X" => Some(Some(Player::X)),
+        Value::String(seat) if seat == "O" => Some(Some(Player::O)),
+        _ => None,
+    }
+}
+
+/// parseResultUpload. `now` is the time of the reader. A device version before game links sends no publicId, options,
+/// tuned or metrics, and a version before generated names sends no guest: those get their defaults, so its waiting
+/// results still upload.
+pub fn parse_result_upload(lists: &MetricLists, value: &Value, now: i64) -> Option<ResultUpload> {
+    let value = value.as_object().filter(|value| has_only_keys(value, &RESULT_KEYS))?;
+    let id = value.get("id")?.as_str()?;
+    if !(16..=64).contains(&id.len()) || !id.chars().all(|char| RESULT_ID_CHARS.contains(char)) {
+        return None;
+    }
+    let mode = match value.get("mode")?.as_str()? {
+        "computer" => GameMode::Computer,
+        "friend" => GameMode::Friend,
+        "nearby" => GameMode::Nearby,
+        _ => return None,
+    };
+    let (game, status) = parse_game_record(value.get("game")?)?;
+    if !has_result(&status) {
+        return None;
+    }
+    let you = player_of(value.get("you")?)?;
+    if (mode == GameMode::Friend) != you.is_none() {
+        return None;
+    }
+    let difficulty = match value.get("difficulty")? {
+        Value::Null => None,
+        level => Some(Difficulty::parse(level.as_str()?)?),
+    };
+    if (mode == GameMode::Computer) != difficulty.is_some() {
+        return None;
+    }
+    let finished_at = whole(value.get("finishedAt")?, MAX_SAFE_INTEGER)? as i64;
+    if finished_at == 0 || finished_at > now.saturating_add(FUTURE_SLACK_MS) {
+        return None;
+    }
+    let public_id = match value.get("publicId") {
+        None | Some(Value::Null) => None,
+        Some(id) => Some(parse_device_game_id(id.as_str()?)?),
+    };
+    let options = match value.get("options") {
+        None | Some(Value::Null) => MatchOptions::default(),
+        Some(options) => parse_match_options(options)?,
+    };
+    let tuned = match value.get("tuned") {
+        None | Some(Value::Null) => false,
+        Some(tuned) => tuned.as_bool()?,
+    };
+    if tuned && mode != GameMode::Computer {
+        return None;
+    }
+    let metrics = match value.get("metrics") {
+        None | Some(Value::Null) => None,
+        Some(metrics) => Some(parse_metrics(lists, metrics)?),
+    };
+    let guest = match value.get("guest") {
+        None | Some(Value::Null) => None,
+        Some(guest) => Some(as_player_token(guest.as_str()?)?),
+    };
+    if guest.is_some() && (mode != GameMode::Nearby || you.is_none()) {
+        return None;
+    }
+    Some(ResultUpload { id: id.to_owned(), mode, game, you, difficulty, finished_at, public_id, options, tuned, metrics, guest })
 }
 
 // ---- Practice ----

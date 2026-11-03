@@ -7,6 +7,7 @@ mod moderation;
 mod practice;
 mod profile;
 mod pruning;
+mod results;
 mod sessions;
 mod testers;
 
@@ -65,6 +66,12 @@ const YARDEN_GITHUB_ID: i64 = 8178413;
 struct FromNode {
     schema: Vec<String>,
     fields: Fields,
+    metrics: crate::protocol::MetricLists,
+}
+
+/// The lists and ranges that the metrics check reads, from TypeScript.
+pub fn metric_lists() -> &'static crate::protocol::MetricLists {
+    &FROM_NODE.metrics
 }
 
 /// The SQL of the copied columns of a result (server/fields.ts).
@@ -75,6 +82,8 @@ struct Fields {
     metric_columns: String,
     game_values_of_doc: String,
     metric_values_of_metrics: String,
+    /// The metric columns from a bound `$metrics` JSON text.
+    metric_values_of_parameter: String,
 }
 
 static FROM_NODE: std::sync::LazyLock<FromNode> =

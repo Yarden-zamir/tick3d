@@ -17,7 +17,7 @@ use super::{Db, FROM_NODE, now_ms};
 use crate::doc::parse_doc;
 use crate::error::{ApiError, ApiResult};
 use crate::ids::{ACCOUNT_TOKEN_PREFIX, person_id};
-use crate::protocol::{CODE_ALPHABET, CODE_LENGTH};
+use crate::protocol::{CODE_ALPHABET, CODE_LENGTH, DEVICE_GAME_ID_LENGTH};
 
 /// Beyond this many rows in memory, the least recently used saved row goes.
 /// Limit: the eviction scans every row. Revisit if a profile shows it, or if the API memory grows with the rows.
@@ -26,7 +26,6 @@ const MAX_SESSION_ROWS: usize = 100_000;
 const RESULT_BATCH: Duration = Duration::from_millis(200);
 /// A unique id is a few random tries away. Twenty failures mean a bug, not bad luck.
 const MAX_ID_ATTEMPTS: usize = 20;
-const DEVICE_GAME_ID_LENGTH: usize = 8;
 
 #[derive(Clone)]
 pub struct Row {
@@ -129,7 +128,7 @@ fn line_name(kind: LineKind) -> &'static str {
     }
 }
 
-fn is_finished(game: &GameRecord) -> bool {
+pub(super) fn is_finished(game: &GameRecord) -> bool {
     matches!(game.to_game().status, Status::Won { .. } | Status::Timeout { .. } | Status::Draw)
 }
 
