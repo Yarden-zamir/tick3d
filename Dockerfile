@@ -38,8 +38,8 @@ USER node
 ENV DB_PATH=/data/tick3d.duckdb
 CMD ["node", "server/main.ts"]
 
-# The Rust API (rust/server, issue #265). No compose file names these stages, so production, previews and LAN hosts do
-# not build or run them. Build by hand: docker build --target rust-api --build-context git=.git .
+# The Rust API (rust/server, issue #265). compose.yml runs rust-api as the `api` service. The Node `api` stage above
+# stays for compose.lan.yml until LAN hosts switch too. Build by hand: docker build --target rust-api --build-context git=.git .
 # The duckdb crate downloads libduckdb.so for glibc at build time, so these stages use Debian, not Alpine.
 FROM rust:1.99.1-slim-trixie AS rust-build
 WORKDIR /src
@@ -50,8 +50,8 @@ RUN cd rust && cargo build --release --locked -p tick3d-server \
   && mkdir /out && cp target/release/tick3d-server /out/ && cp target/release/build/libduckdb-sys-*/out/libduckdb.so /out/
 
 FROM debian:trixie-slim AS rust-api
-# The logins call GitHub and Google over TLS.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+# The logins and purchase checks call GitHub, Google and Apple over TLS. The compose health check runs wget.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget && rm -rf /var/lib/apt/lists/*
 COPY --from=rust-build /out/libduckdb.so /usr/local/lib/
 RUN ldconfig
 COPY --from=rust-build /out/tick3d-server /usr/local/bin/

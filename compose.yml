@@ -40,12 +40,13 @@ services:
       start_interval: 1s
     restart: unless-stopped
 
-  # Online sessions: a Node API with a DuckDB file on the sessions volume. Caddy in `site` proxies /api/* here.
+  # The API: the Rust server (rust/server) with a DuckDB file on the sessions volume. Caddy in `site` proxies /api/* here.
+  # It reads the same file as the Node server did, so a switch back to `target: api` keeps the data.
   api:
     logging: *logging
     build:
       context: .
-      target: api
+      target: rust-api
       # The build reads the release name from the commit (Dockerfile). .dockerignore keeps .git out of the main context.
       additional_contexts:
         git: .git
@@ -80,7 +81,7 @@ services:
       APPLE_APP_ID: ${APPLE_APP_ID:-}
     volumes:
       - sessions:/data
-    # On SIGTERM the API writes the running games, which live in memory, to the database file (server/store.ts).
+    # On SIGTERM the API writes the running games, which live in memory, to the database file (rust/server/src/main.rs).
     # 10,000 running games took about 1.1 s. A deploy waits up to this long before it kills the process.
     stop_grace_period: 60s
     healthcheck:
