@@ -50,3 +50,11 @@
 {"server":"rust","measure":"interaction-sse","serverCpuSeconds":8.14,"result":{"channel":"sse","pairs":20,"rounds":10,"seconds":11.52,"movesPerSecond":121.5,"move":{"n":1400,"p50":54.72,"p90":366.73,"p99":799.58,"max":951.07},"delivery":{"n":1400,"p50":62.74,"p90":366.74,"p99":799.58,"max":951.08}}}
 {"server":"rust","measure":"interaction-sse-under-stats-load","result":{"channel":"sse","pairs":20,"rounds":10,"seconds":16.28,"movesPerSecond":86,"move":{"n":1400,"p50":48.85,"p90":434.77,"p99":784.32,"max":833.64},"delivery":{"n":1400,"p50":59.13,"p90":435.31,"p99":823.22,"max":843.36}}}
 {"server":"rust","measure":"memory","rssKb":188020,"peakRssKb":235124}
+{"server":"rust","measure":"startup","ms":1084,"rssKb":73456}
+{"server": "rust", "measure": "stats-everyone", "connections": 32, "rep": 1, "rps": 5678.8, "p50ms": 3.175, "p90ms": 11.127, "p99ms": 44.934, "ok": 1.0, "codes": {"200": 56797}, "serverCpuSeconds": 11.39}
+{"server": "rust", "measure": "stats-everyone", "connections": 32, "rep": 2, "rps": 5406.5, "p50ms": 3.808, "p90ms": 12.551, "p99ms": 33.611, "ok": 1.0, "codes": {"200": 54190}, "serverCpuSeconds": 13.02}
+{"server": "rust", "measure": "stats-everyone", "connections": 32, "rep": 3, "rps": 2046.6, "p50ms": 6.648, "p90ms": 31.161, "p99ms": 135.844, "ok": 1.0, "codes": {"200": 20723}, "serverCpuSeconds": 8.34}
+{"server": "rust", "measure": "leaderboard", "connections": 32, "rep": 1, "rps": 2911.8, "p50ms": 4.766, "p90ms": 17.285, "p99ms": 69.859, "ok": 1.0, "codes": {"200": 29477}, "serverCpuSeconds": 10.32}
+{"server": "rust", "measure": "leaderboard", "connections": 32, "rep": 2, "rps": 3953.7, "p50ms": 4.882, "p90ms": 17.073, "p99ms": 60.477, "ok": 1.0, "codes": {"200": 39535}, "serverCpuSeconds": 9.28}
+{"server": "rust", "measure": "leaderboard", "connections": 32, "rep": 3, "rps": 6631.7, "p50ms": 2.969, "p90ms": 10.512, "p99ms": 26.858, "ok": 1.0, "codes": {"200": 66417}, "serverCpuSeconds": 10.29}
+{"server":"rust","measure":"memory","rssKb":181332,"peakRssKb":242560}

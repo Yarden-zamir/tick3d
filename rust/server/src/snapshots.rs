@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 
+use axum::body::Bytes;
 use serde_json::Value;
 
 use crate::error::ApiResult;
@@ -16,8 +17,9 @@ const STATS_CACHE_MS: i64 = 60_000;
 /// The time to live of an answer is at least this many times the cost of its last refresh.
 const SNAPSHOT_COST_FACTOR: i64 = 10;
 
+/// The answer as JSON bytes: a request sends them as they are, with no copy and no serialization.
 struct Answer {
-    value: Arc<Value>,
+    value: Bytes,
     at: i64,
     ttl: i64,
 }
@@ -35,7 +37,7 @@ pub struct Snapshots {
 }
 
 impl Snapshots {
-    pub async fn get<F, Fut>(&self, key: String, compute: F) -> ApiResult<Arc<Value>>
+    pub async fn get<F, Fut>(&self, key: String, compute: F) -> ApiResult<Bytes>
     where
         F: Fn() -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ApiResult<Value>> + Send,
@@ -68,13 +70,13 @@ impl Snapshots {
     }
 }
 
-async fn refresh<F, Fut>(entry: &Entry, compute: &F) -> ApiResult<Arc<Value>>
+async fn refresh<F, Fut>(entry: &Entry, compute: &F) -> ApiResult<Bytes>
 where
     F: Fn() -> Fut,
     Fut: Future<Output = ApiResult<Value>>,
 {
     let began = now_ms();
-    let value = Arc::new(compute().await?);
+    let value = Bytes::from(serde_json::to_vec(&compute().await?).map_err(crate::error::ApiError::fault)?);
     let ttl = STATS_CACHE_MS.max(SNAPSHOT_COST_FACTOR * (now_ms() - began));
     *entry.answer.lock().expect("a snapshot is not poisoned") = Some(Answer { value: value.clone(), at: now_ms(), ttl });
     Ok(value)

@@ -36,8 +36,8 @@ SEED_FILE=/tmp/bench-seed.duckdb OHA=~/.cargo/bin/oha \
 | RSS after start | 177 to 184 MB | 71 to 72 MB |
 | Peak RSS over the run | 570 to 600 MB | 235 to 268 MB |
 | `GET /api/health`, 32 connections | 3,945 rps, p50 5.6 ms, p99 36 ms | 16,586 rps, p50 0.77 ms, p99 16 ms |
-| `GET /api/stats` Everyone (cached), 32 connections | 172 rps, p50 164 ms, p99 593 ms | 600 rps, p50 45 ms, p99 220 ms |
-| `GET /api/leaderboard` (cached), 32 connections | 484 rps, p50 57 ms | 447 rps, p50 60 ms |
+| `GET /api/stats` Everyone (cached), 32 connections | 172 rps, p50 164 ms, p99 593 ms | 5,407 rps, p50 3.8 ms, p99 45 ms (600 rps, p50 45 ms before byte snapshots) |
+| `GET /api/leaderboard` (cached), 32 connections | 484 rps, p50 57 ms | 3,954 rps, p50 4.9 ms (447 rps, p50 60 ms before byte snapshots) |
 | `GET /api/me/history`, 16 connections | 15.8 rps, p50 995 ms | 17.7 rps, p50 902 ms |
 | `GET /api/stats?scope=mine`, 4 connections | 0.6 to 1.5 rps, p50 2.7 to 9.6 s | 2.2 to 2.6 rps, p50 1.5 to 2.1 s |
 | Game loop, event stream: moves/s | 102 to 123 | 122 to 150 |
@@ -52,7 +52,7 @@ Ranges are the values of separate full runs.
 ## What the numbers say
 
 - Rust starts about 4 to 5 times faster and uses about half the memory.
-- Small and cached answers are 3 to 4 times faster. The leaderboard is not faster: both servers rebuild a large JSON answer on every request. Next step: serve the snapshot as prepared bytes.
+- Small answers are about 4 times faster. Cached answers were only 1 to 3.5 times faster while Rust rebuilt the JSON on every request; the snapshots now keep the serialized bytes, which makes the Everyone stats about 30 times and the leaderboard about 8 times faster than Node.
 - The biggest gain is architectural. Node runs personal stats on its one store queue, so about 0.5 s of queries hold up the moves of every player. Rust runs them on a second connection (the reader). Under stats load, the move p99 drops from 5.4 s to 0.8 s.
 - Personal stats and history are still slow in both servers: about 0.5 s of DuckDB queries per answer (about 30 statements of 10 to 40 ms each). A cached prepare did not change it. Next step: read the player's rows once and count in Rust.
 - The move p90 of about 350 ms in both servers comes from the move that ends a game: its answer waits up to 200 ms for the result batch. A commit per finished game made it worse (moves/s halved, p50 doubled), so the batch stays.

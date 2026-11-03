@@ -1,12 +1,13 @@
 //! The stats page (server/main.ts: GET /api/stats, GET /api/stats/card/{person} and GET /api/leaderboard). Aggregates only (see
 //! store/stats.rs), so the public stats page needs no login.
+use axum::body::Bytes;
 use axum::extract::{Path, RawQuery, State};
-use axum::http::{HeaderMap, StatusCode};
-use axum::response::Response;
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 
 use crate::App;
 use crate::account::require_person;
-use crate::error::{ApiError, ApiResult};
+use crate::error::{ApiError, ApiResult, no_store};
 use crate::protocol::{LEADERBOARD_FILTER_ERROR, STATS_FILTER_ERROR, StatsScope, parse_leaderboard_filter, parse_stats_filter};
 use crate::sessions::{ok_json, optional_player, require_player};
 use std::sync::Arc;
@@ -42,7 +43,7 @@ pub async fn stats(State(app): State<App>, RawQuery(query): RawQuery, headers: H
             }
         })
         .await?;
-    Ok(ok_json(StatusCode::OK, &*answer))
+    Ok(json_bytes(answer))
 }
 
 /// The player card of a person view, before the stats of that person. It reads the X-Player header as a person filter does.
@@ -64,7 +65,13 @@ pub async fn leaderboard(State(app): State<App>, RawQuery(query): RawQuery, head
     let store = app.store.clone();
     let key = format!("leaderboard {filter:?}");
     let board = app.snapshots.get(key, move || leaderboard_of(store.clone(), filter.clone())).await?;
-    let mut answer = (*board).clone();
-    answer["you"] = serde_json::json!(you);
-    Ok(ok_json(StatusCode::OK, &answer))
+    // The board is a JSON object without "you": replace its closing brace with the caller's field.
+    let open = board.strip_suffix(b"}").ok_or_else(|| ApiError::fault("a leaderboard snapshot is not a JSON object"))?;
+    let you = serde_json::to_vec(&you).map_err(ApiError::fault)?;
+    Ok(json_bytes(Bytes::from([open, b",\"you\":", &you, b"}"].concat())))
+}
+
+/// A JSON answer from ready bytes, with the headers of `ok_json`.
+fn json_bytes(body: Bytes) -> Response {
+    (StatusCode::OK, no_store(), [(header::CONTENT_TYPE, "application/json")], body).into_response()
 }
