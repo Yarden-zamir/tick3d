@@ -1,7 +1,9 @@
 //! The tick3d API server in Rust (#265): the same routes as server/main.ts, against the same DuckDB file.
 mod account;
 mod achievements;
+mod apple_proof;
 mod auth;
+mod copies;
 mod doc;
 mod docs;
 mod error;
@@ -13,6 +15,7 @@ mod live;
 mod login;
 mod moderation;
 mod nearby;
+mod play_proof;
 mod practice;
 mod previews;
 mod protocol;
@@ -53,6 +56,9 @@ pub struct AppState {
     pub previews: Option<previews::Previews>,
     /// The last answers of the Everyone stats and the leaderboard.
     pub snapshots: snapshots::Snapshots,
+    pub play: play_proof::PlayProof,
+    /// None when the Apple checks are not configured.
+    pub apple: Option<apple_proof::AppleProof>,
 }
 
 impl std::ops::Deref for App {
@@ -162,6 +168,8 @@ async fn main() {
         lobby: nearby::Lobby::default(),
         previews: previews::previews_config_from_env().unwrap_or_else(|error| panic!("{error}")).map(previews::Previews::new),
         snapshots: snapshots::Snapshots::default(),
+        play: play_proof::PlayProof::from_env().unwrap_or_else(|error| panic!("{error}")),
+        apple: apple_proof::AppleProof::from_env().unwrap_or_else(|error| panic!("{error}")),
     }));
     let writer = store.clone();
     tokio::spawn(async move {

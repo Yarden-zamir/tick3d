@@ -44,6 +44,8 @@ CMD ["node", "server/main.ts"]
 FROM rust:1.99.1-slim-trixie AS rust-build
 WORKDIR /src
 COPY rust rust
+# The Apple root certificate goes into the binary (rust/server/src/apple_proof.rs).
+COPY server/apple-roots server/apple-roots
 RUN cd rust && cargo build --release --locked -p tick3d-server \
   && mkdir /out && cp target/release/tick3d-server /out/ && cp target/release/build/libduckdb-sys-*/out/libduckdb.so /out/
 

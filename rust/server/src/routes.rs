@@ -9,6 +9,7 @@ use serde_json::json;
 
 use crate::App;
 use crate::account;
+use crate::copies;
 use crate::docs;
 use crate::error::{ApiError, no_store};
 use crate::games;
@@ -89,6 +90,8 @@ static ROUTES: &[Entry] = &[
     ("GET /api/stats", |method| on(method, stats::stats)),
     ("GET /api/stats/card/{person}", |method| on(method, stats::card)),
     ("GET /api/leaderboard", |method| on(method, stats::leaderboard)),
+    ("POST /api/copies/nonce", |method| on(method, copies::nonce)),
+    ("POST /api/copies", |method| on(method, copies::report)),
 ];
 
 fn method_filter(method: &str) -> MethodFilter {

@@ -3,6 +3,7 @@
 //! Limit: this holds while one process uses the file. Two processes cannot open one DuckDB file anyway.
 mod accounts;
 mod achievements;
+mod copies;
 mod deletion;
 mod games;
 mod leaderboard;
