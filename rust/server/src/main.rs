@@ -4,6 +4,7 @@ mod auth;
 mod doc;
 mod docs;
 mod error;
+mod games;
 mod idempotency;
 mod ids;
 mod limits;

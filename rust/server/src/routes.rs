@@ -11,6 +11,7 @@ use crate::App;
 use crate::account;
 use crate::docs;
 use crate::error::{ApiError, no_store};
+use crate::games;
 use crate::idempotency;
 use crate::login;
 use crate::moderation;
@@ -77,6 +78,11 @@ static ROUTES: &[Entry] = &[
     ("GET /api/previews", |method| on(method, previews::previews)),
     ("POST /api/results", |method| on(method, results::add_results)),
     ("POST /api/games/{id}/metrics", |method| on(method, results::add_metrics)),
+    ("GET /api/games/{id}", |method| on(method, games::game)),
+    ("GET /api/me/history", |method| on(method, games::history)),
+    ("DELETE /api/me/history", |method| on(method, games::clear_history)),
+    ("GET /api/me/records", |method| on(method, games::records)),
+    ("GET /api/me/games", |method| on(method, games::my_games)),
 ];
 
 fn method_filter(method: &str) -> MethodFilter {

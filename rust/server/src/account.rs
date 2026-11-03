@@ -88,6 +88,14 @@ impl App {
         }))
     }
 
+    /// The X-Player token of a /api/me route. Every visit with a login links this browser to the account first, so a new
+    /// device joins at once.
+    pub async fn linked_player(&self, headers: &HeaderMap) -> ApiResult<String> {
+        let token = require_player(headers)?;
+        self.link(&token, &self.user(headers)).await?;
+        Ok(token)
+    }
+
     /// Links this browser to the account of its login cookie, and returns the account id.
     async fn link(&self, token: &str, user: &Option<Login>) -> ApiResult<Option<i64>> {
         let Some(user) = user.clone() else { return Ok(None) };
