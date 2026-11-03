@@ -1,0 +1,78 @@
+//! Every route of server/main.ts. The test below checks this table against the documented routes, so every route
+//! that the server handles has docs, and every documented route has a handler.
+use axum::Router;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Json};
+use axum::routing::{MethodFilter, MethodRouter, on};
+use serde_json::json;
+
+use crate::App;
+use crate::docs;
+use crate::error::{ApiError, no_store};
+
+type Entry = (&'static str, fn(MethodFilter) -> MethodRouter<App>);
+
+/// The routes, by the name in server/api-docs.ts.
+static ROUTES: &[Entry] = &[
+    ("GET /api/health", |method| on(method, health)),
+    ("GET /api/openapi.json", |method| on(method, docs::openapi)),
+    ("GET /api/docs", |method| on(method, docs::docs_page)),
+];
+
+fn method_filter(method: &str) -> MethodFilter {
+    match method {
+        "GET" => MethodFilter::GET,
+        "POST" => MethodFilter::POST,
+        "PUT" => MethodFilter::PUT,
+        "PATCH" => MethodFilter::PATCH,
+        "DELETE" => MethodFilter::DELETE,
+        other => panic!("no method filter for {other}"),
+    }
+}
+
+fn split(name: &str) -> (&str, &str) {
+    name.split_once(' ').unwrap_or_else(|| panic!("a route name is 'METHOD /path': {name}"))
+}
+
+/// A documented route that this server does not handle yet.
+/// Limit: the Rust server is not complete until this list is empty. Remove it with the last ported route.
+async fn not_ported() -> ApiError {
+    ApiError::new(StatusCode::NOT_IMPLEMENTED, "The Rust server does not have this route yet.")
+}
+
+pub fn router(app: App) -> Router {
+    let mut router = Router::new();
+    for (name, handler) in ROUTES {
+        let (method, path) = split(name);
+        router = router.route(path, handler(method_filter(method)));
+    }
+    for route in docs::documented_routes() {
+        if ROUTES.iter().any(|(name, _)| *name == route.name) {
+            continue;
+        }
+        let (method, path) = split(&route.name);
+        router = router.route(path, on(method_filter(method), not_ported));
+    }
+    router
+        .fallback(|| async { ApiError::new(StatusCode::NOT_FOUND, "Not found.") })
+        .method_not_allowed_fallback(|| async { ApiError::new(StatusCode::METHOD_NOT_ALLOWED, "Method not allowed.") })
+        .with_state(app)
+}
+
+async fn health(State(app): State<App>) -> impl IntoResponse {
+    let lan = app.lan_host.as_ref().map(|name| json!({ "name": name }));
+    (no_store(), Json(json!({ "ok": true, "lan": lan })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_route_has_docs() {
+        for (name, _) in ROUTES {
+            assert!(docs::documented_routes().iter().any(|route| route.name == *name), "{name} has no docs");
+        }
+    }
+}

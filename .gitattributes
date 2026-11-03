@@ -1,1 +1,2 @@
 src/session/rule-cases.json linguist-generated=true -diff
+rust/server/from-node.json linguist-generated=true -diff

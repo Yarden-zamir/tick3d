@@ -1,0 +1,17 @@
+[package]
+name = "tick3d-server"
+version = "0.1.0"
+description = "The tick3d API server: the second copy of server/ in Rust (issue #265)."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+tick3d-core = { path = "../core" }
+axum = "0.8.9"
+duckdb = "1.20000.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
+sha2 = "0.11.1"

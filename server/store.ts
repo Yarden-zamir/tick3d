@@ -122,7 +122,7 @@ const SEATS = ['X', 'O'] as const satisfies readonly Player[];
 // pruneEmpty deletes sessions where no game has a move, pruneOld deletes old reports, moderation log,
 // page faults and deletion notices, and deleteFor deletes the data of one player. abandonStale ends a live
 // game that nobody changed for a week, and keeps it. Games and results have no limit until storage calls for one.
-const SCHEMA = [
+export const SCHEMA = [
   'CREATE SEQUENCE IF NOT EXISTS session_order',
   `CREATE TABLE IF NOT EXISTS sessions (
      code VARCHAR PRIMARY KEY CHECK (length(code) = ${CODE_LENGTH}),
