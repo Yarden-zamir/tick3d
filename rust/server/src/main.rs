@@ -2,6 +2,7 @@
 mod doc;
 mod docs;
 mod error;
+mod idempotency;
 mod ids;
 mod limits;
 mod live;
@@ -27,6 +28,7 @@ pub struct App(Arc<AppState>);
 pub struct AppState {
     pub store: Store,
     pub live: Arc<Live>,
+    pub idempotency: Arc<idempotency::Idempotency>,
     /// LAN_HOST=1 marks a server that a player runs on their own computer for a local network.
     pub lan_host: Option<String>,
 }
@@ -79,7 +81,7 @@ async fn main() {
     let live = Live::new();
     let store = Store::open(&db_path, live.clone()).expect("the database opens");
     live.set_store(store.clone());
-    let app = App(Arc::new(AppState { store: store.clone(), live: live.clone(), lan_host: lan_host() }));
+    let app = App(Arc::new(AppState { store: store.clone(), live: live.clone(), idempotency: Arc::default(), lan_host: lan_host() }));
     let writer = store.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(SESSION_WRITE);

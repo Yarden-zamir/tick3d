@@ -10,7 +10,9 @@ use serde_json::json;
 use crate::App;
 use crate::docs;
 use crate::error::{ApiError, no_store};
+use crate::idempotency;
 use crate::sessions;
+use axum::middleware::from_fn_with_state;
 
 type Entry = (&'static str, fn(MethodFilter) -> MethodRouter<App>);
 
@@ -59,7 +61,10 @@ pub fn router(app: App) -> Router {
     let mut router = Router::new();
     for (name, handler) in ROUTES {
         let (method, path) = split(name);
-        router = router.route(path, handler(method_filter(method)));
+        let documented = docs::documented_routes().iter().find(|route| route.name == *name).unwrap_or_else(|| panic!("{name} has no docs"));
+        let handler = handler(method_filter(method));
+        let handler = if documented.idempotency_key { handler.layer(from_fn_with_state(app.clone(), idempotency::keyed)) } else { handler };
+        router = router.route(path, handler);
     }
     for route in docs::documented_routes() {
         if ROUTES.iter().any(|(name, _)| *name == route.name) {

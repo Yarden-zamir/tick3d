@@ -10,6 +10,7 @@ use serde::Deserialize;
 pub struct DocumentedRoute {
     /// "METHOD /path", with path parameters in braces.
     pub name: String,
+    pub idempotency_key: bool,
 }
 
 #[derive(Deserialize)]
