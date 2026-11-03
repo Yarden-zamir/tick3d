@@ -2,8 +2,8 @@
 use sha2::{Digest, Sha256};
 
 pub const ACCOUNT_TOKEN_PREFIX: &str = "account-";
-const PERSON_ID_PREFIX: &str = "tick3d-person:";
-const PERSON_ID_LENGTH: usize = 16;
+pub const PERSON_ID_PREFIX: &str = "tick3d-person:";
+pub const PERSON_ID_LENGTH: usize = 16;
 
 /// The token that a seat holds when a logged-in player takes it (accountToken in server/store.ts).
 /// The padding is the same as `lpad(github_id::VARCHAR, 16, '0')` in SQL, also for a negative id.

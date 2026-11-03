@@ -54,7 +54,7 @@ pub fn require_player(headers: &HeaderMap) -> ApiResult<String> {
     player_of(headers).ok_or_else(|| ApiError::bad_request("Missing or invalid X-Player header."))
 }
 
-fn session_code(code: &str) -> ApiResult<String> {
+pub fn session_code(code: &str) -> ApiResult<String> {
     normalize_code(code).ok_or_else(|| ApiError::bad_request("A code has 4 letters or digits."))
 }
 

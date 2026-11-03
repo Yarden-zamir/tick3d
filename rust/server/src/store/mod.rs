@@ -3,9 +3,12 @@
 //! Limit: this holds while one process uses the file. Two processes cannot open one DuckDB file anyway.
 mod accounts;
 mod deletion;
+mod moderation;
 mod profile;
 mod pruning;
 mod sessions;
+
+pub use moderation::DeleteTarget;
 
 use std::sync::{Arc, mpsc};
 use std::thread;

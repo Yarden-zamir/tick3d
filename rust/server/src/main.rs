@@ -8,6 +8,7 @@ mod idempotency;
 mod ids;
 mod limits;
 mod live;
+mod moderation;
 mod protocol;
 mod routes;
 mod sessions;

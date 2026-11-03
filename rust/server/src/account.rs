@@ -220,15 +220,10 @@ pub struct Since {
     since: Option<String>,
 }
 
-/// The deletion notices since `since`. `Number(text)` in JavaScript: a missing or empty value counts as 0.
-/// Limit: hex, octal and binary texts ("0x10") are refused here, and JavaScript reads them. Revisit if a client sends one.
+/// The deletion notices since `since`. A missing value counts as 0, as `Number('')` in JavaScript.
 pub async fn deleted(State(app): State<App>, Query(query): Query<Since>) -> ApiResult<Response> {
-    let text = query.since.unwrap_or_default();
-    let text = crate::protocol::js_trim(&text);
-    let since = if text.is_empty() { Some(0.0) } else { text.parse::<f64>().ok() };
-    let since = since
-        .filter(|since| since.fract() == 0.0 && (0.0..=9_007_199_254_740_991.0).contains(since))
+    let since = crate::protocol::js_safe_integer(&query.since.unwrap_or_default(), 0)
         .ok_or_else(|| ApiError::bad_request("since is not a whole number of 0 or more."))?;
-    let found = app.store.call(move |db| db.deleted_since(since as i64)).await?;
+    let found = app.store.call(move |db| db.deleted_since(since)).await?;
     Ok(ok_json(StatusCode::OK, &found))
 }

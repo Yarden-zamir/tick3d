@@ -501,6 +501,11 @@ impl Db {
         Ok(found)
     }
 
+    /// A seat token of a session in memory that `matches` keeps.
+    pub(super) fn seat_in_memory(&self, matches: impl Fn(&str) -> bool) -> Option<String> {
+        self.sessions.rows.values().flat_map(|(row, _)| [&row.doc.seats.x, &row.doc.seats.o]).flatten().find(|seat| matches(seat)).cloned()
+    }
+
     // ---- Pruning ----
 
     /// The sessions that nobody changed for `age_ms`. A row in memory counts by its own time: it can be newer than the file.

@@ -194,13 +194,13 @@ impl Db {
     }
 
     /// The public person id of each token, through its canonical token. The computer has none.
-    fn persons_of(&mut self, tokens: &[&str]) -> ApiResult<HashMap<String, String>> {
+    pub(super) fn persons_of(&mut self, tokens: &[&str]) -> ApiResult<HashMap<String, String>> {
         let humans: Vec<&str> = tokens.iter().copied().filter(|token| *token != COMPUTER_TOKEN).collect();
         Ok(self.canonical(&humans)?.into_iter().map(|(token, owner)| (token, person_id(&owner))).collect())
     }
 
     /// The custom name of each token that has one (player_names).
-    fn names_of(&mut self, tokens: &[&str]) -> ApiResult<HashMap<String, String>> {
+    pub(super) fn names_of(&mut self, tokens: &[&str]) -> ApiResult<HashMap<String, String>> {
         let named = self.named_tokens()?;
         let known: Vec<String> = tokens.iter().filter(|token| named.contains(**token)).map(|token| (*token).to_owned()).collect();
         if known.is_empty() {

@@ -9,7 +9,7 @@ use tick3d_core::game::Cell;
 use tick3d_core::playoff::{MAX_ROUND_MS, PLAYOFF_TARGETS, PlayoffRequest, PresetId};
 use tick3d_core::session::{MoveRequest, NAME_MAX_LENGTH, SeatAction, SessionUpdate};
 
-use crate::ids::ACCOUNT_TOKEN_PREFIX;
+use crate::ids::{ACCOUNT_TOKEN_PREFIX, PERSON_ID_LENGTH};
 
 pub const CODE_ALPHABET: &str = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 pub const CODE_LENGTH: usize = 4;
@@ -238,8 +238,6 @@ pub fn is_github_login(login: &str) -> bool {
     (1..=39).contains(&login.len()) && login.chars().all(|char| GITHUB_LOGIN_CHARS.contains(char))
 }
 
-const PERSON_ID_LENGTH: usize = 16;
-
 pub fn parse_person_id(value: &str) -> Option<String> {
     let valid = value.len() == PERSON_ID_LENGTH && value.chars().all(|char| char.is_ascii_digit() || ('a'..='f').contains(&char));
     valid.then(|| value.to_owned())
@@ -298,10 +296,100 @@ pub fn parse_block_request(value: &Value) -> Option<String> {
 /// Pictures come from GitHub and Google only, so a page never loads an image from an address that a player chose.
 pub const GITHUB_PICTURES: &str = "https://avatars.githubusercontent.com/";
 
+/// `Number(text)` in JavaScript for a query or path value: an empty text is 0, and white space around is fine.
+/// Limit: hex, octal and binary texts ("0x10") give None here, and JavaScript reads them. Revisit if a client sends one.
+pub fn js_number(text: &str) -> Option<f64> {
+    let text = js_trim(text);
+    if text.is_empty() {
+        return Some(0.0);
+    }
+    // Rust also reads "inf" and "nan", which JavaScript does not. Neither passes a whole-number check.
+    text.parse::<f64>().ok()
+}
+
+/// A JavaScript safe integer of at least `min`, from `Number(text)`.
+pub fn js_safe_integer(text: &str, min: i64) -> Option<i64> {
+    let number = js_number(text)?;
+    let valid = number.fract() == 0.0 && number >= min as f64 && number <= MAX_SAFE_INTEGER as f64;
+    valid.then_some(number as i64)
+}
+
+pub const REPORT_NOTE_MAX_LENGTH: usize = 200;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ReportTarget {
+    Message(u64),
+    Person(String),
+}
+
+/// Where a report points: one chat message or person of an online session, or a person of the stats page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ReportPlace {
+    Session { code: String, target: ReportTarget },
+    StatsPage { person: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReportRequest {
+    pub reason: &'static str,
+    pub note: Option<String>,
+    pub place: ReportPlace,
+}
+
+/// The body of POST /api/reports: { code?, message | person, reason, note? }. Exactly one target, and a message needs a code.
+pub fn parse_report_request(value: &Value) -> Option<ReportRequest> {
+    let value = value.as_object()?;
+    if !has_only_keys(value, &["code", "message", "person", "reason", "note"]) {
+        return None;
+    }
+    let code = match value.get("code") {
+        None => None,
+        Some(code) => Some(normalize_code(code.as_str()?)?),
+    };
+    let reason =
+        ["spam", "abuse", "name", "other"].into_iter().find(|reason| value.get("reason").and_then(Value::as_str) == Some(*reason))?;
+    let note = match value.get("note") {
+        None | Some(Value::Null) => "",
+        Some(note) => js_trim(note.as_str()?),
+    };
+    if js_length(note) > REPORT_NOTE_MAX_LENGTH {
+        return None;
+    }
+    let note = (!note.is_empty()).then(|| note.to_owned());
+    let place = match (value.get("message"), value.get("person")) {
+        (Some(message), None) => {
+            ReportPlace::Session { code: code?, target: ReportTarget::Message(whole(message, MAX_SAFE_INTEGER).filter(|id| *id >= 1)?) }
+        }
+        (None, Some(person)) => {
+            let person = parse_person_id(person.as_str()?)?;
+            match code {
+                Some(code) => ReportPlace::Session { code, target: ReportTarget::Person(person) },
+                None => ReportPlace::StatsPage { person },
+            }
+        }
+        _ => return None,
+    };
+    Some(ReportRequest { reason, note, place })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn reports_need_one_target_and_a_code_for_a_message() {
+        let person = "0123456789abcdef";
+        let stats = parse_report_request(&json!({ "person": person, "reason": "spam", "note": "  " })).unwrap();
+        assert_eq!(stats.place, ReportPlace::StatsPage { person: person.into() });
+        assert_eq!(stats.note, None);
+        let message = parse_report_request(&json!({ "code": "abcd", "message": 3, "reason": "abuse" })).unwrap();
+        assert_eq!(message.place, ReportPlace::Session { code: "ABCD".into(), target: ReportTarget::Message(3) });
+        assert_eq!(parse_report_request(&json!({ "message": 3, "reason": "abuse" })), None);
+        assert_eq!(parse_report_request(&json!({ "code": "ABCD", "message": 3, "person": person, "reason": "abuse" })), None);
+        assert_eq!(parse_report_request(&json!({ "code": null, "person": person, "reason": "abuse" })), None);
+        assert_eq!(parse_report_request(&json!({ "person": person, "reason": "abuse", "note": "x".repeat(201) })), None);
+    }
 
     #[test]
     fn custom_names_follow_parse_custom_name() {
