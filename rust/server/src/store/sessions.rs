@@ -190,7 +190,7 @@ impl Db {
     }
 
     /// Keeps the new document in memory. The session write puts it in the file later.
-    fn save(&mut self, row: &Row, doc: SessionDoc) -> ApiResult<Row> {
+    pub(super) fn save(&mut self, row: &Row, doc: SessionDoc) -> ApiResult<Row> {
         // The same check as the file: a document that cannot be read back never goes in.
         let stored = serde_json::to_value(&doc).map_err(ApiError::fault)?;
         parse_doc(stored).map_err(|error| ApiError::fault(format!("session {} does not read back: {error}", row.code)))?;
@@ -483,6 +483,47 @@ impl Db {
             );
         }
         Ok(outcomes)
+    }
+
+    // ---- Pruning ----
+
+    /// The sessions that nobody changed for `age_ms`. A row in memory counts by its own time: it can be newer than the file.
+    pub(super) fn sessions_older_than(&self, age_ms: i64) -> ApiResult<Vec<(String, SessionDoc)>> {
+        let cutoff = now_ms() - age_ms;
+        let saved: Vec<(String, String)> = self.query(
+            "FROM sessions SELECT code, doc::JSON::VARCHAR AS doc WHERE updated_at < make_timestamptz($cutoff * 1000)",
+            &[("cutoff", &cutoff)],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let mut found = Vec::new();
+        for (code, doc) in saved {
+            if self.sessions.rows.contains_key(&code) {
+                continue;
+            }
+            let stored: Value = serde_json::from_str(&doc).map_err(ApiError::fault)?;
+            let parsed = parse_doc(stored).map_err(|error| ApiError::fault(format!("session {code}: {error}")))?;
+            found.push((code, parsed.doc));
+        }
+        found.extend(
+            self.sessions.rows.values().filter(|(row, _)| row.updated_at < cutoff).map(|(row, _)| (row.code.clone(), row.doc.clone())),
+        );
+        Ok(found)
+    }
+
+    /// Deletes a session from memory and from the file. This is the only SQL write on `sessions` next to
+    /// `write_sessions`. The session has no unsaved changes after the first lines, so the delete loses no move.
+    pub(super) fn delete_session(&mut self, code: &str) -> ApiResult<()> {
+        self.sessions.rows.remove(code);
+        self.sessions.dirty.remove(code);
+        self.sessions.known.remove(code);
+        self.conn.prepare_cached("DELETE FROM sessions WHERE code = $code")?.execute(&[("code", &code as &dyn duckdb::ToSql)][..])?;
+        Ok(())
+    }
+
+    /// Moves the last change of a session in memory back by `ms`, for the pruning tests.
+    #[cfg(test)]
+    pub(super) fn age_session(&mut self, code: &str, ms: i64) {
+        self.sessions.rows.get_mut(code).expect("the session is in memory").0.updated_at -= ms;
     }
 
     // ---- Session writes ----

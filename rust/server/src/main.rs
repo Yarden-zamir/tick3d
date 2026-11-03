@@ -15,6 +15,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use tick3d_core::session;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 
@@ -73,6 +74,35 @@ async fn write_changed_sessions(store: &Store) {
     }
 }
 
+/// The clean-up runs at start and then this often.
+const PRUNE: Duration = Duration::from_secs(3600);
+
+/// Sessions that nobody played go after a while, and so do old reports, moderation log entries, page faults and
+/// deletion notices. A live game with no change for STALE_GAME_MS ends with no winner.
+async fn prune(store: &Store) {
+    let pruned = store
+        .call(|db| {
+            let deleted = db.prune_empty(session::EMPTY_SESSION_TTL_MS)?;
+            let abandoned = db.abandon_stale(session::STALE_GAME_MS)?;
+            Ok((deleted, abandoned, db.prune_old()?))
+        })
+        .await;
+    match pruned {
+        Ok((deleted, abandoned, old)) => {
+            if !deleted.is_empty() {
+                println!("pruned {} empty sessions", deleted.len());
+            }
+            if !abandoned.is_empty() {
+                println!("abandoned {} stale games", abandoned.len());
+            }
+            if old.any() {
+                println!("pruned old rows {old:?}");
+            }
+        }
+        Err(error) => eprintln!("pruning failed: {error:?}"),
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // PORT lets a test run its own server next to another one.
@@ -89,6 +119,14 @@ async fn main() {
         loop {
             interval.tick().await;
             write_changed_sessions(&writer).await;
+        }
+    });
+    let pruner = store.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(PRUNE);
+        loop {
+            interval.tick().await;
+            prune(&pruner).await;
         }
     });
     let listener = TcpListener::bind(("0.0.0.0", port)).await.expect("the port is free");

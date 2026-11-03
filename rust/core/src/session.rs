@@ -531,6 +531,16 @@ pub fn play_move(doc: &SessionDoc, identity: &Identity, request: &MoveRequest, n
     Ok(next)
 }
 
+/// How long an empty session stays: a session that nobody played goes after this.
+pub const EMPTY_SESSION_TTL_MS: EpochMs = 9 * 3_600_000;
+/// A live game with no change for this long ends with no winner.
+pub const STALE_GAME_MS: EpochMs = 7 * 24 * 3_600_000;
+
+/// An empty session: no game in it has a move.
+pub fn is_empty_session(doc: &SessionDoc) -> bool {
+    doc.games.iter().all(|game| game.moves.is_empty())
+}
+
 /// Ends the live game with no winner. None when the live game has no move or is over: then nothing waits.
 pub fn abandon_live(doc: &SessionDoc) -> Option<SessionDoc> {
     let game = doc.current_game();

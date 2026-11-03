@@ -1,0 +1,131 @@
+//! The hourly clean-up of server/store.ts: pruneEmpty, abandonStale and pruneOld.
+use tick3d_core::session::{self, SessionDoc};
+
+use super::{Db, now_ms};
+use crate::error::ApiResult;
+
+/// Reports, the moderation log and page faults go after 90 days. Moderation needs a report for a few weeks at most.
+/// Revisit if a maintainer needs older reports.
+const REPORTS_KEPT_MS: i64 = 90 * 24 * 3_600_000;
+/// A deletion notice stays for a year, so a device that comes back within a year still cleans its copies.
+/// Limit: a device that stays away longer keeps them. Revisit if players ask about it.
+const DELETION_NOTICES_KEPT_MS: i64 = 365 * 24 * 3_600_000;
+
+/// How many rows went from each table in `prune_old`.
+#[derive(Debug, Default)]
+pub struct OldRows {
+    pub reports: usize,
+    pub moderation_log: usize,
+    pub events: usize,
+    pub deleted_people: usize,
+}
+
+impl OldRows {
+    pub fn any(&self) -> bool {
+        self.reports + self.moderation_log + self.events + self.deleted_people > 0
+    }
+}
+
+impl Db {
+    /// Deletes the sessions that no game has a move in and that nobody changed for `age_ms`. A session with a player
+    /// on the page stays, so an open page never loses its game. Returns the codes that went.
+    pub fn prune_empty(&mut self, age_ms: i64) -> ApiResult<Vec<String>> {
+        let mut deleted = Vec::new();
+        for (code, doc) in self.sessions_older_than(age_ms)? {
+            let presence = self.audience(&code, &doc)?.presence;
+            if presence.x || presence.o || !session::is_empty_session(&doc) {
+                continue;
+            }
+            self.delete_session(&code)?;
+            deleted.push(code);
+        }
+        Ok(deleted)
+    }
+
+    /// Ends each live game that nobody changed for `age_ms` with no winner. Its replay stays, and it gets no result.
+    /// A timeout that happened first counts as the timeout, and gets saved with its result.
+    /// Returns the codes of the sessions with an abandoned game.
+    /// Limit: each run reads every older session of the file. Revisit if a run takes more than about a second.
+    pub fn abandon_stale(&mut self, age_ms: i64) -> ApiResult<Vec<String>> {
+        let mut ended = Vec::new();
+        let now = now_ms();
+        for (code, doc) in self.sessions_older_than(age_ms)? {
+            let settled = session::settle(&doc, now);
+            let abandoned = session::abandon_live(settled.as_ref().unwrap_or(&doc));
+            let Some(next): Option<SessionDoc> = abandoned.clone().or(settled) else { continue };
+            let row = self.load_raw(&code)?;
+            self.save(&row, next)?;
+            if abandoned.is_some() {
+                ended.push(code);
+            }
+        }
+        Ok(ended)
+    }
+
+    /// Deletes the reports, moderation log entries and page faults after REPORTS_KEPT_MS, and the deletion notices
+    /// after DELETION_NOTICES_KEPT_MS.
+    pub fn prune_old(&mut self) -> ApiResult<OldRows> {
+        let now = now_ms();
+        let mut prune = |sql: &str, kept_ms: i64| self.execute(sql, &[("cutoff", &(now - kept_ms))]);
+        Ok(OldRows {
+            reports: prune("DELETE FROM reports WHERE created_at < make_timestamptz($cutoff * 1000)", REPORTS_KEPT_MS)?,
+            moderation_log: prune("DELETE FROM moderation_log WHERE created_at < make_timestamptz($cutoff * 1000)", REPORTS_KEPT_MS)?,
+            events: prune("DELETE FROM events WHERE created_at < make_timestamptz($cutoff * 1000)", REPORTS_KEPT_MS)?,
+            deleted_people: prune(
+                "DELETE FROM deleted_people WHERE deleted_at < make_timestamptz($cutoff * 1000)",
+                DELETION_NOTICES_KEPT_MS,
+            )?,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use tick3d_core::clock::NO_LIMIT;
+    use tick3d_core::game::{Cell, Status};
+    use tick3d_core::session::{EMPTY_SESSION_TTL_MS, MoveRequest, STALE_GAME_MS};
+
+    use super::super::{Hooks, Store};
+
+    /// No page has a session open.
+    struct NoPages;
+    impl Hooks for NoPages {
+        fn open_tokens(&self, _: &str) -> Vec<String> {
+            Vec::new()
+        }
+        fn changed(&self, _: &str) {}
+    }
+
+    const TOKEN: &str = "0123456789abcdef-pruning";
+
+    #[tokio::test]
+    async fn prunes_old_empty_sessions_and_abandons_stale_games() {
+        let dir = std::env::temp_dir().join(format!("tick3d-pruning-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.duckdb");
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(path.to_str().unwrap(), Arc::new(NoPages)).unwrap();
+        let (deleted, abandoned, kept) = store
+            .call(|db| {
+                let empty = db.create(TOKEN, "empty", NO_LIMIT)?.code;
+                let fresh = db.create(TOKEN, "fresh", NO_LIMIT)?.code;
+                let played = db.create(TOKEN, "played", NO_LIMIT)?.code;
+                let request = MoveRequest { game: 0, move_count: 0, cell: Cell::try_from(0).unwrap() };
+                db.change(&played, TOKEN, |doc, identity, _| tick3d_core::session::play_move(doc, identity, &request, super::now_ms()))?;
+                db.age_session(&empty, EMPTY_SESSION_TTL_MS + 1000);
+                db.age_session(&played, STALE_GAME_MS + 1000);
+                let deleted = db.prune_empty(EMPTY_SESSION_TTL_MS)?;
+                let abandoned = db.abandon_stale(STALE_GAME_MS)?;
+                let status = db.load(&played)?.doc.current_game().status;
+                Ok((deleted == [empty], abandoned == [played], status == Status::Abandoned && db.load(&fresh).is_ok()))
+            })
+            .await
+            .unwrap();
+        assert!(deleted, "only the old empty session goes");
+        assert!(abandoned, "only the stale game ends");
+        assert!(kept, "the stale game ends with no winner, and the fresh session stays");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}

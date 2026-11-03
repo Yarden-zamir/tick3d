@@ -2,6 +2,7 @@
 //! store queue of server/store.ts does. So each read-check-write job is atomic in this process.
 //! Limit: this holds while one process uses the file. Two processes cannot open one DuckDB file anyway.
 mod accounts;
+mod pruning;
 mod sessions;
 
 use std::sync::{Arc, mpsc};
@@ -178,9 +179,9 @@ impl Db {
     }
 
     /// A statement that can change data. Writes on the account tables drop the token sets. A write on `sessions`
-    /// goes through `execute_on_session` instead, so it never overwrites or loses moves that only memory holds.
+    /// goes through `write_sessions` or `delete_session` instead, so it never overwrites or loses moves that only memory holds.
     pub fn execute(&mut self, sql: &str, params: Params) -> duckdb::Result<usize> {
-        assert!(!sql.contains("sessions"), "an SQL write on sessions goes through execute_on_session: {sql}");
+        assert!(!sql.contains("sessions"), "an SQL write on sessions goes through write_sessions or delete_session: {sql}");
         let result = self.conn.prepare_cached(sql)?.execute(params);
         self.tokens.after_write(sql);
         result
