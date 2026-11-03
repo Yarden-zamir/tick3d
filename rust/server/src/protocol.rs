@@ -372,6 +372,34 @@ pub fn parse_report_request(value: &Value) -> Option<ReportRequest> {
     Some(ReportRequest { reason, note, place })
 }
 
+const VERSION_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.";
+
+/// isVersion: 1 to 64 characters of VERSION_CHARS.
+pub fn is_version(value: &str) -> bool {
+    (1..=64).contains(&value.len()) && value.chars().all(|char| VERSION_CHARS.contains(char))
+}
+
+/// A page fault that a page reports (POST /api/events).
+pub struct ClientEvent {
+    pub kind: &'static str,
+    pub message: String,
+    pub version: String,
+}
+
+const EVENT_MESSAGE_MAX_LENGTH: usize = 300;
+
+/// parseClientEvent: a known kind, a message of 1 to 300 UTF-16 units, and a version.
+pub fn parse_client_event(value: &Value) -> Option<ClientEvent> {
+    let value = value.as_object()?;
+    if !has_only_keys(value, &["kind", "message", "version"]) {
+        return None;
+    }
+    let kind = ["error", "rejection", "refusals"].into_iter().find(|kind| value.get("kind").and_then(Value::as_str) == Some(*kind))?;
+    let version = value.get("version")?.as_str().filter(|version| is_version(version))?;
+    let message = value.get("message")?.as_str().filter(|message| (1..=EVENT_MESSAGE_MAX_LENGTH).contains(&js_length(message)))?;
+    Some(ClientEvent { kind, message: message.to_owned(), version: version.to_owned() })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

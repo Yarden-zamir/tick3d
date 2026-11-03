@@ -1,4 +1,4 @@
-//! Reports and moderation (server/store.ts: report, reports, hideMessage, clearNameOf, deleteDataOf).
+//! Reports, moderation and page faults (server/store.ts: report, reports, hideMessage, clearNameOf, deleteDataOf, addEvent).
 use axum::http::StatusCode;
 use serde::Serialize;
 use tick3d_core::names::name_of;
@@ -9,7 +9,7 @@ use super::accounts::{account_of, account_row};
 use super::deletion::DeletedData;
 use crate::error::{ApiError, ApiResult};
 use crate::ids::{ACCOUNT_TOKEN_PREFIX, PERSON_ID_LENGTH, PERSON_ID_PREFIX, account_token, person_id};
-use crate::protocol::{ReportPlace, ReportRequest, ReportTarget};
+use crate::protocol::{ClientEvent, ReportPlace, ReportRequest, ReportTarget};
 
 /// The maintainers see this many of the newest reports and actions.
 const REPORTS_SHOWN: usize = 200;
@@ -316,5 +316,14 @@ impl Db {
         let token = token.ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "Nobody has that person id or GitHub login."))?;
         // An account token is not a valid X-Player value, but identity_of reads it like a device token of the account.
         self.delete_for(&token)
+    }
+
+    /// A page fault that a page reported. pruneOld deletes it after 90 days.
+    pub fn add_event(&mut self, event: ClientEvent) -> ApiResult<()> {
+        self.execute(
+            "INSERT INTO events (kind, message, version) VALUES ($kind, $message, $version)",
+            &[("kind", &event.kind), ("message", &event.message), ("version", &event.version)],
+        )?;
+        Ok(())
     }
 }

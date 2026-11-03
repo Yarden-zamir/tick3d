@@ -54,6 +54,7 @@ static ROUTES: &[Entry] = &[
     ("GET /api/me/blocks", |method| on(method, account::get_blocks)),
     ("PUT /api/me/blocks/{person}", |method| on(method, account::block)),
     ("DELETE /api/me/blocks/{person}", |method| on(method, account::unblock)),
+    ("POST /api/events", |method| on(method, moderation::event)),
     ("POST /api/reports", |method| on(method, moderation::report)),
     ("GET /api/reports", |method| on(method, moderation::reports)),
     ("DELETE /api/sessions/{code}/chat/{message}", |method| on(method, moderation::hide_message)),
