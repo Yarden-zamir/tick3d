@@ -1563,6 +1563,7 @@ dependencies = [
  "base64",
  "duckdb",
  "hmac",
+ "miniz_oxide",
  "rand",
  "regex",
  "ring",

@@ -10,10 +10,12 @@ mod limits;
 mod live;
 mod login;
 mod moderation;
+mod nearby;
 mod practice;
 mod protocol;
 mod routes;
 mod sessions;
+mod signal;
 mod store;
 mod tester_codes;
 
@@ -40,6 +42,7 @@ pub struct AppState {
     pub auth: Option<auth::Auth>,
     /// LAN_HOST=1 marks a server that a player runs on their own computer for a local network.
     pub lan_host: Option<String>,
+    pub lobby: nearby::Lobby,
 }
 
 impl std::ops::Deref for App {
@@ -132,6 +135,7 @@ async fn main() {
         idempotency: Arc::default(),
         auth: auth::AuthConfig::from_env().map(auth::Auth::new),
         lan_host: lan_host(),
+        lobby: nearby::Lobby::default(),
     }));
     let writer = store.clone();
     tokio::spawn(async move {

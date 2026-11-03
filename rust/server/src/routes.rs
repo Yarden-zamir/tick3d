@@ -14,6 +14,7 @@ use crate::error::{ApiError, no_store};
 use crate::idempotency;
 use crate::login;
 use crate::moderation;
+use crate::nearby;
 use crate::practice;
 use crate::sessions;
 use crate::tester_codes;
@@ -68,6 +69,9 @@ static ROUTES: &[Entry] = &[
     ("GET /api/testing/codes", |method| on(method, tester_codes::codes)),
     ("POST /api/testing/codes/{codeId}/claim", |method| on(method, tester_codes::claim)),
     ("GET /api/testing/claims", |method| on(method, tester_codes::claims)),
+    ("GET /api/nearby/hosts", |method| on(method, nearby::hosts)),
+    ("POST /api/nearby/hosts", |method| on(method, nearby::announce)),
+    ("POST /api/nearby/hosts/{host}/answer", |method| on(method, nearby::answer)),
 ];
 
 fn method_filter(method: &str) -> MethodFilter {
