@@ -9,6 +9,7 @@ mod pruning;
 mod sessions;
 
 pub use moderation::DeleteTarget;
+pub use profile::GoogleProfile;
 
 use std::sync::{Arc, mpsc};
 use std::thread;

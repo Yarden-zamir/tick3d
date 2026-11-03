@@ -8,6 +8,7 @@ mod idempotency;
 mod ids;
 mod limits;
 mod live;
+mod login;
 mod moderation;
 mod protocol;
 mod routes;
@@ -120,7 +121,7 @@ async fn main() {
         store: store.clone(),
         live: live.clone(),
         idempotency: Arc::default(),
-        auth: auth::AuthConfig::from_env().map(|config| auth::Auth { config }),
+        auth: auth::AuthConfig::from_env().map(auth::Auth::new),
         lan_host: lan_host(),
     }));
     let writer = store.clone();

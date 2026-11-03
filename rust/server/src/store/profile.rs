@@ -6,8 +6,8 @@ use serde::Serialize;
 use tick3d_core::names::name_of;
 use tick3d_core::session::PlayerInfo;
 
-use super::Db;
 use super::accounts::{account_of, account_row};
+use super::{Db, Params};
 use crate::auth::Login;
 use crate::error::{ApiError, ApiResult};
 use crate::ids::{account_token, person_id};
@@ -36,6 +36,15 @@ fn login_key(login: &Login) -> (&'static str, String, Option<&str>) {
     match login {
         Login::GitHub { id, login, .. } => ("github", id.to_string(), Some(login.as_str())),
         Login::Google { google } => ("google", google.clone(), None),
+    }
+}
+
+/// PROVIDER_NAMES in server/store.ts.
+fn provider_label(provider: &str) -> &'static str {
+    match provider {
+        "github" => "GitHub",
+        "google" => "Google",
+        other => panic!("unknown login provider {other}"),
     }
 }
 
@@ -131,8 +140,8 @@ impl Db {
     /// Links this browser to the account of a login, and returns the account id.
     /// Limit: the achievements are not ported yet. When they are, mark the owners whose games change here, as
     /// linkToken in server/store.ts does (changedOwners, achievementCache).
-    pub fn link_token(&mut self, token: &str, login: &Login) -> ApiResult<i64> {
-        let id = self.account_of_login(login, None)?;
+    pub fn link_token(&mut self, token: &str, login: &Login, profile: Option<&GoogleProfile>) -> ApiResult<i64> {
+        let id = self.account_of_login(login, profile)?;
         self.execute(
             "INSERT INTO player_tokens (token, github_id) VALUES ($token, $id)
              ON CONFLICT (token) DO UPDATE SET github_id = excluded.github_id, linked_at = now()",
@@ -140,6 +149,137 @@ impl Db {
         )?;
         self.ensure_account_row(id)?;
         Ok(id)
+    }
+
+    /// Adds a login of the other provider to the account of `current`, so both logins open the same account.
+    /// A login that already has its own account brings it along: merge_accounts moves it into this one.
+    pub fn connect_login(&mut self, current: &Login, adding: &Login) -> ApiResult<()> {
+        let (provider, subject, label) = login_key(adding);
+        assert_ne!(provider, login_key(current).0, "a login connects only a login of the other provider");
+        let account = self.account_of_login(current, None)?;
+        let found = self.known_account_of(adding)?;
+        if found == Some(account) {
+            return Ok(());
+        }
+        let other: Vec<String> = self.query(
+            "FROM logins SELECT subject WHERE provider = $provider AND github_id = $account",
+            &[("provider", &provider), ("account", &account)],
+            |row| row.get(0),
+        )?;
+        if !other.is_empty() {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                format!("This account already has another {} login.", provider_label(provider)),
+            ));
+        }
+        match found {
+            Some(found) => self.merge_accounts(account, found),
+            None => {
+                self.execute(
+                    "INSERT INTO logins (provider, subject, github_id, label) VALUES ($provider, $subject, $account, $label)",
+                    &[("provider", &provider), ("subject", &subject), ("account", &account), ("label", &label)],
+                )?;
+                Ok(())
+            }
+        }
+    }
+
+    /// Moves the account `from` into the account `into`, in one transaction. `into` keeps its name, picture and custom
+    /// name. The devices of `from` and its account token point to `into`, so its seats, games and stats follow. The
+    /// rows that name the account token of `from` as their owner move. A report keeps the person id of its time.
+    /// Limit: a chat message from before the merge names the old person id, so it shows again to a player who blocked
+    /// `from`. Revisit this when a player reports such a message.
+    /// Limit: the achievements are not ported yet. When they are, mark both owners as changed here, as mergeAccounts does.
+    fn merge_accounts(&mut self, into: i64, from: i64) -> ApiResult<()> {
+        let conflict: Vec<String> = self.query(
+            "FROM logins a JOIN logins b USING (provider) SELECT provider WHERE a.github_id = $into AND b.github_id = $from",
+            &[("into", &into), ("from", &from)],
+            |row| row.get(0),
+        )?;
+        if let Some(provider) = conflict.first() {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                format!("Both accounts have a {} login, so they cannot become one.", provider_label(provider)),
+            ));
+        }
+        let (into_token, from_token) = (account_token(into), account_token(from));
+        let (into_person, from_person) = (person_id(&into_token), person_id(&from_token));
+        let ids: Params = &[("into", &into), ("from", &from)];
+        let owners: Params = &[("into", &into_token), ("from", &from_token)];
+        let source: Params = &[("from", &from_token)];
+        let persons: Params = &[("into", &into_person), ("from", &from_person)];
+        let statements: [(&str, Params); 14] = [
+            ("UPDATE logins SET github_id = $into WHERE github_id = $from", ids),
+            ("UPDATE player_tokens SET github_id = $into WHERE github_id = $from", ids),
+            ("DELETE FROM users WHERE github_id = $from", &ids[1..]),
+            // A block of either account stays, once.
+            ("INSERT INTO blocks SELECT * REPLACE ($into AS owner) FROM blocks WHERE owner = $from ON CONFLICT DO NOTHING", owners),
+            ("DELETE FROM blocks WHERE owner = $from", source),
+            // Hidden stats stay hidden when either account hid them.
+            (
+                "INSERT INTO private_stats SELECT * REPLACE ($into AS owner) FROM private_stats WHERE owner = $from ON CONFLICT DO NOTHING",
+                owners,
+            ),
+            ("DELETE FROM private_stats WHERE owner = $from", source),
+            // The later reset wins, so no game counts that a reset of either account dropped.
+            (
+                "INSERT INTO achievement_resets SELECT * REPLACE ($into AS owner) FROM achievement_resets WHERE owner = $from
+                 ON CONFLICT (owner) DO UPDATE SET reset_at = greatest(achievement_resets.reset_at, excluded.reset_at)",
+                owners,
+            ),
+            ("DELETE FROM achievement_resets WHERE owner = $from", source),
+            ("DELETE FROM achievement_players WHERE owner = $from", source),
+            ("UPDATE app_copies SET owner = $into WHERE owner = $from", owners),
+            ("UPDATE tester_codes SET claimed_owner = $into WHERE claimed_owner = $from", owners),
+            ("INSERT INTO blocks SELECT * REPLACE ($into AS person) FROM blocks WHERE person = $from ON CONFLICT DO NOTHING", persons),
+            ("DELETE FROM blocks WHERE person = $from", &persons[1..]),
+        ];
+        self.conn.execute_batch("BEGIN TRANSACTION")?;
+        let result = statements.iter().try_for_each(|(sql, params)| self.execute(sql, params).map(|_| ()));
+        match result {
+            Ok(()) => Ok(self.conn.execute_batch("COMMIT")?),
+            Err(error) => {
+                self.conn.execute_batch("ROLLBACK")?;
+                self.tokens.after_write("ROLLBACK");
+                Err(error.into())
+            }
+        }
+    }
+
+    /// Logout: this browser no longer acts for its account. The other devices of the account stay linked. A seat that
+    /// holds this device token goes to the account first, and so does every result that names this device token.
+    /// The browser then lists and counts none of them. hidden_x and hidden_o stay: a cleared seat stays cleared.
+    /// Limit: the result updates scan the results table. Revisit at about 100,000 results, or when a logout takes more
+    /// than about 100 ms.
+    pub fn unlink_token(&mut self, token: &str) -> ApiResult<()> {
+        let linked: Vec<i64> =
+            self.query("FROM player_tokens SELECT github_id WHERE token = $token", &[("token", &token)], |row| row.get(0))?;
+        let Some(id) = linked.into_iter().next() else { return Ok(()) };
+        let account = self.ensure_account_row(id)?;
+        let saved: Vec<String> = self.query(
+            "FROM sessions SELECT code WHERE seat_x = $token
+             UNION ALL FROM sessions SELECT code WHERE seat_o = $token AND (seat_x IS NULL OR seat_x <> $token)",
+            &[("token", &token)],
+            |row| row.get(0),
+        )?;
+        let mine = |seat: &Option<String>| seat.as_deref() == Some(token);
+        for row in self.sessions_where(saved, |doc| mine(&doc.seats.x) || mine(&doc.seats.o))? {
+            let mut doc = row.doc.clone();
+            for seat in [&mut doc.seats.x, &mut doc.seats.o] {
+                if mine(seat) {
+                    *seat = Some(account.clone());
+                }
+            }
+            self.save(&row, doc)?;
+        }
+        for column in ["token", "player_x", "player_o"] {
+            self.execute(
+                &format!("UPDATE results SET {column} = $account WHERE {column} = $token"),
+                &[("account", &account), ("token", &token)],
+            )?;
+        }
+        self.execute("DELETE FROM player_tokens WHERE token = $token", &[("token", &token)])?;
+        Ok(())
     }
 
     /// The logins of the account of this device: the GitHub login, and whether it has Google.

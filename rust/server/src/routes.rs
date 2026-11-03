@@ -12,6 +12,7 @@ use crate::account;
 use crate::docs;
 use crate::error::{ApiError, no_store};
 use crate::idempotency;
+use crate::login;
 use crate::moderation;
 use crate::sessions;
 use axum::middleware::from_fn_with_state;
@@ -36,6 +37,12 @@ static ROUTES: &[Entry] = &[
     ("POST /api/sessions/{code}/seats/answer", |method| on(method, sessions::answer_seat)),
     ("POST /api/sessions/{code}/chat", |method| on(method, sessions::chat)),
     ("POST /api/sessions/{code}/playoff", |method| on(method, sessions::playoff)),
+    ("GET /api/auth/login", |method| on(method, login::github_login)),
+    ("GET /api/auth/github/callback", |method| on(method, login::github_callback)),
+    ("GET /api/auth/google/login", |method| on(method, login::google_login)),
+    ("GET /api/auth/google/callback", |method| on(method, login::google_callback)),
+    ("POST /api/auth/google/one-tap", |method| on(method, login::google_one_tap)),
+    ("POST /api/auth/logout", |method| on(method, login::logout)),
     ("GET /api/me", |method| on(method, account::get_me)),
     ("DELETE /api/me", |method| on(method, account::delete_me)),
     ("GET /api/deleted", |method| on(method, account::deleted)),

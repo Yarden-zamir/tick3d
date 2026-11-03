@@ -22,7 +22,7 @@ use crate::store::now_ms;
 static ALLOW_DATA_DELETE: Limiter = Limiter::new(10, 3_600_000, 10_000, "Too many data deletions from this address. Try again later.");
 
 /// The origin of the page, for Google One Tap.
-fn origin_of(headers: &HeaderMap) -> String {
+pub fn origin_of(headers: &HeaderMap) -> String {
     format!("https://{}", headers.get(header::HOST).and_then(|value| value.to_str().ok()).unwrap_or(""))
 }
 
@@ -51,7 +51,7 @@ impl App {
     }
 
     /// The answer of GET /api/me: the login state, the custom name and the public person id.
-    async fn me(&self, token: String, user: Option<Login>, origin: &str) -> ApiResult<Value> {
+    pub async fn me(&self, token: String, user: Option<Login>, origin: &str) -> ApiResult<Value> {
         let state = self
             .store
             .call(move |db| {
@@ -92,7 +92,7 @@ impl App {
     async fn link(&self, token: &str, user: &Option<Login>) -> ApiResult<Option<i64>> {
         let Some(user) = user.clone() else { return Ok(None) };
         let token = token.to_owned();
-        Ok(Some(self.store.call(move |db| db.link_token(&token, &user)).await?))
+        Ok(Some(self.store.call(move |db| db.link_token(&token, &user, None)).await?))
     }
 
     async fn me_after_change(&self, headers: &HeaderMap, token: String, user: Option<Login>) -> ApiResult<Response> {
