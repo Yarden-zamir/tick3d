@@ -117,7 +117,8 @@ pub(super) fn filtered_games(tokens: Option<usize>, filter: &FilterSql) -> Strin
 
 /// Rows of a query without bound values.
 fn rows<T>(conn: &Connection, sql: &str, map: impl FnMut(&duckdb::Row) -> duckdb::Result<T>) -> ApiResult<Vec<T>> {
-    Ok(conn.prepare(sql)?.query_map([], map)?.collect::<duckdb::Result<Vec<T>>>()?)
+    // Cached: a DuckDB 2.0 prepare costs about 10 to 18 ms here, and the stats run about 30 statements per answer.
+    Ok(conn.prepare_cached(sql)?.query_map([], map)?.collect::<duckdb::Result<Vec<T>>>()?)
 }
 
 fn one<T>(conn: &Connection, sql: &str, map: impl FnMut(&duckdb::Row) -> duckdb::Result<T>) -> ApiResult<T> {
@@ -242,8 +243,11 @@ pub(super) fn compute_stats(
             let level = filter.level.map(|level| level.as_str());
             let mut params = token_params(&names, tokens);
             params.extend([("since", &since as &dyn ToSql), ("mode", &mode as &dyn ToSql), ("level", &level as &dyn ToSql)]);
-            conn.prepare(&format!("CREATE OR REPLACE TEMP TABLE stats_games AS {}", filtered_games(Some(tokens.len()), &bound_filter())))?
-                .execute(params.as_slice())?;
+            conn.prepare_cached(&format!(
+                "CREATE OR REPLACE TEMP TABLE stats_games AS {}",
+                filtered_games(Some(tokens.len()), &bound_filter())
+            ))?
+            .execute(params.as_slice())?;
             conn.execute_batch("CREATE OR REPLACE TEMP VIEW stats_sample AS FROM stats_games")?;
         }
     }
@@ -695,11 +699,10 @@ impl super::Db {
         Ok((found, shown))
     }
 
-    /// The stats of Mine (`token` is the player) or of a person filter. They have no cache, so a game shows at once.
-    /// Limit: each call runs all queries on the store thread. Revisit this when such a call takes more than about 200 ms.
-    pub fn scoped_stats(&mut self, filter: &StatsFilter, token: Option<&str>) -> ApiResult<Value> {
+    /// Whose stats a Mine or person filter reads (the cheap part, on the store thread): the owner, the tokens, the shown
+    /// person (null for Mine) and the session count. The queries then run on the reader (`scoped_stats`).
+    pub fn stats_subject(&mut self, filter: &StatsFilter, token: Option<&str>) -> ApiResult<StatsSubject> {
         let sessions = self.session_count();
-        let now = super::now_ms();
         let (owner, tokens, person) = match (&filter.person, filter.scope) {
             (None, StatsScope::Mine) => {
                 let token = token.ok_or_else(|| ApiError::bad_request("Your stats need the X-Player header."))?;
@@ -712,10 +715,12 @@ impl super::Db {
             }
             (None, StatsScope::Everyone) => return Err(ApiError::fault("the Everyone stats come from a snapshot")),
         };
-        let mut answer = compute_stats(&self.conn, now, filter, Some(&tokens), sessions)?;
-        answer["person"] = person;
-        answer["achievements"] = serde_json::to_value(self.achievements_of(&owner, &tokens)?).map_err(ApiError::fault)?;
-        Ok(answer)
+        Ok(StatsSubject { owner, tokens, person, sessions })
+    }
+
+    /// The achievements part of a Mine or person answer. It stays on the store thread: a refresh writes achievement_players.
+    pub fn subject_achievements(&mut self, subject: &StatsSubject) -> ApiResult<Value> {
+        serde_json::to_value(self.achievements_of(&subject.owner, &subject.tokens)?).map_err(ApiError::fault)
     }
 
     /// The player card of a person view: the name, and the unlocks of achievement_players, newest first. It reads no game.
@@ -737,6 +742,22 @@ impl super::Db {
         }
         Ok(StatsCard { person: shown, unlocked })
     }
+}
+
+/// The player of a Mine or person answer.
+pub struct StatsSubject {
+    owner: String,
+    tokens: Vec<String>,
+    person: Value,
+    sessions: usize,
+}
+
+/// The queries of a Mine or person answer, on the reader connection. Node ran them on its store queue, where about 0.5 s of
+/// queries held up the moves of every other player; the reader runs them beside the store thread instead.
+pub fn scoped_stats(conn: &Connection, filter: &StatsFilter, subject: &StatsSubject) -> ApiResult<Value> {
+    let mut answer = compute_stats(conn, super::now_ms(), filter, Some(&subject.tokens), subject.sessions)?;
+    answer["person"] = subject.person.clone();
+    Ok(answer)
 }
 
 /// The Everyone stats on the reader connection, for a snapshot (stats in server/store.ts).

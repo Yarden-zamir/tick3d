@@ -20,7 +20,7 @@ mod testers;
 pub use leaderboard::leaderboard_of;
 pub use moderation::DeleteTarget;
 pub use profile::GoogleProfile;
-pub use stats::everyone_stats;
+pub use stats::{everyone_stats, scoped_stats};
 pub use testers::hint_of;
 
 use std::sync::{Arc, mpsc};
@@ -70,6 +70,9 @@ pub struct Store {
     reader: reader::Reader,
 }
 
+/// Prepared statements kept per connection (duckdb-rs keeps 16 by default).
+const STATEMENT_CACHE: usize = 256;
+
 /// The GitHub account of the maintainer Yarden (login Yarden-zamir), for the migration 'tester-invites-before-links'.
 const YARDEN_GITHUB_ID: i64 = 8178413;
 
@@ -115,7 +118,11 @@ impl Store {
         // A new file defaults to the v1.0 storage format for old readers, but VARIANT needs v1.5 storage.
         let config = Config::default().max_memory("256MB")?.threads(2)?.with("storage_compatibility_version", "v1.5.0")?;
         let conn = Connection::open_with_flags(path, config)?;
-        let reader = reader::Reader::start(conn.try_clone()?);
+        // The stats alone prepare about 30 statements, and a DuckDB 2.0 prepare costs 10 ms or more: keep them all.
+        conn.set_prepared_statement_cache_capacity(STATEMENT_CACHE);
+        let reader_conn = conn.try_clone()?;
+        reader_conn.set_prepared_statement_cache_capacity(STATEMENT_CACHE);
+        let reader = reader::Reader::start(reader_conn);
         let (jobs, queue) = mpsc::channel::<Job>();
         let mut watcher_key = [0u8; 32];
         rand::fill(&mut watcher_key);

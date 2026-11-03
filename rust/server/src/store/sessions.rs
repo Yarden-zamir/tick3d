@@ -23,6 +23,9 @@ use crate::protocol::{CODE_ALPHABET, CODE_LENGTH, DEVICE_GAME_ID_LENGTH};
 /// Limit: the eviction scans every row. Revisit if a profile shows it, or if the API memory grows with the rows.
 const MAX_SESSION_ROWS: usize = 100_000;
 /// A finished game waits at most this long for the batch that writes it.
+/// Measured on 2026-11-03 (bench/README.md): a commit per finished game (group commit without a wait) halved the moves per
+/// second and doubled the move p50, because each DuckDB commit is expensive. Revisit with a cheaper commit, or if the end
+/// of a game must answer faster than this wait.
 const RESULT_BATCH: Duration = Duration::from_millis(200);
 /// A unique id is a few random tries away. Twenty failures mean a bug, not bad luck.
 const MAX_ID_ATTEMPTS: usize = 20;

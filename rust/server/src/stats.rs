@@ -9,19 +9,26 @@ use crate::account::require_person;
 use crate::error::{ApiError, ApiResult};
 use crate::protocol::{LEADERBOARD_FILTER_ERROR, STATS_FILTER_ERROR, StatsScope, parse_leaderboard_filter, parse_stats_filter};
 use crate::sessions::{ok_json, optional_player, require_player};
-use crate::store::{everyone_stats, leaderboard_of};
+use std::sync::Arc;
+
+use crate::store::{everyone_stats, leaderboard_of, scoped_stats};
 
 /// Mine needs the X-Player header: the stats of that player on all linked devices. A person filter reads the header when
 /// it is there, so a person who hides their stats still sees them. Everyone comes from a snapshot.
 pub async fn stats(State(app): State<App>, RawQuery(query): RawQuery, headers: HeaderMap) -> ApiResult<Response> {
     let filter = parse_stats_filter(query.as_deref()).ok_or_else(|| ApiError::bad_request(STATS_FILTER_ERROR))?;
-    if filter.scope == StatsScope::Mine {
-        let token = require_player(&headers)?;
-        return Ok(ok_json(StatusCode::OK, &app.store.call(move |db| db.scoped_stats(&filter, Some(&token))).await?));
-    }
-    if filter.person.is_some() {
-        let token = optional_player(&headers)?;
-        return Ok(ok_json(StatusCode::OK, &app.store.call(move |db| db.scoped_stats(&filter, token.as_deref())).await?));
+    if filter.scope == StatsScope::Mine || filter.person.is_some() {
+        let token = if filter.scope == StatsScope::Mine { Some(require_player(&headers)?) } else { optional_player(&headers)? };
+        let asked = filter.clone();
+        let subject = Arc::new(app.store.call(move |db| db.stats_subject(&asked, token.as_deref())).await?);
+        let (reading, achieving) = (subject.clone(), subject);
+        let (answer, achievements) = tokio::join!(
+            app.store.read(move |conn| scoped_stats(conn, &filter, &reading)),
+            app.store.call(move |db| db.subject_achievements(&achieving)),
+        );
+        let mut answer = answer?;
+        answer["achievements"] = achievements?;
+        return Ok(ok_json(StatusCode::OK, &answer));
     }
     let store = app.store.clone();
     let key = format!("stats {filter:?}");
