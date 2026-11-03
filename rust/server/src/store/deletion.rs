@@ -64,7 +64,6 @@ pub struct DeletedSince {
 impl Db {
     /// Delete my data for this device, and for the account when the device is logged in. `token` is a device token,
     /// or the account token of a maintainer request.
-    /// Limit: the achievements are not ported yet. When they are, check every player again here, as deleteFor does.
     pub fn delete_for(&mut self, token: &str) -> ApiResult<DeletedData> {
         let identity = self.identity_of(Some(token))?;
         let own: Vec<String> = identity.iter().cloned().collect();
@@ -79,6 +78,10 @@ impl Db {
         match self.delete_in_transaction(&identity, &own_persons, &ids, &persons, linked) {
             Ok((counts, changed)) => {
                 self.conn.execute_batch("COMMIT")?;
+                // A deletion can change the games of other players too, so every player gets a check. Deletions are rare.
+                // Node starts the check before the deletion; here it starts after the commit, so it reads the new state.
+                self.games_changed(Vec::new());
+                self.check_all_achievements();
                 for code in changed {
                     self.hooks.changed(&code);
                 }

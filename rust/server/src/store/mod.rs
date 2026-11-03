@@ -2,12 +2,14 @@
 //! store queue of server/store.ts does. So each read-check-write job is atomic in this process.
 //! Limit: this holds while one process uses the file. Two processes cannot open one DuckDB file anyway.
 mod accounts;
+mod achievements;
 mod deletion;
 mod games;
 mod moderation;
 mod practice;
 mod profile;
 mod pruning;
+mod reader;
 mod results;
 mod sessions;
 mod testers;
@@ -51,6 +53,8 @@ pub struct Db {
     watcher_key: [u8; 32],
     /// The result batches that the running job waits for: its caller hears back after them.
     job_writes: Vec<oneshot::Receiver<Result<(), String>>>,
+    achievement_state: achievements::AchievementState,
+    reader: reader::Reader,
 }
 
 type Job = Box<dyn FnOnce(&mut Db) + Send>;
@@ -58,6 +62,7 @@ type Job = Box<dyn FnOnce(&mut Db) + Send>;
 #[derive(Clone)]
 pub struct Store {
     jobs: mpsc::Sender<Job>,
+    reader: reader::Reader,
 }
 
 /// The GitHub account of the maintainer Yarden (login Yarden-zamir), for the migration 'tester-invites-before-links'.
@@ -102,6 +107,7 @@ impl Store {
         // A new file defaults to the v1.0 storage format for old readers, but VARIANT needs v1.5 storage.
         let config = Config::default().max_memory("256MB")?.threads(2)?.with("storage_compatibility_version", "v1.5.0")?;
         let conn = Connection::open_with_flags(path, config)?;
+        let reader = reader::Reader::start(conn.try_clone()?);
         let (jobs, queue) = mpsc::channel::<Job>();
         let mut watcher_key = [0u8; 32];
         rand::fill(&mut watcher_key);
@@ -115,8 +121,12 @@ impl Store {
             tokens: accounts::TokenSets::default(),
             watcher_key,
             job_writes: Vec::new(),
+            achievement_state: achievements::AchievementState::default(),
+            reader: reader.clone(),
         };
         db.prepare()?;
+        // The achievements of every player against their games, once per start.
+        db.check_all_achievements();
         thread::Builder::new()
             .name("store".into())
             .spawn(move || {
@@ -130,7 +140,7 @@ impl Store {
                 }
             })
             .expect("the store thread starts");
-        Ok(Store { jobs })
+        Ok(Store { jobs, reader })
     }
 
     /// Runs `job` on the store thread, after the jobs before it. A job that ends a game answers after the

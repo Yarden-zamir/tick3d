@@ -475,6 +475,15 @@ impl Db {
         })();
         self.conn.execute_batch("DELETE FROM result_batch; DELETE FROM seat_batch;").map_err(text)?;
         let stored = stored.map_err(text)?;
+        let seats: Vec<&str> = fresh
+            .iter()
+            .flat_map(|result| [&result.seats.x, &result.seats.o])
+            .flatten()
+            .map(String::as_str)
+            .filter(|seat| *seat != COMPUTER_TOKEN)
+            .collect();
+        let owners = self.canonical(&seats).map_err(|error| format!("{error:?}"))?;
+        self.games_changed(owners.into_values());
         for result in &fresh {
             outcomes.insert(
                 result.id.clone(),

@@ -83,6 +83,8 @@ static ROUTES: &[Entry] = &[
     ("DELETE /api/me/history", |method| on(method, games::clear_history)),
     ("GET /api/me/records", |method| on(method, games::records)),
     ("GET /api/me/games", |method| on(method, games::my_games)),
+    ("GET /api/me/achievements", |method| on(method, games::achievements)),
+    ("DELETE /api/me/achievements", |method| on(method, games::reset_achievements)),
 ];
 
 fn method_filter(method: &str) -> MethodFilter {

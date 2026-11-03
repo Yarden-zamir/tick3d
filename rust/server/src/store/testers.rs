@@ -89,7 +89,6 @@ impl Db {
     /// An invite from one of the claimer's own persons (a device or the account) is a self-invite, and counts for nobody.
     /// Limit: the server cannot tell an unknown person id from the id of a device that never played, so it keeps
     /// any well-formed `by`. Revisit this if fake invites show up in GET /api/testing/claims.
-    /// Limit: Node also marks the invite achievements of the inviter as changed (inviteChanged). Add that with the achievements.
     pub fn claim_tester_code(&mut self, id: i64, claim: ClaimRequest, token: &str) -> ApiResult<String> {
         let own: Vec<String> = self.identity_of(Some(token))?.iter().map(|token| person_id(token)).collect();
         let invited_by = claim.by.filter(|by| !own.contains(by));
@@ -101,6 +100,9 @@ impl Db {
             |row| row.get::<_, String>(0),
         )?;
         if let Some(code) = claimed.into_iter().next() {
+            if let Some(by) = &invited_by {
+                self.invite_changed(by)?;
+            }
             return Ok(code);
         }
         let known = self.query("FROM tester_codes SELECT id WHERE id = $id", &[("id", &id)], |row| row.get::<_, i32>(0))?;

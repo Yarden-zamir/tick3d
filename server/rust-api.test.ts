@@ -6,8 +6,9 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ROUTES, ROUTE_NAMES } from './api-docs.ts';
 import { openApi, swaggerHtml } from './api-docs-render.ts';
-import { GAME_COLUMN_LIST, METRIC_COLUMN_LIST, METRIC_VALUES, gameValues, metricValues } from './fields.ts';
+import { GAME_COLUMN_LIST, METRIC_COLUMN_LIST, METRIC_VALUES, gameValues, metricValues, metricsStruct } from './fields.ts';
 import { SCHEMA } from './store.ts';
+import { achievementCases } from './achievement-cases.ts';
 import { LAYOUTS, REFUSALS, THEMES, VIEWS } from '../src/protocol.ts';
 import { TUNING_FIELDS } from '../src/tuning.ts';
 
@@ -27,6 +28,9 @@ function fromNode() {
       gameValuesOfDoc: gameValues('doc'),
       metricValuesOfMetrics: metricValues('metrics'),
       metricValuesOfParameter: METRIC_VALUES,
+      // The metrics of a row as a struct, for the stats: of `results`, and of `seat_metrics sm`.
+      metricsOfResults: metricsStruct('results'),
+      metricsOfSeatMetrics: metricsStruct('sm'),
     },
     // The lists and ranges that parseMetrics checks (src/protocol.ts, src/tuning.ts).
     metrics: {
@@ -38,6 +42,17 @@ function fromNode() {
     },
   };
 }
+
+const CASES_FILE = new URL('../rust/server/achievement-cases.json', import.meta.url);
+
+describe('rust/server/achievement-cases.json', () => {
+  it('holds the progress that the achievement rules give now', () => {
+    const current = achievementCases();
+    if (process.env.UPDATE_RUST_API === '1') writeFileSync(CASES_FILE, `${JSON.stringify(current)}\n`);
+    expect(existsSync(CASES_FILE), 'achievement-cases.json is missing: write it with UPDATE_RUST_API=1').toBe(true);
+    expect(JSON.parse(readFileSync(CASES_FILE, 'utf8'))).toEqual(current);
+  });
+});
 
 describe('rust/server/from-node.json', () => {
   it('holds the routes, the docs and the schema of this server now', () => {

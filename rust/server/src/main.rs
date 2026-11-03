@@ -1,5 +1,6 @@
 //! The tick3d API server in Rust (#265): the same routes as server/main.ts, against the same DuckDB file.
 mod account;
+mod achievements;
 mod auth;
 mod doc;
 mod docs;

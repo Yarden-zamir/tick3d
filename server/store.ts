@@ -489,7 +489,7 @@ const isFinished = (record: GameRecord) => hasResult(toGame(record).status);
 const MAX_ID_ATTEMPTS = 20;
 // Raise it when a rule in src/achievements.ts changes: every row of achievement_players then fills again.
 // A new or removed achievement changes the signatures by itself.
-const ACHIEVEMENT_RULES_VERSION = 4;
+export const ACHIEVEMENT_RULES_VERSION = 4;
 // The devices that one iPhone app purchase can prove, and the days after which an unused device frees its slot (takeAppleSlot).
 const APPLE_SLOTS_PER_PURCHASE = 5;
 const APPLE_SLOT_IDLE_DAYS = 90;

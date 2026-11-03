@@ -14,7 +14,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::protocol::{Difficulty, GameId, GameMode, has_result, parse_game_record, parse_match_options, parse_result_upload};
 
 /// The largest safe integer of JavaScript: the read of a stored result accepts any finish time.
-const MAX_EPOCH_MS: i64 = (1 << 53) - 1;
+pub(super) const MAX_EPOCH_MS: i64 = (1 << 53) - 1;
 /// HISTORY_PAGE_SIZE in src/protocol.ts.
 const HISTORY_PAGE_SIZE: usize = 50;
 
@@ -35,16 +35,16 @@ fn seated_rows(table: &str, seat_x: &str, seat_o: &str, count: usize) -> String 
     )
 }
 
-fn seated_results(count: usize) -> String {
+pub(super) fn seated_results(count: usize) -> String {
     seated_rows("results", "player_x", "player_o", count)
 }
 
 /// The names of the bound tokens of in_tokens: t0, t1, …
-fn token_names(tokens: &[String]) -> Vec<String> {
+pub(super) fn token_names(tokens: &[String]) -> Vec<String> {
     (0..tokens.len()).map(|index| format!("t{index}")).collect()
 }
 
-fn token_params<'a>(names: &'a [String], tokens: &'a [String]) -> Vec<(&'a str, &'a dyn ToSql)> {
+pub(super) fn token_params<'a>(names: &'a [String], tokens: &'a [String]) -> Vec<(&'a str, &'a dyn ToSql)> {
     names.iter().zip(tokens).map(|(name, token)| (name.as_str(), token as &dyn ToSql)).collect()
 }
 
@@ -100,18 +100,18 @@ fn outcome_of(winner: Option<Player>, you: Option<Player>) -> Outcome {
 }
 
 /// The stored document of a result row: an upload from a device, or an online game that the server recorded.
-struct StoredGame {
-    mode: GameMode,
-    game: GameRecord,
-    status: Status,
-    you: Option<Player>,
-    difficulty: Option<Difficulty>,
-    options: MatchOptions,
-    tuned: bool,
+pub(super) struct StoredGame {
+    pub(super) mode: GameMode,
+    pub(super) game: GameRecord,
+    pub(super) status: Status,
+    pub(super) you: Option<Player>,
+    pub(super) difficulty: Option<Difficulty>,
+    pub(super) options: MatchOptions,
+    pub(super) tuned: bool,
 }
 
 /// readStored in server/store.ts. A stored document that does not parse is a fault.
-fn read_stored(doc: &Value, now: i64) -> ApiResult<StoredGame> {
+pub(super) fn read_stored(doc: &Value, now: i64) -> ApiResult<StoredGame> {
     if doc.get("mode").and_then(Value::as_str) == Some("online") {
         let parsed = doc.get("game").and_then(parse_game_record).filter(|(_, status)| has_result(status));
         // A game stored before hideCoordinates reads it as false.
@@ -547,7 +547,7 @@ fn guest_copies(seat: &str) -> String {
 /// server/store.ts). Both devices send a result, so the guest's history then lists the host's row only. Two games of the
 /// same two players with the same moves inside 10 minutes count as one.
 /// One equality join per host seat, so DuckDB can hash them: a correlated EXISTS joined every result.
-static HOST_HAS_GAME: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+pub(super) static HOST_HAS_GAME: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     format!(
         "(results.nearby_role IS NOT DISTINCT FROM 'guest' AND results.id IN ({} UNION {}))",
         guest_copies("player_x"),

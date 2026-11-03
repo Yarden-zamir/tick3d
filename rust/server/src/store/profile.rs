@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use rand::RngExt;
 use serde::Serialize;
 use tick3d_core::names::name_of;
-use tick3d_core::session::PlayerInfo;
+use tick3d_core::session::{COMPUTER_TOKEN, PlayerInfo};
 
 use super::accounts::{account_of, account_row};
 use super::{Db, Params};
@@ -138,10 +138,23 @@ impl Db {
     }
 
     /// Links this browser to the account of a login, and returns the account id.
-    /// Limit: the achievements are not ported yet. When they are, mark the owners whose games change here, as
-    /// linkToken in server/store.ts does (changedOwners, achievementCache).
     pub fn link_token(&mut self, token: &str, login: &Login, profile: Option<&GoogleProfile>) -> ApiResult<i64> {
         let id = self.account_of_login(login, profile)?;
+        // The games of the device move to the account, also from an account that the device was linked to before.
+        let mut changed = vec![self.owner_of(token)?, token.to_owned(), account_token(id)];
+        // The players who met this device now meet the account, so the opponent of their games changes.
+        // An achievement about different people can lock again: two devices of one person count once.
+        let device = [token.to_owned()];
+        let names = super::games::token_names(&device);
+        let met = self.query(
+            &format!("FROM {} results SELECT results.player_x, results.player_o", super::games::seated_results(1)),
+            &super::games::token_params(&names, &device),
+            |row| Ok([row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?]),
+        )?;
+        let others: Vec<String> = met.into_iter().flatten().flatten().filter(|seat| seat != token && seat != COMPUTER_TOKEN).collect();
+        let others: Vec<&str> = others.iter().map(String::as_str).collect();
+        changed.extend(self.canonical(&others)?.into_values());
+        self.games_changed(changed);
         self.execute(
             "INSERT INTO player_tokens (token, github_id) VALUES ($token, $id)
              ON CONFLICT (token) DO UPDATE SET github_id = excluded.github_id, linked_at = now()",
@@ -189,7 +202,6 @@ impl Db {
     /// rows that name the account token of `from` as their owner move. A report keeps the person id of its time.
     /// Limit: a chat message from before the merge names the old person id, so it shows again to a player who blocked
     /// `from`. Revisit this when a player reports such a message.
-    /// Limit: the achievements are not ported yet. When they are, mark both owners as changed here, as mergeAccounts does.
     fn merge_accounts(&mut self, into: i64, from: i64) -> ApiResult<()> {
         let conflict: Vec<String> = self.query(
             "FROM logins a JOIN logins b USING (provider) SELECT provider WHERE a.github_id = $into AND b.github_id = $from",
@@ -237,7 +249,11 @@ impl Db {
         self.conn.execute_batch("BEGIN TRANSACTION")?;
         let result = statements.iter().try_for_each(|(sql, params)| self.execute(sql, params).map(|_| ()));
         match result {
-            Ok(()) => Ok(self.conn.execute_batch("COMMIT")?),
+            Ok(()) => {
+                self.conn.execute_batch("COMMIT")?;
+                self.games_changed([into_token, from_token]);
+                Ok(())
+            }
             Err(error) => {
                 self.conn.execute_batch("ROLLBACK")?;
                 self.tokens.after_write("ROLLBACK");

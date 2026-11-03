@@ -1,4 +1,4 @@
-//! Finished games as players read them (server/main.ts: GET /api/games/{id} and the /api/me game routes).
+//! Finished games and achievements as players read them (server/main.ts: GET /api/games/{id} and the /api/me game routes).
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
@@ -48,4 +48,23 @@ pub async fn records(State(app): State<App>, headers: HeaderMap) -> ApiResult<Re
 pub async fn my_games(State(app): State<App>, headers: HeaderMap) -> ApiResult<Response> {
     let token = app.linked_player(&headers).await?;
     Ok(ok_json(StatusCode::OK, &app.store.call(move |db| db.my_games(&token)).await?))
+}
+
+/// Every achievement of the player and its rarity.
+pub async fn achievements(State(app): State<App>, headers: HeaderMap) -> ApiResult<Response> {
+    let token = app.linked_player(&headers).await?;
+    Ok(ok_json(StatusCode::OK, &app.store.call(move |db| db.achievements(&token)).await?))
+}
+
+/// "Reset achievements": from now on only new games count. It answers with the achievements after the reset.
+pub async fn reset_achievements(State(app): State<App>, headers: HeaderMap) -> ApiResult<Response> {
+    let token = app.linked_player(&headers).await?;
+    let achievements = app
+        .store
+        .call(move |db| {
+            db.reset_achievements(&token)?;
+            db.achievements(&token)
+        })
+        .await?;
+    Ok(ok_json(StatusCode::OK, &achievements))
 }

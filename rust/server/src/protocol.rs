@@ -255,7 +255,8 @@ fn parse_device_game_id(input: &str) -> Option<String> {
 
 // ---- Games and metrics ----
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+/// Easy, Medium, Hard: the order of DIFFICULTIES, from the easiest level.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Difficulty {
     Easy,
