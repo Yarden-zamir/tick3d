@@ -1074,3 +1074,31 @@ pub fn parse_leaderboard_filter(query: Option<&str>) -> Option<StatsFilter> {
 fn json_name(value: &impl Serialize) -> String {
     serde_json::to_value(value).ok().and_then(|value| value.as_str().map(str::to_owned)).expect("a unit enum serializes to a text")
 }
+
+// ---- Releases ----
+
+/// MAX_RELEASE_NAME in src/release.ts, in UTF-16 units as JavaScript counts them.
+const MAX_RELEASE_NAME: usize = 200;
+
+/// The page bundle that one deploy built (Release in src/release.ts). The build writes release.json.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Release {
+    /// The page script file name, as the metrics version carries it.
+    pub version: String,
+    pub name: String,
+    /// The commit time of the build.
+    pub at: i64,
+}
+
+/// parseRelease in src/release.ts. A bad release file is a build fault, so the caller stops the start.
+pub fn parse_release(value: &Value) -> Result<Release, &'static str> {
+    let value = value.as_object().ok_or("release: not an object")?;
+    let version = value.get("version").and_then(Value::as_str).filter(|version| is_version(version)).ok_or("release: bad version")?;
+    let name = value
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty() && name.encode_utf16().count() <= MAX_RELEASE_NAME)
+        .ok_or("release: bad name")?;
+    let at = value.get("at").and_then(|at| whole(at, MAX_SAFE_INTEGER)).ok_or("release: bad time")?;
+    Ok(Release { version: version.to_owned(), name: name.to_owned(), at: i64::try_from(at).expect("a safe integer fits in i64") })
+}

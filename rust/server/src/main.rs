@@ -139,6 +139,20 @@ async fn main() {
         let added = store.call(move |db| db.add_tester_codes(&codes)).await.expect("the tester codes are stored");
         println!("tester codes: {added} new of {total}");
     }
+    // The release of this build (src/release.ts). The image holds release.json in the working directory, as the Node
+    // image holds it next to server/. A local server has no build, so it records no release. A bad file stops the start.
+    match std::fs::read_to_string("release.json") {
+        Ok(text) => {
+            let value: serde_json::Value =
+                serde_json::from_str(&text).unwrap_or_else(|error| panic!("release.json does not parse: {error}"));
+            let release = protocol::parse_release(&value).unwrap_or_else(|error| panic!("{error}"));
+            let line = format!("release {}: {}", release.version, release.name);
+            let added = store.call(move |db| db.add_release(&release)).await.expect("the release is stored");
+            println!("{line}{}", if added { " (new)" } else { "" });
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => println!("no release.json: this build records no release"),
+        Err(error) => panic!("release.json cannot be read: {error}"),
+    }
     let app = App(Arc::new(AppState {
         store: store.clone(),
         live: live.clone(),

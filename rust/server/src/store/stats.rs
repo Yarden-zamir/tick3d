@@ -746,3 +746,16 @@ pub fn everyone_stats(conn: &Connection, filter: &StatsFilter, sessions: usize) 
     answer["achievements"] = Value::Null;
     Ok(answer)
 }
+
+impl super::Db {
+    /// Stores the release of this build. True when the version is new; a known version keeps its name.
+    pub fn add_release(&mut self, release: &crate::protocol::Release) -> ApiResult<bool> {
+        let inserted = self.query(
+            "INSERT INTO releases (version, name, released_at) VALUES ($version, $name, make_timestamptz($at * 1000))
+             ON CONFLICT DO NOTHING RETURNING version",
+            &[("version", &release.version), ("name", &release.name), ("at", &release.at)],
+            |row| row.get::<_, String>(0),
+        )?;
+        Ok(!inserted.is_empty())
+    }
+}
