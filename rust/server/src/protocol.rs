@@ -1,5 +1,8 @@
 //! The checks of request bodies and headers, as in src/protocol.ts. Each parser takes the parsed JSON body and
 //! returns None for a body that the TypeScript parser refuses, so the route answers with the same 400.
+use std::sync::LazyLock;
+
+use regex::Regex;
 use serde_json::{Map, Value};
 use tick3d_core::clock::{NO_LIMIT, TimeControl};
 use tick3d_core::game::Cell;
@@ -32,7 +35,12 @@ pub fn normalize_code(input: &str) -> Option<String> {
 
 /// JavaScript `trim()`: the JavaScript white space differs from Rust in U+0085 and U+FEFF.
 pub fn js_trim(text: &str) -> &str {
-    text.trim_matches(|char: char| char == '\u{FEFF}' || (char.is_whitespace() && char != '\u{85}'))
+    text.trim_matches(is_js_space)
+}
+
+/// JavaScript white space (`\s`): the Rust white space without U+0085, plus U+FEFF.
+fn is_js_space(char: char) -> bool {
+    char == '\u{FEFF}' || (char.is_whitespace() && char != '\u{85}')
 }
 
 /// The length of a text as JavaScript counts it: UTF-16 code units.
@@ -205,10 +213,105 @@ pub fn parse_playoff_request(value: &Value) -> Option<PlayoffRequest> {
     }
 }
 
+// ---- Accounts ----
+
+pub const CUSTOM_NAME_MIN_LENGTH: usize = 2;
+pub const CUSTOM_NAME_MAX_LENGTH: usize = 24;
+/// Letters of any script with their marks, digits, spaces, "-" and "_". A regex is the simplest way to match the
+/// Unicode categories, as in src/protocol.ts.
+static CUSTOM_NAME_CHARS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\p{L}\p{M}\p{Nd} _-]+$").expect("a valid regex"));
+static CUSTOM_NAME_LETTER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\p{L}\p{Nd}]").expect("a valid regex"));
+
+/// parseCustomName: trims, collapses inner white space, and needs 2 to 24 allowed characters with a letter or a digit.
+pub fn parse_custom_name(value: &Value) -> Option<String> {
+    let name = js_trim(value.as_str()?).split(is_js_space).filter(|part| !part.is_empty()).collect::<Vec<_>>().join(" ");
+    let length = name.chars().count();
+    let valid = (CUSTOM_NAME_MIN_LENGTH..=CUSTOM_NAME_MAX_LENGTH).contains(&length)
+        && CUSTOM_NAME_CHARS.is_match(&name)
+        && CUSTOM_NAME_LETTER.is_match(&name);
+    valid.then_some(name)
+}
+
+const GITHUB_LOGIN_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-";
+
+pub fn is_github_login(login: &str) -> bool {
+    (1..=39).contains(&login.len()) && login.chars().all(|char| GITHUB_LOGIN_CHARS.contains(char))
+}
+
+const PERSON_ID_LENGTH: usize = 16;
+
+pub fn parse_person_id(value: &str) -> Option<String> {
+    let valid = value.len() == PERSON_ID_LENGTH && value.chars().all(|char| char.is_ascii_digit() || ('a'..='f').contains(&char));
+    valid.then(|| value.to_owned())
+}
+
+/// The picture of an account (PUT /api/me/avatar): the picture of the login that made the account, or a new generated one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AvatarPicture {
+    Github,
+    Google,
+    Generated,
+}
+
+impl AvatarPicture {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AvatarPicture::Github => "github",
+            AvatarPicture::Google => "google",
+            AvatarPicture::Generated => "generated",
+        }
+    }
+}
+
+pub fn parse_avatar_request(value: &Value) -> Option<AvatarPicture> {
+    let value = value.as_object()?;
+    if !has_only_keys(value, &["picture"]) {
+        return None;
+    }
+    match value.get("picture")?.as_str()? {
+        "github" => Some(AvatarPicture::Github),
+        "google" => Some(AvatarPicture::Google),
+        "generated" => Some(AvatarPicture::Generated),
+        _ => None,
+    }
+}
+
+/// The body of PUT /api/me/stats-privacy: `{ "private": bool }`.
+pub fn parse_stats_privacy(value: &Value) -> Option<bool> {
+    let value = value.as_object()?;
+    if !has_only_keys(value, &["private"]) {
+        return None;
+    }
+    value.get("private")?.as_bool()
+}
+
+/// The body of PUT /api/me/blocks/{person}: the name that the caller saw, 1 to NAME_MAX_LENGTH UTF-16 units.
+pub fn parse_block_request(value: &Value) -> Option<String> {
+    let value = value.as_object()?;
+    if !has_only_keys(value, &["name"]) {
+        return None;
+    }
+    let name = value.get("name")?.as_str()?;
+    (1..=NAME_MAX_LENGTH).contains(&js_length(name)).then(|| name.to_owned())
+}
+
+/// Pictures come from GitHub and Google only, so a page never loads an image from an address that a player chose.
+pub const GITHUB_PICTURES: &str = "https://avatars.githubusercontent.com/";
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn custom_names_follow_parse_custom_name() {
+        assert_eq!(parse_custom_name(&json!("  Ana \t  María ")), Some("Ana María".into()));
+        assert_eq!(parse_custom_name(&json!("דנה_1")), Some("דנה_1".into()));
+        assert_eq!(parse_custom_name(&json!("--")), None, "a name needs a letter or a digit");
+        assert_eq!(parse_custom_name(&json!("a")), None);
+        assert_eq!(parse_custom_name(&json!("bad!")), None);
+        assert_eq!(parse_custom_name(&json!("x".repeat(25))), None);
+    }
 
     #[test]
     fn whole_numbers_follow_javascript() {

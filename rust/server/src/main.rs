@@ -1,4 +1,6 @@
 //! The tick3d API server in Rust (#265): the same routes as server/main.ts, against the same DuckDB file.
+mod account;
+mod auth;
 mod doc;
 mod docs;
 mod error;
@@ -30,6 +32,8 @@ pub struct AppState {
     pub store: Store,
     pub live: Arc<Live>,
     pub idempotency: Arc<idempotency::Idempotency>,
+    /// None when login is off.
+    pub auth: Option<auth::Auth>,
     /// LAN_HOST=1 marks a server that a player runs on their own computer for a local network.
     pub lan_host: Option<String>,
 }
@@ -111,7 +115,13 @@ async fn main() {
     let live = Live::new();
     let store = Store::open(&db_path, live.clone()).expect("the database opens");
     live.set_store(store.clone());
-    let app = App(Arc::new(AppState { store: store.clone(), live: live.clone(), idempotency: Arc::default(), lan_host: lan_host() }));
+    let app = App(Arc::new(AppState {
+        store: store.clone(),
+        live: live.clone(),
+        idempotency: Arc::default(),
+        auth: auth::AuthConfig::from_env().map(|config| auth::Auth { config }),
+        lan_host: lan_host(),
+    }));
     let writer = store.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(SESSION_WRITE);
@@ -130,7 +140,7 @@ async fn main() {
         }
     });
     let listener = TcpListener::bind(("0.0.0.0", port)).await.expect("the port is free");
-    println!("tick3d api (rust) on :{port}, db {db_path}");
+    println!("tick3d api (rust) on :{port}, db {db_path}, login {}", if app.auth.is_some() { "on" } else { "off" });
     let service = routes::router(app).into_make_service_with_connect_info::<SocketAddr>();
     let (stop, stopping) = tokio::sync::oneshot::channel::<()>();
     let server = tokio::spawn(async move {

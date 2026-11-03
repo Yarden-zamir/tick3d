@@ -1335,9 +1335,11 @@ name = "tick3d-server"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64",
  "duckdb",
  "hmac",
  "rand",
+ "regex",
  "serde",
  "serde_json",
  "sha2",

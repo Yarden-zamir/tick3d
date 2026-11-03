@@ -2,6 +2,7 @@
 //! store queue of server/store.ts does. So each read-check-write job is atomic in this process.
 //! Limit: this holds while one process uses the file. Two processes cannot open one DuckDB file anyway.
 mod accounts;
+mod profile;
 mod pruning;
 mod sessions;
 

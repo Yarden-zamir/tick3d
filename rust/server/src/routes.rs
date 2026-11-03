@@ -8,6 +8,7 @@ use axum::routing::{MethodFilter, MethodRouter, on};
 use serde_json::json;
 
 use crate::App;
+use crate::account;
 use crate::docs;
 use crate::error::{ApiError, no_store};
 use crate::idempotency;
@@ -34,6 +35,15 @@ static ROUTES: &[Entry] = &[
     ("POST /api/sessions/{code}/seats/answer", |method| on(method, sessions::answer_seat)),
     ("POST /api/sessions/{code}/chat", |method| on(method, sessions::chat)),
     ("POST /api/sessions/{code}/playoff", |method| on(method, sessions::playoff)),
+    ("GET /api/me", |method| on(method, account::get_me)),
+    ("PUT /api/me/name", |method| on(method, account::set_name)),
+    ("DELETE /api/me/name", |method| on(method, account::clear_name)),
+    ("PUT /api/me/avatar", |method| on(method, account::set_avatar)),
+    ("GET /api/me/stats-privacy", |method| on(method, account::get_stats_privacy)),
+    ("PUT /api/me/stats-privacy", |method| on(method, account::set_stats_privacy)),
+    ("GET /api/me/blocks", |method| on(method, account::get_blocks)),
+    ("PUT /api/me/blocks/{person}", |method| on(method, account::block)),
+    ("DELETE /api/me/blocks/{person}", |method| on(method, account::unblock)),
 ];
 
 fn method_filter(method: &str) -> MethodFilter {

@@ -52,15 +52,15 @@ impl AudienceData {
 }
 
 /// The columns of users that make a PlayerInfo: provider, login, avatar, name, seed. All nullable for a LEFT JOIN.
-type AccountRow = (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>);
+pub(super) type AccountRow = (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>);
 
-fn account_row(row: &duckdb::Row, first: usize) -> duckdb::Result<AccountRow> {
+pub(super) fn account_row(row: &duckdb::Row, first: usize) -> duckdb::Result<AccountRow> {
     Ok((row.get(first)?, row.get(first + 1)?, row.get(first + 2)?, row.get(first + 3)?, row.get(first + 4)?))
 }
 
 /// The account of a seat from a LEFT JOIN of users: no login means no account.
 /// A Google name is often a real name, so after a rename the custom name takes its place: nobody else sees it.
-fn account_of((provider, login, avatar, name, seed): AccountRow) -> ApiResult<Option<PlayerInfo>> {
+pub(super) fn account_of((provider, login, avatar, name, seed): AccountRow) -> ApiResult<Option<PlayerInfo>> {
     let Some(login) = login else { return Ok(None) };
     let provider = match provider.as_deref() {
         Some("github") => LoginProvider::Github,
