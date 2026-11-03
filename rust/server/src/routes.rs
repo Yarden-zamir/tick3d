@@ -20,6 +20,7 @@ use crate::practice;
 use crate::previews;
 use crate::results;
 use crate::sessions;
+use crate::stats;
 use crate::tester_codes;
 use axum::middleware::from_fn_with_state;
 
@@ -85,6 +86,9 @@ static ROUTES: &[Entry] = &[
     ("GET /api/me/games", |method| on(method, games::my_games)),
     ("GET /api/me/achievements", |method| on(method, games::achievements)),
     ("DELETE /api/me/achievements", |method| on(method, games::reset_achievements)),
+    ("GET /api/stats", |method| on(method, stats::stats)),
+    ("GET /api/stats/card/{person}", |method| on(method, stats::card)),
+    ("GET /api/leaderboard", |method| on(method, stats::leaderboard)),
 ];
 
 fn method_filter(method: &str) -> MethodFilter {

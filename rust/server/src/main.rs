@@ -20,6 +20,8 @@ mod results;
 mod routes;
 mod sessions;
 mod signal;
+mod snapshots;
+mod stats;
 mod store;
 mod tester_codes;
 
@@ -49,6 +51,8 @@ pub struct AppState {
     pub lobby: nearby::Lobby,
     /// None on a server without previews (a LAN host).
     pub previews: Option<previews::Previews>,
+    /// The last answers of the Everyone stats and the leaderboard.
+    pub snapshots: snapshots::Snapshots,
 }
 
 impl std::ops::Deref for App {
@@ -143,6 +147,7 @@ async fn main() {
         lan_host: lan_host(),
         lobby: nearby::Lobby::default(),
         previews: previews::previews_config_from_env().unwrap_or_else(|error| panic!("{error}")).map(previews::Previews::new),
+        snapshots: snapshots::Snapshots::default(),
     }));
     let writer = store.clone();
     tokio::spawn(async move {

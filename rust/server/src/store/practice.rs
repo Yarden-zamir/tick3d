@@ -3,8 +3,10 @@ use serde::Serialize;
 use tick3d_core::names::name_of;
 use tick3d_core::playoff::PresetId;
 
+use duckdb::Connection;
+
 use super::{Db, json_list};
-use crate::error::ApiResult;
+use crate::error::{ApiError, ApiResult};
 use crate::protocol::{PracticeMode, PracticeRun};
 
 /// The person of a token: the GitHub account, else the token (PERSON in server/stats.ts).
@@ -87,32 +89,9 @@ impl Db {
         Ok(!inserted.is_empty())
     }
 
-    /// The best `limit` people of one mode and preset.
-    /// Limit: the stats page also reads the best of every mode and preset (practiceStats). Add that with the stats.
-    fn practice_leaders(&self, limit: i64, mode: PracticeMode, preset: PresetId) -> ApiResult<Vec<PracticeLeader>> {
-        let sql = format!(
-            "{} SELECT row_number() OVER (PARTITION BY mode, preset ORDER BY key, account NULLS LAST, person)::INTEGER AS rank,
-               account, custom, person, total_ms, score
-             FROM best WHERE mode = $mode AND preset = $preset
-             QUALIFY rank <= $limit ORDER BY rank",
-            runs_sql()
-        );
-        Ok(self.query(&sql, &[("mode", &mode.as_str()), ("preset", &preset.as_str()), ("limit", &limit)], |row| {
-            let person: String = row.get(3)?;
-            Ok(PracticeLeader {
-                mode,
-                preset,
-                rank: row.get(0)?,
-                player: person_name(row.get(1)?, row.get(2)?, &person),
-                total_ms: row.get(4)?,
-                score: row.get(5)?,
-            })
-        })?)
-    }
-
     /// The leaderboard of one mode and preset, and the best run of the caller on all linked devices.
     pub fn practice_board(&mut self, mode: PracticeMode, preset: PresetId, token: Option<&str>) -> ApiResult<PracticeBoard> {
-        let top = self.practice_leaders(10, mode, preset)?;
+        let top = practice_leaders(&self.conn, 10, Some((mode, preset)))?;
         let tokens: Vec<String> = self.identity_of(token)?.into_iter().collect();
         if tokens.is_empty() {
             return Ok(PracticeBoard { mode, preset, top, you: None });
@@ -129,4 +108,82 @@ impl Db {
             .next();
         Ok(PracticeBoard { mode, preset, top, you })
     }
+}
+
+/// The best `limit` people of each mode and preset (leaders in server/practice.ts). `only` limits the list to one mode
+/// and preset. A free function, so the reader connection runs it for the Everyone stats too.
+fn practice_leaders(conn: &Connection, limit: i64, only: Option<(PracticeMode, PresetId)>) -> ApiResult<Vec<PracticeLeader>> {
+    let sql = format!(
+        "{} SELECT mode, preset, row_number() OVER (PARTITION BY mode, preset ORDER BY key, account NULLS LAST, person)::INTEGER AS rank,
+           account, custom, person, total_ms, score
+         FROM best {} QUALIFY rank <= $limit ORDER BY mode, preset, rank",
+        runs_sql(),
+        if only.is_some() { "WHERE mode = $mode AND preset = $preset" } else { "" }
+    );
+    let (mode, preset) = only.map_or(("", ""), |(mode, preset)| (mode.as_str(), preset.as_str()));
+    let params: Vec<(&str, &dyn duckdb::ToSql)> =
+        if only.is_some() { vec![("limit", &limit), ("mode", &mode), ("preset", &preset)] } else { vec![("limit", &limit)] };
+    let found = conn
+        .prepare(&sql)?
+        .query_map(params.as_slice(), |row| {
+            let texts: [String; 2] = [row.get(0)?, row.get(1)?];
+            let person: String = row.get(5)?;
+            Ok((texts, row.get::<_, i32>(2)?, person_name(row.get(3)?, row.get(4)?, &person), row.get::<_, i32>(6)?, row.get::<_, i32>(7)?))
+        })?
+        .collect::<duckdb::Result<Vec<_>>>()?;
+    found
+        .into_iter()
+        .map(|([mode, preset], rank, player, total_ms, score)| {
+            let mode = PracticeMode::parse(&mode).ok_or_else(|| ApiError::fault(format!("a practice run has the unknown mode {mode}")))?;
+            let preset =
+                PresetId::parse(&preset).ok_or_else(|| ApiError::fault(format!("a practice run has the unknown preset {preset}")))?;
+            Ok(PracticeLeader { mode, preset, rank, player, total_ms, score })
+        })
+        .collect()
+}
+
+/// The runs of one mode and preset on the stats page.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PracticeRuns {
+    mode: PracticeMode,
+    preset: PresetId,
+    runs: i32,
+    players: i32,
+    avg_round_ms: Option<f64>,
+}
+
+/// The practice part of the stats page (PracticeStats in src/protocol.ts).
+#[derive(Serialize)]
+pub struct PracticeStats {
+    runs: Vec<PracticeRuns>,
+    best: Vec<PracticeLeader>,
+}
+
+/// practiceStats in server/practice.ts.
+pub(super) fn practice_stats(conn: &Connection) -> ApiResult<PracticeStats> {
+    let sql = format!(
+        "{} SELECT mode, preset, count(*)::INTEGER AS runs, count(DISTINCT person)::INTEGER AS players,
+           (SELECT avg(t) FROM (SELECT unnest(r.round_ms) AS t FROM runs r WHERE r.mode = runs.mode AND r.preset = runs.preset)) AS avg_round_ms
+         FROM runs GROUP BY mode, preset ORDER BY mode, preset",
+        runs_sql()
+    );
+    let found = conn
+        .prepare(&sql)?
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get(2)?, row.get(3)?, row.get(4)?)))?
+        .collect::<duckdb::Result<Vec<_>>>()?;
+    let runs = found
+        .into_iter()
+        .map(|(mode, preset, runs, players, avg_round_ms)| {
+            Ok(PracticeRuns {
+                mode: PracticeMode::parse(&mode).ok_or_else(|| ApiError::fault(format!("a practice run has the unknown mode {mode}")))?,
+                preset: PresetId::parse(&preset)
+                    .ok_or_else(|| ApiError::fault(format!("a practice run has the unknown preset {preset}")))?,
+                runs,
+                players,
+                avg_round_ms,
+            })
+        })
+        .collect::<ApiResult<_>>()?;
+    Ok(PracticeStats { runs, best: practice_leaders(conn, 5, None)? })
 }

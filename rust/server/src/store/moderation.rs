@@ -2,7 +2,7 @@
 use axum::http::StatusCode;
 use serde::Serialize;
 use tick3d_core::names::name_of;
-use tick3d_core::session::{ChatEntry, ChatFrom};
+use tick3d_core::session::{ChatEntry, ChatFrom, PlayerInfo};
 
 use super::Db;
 use super::accounts::{account_of, account_row};
@@ -48,11 +48,13 @@ pub struct Reports {
     actions: Vec<ModerationAction>,
 }
 
-/// The person behind a public person id: the name that the games show.
-/// Limit: only the reports read it now. The stats routes also need the canonical token, the tokens and the account
-/// (statsPersonOf in server/store.ts): add them when the stats are ported.
+/// The person behind a public person id (statsPersonOf in server/store.ts): the canonical token, every token, and the
+/// name and the account that the games show.
 pub struct StatsPerson {
+    pub owner: String,
+    pub tokens: Vec<String>,
     pub name: String,
+    pub player: Option<PlayerInfo>,
 }
 
 /// The target of a report row.
@@ -86,11 +88,16 @@ impl Db {
             |row| Ok((row.get::<_, i64>(0)?, account_row(row, 1)?)),
         )?;
         if let Some((id, row)) = accounts.into_iter().next() {
-            let name = match account_of(row)? {
-                Some(player) => player.name.unwrap_or(player.login),
-                None => self.name_of_token(&account_token(id))?,
+            let owner = account_token(id);
+            let player = account_of(row)?;
+            let name = match &player {
+                Some(player) => player.name.clone().unwrap_or_else(|| player.login.clone()),
+                None => self.name_of_token(&owner)?,
             };
-            return Ok(Some(StatsPerson { name }));
+            let linked: Vec<String> =
+                self.query("FROM player_tokens SELECT token WHERE github_id = $id", &[("id", &id)], |row| row.get(0))?;
+            let tokens = std::iter::once(owner.clone()).chain(linked).collect();
+            return Ok(Some(StatsPerson { owner, tokens, name, player }));
         }
         // A device without an account. A linked token stands for its account, so it is not a device person.
         let devices: Vec<String> = self.query(
@@ -101,7 +108,7 @@ impl Db {
             |row| row.get(0),
         )?;
         let Some(token) = devices.into_iter().next() else { return Ok(None) };
-        Ok(Some(StatsPerson { name: self.name_of_token(&token)? }))
+        Ok(Some(StatsPerson { name: self.name_of_token(&token)?, owner: token.clone(), tokens: vec![token], player: None }))
     }
 
     /// Stores a report of a message or a person of an online session. The session must hold the target now.

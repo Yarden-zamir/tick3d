@@ -5,6 +5,7 @@ mod accounts;
 mod achievements;
 mod deletion;
 mod games;
+mod leaderboard;
 mod moderation;
 mod practice;
 mod profile;
@@ -12,10 +13,13 @@ mod pruning;
 mod reader;
 mod results;
 mod sessions;
+mod stats;
 mod testers;
 
+pub use leaderboard::leaderboard_of;
 pub use moderation::DeleteTarget;
 pub use profile::GoogleProfile;
+pub use stats::everyone_stats;
 pub use testers::hint_of;
 
 use std::sync::{Arc, mpsc};
@@ -90,6 +94,9 @@ struct Fields {
     metric_values_of_metrics: String,
     /// The metric columns from a bound `$metrics` JSON text.
     metric_values_of_parameter: String,
+    /// The metrics of a row as a struct (metricsStruct in server/fields.ts), of `results` and of `seat_metrics sm`.
+    metrics_of_results: String,
+    metrics_of_seat_metrics: String,
 }
 
 static FROM_NODE: std::sync::LazyLock<FromNode> =
@@ -160,6 +167,11 @@ impl Store {
             write.await.map_err(|_| ApiError::fault("a result batch was dropped"))?.map_err(ApiError::fault)?;
         }
         result
+    }
+
+    /// Runs `job` on the reader connection, after the reads before it: for the answers about every player.
+    pub async fn read<R: Send + 'static>(&self, job: impl FnOnce(&Connection) -> ApiResult<R> + Send + 'static) -> ApiResult<R> {
+        self.reader.call(job).await
     }
 }
 

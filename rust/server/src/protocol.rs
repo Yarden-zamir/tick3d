@@ -345,6 +345,13 @@ pub struct MetricLists {
     tuning_fields: Vec<TuningField>,
 }
 
+impl MetricLists {
+    /// REFUSALS in src/protocol.ts, in its order.
+    pub fn refusals(&self) -> &[String] {
+        &self.refusals
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct TuningField {
     path: Vec<String>,
@@ -855,6 +862,25 @@ pub fn parse_client_event(value: &Value) -> Option<ClientEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_the_stats_filters_as_the_page_writes_them() {
+        let filter = parse_stats_filter(Some("scope=mine&range=7d&mode=computer&level=hard")).expect("a valid filter");
+        assert_eq!(
+            (filter.scope, filter.range, filter.mode, filter.level),
+            (StatsScope::Mine, StatsRange::Week, Some(GameMode::Computer), Some(Difficulty::Hard))
+        );
+        assert_eq!(parse_stats_filter(None).map(|filter| filter.range), Some(StatsRange::All));
+        let person = "person=0123456789abcdef";
+        for refused in
+            ["range=7d&range=30d", "mode=online&level=easy", "scope=mine&person=0123456789abcdef", "scope=", "other=1", "level=Hard"]
+        {
+            assert_eq!(parse_stats_filter(Some(refused)), None, "{refused}");
+        }
+        assert!(parse_stats_filter(Some(person)).is_some());
+        assert_eq!(parse_leaderboard_filter(Some(person)), None);
+        assert_eq!(parse_leaderboard_filter(Some("scope=mine")), None);
+    }
     use serde_json::json;
 
     #[test]
@@ -947,4 +973,104 @@ mod tests {
         assert_eq!(normalize_code(" ab2c "), Some("AB2C".to_owned()));
         assert_eq!(normalize_code("AB1C"), None);
     }
+}
+
+// ---- Stats filters ----
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StatsScope {
+    Everyone,
+    Mine,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum StatsRange {
+    #[serde(rename = "7d")]
+    Week,
+    #[serde(rename = "30d")]
+    Month,
+    #[serde(rename = "all")]
+    All,
+}
+
+impl StatsRange {
+    /// RANGE_DAYS in src/protocol.ts. None for all time.
+    pub fn days(self) -> Option<i64> {
+        match self {
+            StatsRange::Week => Some(7),
+            StatsRange::Month => Some(30),
+            StatsRange::All => None,
+        }
+    }
+}
+
+impl GameMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            GameMode::Computer => "computer",
+            GameMode::Friend => "friend",
+            GameMode::Online => "online",
+            GameMode::Nearby => "nearby",
+        }
+    }
+}
+
+/// The filters of the stats page (StatsFilter in src/protocol.ts). `person` goes with the everyone scope only.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct StatsFilter {
+    pub scope: StatsScope,
+    pub range: StatsRange,
+    pub mode: Option<GameMode>,
+    pub level: Option<Difficulty>,
+    pub person: Option<String>,
+}
+
+pub const STATS_FILTER_ERROR: &str = "Unknown stats filter. scope: everyone or mine. range: 7d, 30d, all. mode: computer, friend, online, nearby. level: easy, medium, hard, only with the computer mode or no mode. person: a person id of 16 hex characters, not with scope mine. Each key at most once.";
+pub const LEADERBOARD_FILTER_ERROR: &str = "Unknown leaderboard filter. range: 7d, 30d, all. mode: computer, friend, online, nearby. level: easy, medium, hard, only with the computer mode or no mode. Each key at most once.";
+
+/// parseStatsFilter in src/protocol.ts. Refuses an unknown key, a repeated key, an unknown or empty value, a level with a
+/// mode other than computer, and a person with the mine scope. `query` is the raw query of the address.
+pub fn parse_stats_filter(query: Option<&str>) -> Option<StatsFilter> {
+    let pairs: Vec<(String, String)> = url::form_urlencoded::parse(query.unwrap_or("").as_bytes()).into_owned().collect();
+    let mut filter = StatsFilter { scope: StatsScope::Everyone, range: StatsRange::All, mode: None, level: None, person: None };
+    let mut seen = Vec::new();
+    for (key, value) in &pairs {
+        if seen.contains(&key.as_str()) {
+            return None;
+        }
+        seen.push(key.as_str());
+        match key.as_str() {
+            "scope" => filter.scope = [StatsScope::Everyone, StatsScope::Mine].into_iter().find(|scope| json_name(scope) == *value)?,
+            "range" => {
+                filter.range =
+                    [StatsRange::Week, StatsRange::Month, StatsRange::All].into_iter().find(|range| json_name(range) == *value)?
+            }
+            "mode" => {
+                filter.mode = Some(
+                    [GameMode::Computer, GameMode::Friend, GameMode::Online, GameMode::Nearby]
+                        .into_iter()
+                        .find(|mode| mode.as_str() == value)?,
+                )
+            }
+            "level" => filter.level = Some(Difficulty::parse(value)?),
+            "person" => filter.person = Some(parse_person_id(value)?),
+            _ => return None,
+        }
+    }
+    let level_without_computer = filter.level.is_some() && filter.mode.is_some_and(|mode| mode != GameMode::Computer);
+    if level_without_computer || (filter.person.is_some() && filter.scope == StatsScope::Mine) {
+        return None;
+    }
+    Some(filter)
+}
+
+/// The filter of GET /api/leaderboard: the stats filter without a scope and a person.
+pub fn parse_leaderboard_filter(query: Option<&str>) -> Option<StatsFilter> {
+    parse_stats_filter(query).filter(|filter| filter.scope == StatsScope::Everyone && filter.person.is_none())
+}
+
+/// The JSON text of a unit enum value, such as "7d".
+fn json_name(value: &impl Serialize) -> String {
+    serde_json::to_value(value).ok().and_then(|value| value.as_str().map(str::to_owned)).expect("a unit enum serializes to a text")
 }

@@ -50,6 +50,11 @@ pub struct Sessions {
 }
 
 impl Sessions {
+    /// How many sessions exist, in memory and in the file.
+    pub fn known_count(&self) -> usize {
+        self.known.len()
+    }
+
     pub fn load_known_codes(&mut self, conn: &Connection) -> duckdb::Result<()> {
         let mut statement = conn.prepare("FROM sessions SELECT code")?;
         self.known = statement.query_map([], |row| row.get(0))?.collect::<duckdb::Result<_>>()?;
