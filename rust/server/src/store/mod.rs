@@ -8,9 +8,11 @@ mod practice;
 mod profile;
 mod pruning;
 mod sessions;
+mod testers;
 
 pub use moderation::DeleteTarget;
 pub use profile::GoogleProfile;
+pub use testers::hint_of;
 
 use std::sync::{Arc, mpsc};
 use std::thread;

@@ -8,10 +8,10 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use sha2::{Digest, Sha256};
 
 use crate::App;
 use crate::error::ApiError;
+use crate::ids::sha256_hex;
 use crate::sessions::{MAX_BODY_BYTES, player_of};
 use crate::store::now_ms;
 
@@ -139,7 +139,7 @@ pub async fn keyed(State(app): State<App>, request: Request, next: Next) -> Resp
         return ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, "Request body is too large.").into_response();
     };
     let path = parts.uri.path().to_owned();
-    let digest: String = Sha256::digest(&body).iter().map(|byte| format!("{byte:02x}")).collect();
+    let digest = sha256_hex(&body);
     let fingerprint = format!("{} {path}\n{digest}", parts.method);
     let id = format!("{player}\n{path}\n{key}");
     let serial = match app.idempotency.claim(&id, &fingerprint, now_ms()) {

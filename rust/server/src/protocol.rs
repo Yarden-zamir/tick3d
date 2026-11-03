@@ -281,6 +281,54 @@ pub fn parse_practice_run(value: &Value) -> Option<PracticeRun> {
     Some(PracticeRun { id: id.to_owned(), mode, preset, round_ms, score: u32::try_from(score).expect("a score fits in u32") })
 }
 
+// ---- Tester codes ----
+
+pub const TESTER_NAME_MAX_LENGTH: usize = 40;
+const EMAIL_MAX_LENGTH: usize = 254;
+static TESTER_NAME_CHARS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\p{L}\p{M}\p{Nd} _.'-]+$").expect("a valid regex"));
+
+/// parseTesterName in src/share/codes.ts: 1 to 40 characters after a trim, the inner spaces joined to one, with a letter or a digit.
+pub fn parse_tester_name(text: &str) -> Option<String> {
+    let name = js_trim(text).split(is_js_space).filter(|part| !part.is_empty()).collect::<Vec<_>>().join(" ");
+    let valid = (1..=TESTER_NAME_MAX_LENGTH).contains(&name.chars().count())
+        && TESTER_NAME_CHARS.is_match(&name)
+        && CUSTOM_NAME_LETTER.is_match(&name);
+    valid.then_some(name)
+}
+
+/// parseEmail in src/share/codes.ts: one "@", a name before it, and a domain with a dot after it.
+/// Limit: it accepts some addresses that cannot receive mail. The maintainer reads each one by hand.
+fn parse_email(text: &str) -> Option<String> {
+    let email = js_trim(text);
+    if js_length(email) > EMAIL_MAX_LENGTH || email.chars().any(is_js_space) {
+        return None;
+    }
+    let (local, domain) = email.split_once('@')?;
+    let valid =
+        !local.is_empty() && !domain.contains('@') && domain.split('.').count() >= 2 && domain.split('.').all(|label| !label.is_empty());
+    valid.then(|| email.to_owned())
+}
+
+/// The body of a tester code claim. `by` is the person id of the inviter, or None.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClaimRequest {
+    pub email: String,
+    pub name: String,
+    pub by: Option<String>,
+}
+
+/// parseClaimRequest: a missing or null `by` is a claim without an invite. Another `by` must be a person id.
+pub fn parse_claim_request(value: &Value) -> Option<ClaimRequest> {
+    let value = value.as_object()?;
+    let email = parse_email(value.get("email")?.as_str()?)?;
+    let name = parse_tester_name(value.get("name")?.as_str()?)?;
+    let by = match value.get("by") {
+        None | Some(Value::Null) => None,
+        Some(by) => Some(parse_person_id(by.as_str()?)?),
+    };
+    Some(ClaimRequest { email, name, by })
+}
+
 // ---- Accounts ----
 
 pub const CUSTOM_NAME_MIN_LENGTH: usize = 2;
@@ -509,6 +557,18 @@ mod tests {
         assert!(run("targets", 8, 10).is_none());
         assert!(run("echo", 8, 800).is_some());
         assert!(run("echo", 8, 801).is_none());
+    }
+
+    #[test]
+    fn claims_need_an_email_shape_and_a_name() {
+        let claim = |email: &str, name: &str| parse_claim_request(&json!({ "email": email, "name": name }));
+        assert_eq!(claim(" a@b.c ", "  Ann   Lee ").map(|claim| (claim.email, claim.name)), Some(("a@b.c".into(), "Ann Lee".into())));
+        assert!(claim("a@b", "Ann").is_none());
+        assert!(claim("a@@b.c", "Ann").is_none());
+        assert!(claim("a b@c.d", "Ann").is_none());
+        assert!(claim("a@b..c", "Ann").is_none());
+        assert!(claim("a@b.c", "...").is_none());
+        assert!(parse_claim_request(&json!({ "email": "a@b.c", "name": "Ann", "by": "nope" })).is_none());
     }
 
     #[test]

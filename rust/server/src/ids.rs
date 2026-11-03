@@ -13,9 +13,12 @@ pub fn account_token(account_id: i64) -> String {
 
 /// The public id of a token (personId in src/protocol.ts): never send a token itself to a page.
 pub fn person_id(token: &str) -> String {
-    let digest = Sha256::digest(format!("{PERSON_ID_PREFIX}{token}"));
-    let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
-    hex[..PERSON_ID_LENGTH].to_owned()
+    sha256_hex(format!("{PERSON_ID_PREFIX}{token}").as_bytes())[..PERSON_ID_LENGTH].to_owned()
+}
+
+/// The SHA-256 of `bytes` in lower-case hex.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[cfg(test)]

@@ -16,6 +16,7 @@ use crate::login;
 use crate::moderation;
 use crate::practice;
 use crate::sessions;
+use crate::tester_codes;
 use axum::middleware::from_fn_with_state;
 
 type Entry = (&'static str, fn(MethodFilter) -> MethodRouter<App>);
@@ -64,6 +65,9 @@ static ROUTES: &[Entry] = &[
     ("DELETE /api/accounts/{login}", |method| on(method, moderation::delete_account)),
     ("POST /api/practice/runs", |method| on(method, practice::add_run)),
     ("GET /api/practice/best", |method| on(method, practice::best)),
+    ("GET /api/testing/codes", |method| on(method, tester_codes::codes)),
+    ("POST /api/testing/codes/{codeId}/claim", |method| on(method, tester_codes::claim)),
+    ("GET /api/testing/claims", |method| on(method, tester_codes::claims)),
 ];
 
 fn method_filter(method: &str) -> MethodFilter {

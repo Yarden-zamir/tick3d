@@ -15,6 +15,7 @@ mod protocol;
 mod routes;
 mod sessions;
 mod store;
+mod tester_codes;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -118,6 +119,13 @@ async fn main() {
     let live = Live::new();
     let store = Store::open(&db_path, live.clone()).expect("the database opens");
     live.set_store(store.clone());
+    // The tester codes of TESTER_CODES. A bad entry stops the start.
+    let codes = tester_codes::tester_codes_from_env().unwrap_or_else(|error| panic!("{error}"));
+    if !codes.is_empty() {
+        let total = codes.len();
+        let added = store.call(move |db| db.add_tester_codes(&codes)).await.expect("the tester codes are stored");
+        println!("tester codes: {added} new of {total}");
+    }
     let app = App(Arc::new(AppState {
         store: store.clone(),
         live: live.clone(),
