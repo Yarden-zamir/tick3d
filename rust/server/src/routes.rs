@@ -10,6 +10,7 @@ use serde_json::json;
 use crate::App;
 use crate::docs;
 use crate::error::{ApiError, no_store};
+use crate::sessions;
 
 type Entry = (&'static str, fn(MethodFilter) -> MethodRouter<App>);
 
@@ -18,6 +19,19 @@ static ROUTES: &[Entry] = &[
     ("GET /api/health", |method| on(method, health)),
     ("GET /api/openapi.json", |method| on(method, docs::openapi)),
     ("GET /api/docs", |method| on(method, docs::docs_page)),
+    ("POST /api/sessions", |method| on(method, sessions::create)),
+    ("GET /api/sessions/{code}", |method| on(method, sessions::get)),
+    ("GET /api/sessions/{code}/events", |method| on(method, sessions::events)),
+    ("POST /api/sessions/{code}/leave", |method| on(method, sessions::leave)),
+    ("PATCH /api/sessions/{code}", |method| on(method, sessions::update)),
+    ("POST /api/sessions/{code}/lock", |method| on(method, sessions::lock)),
+    ("POST /api/sessions/{code}/join", |method| on(method, sessions::join)),
+    ("POST /api/sessions/{code}/moves", |method| on(method, sessions::moves)),
+    ("POST /api/sessions/{code}/games", |method| on(method, sessions::new_game)),
+    ("POST /api/sessions/{code}/seats", |method| on(method, sessions::seats)),
+    ("POST /api/sessions/{code}/seats/answer", |method| on(method, sessions::answer_seat)),
+    ("POST /api/sessions/{code}/chat", |method| on(method, sessions::chat)),
+    ("POST /api/sessions/{code}/playoff", |method| on(method, sessions::playoff)),
 ];
 
 fn method_filter(method: &str) -> MethodFilter {

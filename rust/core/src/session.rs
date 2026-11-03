@@ -61,14 +61,14 @@ type Rule<T = SessionDoc> = Result<T, SessionError>;
 pub type Identity = HashSet<String>;
 
 /// One game as stored. `abandoned` is in the JSON only when it is true.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameRecord {
     pub moves: Vec<Cell>,
     pub times: Vec<EpochMs>,
     pub clock: TimeControl,
     pub timed_out: bool,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub abandoned: bool,
 }
 
@@ -95,13 +95,13 @@ impl GameRecord {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SessionMode {
     Online,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MatchOptions {
     pub hide_board: bool,
@@ -109,7 +109,7 @@ pub struct MatchOptions {
     pub hide_coordinates: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum MatchOption {
     HideBoard,
@@ -130,7 +130,7 @@ impl MatchOptions {
 }
 
 /// `from` is the seat of the sender, or the watcher. `by` is the person id of the sender, when the holder has one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChatFrom {
     X,
     O,
@@ -148,7 +148,7 @@ impl From<Player> for ChatFrom {
 }
 
 /// A change to the session that the chat log shows between the messages.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum SessionEvent {
     NewGame { game: usize, swapped: bool },
@@ -162,7 +162,7 @@ pub enum SessionEvent {
 }
 
 /// Messages and events share one id sequence, so the log keeps one order.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ChatEntry {
     Message {
@@ -188,7 +188,7 @@ impl ChatEntry {
 }
 
 /// Every seat action, as the chat log names it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SeatKind {
     Swap,
@@ -201,7 +201,7 @@ pub enum SeatKind {
 }
 
 /// The seat actions that change the seat or the game of the other player. They wait until the other player accepts.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConsentAction {
     Swap,
@@ -267,7 +267,7 @@ impl SeatAction {
 
 /// A seat change that waits for the other player. `watcher` is the token of the watcher that takes
 /// the other seat (replace), else None. The request ends SEAT_REQUEST_MS after `at`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SeatRequest {
     pub kind: ConsentAction,
     pub from: Player,
@@ -276,7 +276,7 @@ pub struct SeatRequest {
 }
 
 /// The stored document of one online session, in format CURRENT_FORMAT (src/session/format.ts).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionDoc {
     pub format: u32,
@@ -354,7 +354,7 @@ pub struct OpenWatcher {
 // ---- Helpers ----
 
 /// JavaScript `trim()`: the JavaScript white space differs from Rust in U+0085 and U+FEFF.
-fn js_trim(text: &str) -> &str {
+pub fn js_trim(text: &str) -> &str {
     text.trim_matches(|c: char| (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}')
 }
 

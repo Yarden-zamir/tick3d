@@ -6,6 +6,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ROUTES, ROUTE_NAMES } from './api-docs.ts';
 import { openApi, swaggerHtml } from './api-docs-render.ts';
+import { GAME_COLUMN_LIST, METRIC_COLUMN_LIST, METRIC_VALUES, gameValues, metricValues } from './fields.ts';
 import { SCHEMA } from './store.ts';
 
 const FILE = new URL('../rust/server/from-node.json', import.meta.url);
@@ -17,6 +18,14 @@ function fromNode() {
     openapi: JSON.stringify(openApi('{origin}'), null, 2),
     docsHtml: swaggerHtml(),
     schema: SCHEMA,
+    // The SQL of the copied columns of a result (server/fields.ts), for the batch tables and for bound $metrics.
+    fields: {
+      gameColumns: GAME_COLUMN_LIST,
+      metricColumns: METRIC_COLUMN_LIST,
+      gameValuesOfDoc: gameValues('doc'),
+      metricValuesOfMetrics: metricValues('metrics'),
+      metricValuesOfParameter: METRIC_VALUES,
+    },
   };
 }
 

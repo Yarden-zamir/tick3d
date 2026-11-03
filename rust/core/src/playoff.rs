@@ -20,13 +20,13 @@ pub enum PresetId {
 }
 
 /// `times` holds the time of each target that the player hit, in order.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayoffSeat {
     pub joined: bool,
     pub times: Vec<u32>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PlayoffEnd {
     /// Both players finished.
@@ -37,7 +37,7 @@ pub enum PlayoffEnd {
     Left,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Playoff {
     /// Grows with each playoff of the session, so a late request for an older playoff does nothing.
