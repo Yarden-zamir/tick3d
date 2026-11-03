@@ -12,6 +12,7 @@ mod login;
 mod moderation;
 mod nearby;
 mod practice;
+mod previews;
 mod protocol;
 mod routes;
 mod sessions;
@@ -43,6 +44,8 @@ pub struct AppState {
     /// LAN_HOST=1 marks a server that a player runs on their own computer for a local network.
     pub lan_host: Option<String>,
     pub lobby: nearby::Lobby,
+    /// None on a server without previews (a LAN host).
+    pub previews: Option<previews::Previews>,
 }
 
 impl std::ops::Deref for App {
@@ -136,6 +139,7 @@ async fn main() {
         auth: auth::AuthConfig::from_env().map(auth::Auth::new),
         lan_host: lan_host(),
         lobby: nearby::Lobby::default(),
+        previews: previews::previews_config_from_env().unwrap_or_else(|error| panic!("{error}")).map(previews::Previews::new),
     }));
     let writer = store.clone();
     tokio::spawn(async move {

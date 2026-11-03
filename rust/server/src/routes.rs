@@ -16,6 +16,7 @@ use crate::login;
 use crate::moderation;
 use crate::nearby;
 use crate::practice;
+use crate::previews;
 use crate::sessions;
 use crate::tester_codes;
 use axum::middleware::from_fn_with_state;
@@ -72,6 +73,7 @@ static ROUTES: &[Entry] = &[
     ("GET /api/nearby/hosts", |method| on(method, nearby::hosts)),
     ("POST /api/nearby/hosts", |method| on(method, nearby::announce)),
     ("POST /api/nearby/hosts/{host}/answer", |method| on(method, nearby::answer)),
+    ("GET /api/previews", |method| on(method, previews::previews)),
 ];
 
 fn method_filter(method: &str) -> MethodFilter {
