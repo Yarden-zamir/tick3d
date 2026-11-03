@@ -10,6 +10,7 @@ mod limits;
 mod live;
 mod login;
 mod moderation;
+mod practice;
 mod protocol;
 mod routes;
 mod sessions;

@@ -4,6 +4,7 @@
 mod accounts;
 mod deletion;
 mod moderation;
+mod practice;
 mod profile;
 mod pruning;
 mod sessions;

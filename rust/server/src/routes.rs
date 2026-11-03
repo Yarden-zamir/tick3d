@@ -14,6 +14,7 @@ use crate::error::{ApiError, no_store};
 use crate::idempotency;
 use crate::login;
 use crate::moderation;
+use crate::practice;
 use crate::sessions;
 use axum::middleware::from_fn_with_state;
 
@@ -61,6 +62,8 @@ static ROUTES: &[Entry] = &[
     ("DELETE /api/players/{person}/name", |method| on(method, moderation::clear_name_of)),
     ("DELETE /api/players/{person}", |method| on(method, moderation::delete_person)),
     ("DELETE /api/accounts/{login}", |method| on(method, moderation::delete_account)),
+    ("POST /api/practice/runs", |method| on(method, practice::add_run)),
+    ("GET /api/practice/best", |method| on(method, practice::best)),
 ];
 
 fn method_filter(method: &str) -> MethodFilter {

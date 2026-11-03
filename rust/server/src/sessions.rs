@@ -54,6 +54,14 @@ pub fn require_player(headers: &HeaderMap) -> ApiResult<String> {
     player_of(headers).ok_or_else(|| ApiError::bad_request("Missing or invalid X-Player header."))
 }
 
+/// The X-Player header of a route that also answers without one. A header that is there must be valid.
+pub fn optional_player(headers: &HeaderMap) -> ApiResult<Option<String>> {
+    match header_text(headers, "x-player") {
+        None if !headers.contains_key("x-player") => Ok(None),
+        text => text.and_then(as_player_token).map(Some).ok_or_else(|| ApiError::bad_request("Invalid X-Player header.")),
+    }
+}
+
 pub fn session_code(code: &str) -> ApiResult<String> {
     normalize_code(code).ok_or_else(|| ApiError::bad_request("A code has 4 letters or digits."))
 }

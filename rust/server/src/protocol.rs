@@ -3,6 +3,7 @@
 use std::sync::LazyLock;
 
 use regex::Regex;
+use serde::Serialize;
 use serde_json::{Map, Value};
 use tick3d_core::clock::{NO_LIMIT, TimeControl};
 use tick3d_core::game::Cell;
@@ -193,12 +194,7 @@ pub fn parse_playoff_request(value: &Value) -> Option<PlayoffRequest> {
     let id = || get("id", MAX_SAFE_INTEGER);
     match value.get("action")?.as_str()? {
         "start" => {
-            let preset = match value.get("preset")?.as_str()? {
-                "easy" => PresetId::Easy,
-                "normal" => PresetId::Normal,
-                "hard" => PresetId::Hard,
-                _ => return None,
-            };
+            let preset = PresetId::parse(value.get("preset")?.as_str()?)?;
             let seed = u32::try_from(get("seed", u64::from(u32::MAX))?).expect("the seed fits in u32");
             Some(PlayoffRequest::Start { preset, seed })
         }
@@ -211,6 +207,78 @@ pub fn parse_playoff_request(value: &Value) -> Option<PlayoffRequest> {
         }),
         _ => None,
     }
+}
+
+// ---- Practice ----
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PracticeMode {
+    Targets,
+    Echo,
+}
+
+impl PracticeMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PracticeMode::Targets => "targets",
+            PracticeMode::Echo => "echo",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<PracticeMode> {
+        [PracticeMode::Targets, PracticeMode::Echo].into_iter().find(|mode| mode.as_str() == text)
+    }
+
+    /// ROUNDS in src/practice/practice.ts.
+    fn rounds(self) -> usize {
+        match self {
+            PracticeMode::Targets => PLAYOFF_TARGETS,
+            PracticeMode::Echo => 8,
+        }
+    }
+}
+
+/// ECHO_POINTS in src/practice/practice.ts: the points of one perfect echo round.
+const ECHO_POINTS: u64 = 100;
+
+/// A finished run of the practice room (POST /api/practice/runs).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PracticeRun {
+    pub id: String,
+    pub mode: PracticeMode,
+    pub preset: PresetId,
+    pub round_ms: Vec<u32>,
+    pub score: u32,
+}
+
+/// parsePracticeRun: an id of 8 to 64 letters, digits or "-", one time per round, and a score that the mode can give.
+/// Extra fields are allowed there, so here too.
+pub fn parse_practice_run(value: &Value) -> Option<PracticeRun> {
+    let value = value.as_object()?;
+    let mode = PracticeMode::parse(value.get("mode")?.as_str()?)?;
+    let preset = PresetId::parse(value.get("preset")?.as_str()?)?;
+    let id = value.get("id")?.as_str()?;
+    if !(8..=64).contains(&id.len()) || !id.chars().all(|char| char.is_ascii_alphanumeric() || char == '-') {
+        return None;
+    }
+    let rounds = value.get("roundMs")?.as_array()?;
+    if rounds.len() != mode.rounds() {
+        return None;
+    }
+    let round_ms = rounds
+        .iter()
+        .map(|ms| whole(ms, MAX_ROUND_MS as u64).map(|ms| u32::try_from(ms).expect("a round time fits in u32")))
+        .collect::<Option<Vec<_>>>()?;
+    let max_score = match mode {
+        PracticeMode::Echo => ECHO_POINTS * mode.rounds() as u64,
+        PracticeMode::Targets => mode.rounds() as u64,
+    };
+    let score = whole(value.get("score")?, max_score)?;
+    if mode == PracticeMode::Targets && score != max_score {
+        return None;
+    }
+    Some(PracticeRun { id: id.to_owned(), mode, preset, round_ms, score: u32::try_from(score).expect("a score fits in u32") })
 }
 
 // ---- Accounts ----
@@ -427,6 +495,20 @@ mod tests {
         assert_eq!(parse_custom_name(&json!("a")), None);
         assert_eq!(parse_custom_name(&json!("bad!")), None);
         assert_eq!(parse_custom_name(&json!("x".repeat(25))), None);
+    }
+
+    #[test]
+    fn practice_runs_need_a_score_that_the_mode_can_give() {
+        let run = |mode: &str, rounds: usize, score: u64| {
+            parse_practice_run(
+                &json!({ "id": "run-12345678", "mode": mode, "preset": "easy", "roundMs": vec![1500; rounds], "score": score }),
+            )
+        };
+        assert!(run("targets", 10, 10).is_some());
+        assert!(run("targets", 10, 9).is_none());
+        assert!(run("targets", 8, 10).is_none());
+        assert!(run("echo", 8, 800).is_some());
+        assert!(run("echo", 8, 801).is_none());
     }
 
     #[test]

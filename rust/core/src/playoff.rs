@@ -19,6 +19,22 @@ pub enum PresetId {
     Hard,
 }
 
+impl PresetId {
+    pub const ALL: [PresetId; 3] = [PresetId::Easy, PresetId::Normal, PresetId::Hard];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PresetId::Easy => "easy",
+            PresetId::Normal => "normal",
+            PresetId::Hard => "hard",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<PresetId> {
+        PresetId::ALL.into_iter().find(|preset| preset.as_str() == text)
+    }
+}
+
 /// `times` holds the time of each target that the player hit, in order.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayoffSeat {
