@@ -21,6 +21,7 @@ use crate::practice;
 use crate::previews;
 use crate::results;
 use crate::sessions;
+use crate::socket;
 use crate::stats;
 use crate::tester_codes;
 use axum::middleware::from_fn_with_state;
@@ -131,7 +132,9 @@ pub fn router(app: App) -> Router {
         let (method, path) = split(&route.name);
         router = router.route(path, on(method_filter(method), not_ported));
     }
+    // The WebSocket of the page (socket.rs). It is not in the published API document: agents use REST and long polls.
     router
+        .route("/api/ws", axum::routing::get(socket::socket))
         .fallback(|| async { ApiError::new(StatusCode::NOT_FOUND, "Not found.") })
         .method_not_allowed_fallback(|| async { ApiError::new(StatusCode::METHOD_NOT_ALLOWED, "Method not allowed.") })
         .with_state(app)

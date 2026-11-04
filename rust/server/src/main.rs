@@ -24,6 +24,7 @@ mod routes;
 mod sessions;
 mod signal;
 mod snapshots;
+mod socket;
 mod stats;
 mod store;
 mod tester_codes;
