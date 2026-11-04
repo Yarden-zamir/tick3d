@@ -68,3 +68,15 @@
 {"server":"rust","measure":"interaction-poll","serverCpuSeconds":5.10,"result":{"channel":"poll","pairs":20,"rounds":10,"seconds":12.36,"movesPerSecond":113.3,"move":{"n":1400,"p50":57.07,"p90":384.71,"p99":713.92,"max":947.3},"delivery":{"n":1400,"p50":52.99,"p90":198.51,"p99":705.83,"max":873.95}}}
 {"server":"rust","measure":"interaction-sse-under-stats-load","result":{"channel":"sse","pairs":20,"rounds":10,"seconds":21.34,"movesPerSecond":65.6,"move":{"n":1400,"p50":71.06,"p90":441.51,"p99":1181.39,"max":1420.95},"delivery":{"n":1400,"p50":59.84,"p90":256.31,"p99":806.79,"max":898.35}}}
 {"server":"rust","measure":"memory","rssKb":225864,"peakRssKb":239128}
+{"server":"node","measure":"startup","ms":4350,"rssKb":181520}
+{"server": "node", "measure": "stats-mine", "connections": 4, "rep": 1, "rps": 0.4, "p50ms": null, "p90ms": null, "p99ms": null, "ok": null, "codes": {}, "serverCpuSeconds": 10.03}
+{"server": "node", "measure": "stats-mine", "connections": 4, "rep": 2, "rps": 0.8, "p50ms": 8524.203, "p90ms": 9644.723, "p99ms": 9644.723, "ok": 1.0, "codes": {"200": 4}, "serverCpuSeconds": 11.36}
+{"server": "node", "measure": "stats-mine", "connections": 4, "rep": 3, "rps": 0.9, "p50ms": 5360.339, "p90ms": 7212.224, "p99ms": 7212.224, "ok": 1.0, "codes": {"200": 5}, "serverCpuSeconds": 8.69}
+{"server":"node","measure":"interaction-sse-under-stats-load","result":{"channel":"sse","pairs":20,"rounds":10,"seconds":73.53,"movesPerSecond":19,"move":{"n":1400,"p50":65.76,"p90":563.91,"p99":6231.89,"max":8301.06},"delivery":{"n":1400,"p50":54.27,"p90":463.67,"p99":12385.83,"max":12530.42}}}
+{"server":"node","measure":"memory","rssKb":261692,"peakRssKb":632876}
+{"server":"rust","measure":"startup","ms":2112,"rssKb":69188}
+{"server": "rust", "measure": "stats-mine", "connections": 4, "rep": 1, "rps": 7.8, "p50ms": 439.161, "p90ms": 624.272, "p99ms": 1855.162, "ok": 1.0, "codes": {"200": 74}, "serverCpuSeconds": 11.73}
+{"server": "rust", "measure": "stats-mine", "connections": 4, "rep": 2, "rps": 7.5, "p50ms": 510.138, "p90ms": 772.83, "p99ms": 971.856, "ok": 1.0, "codes": {"200": 71}, "serverCpuSeconds": 12.03}
+{"server": "rust", "measure": "stats-mine", "connections": 4, "rep": 3, "rps": 9.9, "p50ms": 385.122, "p90ms": 550.967, "p99ms": 677.129, "ok": 1.0, "codes": {"200": 95}, "serverCpuSeconds": 11.84}
+{"server":"rust","measure":"interaction-sse-under-stats-load","result":{"channel":"sse","pairs":20,"rounds":10,"seconds":11.24,"movesPerSecond":124.5,"move":{"n":1400,"p50":37.5,"p90":327.86,"p99":582.83,"max":1039.57},"delivery":{"n":1400,"p50":36.96,"p90":107.11,"p99":446.27,"max":898.69}}}
+{"server":"rust","measure":"memory","rssKb":218496,"peakRssKb":232548}

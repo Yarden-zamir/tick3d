@@ -10,19 +10,19 @@ use super::{FROM_NODE, metric_lists};
 use crate::error::{ApiError, ApiResult};
 use crate::protocol::{StatsFilter, StatsScope};
 
-const CELL_COUNT: usize = 64;
+pub(super) const CELL_COUNT: usize = 64;
 /// Everyone: the charts of moves, times, settings and devices read a copy of the newest STATS_SAMPLE games.
 const STATS_SAMPLE: i64 = 100_000;
-const DAY_MS: i64 = 86_400_000;
+pub(super) const DAY_MS: i64 = 86_400_000;
 /// The newest games with a side that the form and the streaks read.
 /// Limit: the streaks count inside these games only. Revisit this when one player has more games than this.
-const SIDED_GAMES: i64 = 5000;
+pub(super) const SIDED_GAMES: i64 = 5000;
 const FORM_WINDOW: usize = 20;
-const RELEASE_ROWS: i64 = 12;
-const MOVE_TIME_BUCKETS: i64 = 8;
-const SESSION_MODES: [&str; 4] = ["computer", "friend", "online", "nearby"];
-const DIFFICULTIES: [&str; 3] = ["easy", "medium", "hard"];
-const HIDE_SETTINGS: [&str; 4] = ["none", "board", "history", "both"];
+pub(super) const RELEASE_ROWS: i64 = 12;
+pub(super) const MOVE_TIME_BUCKETS: i64 = 8;
+pub(super) const SESSION_MODES: [&str; 4] = ["computer", "friend", "online", "nearby"];
+pub(super) const DIFFICULTIES: [&str; 3] = ["easy", "medium", "hard"];
+pub(super) const HIDE_SETTINGS: [&str; 4] = ["none", "board", "history", "both"];
 // NOT MATERIALIZED: a query that reads g twice must not copy the whole view of every game.
 const GAMES: &str = "WITH g AS NOT MATERIALIZED (FROM stats_games)";
 const SAMPLE: &str = "WITH g AS NOT MATERIALIZED (FROM stats_sample)";
@@ -37,7 +37,7 @@ pub(super) fn js_number(value: f64) -> Value {
     if value.fract() == 0.0 && value.abs() < 9_007_199_254_740_992.0 { json!(value as i64) } else { json!(value) }
 }
 
-fn js_option(value: Option<f64>) -> Value {
+pub(super) fn js_option(value: Option<f64>) -> Value {
     value.map_or(Value::Null, js_number)
 }
 
@@ -132,7 +132,7 @@ fn counts(conn: &Connection, sql: &str) -> ApiResult<Value> {
 }
 
 /// A count for each of the 64 cells, from (cell, count) pairs.
-fn per_cell(found: impl IntoIterator<Item = (i64, i64)>) -> ApiResult<Vec<i64>> {
+pub(super) fn per_cell(found: impl IntoIterator<Item = (i64, i64)>) -> ApiResult<Vec<i64>> {
     let mut cells = vec![0; CELL_COUNT];
     for (cell, count) in found {
         let slot = usize::try_from(cell)
@@ -145,14 +145,14 @@ fn per_cell(found: impl IntoIterator<Item = (i64, i64)>) -> ApiResult<Vec<i64>> 
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum SideOutcome {
+pub(super) enum SideOutcome {
     Won,
     Drawn,
     Lost,
 }
 
 impl SideOutcome {
-    fn parse(text: &str) -> Option<SideOutcome> {
+    pub(super) fn parse(text: &str) -> Option<SideOutcome> {
         match text {
             "won" => Some(SideOutcome::Won),
             "drawn" => Some(SideOutcome::Drawn),
@@ -171,7 +171,7 @@ impl SideOutcome {
 }
 
 /// At each game, the share of wins in the FORM_WINDOW games up to it. `games` is oldest first.
-fn form_of(games: &[(i64, SideOutcome)]) -> Value {
+pub(super) fn form_of(games: &[(i64, SideOutcome)]) -> Value {
     let mut wins = 0;
     let mut form = Vec::with_capacity(games.len());
     for (i, (at, outcome)) in games.iter().enumerate() {
@@ -187,7 +187,7 @@ fn form_of(games: &[(i64, SideOutcome)]) -> Value {
 }
 
 /// The longest run of wins, and the run of equal results that ends with the newest game. Oldest first.
-fn streaks_of(outcomes: &[SideOutcome]) -> (usize, Value) {
+pub(super) fn streaks_of(outcomes: &[SideOutcome]) -> (usize, Value) {
     let mut best = 0;
     let mut run = 0;
     for (i, outcome) in outcomes.iter().enumerate() {
@@ -755,7 +755,8 @@ pub struct StatsSubject {
 /// The queries of a Mine or person answer, on the reader connection. Node ran them on its store queue, where about 0.5 s of
 /// queries held up the moves of every other player; the reader runs them beside the store thread instead.
 pub fn scoped_stats(conn: &Connection, filter: &StatsFilter, subject: &StatsSubject) -> ApiResult<Value> {
-    let mut answer = compute_stats(conn, super::now_ms(), filter, Some(&subject.tokens), subject.sessions)?;
+    let mut answer = super::personal::personal_stats(conn, super::now_ms(), filter, &subject.tokens, subject.sessions)?;
+    answer["practice"] = serde_json::to_value(practice_stats(conn)?).map_err(ApiError::fault)?;
     answer["person"] = subject.person.clone();
     Ok(answer)
 }

@@ -8,6 +8,7 @@ mod deletion;
 mod games;
 mod leaderboard;
 mod moderation;
+mod personal;
 mod practice;
 mod profile;
 mod pruning;
