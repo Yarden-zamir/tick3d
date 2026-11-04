@@ -246,12 +246,7 @@ impl Db {
                         version: row.version,
                         identity,
                         now,
-                        audience: session::Audience {
-                            presence,
-                            watchers: &audience.watchers,
-                            name: &name,
-                            person: &person,
-                        },
+                        audience: session::Audience { presence, watchers: &audience.watchers, name: &name, person: &person },
                         players: players.clone(),
                     },
                 )

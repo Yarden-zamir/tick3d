@@ -126,7 +126,13 @@ async fn serve(app: App, mut socket: WebSocket, token: String, peer: SocketAddr,
 }
 
 /// Registers a live stream for the session and forwards its messages. The stream leaves when the task ends.
-async fn start_watch(app: &App, watches: &mut HashMap<String, JoinHandle<()>>, code: &str, token: &str, out: &mpsc::UnboundedSender<String>) -> ApiResult<()> {
+async fn start_watch(
+    app: &App,
+    watches: &mut HashMap<String, JoinHandle<()>>,
+    code: &str,
+    token: &str,
+    out: &mpsc::UnboundedSender<String>,
+) -> ApiResult<()> {
     let code = session_code(code)?;
     if watches.contains_key(&code) {
         return Ok(());
