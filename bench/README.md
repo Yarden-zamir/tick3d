@@ -40,14 +40,15 @@ SEED_FILE=/tmp/bench-seed.duckdb OHA=~/.cargo/bin/oha \
 | `GET /api/leaderboard` (cached), 32 connections | 484 rps, p50 57 ms | 3,954 rps, p50 4.9 ms (447 rps, p50 60 ms before byte snapshots) |
 | `GET /api/me/history`, 16 connections | 15.8 rps, p50 995 ms | 17.7 rps, p50 902 ms |
 | `GET /api/stats?scope=mine`, 4 connections | 0.6 to 1.5 rps, p50 2.7 to 9.6 s | 2.2 to 2.6 rps, p50 1.5 to 2.1 s |
-| Game loop, event stream: moves/s | 102 to 123 | 122 to 150 |
-| Game loop, event stream: move p50 / p90 / p99 | 60-66 / 370-381 / 525-673 ms | 40-55 / 351-367 / 567-800 ms |
-| Game loop, long poll: moves/s, move p50 / p99 | 154, 48 / 466 ms | 171, 40 / 901 ms |
-| **Mixed: moves/s** | **19** | **86** |
-| **Mixed: move p90 / p99** | **3,214 / 5,435 ms** | **435 / 784 ms** |
-| Mixed: delivery p99 | 7,671 ms | 823 ms |
+| Game loop, event stream: moves/s | 102 to 182 | 114 to 187 |
+| Game loop, event stream: move p50 / p90 / p99 | 39-66 / 318-381 / 468-673 ms | 32-58 / 326-367 / 420-800 ms |
+| Game loop, event stream: delivery p50 / p90 / p99 (2026-11-04) | 32 / 72 / 154 ms | 28-48 / 65-187 / 150-322 ms |
+| Game loop, long poll: moves/s | 154 to 196 | 113 to 171 |
+| **Mixed: moves/s** | **19 to 20** | **66 to 86** |
+| **Mixed: move p90 / p99** | **1,971-3,214 / 5,435-6,173 ms** | **435-442 / 784-1,181 ms** |
+| Mixed: delivery p90 / p99 (2026-11-04) | 2,770 / 6,210 ms | 256 / 807 ms |
 
-Ranges are the values of separate full runs.
+Ranges are the values of separate runs. The raw JSON lines of every run are in `results.jsonl`.
 
 ## What the numbers say
 
@@ -55,11 +56,14 @@ Ranges are the values of separate full runs.
 - Small answers are about 4 times faster. Cached answers were only 1 to 3.5 times faster while Rust rebuilt the JSON on every request; the snapshots now keep the serialized bytes, which makes the Everyone stats about 30 times and the leaderboard about 8 times faster than Node.
 - The biggest gain is architectural. Node runs personal stats on its one store queue, so about 0.5 s of queries hold up the moves of every player. Rust runs them on a second connection (the reader). Under stats load, the move p99 drops from 5.4 s to 0.8 s.
 - Personal stats and history are still slow in both servers: about 0.5 s of DuckDB queries per answer (about 30 statements of 10 to 40 ms each). A cached prepare did not change it. Next step: read the player's rows once and count in Rust.
+- The plain game loop shows no reliable difference: the ranges of separate runs overlap, and in one run on 2026-11-04 Node did more moves per second than Rust.
+- Delivery to the opponent is much faster than the move answer: p90 65 to 190 ms against about 330 ms. Only the move that ends a game waits for the result batch, and only its own answer waits.
 - The move p90 of about 350 ms in both servers comes from the move that ends a game: its answer waits up to 200 ms for the result batch. A commit per finished game made it worse (moves/s halved, p50 doubled), so the batch stays.
 
 ## Caveats
 
 - One shared VPS with production on it. Single runs vary a lot (health: 6,259 to 22,234 rps in one series).
 - The game loop runs once per series, not 3 times.
+- Before 2026-11-04, `interaction.ts` took the delivery time after the move answer, so the earlier delivery numbers were too high. Only the rows marked 2026-11-04 use the fixed client.
 - The load client of the game loop is Node. It is the same client for both servers.
 - The Node server runs from a folder of symlinks with `--preserve-symlinks`, as in the parity scripts.

@@ -48,9 +48,13 @@ COPY rust rust
 COPY server/apple-roots server/apple-roots
 # The cache mounts keep the crates and the build between deploys, so a deploy compiles only what changed. A cold build
 # takes about 9 minutes on the VPS; without the caches every deploy would pay that.
+# The cache is shared by every build on the builder, so it can hold several libduckdb.so. Cargo names the out_dir of the
+# build script that this binary used (also for a cached build), and the stage copies that one, or stops.
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/rust/target \
-  cd rust && cargo build --release --locked -p tick3d-server \
-  && mkdir /out && cp target/release/tick3d-server /out/ && cp "$(ls -t target/release/build/libduckdb-sys-*/out/libduckdb.so | head -1)" /out/
+  cd rust && cargo build --release --locked -p tick3d-server --message-format=json-render-diagnostics > /tmp/build.json \
+  && duckdb_out=$(grep '"reason":"build-script-executed"' /tmp/build.json | grep '"package_id":"[^"]*libduckdb-sys@' | sed -E 's/.*"out_dir":"([^"]+)".*/\1/') \
+  && test -f "$duckdb_out/libduckdb.so" \
+  && mkdir /out && cp target/release/tick3d-server "$duckdb_out/libduckdb.so" /out/
 
 FROM debian:trixie-slim AS rust-api
 # The logins and purchase checks call GitHub, Google and Apple over TLS. The compose health check runs wget.

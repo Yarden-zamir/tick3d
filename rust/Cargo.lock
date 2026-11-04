@@ -1811,6 +1811,7 @@ dependencies = [
  "tick3d-core",
  "tokio",
  "tokio-stream",
+ "tower",
  "ureq",
  "url",
  "x509-cert",

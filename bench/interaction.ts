@@ -76,14 +76,15 @@ async function pair(index: number): Promise<void> {
       const [mover, waiter] = n % 2 === 0 ? [a, b] : [b, a];
       const waiterIndex = n % 2 === 0 ? 1 : 0;
       const started = performance.now();
-      const seen =
+      // The delivery time is taken when the opponent's channel sees the version, which can come before the move answer.
+      const delivered = (
         channel === 'sse'
           ? (sse[waiterIndex] as ReturnType<typeof listen>).until(version + 1)
-          : call(waiter, client, 'GET', `/sessions/${code}?wait=${version}`).then(() => undefined);
+          : call(waiter, client, 'GET', `/sessions/${code}?wait=${version}`).then(() => undefined)
+      ).then(() => performance.now() - started);
       const moved = await call(mover, client, 'POST', `/sessions/${code}/moves`, { game: 0, moveCount: n, cell });
       moveMs.push(performance.now() - started);
-      await seen;
-      deliveryMs.push(performance.now() - started);
+      deliveryMs.push(await delivered);
       version = moved.version;
     }
     for (const listener of sse) listener.close();

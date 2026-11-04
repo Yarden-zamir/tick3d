@@ -204,16 +204,11 @@ async fn main() {
     // The pages open a new stream after the retry time of the stream, and the proxies hold it until the next process answers.
     live.close_all();
     let _ = stop.send(());
+    // A handler that still runs after the grace time can reach the store later: the close refuses it with a 503, so no
+    // player sees an answer for a change that the last write missed.
     let _ = tokio::time::timeout(SHUTDOWN_GRACE, server).await;
-    write_changed_sessions(&store).await;
-    if let Err(error) = store
-        .call(|db| {
-            db.write_results();
-            Ok(())
-        })
-        .await
-    {
-        eprintln!("result write at the stop: {error:?}");
+    if let Err(error) = store.call(|db| db.close()).await {
+        eprintln!("the last write at the stop: {error:?}");
     }
 }
 

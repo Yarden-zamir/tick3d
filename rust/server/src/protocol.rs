@@ -306,8 +306,9 @@ pub fn parse_game_record(value: &Value) -> Option<(GameRecord, Status)> {
     };
     let clock = parse_clock(value.get("clock")?)?;
     let game = replay(&moves, Player::X, Some(&times), clock).ok()?;
-    // timeOut and abandon throw for a game that is over: the record then does not parse.
-    if (timed_out || abandoned) && !game.is_playing() {
+    // timeOut and abandon throw for a game that is over: the record then does not parse. A game that timed out is over,
+    // so it cannot also be abandoned (in Rust, abandon() on it panics and stops the server).
+    if ((timed_out || abandoned) && !game.is_playing()) || (timed_out && abandoned) {
         return None;
     }
     let ended = if timed_out { game.time_out() } else { game };
@@ -862,6 +863,15 @@ pub fn parse_client_event(value: &Value) -> Option<ClientEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refuses_a_record_that_both_timed_out_and_was_abandoned() {
+        // A game that timed out has ended, so it cannot also be abandoned. Before the fix this panicked in abandon().
+        let record = serde_json::json!({ "moves": [], "times": [], "clock": { "perMove": 10, "perGame": null }, "timedOut": true, "abandoned": true });
+        assert!(parse_game_record(&record).is_none());
+        let timed_out = serde_json::json!({ "moves": [0], "times": [1], "clock": { "perMove": 10, "perGame": null }, "timedOut": true });
+        assert!(parse_game_record(&timed_out).is_some());
+    }
 
     #[test]
     fn reads_the_stats_filters_as_the_page_writes_them() {

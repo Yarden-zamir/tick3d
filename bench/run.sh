@@ -5,7 +5,11 @@
 # - Both servers run on CPUs 0-1, the load tools on CPUs 2-3, so they do not compete for a core.
 # - Run it through the shared lock on the VPS: nice -n 19 flock /tmp/tick3d-heavy.lock bench/run.sh ...
 set -euo pipefail
-NODE_APP=$1; RUST_BIN=$2; DUCKDB_LIB=$3; REPS=${4:-3}
+# Absolute paths: start() changes the directory before it uses them, and a missing binary would leave the health
+# check waiting for ever.
+NODE_APP=$(realpath "$1"); RUST_BIN=$(realpath "$2"); DUCKDB_LIB=$(realpath "$3"); REPS=${4:-3}
+[ -x "$RUST_BIN" ] || { echo "no Rust binary at $RUST_BIN" >&2; exit 1; }
+[ -f "$DUCKDB_LIB/libduckdb.so" ] || { echo "no libduckdb.so in $DUCKDB_LIB" >&2; exit 1; }
 HERE=$(cd "$(dirname "$0")" && pwd); WORK=$(mktemp -d -t tick3d-bench-XXXXXX); PORT=18600
 OHA=${OHA:-oha}; SERVER_CPUS=0,1; CLIENT_CPUS=2,3
 trap 'stop; rm -rf "$WORK"' EXIT
@@ -19,7 +23,10 @@ start() { # <node|rust> <db file>
     (cd "$WORK" && DB_PATH=$db PORT=$PORT LD_LIBRARY_PATH=$DUCKDB_LIB exec taskset -c $SERVER_CPUS "$RUST_BIN") > "$WORK/$1.log" 2>&1 &
   fi
   PID=$!
-  until curl -fs -o /dev/null "http://127.0.0.1:$PORT/api/health"; do sleep 0.02; done
+  until curl -fs -o /dev/null "http://127.0.0.1:$PORT/api/health"; do
+    kill -0 "$PID" 2>/dev/null || { echo "the $1 server stopped at start:" >&2; cat "$WORK/$1.log" >&2; exit 1; }
+    sleep 0.02
+  done
   echo "{\"server\":\"$1\",\"measure\":\"startup\",\"ms\":$(( ($(date +%s%N) - began) / 1000000 )),\"rssKb\":$(rss)}"
 }
 stop() { if [ -n "$PID" ]; then kill -TERM "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; PID=""; fi; }

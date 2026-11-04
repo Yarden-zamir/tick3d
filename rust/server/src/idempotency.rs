@@ -117,6 +117,14 @@ struct Running {
     done: bool,
 }
 
+impl Running {
+    /// Records the answer, so a retry with the key replays it.
+    fn answered(mut self, answer: Answer) {
+        self.idempotency.finish(&self.id, self.serial, Some(answer));
+        self.done = true;
+    }
+}
+
 impl Drop for Running {
     fn drop(&mut self) {
         if !self.done {
@@ -157,19 +165,94 @@ pub async fn keyed(State(app): State<App>, request: Request, next: Next) -> Resp
         Claim::Replay(answer) => return (answer.status, answer.headers, answer.body).into_response(),
         Claim::Run(serial) => serial,
     };
-    let mut running = Running { idempotency: Arc::clone(&app.idempotency), id, serial, done: false };
-    let response = next.run(Request::from_parts(parts, Body::from(body))).await;
-    let (mut parts, body) = response.into_parts();
-    let Ok(body) = axum::body::to_bytes(body, usize::MAX).await else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
-    // A server error is not the answer to the request, so a retry runs it again.
-    if !parts.status.is_server_error() {
-        parts.headers.remove(axum::http::header::CONTENT_LENGTH);
-        running.idempotency.finish(
-            &running.id,
-            serial,
-            Some(Answer { status: parts.status, headers: parts.headers.clone(), body: body.clone() }),
-        );
-        running.done = true;
+    let running = Running { idempotency: Arc::clone(&app.idempotency), id, serial, done: false };
+    // The request runs in its own task: a client that leaves drops this future, but a store job that started still
+    // changes the data. The task records the answer anyway, so a retry with the key replays it instead of running again.
+    let task = tokio::spawn(async move {
+        let response = next.run(Request::from_parts(parts, Body::from(body))).await;
+        let (mut parts, body) = response.into_parts();
+        let Ok(body) = axum::body::to_bytes(body, usize::MAX).await else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
+        // A server error is not the answer to the request, so a retry runs it again.
+        if !parts.status.is_server_error() {
+            parts.headers.remove(axum::http::header::CONTENT_LENGTH);
+            running.answered(Answer { status: parts.status, headers: parts.headers.clone(), body: body.clone() });
+        }
+        Response::from_parts(parts, Body::from(body))
+    });
+    task.await.unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::future::Future;
+    use std::net::SocketAddr;
+    use std::sync::Arc;
+    use std::task::Poll;
+
+    use axum::body::Body;
+    use axum::extract::{ConnectInfo, Request};
+    use axum::http::StatusCode;
+    use tower::ServiceExt;
+
+    use crate::{App, AppState, live::Live, nearby, play_proof, routes, snapshots, store::Store};
+
+    fn create(key: &str) -> Request {
+        let mut request = Request::builder()
+            .method("POST")
+            .uri("/api/sessions")
+            .header("x-player", "0123456789abcdef-keyed1")
+            .header("idempotency-key", key)
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"name":"keyed"}"#))
+            .expect("a request");
+        request.extensions_mut().insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 9))));
+        request
     }
-    Response::from_parts(parts, Body::from(body))
+
+    /// A client that leaves after the request started must not let a retry with the same key run it a second time.
+    #[tokio::test]
+    async fn a_request_that_its_client_left_still_records_its_answer() {
+        let dir = std::env::temp_dir().join(format!("tick3d-keyed-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.duckdb");
+        let _ = std::fs::remove_file(&path);
+        let live = Live::new();
+        let store = Store::open(path.to_str().unwrap(), live.clone()).unwrap();
+        live.set_store(store.clone());
+        let app = App(Arc::new(AppState {
+            store: store.clone(),
+            live,
+            idempotency: Arc::default(),
+            auth: None,
+            lan_host: None,
+            lobby: nearby::Lobby::default(),
+            previews: None,
+            snapshots: snapshots::Snapshots::default(),
+            play: play_proof::PlayProof::from_env().unwrap(),
+            apple: None,
+        }));
+        let router = routes::router(app);
+        // Poll the first request once, so it starts, then drop it, as a client that leaves.
+        {
+            let mut first = std::pin::pin!(router.clone().oneshot(create("k1")));
+            std::future::poll_fn(|cx| {
+                let _ = first.as_mut().poll(cx);
+                Poll::Ready(())
+            })
+            .await;
+        }
+        // The retry waits while the first one still runs (409), then replays its answer.
+        let mut retry = router.clone().oneshot(create("k1")).await.unwrap();
+        for _ in 0..50 {
+            if retry.status() != StatusCode::CONFLICT {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            retry = router.clone().oneshot(create("k1")).await.unwrap();
+        }
+        assert_eq!(retry.status(), StatusCode::CREATED);
+        let sessions = store.call(|db| Ok(db.session_count())).await.unwrap();
+        assert_eq!(sessions, 1, "the operation ran once");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

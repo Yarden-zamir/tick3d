@@ -60,6 +60,8 @@ pub struct Db {
     job_writes: Vec<oneshot::Receiver<Result<(), String>>>,
     achievement_state: achievements::AchievementState,
     reader: reader::Reader,
+    /// Set by `close` at a stop: every later job is refused, so no answer reports a change that the last write missed.
+    closed: bool,
 }
 
 type Job = Box<dyn FnOnce(&mut Db) + Send>;
@@ -138,6 +140,7 @@ impl Store {
             job_writes: Vec::new(),
             achievement_state: achievements::AchievementState::default(),
             reader: reader.clone(),
+            closed: false,
         };
         db.prepare()?;
         // The achievements of every player against their games, once per start.
@@ -164,7 +167,11 @@ impl Store {
         let (answer, answered) = oneshot::channel();
         self.jobs
             .send(Box::new(move |db| {
-                let result = job(db);
+                let result = if db.closed {
+                    Err(ApiError::new(axum::http::StatusCode::SERVICE_UNAVAILABLE, "The server is stopping. Try again in a moment."))
+                } else {
+                    job(db)
+                };
                 let writes = std::mem::take(&mut db.job_writes);
                 // The caller can be gone (the client left). The job ran anyway, as in server/store.ts.
                 let _ = answer.send((result, writes));
@@ -184,6 +191,16 @@ impl Store {
 }
 
 impl Db {
+    /// The last job at a stop: writes every changed session and the waiting results, then refuses every later job.
+    /// One job, so nothing can change between the write and the close.
+    pub fn close(&mut self) -> ApiResult<()> {
+        let changed = self.dirty_codes();
+        let sessions = self.write_sessions(&changed);
+        self.write_results();
+        self.closed = true;
+        sessions
+    }
+
     fn prepare(&mut self) -> duckdb::Result<()> {
         for statement in &FROM_NODE.schema {
             self.conn.execute_batch(statement)?;

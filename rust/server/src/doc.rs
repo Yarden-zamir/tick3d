@@ -89,8 +89,12 @@ pub fn parse_doc(stored: Value) -> Result<ParsedDoc, String> {
         if game.times.len() != game.moves.len() {
             return Err(format!("game {index} has invalid move times"));
         }
-        replay(&game.moves, tick3d_core::game::Player::X, Some(&game.times), game.clock)
+        let replayed = replay(&game.moves, tick3d_core::game::Player::X, Some(&game.times), game.clock)
             .map_err(|_| format!("game {index} does not replay"))?;
+        // to_game applies the flags and panics on a game that is already over, so such a document must not parse.
+        if (game.timed_out || game.abandoned) && (!replayed.is_playing() || (game.timed_out && game.abandoned)) {
+            return Err(format!("game {index} has an end flag that its moves do not allow"));
+        }
     }
     Ok(ParsedDoc { doc, stale })
 }
@@ -102,6 +106,28 @@ fn default(object: &mut Map<String, Value>, key: &str, value: Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A game with both end flags, or an end flag on a game that its moves already ended, is refused, not a panic later.
+    #[test]
+    fn refuses_end_flags_that_the_moves_do_not_allow() {
+        let cases: Value = serde_json::from_str(include_str!("../../../src/session/rule-cases.json")).expect("rule-cases.json parses");
+        let doc = cases["sessions"]
+            .as_array()
+            .expect("sessions")
+            .iter()
+            .flat_map(|session| session["steps"].as_array().expect("steps").iter())
+            .filter_map(|step| step["result"].get("doc").cloned())
+            .find(|doc| parse_doc(doc.clone()).is_ok())
+            .expect("a rule case document that reads");
+        let with_flags = |timed_out: bool, abandoned: bool| {
+            let mut doc = doc.clone();
+            let game = &mut doc["games"][0];
+            game["timedOut"] = json!(timed_out);
+            game["abandoned"] = json!(abandoned);
+            parse_doc(doc)
+        };
+        assert!(with_flags(true, true).is_err());
+    }
 
     /// Every document of the shared rule cases reads back as itself. The random cases rename sessions without the
     /// name check of the routes (src/session/core.ts does not check it), so a document with such a name does not count.

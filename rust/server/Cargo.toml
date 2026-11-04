@@ -31,3 +31,4 @@ x509-cert = "0.2.5"
 
 [dev-dependencies]
 rcgen = "0.14.10"
+tower = { version = "0.5.3", features = ["util"] }

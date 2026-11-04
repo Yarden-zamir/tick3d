@@ -129,6 +129,29 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// The stop writes every changed session in one last job, and refuses every job after it.
+    #[tokio::test]
+    async fn the_close_writes_the_sessions_and_refuses_later_jobs() {
+        let dir = std::env::temp_dir().join(format!("tick3d-close-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.duckdb");
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(path.to_str().unwrap(), Arc::new(NoPages)).unwrap();
+        let code = store.call(|db| Ok(db.create(TOKEN, "closing", NO_LIMIT)?.code)).await.unwrap();
+        store.call(|db| db.close()).await.unwrap();
+        let written = code.clone();
+        let saved: i64 = store
+            .read(move |conn| Ok(conn.query_row("SELECT count(*) FROM sessions WHERE code = ?", [&written], |row| row.get(0))?))
+            .await
+            .unwrap();
+        assert_eq!(saved, 1, "the session is in the file");
+        let later = store.call(move |db| Ok(db.create(TOKEN, "too late", NO_LIMIT)?.code)).await;
+        assert!(
+            matches!(later, Err(crate::error::ApiError::Refusal { status, .. }) if status == axum::http::StatusCode::SERVICE_UNAVAILABLE)
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// Both players leave a timed game, then its clock runs out. The game ends with no player on a seat: it must not
     /// stop the server (a panicked store job exits the process and loses the sessions in memory), and it has no result.
     #[tokio::test]
