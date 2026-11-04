@@ -37,6 +37,14 @@ const MAX_MESSAGE_BYTES: usize = 64 * 1024;
 const PING: Duration = Duration::from_secs(25);
 /// The sessions that one socket can watch at once. A page watches one.
 const MAX_WATCHES: usize = 8;
+/// Messages that wait for a slow page. A watch that finds the queue full drops the view and sends "changed" when there
+/// is room again, so the page loads the session and misses nothing; the memory of one socket stays bounded.
+const OUTGOING: usize = 64;
+/// The largest answer of an action: a session view is far smaller.
+const MAX_ANSWER_BYTES: usize = 1 << 20;
+/// The last parts of a session path that a socket action may name, after /sessions/{code}: the play actions of the page
+/// (src/online.ts api). The event stream, leave and the maintainer routes stay on HTTP.
+const ACTIONS: [&str; 8] = ["join", "moves", "games", "chat", "playoff", "lock", "seats", "seats/answer"];
 
 #[derive(Deserialize)]
 pub struct SocketQuery {
@@ -69,7 +77,7 @@ pub async fn socket(
 async fn serve(app: App, mut socket: WebSocket, token: String, peer: SocketAddr, forwarded: Option<HeaderValue>) {
     let router = routes::router(app.clone());
     // Pushes and answers wait here, so the tasks never write to the socket at the same time.
-    let (out, mut outgoing) = mpsc::unbounded_channel::<String>();
+    let (out, mut outgoing) = mpsc::channel::<String>(OUTGOING);
     let mut watches: HashMap<String, JoinHandle<()>> = HashMap::new();
     let mut ping = tokio::time::interval(PING);
     ping.tick().await;
@@ -89,12 +97,13 @@ async fn serve(app: App, mut socket: WebSocket, token: String, peer: SocketAddr,
                         // leaves does not cancel a move that the store already applies.
                         tokio::spawn(async move {
                             let (status, body) = act(router, &token, peer, forwarded, &method, &path, body).await;
-                            let _ = out.send(json!({ "id": id, "status": status, "body": body }).to_string());
+                            // An answer waits for room: the page needs every answer.
+                            let _ = out.send(json!({ "id": id, "status": status, "body": body }).to_string()).await;
                         });
                     }
                     Ok(Incoming::Watch { watch }) => {
                         if let Err(error) = start_watch(&app, &mut watches, &watch, &token, &out).await {
-                            let _ = out.send(json!({ "code": watch, "error": error_text(&error) }).to_string());
+                            let _ = out.try_send(json!({ "code": watch, "error": error_text(&error) }).to_string());
                         }
                     }
                     Ok(Incoming::Unwatch { unwatch }) => {
@@ -103,7 +112,7 @@ async fn serve(app: App, mut socket: WebSocket, token: String, peer: SocketAddr,
                         }
                     }
                     Err(_) => {
-                        let _ = out.send(json!({ "error": "A message must be an action, a watch or an unwatch." }).to_string());
+                        let _ = out.try_send(json!({ "error": "A message must be an action, a watch or an unwatch." }).to_string());
                     }
                 }
             }
@@ -131,7 +140,7 @@ async fn start_watch(
     watches: &mut HashMap<String, JoinHandle<()>>,
     code: &str,
     token: &str,
-    out: &mpsc::UnboundedSender<String>,
+    out: &mpsc::Sender<String>,
 ) -> ApiResult<()> {
     let code = session_code(code)?;
     if watches.contains_key(&code) {
@@ -147,17 +156,18 @@ async fn start_watch(
     let (out, pushed) = (out.clone(), code.clone());
     let task = tokio::spawn(async move {
         use tokio_stream::StreamExt;
+        let changed = json!({ "code": pushed, "view": "changed" }).to_string();
         // The first message after a watch: the page loads the session, as after the open of an event stream.
-        let _ = out.send(json!({ "code": pushed, "view": "changed" }).to_string());
+        let mut missed = out.try_send(changed.clone()).is_err();
         while let Some(message) = stream.next().await {
-            // A view is JSON text already: put it in as it is, without a parse and a new serialization.
-            let text = if message == "changed" {
-                json!({ "code": pushed, "view": "changed" }).to_string()
-            } else {
-                format!("{{\"code\":\"{pushed}\",\"view\":{message}}}")
-            };
-            if out.send(text).is_err() {
-                break;
+            // A view is JSON text already: put it in as it is, without a parse and a new serialization. After a dropped
+            // view, the next message is "changed", so the page loads the session instead of missing the change.
+            let text =
+                if message == "changed" || missed { changed.clone() } else { format!("{{\"code\":\"{pushed}\",\"view\":{message}}}") };
+            match out.try_send(text) {
+                Ok(()) => missed = false,
+                Err(mpsc::error::TrySendError::Full(_)) => missed = true,
+                Err(mpsc::error::TrySendError::Closed(_)) => break,
             }
         }
     });
@@ -182,25 +192,76 @@ async fn act(
     path: &str,
     body: Option<Value>,
 ) -> (u16, Value) {
-    // Play only: the agent API and the other routes stay on HTTP.
-    let allowed = path == "/sessions" || path.starts_with("/sessions/");
-    let Ok(method) = method.parse::<Method>() else { return (400, json!({ "error": "Unknown method." })) };
-    if !allowed || !matches!(method, Method::GET | Method::POST | Method::PATCH | Method::DELETE) || path.contains("..") {
-        return (400, json!({ "error": "A socket action is a session request: a path under /sessions." }));
+    let refused = || (400, json!({ "error": "A socket action is a play action of a session (see src/online.ts api)." }));
+    let Ok(method) = method.parse::<Method>() else { return refused() };
+    if !is_play_action(&method, path) {
+        return refused();
     }
-    let mut request = Request::builder()
+    // The path passed is_play_action (a code and fixed words), but a request that does not build is a refusal, not a panic.
+    let Ok(mut request) = Request::builder()
         .method(method)
         .uri(format!("/api{path}"))
         .header("x-player", token)
         .header("content-type", "application/json")
         .body(Body::from(body.map(|body| body.to_string()).unwrap_or_default()))
-        .expect("a session request builds");
+    else {
+        return refused();
+    };
     if let Some(forwarded) = forwarded {
         request.headers_mut().insert("x-forwarded-for", forwarded);
     }
     request.extensions_mut().insert(ConnectInfo(peer));
     let Ok(response) = router.oneshot(request).await;
     let status = response.status().as_u16();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap_or_default();
+    let Ok(bytes) = axum::body::to_bytes(response.into_body(), MAX_ANSWER_BYTES).await else {
+        return (500, json!({ "error": "Server error." }));
+    };
     (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+/// The play actions of the page, and nothing else: POST /sessions, GET or PATCH /sessions/{code} (without a query, so no
+/// long poll), and POST /sessions/{code}/<an action of ACTIONS>. `code` is 4 letters or digits.
+fn is_play_action(method: &Method, path: &str) -> bool {
+    if path == "/sessions" {
+        return method == Method::POST;
+    }
+    let Some(rest) = path.strip_prefix("/sessions/") else { return false };
+    let (code, action) = rest.split_once('/').map_or((rest, None), |(code, action)| (code, Some(action)));
+    if code.len() != 4 || !code.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+        return false;
+    }
+    match action {
+        None => *method == Method::GET || *method == Method::PATCH,
+        Some(action) => *method == Method::POST && ACTIONS.contains(&action),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn allows_the_play_actions_of_the_page_only() {
+        for (method, path) in [
+            (Method::POST, "/sessions"),
+            (Method::GET, "/sessions/AB12"),
+            (Method::PATCH, "/sessions/AB12"),
+            (Method::POST, "/sessions/AB12/moves"),
+            (Method::POST, "/sessions/AB12/seats/answer"),
+        ] {
+            assert!(is_play_action(&method, path), "{method} {path}");
+        }
+        for (method, path) in [
+            (Method::GET, "/sessions/AB12/events"),
+            (Method::POST, "/sessions/AB12/leave"),
+            (Method::GET, "/sessions/AB12?wait=3"),
+            (Method::DELETE, "/sessions/AB12/chat/1"),
+            (Method::GET, "/sessions"),
+            (Method::POST, "/sessions/AB 1/moves"),
+            (Method::POST, "/sessions/AB12/../me"),
+            (Method::GET, "/me"),
+        ] {
+            assert!(!is_play_action(&method, path), "{method} {path}");
+        }
+    }
 }

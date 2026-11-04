@@ -90,8 +90,6 @@ export class PlaySocket {
     const socket = (this.options.create ?? ((url) => new WebSocket(url)))(this.options.url);
     this.socket = socket;
     socket.onopen = () => {
-      this.opened = true;
-      this.failures = 0;
       for (const code of this.watches.keys()) socket.send(JSON.stringify({ watch: code }));
     };
     socket.onmessage = (event: MessageEvent<unknown>) => this.receive(event.data);
@@ -99,6 +97,10 @@ export class PlaySocket {
   }
 
   private receive(data: unknown): void {
+    // A socket counts as working once the server sent something: an open alone can come from a proxy that closes the
+    // connection right after, and such a socket must still count toward the move to HTTP.
+    this.opened = true;
+    this.failures = 0;
     if (typeof data !== 'string') return;
     let message: unknown;
     try {

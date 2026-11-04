@@ -93,17 +93,34 @@ describe('PlaySocket', () => {
     const socket = playSocket(blocked);
     socket.watch('ABCD', () => {});
     last().open();
+    last().deliver({ code: 'ABCD', view: 'changed' });
     for (let failure = 0; failure < 4; failure++) {
       last().close();
       await vi.runAllTimersAsync();
     }
     // Four failures, then the socket works again: the count starts over.
     last().open();
+    last().deliver({ code: 'ABCD', view: 'changed' });
     for (let failure = 0; failure < 4; failure++) {
       last().close();
       await vi.runAllTimersAsync();
     }
     expect(blocked).not.toHaveBeenCalled();
+    last().close();
+    expect(socket.blocked).toBe(true);
+    expect(blocked).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
+
+  it('counts sockets that open and close at once without a message as failures, so the page still moves to HTTP', async () => {
+    vi.useFakeTimers();
+    const blocked = vi.fn();
+    const socket = playSocket(blocked);
+    socket.watch('ABCD', () => {});
+    last().open();
+    last().close();
+    await vi.runAllTimersAsync();
+    last().open();
     last().close();
     expect(socket.blocked).toBe(true);
     expect(blocked).toHaveBeenCalledOnce();
