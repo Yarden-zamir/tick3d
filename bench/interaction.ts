@@ -5,6 +5,7 @@
 // socket per player), `sse` (the earlier page: a request per move and an event stream) or `poll` (the agent API,
 // GET ?wait=<version>).
 // Usage: node bench/interaction.ts <base url> <pairs> <rounds> <ws|sse|poll>
+import { socketOf as openSocket } from './socket-client.ts';
 import { tokenOf } from './tokens.ts';
 
 const [base, pairsText, roundsText, channel] = process.argv.slice(2);
@@ -64,56 +65,7 @@ function listen(code: string, token: string, stream: string) {
   };
 }
 
-/// One socket of a player: actions with their answers, and the versions of the watched sessions.
-async function socketOf(token: string) {
-  const socket = new WebSocket(`${(base as string).replace(/^http/, 'ws')}/api/ws?player=${token}`);
-  const replies = new Map<number, { done: (view: View) => void; failed: (error: Error) => void }>();
-  const seen = new Map<string, number>();
-  let waiters: { code: string; version: number; done: () => void; failed: (error: Error) => void }[] = [];
-  let id = 0;
-  socket.onmessage = (event: MessageEvent<string>) => {
-    const message = JSON.parse(event.data) as { id?: number; status?: number; body?: View; code?: string; view?: View | 'changed' };
-    if (message.id !== undefined) {
-      if (message.status !== 200) throw new Error(`socket action: ${message.status} ${JSON.stringify(message.body)}`);
-      replies.get(message.id)?.done(message.body as View);
-      replies.delete(message.id);
-      return;
-    }
-    if (message.code === undefined || typeof message.view !== 'object') return;
-    const version = Math.max(seen.get(message.code) ?? 0, message.view.version);
-    seen.set(message.code, version);
-    for (const waiter of waiters.filter((w) => w.code === message.code && w.version <= version)) waiter.done();
-    waiters = waiters.filter((w) => !(w.code === message.code && w.version <= version));
-  };
-  await new Promise((done, failed) => {
-    socket.onopen = done;
-    socket.onerror = failed;
-  });
-  // A socket that closes during a run fails the run: no action or wait stays pending for ever.
-  socket.onclose = () => {
-    const error = new Error(`the socket of ${token} closed during the run`);
-    for (const reply of replies.values()) reply.failed(error);
-    replies.clear();
-    for (const waiter of waiters) waiter.failed(error);
-    waiters = [];
-  };
-  return {
-    act: (method: string, path: string, body: object) =>
-      new Promise<View>((done, failed) => {
-        id += 1;
-        replies.set(id, { done, failed });
-        socket.send(JSON.stringify({ id, method, path, body }));
-      }),
-    watch: (code: string) => socket.send(JSON.stringify({ watch: code })),
-    unwatch: (code: string) => socket.send(JSON.stringify({ unwatch: code })),
-    until: (code: string, version: number) =>
-      (seen.get(code) ?? 0) >= version ? Promise.resolve() : new Promise<void>((done, failed) => waiters.push({ code, version, done, failed })),
-    close: () => {
-      socket.onclose = null;
-      socket.close();
-    },
-  };
-}
+const socketOf = (token: string) => openSocket(`${(base as string).replace(/^http/, 'ws')}/api/ws?player=${token}`);
 
 async function pair(index: number): Promise<void> {
   if (channel === 'ws') return socketPair(index);

@@ -106,5 +106,5 @@ export default defineConfig({
   // One entry per page in src/pages.ts.
   build: { rollupOptions: { input: Object.fromEntries(Object.entries(PAGES).map(([name, { file }]) => [name, file])) } },
   // Vitest runs the unit tests only. Playwright runs the e2e/ tests against a deployed site (npm run e2e).
-  test: { include: ['{src,server}/**/*.test.ts'] },
+  test: { include: ['{src,server,bench}/**/*.test.ts'] },
 });

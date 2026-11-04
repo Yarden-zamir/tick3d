@@ -11,6 +11,7 @@
 //!   page must load the session.
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
@@ -21,7 +22,7 @@ use axum::http::{HeaderMap, HeaderValue, Method};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::sync::mpsc;
+use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinHandle;
 use tower::ServiceExt;
 
@@ -40,8 +41,13 @@ const MAX_WATCHES: usize = 8;
 /// Messages that wait for a slow page. A watch that finds the queue full drops the view and sends "changed" when there
 /// is room again, so the page loads the session and misses nothing; the memory of one socket stays bounded.
 const OUTGOING: usize = 64;
-/// The largest answer of an action: a session view is far smaller.
-const MAX_ANSWER_BYTES: usize = 1 << 20;
+/// The actions of one socket that run at once. The page sends one action at a time (it waits for each answer), so a
+/// socket above this is not the page: the server closes it, and the page reconnects. This bounds the tasks, the waiting
+/// answers and the store jobs of one socket.
+/// Limit: the store queue itself (store/mod.rs) is shared with HTTP and has no bound, as in the Node server: many sockets
+/// or requests together can still queue many jobs. Revisit with a global admission limit if the store queue ever grows
+/// under real load.
+const MAX_ACTIONS_IN_FLIGHT: usize = 8;
 /// The last parts of a session path that a socket action may name, after /sessions/{code}: the play actions of the page
 /// (src/online.ts api). The event stream, leave and the maintainer routes stay on HTTP.
 const ACTIONS: [&str; 8] = ["join", "moves", "games", "chat", "playoff", "lock", "seats", "seats/answer"];
@@ -79,6 +85,7 @@ async fn serve(app: App, mut socket: WebSocket, token: String, peer: SocketAddr,
     // Pushes and answers wait here, so the tasks never write to the socket at the same time.
     let (out, mut outgoing) = mpsc::channel::<String>(OUTGOING);
     let mut watches: HashMap<String, JoinHandle<()>> = HashMap::new();
+    let in_flight = Arc::new(Semaphore::new(MAX_ACTIONS_IN_FLIGHT));
     let mut ping = tokio::time::interval(PING);
     ping.tick().await;
     loop {
@@ -92,10 +99,15 @@ async fn serve(app: App, mut socket: WebSocket, token: String, peer: SocketAddr,
                 };
                 match serde_json::from_str::<Incoming>(&text) {
                     Ok(Incoming::Action { id, method, path, body }) => {
+                        let Ok(permit) = Arc::clone(&in_flight).try_acquire_owned() else {
+                            let _ = socket.send(Message::Close(None)).await;
+                            break;
+                        };
                         let (router, out, token, forwarded) = (router.clone(), out.clone(), token.clone(), forwarded.clone());
                         // Each action runs in its own task: a slow action does not hold up the pushes, and a page that
-                        // leaves does not cancel a move that the store already applies.
+                        // leaves does not cancel a move that the store already applies. The permit ends with the task.
                         tokio::spawn(async move {
+                            let _permit = permit;
                             let (status, body) = act(router, &token, peer, forwarded, &method, &path, body).await;
                             // An answer waits for room: the page needs every answer.
                             let _ = out.send(json!({ "id": id, "status": status, "body": body }).to_string()).await;
@@ -152,27 +164,48 @@ async fn start_watch(
     // 404 before the watch starts, as for the event stream.
     let known = code.clone();
     app.store.call(move |db| db.load(&known).map(drop)).await?;
-    let mut stream = app.live.open(&code, Some(token.to_owned()), None)?;
-    let (out, pushed) = (out.clone(), code.clone());
-    let task = tokio::spawn(async move {
-        use tokio_stream::StreamExt;
-        let changed = json!({ "code": pushed, "view": "changed" }).to_string();
-        // The first message after a watch: the page loads the session, as after the open of an event stream.
-        let mut missed = out.try_send(changed.clone()).is_err();
-        while let Some(message) = stream.next().await {
-            // A view is JSON text already: put it in as it is, without a parse and a new serialization. After a dropped
-            // view, the next message is "changed", so the page loads the session instead of missing the change.
-            let text =
-                if message == "changed" || missed { changed.clone() } else { format!("{{\"code\":\"{pushed}\",\"view\":{message}}}") };
-            match out.try_send(text) {
-                Ok(()) => missed = false,
-                Err(mpsc::error::TrySendError::Full(_)) => missed = true,
-                Err(mpsc::error::TrySendError::Closed(_)) => break,
-            }
-        }
-    });
+    let stream = app.live.open(&code, Some(token.to_owned()), None)?;
+    let task = tokio::spawn(forward(stream, out.clone(), code.clone()));
     watches.insert(code, task);
     Ok(())
+}
+
+/// Forwards the messages of one live stream to the queue of the socket. A view that finds the queue full is dropped, and
+/// "changed" goes out as soon as the queue has room again, also when no later change comes: the page then loads the
+/// session. So a slow page misses nothing, and the queue stays bounded.
+async fn forward<S: tokio_stream::Stream<Item = String> + Unpin>(mut stream: S, out: mpsc::Sender<String>, code: String) {
+    use tokio_stream::StreamExt;
+    let changed = json!({ "code": code, "view": "changed" }).to_string();
+    // The first message after a watch: the page loads the session, as after the open of an event stream.
+    let mut missed = out.try_send(changed.clone()).is_err();
+    loop {
+        if missed {
+            // Wait for room or for the next message, whichever comes first. Room sends "changed" now.
+            tokio::select! {
+                room = out.reserve() => {
+                    let Ok(room) = room else { return };
+                    room.send(changed.clone());
+                    missed = false;
+                    continue;
+                }
+                message = stream.next() => {
+                    if message.is_none() {
+                        return;
+                    }
+                    // The page loads the session anyway once there is room: this view adds nothing.
+                    continue;
+                }
+            }
+        }
+        let Some(message) = stream.next().await else { return };
+        // A view is JSON text already: put it in as it is, without a parse and a new serialization.
+        let text = if message == "changed" { changed.clone() } else { format!("{{\"code\":\"{code}\",\"view\":{message}}}") };
+        match out.try_send(text) {
+            Ok(()) => {}
+            Err(mpsc::error::TrySendError::Full(_)) => missed = true,
+            Err(mpsc::error::TrySendError::Closed(_)) => return,
+        }
+    }
 }
 
 fn error_text(error: &ApiError) -> String {
@@ -213,7 +246,9 @@ async fn act(
     request.extensions_mut().insert(ConnectInfo(peer));
     let Ok(response) = router.oneshot(request).await;
     let status = response.status().as_u16();
-    let Ok(bytes) = axum::body::to_bytes(response.into_body(), MAX_ANSWER_BYTES).await else {
+    // No size cap: a play action answers with one session view, as over HTTP, and the allow-list keeps the event stream
+    // and long polls out. A cap could answer 500 for a move that the store applied (a long session has a large view).
+    let Ok(bytes) = axum::body::to_bytes(response.into_body(), usize::MAX).await else {
         return (500, json!({ "error": "Server error." }));
     };
     (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
@@ -239,6 +274,27 @@ fn is_play_action(method: &Method, path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The last change is dropped on a full queue; when the page reads the queue empty, "changed" follows with no later change.
+    #[tokio::test]
+    async fn a_dropped_view_is_followed_by_changed_once_the_queue_has_room() {
+        let (out, mut queue) = mpsc::channel::<String>(2);
+        let (messages, stream) = mpsc::unbounded_channel::<String>();
+        let task = tokio::spawn(forward(tokio_stream::wrappers::UnboundedReceiverStream::new(stream), out.clone(), "AB12".into()));
+        // The watch sends "changed" first; then the page is slow and the queue fills up.
+        assert!(queue.recv().await.unwrap().contains("changed"));
+        out.send("other 1".into()).await.unwrap();
+        out.send("other 2".into()).await.unwrap();
+        // The last change of the session: its view finds the queue full.
+        messages.send(r#"{"version":7}"#.into()).unwrap();
+        tokio::task::yield_now().await;
+        // The page reads the queue empty. No later change comes.
+        assert_eq!(queue.recv().await.unwrap(), "other 1");
+        assert_eq!(queue.recv().await.unwrap(), "other 2");
+        let next = tokio::time::timeout(std::time::Duration::from_secs(1), queue.recv()).await.expect("a message follows").unwrap();
+        assert_eq!(next, r#"{"code":"AB12","view":"changed"}"#);
+        task.abort();
+    }
 
     #[test]
     fn allows_the_play_actions_of_the_page_only() {
