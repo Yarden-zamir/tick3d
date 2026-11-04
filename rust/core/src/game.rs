@@ -80,7 +80,8 @@ impl Cell {
         Cell(layer * SIZE * SIZE + row * SIZE + column)
     }
 
-    fn coords(self) -> [u8; 3] {
+    /// Layer, row and column.
+    pub fn coords(self) -> [u8; 3] {
         [self.0 / (SIZE * SIZE), self.0 / SIZE % SIZE, self.0 % SIZE]
     }
 }
@@ -161,7 +162,7 @@ static LINES_THROUGH: LazyLock<Vec<Vec<Line>>> = LazyLock::new(|| {
 
 pub type Board = [Option<Player>; CELL_COUNT];
 
-fn winning_line(board: &Board, cell: Cell, player: Player) -> Option<Line> {
+pub fn winning_line(board: &Board, cell: Cell, player: Player) -> Option<Line> {
     LINES_THROUGH[cell.index()].iter().find(|line| line.iter().all(|c| board[c.index()] == Some(player))).copied()
 }
 

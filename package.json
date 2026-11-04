@@ -46,6 +46,7 @@
   "knip": {
     "entry": [
       "e2e/*.spec.ts",
+      "bench/*.ts",
       "store-images/*.ts",
       "video/creative/tools/*.ts"
     ],

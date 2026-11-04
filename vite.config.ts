@@ -101,9 +101,10 @@ export default defineConfig({
     }),
   ],
   // The dev server sends API calls to `npm run api` on port 8080, as Caddy does in production.
-  server: { proxy: { '/api': 'http://127.0.0.1:8080' } },
+  // ws: the page plays over a WebSocket at /api/ws (src/socket.ts). vite preview reuses this proxy.
+  server: { proxy: { '/api': { target: 'http://127.0.0.1:8080', ws: true } } },
   // One entry per page in src/pages.ts.
   build: { rollupOptions: { input: Object.fromEntries(Object.entries(PAGES).map(([name, { file }]) => [name, file])) } },
   // Vitest runs the unit tests only. Playwright runs the e2e/ tests against a deployed site (npm run e2e).
-  test: { include: ['{src,server}/**/*.test.ts'] },
+  test: { include: ['{src,server,bench}/**/*.test.ts'] },
 });

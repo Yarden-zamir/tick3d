@@ -30,6 +30,7 @@
     "src",
     "server",
     "e2e",
+    "bench",
     "store-images",
     "video/creative",
     "vite.config.ts"

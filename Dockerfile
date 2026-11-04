@@ -38,6 +38,38 @@ USER node
 ENV DB_PATH=/data/tick3d.duckdb
 CMD ["node", "server/main.ts"]
 
+# The Rust API (rust/server, issue #265). compose.yml runs rust-api as the `api` service. The Node `api` stage above
+# stays for compose.lan.yml until LAN hosts switch too. Build by hand: docker build --target rust-api --build-context git=.git .
+# The duckdb crate downloads libduckdb.so for glibc at build time, so these stages use Debian, not Alpine.
+FROM rust:1.99.1-slim-trixie AS rust-build
+WORKDIR /src
+COPY rust rust
+# The Apple root certificate goes into the binary (rust/server/src/apple_proof.rs).
+COPY server/apple-roots server/apple-roots
+# The cache mounts keep the crates and the build between deploys, so a deploy compiles only what changed. A cold build
+# takes about 9 minutes on the VPS; without the caches every deploy would pay that.
+# The cache is shared by every build on the builder, so it can hold several libduckdb.so. Cargo names the out_dir of the
+# build script that this binary used (also for a cached build), and the stage copies that one, or stops.
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/rust/target \
+  cd rust && cargo build --release --locked -p tick3d-server --message-format=json-render-diagnostics > /tmp/build.json \
+  && duckdb_out=$(grep '"reason":"build-script-executed"' /tmp/build.json | grep '"package_id":"[^"]*libduckdb-sys@' | sed -E 's/.*"out_dir":"([^"]+)".*/\1/') \
+  && test -f "$duckdb_out/libduckdb.so" \
+  && mkdir /out && cp target/release/tick3d-server "$duckdb_out/libduckdb.so" /out/
+
+FROM debian:trixie-slim AS rust-api
+# The logins and purchase checks call GitHub, Google and Apple over TLS. The compose health check runs wget.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget && rm -rf /var/lib/apt/lists/*
+COPY --from=rust-build /out/libduckdb.so /usr/local/lib/
+RUN ldconfig
+COPY --from=rust-build /out/tick3d-server /usr/local/bin/
+WORKDIR /app
+# The release of this build: the API reads release.json in its working directory at start (rust/server/src/main.rs).
+COPY --from=build /app/dist/release.json release.json
+RUN useradd --system --uid 1000 tick3d && mkdir /data && chown tick3d:tick3d /data
+USER tick3d
+ENV DB_PATH=/data/tick3d.duckdb
+CMD ["tick3d-server"]
+
 # Toys (container/build-toys.sh), served at /toys/. Only a pull request preview (pr-<n>) builds them: production,
 # manual deploys and LAN hosts serve no toys. A toy reads the whole committed tree from .git, because .dockerignore
 # keeps out files that it can need, such as *.md.
