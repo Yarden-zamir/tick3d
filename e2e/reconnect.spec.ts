@@ -23,8 +23,10 @@ async function failStreams(page: Page, times: number): Promise<{ count: () => nu
   return { count: () => count };
 }
 
-// The pages whose sockets fail for good (dropStreams).
+// The pages whose sockets fail now (dropStreams, socketsDown).
 const dropped = new WeakSet<Page>();
+// The HTTP event stream, the fallback of a page whose socket counts as blocked (src/socket.ts).
+const EVENTS = '**/api/sessions/*/events*';
 
 // Keeps every WebSocket of the page, so a test can end them (dropStreams). Runs before the app.
 function recordStreams(): void {
@@ -39,13 +41,24 @@ function recordStreams(): void {
   };
 }
 
-// The socket of the page fails for good, now and later: the open one closes, and each new one closes at once.
-// The page gets no change from the server any more, unless it reads the session.
+// Every live channel of the page fails for good, now and later: the open socket closes, each new one closes at once,
+// and the HTTP event stream (the fallback) answers 502. So the page gets no change from the server any more, unless it
+// reads the session itself. This freezes a stale page on purpose; no test depends on how fast a channel gives up.
 async function dropStreams(page: Page): Promise<void> {
+  await page.route(EVENTS, (route) => route.fulfill({ status: 502, body: 'Bad Gateway' }));
+  await socketsDown(page);
+}
+
+// The sockets of the page fail until socketsUp: the open one closes, and each new one closes at once.
+async function socketsDown(page: Page): Promise<void> {
   dropped.add(page);
   await page.evaluate(() => {
     for (const socket of (window as unknown as { e2eSockets: WebSocket[] }).e2eSockets) socket.close();
   });
+}
+
+function socketsUp(page: Page): void {
+  dropped.delete(page);
 }
 
 // Loads the page again with its sockets recorded and routed, so dropStreams can end them.
@@ -128,4 +141,46 @@ test('a move that the page refuses as not its turn reads the session again, so a
   await expect(status(alice)).toHaveText('Your move (X)');
   await cell(alice, 2).click();
   await expect(marks(bob)).toHaveCount(3);
+});
+
+test('a move made while the socket is down shows when the socket is back, without a tap', async ({ open }) => {
+  const alice = await recorded(await open());
+  const code = await createOnline(alice);
+  const { page: bob } = await joinAsO(open, `/?code=${code}`);
+  await cell(alice, 0).click();
+  await expect(marks(bob)).toHaveCount(1);
+
+  // Alice's socket goes down. Bob moves meanwhile: no channel tells Alice.
+  await socketsDown(alice);
+  await cell(bob, 1).click();
+  await expect
+    .poll(async () => ((await callApi(bob, `/api/sessions/${code}`)) as { games: { moves: number[] }[] }).games[0]?.moves.length)
+    .toBe(2);
+  await expect(marks(alice)).toHaveCount(1);
+
+  // The socket comes back after its retry wait. The watch starts with a load, so the missed move shows.
+  socketsUp(alice);
+  await expect(marks(alice)).toHaveCount(2);
+  await expect(status(alice)).toHaveText('Your move (X)');
+});
+
+test('a page whose socket keeps failing moves to the event stream, and still sees the moves of the other player', async ({ open }) => {
+  const { page: alice } = await open();
+  // From the first load on, every socket of Alice closes at once. Playwright opens a routed socket before the close,
+  // so the page takes the path after an open: it moves to the HTTP event stream after 5 failures in a row (src/socket.ts),
+  // about 15 s of retry waits.
+  await alice.routeWebSocket(SOCKET, (socket) => void socket.close());
+  await alice.reload();
+  const code = await createOnline(alice);
+  const { page: bob } = await joinAsO(open, `/?code=${code}`);
+  // Alice's own moves go over HTTP at once, while her socket is down.
+  await cell(alice, 0).click();
+  await expect(marks(bob)).toHaveCount(1);
+  await cell(bob, 1).click();
+  await expect(marks(alice)).toHaveCount(2, { timeout: 40_000 });
+  await cell(alice, 2).click();
+  await expect(marks(bob)).toHaveCount(3);
+  // Later moves of Bob come through the event stream at once.
+  await cell(bob, 3).click();
+  await expect(marks(alice)).toHaveCount(4);
 });

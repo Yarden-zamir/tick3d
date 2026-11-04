@@ -46,7 +46,7 @@ describe('PlaySocket', () => {
     await expect(answer).resolves.toEqual({ status: 200, body: { version: 4 } });
   });
 
-  it('watches again after a reconnect, and tells the page to load the session', async () => {
+  it('watches again after a reconnect, and the page loads the session only when the socket is back', async () => {
     vi.useFakeTimers();
     const socket = playSocket();
     const views: unknown[] = [];
@@ -54,10 +54,14 @@ describe('PlaySocket', () => {
     last().open();
     last().deliver({ code: 'ABCD', view: { version: 2 } });
     last().close();
-    expect(views).toEqual([{ version: 2 }, undefined]);
+    // A close alone tells the page nothing: a dead channel delivers no change.
+    expect(views).toEqual([{ version: 2 }]);
     await vi.runAllTimersAsync();
     last().open();
     expect(last().sent).toEqual([{ watch: 'ABCD' }]);
+    // The server answers a watch with "changed" first, and then the page loads the session.
+    last().deliver({ code: 'ABCD', view: 'changed' });
+    expect(views).toEqual([{ version: 2 }, undefined]);
     vi.useRealTimers();
   });
 
@@ -77,6 +81,29 @@ describe('PlaySocket', () => {
     socket.watch('ABCD', () => {});
     last().close();
     await vi.runAllTimersAsync();
+    last().close();
+    expect(socket.blocked).toBe(true);
+    expect(blocked).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
+
+  it('moves to HTTP after 5 failures in a row when the socket had opened, and a reopen resets the count', async () => {
+    vi.useFakeTimers();
+    const blocked = vi.fn();
+    const socket = playSocket(blocked);
+    socket.watch('ABCD', () => {});
+    last().open();
+    for (let failure = 0; failure < 4; failure++) {
+      last().close();
+      await vi.runAllTimersAsync();
+    }
+    // Four failures, then the socket works again: the count starts over.
+    last().open();
+    for (let failure = 0; failure < 4; failure++) {
+      last().close();
+      await vi.runAllTimersAsync();
+    }
+    expect(blocked).not.toHaveBeenCalled();
     last().close();
     expect(socket.blocked).toBe(true);
     expect(blocked).toHaveBeenCalledOnce();

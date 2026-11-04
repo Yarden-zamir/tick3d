@@ -17,6 +17,10 @@ export class SocketNotOpen extends Error {}
 
 // A socket that did not open this many times in a row, without any open before, counts as blocked.
 const FAILS_BEFORE_HTTP = 2;
+// After an earlier open, more failures in a row (about 30 s with the retry waits of src/online.ts) count as blocked: a
+// deploy restarts the server within that time (Caddy holds a request for up to 30 s), but a network or a proxy that
+// starts to block WebSockets would otherwise leave the page without live changes for good.
+const FAILS_BEFORE_HTTP_AFTER_OPEN = 5;
 
 export type SocketOptions = {
   url: string;
@@ -123,12 +127,14 @@ export class PlaySocket {
     for (const pending of this.waiting.values()) pending.failed(new Error('the socket closed'));
     this.waiting.clear();
     this.failures += 1;
-    if (!this.opened && this.failures >= FAILS_BEFORE_HTTP) {
+    if (this.failures >= (this.opened ? FAILS_BEFORE_HTTP_AFTER_OPEN : FAILS_BEFORE_HTTP)) {
       this.block();
       return;
     }
-    // After a reconnect the page loads each watched session, in case it missed a change.
-    if (this.opened) for (const watchers of this.watches.values()) for (const watcher of watchers) watcher(undefined);
+    // No load here. The page loads each watched session when a channel works again: the server sends "changed" first
+    // after each watch, and the HTTP event stream calls onChange(undefined) when it opens. So no change stays missed.
+    // A load at the close adds nothing to that: during a deploy HTTP is down too, and otherwise it only moves the
+    // load earlier by one retry wait, while the page cannot get the next change anyway until a channel is back.
     if (this.watches.size === 0) return;
     this.timer = setTimeout(() => {
       this.timer = undefined;
