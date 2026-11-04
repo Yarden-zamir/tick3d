@@ -100,6 +100,7 @@ for server in $SERVERS; do
   load "$server" stats-mine 4 "/api/stats?scope=mine" "x-player: $(node -e "import('$HERE/tokens.ts').then((m) => console.log(m.tokenOf(7)))")"
   load "$server" history 16 /api/me/history "x-player: $(node -e "import('$HERE/tokens.ts').then((m) => console.log(m.tokenOf(7)))")"
   interaction "$server" sse
+  [ "$server" = rust ] && interaction "$server" ws
   interaction "$server" poll
   mixed "$server"
   echo "{\"server\":\"$server\",\"measure\":\"memory\",\"rssKb\":$(rss),\"peakRssKb\":$(peak)}"

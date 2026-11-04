@@ -48,6 +48,7 @@ import {
   statsQuery,
 } from './protocol.ts';
 import { STORAGE_KEYS } from './storage-keys.ts';
+import { PlaySocket, type SocketAnswer } from './socket.ts';
 import { type ClaimRequest, type ClaimedCode, type TesterCodes, parseClaimedCode, parseTesterCodes } from './share/codes.ts';
 import { type AppOpen, parseCopyAnswer } from './copies.ts';
 
@@ -129,8 +130,54 @@ function pushedView(data: unknown): SessionView | undefined {
   }
 }
 
-const request = async (method: string, path: string, body?: unknown): Promise<SessionView> =>
-  parseSessionView(await call(method, `/sessions${path}`, body));
+// The answer of a socket action, read as `call` reads an HTTP answer.
+function answerOf({ status, body }: SocketAnswer): unknown {
+  if (status < 200 || status >= 300) {
+    const message = typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string' ? body.error : `Server error (${status}).`;
+    throw new OnlineError(message, status);
+  }
+  if (body === null || body === undefined) throw new OnlineError('The server sent an answer that the game cannot read.');
+  return body;
+}
+
+// HTTP subscriptions that take over the socket watches when the socket counts as blocked.
+const onSocketBlocked = new Set<() => void>();
+const playSocket =
+  typeof WebSocket === 'function' && typeof location !== 'undefined'
+    ? new PlaySocket({
+        url: `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/ws?player=${encodeURIComponent(token)}`,
+        retryMs: (failures) => streamRetryMs(failures),
+        onBlocked: () => {
+          for (const moveToHttp of onSocketBlocked) moveToHttp();
+        },
+      })
+    : undefined;
+
+// A session action: over the socket while it works, else over HTTP. A socket that broke during the action rejects
+// as a broken request does: the action may or may not have happened.
+async function sessionCall(method: string, path: string, body?: unknown): Promise<unknown> {
+  if (playSocket !== undefined && !playSocket.blocked) {
+    try {
+      return answerOf(await playSocket.act(method, `/sessions${path}`, body));
+    } catch (error) {
+      if (error instanceof OnlineError) throw error;
+      if (!playSocket.blocked) throw new OnlineError('Cannot reach the server. Check the connection.');
+    }
+  }
+  return call(method, `/sessions${path}`, body);
+}
+
+const request = async (method: string, path: string, body?: unknown): Promise<SessionView> => parseSessionView(await sessionCall(method, path, body));
+
+// A view that the socket pushed, or undefined when the page must load the session.
+function socketView(view: unknown): SessionView | undefined {
+  if (view === undefined) return undefined;
+  try {
+    return parseSessionView(view);
+  } catch {
+    return undefined;
+  }
+}
 
 // `name` is the custom name of a player without a GitHub login, or null. `person` is the public person id of
 // this player (of the account when logged in), and `hasCopy` whether the player holds a copy of the paid Android app
@@ -391,44 +438,64 @@ export const api = {
   nearbyHosts: async (signal?: AbortSignal): Promise<LobbyHost[]> => parseLobbyHosts(await call('GET', '/nearby/hosts', undefined, signal)),
   answerNearby: (id: HostId, offer: string, answer: string) => call('POST', `/nearby/hosts/${id}/answer`, { answer, offer }),
 
-  // Calls onChange after every change, and after each reconnect in case a change was missed.
-  // The server sends the new view with a change. An old server sends "changed", and a view that this page cannot
-  // read comes from a newer server: in both cases onChange gets undefined, and the page loads the session.
-  // The token marks this page's seats as present, so the other player sees "here" or "away".
-  // The browser reconnects by itself after a network error, but it stops for good after an error status,
-  // such as the 502 of the proxy while a deploy replaces the API. Then this opens a new stream after a wait.
-  // Behind Cloudflare over HTTP/3 the server learns late that a stream closed, so leaving sends a beacon.
+  // Calls onChange after every change, and with undefined after each (re)connect, in case a change was missed: then
+  // the page loads the session. The watch marks this page's seats as present, so the other player sees "here" or "away".
+  // Over the socket while it works; the event stream when the socket is blocked.
   subscribe(code: Code, onChange: (view: SessionView | undefined) => void): () => void {
-    const stream = crypto.randomUUID();
-    const query = `player=${encodeURIComponent(token)}&stream=${stream}`;
-    const leave = () => navigator.sendBeacon(`/api/sessions/${code}/leave?${query}`);
-    let source: EventSource | undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let failures = 0;
-    // Set when the page leaves the session: an error of the closing stream must not open a new one.
-    let stopped = false;
-    const connect = () => {
-      const opened = new EventSource(`/api/sessions/${code}/events?${query}`);
-      source = opened;
-      opened.onmessage = (event: MessageEvent<unknown>) => onChange(pushedView(event.data));
-      opened.onopen = () => {
-        failures = 0;
-        onChange(undefined);
-      };
-      opened.onerror = () => {
-        if (stopped || opened.readyState !== EventSource.CLOSED) return;
-        timer = setTimeout(connect, streamRetryMs(failures));
-        failures += 1;
-      };
+    if (playSocket === undefined || playSocket.blocked) return subscribeHttp(code, onChange);
+    let stopHttp: (() => void) | undefined;
+    const stopSocket = playSocket.watch(code, (view) => onChange(socketView(view)));
+    const moveToHttp = () => {
+      stopSocket();
+      stopHttp = subscribeHttp(code, onChange);
     };
-    connect();
-    addEventListener('pagehide', leave);
+    onSocketBlocked.add(moveToHttp);
     return () => {
-      stopped = true;
-      clearTimeout(timer);
-      removeEventListener('pagehide', leave);
-      source?.close();
-      leave();
+      onSocketBlocked.delete(moveToHttp);
+      stopSocket();
+      stopHttp?.();
     };
   },
 };
+
+// The event stream of one session (GET /api/sessions/{code}/events): the HTTP path of `api.subscribe`.
+// Calls onChange after every change, and after each reconnect in case a change was missed.
+// The server sends the new view with a change. An old server sends "changed", and a view that this page cannot
+// read comes from a newer server: in both cases onChange gets undefined, and the page loads the session.
+// The token marks this page's seats as present, so the other player sees "here" or "away".
+// The browser reconnects by itself after a network error, but it stops for good after an error status,
+// such as the 502 of the proxy while a deploy replaces the API. Then this opens a new stream after a wait.
+// Behind Cloudflare over HTTP/3 the server learns late that a stream closed, so leaving sends a beacon.
+function subscribeHttp(code: Code, onChange: (view: SessionView | undefined) => void): () => void {
+  const stream = crypto.randomUUID();
+  const query = `player=${encodeURIComponent(token)}&stream=${stream}`;
+  const leave = () => navigator.sendBeacon(`/api/sessions/${code}/leave?${query}`);
+  let source: EventSource | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let failures = 0;
+  // Set when the page leaves the session: an error of the closing stream must not open a new one.
+  let stopped = false;
+  const connect = () => {
+    const opened = new EventSource(`/api/sessions/${code}/events?${query}`);
+    source = opened;
+    opened.onmessage = (event: MessageEvent<unknown>) => onChange(pushedView(event.data));
+    opened.onopen = () => {
+      failures = 0;
+      onChange(undefined);
+    };
+    opened.onerror = () => {
+      if (stopped || opened.readyState !== EventSource.CLOSED) return;
+      timer = setTimeout(connect, streamRetryMs(failures));
+      failures += 1;
+    };
+  };
+  connect();
+  addEventListener('pagehide', leave);
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+    removeEventListener('pagehide', leave);
+    source?.close();
+    leave();
+  };
+}

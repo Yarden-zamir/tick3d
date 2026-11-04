@@ -3,50 +3,47 @@ import type { BrowserContext, Page } from '@playwright/test';
 
 // This file creates three online sessions. The server allows 60 new sessions per hour for one client address.
 
-const EVENTS = '**/api/sessions/*/events*';
+// The page plays over one WebSocket (src/socket.ts). These tests break it, as a deploy or a network change does.
+const SOCKET = '**/api/ws*';
 
-// The live stream of the page answers 502, as while the server restarts for a deploy. A browser
-// gives up on an EventSource after an HTTP error answer, and does not retry it by itself.
-// `times` limits the failed answers; without it, every stream of the page fails.
-async function failStreams(page: Page, times?: number): Promise<{ count: () => number }> {
+// The first `times` sockets of the page close at once, as while the server restarts for a deploy. Later sockets reach
+// the server. The page opens a new socket after a wait, and loads the session again.
+async function failStreams(page: Page, times: number): Promise<{ count: () => number }> {
   let count = 0;
-  await page.route(
-    EVENTS,
-    (route) => {
+  await page.routeWebSocket(SOCKET, (socket) => {
+    if (count < times) {
       count++;
-      return route.fulfill({ status: 502, body: 'Bad Gateway' });
-    },
-    times === undefined ? undefined : { times },
-  );
+      socket.close();
+      return;
+    }
+    socket.connectToServer();
+  });
   return { count: () => count };
 }
 
-// Keeps every EventSource of the page, so a test can end them (dropStreams). Runs before the app.
+// Keeps every WebSocket of the page, so a test can end them (dropStreams). Runs before the app.
 function recordStreams(): void {
-  const streams: EventSource[] = [];
-  (window as unknown as { e2eStreams: EventSource[] }).e2eStreams = streams;
-  const Native = window.EventSource;
-  window.EventSource = class extends Native {
-    constructor(url: string | URL, init?: EventSourceInit) {
-      super(url, init);
-      streams.push(this);
+  const sockets: WebSocket[] = [];
+  (window as unknown as { e2eSockets: WebSocket[] }).e2eSockets = sockets;
+  const Native = window.WebSocket;
+  window.WebSocket = class extends Native {
+    constructor(url: string | URL, protocols?: string | string[]) {
+      super(url, protocols);
+      sockets.push(this);
     }
   };
 }
 
-// Every live stream of the page fails for good, now and later: the open ones end as after an HTTP error answer,
-// and each new one gets a 502. The page gets no change from the server any more, unless it reads the session.
+// The socket of the page fails for good, now and later: the open one closes, and each new one closes at once.
+// The page gets no change from the server any more, unless it reads the session.
 async function dropStreams(page: Page): Promise<void> {
-  await failStreams(page);
+  await page.routeWebSocket(SOCKET, (socket) => socket.close());
   await page.evaluate(() => {
-    for (const source of (window as unknown as { e2eStreams: EventSource[] }).e2eStreams) {
-      source.close();
-      source.dispatchEvent(new Event('error'));
-    }
+    for (const socket of (window as unknown as { e2eSockets: WebSocket[] }).e2eSockets) socket.close();
   });
 }
 
-// Loads the page again, so it keeps its streams for dropStreams.
+// Loads the page again, so it keeps its sockets for dropStreams.
 async function recorded({ page, context }: { page: Page; context: BrowserContext }): Promise<Page> {
   await context.addInitScript(recordStreams);
   await page.reload();

@@ -1,14 +1,15 @@
 // The online game loop: `pairs` pairs play `rounds` games each, at the same time. Player A makes a session, B joins and
 // listens, then they play X 0 1 2 3 and O 16 17 18 (7 moves).
 // It measures each move request (POST /moves until its answer) and the delivery: from the start of a move request until
-// the opponent's channel shows the new version. `channel` is `sse` (the page's event stream) or `poll` (the agent API,
+// the opponent's channel shows the new version. `channel` is `ws` (the page's WebSocket: moves and views over one
+// socket per player), `sse` (the earlier page: a request per move and an event stream) or `poll` (the agent API,
 // GET ?wait=<version>).
-// Usage: node bench/interaction.ts <base url> <pairs> <rounds> <sse|poll>
+// Usage: node bench/interaction.ts <base url> <pairs> <rounds> <ws|sse|poll>
 import { tokenOf } from './tokens.ts';
 
 const [base, pairsText, roundsText, channel] = process.argv.slice(2);
-if (base === undefined || pairsText === undefined || roundsText === undefined || (channel !== 'sse' && channel !== 'poll')) {
-  throw new Error('usage: interaction.ts <base> <pairs> <rounds> <sse|poll>');
+if (base === undefined || pairsText === undefined || roundsText === undefined || (channel !== 'ws' && channel !== 'sse' && channel !== 'poll')) {
+  throw new Error('usage: interaction.ts <base> <pairs> <rounds> <ws|sse|poll>');
 }
 const pairs = Number(pairsText);
 const rounds = Number(roundsText);
@@ -63,7 +64,48 @@ function listen(code: string, token: string, stream: string) {
   };
 }
 
+/// One socket of a player: actions with their answers, and the versions of the watched sessions.
+async function socketOf(token: string) {
+  const socket = new WebSocket(`${(base as string).replace(/^http/, 'ws')}/api/ws?player=${token}`);
+  const replies = new Map<number, (view: View) => void>();
+  const seen = new Map<string, number>();
+  let waiters: { code: string; version: number; done: () => void }[] = [];
+  let id = 0;
+  socket.onmessage = (event: MessageEvent<string>) => {
+    const message = JSON.parse(event.data) as { id?: number; status?: number; body?: View; code?: string; view?: View | 'changed' };
+    if (message.id !== undefined) {
+      if (message.status !== 200) throw new Error(`socket action: ${message.status} ${JSON.stringify(message.body)}`);
+      replies.get(message.id)?.(message.body as View);
+      replies.delete(message.id);
+      return;
+    }
+    if (message.code === undefined || typeof message.view !== 'object') return;
+    const version = Math.max(seen.get(message.code) ?? 0, message.view.version);
+    seen.set(message.code, version);
+    for (const waiter of waiters.filter((w) => w.code === message.code && w.version <= version)) waiter.done();
+    waiters = waiters.filter((w) => !(w.code === message.code && w.version <= version));
+  };
+  await new Promise((done, failed) => {
+    socket.onopen = done;
+    socket.onerror = failed;
+  });
+  return {
+    act: (method: string, path: string, body: object) =>
+      new Promise<View>((done) => {
+        id += 1;
+        replies.set(id, done);
+        socket.send(JSON.stringify({ id, method, path, body }));
+      }),
+    watch: (code: string) => socket.send(JSON.stringify({ watch: code })),
+    unwatch: (code: string) => socket.send(JSON.stringify({ unwatch: code })),
+    until: (code: string, version: number) =>
+      (seen.get(code) ?? 0) >= version ? Promise.resolve() : new Promise<void>((done) => waiters.push({ code, version, done })),
+    close: () => socket.close(),
+  };
+}
+
 async function pair(index: number): Promise<void> {
+  if (channel === 'ws') return socketPair(index);
   const [a, b] = [tokenOf(1_000_000 + index * 2), tokenOf(1_000_001 + index * 2)];
   for (let round = 0; round < rounds; round++) {
     // Each session comes from its own address, so the limit of new games per address does not stop the run.
@@ -89,6 +131,30 @@ async function pair(index: number): Promise<void> {
     }
     for (const listener of sse) listener.close();
   }
+}
+
+/// The same game loop over one socket per player. Create and join stay on HTTP, because the limit of new games counts
+/// per address and a socket has one address.
+async function socketPair(index: number): Promise<void> {
+  const [a, b] = [tokenOf(1_000_000 + index * 2), tokenOf(1_000_001 + index * 2)];
+  const sockets = [await socketOf(a), await socketOf(b)];
+  for (let round = 0; round < rounds; round++) {
+    const client = `10.${(index >> 8) & 255}.${index & 255}.${round & 255}`;
+    const code = (await call(a, client, 'POST', '/sessions', { name: 'bench' })).code;
+    for (const socket of sockets) socket.watch(code);
+    let version = (await call(b, client, 'POST', `/sessions/${code}/join`)).version;
+    for (const [n, cell] of MOVES.entries()) {
+      const [mover, waiter] = n % 2 === 0 ? [sockets[0], sockets[1]] : [sockets[1], sockets[0]];
+      const started = performance.now();
+      const delivered = (waiter as Awaited<ReturnType<typeof socketOf>>).until(code, version + 1).then(() => performance.now() - started);
+      const moved = await (mover as Awaited<ReturnType<typeof socketOf>>).act('POST', `/sessions/${code}/moves`, { game: 0, moveCount: n, cell });
+      moveMs.push(performance.now() - started);
+      deliveryMs.push(await delivered);
+      version = moved.version;
+    }
+    for (const socket of sockets) socket.unwatch(code);
+  }
+  for (const socket of sockets) socket.close();
 }
 
 const percentile = (values: number[], p: number) => {
