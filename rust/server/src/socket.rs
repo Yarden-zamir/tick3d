@@ -256,10 +256,16 @@ async fn act(
 
 /// The answer of an action: the JSON bytes of the handler go in as they are, without a parse into a `Value` and a new
 /// serialization (about 0.16 ms of the 3 ms of server CPU per move, measured on 2026-11-04). A body that is not one JSON
-/// value (an empty body) becomes null, as before. The check parses without building anything.
+/// value (an empty body, bytes that are not UTF-8, text after the value) becomes null, as before. The check parses
+/// without building anything.
+/// Limit: the check accepts some JSON that a parse into `Value` refuses: 1e999, an escaped lone surrogate, nesting deeper
+/// than 128. Those bytes go in as they are and are still JSON, where the old code sent null. The handlers serialize with
+/// serde_json and do not write such JSON. Check this again if an answer body comes from somewhere else.
 fn envelope(id: u64, status: u16, body: &[u8]) -> String {
-    let valid = serde_json::from_slice::<serde::de::IgnoredAny>(body).is_ok();
-    let body = if valid { std::str::from_utf8(body).expect("valid JSON is UTF-8") } else { "null" };
+    let body = match std::str::from_utf8(body) {
+        Ok(text) if serde_json::from_str::<serde::de::IgnoredAny>(text).is_ok() => text,
+        _ => "null",
+    };
     format!(r#"{{"id":{id},"status":{status},"body":{body}}}"#)
 }
 
@@ -314,6 +320,20 @@ mod tests {
         assert_eq!(parsed, json!({ "id": 7, "status": 200, "body": serde_json::from_slice::<Value>(view).unwrap() }));
         assert_eq!(envelope(8, 200, b""), r#"{"id":8,"status":200,"body":null}"#);
         assert_eq!(serde_json::from_str::<Value>(&envelope(9, 400, b"{not json")).unwrap()["body"], Value::Null);
+    }
+
+    /// Each answer is one JSON message with the body in its own field, whatever bytes the body holds.
+    #[test]
+    fn an_answer_body_cannot_break_the_message() {
+        let body_of = |bytes: &[u8]| serde_json::from_str::<Value>(&envelope(1, 200, bytes)).expect("one JSON message")["body"].clone();
+        // Not UTF-8 inside a string: null, no panic.
+        assert_eq!(body_of(b"\"\xff\""), Value::Null);
+        // Text after the value cannot add fields to the message.
+        assert_eq!(body_of(br#"{}, "id": 2"#), Value::Null);
+        assert_eq!(body_of(br#"{"a":1}}"#), Value::Null);
+        // Escapes and UTF-8 stay as they are.
+        assert_eq!(body_of(r#"{"name":"a\"b\\cé ✓ 🎲","id":9}"#.as_bytes()), json!({ "name": "a\"b\\cé ✓ 🎲", "id": 9 }));
+        assert_eq!(serde_json::from_str::<Value>(&envelope(3, 200, br#"{"id":9}"#)).unwrap()["id"], 3);
     }
 
     #[test]
