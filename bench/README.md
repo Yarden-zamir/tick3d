@@ -50,6 +50,26 @@ SEED_FILE=/tmp/bench-seed.duckdb OHA=~/.cargo/bin/oha \
 
 Ranges are the values of separate runs. The raw JSON lines of every run are in `results.jsonl`.
 
+## Transport: WebSocket against the event stream (2026-11-04, PR #275 at 64806e3)
+
+The game loop on the Rust server only, 3 runs per channel on fresh copies of the same seed. `ws`: one socket per player
+for the moves and the views; create and join stay on HTTP, because the limit of new games counts per address. `sse`: a
+request per move and an event stream per player, as the page did before. `poll`: the agent API.
+
+| Channel | Moves/s (3 runs) | Move p50 / p90 / p99 | Delivery p50 / p90 / p99 | Server CPU |
+|---|---|---|---|---|
+| WebSocket | 134 (102, 134, 152) | 21 / 421 / 769 ms | 32 / 74 / 293 ms | 7.4 s |
+| Event stream and HTTP moves | 113 (99, 113, 135) | 58 / 368 / 777 ms | 50 / 166 / 321 ms | 5.9 s |
+| Long poll | 138 (129, 138, 150) | 52 / 355 / 576 ms | 53 / 155 / 346 ms | 4.2 s |
+
+- The socket cuts the median move answer from 58 to 21 ms, and the median delivery from 50 to 32 ms (p90 166 to 74 ms).
+- Moves per second show no reliable difference: the ranges of the runs overlap.
+- The p90 and p99 of a move stay about the same in every channel: they come from the move that ends a game, which waits
+  for the 200 ms result batch.
+- The socket used about 27 % more server CPU in these runs: each action goes through the router a second time. One test,
+  with a wide spread.
+- Long polls serve the agent API about as well as the event stream does.
+
 ## What the numbers say
 
 - Rust starts about 4 to 5 times faster and uses about half the memory.

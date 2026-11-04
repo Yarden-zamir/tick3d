@@ -80,3 +80,18 @@
 {"server": "rust", "measure": "stats-mine", "connections": 4, "rep": 3, "rps": 9.9, "p50ms": 385.122, "p90ms": 550.967, "p99ms": 677.129, "ok": 1.0, "codes": {"200": 95}, "serverCpuSeconds": 11.84}
 {"server":"rust","measure":"interaction-sse-under-stats-load","result":{"channel":"sse","pairs":20,"rounds":10,"seconds":11.24,"movesPerSecond":124.5,"move":{"n":1400,"p50":37.5,"p90":327.86,"p99":582.83,"max":1039.57},"delivery":{"n":1400,"p50":36.96,"p90":107.11,"p99":446.27,"max":898.69}}}
 {"server":"rust","measure":"memory","rssKb":218496,"peakRssKb":232548}
+{"server":"rust","measure":"startup","ms":1906,"rssKb":71288}
+{"server":"rust","measure":"interaction-sse","serverCpuSeconds":5.85,"result":{"channel":"sse","pairs":20,"rounds":10,"seconds":14.17,"movesPerSecond":98.8,"move":{"n":1400,"p50":69.39,"p90":450.4,"p99":691.55,"max":1083.02},"delivery":{"n":1400,"p50":58.75,"p90":192.15,"p99":706.14,"max":1220.99}}}
+{"server":"rust","measure":"interaction-ws","serverCpuSeconds":7.43,"result":{"channel":"ws","pairs":20,"rounds":10,"seconds":10.44,"movesPerSecond":134.1,"move":{"n":1400,"p50":21.15,"p90":420.7,"p99":701.82,"max":774.65},"delivery":{"n":1400,"p50":32.22,"p90":60.91,"p99":158.1,"max":209.71}}}
+{"server":"rust","measure":"interaction-poll","serverCpuSeconds":4.67,"result":{"channel":"poll","pairs":20,"rounds":10,"seconds":10.88,"movesPerSecond":128.7,"move":{"n":1400,"p50":55.33,"p90":354.86,"p99":751.15,"max":985.47},"delivery":{"n":1400,"p50":53.28,"p90":155.28,"p99":632.41,"max":656.03}}}
+{"server":"rust","measure":"memory","rssKb":117384,"peakRssKb":127316}
+{"server":"rust","measure":"startup","ms":551,"rssKb":73880}
+{"server":"rust","measure":"interaction-sse","serverCpuSeconds":4.49,"result":{"channel":"sse","pairs":20,"rounds":10,"seconds":10.41,"movesPerSecond":134.5,"move":{"n":1400,"p50":48.08,"p90":341.19,"p99":776.95,"max":1017.29},"delivery":{"n":1400,"p50":44.29,"p90":121.32,"p99":285.49,"max":505.25}}}
+{"server":"rust","measure":"interaction-ws","serverCpuSeconds":6.24,"result":{"channel":"ws","pairs":20,"rounds":10,"seconds":9.21,"movesPerSecond":152,"move":{"n":1400,"p50":20.6,"p90":337.18,"p99":768.8,"max":875.62},"delivery":{"n":1400,"p50":29.7,"p90":74.39,"p99":292.74,"max":679.76}}}
+{"server":"rust","measure":"interaction-poll","serverCpuSeconds":4.21,"result":{"channel":"poll","pairs":20,"rounds":10,"seconds":9.31,"movesPerSecond":150.3,"move":{"n":1400,"p50":36.54,"p90":300.17,"p99":575.89,"max":918.33},"delivery":{"n":1400,"p50":40.18,"p90":140.48,"p99":298.09,"max":534.71}}}
+{"server":"rust","measure":"memory","rssKb":120932,"peakRssKb":131192}
+{"server":"rust","measure":"startup","ms":901,"rssKb":72072}
+{"server":"rust","measure":"interaction-sse","serverCpuSeconds":6.41,"result":{"channel":"sse","pairs":20,"rounds":10,"seconds":12.42,"movesPerSecond":112.7,"move":{"n":1400,"p50":57.79,"p90":367.91,"p99":1075.32,"max":1605.67},"delivery":{"n":1400,"p50":50.15,"p90":166.45,"p99":321.23,"max":1084.51}}}
+{"server":"rust","measure":"interaction-ws","serverCpuSeconds":8.87,"result":{"channel":"ws","pairs":20,"rounds":10,"seconds":13.72,"movesPerSecond":102.1,"move":{"n":1400,"p50":33.55,"p90":499.37,"p99":851.1,"max":927.23},"delivery":{"n":1400,"p50":36.93,"p90":136.23,"p99":478.02,"max":611.88}}}
+{"server":"rust","measure":"interaction-poll","serverCpuSeconds":4.23,"result":{"channel":"poll","pairs":20,"rounds":10,"seconds":10.17,"movesPerSecond":137.7,"move":{"n":1400,"p50":51.54,"p90":367.36,"p99":542.19,"max":577.96},"delivery":{"n":1400,"p50":52.66,"p90":166.99,"p99":346.26,"max":481.5}}}
+{"server":"rust","measure":"memory","rssKb":119108,"peakRssKb":126868}
