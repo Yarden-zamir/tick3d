@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Query, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method};
@@ -110,7 +110,7 @@ async fn serve(app: App, mut socket: WebSocket, token: String, peer: SocketAddr,
                             let _permit = permit;
                             let (status, body) = act(router, &token, peer, forwarded, &method, &path, body).await;
                             // An answer waits for room: the page needs every answer.
-                            let _ = out.send(json!({ "id": id, "status": status, "body": body }).to_string()).await;
+                            let _ = out.send(envelope(id, status, &body)).await;
                         });
                     }
                     Ok(Incoming::Watch { watch }) => {
@@ -224,8 +224,8 @@ async fn act(
     method: &str,
     path: &str,
     body: Option<Value>,
-) -> (u16, Value) {
-    let refused = || (400, json!({ "error": "A socket action is a play action of a session (see src/online.ts api)." }));
+) -> (u16, Bytes) {
+    let refused = || (400, Bytes::from_static(br#"{"error":"A socket action is a play action of a session (see src/online.ts api)."}"#));
     let Ok(method) = method.parse::<Method>() else { return refused() };
     if !is_play_action(&method, path) {
         return refused();
@@ -249,9 +249,18 @@ async fn act(
     // No size cap: a play action answers with one session view, as over HTTP, and the allow-list keeps the event stream
     // and long polls out. A cap could answer 500 for a move that the store applied (a long session has a large view).
     let Ok(bytes) = axum::body::to_bytes(response.into_body(), usize::MAX).await else {
-        return (500, json!({ "error": "Server error." }));
+        return (500, Bytes::from_static(br#"{"error":"Server error."}"#));
     };
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    (status, bytes)
+}
+
+/// The answer of an action: the JSON bytes of the handler go in as they are, without a parse into a `Value` and a new
+/// serialization (about 0.16 ms of the 3 ms of server CPU per move, measured on 2026-11-04). A body that is not one JSON
+/// value (an empty body) becomes null, as before. The check parses without building anything.
+fn envelope(id: u64, status: u16, body: &[u8]) -> String {
+    let valid = serde_json::from_slice::<serde::de::IgnoredAny>(body).is_ok();
+    let body = if valid { std::str::from_utf8(body).expect("valid JSON is UTF-8") } else { "null" };
+    format!(r#"{{"id":{id},"status":{status},"body":{body}}}"#)
 }
 
 /// The play actions of the page, and nothing else: POST /sessions, GET or PATCH /sessions/{code} (without a query, so no
@@ -294,6 +303,17 @@ mod tests {
         let next = tokio::time::timeout(std::time::Duration::from_secs(1), queue.recv()).await.expect("a message follows").unwrap();
         assert_eq!(next, r#"{"code":"AB12","view":"changed"}"#);
         task.abort();
+    }
+
+    #[test]
+    fn puts_the_answer_body_in_as_it_is() {
+        let view = br#"{"code":"AB12","version":3,"you":"X"}"#;
+        let text = envelope(7, 200, view);
+        let parsed: Value = serde_json::from_str(&text).unwrap();
+        // The same answer as the earlier parse and serialization.
+        assert_eq!(parsed, json!({ "id": 7, "status": 200, "body": serde_json::from_slice::<Value>(view).unwrap() }));
+        assert_eq!(envelope(8, 200, b""), r#"{"id":8,"status":200,"body":null}"#);
+        assert_eq!(serde_json::from_str::<Value>(&envelope(9, 400, b"{not json")).unwrap()["body"], Value::Null);
     }
 
     #[test]
