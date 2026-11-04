@@ -1,6 +1,8 @@
 // One WebSocket per page for online play (GET /api/ws, rust/server/src/socket.rs). The page sends its session actions
 // and gets the views of the sessions that it watches over this one connection. REST stays for everything else.
-// If the socket never opens (a network or a proxy that blocks WebSockets), the page uses HTTP for the rest of its life.
+// An action goes over the socket only while it is open; otherwise the caller uses HTTP at once, so no action waits
+// for a reconnect. If the socket never opens (a network or a proxy that blocks WebSockets), the page watches over HTTP
+// for the rest of its life.
 
 // An answer of a socket action: the HTTP status and the JSON body of the same request over HTTP.
 export type SocketAnswer = { status: number; body: unknown };
@@ -8,7 +10,10 @@ export type SocketAnswer = { status: number; body: unknown };
 // Views of one watched session: an object, or undefined when the page must load the session.
 type Watcher = (view: unknown) => void;
 
-type Pending = { message: string; done: (answer: SocketAnswer) => void; failed: (error: Error) => void };
+type Pending = { done: (answer: SocketAnswer) => void; failed: (error: Error) => void };
+
+// The socket is not open now: the caller sends the action over HTTP.
+export class SocketNotOpen extends Error {}
 
 // A socket that did not open this many times in a row, without any open before, counts as blocked.
 const FAILS_BEFORE_HTTP = 2;
@@ -30,8 +35,6 @@ export class PlaySocket {
   private opened = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private readonly waiting = new Map<number, Pending>();
-  // Actions that wait for the socket to open.
-  private readonly queued: number[] = [];
   private readonly watches = new Map<string, Set<Watcher>>();
   // Set when the socket counts as blocked: every caller uses HTTP from then on.
   blocked = false;
@@ -42,20 +45,20 @@ export class PlaySocket {
     this.options = options;
   }
 
-  // Runs a session action over the socket. Rejects when the socket closes before the answer came: as with a request
-  // whose connection broke, the action may or may not have happened.
+  // Runs a session action over the open socket. Rejects with SocketNotOpen when the socket is not open (it then starts
+  // to connect, for the next action). Rejects with another error when the socket closes before the answer came: as with
+  // a request whose connection broke, the action may or may not have happened.
   act(method: string, path: string, body?: unknown): Promise<SocketAnswer> {
-    if (this.blocked) return Promise.reject(new Error('the socket is blocked'));
+    const socket = this.socket;
+    if (socket?.readyState !== WebSocket.OPEN) {
+      this.connect();
+      return Promise.reject(new SocketNotOpen());
+    }
     this.nextId += 1;
     const id = this.nextId;
-    const message = JSON.stringify({ id, method, path, ...(body === undefined ? {} : { body }) });
     return new Promise<SocketAnswer>((done, failed) => {
-      this.waiting.set(id, { message, done, failed });
-      if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(message);
-      else {
-        this.queued.push(id);
-        this.connect();
-      }
+      this.waiting.set(id, { done, failed });
+      socket.send(JSON.stringify({ id, method, path, ...(body === undefined ? {} : { body }) }));
     });
   }
 
@@ -86,10 +89,6 @@ export class PlaySocket {
       this.opened = true;
       this.failures = 0;
       for (const code of this.watches.keys()) socket.send(JSON.stringify({ watch: code }));
-      for (const id of this.queued.splice(0)) {
-        const pending = this.waiting.get(id);
-        if (pending !== undefined) socket.send(pending.message);
-      }
     };
     socket.onmessage = (event: MessageEvent<unknown>) => this.receive(event.data);
     socket.onclose = () => this.closed(socket);
@@ -120,12 +119,9 @@ export class PlaySocket {
   private closed(socket: WebSocket): void {
     if (this.socket !== socket) return;
     this.socket = undefined;
-    // Sent actions lose their answer; queued ones wait for the next socket.
-    for (const [id, pending] of this.waiting) {
-      if (this.queued.includes(id)) continue;
-      this.waiting.delete(id);
-      pending.failed(new Error('the socket closed'));
-    }
+    // Sent actions lose their answer.
+    for (const pending of this.waiting.values()) pending.failed(new Error('the socket closed'));
+    this.waiting.clear();
     this.failures += 1;
     if (!this.opened && this.failures >= FAILS_BEFORE_HTTP) {
       this.block();
@@ -133,7 +129,7 @@ export class PlaySocket {
     }
     // After a reconnect the page loads each watched session, in case it missed a change.
     if (this.opened) for (const watchers of this.watches.values()) for (const watcher of watchers) watcher(undefined);
-    if (this.watches.size === 0 && this.waiting.size === 0) return;
+    if (this.watches.size === 0) return;
     this.timer = setTimeout(() => {
       this.timer = undefined;
       this.connect();
@@ -142,9 +138,6 @@ export class PlaySocket {
 
   private block(): void {
     this.blocked = true;
-    for (const pending of this.waiting.values()) pending.failed(new Error('the socket is blocked'));
-    this.waiting.clear();
-    this.queued.length = 0;
     this.options.onBlocked?.();
   }
 }

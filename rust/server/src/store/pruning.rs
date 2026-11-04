@@ -129,6 +129,20 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// The answer to a create comes before any page watches the session; the creator is here all the same.
+    #[tokio::test]
+    async fn the_holder_of_a_view_counts_as_here() {
+        let dir = std::env::temp_dir().join(format!("tick3d-presence-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.duckdb");
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(path.to_str().unwrap(), Arc::new(NoPages)).unwrap();
+        let view = store.call(|db| db.create(TOKEN, "presence", NO_LIMIT)).await.unwrap();
+        let presence = serde_json::to_value(&view).unwrap()["presence"].clone();
+        assert_eq!(presence, serde_json::json!({ "X": true, "O": false }));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// The stop writes every changed session in one last job, and refuses every job after it.
     #[tokio::test]
     async fn the_close_writes_the_sessions_and_refuses_later_jobs() {

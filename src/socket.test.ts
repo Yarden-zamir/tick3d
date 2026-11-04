@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PlaySocket } from './socket.ts';
+import { PlaySocket, SocketNotOpen } from './socket.ts';
 
 // A socket under the test's control: it opens, delivers and closes when the test says so.
 class FakeSocket {
@@ -35,10 +35,12 @@ function playSocket(onBlocked = () => {}) {
 const last = () => FakeSocket.made.at(-1) as FakeSocket;
 
 describe('PlaySocket', () => {
-  it('sends an action once the socket opens and answers with its reply', async () => {
+  it('sends an action only over an open socket; before that, the caller uses HTTP and the socket connects', async () => {
     const socket = playSocket();
-    const answer = socket.act('POST', '/sessions/ABCD/moves', { cell: 3 });
+    await expect(socket.act('POST', '/sessions', { name: 'x' })).rejects.toBeInstanceOf(SocketNotOpen);
+    expect(FakeSocket.made).toHaveLength(1);
     last().open();
+    const answer = socket.act('POST', '/sessions/ABCD/moves', { cell: 3 });
     expect(last().sent).toEqual([{ id: 1, method: 'POST', path: '/sessions/ABCD/moves', body: { cell: 3 } }]);
     last().deliver({ id: 1, status: 200, body: { version: 4 } });
     await expect(answer).resolves.toEqual({ status: 200, body: { version: 4 } });
@@ -61,8 +63,9 @@ describe('PlaySocket', () => {
 
   it('rejects an action whose socket closed before the answer, as a broken request', async () => {
     const socket = playSocket();
-    const answer = socket.act('POST', '/sessions/ABCD/games');
+    socket.watch('ABCD', () => {});
     last().open();
+    const answer = socket.act('POST', '/sessions/ABCD/games');
     last().close();
     await expect(answer).rejects.toThrow('the socket closed');
   });
@@ -71,11 +74,10 @@ describe('PlaySocket', () => {
     vi.useFakeTimers();
     const blocked = vi.fn();
     const socket = playSocket(blocked);
-    const answer = socket.act('POST', '/sessions', { name: 'x' });
+    socket.watch('ABCD', () => {});
     last().close();
     await vi.runAllTimersAsync();
     last().close();
-    await expect(answer).rejects.toThrow('blocked');
     expect(socket.blocked).toBe(true);
     expect(blocked).toHaveBeenCalledOnce();
     vi.useRealTimers();

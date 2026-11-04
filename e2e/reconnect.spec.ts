@@ -1,10 +1,11 @@
-import { cell, createOnline, expect, expectToast, joinAsO, marks, playTurns, status, test, xWins } from './fixtures.ts';
+import { callApi, cell, createOnline, expect, expectToast, joinAsO, marks, playTurns, status, test, xWins } from './fixtures.ts';
 import type { BrowserContext, Page } from '@playwright/test';
 
 // This file creates three online sessions. The server allows 60 new sessions per hour for one client address.
 
 // The page plays over one WebSocket (src/socket.ts). These tests break it, as a deploy or a network change does.
-const SOCKET = '**/api/ws*';
+// A socket route takes effect for the WebSockets of a document that loads after it, so each helper loads the page again.
+const SOCKET = /\/api\/ws(\?|$)/;
 
 // The first `times` sockets of the page close at once, as while the server restarts for a deploy. Later sockets reach
 // the server. The page opens a new socket after a wait, and loads the session again.
@@ -13,13 +14,17 @@ async function failStreams(page: Page, times: number): Promise<{ count: () => nu
   await page.routeWebSocket(SOCKET, (socket) => {
     if (count < times) {
       count++;
-      socket.close();
+      void socket.close();
       return;
     }
     socket.connectToServer();
   });
+  await page.reload();
   return { count: () => count };
 }
+
+// The pages whose sockets fail for good (dropStreams).
+const dropped = new WeakSet<Page>();
 
 // Keeps every WebSocket of the page, so a test can end them (dropStreams). Runs before the app.
 function recordStreams(): void {
@@ -37,15 +42,19 @@ function recordStreams(): void {
 // The socket of the page fails for good, now and later: the open one closes, and each new one closes at once.
 // The page gets no change from the server any more, unless it reads the session.
 async function dropStreams(page: Page): Promise<void> {
-  await page.routeWebSocket(SOCKET, (socket) => socket.close());
+  dropped.add(page);
   await page.evaluate(() => {
     for (const socket of (window as unknown as { e2eSockets: WebSocket[] }).e2eSockets) socket.close();
   });
 }
 
-// Loads the page again, so it keeps its sockets for dropStreams.
+// Loads the page again with its sockets recorded and routed, so dropStreams can end them.
 async function recorded({ page, context }: { page: Page; context: BrowserContext }): Promise<Page> {
   await context.addInitScript(recordStreams);
+  await page.routeWebSocket(SOCKET, (socket) => {
+    if (dropped.has(page)) void socket.close();
+    else socket.connectToServer();
+  });
   await page.reload();
   return page;
 }
@@ -87,9 +96,10 @@ test('after a new game swapped the seats behind a dead stream, the page shows th
   await bob.locator('#new-game').click();
   await expect(status(bob)).toContainText('Your move (X)');
   // The page shows the move before the server has it. Alice must read the session after the server stored it.
-  const moved = bob.waitForResponse((response) => response.url().endsWith(`/api/sessions/${code}/moves`) && response.ok());
   await cell(bob, 5).click();
-  await moved;
+  await expect
+    .poll(async () => ((await callApi(bob, `/api/sessions/${code}`)) as { games: { moves: number[] }[] }).games.at(-1)?.moves.length)
+    .toBe(1);
 
   // Alice comes back. The page reads the session again: she plays O now, and sees Bob's move.
   await hideAndShow(alice);

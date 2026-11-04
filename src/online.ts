@@ -48,7 +48,7 @@ import {
   statsQuery,
 } from './protocol.ts';
 import { STORAGE_KEYS } from './storage-keys.ts';
-import { PlaySocket, type SocketAnswer } from './socket.ts';
+import { PlaySocket, type SocketAnswer, SocketNotOpen } from './socket.ts';
 import { type ClaimRequest, type ClaimedCode, type TesterCodes, parseClaimedCode, parseTesterCodes } from './share/codes.ts';
 import { type AppOpen, parseCopyAnswer } from './copies.ts';
 
@@ -161,7 +161,7 @@ async function sessionCall(method: string, path: string, body?: unknown): Promis
       return answerOf(await playSocket.act(method, `/sessions${path}`, body));
     } catch (error) {
       if (error instanceof OnlineError) throw error;
-      if (!playSocket.blocked) throw new OnlineError('Cannot reach the server. Check the connection.');
+      if (!(error instanceof SocketNotOpen)) throw new OnlineError('Cannot reach the server. Check the connection.');
     }
   }
   return call(method, `/sessions${path}`, body);

@@ -232,6 +232,13 @@ impl Db {
         Ok(identities
             .iter()
             .map(|identity| {
+                // The holder of a view is here: a page that gets an answer or a push is open. Without this, the answer
+                // to a create came before the page's own watch and showed "You · away" until the next push, and the
+                // two texts can wrap differently on a small phone (the row-layout e2e flake on #274).
+                let mut presence = audience.presence;
+                for seat in row.doc.seats_of(identity) {
+                    presence.set(seat, true);
+                }
                 view_of(
                     &row.doc,
                     ViewContext {
@@ -240,7 +247,7 @@ impl Db {
                         identity,
                         now,
                         audience: session::Audience {
-                            presence: audience.presence,
+                            presence,
                             watchers: &audience.watchers,
                             name: &name,
                             person: &person,
