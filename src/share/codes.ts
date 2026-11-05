@@ -19,13 +19,9 @@ export type TesterCodes = { codes: TesterCode[] };
 // `by` is the person id of the inviter: the `by` value of the invite link (/share?by=<person id>), or null.
 export type ClaimRequest = { email: string; name: string; by: PersonId | null };
 export type ClaimedCode = { code: string };
-// One entry of the TESTER_CODES setting: a free code, or a code that `name` holds already.
-export type TesterCodeEntry = { code: string; name: string | null };
 
 const isTesterCode = (value: unknown): value is string =>
   typeof value === 'string' && value.length >= CODE_MIN_LENGTH && value.length <= CODE_MAX_LENGTH && [...value].every((char) => CODE_CHARS.includes(char));
-
-export const hintOf = (code: string): string => code.slice(0, HINT_LENGTH);
 
 // A display name: 1 to 40 characters after a trim, with the spaces inside joined to one.
 // Letters and digits of every script, spaces, and the marks of names: - _ . '
@@ -58,30 +54,6 @@ export function parseClaimRequest(value: unknown): ClaimRequest | undefined {
   const name = parseTesterName(value.name);
   const by = value.by === undefined || value.by === null ? null : parsePersonId(value.by);
   return email === undefined || name === undefined || by === undefined ? undefined : { email, name, by };
-}
-
-// The TESTER_CODES setting: entries split by commas or new lines. An entry is `CODE` (free) or
-// `CODE=Name` (given out already, to Name). It throws on a bad entry, so a typo stops the API start.
-export function parseTesterCodeEntries(text: string): TesterCodeEntry[] {
-  const entries = text
-    .split('\n')
-    .flatMap((line) => line.split(','))
-    .map((entry) => entry.trim())
-    .filter((entry) => entry !== '');
-  const seen = new Set<string>();
-  return entries.map((entry, index) => {
-    const equals = entry.indexOf('=');
-    const code = (equals === -1 ? entry : entry.slice(0, equals)).trim();
-    if (!isTesterCode(code)) {
-      throw new Error(`TESTER_CODES entry ${index + 1}: a code has ${CODE_MIN_LENGTH} to ${CODE_MAX_LENGTH} characters from A-Z and 0-9`);
-    }
-    if (seen.has(code)) throw new Error(`TESTER_CODES entry ${index + 1}: the code ${hintOf(code)}… comes twice`);
-    seen.add(code);
-    if (equals === -1) return { code, name: null };
-    const name = parseTesterName(entry.slice(equals + 1));
-    if (name === undefined) throw new Error(`TESTER_CODES entry ${index + 1}: the name after "=" is not a valid name`);
-    return { code, name };
-  });
 }
 
 const GRAVATAR_HASH_LENGTH = 64;

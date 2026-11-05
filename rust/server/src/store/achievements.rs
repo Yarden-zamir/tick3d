@@ -1,5 +1,5 @@
 //! The achievements of each player over their finished games, and achievement_players for the rarity and the
-//! leaderboard (server/store.ts: progressOfTokens, refreshOwners, checkAllAchievements, inviteEvents, inviteFactsOf).
+//! leaderboard.
 use std::collections::{HashMap, HashSet};
 
 use duckdb::{Connection, ToSql};
@@ -33,12 +33,12 @@ pub struct AchievementState {
     rarity: Option<Rarity>,
 }
 
-/// The owner of a seat: the account token of a linked device, else the seat token (ownerOfSeat in server/store.ts).
+/// The owner of a seat: the account token of a linked device, else the seat token.
 fn owner_of_seat(seat: &str, joined: &str) -> String {
     format!("coalesce($account || lpad({joined}.github_id::VARCHAR, 16, '0'), {seat})")
 }
 
-/// The counted games of each player in `source`, as in the rarity (ownedGames in server/store.ts). `counts` is false for a
+/// The counted games of each player in `source`, as in the rarity. `counts` is false for a
 /// game before the player's last "Reset achievements". Bound values: $account and $computer, and those of `source`.
 fn owned_games(source: &str) -> String {
     format!(
@@ -53,8 +53,8 @@ fn owned_games(source: &str) -> String {
     )
 }
 
-/// The games behind a row of achievement_players. A new or removed achievement changes it too ($rules). The text is the
-/// same as in server/store.ts, so both servers write the same signatures.
+/// The games behind a row of achievement_players. A new or removed achievement changes it too ($rules). Change it only with
+/// ACHIEVEMENT_RULES_VERSION: every row of achievement_players then fills again.
 const SIGNATURE: &str = "md5($rules) || ':' || count(*) FILTER (counts) || ':' || coalesce(bit_xor(hash(id)) FILTER (counts), 0)";
 const OWNERS: &str = "CAST($owners AS JSON)::VARCHAR[]";
 
@@ -82,7 +82,7 @@ fn game_row(row: &duckdb::Row, first: usize) -> duckdb::Result<GameRow> {
 const GAME_ROW_COLUMNS: &str =
     "results.public_id, results.doc::JSON::VARCHAR, results.metrics::JSON::VARCHAR, epoch_ms(results.finished_at)";
 
-/// One finished game for the player who holds the seats where `mine` is true (achievementGame in server/store.ts).
+/// One finished game for the player who holds the seats where `mine` is true.
 /// The invites between the player and the opponent come later, from invite_facts_of.
 fn achievement_game(row: &GameRow, mine_x: bool, mine_o: bool) -> ApiResult<AchievementGame> {
     if !mine_x && !mine_o {
@@ -161,7 +161,7 @@ fn opponents_of(games: &[AchievementGame]) -> Vec<String> {
     games.iter().filter_map(|game| game.opponent.clone()).filter(|opponent| seen.insert(opponent.clone())).collect()
 }
 
-/// inviteFactsOf in server/store.ts, for the player with these `tokens` (all of them, the owner too):
+/// The invite facts of the player with these `tokens` (all of them, the owner too):
 /// - invites: the people that the player invited, and the people that those people invited in turn, after the last
 ///   "Reset achievements" (`since`). The events of one person count once. An invite of the player counts for nobody.
 /// - bonds: the first invite in each direction between the player and each opponent, at any time. `opponents` holds the

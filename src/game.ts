@@ -19,7 +19,7 @@ export type Status =
   // The other player ran out of time.
   | { kind: 'timeout'; winner: Player }
   | { kind: 'draw' }
-  // Nobody moved for a long time, so the server ended the game (abandonStale in server/store.ts). It has no result.
+  // Nobody moved for a long time, so the server ended the game (rust/server/src/store/pruning.rs). It has no result.
   | { kind: 'abandoned' };
 
 export type Game = {

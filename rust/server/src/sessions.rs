@@ -1,4 +1,4 @@
-//! The routes of online sessions (server/main.ts: POST /api/sessions and /api/sessions/{code}/...).
+//! The routes of online sessions.
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::time::Duration;

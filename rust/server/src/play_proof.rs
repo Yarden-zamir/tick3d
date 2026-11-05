@@ -1,4 +1,4 @@
-//! Google Play purchase proofs (server/play-proof.ts): a classic Play Integrity request with a server nonce.
+//! Google Play purchase proofs: a classic Play Integrity request with a server nonce.
 //! The access token of the service account stays in memory until it nearly expires, so a check costs one Google call,
 //! not two. A restart drops the outstanding nonces, not the copies.
 use std::collections::HashMap;

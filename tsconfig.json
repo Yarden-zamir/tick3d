@@ -28,7 +28,7 @@
   },
   "include": [
     "src",
-    "server",
+    "contract",
     "e2e",
     "bench",
     "store-images",

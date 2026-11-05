@@ -44,7 +44,7 @@ const OUTGOING: usize = 64;
 /// The actions of one socket that run at once. The page sends one action at a time (it waits for each answer), so a
 /// socket above this is not the page: the server closes it, and the page reconnects. This bounds the tasks, the waiting
 /// answers and the store jobs of one socket.
-/// Limit: the store queue itself (store/mod.rs) is shared with HTTP and has no bound, as in the Node server: many sockets
+/// Limit: the store queue itself (store/mod.rs) is shared with HTTP and has no bound: many sockets
 /// or requests together can still queue many jobs. Revisit with a global admission limit if the store queue ever grows
 /// under real load.
 const MAX_ACTIONS_IN_FLIGHT: usize = 8;

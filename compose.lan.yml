@@ -33,7 +33,7 @@ services:
     logging: *logging
     build:
       context: .
-      target: api
+      target: rust-api
       # The build reads the release name from the commit (Dockerfile), so this needs a git clone, not a worktree or a zip.
       additional_contexts:
         git: .git

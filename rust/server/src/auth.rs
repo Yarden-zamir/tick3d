@@ -1,4 +1,4 @@
-//! GitHub and Google login (server/auth.ts). Login is optional: a player plays with a browser token either way.
+//! GitHub and Google login. Login is optional: a player plays with a browser token either way.
 //! A login links that token to an account, so sessions and stats follow the player across devices.
 //! The account cookie is set for COOKIE_DOMAIN and its subdomains. Every environment that shares AUTH_SECRET can
 //! check the cookie. Without the GitHub settings, login is off.

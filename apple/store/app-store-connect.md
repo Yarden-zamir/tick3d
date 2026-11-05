@@ -1,7 +1,7 @@
 # App Store Connect answers
 
 The `app-store-listing` workflow syncs the texts in `en-US/`, the screenshots, `app-store-connect.json` (category, content rights, age rating) and the price in `store/price-usd.txt`. This file explains those answers and holds the App Privacy answers, which you enter by hand.
-Each answer follows the code: see `/privacy` and `server/store.ts`. Keep the answers consistent with [android/store/play-console.md](../../android/store/play-console.md).
+Each answer follows the code: see `/privacy` and `contract/schema.ts`. Keep the answers consistent with [android/store/play-console.md](../../android/store/play-console.md).
 Privacy policy: https://tick3d.yarden-zamir.com/privacy
 
 ## Synced from app-store-connect.json and store/price-usd.txt

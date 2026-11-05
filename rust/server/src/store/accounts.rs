@@ -1,4 +1,4 @@
-//! The accounts, devices and names behind player tokens (server/store.ts: identityOf, accountsOf, namesOf, audience).
+//! The accounts, devices and names behind player tokens.
 use std::collections::{HashMap, HashSet};
 
 use hmac::{Hmac, KeyInit, Mac};
@@ -289,7 +289,7 @@ impl Db {
         Ok(AudienceData { presence, watchers, names, persons })
     }
 
-    /// The account id in an account token (accountIdOf in server/store.ts).
+    /// The account id in an account token.
     pub fn account_id_in(token: &str) -> i64 {
         let digits = token.strip_prefix(ACCOUNT_TOKEN_PREFIX).expect("an account token has the prefix");
         let digits = digits.trim_start_matches('0');

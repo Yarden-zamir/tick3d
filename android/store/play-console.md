@@ -1,6 +1,6 @@
 # Play Console answers
 
-Paste these answers into Play Console. Each answer follows the code: see `/privacy` and `server/store.ts`.
+Paste these answers into Play Console. Each answer follows the code: see `/privacy` and `contract/schema.ts`.
 Privacy policy: https://tick3d.yarden-zamir.com/privacy
 
 ## Store settings

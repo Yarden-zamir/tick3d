@@ -1,4 +1,4 @@
-//! The hourly clean-up of server/store.ts: pruneEmpty, abandonStale and pruneOld.
+//! The hourly clean-up: empty sessions, stale live games and old rows.
 use tick3d_core::session::{self, SessionDoc};
 
 use super::{Db, now_ms};

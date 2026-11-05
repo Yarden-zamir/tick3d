@@ -1,4 +1,4 @@
-//! The Idempotency-Key header (server/idempotency.ts): a repeat of a keyed request gets the first answer, and
+//! The Idempotency-Key header: a repeat of a keyed request gets the first answer, and
 //! changes nothing. A key counts per player and path for IDEMPOTENCY_TTL.
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};

@@ -1,4 +1,4 @@
-//! The bought copies of the apps (server/main.ts: POST /api/copies/nonce and POST /api/copies). A store proof makes or
+//! The bought copies of the apps (POST /api/copies/nonce and POST /api/copies). A store proof makes or
 //! confirms the copy of a device. The checks of the proofs are in play_proof.rs and apple_proof.rs.
 use std::net::SocketAddr;
 
@@ -16,7 +16,7 @@ use crate::protocol::parse_person_id;
 use crate::sessions::{ok_json, read_json, require_player};
 use crate::store::now_ms;
 
-/// APP_OPENS_PER_HOUR in server/api-docs.ts, for app opens and for nonces.
+/// APP_OPENS_PER_HOUR in contract/api-docs.ts, for app opens and for nonces.
 static ALLOW_APP_OPEN: Limiter = Limiter::new(60, 3_600_000, 10_000, "Too many app reports from this address. Try again later.");
 static ALLOW_PROOF_NONCE: Limiter = Limiter::new(60, 3_600_000, 10_000, "Too many purchase checks from this address.");
 /// A proof is at most 32 KiB of text, inside a body of at most 40 KiB.

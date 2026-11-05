@@ -1,5 +1,4 @@
-//! Delete my data (server/store.ts: deleteFor, deleteData, deletedSince). The comment above deleteFor in
-//! server/store.ts lists what happens to each table.
+//! Delete my data. DATA_TABLES in contract/api-docs.ts lists the tables that it changes.
 use std::collections::{BTreeMap, HashSet};
 
 use serde::Serialize;
@@ -9,7 +8,7 @@ use super::{Db, json_list, now_ms};
 use crate::error::ApiResult;
 use crate::ids::person_id;
 
-/// The tables of the answer (DATA_TABLES in server/api-docs.ts).
+/// The tables of the answer (DATA_TABLES in contract/api-docs.ts).
 const DATA_TABLES: [&str; 18] = [
     "sessions",
     "chat_messages",

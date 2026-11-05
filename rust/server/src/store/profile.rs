@@ -1,5 +1,4 @@
-//! The logins, names, pictures and settings of a player (server/store.ts: linkToken, loginsOf, account, setName,
-//! setAvatar, blocks, statsPrivate).
+//! The logins, names, pictures and settings of a player.
 use axum::http::StatusCode;
 use rand::RngExt;
 use serde::Serialize;
@@ -39,7 +38,7 @@ fn login_key(login: &Login) -> (&'static str, String, Option<&str>) {
     }
 }
 
-/// PROVIDER_NAMES in server/store.ts.
+/// The shown name of a login provider.
 fn provider_label(provider: &str) -> &'static str {
     match provider {
         "github" => "GitHub",

@@ -1,5 +1,5 @@
 //! A second connection for the answers about every player: the achievement check, and later the Everyone stats and the
-//! leaderboard (the reader in server/store.ts). They read every game, so they run on their own thread, one at a time,
+//! leaderboard. They read every game, so they run on their own thread, one at a time,
 //! and the store jobs never wait for them. Each read sees a consistent view of the data while the store thread writes.
 use std::sync::mpsc;
 use std::thread;

@@ -1,4 +1,4 @@
-//! The login routes (server/main.ts: /api/auth/...). The OAuth calls block on the network, so they run in
+//! The login routes (/api/auth/...). The OAuth calls block on the network, so they run in
 //! `spawn_blocking`. Logins are rare, so a blocking client is enough.
 use std::collections::HashMap;
 

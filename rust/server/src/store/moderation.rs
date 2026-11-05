@@ -1,4 +1,4 @@
-//! Reports, moderation and page faults (server/store.ts: report, reports, hideMessage, clearNameOf, deleteDataOf, addEvent).
+//! Reports, moderation and page faults.
 use axum::http::StatusCode;
 use serde::Serialize;
 use tick3d_core::names::name_of;
@@ -48,7 +48,7 @@ pub struct Reports {
     actions: Vec<ModerationAction>,
 }
 
-/// The person behind a public person id (statsPersonOf in server/store.ts): the canonical token, every token, and the
+/// The person behind a public person id: the canonical token, every token, and the
 /// name and the account that the games show.
 pub struct StatsPerson {
     pub owner: String,

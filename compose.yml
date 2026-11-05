@@ -41,7 +41,6 @@ services:
     restart: unless-stopped
 
   # The API: the Rust server (rust/server) with a DuckDB file on the sessions volume. Caddy in `site` proxies /api/* here.
-  # It reads the same file as the Node server did, so a switch back to `target: api` keeps the data.
   api:
     logging: *logging
     build:
@@ -72,7 +71,7 @@ services:
       PREVIEWS_DOMAIN: tick3d.yarden-zamir.com
       # prod or pr-<n>. Only prod calls GitHub; every other environment reads the list from production.
       KITSHN_ENVIRONMENT: ${KITSHN_ENVIRONMENT}
-      # The Google Play promo codes of the /share page, from the KITSHN_TESTER_CODES secret (server/tester-codes.ts).
+      # The Google Play promo codes of the /share page, from the KITSHN_TESTER_CODES secret (rust/server/src/tester_codes.rs).
       # Only prod reads them, so a preview database never holds a real code.
       TESTER_CODES: ${TESTER_CODES:-}
       # KITSHN_PLAY_SERVICE_ACCOUNT_JSON is separate from the upload signing key.
