@@ -77,8 +77,10 @@ pub async fn watch(app: App) {
                 Some(PlayStage::Live) => {
                     app.stores.play_live.store(true, Ordering::Relaxed);
                     println!("the Play listing is public: the app is live on Google Play");
-                    if let Err(error) = app.store.call(|db| db.mark_play_live()).await {
-                        eprintln!("the Play stage cannot be stored: {error:?}");
+                    // The mark keeps the stage across restarts, so the task ends only once it is stored.
+                    while let Err(error) = app.store.call(|db| db.mark_play_live()).await {
+                        eprintln!("the Play stage cannot be stored, it tries again: {error:?}");
+                        tokio::time::sleep(RETRY_AFTER).await;
                     }
                 }
                 Some(PlayStage::Testing) => wait = CHECK_EVERY,
