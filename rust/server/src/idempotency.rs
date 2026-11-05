@@ -230,6 +230,7 @@ mod tests {
             snapshots: snapshots::Snapshots::default(),
             play: play_proof::PlayProof::from_env().unwrap(),
             apple: None,
+            stores: crate::stores::Stores::default(),
         }));
         let router = routes::router(app);
         // Poll the first request once, so it starts, then drop it, as a client that leaves.

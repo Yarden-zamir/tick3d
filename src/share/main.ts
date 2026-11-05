@@ -1,5 +1,6 @@
-// The share page (/share): the invite link, the steps to join the closed test on Android or iPhone, and the Google Play
+// The share page (/share): the invite link, the way to get the app on Android or iPhone, and the free Google Play
 // promo codes of the Android path (src/share/codes.ts). The page keeps the codes that it claimed in localStorage.
+// It has two pages in one (src/share/version.ts): the closed test, then the page for everyone once the app is live.
 import '../style.css';
 import './share.css';
 import { element } from '../element.ts';
@@ -13,8 +14,10 @@ import { type Countdown, countdown, formatLeft } from './countdown.ts';
 import { inviteUrl, inviterOf } from './invite.ts';
 import { PHONES, type Phone, isPhone, phoneOf } from './phone.ts';
 import { askReminder, remind, reminderSupport } from './reminder.ts';
+import { playStage, showShareSiteInIosWhenLive } from '../stores.ts';
 import { type Progress, STEPS, type StepId, force, markDone, parseProgress, stepStates } from './steps.ts';
 import type { PersonId } from '../protocol.ts';
+import { type ShareVersion, knownVersion, versionOf } from './version.ts';
 
 // The person id of this player, for the invite link. It stays null until GET /api/me answers.
 let me: PersonId | null = null;
@@ -123,10 +126,12 @@ shareButton.addEventListener('click', () => void sharePage());
 // link as the big button. "Play online with a friend" opens the game page, which starts the game.
 const headerShareMenu = element('#game-share-menu', HTMLDivElement);
 element('#game-share-play', HTMLButtonElement).addEventListener('click', () => location.assign(PLAY_ONLINE_HREF));
-element('#game-share-site', HTMLButtonElement).addEventListener('click', () => {
+const shareSite = element('#game-share-site', HTMLButtonElement);
+shareSite.addEventListener('click', () => {
   headerShareMenu.hidePopover();
   void sharePage();
 });
+showShareSiteInIosWhenLive(shareSite);
 
 // ---- Storage ----
 
@@ -203,17 +208,22 @@ for (const step of Object.values(STEPS).flat()) {
 
 // The countdown of the wait, while a step waits.
 let wait: Countdown | null = null;
+// The page of /share that shows, or undefined until the server answers (see Start).
+let version: ShareVersion | undefined;
 
 function renderSteps(): void {
   let waiting = false;
+  // Only the closed test has an order of steps. On the page for everyone, a player can buy the app without a code.
+  const ordered = version === 'testing';
   for (const phone of PHONES) {
     for (const { step, state } of stepStates(progress, phone, Date.now())) {
       const item = stepItems.get(step);
       const forceButton = forceButtons.get(step);
       if (item === undefined || forceButton === undefined) throw new Error(`no element for the step ${step}`);
-      item.dataset.state = state;
-      forceButton.hidden = state !== 'locked' && state !== 'waiting';
-      if (state === 'waiting') waiting = true;
+      if (ordered) item.dataset.state = state;
+      else delete item.dataset.state;
+      forceButton.hidden = !ordered || (state !== 'locked' && state !== 'waiting');
+      if (ordered && state === 'waiting') waiting = true;
     }
   }
   waitBox.hidden = !waiting;
@@ -262,7 +272,7 @@ function showPhone(phone: Phone | null): void {
     paths[each].hidden = each !== phone;
   }
   if (phone === 'android' && !codesLoaded) void loadCodes();
-  if (phone === 'iphone' && !qrShown) {
+  if (phone === 'iphone' && version === 'testing' && !qrShown) {
     qrShown = true;
     void renderQr(inviteLink.href).then((svg) => inviteQr.append(svg));
   }
@@ -590,6 +600,22 @@ element('#claim-cancel', HTMLButtonElement).addEventListener('click', () => dial
 element('#claim-close', HTMLButtonElement).addEventListener('click', () => dialog.close());
 
 // ---- Start ----
+
+// Both pages stay hidden until the page knows which one shows (share.css), so a visitor never sees the wrong one.
+function showVersion(next: ShareVersion): void {
+  version = next;
+  document.body.dataset.shareVersion = next;
+  renderSteps();
+  // The TestFlight QR code of the closed test draws once its page is known.
+  if (choices.iphone.getAttribute('aria-pressed') === 'true') showPhone('iphone');
+}
+
+const known = knownVersion(location.search, readStored(STORAGE_KEYS.playLive) === true);
+if (known !== undefined) showVersion(known);
+void playStage().then((stage) => {
+  if (stage === 'live') writeStored(STORAGE_KEYS.playLive, true);
+  if (known === undefined) showVersion(versionOf(stage));
+});
 
 const stored = readStored(STORAGE_KEYS.testerPhone);
 renderMine();

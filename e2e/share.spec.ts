@@ -4,6 +4,8 @@ import { STORAGE_KEYS } from '../src/storage-keys.ts';
 import { expect, test } from './fixtures.ts';
 
 // The share page (/share) with a fake code list, so the test needs no real codes. A preview has none.
+// The closed-test page is fixed with ?version=testing: once the app is live, /share shows the page for everyone.
+const TESTING = `${PAGES.share.path}?version=testing`;
 
 const CODE = 'B9WQ4T7XK2M8RZ5P3N6H1JD';
 type Card = { id: number; hint: string; claimed: boolean; name: string | null; gravatar: string | null };
@@ -41,7 +43,7 @@ async function openCodeStep(page: Page): Promise<void> {
 }
 
 test('the page asks for the phone, and each phone shows its own steps', async ({ open }) => {
-  const { page } = await open({ path: PAGES.share.path });
+  const { page } = await open({ path: TESTING });
   await expect(page.locator('#android-path')).toBeHidden();
   await expect(page.locator('#iphone-path')).toBeHidden();
   await page.getByRole('button', { name: 'iPhone' }).click();
@@ -53,8 +55,24 @@ test('the page asks for the phone, and each phone shows its own steps', async ({
   await expect(page.getByRole('button', { name: 'iPhone' })).toHaveAttribute('aria-pressed', 'true');
 });
 
+test('the page for everyone keeps the codes and the invite link, without the closed-test steps', async ({ open }) => {
+  const { page } = await open({ path: `${PAGES.share.path}?version=general` });
+  await fakeCodes(page);
+  await expect(page.getByRole('heading', { name: 'Get tick3d' })).toBeVisible();
+  await page.getByRole('button', { name: 'Android' }).click();
+  await expect(step(page, 'group')).toBeHidden();
+  await expect(step(page, 'tester')).toBeHidden();
+  // No order of steps: the code step and Install are open at once, with no "Open now".
+  await expect(step(page, 'code')).not.toHaveAttribute('data-state');
+  await expect(step(page, 'install').getByRole('link', { name: 'Install from Play' })).toBeVisible();
+  await expect(card(page, 'B9W')).toBeVisible();
+  await page.getByRole('button', { name: 'iPhone' }).click();
+  await expect(page.locator('#testflight-link')).toBeHidden();
+  await expect(page.getByRole('link', { name: 'Play now' })).toBeVisible();
+});
+
 test('the steps open in order, with a wait before the code step, and a tap opens a step early', async ({ open }) => {
-  const { page } = await open({ path: PAGES.share.path });
+  const { page } = await open({ path: TESTING });
   // The links open Google in a new tab. The test needs only the tap.
   await page.context().route(/^https:\/\/(groups|play)\.google\.com\//, (route) => route.fulfill({ body: '' }));
   await page.getByRole('button', { name: 'Android' }).click();
@@ -81,7 +99,7 @@ test('the steps open in order, with a wait before the code step, and a tap opens
 });
 
 test('a claim shows the code, and a second claim asks first', async ({ open }) => {
-  const { page } = await open({ path: PAGES.share.path });
+  const { page } = await open({ path: TESTING });
   await fakeCodes(page);
   await openCodeStep(page);
   await expect(card(page, 'K7Q')).toHaveAttribute('data-state', 'taken');
@@ -112,7 +130,7 @@ test('a claim shows the code, and a second claim asks first', async ({ open }) =
 });
 
 test('a code that somebody else took first turns taken, with a message', async ({ open }) => {
-  const { page } = await open({ path: PAGES.share.path });
+  const { page } = await open({ path: TESTING });
   await fakeCodes(page, [2]);
   await openCodeStep(page);
   await card(page, 'B9W').click();
@@ -125,14 +143,14 @@ test('a code that somebody else took first turns taken, with a message', async (
 });
 
 test('without free codes, the page says whom to ask', async ({ open }) => {
-  const { page } = await open({ path: PAGES.share.path });
+  const { page } = await open({ path: TESTING });
   await page.route('**/api/testing/codes', (route) => route.fulfill({ json: { codes: [{ id: 1, hint: 'K7Q', claimed: true, name: 'Tom', gravatar: null }] } }));
   await page.getByRole('button', { name: 'Android' }).click();
   await expect(page.locator('#codes-empty')).toBeVisible();
 });
 
 test('a refresh turns a card that another tester took in its own slot, without a new grid', async ({ open }) => {
-  const { page } = await open({ path: PAGES.share.path });
+  const { page } = await open({ path: TESTING });
   const codes: Card[] = Array.from({ length: 30 }, (_, i) => ({ id: i + 1, hint: `C${String(i).padStart(2, '0')}`, claimed: false, name: null, gravatar: null }));
   await page.route('**/api/testing/codes', (route) => route.fulfill({ json: { codes } }));
   await page.getByRole('button', { name: 'Android' }).click();
@@ -158,7 +176,7 @@ test('a refresh turns a card that another tester took in its own slot, without a
 
 test('an invite link credits its first inviter in the claim, and the share button shares the own invite link', async ({ open }) => {
   const INVITER = '0123456789abcdef';
-  const { page } = await open({ path: `${PAGES.share.path}?by=${INVITER}` });
+  const { page } = await open({ path: `${TESTING}&by=${INVITER}` });
   await fakeCodes(page);
   // The share sheet gets the link only, with the person id of this browser.
   await page.evaluate(() => {
@@ -179,8 +197,8 @@ test('an invite link credits its first inviter in the claim, and the share butto
     .toEqual({ url: `${new URL(page.url()).origin}/share?by=${me.person}` });
 
   // A later visit with another inviter, or none, keeps the first one.
-  await page.goto(`${PAGES.share.path}?by=fedcba9876543210`);
-  await page.goto(`${PAGES.share.path}?by=bad`);
+  await page.goto(`${TESTING}&by=fedcba9876543210`);
+  await page.goto(`${TESTING}&by=bad`);
   await openCodeStep(page);
   await card(page, 'B9W').click();
   await page.getByLabel('Google Play email').fill('dana@example.com');
@@ -191,7 +209,7 @@ test('an invite link credits its first inviter in the claim, and the share butto
 });
 
 test('the header Share menu shares the invite link, and Play online starts a game on the game page', async ({ open }) => {
-  const { page } = await open({ path: PAGES.share.path });
+  const { page } = await open({ path: TESTING });
   await page.evaluate(() => {
     Object.assign(navigator, {
       share: async (data: ShareData) => {

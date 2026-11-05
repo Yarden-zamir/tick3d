@@ -1343,6 +1343,18 @@ function parsePreview(value: unknown): Preview | undefined {
   return { number, title, description, url, previewUrl, updatedAt, draft, contributors: people, parent, toy, images: parsedImages };
 }
 
+// GET /api/stores: where the apps stand in the stores (rust/server/src/stores.rs). testing: only testers get the
+// Android app (the closed test). live: everyone gets it from Google Play.
+export const PLAY_STAGES = ['testing', 'live'] as const;
+export type PlayStage = (typeof PLAY_STAGES)[number];
+export type Stores = { play: PlayStage };
+
+export function parseStores(value: unknown): Stores | undefined {
+  if (!isRecord(value)) return undefined;
+  const play = PLAY_STAGES.find((stage) => stage === value.play);
+  return play === undefined ? undefined : { play };
+}
+
 export function parsePreviews(value: unknown): Previews {
   if (!isRecord(value) || !Array.isArray(value.previews) || !(value.error === null || typeof value.error === 'string')) {
     throw new Error('invalid answer from /api/previews');
