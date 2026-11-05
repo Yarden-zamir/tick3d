@@ -75,6 +75,9 @@ pub struct Store {
 /// Prepared statements kept per connection (duckdb-rs keeps 16 by default).
 const STATEMENT_CACHE: usize = 256;
 
+/// The mark in the migrations table of an app that is live on Google Play (Db::play_live).
+const PLAY_LIVE: &str = "play-listing-live";
+
 /// The GitHub account of the maintainer Yarden (login Yarden-zamir), for the migration 'tester-invites-before-links'.
 const YARDEN_GITHUB_ID: i64 = 8178413;
 
@@ -230,6 +233,21 @@ impl Db {
             )
         })?;
         self.sessions.load_known_codes(&self.conn)
+    }
+
+    /// True once the Android app was live on Google Play (stores.rs). The migrations table keeps the mark, because it
+    /// is a fact that happens once per database, like a migration.
+    pub fn play_live(&self) -> ApiResult<bool> {
+        let count: i64 = self.conn.query_row(
+            "SELECT count(*) FROM migrations WHERE name = $name",
+            duckdb::named_params! { "name": PLAY_LIVE },
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    pub fn mark_play_live(&mut self) -> ApiResult<()> {
+        Ok(self.run_once(PLAY_LIVE, |_| Ok(()))?)
     }
 
     /// Runs `task` once per database: the migrations table keeps the name, so a later start skips it.

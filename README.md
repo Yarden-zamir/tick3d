@@ -224,7 +224,7 @@ Both come from `contract/api-docs.ts`. The routes that change a game accept an `
 
 - The closed-test page: Android (Google Group, Play testing, a free code, install) and iPhone (TestFlight), with the steps in order.
 - The page for everyone: Android (a free code while codes last, then install from Play) and iPhone (play in Safari), with no order of steps.
-- The page for everyone shows once the Android app is live on Google Play. The server reads the public Play listing at start and every hour: 404 means the closed test, 200 means live (`rust/server/src/stores.rs`, `GET /api/stores`). Nobody needs to switch it. Limit: an open test would also make the listing public.
+- The page for everyone shows once the Android app is live on Google Play. The server reads the public Play listing at start and every hour: 404 means the closed test, 200 means live (`rust/server/src/stores.rs`, `GET /api/stores`). The database keeps a live stage, so a restart does not turn it back. A check that gets no answer runs again after 5 minutes. Nobody needs to switch it. Limit: an open test would also make the listing public.
 - A browser that saw the app live keeps the page for everyone. `?version=testing` or `?version=general` opens one page, for a review.
 
 The page was `/testing` before: `/testing` redirects to `/share` with the query (`container/Caddyfile`), so the links sent before the rename keep working. The old host `testing.tick3d.yarden-zamir.com` is gone (see `kitshn.md`): use `https://tick3d.yarden-zamir.com/share`.

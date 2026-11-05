@@ -18,6 +18,8 @@ use crate::sessions::ok_json;
 
 /// The server checks the listing at start, then this often, until the app is live.
 const CHECK_EVERY: Duration = Duration::from_secs(3600);
+/// After an answer that tells nothing (an error, a time-out), the next check comes sooner.
+const RETRY_AFTER: Duration = Duration::from_secs(300);
 const TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -29,8 +31,8 @@ pub enum PlayStage {
     Live,
 }
 
-/// Once live, the stage stays live while the process runs, so a later error or a short outage at Google cannot turn
-/// the pages back.
+/// Once live, the stage stays live: the database keeps it (Db::mark_play_live), so a restart, a later error or a short
+/// outage at Google cannot turn the pages back.
 #[derive(Default)]
 pub struct Stores {
     play_live: AtomicBool,
@@ -51,13 +53,20 @@ fn stage_of(status: u16) -> Option<PlayStage> {
     }
 }
 
-/// Checks the Play listing at start, then every CHECK_EVERY, until the app is live. A LAN host does not call it.
+/// Reads the stage that the database keeps, then checks the Play listing at start and every CHECK_EVERY until the app
+/// is live. A LAN host does not call it.
 pub async fn watch(app: App) {
+    match app.store.call(|db| db.play_live()).await {
+        Ok(true) => app.stores.play_live.store(true, Ordering::Relaxed),
+        Ok(false) => {}
+        Err(error) => eprintln!("the stored Play stage cannot be read: {error:?}"),
+    }
     let url = format!("https://play.google.com/store/apps/details?id={PACKAGE_ID}&hl=en");
     let agent = ureq::Agent::config_builder().http_status_as_error(false).timeout_global(Some(TIMEOUT)).build().new_agent();
-    let mut interval = tokio::time::interval(CHECK_EVERY);
+    let mut wait = Duration::ZERO;
     while app.stores.play() == PlayStage::Testing {
-        interval.tick().await;
+        tokio::time::sleep(wait).await;
+        wait = RETRY_AFTER;
         let (agent, url) = (agent.clone(), url.clone());
         let answer = tokio::task::spawn_blocking(move || {
             agent.get(&url).header("user-agent", "tick3d").call().map(|response| response.status().as_u16())
@@ -68,8 +77,11 @@ pub async fn watch(app: App) {
                 Some(PlayStage::Live) => {
                     app.stores.play_live.store(true, Ordering::Relaxed);
                     println!("the Play listing is public: the app is live on Google Play");
+                    if let Err(error) = app.store.call(|db| db.mark_play_live()).await {
+                        eprintln!("the Play stage cannot be stored: {error:?}");
+                    }
                 }
-                Some(PlayStage::Testing) => {}
+                Some(PlayStage::Testing) => wait = CHECK_EVERY,
                 None => eprintln!("the Play listing answered {status}"),
             },
             Ok(Err(error)) => eprintln!("the Play listing check failed: {error}"),
@@ -98,6 +110,22 @@ mod tests {
         for status in [301, 403, 429, 500, 503] {
             assert_eq!(stage_of(status), None, "{status}");
         }
+    }
+
+    /// The mark stays in the database, so the next start reads the app as live before it asks Google.
+    #[tokio::test]
+    async fn the_database_keeps_a_live_app() {
+        let dir = std::env::temp_dir().join(format!("tick3d-stores-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.duckdb");
+        let _ = std::fs::remove_file(&path);
+        let live = crate::live::Live::new();
+        let store = crate::store::Store::open(path.to_str().unwrap(), live.clone()).unwrap();
+        live.set_store(store.clone());
+        assert!(!store.call(|db| db.play_live()).await.unwrap());
+        store.call(|db| db.mark_play_live()).await.unwrap();
+        store.call(|db| db.mark_play_live()).await.unwrap();
+        assert!(store.call(|db| db.play_live()).await.unwrap());
     }
 
     #[test]
