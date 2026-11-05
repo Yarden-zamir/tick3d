@@ -508,6 +508,11 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       additionalProperties: ref('DeviceGameId'),
       description: 'By result id: the public id that the server keeps for a result, when it differs from the one that the device sent.',
     },
+    refused: {
+      type: 'array',
+      description: 'The results that the server refused, by their place in the request list. The other results of the upload are stored. A device does not send a refused result again.',
+      items: object('One refused result.', { index: count('The place of the result in the request list, from 0.'), error: { type: 'string' } }),
+    },
   }),
   Ok: object('Done.', { ok: { const: true } }),
   GoogleCredential: object('The ID token that Google One Tap gave the page.', { credential: { type: 'string', description: 'A JWT that Google signed for the Google client of this server.' } }),
@@ -1804,11 +1809,11 @@ export const ROUTES = {
     },
     response: {
       status: 200,
-      description: 'How many results were new, and the public ids that the server changed.',
+      description: 'How many results were new, the public ids that the server changed, and the results that it refused: one that is not a valid finished game, or one whose guest is your own player id.',
       schema: 'ResultsResponse',
-      example: { stored: 2, renamed: {} },
+      example: { stored: 2, renamed: {}, refused: [] },
     },
-    errors: [BAD_PLAYER, { status: 400, when: `There is no results list, it has more than ${RESULTS_PER_UPLOAD} results, a result is not a valid finished game, or a guest is your own player id.` }, { status: 413, when: 'The body is larger than 256 kB.' }],
+    errors: [BAD_PLAYER, { status: 400, when: `There is no results list, or it has more than ${RESULTS_PER_UPLOAD} results.` }, { status: 413, when: 'The body is larger than 256 kB.' }],
     examplePlayer: AGENT_A,
   },
   'GET /api/auth/login': {

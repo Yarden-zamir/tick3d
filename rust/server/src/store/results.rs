@@ -16,6 +16,13 @@ pub struct QueuedUpload {
     pub outcome: oneshot::Receiver<Result<ResultOutcome, String>>,
 }
 
+/// An upload that the server refuses, by its place in the request list, so the device stops sending it.
+#[derive(Debug, PartialEq, Eq)]
+pub struct RefusedUpload {
+    pub index: usize,
+    pub error: &'static str,
+}
+
 /// The seat tokens of a result from a device. Its player holds `you`, or both seats in a friend game.
 /// A Nearby host also names the guest on the other seat.
 fn seat_tokens(token: &str, you: Option<Player>, guest: Option<&str>) -> PerPlayer<Option<String>> {
@@ -24,18 +31,22 @@ fn seat_tokens(token: &str, you: Option<Player>, guest: Option<&str>) -> PerPlay
 }
 
 impl Db {
-    /// Queues the finished games of one upload. The job answers after the batch that writes them.
-    pub fn add_results(&mut self, token: &str, uploads: &[Value]) -> ApiResult<Vec<QueuedUpload>> {
+    /// Queues the finished games of one upload. The job answers after the batch that writes them. A result that is not
+    /// valid is refused on its own, so one bad result never blocks the others of the device.
+    pub fn add_results(&mut self, token: &str, uploads: &[Value]) -> (Vec<QueuedUpload>, Vec<RefusedUpload>) {
         let now = now_ms();
-        let results = uploads
-            .iter()
-            .map(|upload| parse_result_upload(metric_lists(), upload, now))
-            .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| ApiError::bad_request("A result is not a valid finished game."))?;
-        if results.iter().any(|result| result.guest.as_deref() == Some(token)) {
-            return Err(ApiError::bad_request("The guest of a Nearby game needs its own player token."));
+        let mut results = Vec::new();
+        let mut refused = Vec::new();
+        for (index, upload) in uploads.iter().enumerate() {
+            match parse_result_upload(metric_lists(), upload, now) {
+                None => refused.push(RefusedUpload { index, error: "A result is not a valid finished game." }),
+                Some(result) if result.guest.as_deref() == Some(token) => {
+                    refused.push(RefusedUpload { index, error: "The guest of a Nearby game needs its own player token." });
+                }
+                Some(result) => results.push(result),
+            }
         }
-        Ok(results
+        let queued = results
             .into_iter()
             .map(|result| {
                 // The metrics go to their own column, and the guest's token to its seat column, not into the stored game.
@@ -63,7 +74,8 @@ impl Db {
                 });
                 QueuedUpload { id: result.id, asked, outcome }
             })
-            .collect())
+            .collect();
+        (queued, refused)
     }
 
     /// The finished game of an online id in its session, or a 404.
