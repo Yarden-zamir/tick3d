@@ -21,6 +21,7 @@ import {
   type PlayerInfo,
   type PlayerToken,
   type Previews,
+  type Stores,
   type ReportReason,
   type PublicGame,
   RESULTS_PER_UPLOAD,
@@ -42,6 +43,7 @@ import {
   parsePersonId,
   parsePlayerInfo,
   parsePreviews,
+  parseStores,
   parsePublicGame,
   parseSessionView,
   parseLeaderboard,
@@ -349,6 +351,11 @@ export const api = {
   report: (report: { reason: ReportReason; note: string } & ({ code: Code; message: number } | { code?: Code; person: PersonId })) =>
     call('POST', '/reports', report),
   previews: async (): Promise<Previews> => parsePreviews(await call('GET', '/previews')),
+  stores: async (): Promise<Stores> => {
+    const stores = parseStores(await call('GET', '/stores'));
+    if (stores === undefined) throw new Error('invalid answer from /api/stores');
+    return stores;
+  },
   // The promo codes of the Android closed test (/share).
   testerCodes: async (): Promise<TesterCodes> => {
     const codes = parseTesterCodes(await call('GET', '/testing/codes'));

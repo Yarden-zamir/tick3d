@@ -27,6 +27,7 @@ mod snapshots;
 mod socket;
 mod stats;
 mod store;
+mod stores;
 mod tester_codes;
 
 use std::net::SocketAddr;
@@ -60,6 +61,8 @@ pub struct AppState {
     pub play: play_proof::PlayProof,
     /// None when the Apple checks are not configured.
     pub apple: Option<apple_proof::AppleProof>,
+    /// Where the apps stand in the stores (stores.rs).
+    pub stores: stores::Stores,
 }
 
 impl std::ops::Deref for App {
@@ -171,7 +174,12 @@ async fn main() {
         snapshots: snapshots::Snapshots::default(),
         play: play_proof::PlayProof::from_env().unwrap_or_else(|error| panic!("{error}")),
         apple: apple_proof::AppleProof::from_env().unwrap_or_else(|error| panic!("{error}")),
+        stores: stores::Stores::default(),
     }));
+    // A LAN host may have no internet, and its page has no store links to switch.
+    if app.lan_host.is_none() {
+        tokio::spawn(stores::watch(app.clone()));
+    }
     let writer = store.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(SESSION_WRITE);
