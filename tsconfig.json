@@ -31,6 +31,7 @@
     "server",
     "e2e",
     "bench",
+    ".github/scripts",
     "store-images",
     "video/creative",
     "vite.config.ts"
