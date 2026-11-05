@@ -17,6 +17,31 @@ SEED_FILE=/tmp/bench-seed.duckdb OHA=~/.cargo/bin/oha \
 - `SEED_FILE` keeps the seed between runs. Seeding takes about 3 minutes.
 - The VPS is noisy. For an A/B comparison, run the binaries in turn several times, and compare the pairs.
 
+## Launch load on a preview (2026-11-05)
+
+`preview-load.sh` runs the game loop over the WebSocket against a deployed site while `oha` reads the stats, the leaderboard and the page at about 20 requests per second. It stops when production health slows down. The client ran on the VPS, so each request went out to Cloudflare and back.
+
+```sh
+OHA=~/.cargo/bin/oha bench/preview-load.sh https://tick3d-pr-279.yarden-zamir.com 50 1 60
+```
+
+| Measure | Result |
+|---|---|
+| 50 online games at the same time (100 players), 350 moves over the WebSocket | all done, 56 moves/s |
+| Move answer p50 / p90 / p99 | 66 / 549 / 752 ms |
+| Delivery to the opponent p50 / p90 / p99 | 70 / 321 / 752 ms |
+| Reads at 21 requests/s: stats, leaderboard, page p50 / p99 | 36–48 / 300–476 ms, all 200 |
+| Production health during the run | median 0.20 s, max 0.40 s; the guard did not stop the run |
+
+All 50 games started in the same second and moved without a pause, which is harsher than real players. The move p90 comes from the move that ends a game: its answer waits up to 200 ms for the result batch, plus two trips through Cloudflare.
+
+Limits:
+
+- 🔴 The limits count per client address. Many phones share one IPv4 address behind a mobile carrier (CGNAT), and so do schools and offices. Behind one address, all players together get 60 new games per hour (`CREATES_PER_HOUR`), 60 app opens and 60 purchase checks per hour (`APP_OPENS_PER_HOUR`, `rust/server/src/copies.rs`), and 5 code claims per hour (`TESTER_CLAIMS_PER_HOUR`). The 61st player on such an address gets 429. Revisit before the launch if Play installs come mostly from mobile data: raise the limits, or count per player token with a looser cap per address.
+- The counts live in memory and reset with each deploy (`rust/server/src/limits.rs`).
+- This test cannot pass 60 games per hour per site from one machine. A larger test needs more client addresses, or a preview with higher limits.
+- Previews and production share the 4 cores of the VPS. During the run the load average reached 3.7, with other builds on the machine too.
+
 The results below compare the Node API, which this repository removed after the Rust server went live on 2026-11-04, with the Rust API. They stay as the record of that switch.
 
 ## Method
