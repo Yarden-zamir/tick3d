@@ -23,6 +23,7 @@ use crate::results;
 use crate::sessions;
 use crate::socket;
 use crate::stats;
+use crate::stores;
 use crate::tester_codes;
 use axum::middleware::from_fn_with_state;
 
@@ -31,6 +32,7 @@ type Entry = (&'static str, fn(MethodFilter) -> MethodRouter<App>);
 /// The routes, by the name in contract/api-docs.ts.
 static ROUTES: &[Entry] = &[
     ("GET /api/health", |method| on(method, health)),
+    ("GET /api/stores", |method| on(method, stores::stores)),
     ("GET /api/openapi.json", |method| on(method, docs::openapi)),
     ("GET /api/docs", |method| on(method, docs::docs_page)),
     ("POST /api/sessions", |method| on(method, sessions::create)),

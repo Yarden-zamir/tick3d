@@ -779,3 +779,13 @@
   justify-content: flex-end;
   gap: 0.6rem;
 }
+
+/* The two pages of /share (src/share/version.ts). Both stay hidden until the page knows which one shows. */
+body:not([data-share-version='testing']) [data-only='testing'],
+body:not([data-share-version='general']) [data-only='general'] {
+  display: none;
+}
+
+body:not([data-share-version]) [data-general-text] {
+  visibility: hidden;
+}

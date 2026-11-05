@@ -25,6 +25,8 @@ export const STORAGE_KEYS = {
   testerSteps: 'tick3d.tester-steps',
   // The person id of the first invite link that brought this browser to /share (src/share/invite.ts).
   testerInvitedBy: 'tick3d.tester-invited-by',
+  // Set once /share learned that the app is live on Google Play, so a later visit shows the launch page at once (src/share/version.ts).
+  playLive: 'tick3d.play-live',
   // The achievements that this device showed already, in a popup or on an end card (src/page/achievement-popup.ts).
   achievementsSeen: 'tick3d.achievements-seen',
   // Set once the prompt for a name or a login showed on this device (src/page/identity-nudge.ts).
