@@ -41,6 +41,14 @@ jobs:
         with:
           service-account-json: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
 
+      # Without Play access the job does nothing, as for a repository without the app. Once production is on, that
+      # would leave a rollout without a vitals check, so it fails instead.
+      - name: Play access for production
+        if: steps.play.outputs.ready != 'true' && vars.PLAY_RELEASE_TRACK == 'production'
+        run: |
+          echo "::error::PLAY_RELEASE_TRACK is production, but the Play API is not ready (PLAY_SERVICE_ACCOUNT_JSON). The rollout cannot check vitals."
+          exit 1
+
       - name: Rollout
         if: steps.play.outputs.ready == 'true'
         env:

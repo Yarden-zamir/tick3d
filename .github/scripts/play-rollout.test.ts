@@ -41,15 +41,21 @@ describe('the track', () => {
     expect(releasesAfter([staged, previous], { action: 'raise', fraction: 0.2 })).toEqual([{ ...staged, userFraction: 0.2 }, previous]);
     expect(releasesAfter([staged, previous], { action: 'halt', reason: 'x' })).toEqual([{ ...staged, status: 'halted' }, previous]);
     expect(releasesAfter([staged, previous], { action: 'complete' })).toEqual([{ name: '1.2.0', versionCodes: ['42'], status: 'completed' }]);
+    const halted: Release = { name: '1.1.5', versionCodes: ['41'], status: 'halted' };
+    expect(releasesAfter([staged, halted, previous], { action: 'complete' })).toEqual([{ name: '1.2.0', versionCodes: ['42'], status: 'completed' }, halted]);
   });
 });
 
 describe('Android vitals', () => {
-  const row = (code: string, value: string) => ({ dimensions: [{ dimension: 'versionCode', int64Value: code }], metrics: [{ metric: 'm', decimalValue: { value } }] });
+  const row = (code: string, value: string, day: number) => ({
+    startTime: { year: 2026, month: 11, day },
+    dimensions: [{ dimension: 'versionCode', int64Value: code }],
+    metrics: [{ metric: 'm', decimalValue: { value } }],
+  });
 
-  it('reads the newest row of the version', () => {
-    expect(latestRate([row('42', '0.001'), row('41', '0.9'), row('42', '0.002')], 42, 'm')).toBe(0.002);
-    expect(latestRate([row('41', '0.9')], 42, 'm')).toBeUndefined();
+  it('reads the newest day of the version, whatever the order of the rows', () => {
+    expect(latestRate([row('42', '0.002', 4), row('41', '0.9', 5), row('42', '0.001', 3)], 42, 'm')).toBe(0.002);
+    expect(latestRate([row('41', '0.9', 5)], 42, 'm')).toBeUndefined();
   });
 
   it('is bad over a threshold of Google, and has no data without rows', () => {

@@ -47,10 +47,11 @@ export function stagedRelease(releases: Release[]): { release: Release; versionC
   return release === undefined || codes.length === 0 ? undefined : { release, versionCode: Math.max(...codes) };
 }
 
-// The releases of the track after the decision. A completed release replaces the one that was complete before.
+// The releases of the track after the decision. A completed release replaces the one that was complete before. A
+// halted or a draft release stays, for a person to resume or publish.
 export function releasesAfter(releases: Release[], decision: Decision): Release[] {
   return releases.flatMap((release): Release[] => {
-    if (release.status !== 'inProgress') return decision.action === 'complete' ? [] : [release];
+    if (release.status !== 'inProgress') return decision.action === 'complete' && release.status === 'completed' ? [] : [release];
     if (decision.action === 'raise') return [{ ...release, userFraction: decision.fraction }];
     if (decision.action === 'halt') return [{ ...release, status: 'halted' }];
     if (decision.action === 'complete') {
@@ -61,12 +62,23 @@ export function releasesAfter(releases: Release[], decision: Decision): Release[
   });
 }
 
-type Row = { dimensions?: { dimension: string; int64Value?: string; stringValue?: string }[]; metrics?: { metric: string; decimalValue?: { value: string } }[] };
+type Row = {
+  startTime?: { year: number; month: number; day: number };
+  dimensions?: { dimension: string; int64Value?: string; stringValue?: string }[];
+  metrics?: { metric: string; decimalValue?: { value: string } }[];
+};
 
-// The 7-day user-weighted rate of the newest row of the version, or undefined without a row.
+const dayOf = (row: Row): number => {
+  const start = row.startTime;
+  if (start === undefined) throw new Error('a vitals row has no startTime');
+  return Date.UTC(start.year, start.month - 1, start.day);
+};
+
+// The 7-day user-weighted rate of the newest row of the version (by its start day), or undefined without a row.
 export function latestRate(rows: Row[], versionCode: number, metric: string): number | undefined {
   const mine = rows.filter((row) => row.dimensions?.some((d) => d.dimension === 'versionCode' && Number(d.int64Value ?? d.stringValue) === versionCode));
-  const value = mine.at(-1)?.metrics?.find((m) => m.metric === metric)?.decimalValue?.value;
+  const newest = mine.reduce<Row | undefined>((best, row) => (best === undefined || dayOf(row) > dayOf(best) ? row : best), undefined);
+  const value = newest?.metrics?.find((m) => m.metric === metric)?.decimalValue?.value;
   if (value === undefined) return undefined;
   const rate = Number(value);
   if (!Number.isFinite(rate)) throw new Error(`${metric} is not a number: ${value}`);
@@ -146,10 +158,23 @@ async function uploadedAt(ghToken: string, repository: string, versionCode: numb
   throw new Error(`no android run has the run number ${versionCode}`);
 }
 
+// True while an android run is in progress: its upload holds a Play edit, and a new edit would make that edit fail.
+async function uploadRuns(ghToken: string, repository: string): Promise<boolean> {
+  const answer = (await ok(`https://api.github.com/repos/${repository}/actions/workflows/android.yml/runs?status=in_progress&per_page=1`, { token: ghToken })) as {
+    total_count: number;
+  };
+  return answer.total_count > 0;
+}
+
 async function main(): Promise<void> {
   const token = env('TOKEN');
   const pkg = env('PACKAGE');
   const dryRun = process.env.DRY_RUN === '1';
+  // The rollout runs once a day and follows the age of the release, so a skipped day only delays a step.
+  if (await uploadRuns(env('GH_TOKEN'), env('REPOSITORY'))) {
+    console.log('An android run is in progress, so the rollout waits for the next day.');
+    return;
+  }
   const edits = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${pkg}/edits`;
   const edit = (await ok(edits, { token, method: 'POST', body: '{}' })) as { id: string };
   const done = async (commit: boolean) => {
@@ -157,6 +182,11 @@ async function main(): Promise<void> {
     else await request(`${edits}/${edit.id}`, { token, method: 'DELETE' });
   };
   const track = await request(`${edits}/${edit.id}/tracks/production`, { token });
+  // 404: the app has no production track yet. Any other failure must show, not look like an empty track.
+  if (track.status !== 200 && track.status !== 404) {
+    await done(false);
+    throw new Error(`the production track answered ${track.status}: ${JSON.stringify(track.body)}`);
+  }
   const releases = track.status === 200 ? ((track.body as { releases?: Release[] }).releases ?? []) : [];
   const staged = stagedRelease(releases);
   if (staged === undefined) {
