@@ -601,6 +601,34 @@ mod tests {
         answer
     }
 
+    /// One bad result in an upload is refused on its own; the good ones of the same upload are stored.
+    #[tokio::test]
+    async fn refuses_a_bad_result_alone_and_stores_the_others() {
+        use super::super::results::RefusedUpload;
+        let dir = std::env::temp_dir().join(format!("tick3d-refused-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.duckdb");
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(path.to_str().unwrap(), Arc::new(NoPages)).unwrap();
+        let all = uploads(super::super::now_ms());
+        // Three games without a guest, a broken one at index 1, and at the end a Nearby game that names the uploader as its guest.
+        let mut batch = all[..3].to_vec();
+        batch.insert(1, json!({ "id": "broken-result-0001", "mode": "computer" }));
+        batch.push(all[4].clone());
+        let (queued, refused) = store.call(move |db| Ok(db.add_results(GUEST, &batch))).await.unwrap();
+        assert_eq!(
+            refused,
+            [
+                RefusedUpload { index: 1, error: "A result is not a valid finished game." },
+                RefusedUpload { index: 4, error: "The guest of a Nearby game needs its own player token." },
+            ]
+        );
+        assert_eq!(queued.len(), 3);
+        for upload in queued {
+            assert!(upload.outcome.await.unwrap().unwrap().stored);
+        }
+    }
+
     #[tokio::test]
     async fn counts_the_same_as_the_sql_stats() {
         let dir = std::env::temp_dir().join(format!("tick3d-personal-{}", std::process::id()));
@@ -611,7 +639,8 @@ mod tests {
         let now = super::super::now_ms();
         store
             .call(move |db| {
-                db.add_results(ALICE, &uploads(now))?;
+                let (_, refused) = db.add_results(ALICE, &uploads(now));
+                assert!(refused.is_empty(), "{refused:?}");
                 db.add_release(&Release { version: "main-aaaa1".into(), name: "First".into(), at: now - 50 * DAY })?;
                 Ok(())
             })

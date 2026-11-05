@@ -7,8 +7,9 @@ import { type Code, type ResultUpload, type SessionView, normalizeCode, parseRes
 // A session that this device holds: computer and friend games, and Nearby games it hosts.
 // `doc` is the stored document, read through parseDoc on every load like on the server.
 export type DeviceSession = { code: Code; doc: unknown; version: number; updatedAt: number };
-// A finished game waiting for upload, or already sent.
-type DeviceResult = { id: string; upload: ResultUpload; sent: boolean };
+// A finished game waiting for upload, or already sent. `refused` is the error of the server for a result that it never
+// stores, so the device does not send it again; null otherwise.
+type DeviceResult = { id: string; upload: ResultUpload; sent: boolean; refused: string | null };
 // The last view of an online session, so it opens read-only without a network.
 type CachedView = { code: Code; view: SessionView; savedAt: number };
 
@@ -43,9 +44,13 @@ const PARSERS: { readonly [S in StoreName]: (row: unknown) => Stores[S] } = {
   results(row) {
     if (!isRecord(row)) throw new Error('stored result: not an object');
     const { id, sent } = row;
+    // A row from before the refusals has no `refused`.
+    const refused = row.refused ?? null;
     const upload = parseResultUpload(row.upload, epochNow());
-    if (typeof id !== 'string' || typeof sent !== 'boolean' || upload === undefined) throw new Error('stored result: bad id, sent flag or upload');
-    return { id, upload, sent };
+    if (typeof id !== 'string' || typeof sent !== 'boolean' || !(refused === null || typeof refused === 'string') || upload === undefined) {
+      throw new Error('stored result: bad id, sent flag, refusal or upload');
+    }
+    return { id, upload, sent, refused };
   },
   remote(row) {
     if (!isRecord(row)) throw new Error('stored view: not an object');
