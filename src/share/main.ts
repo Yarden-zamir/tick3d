@@ -605,6 +605,9 @@ element('#claim-close', HTMLButtonElement).addEventListener('click', () => dialo
 function showVersion(next: ShareVersion): void {
   version = next;
   document.body.dataset.shareVersion = next;
+  if (next === 'general') {
+    for (const heading of document.querySelectorAll<HTMLElement>('[data-general-text]')) heading.textContent = heading.dataset.generalText ?? '';
+  }
   renderSteps();
   // The TestFlight QR code of the closed test draws once its page is known.
   if (choices.iphone.getAttribute('aria-pressed') === 'true') showPhone('iphone');

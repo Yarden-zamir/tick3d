@@ -71,8 +71,9 @@
         <button type="button" class="trailer-sound" id="trailer-sound" aria-pressed="false">Tap for sound</button>
       </figure>
       <section class="share-hero" aria-labelledby="share-title">
-        <!-- The two pages of /share (src/share/version.ts): data-only="testing" for the closed test, data-only="general" for everyone. -->
-        <h2 id="share-title"><span data-only="testing">Test tick3d before everyone else</span><span data-only="general">Get tick3d</span></h2>
+        <!-- The two pages of /share (src/share/version.ts): data-only="testing" for the closed test, data-only="general" for everyone.
+             A heading keeps one element: data-general-text is its text on the page for everyone. -->
+        <h2 id="share-title" data-general-text="Get tick3d">Test tick3d before everyone else</h2>
         <p data-only="testing">Thanks for helping! Which phone do you have?</p>
         <p data-only="general">3D tic-tac-toe on a 4×4×4 cube. Which phone do you have?</p>
         <div class="phone-picker" id="phone-picker" role="group" aria-label="Your phone">
@@ -204,7 +205,7 @@
       </form>
     </dialog>
     <div class="modal info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
-      <h2 id="info-title"><span data-only="testing">How sharing and testing work</span><span data-only="general">How sharing works</span></h2>
+      <h2 id="info-title" data-general-text="How sharing works">How sharing and testing work</h2>
       <p data-only="testing">tick3d is in a closed test on Google Play and on TestFlight.</p>
       <ul data-only="general">
         <li>Android: a free Google Play code makes the app free, while codes last. A card shows only the first letters of its code.</li>
