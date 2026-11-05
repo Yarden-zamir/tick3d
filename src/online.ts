@@ -1,6 +1,7 @@
 import { ACHIEVEMENT_IDS, type Achievements, parseAchievements } from './achievements.ts';
 import type { TimeControl } from './clock.ts';
 import { parseDeletedPeople } from './deletions.ts';
+import { isRecord, isUnknownArray } from './guards.ts';
 import type { EpochMs } from './epoch.ts';
 import { type Announced, type HostId, type LobbyHost, parseAnnounced, parseLobbyHosts } from './nearby/lobby.ts';
 import type { PlayoffRequest } from './practice/playoff.ts';
@@ -386,21 +387,31 @@ export const api = {
   // Logs in with the ID token of Google One Tap (src/page/google-one-tap.ts).
   googleOneTap: (credential: string): Promise<Me> => changed(() => call('POST', '/auth/google/one-tap', { credential })),
 
-  // Sends finished games in batches. Returns the public id of each result (by result id) that
-  // the server keeps under another public id than the device sent.
-  async uploadResults(results: readonly ResultUpload[]): Promise<Map<string, DeviceGameId>> {
+  // Sends finished games in batches. `renamed`: the public id of each result (by result id) that the server keeps
+  // under another public id than the device sent. `refused`: the error of each result (by result id) that the server
+  // refused. The server stores the other results of the batch.
+  async uploadResults(results: readonly ResultUpload[]): Promise<{ renamed: Map<string, DeviceGameId>; refused: Map<string, string> }> {
     const renamed = new Map<string, DeviceGameId>();
+    const refused = new Map<string, string>();
     for (let start = 0; start < results.length; start += RESULTS_PER_UPLOAD) {
-      const answer = await call('POST', '/results', { results: results.slice(start, start + RESULTS_PER_UPLOAD) });
-      const ids = typeof answer === 'object' && answer !== null && 'renamed' in answer ? answer.renamed : undefined;
-      if (typeof ids !== 'object' || ids === null) throw new Error('invalid answer from /api/results');
-      for (const [resultId, value] of Object.entries(ids)) {
+      const batch = results.slice(start, start + RESULTS_PER_UPLOAD);
+      const answer = await call('POST', '/results', { results: batch });
+      if (!isRecord(answer) || !isRecord(answer.renamed)) throw new Error('invalid answer from /api/results');
+      for (const [resultId, value] of Object.entries(answer.renamed)) {
         const id = parseDeviceGameId(value);
         if (id === undefined) throw new Error('invalid game id from /api/results');
         renamed.set(resultId, id);
       }
+      // A server from before the refusals per result sends none: it answered 400 for the whole batch instead.
+      const refusals = answer.refused ?? [];
+      if (!isUnknownArray(refusals)) throw new Error('invalid refused list from /api/results');
+      for (const refusal of refusals) {
+        const result = isRecord(refusal) && typeof refusal.index === 'number' ? batch[refusal.index] : undefined;
+        if (result === undefined || !isRecord(refusal) || typeof refusal.error !== 'string') throw new Error('invalid refusal from /api/results');
+        refused.set(result.id, refusal.error);
+      }
     }
-    return renamed;
+    return { renamed, refused };
   },
 
   game: async (id: GameId): Promise<PublicGame> => parsePublicGame(await call('GET', `/games/${id}`)),
