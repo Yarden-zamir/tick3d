@@ -1,4 +1,4 @@
-//! The Google Play promo codes of the closed test (server/tester-codes.ts, src/share/codes.ts) and their routes.
+//! The Google Play promo codes of the closed test (src/share/codes.ts) and their routes.
 //! KitSHn fills TESTER_CODES from the GitHub secret KITSHN_TESTER_CODES. The repository is public, so codes never go in git.
 use std::collections::HashSet;
 use std::net::SocketAddr;
@@ -18,7 +18,7 @@ use crate::store::{hint_of, now_ms};
 
 const CODE_MIN_LENGTH: usize = 10;
 const CODE_MAX_LENGTH: usize = 30;
-/// The KitSHn environment of production, as in server/previews.ts.
+/// The KitSHn environment of production.
 const PRODUCTION_ENVIRONMENT: &str = "prod";
 
 /// Claims per address: 5 per hour (TESTER_CLAIMS_PER_HOUR).
@@ -93,7 +93,7 @@ pub async fn claim(
 ) -> ApiResult<Response> {
     ALLOW_TESTER_CLAIM.allow(&client_of(&headers, peer), now_ms())?;
     let token = require_player(&headers)?;
-    // Node also refuses a text that `Number` reads but that is not the plain number, such as "01" or "1.0".
+    // A text that `Number` reads but that is not the plain number, such as "01" or "1.0", is refused too.
     let id = js_safe_integer(&code_id, 1)
         .filter(|id| id.to_string() == code_id)
         .ok_or_else(|| ApiError::bad_request("A code id is a whole number from 1."))?;

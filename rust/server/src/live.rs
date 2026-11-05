@@ -1,5 +1,4 @@
-//! The open pages of each session (event streams) and the long polls (server/main.ts: streams, notify, push,
-//! server/waiters.ts). They live in this process only, which is fine for one API process. A seat with an open
+//! The open pages of each session (event streams) and the long polls. They live in this process only, which is fine for one API process. A seat with an open
 //! stream is "present", and a token without a seat is a watcher. Long polls do not count: an API client shows as away.
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -18,7 +17,7 @@ use crate::store::{Hooks, Store};
 const MAX_STREAMS: usize = 10_000;
 /// Each long poll holds one request. The same reason caps them.
 const MAX_WAITERS: usize = 2000;
-/// A long poll waits at most this long (WAIT_MS in server/api-docs.ts).
+/// A long poll waits at most this long (WAIT_MS in contract/api-docs.ts).
 pub const WAIT: Duration = Duration::from_millis(25_000);
 
 /// One message to an open page: a view as JSON, or "changed" for a page that must fetch its view.

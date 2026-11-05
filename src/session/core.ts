@@ -53,10 +53,10 @@ export const COMPUTER_TOKEN = 'computer';
 
 // The display name of a player without a GitHub login: their custom name, else the generated name.
 // The holder of the session knows the custom names; the generated name needs nothing.
-export type NameOf = (token: string) => string;
+type NameOf = (token: string) => string;
 
 // The name of the player on a seat. Null for an empty seat, and for the computer: the page says "Computer".
-export const seatName = (token: string | null, name: NameOf = nameOf): string | null =>
+const seatName = (token: string | null, name: NameOf = nameOf): string | null =>
   token === null || token === COMPUTER_TOKEN ? null : name(token);
 
 const emptyRecord = (clock: TimeControl): GameRecord => ({ moves: [], times: [], clock, timedOut: false });
@@ -193,8 +193,6 @@ export const isEmptySession = (doc: SessionDoc): boolean => doc.games.every((gam
 
 // How long an empty session stays: a session someone made and never played is gone after this.
 export const EMPTY_SESSION_TTL_MS = 9 * 3_600_000;
-// A live game with no change for this long ends with no winner (abandonStale in server/store.ts).
-export const STALE_GAME_MS = 7 * 24 * 3_600_000;
 
 // Ends the live game with no winner. Undefined when the live game has no move or is over: then nothing waits.
 export function abandonLive(doc: SessionDoc): SessionDoc | undefined {

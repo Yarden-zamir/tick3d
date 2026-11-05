@@ -1,4 +1,4 @@
-//! Finished games and achievements as players read them (server/main.ts: GET /api/games/{id} and the /api/me game routes).
+//! Finished games and achievements as players read them (GET /api/games/{id} and the /api/me game routes).
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;

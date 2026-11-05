@@ -7,7 +7,7 @@ import { REFUSALS } from '../src/protocol.ts';
 
 type Field = { column: string; type: string; path: string };
 
-// From the document of a result (ResultUpload, or an online game in server/store.ts).
+// From the document of a result (ResultUpload, or an online game in rust/server/src/store/sessions.rs).
 const GAME_FIELDS: readonly Field[] = [
   { column: 'mode', type: 'VARCHAR', path: '$.mode' },
   { column: 'level', type: 'VARCHAR', path: '$.difficulty' },
@@ -69,7 +69,7 @@ export const metricValues = (metrics: string) => values(METRIC_FIELDS, `${metric
 export const METRIC_VALUES = metricValues('$metrics');
 
 // Schema statements: the columns and their indexes. Every write fills the columns (gameValues, metricValues, and
-// the session seats in writeSessions of server/store.ts), so a row never lacks them. My games and a logout find
+// the session seats in the session writes of rust/server/src/store/sessions.rs), so a row never lacks them. My games and a logout find
 // the sessions of a player through the seat columns.
 export const FIELD_SCHEMA = [
   ...addColumns('results', GAME_FIELDS),
@@ -77,7 +77,7 @@ export const FIELD_SCHEMA = [
   ...addColumns('seat_metrics', METRIC_FIELDS),
   'ALTER TABLE sessions ADD COLUMN IF NOT EXISTS seat_x VARCHAR',
   'ALTER TABLE sessions ADD COLUMN IF NOT EXISTS seat_o VARCHAR',
-  // The games and the sessions of one player are index lookups (seatedRows in server/stats.ts).
+  // The games and the sessions of one player are index lookups (rust/server/src/store/stats.rs).
   'CREATE INDEX IF NOT EXISTS results_player_x ON results (player_x)',
   'CREATE INDEX IF NOT EXISTS results_player_o ON results (player_o)',
   'CREATE INDEX IF NOT EXISTS sessions_seat_x ON sessions (seat_x)',

@@ -1,4 +1,4 @@
-//! The Google Play promo codes of the closed test (server/store.ts: addTesterCodes, testerCodes, claimTesterCode, testerClaims).
+//! The Google Play promo codes of the closed test.
 use axum::http::StatusCode;
 use serde::Serialize;
 
@@ -16,7 +16,7 @@ pub fn hint_of(code: &str) -> String {
     code[..HINT_LENGTH.min(code.len())].to_owned()
 }
 
-/// The Gravatar hash of an email: SHA-256 of the trimmed, lower-case address (gravatarOf in server/tester-codes.ts).
+/// The Gravatar hash of an email: SHA-256 of the trimmed, lower-case address.
 /// Limit: the hash identifies an email to anybody who knows that email already. Revisit this if a tester objects.
 fn gravatar_of(email: &str) -> String {
     sha256_hex(email.trim().to_lowercase().as_bytes())

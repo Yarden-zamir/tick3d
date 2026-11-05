@@ -432,7 +432,7 @@ export const api = {
   leaderboard: async (filter: StatsFilter): Promise<Leaderboard> =>
     parseLeaderboard(await call('GET', `/leaderboard${statsQuery({ ...filter, scope: 'everyone', person: null })}`)),
 
-  // The Nearby lobby (server/lobby.ts). The server holds an announcement until a guest answers, or for about 25 s.
+  // The Nearby lobby (rust/server/src/nearby.rs). The server holds an announcement until a guest answers, or for about 25 s.
   announceNearby: async (offer: string, id: HostId | undefined, signal: AbortSignal): Promise<Announced> =>
     parseAnnounced(await call('POST', '/nearby/hosts', { offer, ...(id === undefined ? {} : { id }) }, signal)),
   nearbyHosts: async (signal?: AbortSignal): Promise<LobbyHost[]> => parseLobbyHosts(await call('GET', '/nearby/hosts', undefined, signal)),

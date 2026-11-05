@@ -1,4 +1,4 @@
-//! The previews list (GET /api/previews, server/previews.ts): the open pull requests of the repository that have a live preview.
+//! The previews list (GET /api/previews): the open pull requests of the repository that have a live preview.
 //!
 //! The data comes from the public GitHub REST API without a token. GitHub allows 60 such calls per hour per address, and
 //! production and every preview share the address of the VPS. So:
@@ -26,7 +26,7 @@ use crate::protocol::{GITHUB_PICTURES, is_github_login, js_length, js_trim};
 use crate::sessions::ok_json;
 use crate::store::now_ms;
 
-/// PREVIEWS_CACHE_MS and PREVIEWS_RELAY_CACHE_MS in server/api-docs.ts.
+/// PREVIEWS_CACHE_MS and PREVIEWS_RELAY_CACHE_MS in contract/api-docs.ts.
 const CACHE_MS: i64 = 180_000;
 const RELAY_CACHE_MS: i64 = 15_000;
 /// GitHub returns at most this many pull requests in one page, the most recently updated first.

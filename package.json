@@ -8,16 +8,13 @@
     "dev": "vite",
     "check": "tsc && npm run lint && vitest run",
     "test": "vitest run",
-    "lint": "oxlint --type-aware --deny-warnings src server e2e video/creative vite.config.ts && stylelint \"src/**/*.css\" && html-validate *.html && knip",
+    "lint": "oxlint --type-aware --deny-warnings src contract e2e video/creative vite.config.ts && stylelint \"src/**/*.css\" && html-validate *.html && knip",
     "build": "tsc && vite build",
-    "api": "DB_PATH=./dev.duckdb node server/main.ts",
+    "api": "cd rust && DB_PATH=../dev.duckdb cargo run --release -p tick3d-server",
     "e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
-    "@apple/app-store-server-library": "3.1.0",
-    "@capacitor/core": "8.6.0",
-    "@duckdb/node-api": "2.0.0-r.1",
-    "google-auth-library": "11.3.2"
+    "@capacitor/core": "8.6.0"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

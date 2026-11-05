@@ -1,4 +1,4 @@
-//! The routes of the player's own account (server/main.ts: GET /api/me, name, avatar, stats-privacy, blocks).
+//! The routes of the player's own account (GET /api/me, name, avatar, stats-privacy, blocks).
 //! A cross-site form cannot send the X-Player header, so another site cannot change a player's account.
 use axum::body::Body;
 use std::net::SocketAddr;

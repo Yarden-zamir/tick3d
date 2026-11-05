@@ -1,4 +1,4 @@
-//! The leaderboard (server/leaderboard.ts and leaderboardOf in server/store.ts): the common stats of each person, from
+//! The leaderboard: the common stats of each person, from
 //! their side of each game. The store adds the names and the person ids, so no token leaves the server.
 use duckdb::{Connection, ToSql};
 use serde::Serialize;
@@ -72,7 +72,7 @@ pub struct LeaderRow {
     achievements: i64,
 }
 
-/// The rows of the leaderboard, on the reader connection (leaderRows in server/leaderboard.ts).
+/// The rows of the leaderboard, on the reader connection.
 fn leader_rows(conn: &Connection, filter: &StatsFilter) -> ApiResult<Vec<LeaderRow>> {
     let since = since_of(filter, now_ms());
     let mode = filter.mode.map(|mode| mode.as_str());

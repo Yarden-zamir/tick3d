@@ -1,4 +1,4 @@
-//! The practice room routes (server/main.ts: POST /api/practice/runs, GET /api/practice/best).
+//! The practice room routes (POST /api/practice/runs, GET /api/practice/best).
 use std::net::SocketAddr;
 
 use axum::body::Body;

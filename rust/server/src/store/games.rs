@@ -1,4 +1,4 @@
-//! Finished games as players read them (server/store.ts: game, history, clearHistory, records, myGames).
+//! Finished games as players read them.
 use std::collections::{BTreeMap, HashMap};
 
 use duckdb::ToSql;
@@ -48,7 +48,7 @@ pub(super) fn token_params<'a>(names: &'a [String], tokens: &'a [String]) -> Vec
     names.iter().zip(tokens).map(|(name, token)| (name.as_str(), token as &dyn ToSql)).collect()
 }
 
-/// Joins the account of each seat of a result row (SEAT_ACCOUNTS in server/store.ts).
+/// Joins the account of each seat of a result row.
 const SEAT_ACCOUNTS: &str = "LEFT JOIN player_tokens tx ON tx.token = results.player_x LEFT JOIN users ux ON ux.github_id = tx.github_id
   LEFT JOIN player_tokens t_o ON t_o.token = results.player_o LEFT JOIN users uo ON uo.github_id = t_o.github_id";
 /// Ten columns: the account of X, then of O, each as provider, login, avatar, name, seed. Then the two seat tokens.
@@ -110,7 +110,7 @@ pub(super) struct StoredGame {
     pub(super) tuned: bool,
 }
 
-/// readStored in server/store.ts. A stored document that does not parse is a fault.
+/// A stored game from its document. A stored document that does not parse is a fault.
 pub(super) fn read_stored(doc: &Value, now: i64) -> ApiResult<StoredGame> {
     if doc.get("mode").and_then(Value::as_str) == Some("online") {
         let parsed = doc.get("game").and_then(parse_game_record).filter(|(_, status)| has_result(status));
@@ -534,7 +534,7 @@ impl Db {
     }
 }
 
-/// The guest rows that have a host row on `seat`, as one join of the few Nearby rows (guestCopies in server/store.ts).
+/// The guest rows that have a host row on `seat`, as one join of the few Nearby rows.
 fn guest_copies(seat: &str) -> String {
     format!(
         "SELECT guest.id FROM results guest JOIN results host ON host.{seat} = guest.token
@@ -543,8 +543,8 @@ fn guest_copies(seat: &str) -> String {
     )
 }
 
-/// True for the result of a Nearby guest when the host's result of the same game names the guest (HOST_HAS_GAME in
-/// server/store.ts). Both devices send a result, so the guest's history then lists the host's row only. Two games of the
+/// True for the result of a Nearby guest when the host's result of the same game names the guest (HOST_HAS_GAME).
+/// Both devices send a result, so the guest's history then lists the host's row only. Two games of the
 /// same two players with the same moves inside 10 minutes count as one.
 /// One equality join per host seat, so DuckDB can hash them: a correlated EXISTS joined every result.
 pub(super) static HOST_HAS_GAME: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {

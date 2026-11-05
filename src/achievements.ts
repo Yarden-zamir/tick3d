@@ -26,7 +26,7 @@ export type AchievementGame = {
   // How the player placed their moves, from the metrics of their device. Null without them, as in an online game.
   input: Metrics['input'] | null;
   // The first time that the opponent got the game through the invite link of the player, and the first time that the
-  // player got it through the link of the opponent (inviteEvents in server/store.ts). Only the server knows them:
+  // player got it through the link of the opponent (invite_events in rust/server/src/store/achievements.rs). Only the server knows them:
   // null on the device, without an opponent, and without such an invite.
   invitedOpponentAt: EpochMs | null;
   invitedByOpponentAt: EpochMs | null;
@@ -34,7 +34,7 @@ export type AchievementGame = {
 
 // The people who got the game through an invite, each person once, as the time when they got it, in any order.
 // direct: the people that the player invited. second: the people that those people invited in turn.
-// Only the server knows them (invitesOf in server/store.ts), so the device passes none.
+// Only the server knows them (rust/server/src/store/achievements.rs), so the device passes none.
 export type Invites = { direct: readonly EpochMs[]; second: readonly EpochMs[] };
 const NO_INVITES: Invites = { direct: [], second: [] };
 

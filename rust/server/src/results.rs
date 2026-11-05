@@ -1,4 +1,4 @@
-//! Finished games: uploads from the devices and the metrics of online games (server/main.ts).
+//! Finished games: uploads from the devices and the metrics of online games.
 use std::collections::BTreeMap;
 
 use axum::body::Body;

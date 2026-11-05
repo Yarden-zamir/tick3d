@@ -5,7 +5,7 @@ import { isRecord } from './guards.ts';
 import { type PersonId, parsePersonId } from './protocol.ts';
 
 // The App Store id of an iPhone (AppStore.deviceVerificationID): a UUID in lower case. The signed purchase proves it
-// with its deviceVerification hash (server/apple-proof.ts), so it names the device slot of a purchase.
+// with its deviceVerification hash (rust/server/src/apple_proof.rs), so it names the device slot of a purchase.
 export type AppleDeviceId = string & { readonly brand: 'AppleDeviceId' };
 
 const HEX = '0123456789abcdef';

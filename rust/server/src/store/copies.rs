@@ -1,4 +1,4 @@
-//! The bought copies of the apps (server/store.ts: reportAppOpen, revokePlayCopy, takeAppleSlot).
+//! The bought copies of the apps.
 use std::collections::HashSet;
 
 use axum::http::StatusCode;

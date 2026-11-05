@@ -1,4 +1,4 @@
-//! The last answer of each Everyone query, by kind and filter (snapshot in server/store.ts). The filters have a few dozen
+//! The last answer of each Everyone query, by kind and filter. The filters have a few dozen
 //! combinations, so the map stays small. A request gets the last answer at once. An answer older than its time to live
 //! starts a refresh in the background, and the next request gets the new answer. The time to live grows with the cost of
 //! a refresh, so a slow refresh does not keep the reader busy. Only the first request of a filter after a start waits.
@@ -12,7 +12,7 @@ use serde_json::Value;
 use crate::error::ApiResult;
 use crate::store::now_ms;
 
-/// STATS_CACHE_MS in server/api-docs.ts: the shortest time to live of an answer.
+/// STATS_CACHE_MS in contract/api-docs.ts: the shortest time to live of an answer.
 const STATS_CACHE_MS: i64 = 60_000;
 /// The time to live of an answer is at least this many times the cost of its last refresh.
 const SNAPSHOT_COST_FACTOR: i64 = 10;

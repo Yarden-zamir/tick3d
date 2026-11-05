@@ -1,4 +1,4 @@
-//! The routes and the docs of server/api-docs.ts, from rust/server/from-node.json.
+//! The routes and the docs of contract/api-docs.ts, from rust/server/contract.json.
 use std::sync::LazyLock;
 
 use axum::http::{HeaderMap, HeaderName, header};
@@ -21,7 +21,7 @@ struct Docs {
     docs_html: String,
 }
 
-static DOCS: LazyLock<Docs> = LazyLock::new(|| serde_json::from_str(include_str!("../from-node.json")).expect("from-node.json parses"));
+static DOCS: LazyLock<Docs> = LazyLock::new(|| serde_json::from_str(include_str!("../contract.json")).expect("contract.json parses"));
 
 pub fn documented_routes() -> &'static [DocumentedRoute] {
     &DOCS.routes

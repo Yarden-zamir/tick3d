@@ -1,4 +1,4 @@
-// Makes the served API docs from server/api-docs.ts: the OpenAPI 3.1 document, and a Swagger UI page for it.
+// Makes the served API docs from contract/api-docs.ts: the OpenAPI 3.1 document, and a Swagger UI page for it.
 // `origin` is the site address, for example https://tick3d.yarden-zamir.com. It goes into the examples.
 import {
   type Block,
@@ -13,7 +13,11 @@ import {
   ref,
   splitRoute,
 } from './api-docs.ts';
-import { IDEMPOTENCY_KEY_MAX_LENGTH, IDEMPOTENCY_TTL_MS } from './idempotency.ts';
+
+// Keys have at most this many characters (rust/server/src/idempotency.rs).
+const IDEMPOTENCY_KEY_MAX_LENGTH = 255;
+// The server keeps the answer of a key this long (rust/server/src/idempotency.rs).
+const IDEMPOTENCY_TTL_MS = 3_600_000;
 
 const route = (name: RouteName): Route => ROUTES[name];
 const pathParams = (path: string): string[] =>
@@ -51,7 +55,7 @@ export function curlOf(name: RouteName, origin: string): string {
 
 // ---- OpenAPI ----
 
-// The Idempotency-Key header (server/idempotency.ts), one entry that each route that accepts it refers to.
+// The Idempotency-Key header (rust/server/src/idempotency.rs), one entry that each route that accepts it refers to.
 const IDEMPOTENCY_KEY = {
   name: 'Idempotency-Key',
   in: 'header',

@@ -1,4 +1,4 @@
-//! Reports, the moderation routes of the maintainers, and page faults (server/main.ts).
+//! Reports, the moderation routes of the maintainers, and page faults.
 use std::net::SocketAddr;
 
 use axum::body::Body;
@@ -15,7 +15,7 @@ use crate::protocol::{is_github_login, js_safe_integer, parse_client_event, pars
 use crate::sessions::{MAX_BODY_BYTES, ok_json, read_json, require_player, session_code};
 use crate::store::{DeleteTarget, now_ms};
 
-/// Page faults per address: 30 per 10 minutes (EVENTS_PER_10_MINUTES). The message is the same as Node's.
+/// Page faults per address: 30 per 10 minutes (EVENTS_PER_10_MINUTES).
 static ALLOW_EVENT: Limiter = Limiter::new(30, 600_000, 10_000, "Too many reports from this address. Try again later.");
 const MAX_EVENT_BODY_BYTES: usize = 1024;
 
