@@ -1,0 +1,57 @@
+name: kitshn-retry
+
+# Reruns a failed kitshn deploy once, when its log shows a failure of kitshn or of the network, not of the build.
+# A first run of kitshn.yml that fails in a deploy job runs this. It reads the log of each failed deploy job and reruns
+# the failed jobs of that run once (attempt 1 only). A build or app failure ("the deploy failed (exit code N)") and any
+# message that it does not know never rerun.
+# Limit: it knows the messages of the kitshn CLI of 2026-11 (packages/kitshn/src/cli.ts). Revisit when kitshn changes
+# them. workflow_run uses this file from main, so a change here works after its merge.
+on:
+  workflow_run:
+    workflows: ['.github/workflows/kitshn.yml']
+    types: [completed]
+
+# actions: write reruns the failed jobs.
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  retry:
+    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Read the failed deploy jobs and rerun once
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          jobs=$(gh api "repos/$REPO/actions/runs/$RUN/attempts/1/jobs" --paginate --jq '.jobs[] | select(.conclusion == "failure") | "\(.id)\t\(.name)"')
+          [[ -n "$jobs" ]] || { echo "No failed job."; exit 0; }
+          transport=0; other=0
+          while IFS=$'\t' read -r id name; do
+            if [[ "$name" != *deploy* ]]; then
+              echo "$name failed, and it is no deploy job: no rerun."
+              other=1
+              continue
+            fi
+            log=$(gh api "repos/$REPO/actions/jobs/$id/logs")
+            if grep -q 'kitshn: the deploy failed (exit code' <<< "$log"; then
+              echo "$name: the build or the app failed: no rerun."
+              other=1
+            elif grep -q -E 'kitshn: .*(fetch failed|ECONNRESET|ETIMEDOUT|did not end within|the deploy expired|answered 5[0-9][0-9])' <<< "$log"; then
+              echo "$name: kitshn or the network failed."
+              transport=1
+            else
+              echo "$name: an unknown failure: no rerun."
+              other=1
+            fi
+          done <<< "$jobs"
+          if [[ $transport == 1 && $other == 0 ]]; then
+            gh run rerun "$RUN" --failed --repo "$REPO"
+            echo "Reran the failed jobs of run $RUN once." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No rerun of run $RUN." >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -146,7 +146,7 @@ test('3 an online game with chat', async ({ open }) => {
   await alice.page.locator('#chat-input').evaluate((element) => element.scrollIntoView({ block: 'end' }));
   await alice.page.evaluate(() => scrollBy(0, 40));
   await hideLocalOnly(alice.page);
-  // The server draws the session code (newCode in server/store.ts) and has no seam to fix it.
+  // The server draws the session code (new_code in rust/server/src/store/sessions.rs) and has no seam to fix it.
   // Limit: this fixes only the code in the online box. Revisit if a scene shows the code elsewhere.
   await alice.page.locator('#online-code').evaluate((element) => {
     element.textContent = 'H3WY';

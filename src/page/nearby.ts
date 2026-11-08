@@ -1,5 +1,5 @@
 // The Nearby panel: host or join a game on the local network over WebRTC.
-// Online, hosted games also show in a list on the other devices of the network (server/lobby.ts).
+// Online, hosted games also show in a list on the other devices of the network (rust/server/src/nearby.rs).
 import type { Player } from '../game.ts';
 import { detectDevice, deviceLabel, DEVICE_ICONS } from '../nearby/device.ts';
 import type { Announced, HostId, LobbyHost } from '../nearby/lobby.ts';
@@ -251,7 +251,7 @@ function stopAnnouncing(): void {
   listed = false;
 }
 
-// Holds one announce request open at a time (see server/lobby.ts). A request ends with the answer
+// Holds one announce request open at a time (see rust/server/src/nearby.rs). A request ends with the answer
 // of a guest, or after about 25 s, and the next one starts at once.
 async function announceLoop(host: NearbyHost, signal: AbortSignal): Promise<void> {
   const hosting = () => !signal.aborted && navigator.onLine && nearby.kind === 'hosting' && nearby.host === host;

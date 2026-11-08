@@ -349,7 +349,7 @@ function tiles(stats: Stats): void {
   ]);
 }
 
-// The cards that only Mine and a person filter have. A person filter has no opponents (server/stats.ts).
+// The cards that only Mine and a person filter have. A person filter has no opponents (rust/server/src/store/stats.rs).
 function personalCards(personal: NonNullable<Stats['personal']>, own: boolean): void {
   stacked(
     card(own ? 'Your results' : 'Results', false, 'Won, drawn and lost, per mode and computer level. Same-screen games have no side, so they do not count.'),
@@ -701,7 +701,7 @@ async function show(filter: StatsFilter, problem = ''): Promise<void> {
         : stats.personal === null
           ? 'all players'
           : 'your games on every device that you logged in with, or on this browser';
-    // With many games, the charts of moves, times, settings and devices read the newest games only (server/stats.ts).
+    // With many games, the charts of moves, times, settings and devices read the newest games only (rust/server/src/store/stats.rs).
     const sampled = stats.sample === null ? '' : ` The charts of moves, times, settings and devices show the newest ${stats.sample.toLocaleString()} games.`;
     note.textContent = `${problem}Updated ${new Date(stats.generatedAt).toLocaleString()}. These numbers show ${scope}.${sampled}`;
   } catch (error) {

@@ -165,25 +165,25 @@ A mode change moves neither the board nor the Opponent picker:
 - `src/ai.ts`, `src/ai-worker.ts`, `src/move-search.ts`: the computer levels, in a Web Worker.
 - `src/session/core.ts`: the session rules. The server, the device and the Nearby host all run them.
 - `src/session/format.ts`: the stored session format.
-- `rust/core/`: a Rust copy of the online session rules, for the Rust server ([#265](https://github.com/Yarden-zamir/tick3d/issues/265)). It must pass every case in `src/session/rule-cases.json`. After a rule change in TypeScript, run `UPDATE_RULE_CASES=1 npx vitest run src/session/rule-cases.test.ts`, then change the Rust copy until `cargo test` in `rust/` passes.
+- `rust/core/`: a Rust copy of the online session rules, for the server. It must pass every case in `src/session/rule-cases.json`. After a rule change in TypeScript, run `UPDATE_RULE_CASES=1 npx vitest run src/session/rule-cases.test.ts`, then change the Rust copy until `cargo test` in `rust/` passes.
 - `src/protocol.ts`: the contract between the page and the API.
 - `src/online.ts`: the API client. `src/local.ts` and `src/device-db.ts`: the device backend on IndexedDB.
 - `src/nearby/`: WebRTC, QR codes and the host and guest sessions.
 - `src/sound.ts`, `src/sound-sets.ts`: the sounds and the sound sets. `src/click-sound.ts`: the click of every control. `src/song.ts`: a finished game as a song.
 - `src/voice/`: the voice engine (pitch, range, sticky cells, tilt, clips) for the game and the Voice room. `src/page/voice.ts`: play by voice in the game.
-- `sound-input.html`, `src/sound-input/`: the Voice room. `src/practice/`: the practice and playoff rules, shared with `server/practice.ts`.
+- `sound-input.html`, `src/sound-input/`: the Voice room. `src/practice/`: the practice and playoff rules.
 - `src/main.ts`, `src/page/`, `index.html`, `src/style.css`: the game page, one module per feature in `src/page/`.
 - `src/page/safety.ts`, `src/page/person-mark.ts`: the report and block menu of the game. `src/safety-dialog.ts` and `src/blocks.ts`: the menu and the block list, shared with the stats page.
 - `src/header/`: the header and the footer of every page. `src/markup.test.ts` checks that every page has the same header and footer.
 - `stats.html`, `src/stats/`: the stats page. `sound-training.html`, `src/sound-training/`: the ear trainer.
-- `share.html`, `src/share/`: the share page. `server/tester-codes.ts`: the codes from `TESTER_CODES`.
+- `share.html`, `src/share/`: the share page. `rust/server/src/tester_codes.rs`: the codes from `TESTER_CODES`.
 - `src/pwa.ts`, `vite.config.ts`: the service worker and the manifest.
-- `server/main.ts`: the HTTP API. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub and Google login.
-- `server/api-docs.ts`: every API route with its docs. The server finds routes in this list.
+- `rust/server/`: the HTTP API in Rust. `rust/server/src/routes.rs`: every route. `rust/server/src/store/`: the DuckDB store. `rust/server/src/auth.rs`: GitHub and Google login.
+- `contract/`: the API contract that the page and the server share. `contract/api-docs.ts`: every API route with its docs. `contract/schema.ts`: the tables. `contract/contract.test.ts` writes them, with the metric lists of `src/`, to `rust/server/contract.json`, which the server reads at build time.
 
-To add a route, add one entry to `ROUTES` in `server/api-docs.ts` and one case to the switch in `server/main.ts`. The type check fails when one of the two is missing.
+To add a route, add one entry to `ROUTES` in `contract/api-docs.ts`, write `rust/server/contract.json` again (`UPDATE_RUST_API=1 npx vitest run contract/contract.test.ts`), and add the handler to `ROUTES` in `rust/server/src/routes.rs`. The tests fail when one of the two is missing.
 
-The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs TypeScript directly on Node 26 and stores data in [DuckDB](https://duckdb.org).
+The page is plain TypeScript built with Vite, with no runtime dependencies. The API is a Rust server ([axum](https://github.com/tokio-rs/axum)) that stores data in [DuckDB](https://duckdb.org).
 
 ## Stored data and format changes
 
@@ -191,15 +191,15 @@ The page is plain TypeScript built with Vite, with no runtime dependencies. The 
 - A new optional field needs only a default in `parseDoc` (`src/session/format.ts`). It needs no migration and no database reset.
 - A breaking change needs a new `CURRENT_FORMAT` and one `UPGRADES` step. `src/session/format.ts` explains the rules.
 - `src/session/fixtures/` holds a document of each released format. A test reads each one.
-- Table changes are append-only statements in `server/store.ts`, such as `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
-- A one-time data change runs through `runOnce` in `server/store.ts`: the `migrations` table keeps its name, so it runs once per database.
+- Table changes are append-only statements in `contract/schema.ts`, such as `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
+- A one-time data change runs through `run_once` in `rust/server/src/store/mod.rs`: the `migrations` table keeps its name, so it runs once per database.
 
 ## API
 
 - `/api/openapi.json`: the OpenAPI 3.1 document, with every route, shape, error and a curl example.
 - `/api/docs`: the same document in Swagger UI.
 
-Both come from `server/api-docs.ts`. The routes that change a game accept an `Idempotency-Key` header, and every 429 has a `Retry-After` header.
+Both come from `contract/api-docs.ts`. The routes that change a game accept an `Idempotency-Key` header, and every 429 has a `Retry-After` header.
 
 ## Stats page and what is logged
 
@@ -209,7 +209,7 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 - "Hide my stats" in My games closes your person view, your achievements included, to everyone but you: `GET /api/stats` and `GET /api/stats/card/{person}` then answer 403. It also takes you off the leaderboard. Mine still works, and Everyone still counts your games without your name. The setting follows a GitHub login.
 - Leaderboard (Everyone only): one row per player with their name, GitHub login and picture, and games, won, drawn, lost, win rate, best streak, fastest win, average moves, achievements and last game. Tap a column to sort; tap it again to turn the order around. It follows the time, mode and level filters, and loads when it scrolls into view. The achievements count covers all games. Friend games and the computer do not count. Players that you blocked are not on your board. `GET /api/leaderboard` gives the same rows.
 - Everyone answers (the stats and the leaderboard) come from a snapshot. A second database connection refreshes it in the background when it is a minute old, or older for a costly refresh, so a visitor and the game never wait for it. With more than 100,000 games, the charts of moves, times, settings and devices show the newest 100,000.
-- Speed: the queries read plain columns that each write copies out of the stored game (`server/fields.ts`), and the games of one player come through indexes on the seat columns. At 1,000,000 players (5,000,000 games) every request of one player answered in under 1.5 s.
+- Speed: the queries read plain columns that each write copies out of the stored game (`contract/fields.ts`), and the games of one player come through indexes on the seat columns. At 1,000,000 players (5,000,000 games) every request of one player answered in under 1.5 s.
 - A tap on a row opens the person view. Its player card shows the unlocked achievements in a row that scrolls, newest first, and Report or block. The card has its own request (`GET /api/stats/card/{person}`), which reads no game, so it shows before the stats of the person.
 - On a phone, the player column of the leaderboard stays in view and cuts off long names, so about 4 number columns fit next to it.
 - While the stats load, the cards show as grey skeletons with a moving light, and then fade in. With reduced motion, the skeletons stay still.
@@ -220,33 +220,40 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 
 ## Share page
 
-`/share` holds the invite link and the steps to join the closed test: Android (Google Group, Play testing, a free Google Play promo code, install) and iPhone (TestFlight). The page was `/testing` before: `/testing` redirects to `/share` with the query (`container/Caddyfile`), so the links sent before the rename keep working. The old host `testing.tick3d.yarden-zamir.com` is gone (see `kitshn.md`): use `https://tick3d.yarden-zamir.com/share`.
+`/share` holds the invite link, the free Google Play promo codes and the way to get the app. It has two pages in one (`src/share/version.ts`):
+
+- The closed-test page: Android (Google Group, Play testing, a free code, install) and iPhone (TestFlight), with the steps in order.
+- The page for everyone: Android (a free code while codes last, then install from Play) and iPhone (play in Safari), with no order of steps.
+- The page for everyone shows once the Android app is live on Google Play. The server reads the public Play listing at start and every hour: 404 means the closed test, 200 means live (`rust/server/src/stores.rs`, `GET /api/stores`). The database keeps a live stage, so a restart does not turn it back. A check that gets no answer runs again after 5 minutes. Nobody needs to switch it. Limit: an open test would also make the listing public.
+- A browser that saw the app live keeps the page for everyone. `?version=testing` or `?version=general` opens one page, for a review.
+
+The page was `/testing` before: `/testing` redirects to `/share` with the query (`container/Caddyfile`), so the links sent before the rename keep working. The old host `testing.tick3d.yarden-zamir.com` is gone (see `kitshn.md`): use `https://tick3d.yarden-zamir.com/share`.
 
 - The codes come from the GitHub secret `KITSHN_TESTER_CODES` in the Environment `prod`, never from git: one entry per line or comma. `CODE` is a free code, and `CODE=Name` is a code that Name has already. A code has 10 to 30 characters from A-Z and 0-9.
 - At start, the API adds the codes that it does not hold yet. A known code keeps its row and its claim. A bad entry stops the start. Only production reads the secret, so a preview shows no codes.
 - A claim stores the email and the name that the tester types, the player token of the claimer and its owner then, and the person id of the inviter. The page shows the name and the Gravatar picture of each claim, never the email or a full code. `GET /api/testing/claims` gives the emails and the inviters to the maintainers, to add them to the Google Group.
 - Each code keeps its slot (#1, #2, ...): the order of the secret, with later codes at the end. The page refreshes the list every 20 s and when it comes back into view, and turns a claimed card in its place.
-- One address can claim 5 codes per hour. The browser keeps its codes in localStorage and shows them on the next visit.
+- One player can claim 5 codes per hour, and one address 100 (the limits count per player, so phones behind one carrier address do not share them). The browser keeps its codes in localStorage and shows them on the next visit.
 - The 15 s trailer (`public/trailer/`, 1.4 MB: 1280×720, x264 two-pass at 700 kbit/s with `-tune animation`, AAC 80 kbit/s, faststart) plays at the top without sound, once the browser expects to play it without a stop. A tap turns the sound on for one run. Each run ends on its last frame for 2.5 s, which also lets the last sound play out. The next run starts without sound. With reduced motion, it waits for a tap. A new encode gets a new file name, so no cache serves the old one.
 - The count of free codes is a button: it scrolls to the first free card and makes it pulse.
-- Share with a friend shares only the invite link `<origin>/share?by=<person id>`, with the public person id of the sharer. The Share button of the game header offers the same link ("Share tick3d"), and "Play online with a friend": a new online game, as the Online choice starts one, and its play link. The iOS app hides "Share tick3d", because `/share` offers Google Play codes.
+- Share with a friend shares only the invite link `<origin>/share?by=<person id>`, with the public person id of the sharer. The Share button of the game header offers the same link ("Share tick3d"), and "Play online with a friend": a new online game, as the Online choice starts one, and its play link. The iOS app hides "Share tick3d" while the app is in the closed test, because `/share` then explains how to join the test on Google Play. Once the app is live, the iOS app shows it. `/share` always opens in the browser, not in the iOS app.
 - The page keeps the first valid `by` in localStorage, and a claim sends it. The server stores it as `invited_by` on the code. An invite from the claimer's own person (a device or the account) counts for nobody.
 - Copies of the paid Android app (`src/copies.ts`): the native launch activity opens Chrome and establishes its validated message channel. The page requests a five-minute, one-time server nonce with its existing `X-Player`, then sends that nonce to the native activity. The activity returns a classic Play Integrity token and the Play Install Referrer over the channel. The page submits the proof with the same player token to `POST /api/copies`. The server calls Google's `decodeIntegrityToken`, checks the nonce's player, freshness and single use, timestamp, package, `PLAY_RECOGNIZED` and `LICENSED`, then records a proved copy. A launch referrer alone proves nothing. Without a network or a message channel the app opens without a new proof. Existing copies stay unproved until a verified open. The channel needs Chrome 115 or later and the `use_as_origin` relation in the site's Digital Asset Links.
 - The copy belongs to the account that is logged in on that device now, or to the device without a login. A login with another account on the device moves the copy to that account, and a logout moves it back to the device. So one copy serves one account at a time. No step on the page is needed.
 - `GET /api/me` gives `hasCopy`: true on every browser of an account that holds a copy, the web too.
 - A valid, player-bound `UNLICENSED` Play verdict clears `proved` on that device only. `UNEVALUATED` (Google could not decide) answers 403 and changes nothing. Other proved devices of the account keep their copies. A malformed, stale, reused or wrong-player proof cannot revoke a copy. Apple refunds are not checked; revisit when a player reports a refund.
-- The invite achievements count distinct people, also for Family tree: the claims and the app opens with that inviter, merged when they share a device, an owner or the account that holds a device now (`server/invite-people.ts`). A claim in the browser, a later login and the app on the same phone count once, and so do two devices of one account, also when a device logs in after its event. The claims from before the invite links count as invites of Yarden, except the codes that he gave to himself (a one-time migration in `server/store.ts`).
-- The iPhone app reports StoreKit 2 `AppTransaction` through a small Capacitor plugin. The server verifies its signed data with Apple's App Store Server Library, the bundle identifier, app identifier and environment. Apple's `appTransactionId` identifies an app purchase; `originalTransactionId` belongs to in-app purchases and is not present here. The plugin also sends `AppStore.deviceVerificationID`, and the server checks it against the signed `deviceVerification` hash. One purchase holds at most five devices (`apple_slots`), keyed by that id, so a copied proof cannot fill other slots. A new player token on the same device takes its slot over. A device cannot switch Apple purchases. Delete my data frees the slot, and a device unused for 90 days frees its slot when a new device needs it. TestFlight gets copies while it stays invite only; revisit when the TestFlight link becomes public. The iPhone browser storage is separate from Safari, so only an inviter visible inside the app can count.
+- The invite achievements count distinct people, also for Family tree: the claims and the app opens with that inviter, merged when they share a device, an owner or the account that holds a device now (`people_of` in `rust/server/src/achievements.rs`). A claim in the browser, a later login and the app on the same phone count once, and so do two devices of one account, also when a device logs in after its event. The claims from before the invite links count as invites of Yarden, except the codes that he gave to himself (a one-time migration in `rust/server/src/store/mod.rs`).
+- The iPhone app reports StoreKit 2 `AppTransaction` through a small Capacitor plugin. The server verifies its signed data as Apple's App Store Server Library does (`rust/server/src/apple_proof.rs`), and checks the bundle identifier, app identifier and environment. Apple's `appTransactionId` identifies an app purchase; `originalTransactionId` belongs to in-app purchases and is not present here. The plugin also sends `AppStore.deviceVerificationID`, and the server checks it against the signed `deviceVerification` hash. One purchase holds at most five devices (`apple_slots`), keyed by that id, so a copied proof cannot fill other slots. A new player token on the same device takes its slot over. A device cannot switch Apple purchases. Delete my data frees the slot, and a device unused for 90 days frees its slot when a new device needs it. TestFlight gets copies while it stays invite only; revisit when the TestFlight link becomes public. The iPhone browser storage is separate from Safari, so only an inviter visible inside the app can count.
 
 Run it locally with fake codes:
 
 ```sh
-TESTER_CODES="AAAAAAAAAAAAAAAAAAAAAA1=Tom,BBBBBBBBBBBBBBBBBBBBBB2" DB_PATH=/tmp/share.duckdb node server/main.ts
+cd rust && TESTER_CODES="AAAAAAAAAAAAAAAAAAAAAA1=Tom,BBBBBBBBBBBBBBBBBBBBBB2" DB_PATH=/tmp/share.duckdb cargo run --release -p tick3d-server
 ```
 
 ## Develop
 
-Node is not necessary on the host. Run the commands in a container:
+Node is not necessary on the host. Run the page commands in a container:
 
 ```sh
 docker run --rm -v "$PWD":/app -w /app node:26-alpine sh -c 'npm ci && npm run check && npm run build'
@@ -255,8 +262,8 @@ docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:26-alpine npx vite 
 
 - `npm run check` runs the type check, the linters (`npm run lint`) and the unit tests.
 - `npm run build` runs the type check and the Vite build.
-- `cargo test` in `rust/` runs the Rust rules against the rule cases. `rust/rust-toolchain.toml` sets the Rust version.
-- `npm run api` starts the API on port 8080 with `./dev.duckdb`.
+- `cargo test` in `rust/` runs the tests of the server and of the Rust rules, also against the rule cases. `rust/rust-toolchain.toml` sets the Rust version.
+- `npm run api` builds and starts the Rust API on port 8080 with `./dev.duckdb`. It needs Rust (rustup) on the host.
 - `npm run dev` starts the Vite dev server on port 5173. It sends `/api` calls to `npm run api`, so run both for Online games.
 
 `npm run e2e` runs the Playwright tests in `e2e/` against a deployed site. Set `E2E_BASE_URL` to the site, for example a pull request preview:
@@ -330,6 +337,9 @@ uv run store-images/convert.py /tmp/shots
 See [kitshn.md](kitshn.md). A push to `main` deploys production.
 
 The paid Android app on Google Play wraps the production site. The `android` workflow builds the committed Gradle project in `android/` and uploads it to closed testing. It runs on a push to `main` that changes the app (`android/`, except the listing, the scripts and the fastlane tools), on a tag `android-v1.2.0`, or by hand. The `play-*` workflows release it, sync the listing and file issues from reviews and crashes. Do not run `bubblewrap update` over the native purchase activity.
+
+- Production: set the repository variable `PLAY_RELEASE_TRACK` to `production` once Google gives production access. A tag `android-v*` then uploads a staged production release at 5 %, and needs no other step. The first production release goes to everyone at once, because Google stages only updates. Without the variable, a tag goes to closed testing, as before. A push to `main` always goes to closed testing.
+- The daily `play-rollout` workflow widens it by the age of the release, 5 %, 20 %, 50 %, then 100 % on day 3, while Android vitals stay under the bad behaviour thresholds of Google (user-perceived crash rate 1.09 %, ANR rate 0.47 %). A rate over a threshold halts the release and fails the job. Then fix the app and tag again, or resume it in Play Console. A run by hand shows the decision without a change (dry run). Limit: with few users, vitals has no data for a version, and the rollout widens on age alone.
 
 The iOS app wraps the production site the same way, with [Capacitor](https://capacitorjs.com): a site deploy reaches it with no app build. The `ios` workflow generates the Xcode project from [apple/capacitor.config.json](apple/capacitor.config.json), then installs the committed Swift purchase plugin with `apple/install-purchase-plugin.mjs`. A tag `ios-v1.2.0` builds, signs and uploads the app to TestFlight, and makes a GitHub release.
 

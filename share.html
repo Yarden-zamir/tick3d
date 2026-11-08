@@ -71,8 +71,11 @@
         <button type="button" class="trailer-sound" id="trailer-sound" aria-pressed="false">Tap for sound</button>
       </figure>
       <section class="share-hero" aria-labelledby="share-title">
-        <h2 id="share-title">Test tick3d before everyone else</h2>
-        <p>Thanks for helping! Which phone do you have?</p>
+        <!-- The two pages of /share (src/share/version.ts): data-only="testing" for the closed test, data-only="general" for everyone.
+             A heading keeps one element: data-general-text is its text on the page for everyone. -->
+        <h2 id="share-title" data-general-text="Get tick3d">Test tick3d before everyone else</h2>
+        <p data-only="testing">Thanks for helping! Which phone do you have?</p>
+        <p data-only="general">3D tic-tac-toe on a 4×4×4 cube. Which phone do you have?</p>
         <div class="phone-picker" id="phone-picker" role="group" aria-label="Your phone">
           <button type="button" class="phone-choice" id="pick-android" data-phone="android" aria-pressed="false">
             <svg viewBox="0 0 24 24" width="34" height="34" fill="currentColor" aria-hidden="true"><path d="M6 18c0 .55.45 1 1 1h1v3.5a1.5 1.5 0 0 0 3 0V19h2v3.5a1.5 1.5 0 0 0 3 0V19h1c.55 0 1-.45 1-1V8H6v10ZM3.5 8A1.5 1.5 0 0 0 2 9.5v7a1.5 1.5 0 0 0 3 0v-7A1.5 1.5 0 0 0 3.5 8Zm17 0A1.5 1.5 0 0 0 19 9.5v7a1.5 1.5 0 0 0 3 0v-7A1.5 1.5 0 0 0 20.5 8Zm-4.97-5.84 1.3-1.3a.5.5 0 0 0-.7-.71l-1.48 1.48A5.96 5.96 0 0 0 12 1c-.96 0-1.86.23-2.66.63L7.85.15a.5.5 0 0 0-.7.71l1.31 1.31A5.98 5.98 0 0 0 6 7h12a5.98 5.98 0 0 0-2.47-4.84ZM10 5H9V4h1v1Zm5 0h-1V4h1v1Z"/></svg>
@@ -88,12 +91,12 @@
       <section class="share-path" id="android-path" aria-labelledby="android-title" hidden>
         <h2 id="android-title" class="path-title">Android</h2>
         <ol class="steps">
-          <li class="step" data-step="group">
+          <li class="step" data-step="group" data-only="testing">
             <h3>Join the Google Group</h3>
             <p>Use the Google account of your phone.</p>
             <a class="btn" href="https://groups.google.com/g/tick3d" target="_blank" rel="noopener" data-done>Open the group</a>
           </li>
-          <li class="step" data-step="tester">
+          <li class="step" data-step="tester" data-only="testing">
             <h3>Become a tester</h3>
             <p>Tap "Become a tester", then come back here. If it fails, wait a minute and try again.</p>
             <p class="step-stop"><b>Do not download yet.</b> Play shows a price until you redeem your code.</p>
@@ -107,7 +110,8 @@
               <p class="remind-note" id="remind-note" role="status" hidden></p>
             </div>
             <h3>Claim a free code, then redeem it</h3>
-            <p>Pick one card for a free code, then redeem it in Play.</p>
+            <p data-only="testing">Pick one card for a free code, then redeem it in Play.</p>
+            <p data-only="general">Free Google Play codes, while they last. Pick one card, then redeem the code in Play before you install.</p>
             <div class="my-codes" id="my-codes" aria-live="polite"></div>
             <p class="codes-note" id="codes-note" role="status">Loading the codes…</p>
             <div class="code-grid" id="code-grid"></div>
@@ -117,7 +121,8 @@
           </li>
           <li class="step" data-step="install">
             <h3>Install</h3>
-            <p>Open tick3d on Play. It shows "Install" with no price. A price means that the code is not redeemed yet.</p>
+            <p data-only="testing">Open tick3d on Play. It shows "Install" with no price. A price means that the code is not redeemed yet.</p>
+            <p data-only="general">Open tick3d on Play. With a redeemed code, Play shows "Install" with no price.</p>
             <a class="btn btn-primary" href="https://play.google.com/store/apps/details?id=com.yardenzamir.tick3d" target="_blank" rel="noopener">Install from Play</a>
           </li>
         </ol>
@@ -126,12 +131,12 @@
       <section class="share-path" id="iphone-path" aria-labelledby="iphone-title" hidden>
         <h2 id="iphone-title" class="path-title">iPhone</h2>
         <ol class="steps">
-          <li class="step" data-step="testflight">
+          <li class="step" data-step="testflight" data-only="testing">
             <h3>Install TestFlight</h3>
             <p>The free Apple app for test builds.</p>
             <a class="btn" href="https://apps.apple.com/app/testflight/id899247664" target="_blank" rel="noopener" data-done>TestFlight on the App Store</a>
           </li>
-          <li class="step" data-step="invite">
+          <li class="step" data-step="invite" data-only="testing">
             <h3>Open the invite on your iPhone</h3>
             <p>Tap Accept, then Install. On a computer? Scan the code with your iPhone.</p>
             <div class="invite">
@@ -139,9 +144,14 @@
               <figure class="invite-qr" id="invite-qr" aria-label="QR code of the invite"></figure>
             </div>
           </li>
-          <li class="step" data-step="keep">
+          <li class="step" data-step="keep" data-only="testing">
             <h3>Keep TestFlight</h3>
             <p>New builds come through TestFlight. A build stops after 90 days.</p>
+          </li>
+          <li class="step" data-only="general">
+            <h3>Play in Safari</h3>
+            <p>The iPhone app comes later. tick3d plays in Safari now: tap Share, then "Add to Home Screen" to keep it like an app.</p>
+            <a class="btn btn-primary" href="/">Play now</a>
           </li>
         </ol>
       </section>
@@ -177,7 +187,8 @@
           <button type="button" class="btn btn-small btn-icon" id="claim-close" aria-label="Close"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </div>
         <p class="claim-warning" id="claim-warning" hidden><b>Are you sure?</b> You already have a code on this device. A second code leaves one less for another tester.</p>
-        <p class="claim-hint">Yarden adds this email to the tester group. Other testers see only your name and your Gravatar picture.</p>
+        <p class="claim-hint" data-only="testing">Yarden adds this email to the tester group. Other testers see only your name and your Gravatar picture.</p>
+        <p class="claim-hint" data-only="general">Only the tick3d maintainers see this email. Other players see only your name and your Gravatar picture.</p>
         <label class="claim-field">
           <span>Google Play email</span>
           <input type="email" id="claim-email" name="email" autocomplete="email" maxlength="254" required placeholder="you@gmail.com" />
@@ -194,9 +205,16 @@
       </form>
     </dialog>
     <div class="modal info-panel" id="info-panel" popover role="dialog" aria-labelledby="info-title">
-      <h2 id="info-title">How sharing and testing work</h2>
-      <p>tick3d is in a closed test on Google Play and on TestFlight.</p>
-      <ul>
+      <h2 id="info-title" data-general-text="How sharing works">How sharing and testing work</h2>
+      <p data-only="testing">tick3d is in a closed test on Google Play and on TestFlight.</p>
+      <ul data-only="general">
+        <li>Android: a free Google Play code makes the app free, while codes last. A card shows only the first letters of its code.</li>
+        <li>A claim stores the email and the name that you type. Other players see the name and your Gravatar picture, never the email.</li>
+        <li>This browser keeps your code, so it shows here on your next visit.</li>
+        <li>iPhone: tick3d plays in Safari. The iPhone app comes later.</li>
+        <li>Share with a friend shares your invite link. A friend who gets the game on Android through it counts for your invite achievements.</li>
+      </ul>
+      <ul data-only="testing">
         <li>Android: each tester gets one free Google Play code. A card shows only the first letters of its code.</li>
         <li>A claim stores the email and the name that you type. Other testers see the name and your Gravatar picture, never the email.</li>
         <li>This browser keeps your code, so it shows here on your next visit.</li>

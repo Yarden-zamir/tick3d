@@ -1,5 +1,5 @@
 // Cases of the achievement rules for the Rust server (rust/server/src/achievements.rs): random players with games and
-// invites, and the progress that src/achievements.ts gives them. server/rust-api.test.ts writes them to
+// invites, and the progress that src/achievements.ts gives them. contract/contract.test.ts writes them to
 // rust/server/achievement-cases.json, so the Rust rules cannot drift from these rules.
 // The seed is fixed, so the same rules give the same file.
 // Limit: no case wins with the 64th move (last-move): a fixture of such a game is hard to build. Random outcomes also
@@ -9,7 +9,10 @@ import { type AchievementGame, type Invites, ACHIEVEMENTS, achievementProgress }
 import type { TimeControl } from '../src/clock.ts';
 import { toEpochMs as ms } from '../src/epoch.ts';
 import type { GameId, SessionMode } from '../src/protocol.ts';
-import { ACHIEVEMENT_RULES_VERSION } from './store.ts';
+
+// Raise it when a rule in src/achievements.ts changes: every row of achievement_players then fills again.
+// A new or removed achievement changes the signatures by itself.
+const ACHIEVEMENT_RULES_VERSION = 5;
 
 // The game fixtures of src/achievements.test.ts.
 const X_ROW = [0, 16, 1, 17, 2, 18, 3];

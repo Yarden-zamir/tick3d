@@ -1,4 +1,4 @@
-//! The Google Play promo codes of the closed test (server/tester-codes.ts, src/share/codes.ts) and their routes.
+//! The Google Play promo codes of the closed test (src/share/codes.ts) and their routes.
 //! KitSHn fills TESTER_CODES from the GitHub secret KITSHN_TESTER_CODES. The repository is public, so codes never go in git.
 use std::collections::HashSet;
 use std::net::SocketAddr;
@@ -11,18 +11,18 @@ use serde_json::json;
 
 use crate::App;
 use crate::error::{ApiError, ApiResult};
-use crate::limits::{Limiter, client_of};
+use crate::limits::{PlayerLimit, client_of};
 use crate::protocol::{TESTER_NAME_MAX_LENGTH, js_safe_integer, parse_claim_request, parse_tester_name};
 use crate::sessions::{MAX_BODY_BYTES, ok_json, read_json, require_player};
 use crate::store::{hint_of, now_ms};
 
 const CODE_MIN_LENGTH: usize = 10;
 const CODE_MAX_LENGTH: usize = 30;
-/// The KitSHn environment of production, as in server/previews.ts.
+/// The KitSHn environment of production.
 const PRODUCTION_ENVIRONMENT: &str = "prod";
 
 /// Claims per address: 5 per hour (TESTER_CLAIMS_PER_HOUR).
-static ALLOW_TESTER_CLAIM: Limiter = Limiter::new(5, 3_600_000, 10_000, "Too many code claims from this address. Try again later.");
+static ALLOW_TESTER_CLAIM: PlayerLimit = PlayerLimit::new(5, 3_600_000, "Too many code claims. Try again later.");
 
 /// One entry of TESTER_CODES: a free code, or a code that `name` holds already.
 #[derive(Debug, PartialEq, Eq)]
@@ -91,9 +91,9 @@ pub async fn claim(
     headers: HeaderMap,
     body: Body,
 ) -> ApiResult<Response> {
-    ALLOW_TESTER_CLAIM.allow(&client_of(&headers, peer), now_ms())?;
     let token = require_player(&headers)?;
-    // Node also refuses a text that `Number` reads but that is not the plain number, such as "01" or "1.0".
+    ALLOW_TESTER_CLAIM.allow(&token, &client_of(&headers, peer), now_ms())?;
+    // A text that `Number` reads but that is not the plain number, such as "01" or "1.0", is refused too.
     let id = js_safe_integer(&code_id, 1)
         .filter(|id| id.to_string() == code_id)
         .ok_or_else(|| ApiError::bad_request("A code id is a whole number from 1."))?;

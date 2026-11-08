@@ -1,4 +1,4 @@
-//! The Idempotency-Key header (server/idempotency.ts): a repeat of a keyed request gets the first answer, and
+//! The Idempotency-Key header: a repeat of a keyed request gets the first answer, and
 //! changes nothing. A key counts per player and path for IDEMPOTENCY_TTL.
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -230,6 +230,7 @@ mod tests {
             snapshots: snapshots::Snapshots::default(),
             play: play_proof::PlayProof::from_env().unwrap(),
             apple: None,
+            stores: crate::stores::Stores::default(),
         }));
         let router = routes::router(app);
         // Poll the first request once, so it starts, then drop it, as a client that leaves.

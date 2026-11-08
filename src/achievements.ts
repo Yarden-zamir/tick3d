@@ -26,7 +26,7 @@ export type AchievementGame = {
   // How the player placed their moves, from the metrics of their device. Null without them, as in an online game.
   input: Metrics['input'] | null;
   // The first time that the opponent got the game through the invite link of the player, and the first time that the
-  // player got it through the link of the opponent (inviteEvents in server/store.ts). Only the server knows them:
+  // player got it through the link of the opponent (invite_events in rust/server/src/store/achievements.rs). Only the server knows them:
   // null on the device, without an opponent, and without such an invite.
   invitedOpponentAt: EpochMs | null;
   invitedByOpponentAt: EpochMs | null;
@@ -34,7 +34,7 @@ export type AchievementGame = {
 
 // The people who got the game through an invite, each person once, as the time when they got it, in any order.
 // direct: the people that the player invited. second: the people that those people invited in turn.
-// Only the server knows them (invitesOf in server/store.ts), so the device passes none.
+// Only the server knows them (rust/server/src/store/achievements.rs), so the device passes none.
 export type Invites = { direct: readonly EpochMs[]; second: readonly EpochMs[] };
 const NO_INVITES: Invites = { direct: [], second: [] };
 
@@ -670,11 +670,22 @@ export const ACHIEVEMENT_IDS: readonly AchievementId[] = ACHIEVEMENTS.map((achie
 // and unlockedBy is also null for a game from before game links.
 export type AchievementProgress = { id: AchievementId; count: number; unlockedAt: EpochMs | null; unlockedBy: GameId | null };
 
+// Oldest first. Two games that end in the same millisecond go by their id, a game without an id first, so a streak
+// is the same in any order of the input. Limit: two games from before game links (no id) at the same time keep the
+// input order; revisit if such old games matter for an unlock.
+function byFinish(a: AchievementGame, b: AchievementGame): number {
+  if (a.finishedAt !== b.finishedAt) return a.finishedAt - b.finishedAt;
+  if (a.id === b.id) return 0;
+  if (a.id === null) return -1;
+  if (b.id === null) return 1;
+  return a.id < b.id ? -1 : 1;
+}
+
 // The progress of every achievement, in the order of ACHIEVEMENTS. The games can come in any order.
 export function achievementProgress(games: readonly AchievementGame[], invites: Invites = NO_INVITES): AchievementProgress[] {
   const rivalries = new Map<string, Outcome[]>();
   const played = games
-    .toSorted((a, b) => a.finishedAt - b.finishedAt)
+    .toSorted(byFinish)
     .map((game): PlayedGame => {
       const end = toGame(game.game);
       if (!hasResult(end.status)) throw new Error('an achievement game has no result');

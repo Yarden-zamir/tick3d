@@ -1,4 +1,4 @@
-import { PREVIEWS_CACHE_MS, PREVIEWS_RELAY_CACHE_MS } from '../server/api-docs.ts';
+import { PREVIEWS_CACHE_MS, PREVIEWS_RELAY_CACHE_MS } from '../contract/api-docs.ts';
 import { previewNumberOfHost } from '../src/protocol.ts';
 import { expect, test } from './fixtures.ts';
 

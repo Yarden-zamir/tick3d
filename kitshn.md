@@ -21,7 +21,7 @@ This repository deploys with kitshn 2 (https://kit.yarden-zamir.com). GitHub Act
 
 ## This Recipe
 
-- Services: `site` (Caddy that serves `dist/` on the KitSHn socket) and `api` (Node, serves `/api/*`). `api` keeps DuckDB at `/data/tick3d.duckdb` on the `sessions` volume. Each environment has its own volume.
+- Services: `site` (Caddy that serves `dist/` on the KitSHn socket) and `api` (the Rust server of `rust/server`, serves `/api/*`). `api` keeps DuckDB at `/data/tick3d.duckdb` on the `sessions` volume. Each environment has its own volume.
 - Environments: `prod` from a push to `main`, and an ephemeral `pr-<number>` for each pull request. A pull request with the label `no-preview` gets no preview.
 - Preview limits: none. kitshn 2 has no CPU or memory limit for previews, so a preview competes with production. Revisit when kitshn 2 adds preview limits.
 - Hostnames: `tick3d.yarden-zamir.com` for prod, `tick3d-pr-<number>.yarden-zamir.com` for previews. Both are public.
@@ -32,7 +32,8 @@ This repository deploys with kitshn 2 (https://kit.yarden-zamir.com). GitHub Act
 - Secret `KITSHN_TESTER_CODES`, in the GitHub Environment `prod` only, so previews never get it: the Google Play promo codes of `/share`, one entry per line or comma. Set it with `gh secret set KITSHN_TESTER_CODES --env prod --repo Yarden-zamir/tick3d < file`. An entry is `CODE` (free) or `CODE=Name` (given out already, to Name). A bad entry stops `api` at start. Only prod reads it. At start, `api` adds the codes that it does not hold yet, and a known code keeps its row.
 - `testing.tick3d.yarden-zamir.com` does not answer since the KitSHn 1 shutdown. kitshn 2 cannot serve it: an address is the apex or one name under a zone, so that Universal SSL covers it (K-817). Yarden let it go on 2026-11-01: the address is `https://tick3d.yarden-zamir.com/share`. `/testing` redirects to `/share` on every environment (`container/Caddyfile`). This keeps the links from before the rename working.
 - Previews have no login: the account cookie is for `tick3d.yarden-zamir.com` and its subdomains, and a preview address is not one of them. Only prod calls GitHub for the preview list.
-- A deploy stops the app for a short time. kitshn builds first, then stops the containers, starts the new ones and waits for the socket. In that time, the address shows the kitshn offline page (503), about 30 s on 2026-10-28. While only `api` restarts, `container/Caddyfile` holds the `/api/*` requests. `api` answers the requests that run before it stops (server/main.ts).
+- A deploy stops the app for a short time. kitshn builds first, then stops the containers, starts the new ones and waits for the socket. In that time, kitshn holds GET, HEAD and OPTIONS requests and WebSocket reconnects until the app answers (kitshn#277): on 2026-11-08, one request waited 8 to 19 s at the switch, and no offline page (503) showed. A POST in that time can still get the offline page. While only `api` restarts, `container/Caddyfile` holds the `/api/*` requests. `api` answers the requests that run before it stops (rust/server/src/main.rs).
+- A deploy job that fails because of kitshn or the network (a dropped status read, a time-out, a 5xx answer) runs once more by itself (`.github/workflows/kitshn-retry.yml`). A build or app failure does not.
 - DuckDB allows one process. Stop `api` before you query the database by hand, then start it again.
 
 ## Badge

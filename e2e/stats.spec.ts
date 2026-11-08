@@ -67,7 +67,7 @@ test('the leaderboard loads on scroll, marks your row, sorts by a column, and op
 
   const board = page.locator('.stats-card', { has: page.getByRole('heading', { name: 'Leaderboard' }) });
   const you = board.locator('.leaderboard-you');
-  // The leaderboard comes from a snapshot that refreshes in the background (server/store.ts). An old
+  // The leaderboard comes from a snapshot that refreshes in the background (rust/server/src/snapshots.rs). An old
   // snapshot of this filter, for example from an earlier run on the same preview, answers first and
   // starts the refresh once it is STATS_CACHE_MS (60 s) old. So the page loads again until a snapshot
   // has this player, which can take that long when a run just before this one viewed the filter.

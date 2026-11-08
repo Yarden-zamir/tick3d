@@ -2,6 +2,8 @@ name: android
 
 # Builds the committed Android project. It runs on a push to main that changes the app, on an android-v tag,
 # or by hand. Each run uploads to closed testing (alpha) with release notes (android/release-notes.sh).
+# The repository variable PLAY_RELEASE_TRACK=production sends a tag to production instead, as a staged rollout at 5 %
+# that play-rollout.yml widens each day. That variable is the only change for the launch; a push to main stays on alpha.
 # The page is the same everywhere, so a site deploy reaches the app with no app build (like ios.yml).
 # Every build makes a GitHub release with the bundle. Promotion to other tracks: play-promote.yml.
 #
@@ -152,19 +154,46 @@ jobs:
           bundler-cache: true
           working-directory: android
 
-      # The testers are on closed testing (alpha), so a tag uploads there. The release is completed, so
-      # Play sends it to review and then to the testers without a step in Play Console.
+      # A tag uploads to PLAY_RELEASE_TRACK (default alpha, the testers), anything else to alpha or the chosen track.
+      # A testing release is completed, so Play sends it to review and then to the testers without a step in Play
+      # Console. A production release starts at 5 % (inProgress), and play-rollout.yml widens it.
       - name: Upload to Google Play
         if: steps.play.outputs.ready == 'true'
         working-directory: android
         env:
           SUPPLY_JSON_KEY_DATA: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          TRACK: ${{ inputs.track || (startsWith(github.ref, 'refs/tags/android-v') && vars.PLAY_RELEASE_TRACK) || 'alpha' }}
+          TOKEN: ${{ steps.play.outputs.token }}
+          PACKAGE: ${{ steps.play.outputs.package }}
         run: |
+          # Google stages only updates: the first production release goes to everyone at once. A failed read stops
+          # the job, so an error never publishes to everyone.
+          case "$TRACK" in
+            production)
+              api="https://androidpublisher.googleapis.com/androidpublisher/v3/applications/$PACKAGE/edits"
+              edit=$(curl --silent --fail-with-body -X POST -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{}' "$api" | jq --exit-status --raw-output .id)
+              answer=$(curl --silent -o "$RUNNER_TEMP/track.json" -w '%{http_code}' -H "authorization: Bearer $TOKEN" "$api/$edit/tracks/production")
+              curl --silent -X DELETE -H "authorization: Bearer $TOKEN" "$api/$edit" > /dev/null
+              case "$answer" in
+                200) released=$(jq --exit-status '[.releases // [] | .[] | select(.status == "completed" or .status == "inProgress" or .status == "halted")] | length' "$RUNNER_TEMP/track.json") ;;
+                404) released=0 ;;
+                *) echo "::error::The production track answered $answer: $(cat "$RUNNER_TEMP/track.json")"; exit 1 ;;
+              esac
+              if [[ "$released" == 0 ]]; then
+                status=(--release_status completed)
+                echo "::notice::The first production release goes to everyone: Google stages only updates."
+              else
+                status=(--release_status inProgress --rollout 0.05)
+              fi
+              ;;
+            alpha|internal) status=(--release_status completed) ;;
+            *) echo "::error::PLAY_RELEASE_TRACK must be alpha, internal or production, not $TRACK"; exit 1 ;;
+          esac
           bundle exec fastlane supply \
             --package_name '${{ steps.play.outputs.package }}' \
             --aab "$BUILD_DIR/tick3d.aab" \
-            --track '${{ inputs.track || 'alpha' }}' \
-            --release_status completed \
+            --track "$TRACK" \
+            "${status[@]}" \
             --metadata_path "$RUNNER_TEMP/store" \
             --skip_upload_apk true --skip_upload_metadata true --skip_upload_images true --skip_upload_screenshots true
 
@@ -198,7 +227,7 @@ jobs:
           echo "body=$body" >> "$GITHUB_OUTPUT"
 
       - name: GitHub release
-        uses: softprops/action-gh-release@v3.0.3
+        uses: softprops/action-gh-release@v3.0.4
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           target_commitish: ${{ github.sha }}

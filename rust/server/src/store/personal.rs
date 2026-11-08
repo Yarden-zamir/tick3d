@@ -13,7 +13,7 @@ use super::stats::{
     CELL_COUNT, DAY_MS, DIFFICULTIES, FilterSql, HIDE_SETTINGS, MOVE_TIME_BUCKETS, RELEASE_ROWS, SESSION_MODES, SIDED_GAMES, SideOutcome,
     bound_filter, filtered_games, form_of, js_number, js_option, per_cell, since_of, streaks_of,
 };
-use super::{FROM_NODE, json_list, metric_lists};
+use super::{CONTRACT, json_list, metric_lists};
 use crate::error::{ApiError, ApiResult};
 use crate::protocol::{StatsFilter, StatsScope};
 
@@ -51,6 +51,8 @@ struct Game {
     mine_o: bool,
     mine_upload: bool,
     side: Option<String>,
+    /// The second key of an order by time (results.id).
+    result_id: String,
 }
 
 /// The quantile of `values` as DuckDB's quantile_cont computes it: linear between the two nearest ranks.
@@ -95,7 +97,7 @@ fn read_games(conn: &Connection, filter: &StatsFilter, tokens: &[String], now: i
     let sql = format!(
         "SELECT epoch_ms(finished_at), mode, level, you, computer, tuned, hide_board, hide_history, hide_coordinates,
            to_json(moves)::VARCHAR, to_json(times)::VARCHAR, per_game, per_move, winner, ending, line, player_x, player_o,
-           to_json(metrics)::VARCHAR, public_id, mine_x, mine_o, mine_upload, side
+           to_json(metrics)::VARCHAR, public_id, mine_x, mine_o, mine_upload, side, result_id
          FROM ({})",
         filtered_games(Some(tokens.len()), &filter_sql)
     );
@@ -134,12 +136,13 @@ fn read_games(conn: &Connection, filter: &StatsFilter, tokens: &[String], now: i
             mine_o: row.get(21)?,
             mine_upload: row.get(22)?,
             side: row.get(23)?,
+            result_id: row.get(24)?,
         })
     })?;
     Ok(found.collect::<duckdb::Result<Vec<_>>>()?)
 }
 
-/// The person key of each token (PERSON in server/stats.ts): "github:<id>" for a linked token, else the token.
+/// The person key of each token: "github:<id>" for a linked token, else the token.
 fn persons_of(conn: &Connection, tokens: &HashSet<&str>) -> ApiResult<HashMap<String, String>> {
     let asked: Vec<String> = tokens.iter().map(|token| (*token).to_owned()).collect();
     let linked: HashMap<String, i64> = conn
@@ -285,7 +288,7 @@ pub(super) fn personal_stats(conn: &Connection, now: i64, filter: &StatsFilter, 
         let ids: Vec<String> = mine_seats.keys().map(|id| (*id).to_owned()).collect();
         let sql = format!(
             "SELECT sm.public_id, sm.seat, to_json({})::VARCHAR FROM seat_metrics sm WHERE list_contains(CAST($ids AS JSON)::VARCHAR[], sm.public_id)",
-            FROM_NODE.fields.metrics_of_seat_metrics
+            CONTRACT.fields.metrics_of_seat_metrics
         );
         let seat_rows = conn
             .prepare_cached(&sql)?
@@ -335,8 +338,8 @@ pub(super) fn personal_stats(conn: &Connection, now: i64, filter: &StatsFilter, 
         *mixes.entry(pair.join(" + ")).or_default() += 1;
     }
 
-    // Outcomes from the player's side, oldest first.
-    let mut sided: Vec<(i64, SideOutcome)> = games
+    // Outcomes from the player's side, newest first, by time and then by result id (as the SQL path).
+    let mut keyed: Vec<((i64, &str), SideOutcome)> = games
         .iter()
         .filter_map(|game| {
             let side = game.side.as_deref()?;
@@ -345,10 +348,11 @@ pub(super) fn personal_stats(conn: &Connection, now: i64, filter: &StatsFilter, 
                 Some(winner) if winner == side => SideOutcome::Won,
                 Some(_) => SideOutcome::Lost,
             };
-            Some((game.finished, outcome))
+            Some(((game.finished, game.result_id.as_str()), outcome))
         })
         .collect();
-    sided.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
+    keyed.sort_by(|(a, _), (b, _)| b.cmp(a));
+    let mut sided: Vec<(i64, SideOutcome)> = keyed.into_iter().map(|((at, _), outcome)| (at, outcome)).collect();
     sided.truncate(SIDED_GAMES as usize);
     sided.reverse();
 
@@ -568,7 +572,9 @@ mod tests {
                 if timed_out {
                     moves.truncate(4);
                 }
-                let finished = now - (n * 17 % 45) * DAY - n * 61_000;
+                // Game 8 ends in the same millisecond as game 7, so the order of a tie counts in both paths.
+                let at = if n == 8 { 7 } else { n };
+                let finished = now - (at * 17 % 45) * DAY - at * 61_000;
                 let times: Vec<i64> = (0..moves.len()).map(|i| finished - (moves.len() - i) as i64 * (300 + (n * 977 + i as i64 * 431) % 9000)).collect();
                 let you = if mode == "friend" { Value::Null } else { json!(if n % 2 == 0 { "X" } else { "O" }) };
                 let device = ["phone", "tablet", "computer"][(n % 3) as usize];
@@ -601,6 +607,34 @@ mod tests {
         answer
     }
 
+    /// One bad result in an upload is refused on its own; the good ones of the same upload are stored.
+    #[tokio::test]
+    async fn refuses_a_bad_result_alone_and_stores_the_others() {
+        use super::super::results::RefusedUpload;
+        let dir = std::env::temp_dir().join(format!("tick3d-refused-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.duckdb");
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(path.to_str().unwrap(), Arc::new(NoPages)).unwrap();
+        let all = uploads(super::super::now_ms());
+        // Three games without a guest, a broken one at index 1, and at the end a Nearby game that names the uploader as its guest.
+        let mut batch = all[..3].to_vec();
+        batch.insert(1, json!({ "id": "broken-result-0001", "mode": "computer" }));
+        batch.push(all[4].clone());
+        let (queued, refused) = store.call(move |db| Ok(db.add_results(GUEST, &batch))).await.unwrap();
+        assert_eq!(
+            refused,
+            [
+                RefusedUpload { index: 1, error: "A result is not a valid finished game." },
+                RefusedUpload { index: 4, error: "The guest of a Nearby game needs its own player token." },
+            ]
+        );
+        assert_eq!(queued.len(), 3);
+        for upload in queued {
+            assert!(upload.outcome.await.unwrap().unwrap().stored);
+        }
+    }
+
     #[tokio::test]
     async fn counts_the_same_as_the_sql_stats() {
         let dir = std::env::temp_dir().join(format!("tick3d-personal-{}", std::process::id()));
@@ -611,7 +645,8 @@ mod tests {
         let now = super::super::now_ms();
         store
             .call(move |db| {
-                db.add_results(ALICE, &uploads(now))?;
+                let (_, refused) = db.add_results(ALICE, &uploads(now));
+                assert!(refused.is_empty(), "{refused:?}");
                 db.add_release(&Release { version: "main-aaaa1".into(), name: "First".into(), at: now - 50 * DAY })?;
                 Ok(())
             })

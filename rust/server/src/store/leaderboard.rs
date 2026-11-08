@@ -1,4 +1,4 @@
-//! The leaderboard (server/leaderboard.ts and leaderboardOf in server/store.ts): the common stats of each person, from
+//! The leaderboard: the common stats of each person, from
 //! their side of each game. The store adds the names and the person ids, so no token leaves the server.
 use duckdb::{Connection, ToSql};
 use serde::Serialize;
@@ -24,22 +24,23 @@ fn leaderboard_sql() -> String {
     format!(
         "WITH g AS ({}),
            seats AS (
-             SELECT finished_at, len(moves) AS moves, winner, ending, 'X' AS seat, player_x AS token FROM g WHERE player_x IS DISTINCT FROM player_o
+             SELECT finished_at, result_id, len(moves) AS moves, winner, ending, 'X' AS seat, player_x AS token FROM g WHERE player_x IS DISTINCT FROM player_o
              UNION ALL
-             SELECT finished_at, len(moves) AS moves, winner, ending, 'O' AS seat, player_o AS token FROM g WHERE player_x IS DISTINCT FROM player_o
+             SELECT finished_at, result_id, len(moves) AS moves, winner, ending, 'O' AS seat, player_o AS token FROM g WHERE player_x IS DISTINCT FROM player_o
            ),
            played AS (
              -- A seat can hold the account token itself, which has no player_tokens row.
              SELECT coalesce($account || lpad(pt.github_id::VARCHAR, 16, '0'), token) AS owner,
                coalesce(pt.github_id, CASE WHEN starts_with(token, $account) THEN ltrim(substr(token, length($account) + 1), '0')::BIGINT END) AS github_id,
-               finished_at, moves, ending,
+               finished_at, result_id, moves, ending,
                coalesce(winner = seat, false) AS won, winner IS NULL AS drawn
              FROM seats LEFT JOIN player_tokens pt USING (token)
              WHERE token IS NOT NULL AND token <> $computer
            ),
            shown AS (FROM played WHERE owner NOT IN (FROM private_stats SELECT owner)),
            -- A run counts the games since the last game that was not a win, so each run of wins has one number.
-           runs AS (SELECT owner, won, sum(CASE WHEN won THEN 0 ELSE 1 END) OVER (PARTITION BY owner ORDER BY finished_at ROWS UNBOUNDED PRECEDING) AS run FROM shown),
+           -- result_id orders two games that end in the same millisecond, so the best streak is the same on every call.
+           runs AS (SELECT owner, won, sum(CASE WHEN won THEN 0 ELSE 1 END) OVER (PARTITION BY owner ORDER BY finished_at, result_id ROWS UNBOUNDED PRECEDING) AS run FROM shown),
            streaks AS (SELECT owner, max(wins)::INTEGER AS best_streak FROM (SELECT owner, run, count(*) FILTER (won) AS wins FROM runs GROUP BY owner, run) GROUP BY owner),
            totals AS (
              SELECT owner, any_value(github_id) AS github_id, count(*)::INTEGER AS games, count(*) FILTER (won)::INTEGER AS won,
@@ -72,7 +73,7 @@ pub struct LeaderRow {
     achievements: i64,
 }
 
-/// The rows of the leaderboard, on the reader connection (leaderRows in server/leaderboard.ts).
+/// The rows of the leaderboard, on the reader connection.
 fn leader_rows(conn: &Connection, filter: &StatsFilter) -> ApiResult<Vec<LeaderRow>> {
     let since = since_of(filter, now_ms());
     let mode = filter.mode.map(|mode| mode.as_str());

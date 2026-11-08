@@ -1,19 +1,23 @@
-# API benchmarks: Node against Rust
+# API benchmarks
 
-`run.sh` runs the Node API (`server/`) and the Rust API (`rust/server`) on the same seeded database and the same machine. It prints one JSON line per measurement.
+`run.sh` runs one or more builds of the API server (`rust/server`) on the same seeded database and the same machine, for example the main branch against a change. It prints one JSON line per measurement, with the file name of each binary as `server`.
 
 ## Run it
 
 ```sh
 cd rust && cargo build --release -p tick3d-server && cd ..
+cp rust/target/release/tick3d-server /tmp/change
 LIB=$(ls -td rust/target/release/build/libduckdb-sys-*/out | head -1)
 SEED_FILE=/tmp/bench-seed.duckdb OHA=~/.cargo/bin/oha \
-  nice -n 19 flock /tmp/tick3d-heavy.lock bench/run.sh <node app dir> rust/target/release/tick3d-server "$LIB" 3
+  nice -n 19 flock /tmp/tick3d-heavy.lock bench/run.sh "$LIB" 3 /tmp/main /tmp/change
 ```
 
-- The node app dir holds `server/`, `src/` and a `node_modules` with every server package.
-- `ONLY="stats-mine mixed"` measures only these. `SERVERS=rust` runs only one server.
+- Build each binary from its own checkout, and give each one its own file name.
+- `ONLY="stats-mine mixed"` measures only these.
 - `SEED_FILE` keeps the seed between runs. Seeding takes about 3 minutes.
+- The VPS is noisy. For an A/B comparison, run the binaries in turn several times, and compare the pairs.
+
+The results below compare the Node API, which this repository removed after the Rust server went live on 2026-11-04, with the Rust API. They stay as the record of that switch.
 
 ## Method
 
@@ -85,5 +89,5 @@ request per move and an event stream per player, as the page did before. `poll`:
 - One shared VPS with production on it. Single runs vary a lot (health: 6,259 to 22,234 rps in one series).
 - The game loop runs once per series, not 3 times.
 - Before 2026-11-04, `interaction.ts` took the delivery time after the move answer, so the earlier delivery numbers were too high. Only the rows marked 2026-11-04 use the fixed client.
-- The load client of the game loop is Node. It is the same client for both servers.
-- The Node server runs from a folder of symlinks with `--preserve-symlinks`, as in the parity scripts.
+- The load client of the game loop runs on Node. It is the same client for every server.
+- The Node server ran from a folder of symlinks with `--preserve-symlinks`.

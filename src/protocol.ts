@@ -31,7 +31,7 @@ export type MatchOptions = { hideBoard: boolean; hideHistory: boolean; hideCoord
 export const MATCH_OPTIONS = ['hideBoard', 'hideHistory', 'hideCoordinates'] as const;
 
 // Reads match options. A sender or a stored value from before hideCoordinates has no such field: it reads as false.
-export function parseMatchOptions(value: unknown): MatchOptions | undefined {
+function parseMatchOptions(value: unknown): MatchOptions | undefined {
   if (!isRecord(value) || typeof value.hideBoard !== 'boolean' || typeof value.hideHistory !== 'boolean') return undefined;
   const hideCoordinates = value.hideCoordinates ?? false;
   if (typeof hideCoordinates !== 'boolean') return undefined;
@@ -212,7 +212,7 @@ function parseSeatRequestView(value: unknown): SeatRequestView | undefined {
 // server and a Nearby host give one device the same id, and DuckDB's sha256() finds the same id.
 export type PersonId = string & { readonly __brand: 'PersonId' };
 export const PERSON_ID_LENGTH = 16;
-export const PERSON_ID_PREFIX = 'tick3d-person:';
+const PERSON_ID_PREFIX = 'tick3d-person:';
 const HEX_CHARS = '0123456789abcdef';
 
 export async function personId(token: string): Promise<PersonId> {
@@ -299,7 +299,7 @@ export const AVATAR_PICTURES = ['github', 'google', 'generated'] as const;
 export type AvatarPicture = (typeof AVATAR_PICTURES)[number];
 export const AVATAR_SEED_LENGTH = 12;
 const AVATAR_SEED_CHARS = '0123456789abcdef';
-export const isAvatarSeed = (value: unknown): value is string =>
+const isAvatarSeed = (value: unknown): value is string =>
   typeof value === 'string' && value.length === AVATAR_SEED_LENGTH && [...value].every((char) => AVATAR_SEED_CHARS.includes(char));
 
 // The body of PUT /api/me/avatar.
@@ -353,8 +353,8 @@ export function normalizeChat(input: unknown): string | undefined {
 const TOKEN_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789-';
 
 // The server keeps a seat that a logged-in player takes under the account, with this prefix and the
-// GitHub id (server/store.ts). A GitHub id is public, so no client may send such a token as its own.
-export const ACCOUNT_TOKEN_PREFIX = 'account-';
+// GitHub id (rust/server/src/ids.rs). A GitHub id is public, so no client may send such a token as its own.
+const ACCOUNT_TOKEN_PREFIX = 'account-';
 
 // A token is a crypto.randomUUID() kept in the browser. It proves which seat a browser holds.
 export function asPlayerToken(input: unknown): PlayerToken | undefined {
@@ -414,7 +414,7 @@ export function isMoveList(value: unknown): value is number[] {
   return Array.isArray(value) && value.length <= CELL_COUNT && value.every(isCell);
 }
 
-export function isGameRecord(value: unknown): value is GameRecord {
+function isGameRecord(value: unknown): value is GameRecord {
   if (!isRecord(value)) return false;
   const { moves, times, timedOut, abandoned, clock } = value;
   return (
@@ -573,7 +573,7 @@ function sameStatus(value: unknown, status: Status): boolean {
 }
 
 const GITHUB_LOGIN_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
-export const isGitHubLogin = (login: string): boolean => login.length >= 1 && login.length <= 39 && [...login].every((char) => GITHUB_LOGIN_CHARS.includes(char));
+const isGitHubLogin = (login: string): boolean => login.length >= 1 && login.length <= 39 && [...login].every((char) => GITHUB_LOGIN_CHARS.includes(char));
 
 export const isDisplayName = (value: unknown): value is string => typeof value === 'string' && value.length >= 1 && value.length <= NAME_MAX_LENGTH;
 const isSeatName = (value: unknown): value is string | null => value === null || isDisplayName(value);
@@ -590,7 +590,7 @@ function parseSeatNames(value: unknown): SeatNames | undefined {
 }
 
 // Pictures come from GitHub and Google only, so a page never loads an image from an address a player chose.
-export const PICTURE_HOSTS: Record<LoginProvider, string> = {
+const PICTURE_HOSTS: Record<LoginProvider, string> = {
   github: 'https://avatars.githubusercontent.com/',
   google: 'https://lh3.googleusercontent.com/',
 };
@@ -1053,7 +1053,7 @@ export type Stats = {
   timeLimits: { perGame: number | null; perMove: number | null; games: number }[];
   tuned: { tuned: boolean; games: number; humanWins: number }[];
   // The charts of moves, times, settings and devices of Everyone read the newest `sample` games when there are
-  // more games than that (STATS_SAMPLE in server/stats.ts). Null when they read every game.
+  // more games than that (STATS_SAMPLE in rust/server/src/store/stats.rs). Null when they read every game.
   sample: number | null;
   // From game metrics: device results, and each player of an online game (one report per seat).
   metricsGames: number;
@@ -1082,15 +1082,15 @@ export type Stats = {
   openingWinsX: number[];
   // For Mine and the person filter. null for Everyone. The person filter has no opponents.
   personal: PersonalStats | null;
-  // The sound practice room: runs and leaderboards (server/practice.ts).
+  // The sound practice room: runs and leaderboards (rust/server/src/store/practice.rs).
   practice: PracticeStats;
   // For Mine and the person filter: every achievement and its rarity. The filters do not change it. null for Everyone.
   achievements: Achievements | null;
 };
 
 // A game result from the side of one player. A friend game has no side.
-export type SideOutcome = Exclude<Outcome, 'played'>;
-export type PersonalStats = {
+type SideOutcome = Exclude<Outcome, 'played'>;
+type PersonalStats = {
   // Your survival records: per level, the most moves of a game that the default computer won.
   survival: { level: Difficulty; moves: number }[];
   // Per mode, and per level in computer games. Friend games have no side, so they are not here.
@@ -1104,7 +1104,7 @@ export type PersonalStats = {
 
 // The name and the GitHub account of the person of a person filter: the name that the games show.
 // `you`: the caller is this person, so the page offers no report and no block.
-export type StatsPerson = { name: string; player: PlayerInfo | null; you: boolean };
+type StatsPerson = { name: string; player: PlayerInfo | null; you: boolean };
 
 // GET /api/stats/card/{person}: the player card of a person view. `unlocked` holds the unlocked achievements, newest first.
 export type StatsCard = { person: StatsPerson; unlocked: AchievementId[] };
@@ -1115,7 +1115,6 @@ export type StatsPrivacy = { private: boolean };
 export function parseStatsPrivacy(value: unknown): StatsPrivacy | undefined {
   return isRecord(value) && hasOnlyKeys(value, ['private']) && typeof value.private === 'boolean' ? { private: value.private } : undefined;
 }
-export const STATS_PRIVATE_MESSAGE = 'This player keeps their stats private.';
 
 export const FORM_WINDOW = 20;
 
@@ -1136,7 +1135,6 @@ export type StatsFilter = {
   person: PersonId | null;
 };
 export const ALL_STATS: StatsFilter = { scope: 'everyone', range: 'all', mode: null, level: null, person: null };
-export const RANGE_DAYS: Record<StatsRange, number | null> = { '7d': 7, '30d': 30, all: null };
 const STATS_KEYS = ['scope', 'range', 'mode', 'level', 'person'] as const;
 
 // Refuses an unknown key, a repeated key, an unknown or empty value, a level with a mode other than computer,
@@ -1203,11 +1201,6 @@ export type Leaderboard = {
 };
 export const LEADERBOARD_ROWS = 500;
 
-// The filter of GET /api/leaderboard: the stats filter without a scope and a person.
-export function parseLeaderboardFilter(params: URLSearchParams): StatsFilter | undefined {
-  const filter = parseStatsFilter(params);
-  return filter === undefined || filter.scope !== 'everyone' || filter.person !== null ? undefined : filter;
-}
 
 // A total of a player, such as games or wins. Unlike isCount, it has no cap: an API agent can play many games.
 const isTotal = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
@@ -1255,8 +1248,8 @@ export function outcomeOf(winner: Player | null, you: Player | null): Outcome {
 
 // ---- Previews ----
 
-// GET /api/previews: the open pull requests with a live preview (server/previews.ts).
-export type Contributor = Pick<PlayerInfo, 'login' | 'avatar'> & { url: string };
+// GET /api/previews: the open pull requests with a live preview (rust/server/src/previews.rs).
+type Contributor = Pick<PlayerInfo, 'login' | 'avatar'> & { url: string };
 // An image from the pull request description, such as a screenshot of the change.
 export type PreviewImage = { src: string; alt: string };
 export type Preview = {
@@ -1310,7 +1303,7 @@ export function previewNumberOfHost(hostname: string): number | undefined {
   return Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
-export const isPreviewImageSource = (src: string): boolean => PREVIEW_IMAGE_SOURCES.some((prefix) => src.startsWith(prefix));
+const isPreviewImageSource = (src: string): boolean => PREVIEW_IMAGE_SOURCES.some((prefix) => src.startsWith(prefix));
 
 function parsePreviewImage(value: unknown): PreviewImage | undefined {
   if (!isRecord(value)) return undefined;
@@ -1348,6 +1341,18 @@ function parsePreview(value: unknown): Preview | undefined {
   const parsedImages = images.map(parsePreviewImage);
   if (!parsedImages.every((image) => image !== undefined)) return undefined;
   return { number, title, description, url, previewUrl, updatedAt, draft, contributors: people, parent, toy, images: parsedImages };
+}
+
+// GET /api/stores: where the apps stand in the stores (rust/server/src/stores.rs). testing: only testers get the
+// Android app (the closed test). live: everyone gets it from Google Play.
+export const PLAY_STAGES = ['testing', 'live'] as const;
+export type PlayStage = (typeof PLAY_STAGES)[number];
+export type Stores = { play: PlayStage };
+
+export function parseStores(value: unknown): Stores | undefined {
+  if (!isRecord(value)) return undefined;
+  const play = PLAY_STAGES.find((stage) => stage === value.play);
+  return play === undefined ? undefined : { play };
 }
 
 export function parsePreviews(value: unknown): Previews {

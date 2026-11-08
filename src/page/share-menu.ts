@@ -1,8 +1,8 @@
 // The Share button of the game header: "Play online with a friend" starts an online game and shares its play link,
 // and "Share tick3d" shares the invite link of /share with the person id of this player (src/share/invite.ts).
-// The iOS app hides "Share tick3d": /share offers Google Play codes, and the App Store does not allow a pointer to
-// another store ([data-hide-in~="ios"] in src/style.css).
+// The iOS app shows "Share tick3d" only once the Android app is live on Google Play (src/stores.ts).
 import { inviteUrl } from '../share/invite.ts';
+import { showShareSiteInIosWhenLive } from '../stores.ts';
 import { startOnlineGame } from './controls.ts';
 import { element } from './dom.ts';
 import { copyText, showError, showToast } from './feedback.ts';
@@ -44,8 +44,10 @@ export function setupShareMenu(): void {
     menu.hidePopover();
     void playWithFriend().catch(showError);
   });
-  element('#game-share-site', HTMLButtonElement).addEventListener('click', () => {
+  const shareSite = element('#game-share-site', HTMLButtonElement);
+  shareSite.addEventListener('click', () => {
     menu.hidePopover();
     void shareTick3d().catch(showError);
   });
+  showShareSiteInIosWhenLive(shareSite);
 }

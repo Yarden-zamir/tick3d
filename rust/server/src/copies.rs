@@ -1,4 +1,4 @@
-//! The bought copies of the apps (server/main.ts: POST /api/copies/nonce and POST /api/copies). A store proof makes or
+//! The bought copies of the apps (POST /api/copies/nonce and POST /api/copies). A store proof makes or
 //! confirms the copy of a device. The checks of the proofs are in play_proof.rs and apple_proof.rs.
 use std::net::SocketAddr;
 
@@ -11,14 +11,14 @@ use serde_json::{Value, json};
 use crate::App;
 use crate::apple_proof::ApplePurchase;
 use crate::error::{ApiError, ApiResult};
-use crate::limits::{Limiter, client_of};
+use crate::limits::{PlayerLimit, client_of};
 use crate::protocol::parse_person_id;
 use crate::sessions::{ok_json, read_json, require_player};
 use crate::store::now_ms;
 
-/// APP_OPENS_PER_HOUR in server/api-docs.ts, for app opens and for nonces.
-static ALLOW_APP_OPEN: Limiter = Limiter::new(60, 3_600_000, 10_000, "Too many app reports from this address. Try again later.");
-static ALLOW_PROOF_NONCE: Limiter = Limiter::new(60, 3_600_000, 10_000, "Too many purchase checks from this address.");
+/// APP_OPENS_PER_HOUR in contract/api-docs.ts, for app opens and for nonces.
+static ALLOW_APP_OPEN: PlayerLimit = PlayerLimit::new(60, 3_600_000, "Too many app reports. Try again later.");
+static ALLOW_PROOF_NONCE: PlayerLimit = PlayerLimit::new(60, 3_600_000, "Too many purchase checks.");
 /// A proof is at most 32 KiB of text, inside a body of at most 40 KiB.
 const MAX_PROOF: usize = 32_768;
 const MAX_BODY_BYTES: usize = 40 * 1024;
@@ -55,8 +55,8 @@ fn parse_app_open(value: &Value) -> Option<(Option<String>, AppOpen)> {
 
 /// A cross-site form cannot send the X-Player header, so another site cannot ask for a nonce of a player.
 pub async fn nonce(State(app): State<App>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> ApiResult<Response> {
-    ALLOW_PROOF_NONCE.allow(&client_of(&headers, peer), now_ms())?;
     let token = require_player(&headers)?;
+    ALLOW_PROOF_NONCE.allow(&token, &client_of(&headers, peer), now_ms())?;
     Ok(ok_json(StatusCode::OK, &json!({ "nonce": app.play.nonce(&token)? })))
 }
 
@@ -66,8 +66,8 @@ pub async fn report(
     headers: HeaderMap,
     body: Body,
 ) -> ApiResult<Response> {
-    ALLOW_APP_OPEN.allow(&client_of(&headers, peer), now_ms())?;
     let token = require_player(&headers)?;
+    ALLOW_APP_OPEN.allow(&token, &client_of(&headers, peer), now_ms())?;
     let (by, open) = parse_app_open(&read_json(body, MAX_BODY_BYTES).await?)
         .ok_or_else(|| ApiError::bad_request("An app open report needs the person id of the inviter, or null, in \"by\"."))?;
     // The checks call Google or Apple, so they run off the async threads.

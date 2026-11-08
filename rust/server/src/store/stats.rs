@@ -1,4 +1,4 @@
-//! The aggregates of the public stats page (server/stats.ts computeStats, and stats and statsCard in server/store.ts).
+//! The aggregates of the public stats page and of the player cards.
 //! Everyone gets counts only. Mine adds the names of your opponents. A person filter counts the games of one person,
 //! without their opponents. Never a token, a result id or a game id leaves this file.
 use duckdb::{Connection, ToSql};
@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::games::{seated_results, token_names, token_params};
 use super::practice::{ACCOUNT_NAME, PERSON, person_name, practice_stats};
-use super::{FROM_NODE, metric_lists};
+use super::{CONTRACT, metric_lists};
 use crate::error::{ApiError, ApiResult};
 use crate::protocol::{StatsFilter, StatsScope};
 
@@ -66,12 +66,12 @@ fn literal_filter(filter: &StatsFilter, now: i64) -> FilterSql {
     }
 }
 
-/// `column IN ($t0, …)` (inTokens in server/stats.ts).
+/// `column IN ($t0, …)`.
 fn in_tokens(column: &str, count: usize) -> String {
     format!("{column} IN ({})", (0..count).map(|index| format!("$t{index}")).collect::<Vec<_>>().join(", "))
 }
 
-/// filteredGames in server/stats.ts: one row per finished game that passes the filters. `tokens`: the number of tokens of
+/// One row per finished game that passes the filters. `tokens`: the number of tokens of
 /// one player for Mine and a person filter, else None. Both devices of a Nearby game send a result, so only the host's counts.
 pub(super) fn filtered_games(tokens: Option<usize>, filter: &FilterSql) -> String {
     let (source, mine_x, mine_o, mine_upload) = match tokens {
@@ -102,12 +102,14 @@ pub(super) fn filtered_games(tokens: Option<usize>, filter: &FilterSql) -> Strin
            {mine_o} AS mine_o,
            {mine_upload} AS mine_upload,
            CASE WHEN scoped THEN (CASE WHEN mine_x AND mine_o THEN NULL WHEN mine_x THEN 'X' WHEN mine_o THEN 'O' END)
-             WHEN mode = 'computer' THEN you END AS side
+             WHEN mode = 'computer' THEN you END AS side,
+           -- The second key of every order by time: two games can end in the same millisecond. Never sent to a page.
+           results.id AS result_id
          WHERE results.nearby_role IS DISTINCT FROM 'guest'
            AND ({since} IS NULL OR finished_at >= make_timestamptz({since} * 1000))
            AND ({mode} IS NULL OR results.mode = {mode})
            AND ({level} IS NULL OR results.level = {level})",
-        metrics = FROM_NODE.fields.metrics_of_results,
+        metrics = CONTRACT.fields.metrics_of_results,
         scoped = tokens.is_some(),
         since = filter.since,
         mode = filter.mode,
@@ -200,7 +202,7 @@ pub(super) fn streaks_of(outcomes: &[SideOutcome]) -> (usize, Value) {
     (best, current)
 }
 
-/// computeStats in server/store.ts: about 25 queries over stats_games and stats_sample. Everyone runs on the reader
+/// The stats: about 25 queries over stats_games and stats_sample. Everyone runs on the reader
 /// connection; Mine and a person filter run on the store connection. The caller runs one call at a time on its
 /// connection, so one set of temporary tables is enough. `tokens`: the tokens of one player for Mine and a person filter.
 /// `sessions`: how many sessions exist. The answer has no `practice`, `person` and `achievements` yet.
@@ -425,7 +427,7 @@ fn stats_of_games(conn: &Connection, filter: &StatsFilter, scoped: bool, now: i6
         conn,
         &format!(
             "{SAMPLE} SELECT epoch_ms(finished_at), CASE WHEN winner IS NULL THEN 'drawn' WHEN winner = side THEN 'won' ELSE 'lost' END
-             FROM g WHERE side IS NOT NULL ORDER BY finished_at DESC LIMIT {SIDED_GAMES}"
+             FROM g WHERE side IS NOT NULL ORDER BY finished_at DESC, result_id DESC LIMIT {SIDED_GAMES}"
         ),
         |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
     )?
@@ -491,7 +493,7 @@ fn stats_of_games(conn: &Connection, filter: &StatsFilter, scoped: bool, now: i6
            SELECT {} AS metrics FROM seat_metrics sm JOIN g USING (public_id)
            WHERE NOT g.scoped OR (sm.seat = 'X' AND g.mine_x) OR (sm.seat = 'O' AND g.mine_o)
          )",
-        FROM_NODE.fields.metrics_of_seat_metrics
+        CONTRACT.fields.metrics_of_seat_metrics
     );
     // The field names are fixed here, never input.
     let metric_counts = |field: &str| {
@@ -675,7 +677,7 @@ impl super::Db {
     }
 
     /// The person of a person view, for the caller `token`: 403 when the person hides their stats from the caller, 404
-    /// without an account and a finished game (visiblePersonOf in server/store.ts).
+    /// without an account and a finished game.
     fn visible_person_of(&mut self, person: &str, token: Option<&str>) -> ApiResult<(super::moderation::StatsPerson, ShownPerson)> {
         let hidden: Option<String> = self
             .query(
@@ -761,7 +763,7 @@ pub fn scoped_stats(conn: &Connection, filter: &StatsFilter, subject: &StatsSubj
     Ok(answer)
 }
 
-/// The Everyone stats on the reader connection, for a snapshot (stats in server/store.ts).
+/// The Everyone stats on the reader connection, for a snapshot.
 pub fn everyone_stats(conn: &Connection, filter: &StatsFilter, sessions: usize) -> ApiResult<Value> {
     let mut answer = compute_stats(conn, super::now_ms(), filter, None, sessions)?;
     answer["person"] = Value::Null;

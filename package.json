@@ -8,16 +8,13 @@
     "dev": "vite",
     "check": "tsc && npm run lint && vitest run",
     "test": "vitest run",
-    "lint": "oxlint --type-aware --deny-warnings src server e2e video/creative vite.config.ts && stylelint \"src/**/*.css\" && html-validate *.html && knip",
+    "lint": "oxlint --type-aware --deny-warnings src contract e2e .github/scripts video/creative vite.config.ts && stylelint \"src/**/*.css\" && html-validate *.html && knip",
     "build": "tsc && vite build",
-    "api": "DB_PATH=./dev.duckdb node server/main.ts",
+    "api": "cd rust && DB_PATH=../dev.duckdb cargo run --release -p tick3d-server",
     "e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
-    "@apple/app-store-server-library": "3.1.0",
-    "@capacitor/core": "8.6.0",
-    "@duckdb/node-api": "2.0.0-r.1",
-    "google-auth-library": "11.3.2"
+    "@capacitor/core": "8.6.0"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
@@ -28,25 +25,26 @@
     "fake-indexeddb": "^6.2.7",
     "ggwave": "0.4.0",
     "happy-dom": "^20.14.6",
-    "html-validate": "^11.17.0",
+    "html-validate": "^11.18.0",
     "jsqr": "^1.4.0",
-    "knip": "^6.44.0",
-    "oxlint": "^1.90.0",
+    "knip": "^6.44.1",
+    "oxlint": "^1.91.0",
     "oxlint-tsgolint": "^7.0.2005",
     "pngjs": "^7.0.0",
     "qrcode-generator": "^2.0.4",
     "stylelint": "^17.16.0",
     "stylelint-config-recommended": "^18.0.0",
     "typescript": "^7.0.2",
-    "vite": "^8.3.5",
+    "vite": "^8.3.6",
     "vite-plugin-pwa": "^2.0.0",
-    "vitest": "^5.0.5",
+    "vitest": "^5.1.0",
     "workbox-window": "^7.4.1"
   },
   "knip": {
     "entry": [
       "e2e/*.spec.ts",
       "bench/*.ts",
+      ".github/scripts/*.ts",
       "store-images/*.ts",
       "video/creative/tools/*.ts"
     ],

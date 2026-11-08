@@ -335,7 +335,7 @@ pub fn parse_match_options(value: &Value) -> Option<MatchOptions> {
     })
 }
 
-/// The lists and ranges of parseMetrics, from TypeScript (rust/server/from-node.json).
+/// The lists and ranges of parseMetrics, from TypeScript (rust/server/contract.json).
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MetricLists {

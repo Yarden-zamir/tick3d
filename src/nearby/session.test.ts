@@ -5,7 +5,6 @@ import { createLocalBackend } from '../local.ts';
 import { type PlayerToken, personId } from '../protocol.ts';
 import { createNearbyGuest, createNearbyHost } from './session.ts';
 import { channelPair } from './testing.ts';
-import { openStore } from '../../server/store.ts';
 
 const host = 'aaaaaaaa-0000-4000-8000-000000000001' as PlayerToken;
 const guest = 'bbbbbbbb-0000-4000-8000-000000000002' as PlayerToken;
@@ -86,20 +85,16 @@ describe('Nearby host and guest', () => {
   });
 
   it('gives a device the same person id as the server does, and ties its messages to it', async () => {
-    const server = await openStore(':memory:');
-    try {
-      const online = await server.create(guest, 'Online');
-      const { local, code, connect } = await setup();
-      const first = connect(guest);
-      await first.backend.join(code);
-      await first.backend.chat(code, 'hi from the phone');
-      const nearby = await local.load(code);
-      expect(nearby.people.O).toBe(online.people.X);
-      expect(nearby.people.O).not.toContain(guest);
-      expect(nearby.chat).toMatchObject([{ text: 'hi from the phone', by: online.people.X }]);
-    } finally {
-      await server.close();
-    }
+    // The Rust server gives this token the same id (rust/server/src/ids.rs, a_person_id_is_the_same_as_on_the_page).
+    const serverId = 'f9ef0340306bef2f';
+    const { local, code, connect } = await setup();
+    const first = connect(guest);
+    await first.backend.join(code);
+    await first.backend.chat(code, 'hi from the phone');
+    const nearby = await local.load(code);
+    expect(nearby.people.O).toBe(serverId);
+    expect(await personId(guest)).toBe(serverId);
+    expect(nearby.chat).toMatchObject([{ text: 'hi from the phone', by: serverId }]);
   });
 
   it('does not report a goodbye when the guest leaves on purpose', async () => {

@@ -1,5 +1,4 @@
-//! The live sessions and the results of finished games (server/store.ts: load, save, change, writeSessions,
-//! queueResult, storeResults). Memory holds the current row of each live session, and the file holds the rest.
+//! The live sessions and the results of finished games. Memory holds the current row of each live session, and the file holds the rest.
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
@@ -13,7 +12,7 @@ use tick3d_core::session::{
 };
 use tokio::sync::oneshot;
 
-use super::{Db, FROM_NODE, now_ms};
+use super::{CONTRACT, Db, now_ms};
 use crate::doc::parse_doc;
 use crate::error::{ApiError, ApiResult};
 use crate::ids::{ACCOUNT_TOKEN_PREFIX, person_id};
@@ -315,10 +314,10 @@ impl Db {
     fn record_online(&mut self, code: &str, doc: &SessionDoc, index: usize, finished_at: i64) {
         let game = doc.games[index].clone();
         // Both players can leave a timed game, and then its clock still ends it. Such a game belongs to nobody: it has no
-        // result row. Node threw here, and a panic would stop this process with the sessions in memory.
+        // result row. A panic here would stop this process with the sessions in memory.
         let Some(token) = doc.seats.x.clone().or_else(|| doc.seats.o.clone()) else { return };
         let stored = json!({ "mode": "online", "code": code, "number": index + 1, "name": doc.name, "game": game, "options": doc.options, "finishedAt": finished_at });
-        // The answer waits for the batch, as in server/store.ts, but nothing reads its outcome.
+        // The answer waits for the batch, but nothing reads its outcome.
         drop(self.queue_result(QueuedResult {
             // ':' is not a character of an uploaded result id, so the two kinds never meet.
             id: format!("online:{code}:{index}"),
@@ -475,7 +474,7 @@ impl Db {
             batch.flush().map_err(text)?;
             seat_batch.flush().map_err(text)?;
         }
-        let fields = &FROM_NODE.fields;
+        let fields = &CONTRACT.fields;
         let insert = format!(
             "INSERT INTO results (id, token, doc, finished_at, public_id, player_x, player_o, winner, ending, line, metrics, {}, {})
              SELECT id, token, doc::JSON::VARIANT, make_timestamptz(finished * 1000), public_id, player_x, player_o, winner, ending, line, metrics::JSON::VARIANT,

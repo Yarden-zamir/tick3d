@@ -1,4 +1,4 @@
-//! Limits per client address (createLimiter and clientOf in server/auth.ts).
+//! Limits per player token and per client address.
 use std::collections::{BTreeMap, VecDeque};
 use std::net::SocketAddr;
 use std::sync::Mutex;
@@ -59,5 +59,58 @@ impl Limiter {
         let retry = ((window.ends_at - now) as f64 / 1000.0).ceil().max(1.0) as i64;
         let headers: Vec<(HeaderName, HeaderValue)> = vec![(header::RETRY_AFTER, HeaderValue::from(retry))];
         Err(ApiError::Refusal { status: StatusCode::TOO_MANY_REQUESTS, message: self.message.to_owned(), code: None, headers })
+    }
+}
+
+/// The address limit of a PlayerLimit is this many times its player limit.
+pub const ADDRESS_FACTOR: u32 = 20;
+
+/// A limit per player token, and a looser one per address. Phones behind one carrier NAT share an address, so the
+/// player limit is the real one. The address limit stops one client that makes many tokens.
+/// Limit: a player can make new tokens, so an attacker on many addresses passes both. Revisit with a real attack.
+pub struct PlayerLimit {
+    player: Limiter,
+    address: Limiter,
+}
+
+impl PlayerLimit {
+    pub const fn new(per_player: u32, window_ms: i64, message: &'static str) -> PlayerLimit {
+        PlayerLimit {
+            player: Limiter::new(per_player, window_ms, 10_000, message),
+            address: Limiter::new(per_player * ADDRESS_FACTOR, window_ms, 10_000, message),
+        }
+    }
+
+    pub fn allow(&self, token: &str, client: &str, now: i64) -> Result<(), ApiError> {
+        self.address.allow(client, now)?;
+        self.player.allow(token, now)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn players_behind_one_address_each_get_their_own_limit() {
+        let limit = PlayerLimit::new(2, 60_000, "no");
+        // Three players on one carrier address: each gets 2.
+        for player in ["a", "b", "c"] {
+            assert!(limit.allow(player, "198.51.100.7", 0).is_ok());
+            assert!(limit.allow(player, "198.51.100.7", 0).is_ok());
+            assert!(limit.allow(player, "198.51.100.7", 0).is_err(), "{player} gets a third");
+        }
+        // A new window starts after the window ends.
+        assert!(limit.allow("a", "198.51.100.7", 60_000).is_ok());
+    }
+
+    #[test]
+    fn one_address_with_many_players_stops_at_the_address_limit() {
+        let limit = PlayerLimit::new(1, 60_000, "no");
+        let allowed = (0..100).filter(|n| limit.allow(&format!("player-{n}"), "203.0.113.9", 0).is_ok()).count();
+        assert_eq!(allowed, ADDRESS_FACTOR as usize);
+        // Another address is not affected.
+        assert!(limit.allow("player-0", "203.0.113.10", 0).is_err(), "player-0 used its 1 already");
+        assert!(limit.allow("player-new", "203.0.113.10", 0).is_ok());
     }
 }

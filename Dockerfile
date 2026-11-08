@@ -9,7 +9,6 @@ COPY public public
 # The build reads the package id and the key fingerprints of the Android app for /.well-known/assetlinks.json.
 COPY android/twa-manifest.json android/
 COPY src src
-COPY server server
 # The release name comes from the commit (vite.config.ts, src/release.ts). compose.yml passes the
 # checkout's .git as the `git` context and the environment, which adds "(pr-<n>)" to a preview name.
 RUN apk add --no-cache git
@@ -18,34 +17,13 @@ ARG KITSHN_ENVIRONMENT
 # (.github/workflows/kitshn.yml), which must pass before a deploy starts.
 RUN --mount=type=bind,from=git,target=/app/.git npx vite build
 
-# The API runs its TypeScript directly: Node 26 strips the types. DuckDB is its only runtime package.
-FROM node:26-alpine AS api
-WORKDIR /app
-COPY package.json package-lock.json ./
-# Runtime packages only: the DuckDB client and its native binding for Alpine (musl).
-RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
-# Copy whole folders: a list of single files missed a new shared module once (src/clock.ts).
-# Page-only modules come along but Node never loads them. Tests do not belong in a runtime image.
-COPY --from=build /app/src src/
-COPY --from=build /app/server server/
-COPY --from=build /app/android/twa-manifest.json android/twa-manifest.json
-# The release of this build: the API stores it at start (server/main.ts).
-COPY --from=build /app/dist/release.json release.json
-RUN find src server -name '*.test.ts' -delete
-# A new named volume copies this owner, so the node user can write the database.
-RUN mkdir /data && chown node:node /data
-USER node
-ENV DB_PATH=/data/tick3d.duckdb
-CMD ["node", "server/main.ts"]
-
-# The Rust API (rust/server, issue #265). compose.yml runs rust-api as the `api` service. The Node `api` stage above
-# stays for compose.lan.yml until LAN hosts switch too. Build by hand: docker build --target rust-api --build-context git=.git .
+# The API (rust/server). compose.yml and compose.lan.yml run rust-api as the `api` service.
+# Build by hand: docker build --target rust-api --build-context git=.git .
 # The duckdb crate downloads libduckdb.so for glibc at build time, so these stages use Debian, not Alpine.
 FROM rust:1.99.1-slim-trixie AS rust-build
 WORKDIR /src
 COPY rust rust
-# The Apple root certificate goes into the binary (rust/server/src/apple_proof.rs).
-COPY server/apple-roots server/apple-roots
+# The Apple root certificate (rust/server/apple-roots) goes into the binary (rust/server/src/apple_proof.rs).
 # The cache mounts keep the crates and the build between deploys, so a deploy compiles only what changed. A cold build
 # takes about 9 minutes on the VPS; without the caches every deploy would pay that.
 # The cache is shared by every build on the builder, so it can hold several libduckdb.so. Cargo names the out_dir of the

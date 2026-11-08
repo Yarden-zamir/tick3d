@@ -4,11 +4,7 @@ import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import { parseAnnounce, parseAnnounced, parseAnswerRequest, parseLobbyHosts } from '../src/nearby/lobby.ts';
 import { parseMe, parseMyGames, parseStatsCard } from '../src/online.ts';
-import { parseGoogleCredential } from './auth.ts';
 import {
-  ALL_STATS,
-  type PlayerToken,
-  parseGameId,
   normalizeChat,
   parseClientEvent,
   parseHistoryPage,
@@ -17,6 +13,7 @@ import {
   parsePublicGame,
   parseNewSession,
   parsePreviews,
+  parseStores,
   parseResultUpload,
   parseSessionUpdate,
   parseSessionView,
@@ -36,16 +33,11 @@ import { parsePlayoffRequest } from '../src/practice/playoff.ts';
 import { parsePracticeBoard, parsePracticeRun } from '../src/practice/practice.ts';
 import { PATH_PARAMS, ROUTES, ROUTE_NAMES, type Route, SCHEMAS, type SchemaName, matchRoute, splitRoute } from './api-docs.ts';
 import { curlOf, openApi, swaggerHtml } from './api-docs-render.ts';
-import { openStore } from './store.ts';
 import { isRecord } from '../src/guards.ts';
 import { parseClaimRequest, parseClaimedCode, parseTesterCodes } from '../src/share/codes.ts';
 import { parseAppOpen, parseCopyAnswer } from '../src/copies.ts';
 
 const ORIGIN = 'https://tick3d.example.com';
-const fail = (id: string): never => {
-  throw new Error(`not a game id: ${id}`);
-};
-
 // The real parsers of the page and the server, by shape. A parser returns undefined or throws on a bad value.
 // Shapes without a parser (Health, ResultsResponse, Records, Stats, ...) are read inline by their only caller,
 // so the JSON Schema check below is their only check.
@@ -54,9 +46,9 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   NewSession: parseNewSession,
   SessionUpdate: parseSessionUpdate,
   MoveRequest: parseMoveRequest,
-  // server/main.ts reads `text` and the session rules check it with normalizeChat.
+  // The Rust server reads `text` and checks it as normalizeChat does.
   ChatRequest: (value) => (isRecord(value) ? normalizeChat(value.text) : undefined),
-  // server/main.ts checks the list, and the store checks each result with parseResultUpload.
+  // The Rust server checks the list, and each result as parseResultUpload does.
   ResultsRequest: (value) =>
     isRecord(value) && Array.isArray(value.results) && value.results.every((result) => parseResultUpload(result, ms(Date.now())) !== undefined)
       ? value
@@ -81,15 +73,17 @@ const PARSERS: Partial<Record<SchemaName, (value: unknown) => unknown>> = {
   StatsCard: parseStatsCard,
   SeatAction: parseSeatAction,
   SeatAnswer: parseSeatAnswer,
-  // server/main.ts reads `name` and checks it with parseCustomName.
+  // The Rust server reads `name` and checks it as parseCustomName does (rust/server/src/account.rs).
   NameRequest: (value) => (isRecord(value) ? parseCustomName(value.name) : undefined),
-  GoogleCredential: parseGoogleCredential,
+  // rust/server/src/login.rs reads `credential` as a string.
+  GoogleCredential: (value) => (isRecord(value) && typeof value.credential === 'string' ? value.credential : undefined),
   AvatarRequest: parseAvatarRequest,
   BlockRequest: parseBlockRequest,
   StatsPrivacy: parseStatsPrivacy,
   Blocks: parseBlocks,
   ReportRequest: parseReportRequest,
   TesterCodes: parseTesterCodes,
+  Stores: parseStores,
   ClaimRequest: parseClaimRequest,
   ClaimedCode: parseClaimedCode,
   AppOpen: parseAppOpen,
@@ -162,48 +156,6 @@ describe('the SessionView schema', () => {
       expect(parses('SessionView', without(example, key)), key).toBe(filled.includes(key));
     }
   });
-
-  it('matches what the store sends, so a new field needs docs', async () => {
-    const store = await openStore(':memory:');
-    try {
-      const alice = 'agent-aaaaaaaaaaaaaaaa' as PlayerToken;
-      const bob = 'agent-bbbbbbbbbbbbbbbb' as PlayerToken;
-      const { code } = await store.create(alice, 'Agent match');
-      await store.join(code, bob);
-      for (const [moveCount, cell] of [0, 1, 16, 2, 32, 3, 48].entries()) {
-        await store.move(code, moveCount % 2 === 0 ? alice : bob, { game: 0, moveCount, cell });
-      }
-      const won = await store.chat(code, bob, 'Good game!');
-      expect(schemaErrors('SessionView', won)).toBe('');
-      expect(won.status).toEqual({ kind: 'won', winner: 'X', line: [0, 16, 32, 48] });
-      expect(won.turn).toBeNull();
-      const next = await store.newGame(code, alice);
-      expect(schemaErrors('SessionView', next)).toBe('');
-      expect(next.turn).toBe('X');
-      expect(schemaErrors('MyGames', await store.myGames(alice))).toBe('');
-      const id = `${code}-1`;
-      expect(schemaErrors('PublicGame', await store.game(parseGameId(id) ?? fail(id)))).toBe('');
-      expect(schemaErrors('HistoryPage', await store.history(alice, 0))).toBe('');
-      expect(schemaErrors('Records', { records: await store.records(alice) })).toBe('');
-      expect(schemaErrors('Stats', await store.stats())).toBe('');
-      const board = await store.leaderboard(ALL_STATS, alice);
-      expect(board.rows).toHaveLength(2);
-      expect(schemaErrors('Leaderboard', board)).toBe('');
-    } finally {
-      await store.close();
-    }
-    // DuckDB writes for each move. A busy CI machine needs more than the default 5 s.
-  }, 20_000);
-  it('matches the Mine stats, which add your own results', async () => {
-    const store = await openStore(':memory:');
-    try {
-      const mine = await store.stats({ ...ALL_STATS, scope: 'mine' }, 'agent-aaaaaaaaaaaaaaaa' as PlayerToken);
-      expect(mine.personal).not.toBeNull();
-      expect(schemaErrors('Stats', mine)).toBe('');
-    } finally {
-      await store.close();
-    }
-  }, 20_000);
 });
 
 describe('matchRoute', () => {

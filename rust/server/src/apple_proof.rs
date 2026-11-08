@@ -1,5 +1,4 @@
-//! iPhone app purchase proofs (server/apple-proof.ts and the checks of SignedDataVerifier in
-//! @apple/app-store-server-library, online mode). A proof is a JWS with an x5c chain: leaf, intermediate, root.
+//! iPhone app purchase proofs (the checks of SignedDataVerifier in @apple/app-store-server-library, online mode). A proof is a JWS with an x5c chain: leaf, intermediate, root.
 //! The chain must lead to Apple Root CA G3, carry Apple's marker extensions, be in date, and pass OCSP. Every failure
 //! refuses the proof (fail closed), also a network fault of the OCSP responder.
 //! Speed: a verified chain stays in a cache for 15 minutes, as in the library, so a repeat open costs no OCSP calls.
@@ -31,7 +30,7 @@ use x509_parser::prelude::FromDer;
 
 use crate::error::{ApiError, ApiResult};
 
-const APPLE_ROOT: &[u8] = include_bytes!("../../../server/apple-roots/AppleRootCA-G3.cer");
+const APPLE_ROOT: &[u8] = include_bytes!("../apple-roots/AppleRootCA-G3.cer");
 const MAX_SKEW_MS: i64 = 60_000;
 const CACHE_MS: i64 = 15 * 60_000;
 const MAX_CACHE: usize = 32;

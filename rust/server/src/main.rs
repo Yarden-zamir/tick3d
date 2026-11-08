@@ -1,4 +1,4 @@
-//! The tick3d API server in Rust (#265): the same routes as server/main.ts, against the same DuckDB file.
+//! The tick3d API server: the routes of contract/api-docs.ts on one DuckDB file.
 mod account;
 mod achievements;
 mod apple_proof;
@@ -27,6 +27,7 @@ mod snapshots;
 mod socket;
 mod stats;
 mod store;
+mod stores;
 mod tester_codes;
 
 use std::net::SocketAddr;
@@ -60,6 +61,8 @@ pub struct AppState {
     pub play: play_proof::PlayProof,
     /// None when the Apple checks are not configured.
     pub apple: Option<apple_proof::AppleProof>,
+    /// Where the apps stand in the stores (stores.rs).
+    pub stores: stores::Stores,
 }
 
 impl std::ops::Deref for App {
@@ -146,8 +149,8 @@ async fn main() {
         let added = store.call(move |db| db.add_tester_codes(&codes)).await.expect("the tester codes are stored");
         println!("tester codes: {added} new of {total}");
     }
-    // The release of this build (src/release.ts). The image holds release.json in the working directory, as the Node
-    // image holds it next to server/. A local server has no build, so it records no release. A bad file stops the start.
+    // The release of this build (src/release.ts). The image holds release.json in the working directory (Dockerfile).
+    // A local server has no build, so it records no release. A bad file stops the start.
     match std::fs::read_to_string("release.json") {
         Ok(text) => {
             let value: serde_json::Value =
@@ -171,7 +174,12 @@ async fn main() {
         snapshots: snapshots::Snapshots::default(),
         play: play_proof::PlayProof::from_env().unwrap_or_else(|error| panic!("{error}")),
         apple: apple_proof::AppleProof::from_env().unwrap_or_else(|error| panic!("{error}")),
+        stores: stores::Stores::default(),
     }));
+    // A LAN host may have no internet, and its page has no store links to switch.
+    if app.lan_host.is_none() {
+        tokio::spawn(stores::watch(app.clone()));
+    }
     let writer = store.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(SESSION_WRITE);

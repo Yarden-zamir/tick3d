@@ -1,5 +1,4 @@
-//! The DuckDB file. One thread owns the write connection and runs the store jobs one at a time, as the
-//! store queue of server/store.ts does. So each read-check-write job is atomic in this process.
+//! The DuckDB file. One thread owns the write connection and runs the store jobs one at a time. So each read-check-write job is atomic in this process.
 //! Limit: this holds while one process uses the file. Two processes cannot open one DuckDB file anyway.
 mod accounts;
 mod achievements;
@@ -76,11 +75,14 @@ pub struct Store {
 /// Prepared statements kept per connection (duckdb-rs keeps 16 by default).
 const STATEMENT_CACHE: usize = 256;
 
+/// The mark in the migrations table of an app that is live on Google Play (Db::play_live).
+const PLAY_LIVE: &str = "play-listing-live";
+
 /// The GitHub account of the maintainer Yarden (login Yarden-zamir), for the migration 'tester-invites-before-links'.
 const YARDEN_GITHUB_ID: i64 = 8178413;
 
 #[derive(Deserialize)]
-struct FromNode {
+struct Contract {
     schema: Vec<String>,
     fields: Fields,
     metrics: crate::protocol::MetricLists,
@@ -88,10 +90,10 @@ struct FromNode {
 
 /// The lists and ranges that the metrics check reads, from TypeScript.
 pub fn metric_lists() -> &'static crate::protocol::MetricLists {
-    &FROM_NODE.metrics
+    &CONTRACT.metrics
 }
 
-/// The SQL of the copied columns of a result (server/fields.ts).
+/// The SQL of the copied columns of a result (contract/fields.ts).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Fields {
@@ -101,13 +103,13 @@ struct Fields {
     metric_values_of_metrics: String,
     /// The metric columns from a bound `$metrics` JSON text.
     metric_values_of_parameter: String,
-    /// The metrics of a row as a struct (metricsStruct in server/fields.ts), of `results` and of `seat_metrics sm`.
+    /// The metrics of a row as a struct (metricsStruct in contract/fields.ts), of `results` and of `seat_metrics sm`.
     metrics_of_results: String,
     metrics_of_seat_metrics: String,
 }
 
-static FROM_NODE: std::sync::LazyLock<FromNode> =
-    std::sync::LazyLock::new(|| serde_json::from_str(include_str!("../../from-node.json")).expect("from-node.json parses"));
+static CONTRACT: std::sync::LazyLock<Contract> =
+    std::sync::LazyLock::new(|| serde_json::from_str(include_str!("../../contract.json")).expect("contract.json parses"));
 
 pub fn now_ms() -> i64 {
     let since = SystemTime::now().duration_since(UNIX_EPOCH).expect("the clock is after 1970");
@@ -174,7 +176,7 @@ impl Store {
                     job(db)
                 };
                 let writes = std::mem::take(&mut db.job_writes);
-                // The caller can be gone (the client left). The job ran anyway, as in server/store.ts.
+                // The caller can be gone (the client left). The job ran anyway.
                 let _ = answer.send((result, writes));
             }))
             .map_err(|_| ApiError::fault("the store thread stopped"))?;
@@ -203,7 +205,7 @@ impl Db {
     }
 
     fn prepare(&mut self) -> duckdb::Result<()> {
-        for statement in &FROM_NODE.schema {
+        for statement in &CONTRACT.schema {
             self.conn.execute_batch(statement)?;
         }
         // DuckDB 1.5.6 could not replay ALTER ... DROP NOT NULL on `reports` from the write-ahead log, and the schema
@@ -231,6 +233,21 @@ impl Db {
             )
         })?;
         self.sessions.load_known_codes(&self.conn)
+    }
+
+    /// True once the Android app was live on Google Play (stores.rs). The migrations table keeps the mark, because it
+    /// is a fact that happens once per database, like a migration.
+    pub fn play_live(&self) -> ApiResult<bool> {
+        let count: i64 = self.conn.query_row(
+            "SELECT count(*) FROM migrations WHERE name = $name",
+            duckdb::named_params! { "name": PLAY_LIVE },
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    pub fn mark_play_live(&mut self) -> ApiResult<()> {
+        Ok(self.run_once(PLAY_LIVE, |_| Ok(()))?)
     }
 
     /// Runs `task` once per database: the migrations table keeps the name, so a later start skips it.

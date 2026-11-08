@@ -1,4 +1,4 @@
-//! Every route of server/main.ts. The test below checks this table against the documented routes, so every route
+//! Every route of the API. The tests below checks this table against the documented routes, so every route
 //! that the server handles has docs, and every documented route has a handler.
 use axum::Router;
 use axum::extract::State;
@@ -23,14 +23,16 @@ use crate::results;
 use crate::sessions;
 use crate::socket;
 use crate::stats;
+use crate::stores;
 use crate::tester_codes;
 use axum::middleware::from_fn_with_state;
 
 type Entry = (&'static str, fn(MethodFilter) -> MethodRouter<App>);
 
-/// The routes, by the name in server/api-docs.ts.
+/// The routes, by the name in contract/api-docs.ts.
 static ROUTES: &[Entry] = &[
     ("GET /api/health", |method| on(method, health)),
+    ("GET /api/stores", |method| on(method, stores::stores)),
     ("GET /api/openapi.json", |method| on(method, docs::openapi)),
     ("GET /api/docs", |method| on(method, docs::docs_page)),
     ("POST /api/sessions", |method| on(method, sessions::create)),
@@ -110,12 +112,6 @@ fn split(name: &str) -> (&str, &str) {
     name.split_once(' ').unwrap_or_else(|| panic!("a route name is 'METHOD /path': {name}"))
 }
 
-/// A documented route that this server does not handle yet.
-/// Limit: the Rust server is not complete until this list is empty. Remove it with the last ported route.
-async fn not_ported() -> ApiError {
-    ApiError::new(StatusCode::NOT_IMPLEMENTED, "The Rust server does not have this route yet.")
-}
-
 pub fn router(app: App) -> Router {
     let mut router = Router::new();
     for (name, handler) in ROUTES {
@@ -124,13 +120,6 @@ pub fn router(app: App) -> Router {
         let handler = handler(method_filter(method));
         let handler = if documented.idempotency_key { handler.layer(from_fn_with_state(app.clone(), idempotency::keyed)) } else { handler };
         router = router.route(path, handler);
-    }
-    for route in docs::documented_routes() {
-        if ROUTES.iter().any(|(name, _)| *name == route.name) {
-            continue;
-        }
-        let (method, path) = split(&route.name);
-        router = router.route(path, on(method_filter(method), not_ported));
     }
     // The WebSocket of the page (socket.rs). It is not in the published API document: agents use REST and long polls.
     router
@@ -153,6 +142,13 @@ mod tests {
     fn every_route_has_docs() {
         for (name, _) in ROUTES {
             assert!(docs::documented_routes().iter().any(|route| route.name == *name), "{name} has no docs");
+        }
+    }
+
+    #[test]
+    fn every_documented_route_has_a_handler() {
+        for route in docs::documented_routes() {
+            assert!(ROUTES.iter().any(|(name, _)| *name == route.name), "{} has no handler", route.name);
         }
     }
 }

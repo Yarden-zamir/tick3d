@@ -1,0 +1,60 @@
+name: play-rollout
+
+# Widens the staged rollout of a production release on Google Play once a day, while Android vitals stay healthy:
+# 5 % on the upload day, then 20 %, 50 % and 100 % (.github/scripts/play-rollout.ts). A crash or ANR rate over the bad
+# behaviour threshold of Google halts the release and fails this job. A tag starts the rollout when the repository
+# variable PLAY_RELEASE_TRACK is production (android.yml). Without a staged production release, the job does nothing.
+on:
+  schedule:
+    # 09:17 UTC: after the daily vitals of the Pacific day before.
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Show the decision, change nothing
+        type: boolean
+        default: true
+
+# actions: read finds the android run of the version code, for the age of the release.
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: play
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      - name: Play API
+        id: play
+        uses: ./.github/actions/play-api
+        with:
+          service-account-json: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+
+      # Without Play access the job does nothing, as for a repository without the app. Once production is on, that
+      # would leave a rollout without a vitals check, so it fails instead.
+      - name: Play access for production
+        if: steps.play.outputs.ready != 'true' && vars.PLAY_RELEASE_TRACK == 'production'
+        run: |
+          echo "::error::PLAY_RELEASE_TRACK is production, but the Play API is not ready (PLAY_SERVICE_ACCOUNT_JSON). The rollout cannot check vitals."
+          exit 1
+
+      - name: Rollout
+        if: steps.play.outputs.ready == 'true'
+        env:
+          TOKEN: ${{ steps.play.outputs.token }}
+          PACKAGE: ${{ steps.play.outputs.package }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: node .github/scripts/play-rollout.ts
