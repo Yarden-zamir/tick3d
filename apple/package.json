@@ -5,7 +5,7 @@
   "description": "Capacitor, which builds the iOS app around the production site, and its icon tool. Dependabot updates them.",
   "license": "MIT",
   "devDependencies": {
-    "@capacitor/assets": "3.0.5",
+    "@capacitor/assets": "4.0.0",
     "@capacitor/cli": "8.6.0",
     "@capacitor/core": "8.6.0",
     "@capacitor/ios": "8.6.0"
