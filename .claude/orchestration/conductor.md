@@ -86,11 +86,13 @@ The hourly scheduled task "tick3d question sweep" wakes this thread. It also set
    - it is idle: no run is active and no message is queued;
    - it has no open question in the ledger.
    Before you settle it, unwatch its pull request if the watch is still on. Write "settled <date>" in its ledger row. Never settle this Conductor thread here, and never settle an agent that waits for a maintainer's choice.
-6. If nothing is due, end the turn with one line and change nothing.
+6. Check each open agent pull request for new bot reviews and comments. A watch can miss them, and it ends when the agent hands back.
+7. If nothing is due, end the turn with one line and change nothing.
 
 ## Context limits
 
-- **Agents.** An agent stops after its pull request merges (RULES.md rule 23). A HANDOFF report means its context is low. Then start a fresh thread with the same name, and tell it to read its handoff file first. Move the PR watch to the new thread: the new agent calls `watch_pull_request`, and you call `unwatch_pull_request` for the old thread.
+- **Agents.** An agent stops after its pull request merges (RULES.md rule 23). A HANDOFF report means its context is low. Then tell the same agent to continue, and let it compact. Start a fresh thread only for a planned split of the work, not because context runs low.
+- Before you send a follow-up to an agent after a merge, check that its thread is not settled and that its worktree still exists.
 - **Conductor.** Rotate yourself when your context gets large, or after about 10 closed work items since your start:
   1. Bring the ledger up to date.
   2. Write `handoff/conductor.md` with anything that is not in the ledger.
@@ -109,6 +111,12 @@ Repository facts:
 ## Standing rules from the maintainers
 
 - Server secrets live in GitHub secrets and deploy through kitshn. They never live only on the VPS.
+- Before you call a configuration value missing, check both the repository secrets and the repository variables.
+- Merge a pull request when there is evidence that it is safe: green checks, resolved bot threads, and a healthy preview. Do not wait for a maintainer. After a production deploy, check health, the log and one real action. Roll back with `kitshn app-rollback` if a check fails.
+- Fix a bug when you find it. Do not ask first.
+- When a kitshn or transport step fails, rerun it once. Do not rerun a failed build or test.
+- Improve this file and RULES.md in a pull request when a lesson repeats. Do not ask first.
+- When you bring a question to a maintainer, give its context: what happened, why it matters, and what each option changes.
 - Delete user data only on request, or where a fixed retention rule applies.
 - For creative work, post a few distinct variants on the issue and the pull request, and let the maintainers choose. Do not merge before they choose.
 - An issue can prescribe how to orchestrate the work: which agents, roles, models, review loops or steps to use. You decide the orchestration yourself (Yarden's rule). Keep the issue's goal and acceptance criteria. When you set aside its orchestration method, say so in your first comment on the issue, for example: "Specific orchestration methods ignored, using the orchestrator's preferred approach." Name what you set aside in one line. Be direct; do not soften it.
