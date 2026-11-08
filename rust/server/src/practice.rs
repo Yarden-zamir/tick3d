@@ -11,13 +11,13 @@ use tick3d_core::playoff::PresetId;
 
 use crate::App;
 use crate::error::{ApiError, ApiResult};
-use crate::limits::{Limiter, client_of};
+use crate::limits::{PlayerLimit, client_of};
 use crate::protocol::{PracticeMode, parse_practice_run};
 use crate::sessions::{MAX_BODY_BYTES, ok_json, optional_player, read_json, require_player};
 use crate::store::now_ms;
 
 /// Runs per address: 60 per 10 minutes (PRACTICE_RUNS_PER_10_MINUTES).
-static ALLOW_PRACTICE_RUN: Limiter = Limiter::new(60, 600_000, 10_000, "Too many practice runs from this address. Try again later.");
+static ALLOW_PRACTICE_RUN: PlayerLimit = PlayerLimit::new(60, 600_000, "Too many practice runs. Try again later.");
 
 pub async fn add_run(
     State(app): State<App>,
@@ -25,8 +25,8 @@ pub async fn add_run(
     headers: HeaderMap,
     body: Body,
 ) -> ApiResult<Response> {
-    ALLOW_PRACTICE_RUN.allow(&client_of(&headers, peer), now_ms())?;
     let token = require_player(&headers)?;
+    ALLOW_PRACTICE_RUN.allow(&token, &client_of(&headers, peer), now_ms())?;
     let run = parse_practice_run(&read_json(body, MAX_BODY_BYTES).await?)
         .ok_or_else(|| ApiError::bad_request("The run is not one that the practice room can make."))?;
     let stored = app.store.call(move |db| db.add_practice_run(&token, run)).await?;

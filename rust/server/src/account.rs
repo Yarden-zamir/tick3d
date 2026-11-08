@@ -12,14 +12,14 @@ use tick3d_core::session::{LoginProvider, PlayerInfo};
 use crate::App;
 use crate::auth::{Login, is_maintainer};
 use crate::error::{ApiError, ApiResult};
-use crate::limits::{Limiter, client_of};
+use crate::limits::{PlayerLimit, client_of};
 use crate::protocol::{parse_avatar_request, parse_block_request, parse_custom_name, parse_person_id, parse_stats_privacy};
 use crate::sessions::{MAX_BODY_BYTES, ok_json, read_json, require_player};
 use crate::store::now_ms;
 
 /// Delete my data per address: a player needs it once, so 10 per hour leaves room for a family on one address
 /// (DATA_DELETES_PER_HOUR).
-static ALLOW_DATA_DELETE: Limiter = Limiter::new(10, 3_600_000, 10_000, "Too many data deletions from this address. Try again later.");
+static ALLOW_DATA_DELETE: PlayerLimit = PlayerLimit::new(10, 3_600_000, "Too many data deletions. Try again later.");
 
 /// The origin of the page, for Google One Tap.
 pub fn origin_of(headers: &HeaderMap) -> String {
@@ -210,8 +210,8 @@ pub async fn unblock(State(app): State<App>, Path(person): Path<String>, headers
 
 /// Delete my data. A login cookie links this browser first, so the account goes with it.
 pub async fn delete_me(State(app): State<App>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> ApiResult<Response> {
-    ALLOW_DATA_DELETE.allow(&client_of(&headers, peer), now_ms())?;
     let token = require_player(&headers)?;
+    ALLOW_DATA_DELETE.allow(&token, &client_of(&headers, peer), now_ms())?;
     let user = app.user(&headers);
     app.link(&token, &user).await?;
     let deleted = app.store.call(move |db| db.delete_for(&token)).await?;

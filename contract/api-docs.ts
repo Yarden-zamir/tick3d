@@ -55,7 +55,7 @@ import { CODE_MAX_LENGTH, CODE_MIN_LENGTH, EMAIL_MAX_LENGTH, HINT_LENGTH, TESTER
 
 // Long polls wait at most this long. Proxies keep an idle request open for longer.
 const WAIT_MS = 25_000;
-// New sessions per hour from one address. rust/server/src/sessions.rs enforces it (ALLOW_CREATE).
+// New sessions per hour per player. rust/server/src/sessions.rs enforces it (ALLOW_CREATE), with ADDRESS_FACTOR times as many per address.
 const CREATES_PER_HOUR = 60;
 // Fault reports per 10 minutes from one address. rust/server/src/moderation.rs enforces it (ALLOW_EVENT).
 const EVENTS_PER_10_MINUTES = 30;
@@ -65,17 +65,20 @@ const NEARBY_CALLS_PER_10_MINUTES = 120;
 const NEARBY_HOSTS_PER_NETWORK = 10;
 // A Nearby host stays in the list for this long after its announce request ends.
 const NEARBY_GRACE_MS = 10_000;
-// Practice runs per 10 minutes from one address. rust/server/src/practice.rs enforces it (ALLOW_PRACTICE_RUN).
+// Practice runs per 10 minutes per player. rust/server/src/practice.rs enforces it (ALLOW_PRACTICE_RUN), with ADDRESS_FACTOR times as many per address.
 const PRACTICE_RUNS_PER_10_MINUTES = 60;
-// Reports of chat messages and people per 10 minutes from one address. rust/server/src/moderation.rs enforces it (ALLOW_REPORT).
+// Reports of chat messages and people per 10 minutes per player. rust/server/src/moderation.rs enforces it (ALLOW_REPORT), with ADDRESS_FACTOR times as many per address.
 const REPORTS_PER_10_MINUTES = 20;
-// Delete my data calls per hour from one address. rust/server/src/account.rs enforces it (ALLOW_DATA_DELETE).
+// Delete my data calls per hour per player. rust/server/src/account.rs enforces it (ALLOW_DATA_DELETE), with ADDRESS_FACTOR times as many per address.
 const DATA_DELETES_PER_HOUR = 10;
-// Claims of tester codes per hour from one address. rust/server/src/tester_codes.rs enforces it (ALLOW_TESTER_CLAIM).
+// Claims of tester codes per hour per player. rust/server/src/tester_codes.rs enforces it (ALLOW_TESTER_CLAIM), with ADDRESS_FACTOR times as many per address.
 const TESTER_CLAIMS_PER_HOUR = 5;
-// Reports of an Android app open per hour from one address (POST /api/copies). The app sends one per start, so 60
-// leave room for a family that starts the app often.
+// Reports of an Android app open per hour per player (POST /api/copies), and purchase checks (POST /api/copies/nonce).
+// The app sends one per start, so 60 leave room for a player who starts the app often.
 const APP_OPENS_PER_HOUR = 60;
+// A limit per player also allows this many times as many calls per address, against one client with many player ids.
+// Phones behind one carrier NAT share an address. rust/server/src/limits.rs (ADDRESS_FACTOR).
+const ADDRESS_FACTOR = 20;
 // The tables that Delete my data (rust/server/src/store/deletion.rs) changes, with the rows it deleted and
 // the rows it kept without the player. chat_messages counts the messages inside the session documents.
 // The other tables hold no player data: events, and moderation_log (kept for moderation). tester_codes holds
@@ -1165,12 +1168,12 @@ export const ROUTES = {
     operationId: 'createSession',
     tag: 'Play',
     summary: 'Create a game.',
-    description: `You take seat X, and X moves first. The first other player who joins takes seat O. Share the link /?code=<code>. One address can create ${CREATES_PER_HOUR} sessions per hour.`,
+    description: `You take seat X, and X moves first. The first other player who joins takes seat O. Share the link /?code=<code>. One player can create ${CREATES_PER_HOUR} sessions per hour, and one address ${CREATES_PER_HOUR * ADDRESS_FACTOR}.`,
     player: 'required',
     idempotencyKey: true,
     body: { schema: 'NewSession', example: { name: 'Agent match' } },
     response: { status: 201, description: 'The new session.', schema: 'SessionView', example: view({}) },
-    errors: [BAD_PLAYER, BAD_BODY, TOO_BIG, { status: 429, when: `This address created ${CREATES_PER_HOUR} sessions in the last hour.` }, ...KEY_ERRORS],
+    errors: [BAD_PLAYER, BAD_BODY, TOO_BIG, { status: 429, when: `This player created ${CREATES_PER_HOUR} sessions in the last hour, or this address ${CREATES_PER_HOUR * ADDRESS_FACTOR}.` }, ...KEY_ERRORS],
     examplePlayer: AGENT_A,
   },
   'GET /api/sessions/{code}': {
@@ -1544,14 +1547,14 @@ export const ROUTES = {
     operationId: 'addPracticeRun',
     tag: 'Account',
     summary: 'Store a finished practice run of the Voice room (/sound-input). The page uses it.',
-    description: `One address can send ${PRACTICE_RUNS_PER_10_MINUTES} runs per 10 minutes. The leaderboards and the stats page count them.`,
+    description: `One player can send ${PRACTICE_RUNS_PER_10_MINUTES} runs per 10 minutes, and one address ${PRACTICE_RUNS_PER_10_MINUTES * ADDRESS_FACTOR}. The leaderboards and the stats page count them.`,
     player: 'required',
     body: {
       schema: 'PracticeRun',
       example: { id: 'run-6f1d2c9a', mode: 'targets', preset: 'normal', roundMs: [2100, 1850, 3020, 2400, 1990, 2760, 2210, 1580, 3300, 2040], score: 10 },
     },
     response: { status: 200, description: 'Stored, or already stored.', schema: 'PracticeStored', example: { stored: true } },
-    errors: [BAD_PLAYER, { status: 400, when: 'The run is not one that the page can make.' }, TOO_BIG, { status: 429, when: `This address sent ${PRACTICE_RUNS_PER_10_MINUTES} runs in the last 10 minutes.` }],
+    errors: [BAD_PLAYER, { status: 400, when: 'The run is not one that the page can make.' }, TOO_BIG, { status: 429, when: `This player sent ${PRACTICE_RUNS_PER_10_MINUTES} runs in the last 10 minutes, or this address ${PRACTICE_RUNS_PER_10_MINUTES * ADDRESS_FACTOR}.` }],
     examplePlayer: AGENT_A,
   },
   'GET /api/practice/best': {
@@ -1679,7 +1682,7 @@ export const ROUTES = {
     operationId: 'deleteMyData',
     tag: 'Account',
     summary: 'Delete your data on the server, at once. This logs you out.',
-    description: `With a GitHub or Google login on the page, this deletes the data of the account on every device, else the data of your player id. It deletes your uploaded games, custom name, blocks, practice runs, game metrics and the account. A game with another player stays for that player, without your id. Your seats in online sessions become free, and a session without a player and without a move goes. Your chat messages keep their place, with the text "Deleted by its author." in place of yours. A report that you filed stays without your id, and reports about you stay for the maintainers. A second call deletes nothing. One address can call this ${DATA_DELETES_PER_HOUR} times per hour.`,
+    description: `With a GitHub or Google login on the page, this deletes the data of the account on every device, else the data of your player id. It deletes your uploaded games, custom name, blocks, practice runs, game metrics and the account. A game with another player stays for that player, without your id. Your seats in online sessions become free, and a session without a player and without a move goes. Your chat messages keep their place, with the text "Deleted by its author." in place of yours. A report that you filed stays without your id, and reports about you stay for the maintainers. A second call deletes nothing. One player can call this ${DATA_DELETES_PER_HOUR} times per hour, and one address ${DATA_DELETES_PER_HOUR * ADDRESS_FACTOR}.`,
     player: 'required',
     response: {
       status: 200,
@@ -1687,7 +1690,7 @@ export const ROUTES = {
       schema: 'DeletedData',
       example: Object.fromEntries(DATA_TABLES.map((table) => [table, { deleted: table === 'results' ? 2 : 0, anonymised: table === 'results' || table === 'sessions' ? 1 : 0 }])),
     },
-    errors: [BAD_PLAYER, { status: 429, when: `This address deleted data ${DATA_DELETES_PER_HOUR} times in the last hour.` }],
+    errors: [BAD_PLAYER, { status: 429, when: `This player deleted data ${DATA_DELETES_PER_HOUR} times in the last hour, or this address ${DATA_DELETES_PER_HOUR * ADDRESS_FACTOR}.` }],
     examplePlayer: AGENT_A,
   },
   'GET /api/deleted': {
@@ -1962,7 +1965,7 @@ export const ROUTES = {
     operationId: 'report',
     tag: 'Safety',
     summary: 'Report a chat message or a person of an online game, or a player of the stats page, to the maintainers.',
-    description: `The server keeps a copy of the message or the name. One address can send ${REPORTS_PER_10_MINUTES} reports per 10 minutes.`,
+    description: `The server keeps a copy of the message or the name. One player can send ${REPORTS_PER_10_MINUTES} reports per 10 minutes, and one address ${REPORTS_PER_10_MINUTES * ADDRESS_FACTOR}.`,
     player: 'required',
     body: { schema: 'ReportRequest', example: { code: EXAMPLE_CODE, message: 3, reason: 'abuse', note: 'Insults after the game.' } },
     response: { status: 201, description: 'Stored.', schema: 'ReportStored', example: { id: 1 } },
@@ -1972,7 +1975,7 @@ export const ROUTES = {
       NO_GAME,
       { status: 404, when: 'The message is not in the chat any more, or the person is not in the game now. Without a code: the person has no finished game and no account.' },
       TOO_BIG,
-      { status: 429, when: `This address sent ${REPORTS_PER_10_MINUTES} reports in the last 10 minutes.` },
+      { status: 429, when: `This player sent ${REPORTS_PER_10_MINUTES} reports in the last 10 minutes, or this address ${REPORTS_PER_10_MINUTES * ADDRESS_FACTOR}.` },
     ],
     examplePlayer: AGENT_B,
   },
@@ -2029,7 +2032,7 @@ export const ROUTES = {
     operationId: 'claimTesterCode',
     tag: 'Testing',
     summary: 'Claim one Google Play promo code of the Android closed test.',
-    description: `The answer holds the full code, once. The server stores the email, the name and the person id of the inviter, and no player id. The X-Player header is required, so a form on another site cannot claim. One address can claim ${TESTER_CLAIMS_PER_HOUR} codes per hour.`,
+    description: `The answer holds the full code, once. The server stores the email, the name and the person id of the inviter, and no player id. The X-Player header is required, so a form on another site cannot claim. One player can claim ${TESTER_CLAIMS_PER_HOUR} codes per hour, and one address ${TESTER_CLAIMS_PER_HOUR * ADDRESS_FACTOR}.`,
     player: 'required',
     body: { schema: 'ClaimRequest', example: { email: 'dana@example.com', name: 'Dana', by: OTHER_PERSON } },
     response: { status: 200, description: 'The code is yours.', schema: 'ClaimedCode', example: { code: 'B9WQ4T7XK2M8RZ5P3N6H1JD' } },
@@ -2040,7 +2043,7 @@ export const ROUTES = {
       { status: 404, when: 'No tester code has this id.' },
       { status: 409, when: 'Somebody claimed this code already.' },
       TOO_BIG,
-      { status: 429, when: `This address claimed ${TESTER_CLAIMS_PER_HOUR} codes in the last hour.` },
+      { status: 429, when: `This player claimed ${TESTER_CLAIMS_PER_HOUR} codes in the last hour, or this address ${TESTER_CLAIMS_PER_HOUR * ADDRESS_FACTOR}.` },
     ],
     examplePlayer: AGENT_A,
   },
@@ -2051,18 +2054,18 @@ export const ROUTES = {
     description: 'Bound to the X-Player token. A different player cannot submit its proof.',
     player: 'required',
     response: { status: 200, description: 'A fresh nonce.', schema: 'PurchaseNonce', example: { nonce: 'one-time-server-nonce' } },
-    errors: [BAD_PLAYER, { status: 429, when: 'Too many checks from this address.' }, { status: 503, when: 'Too many outstanding checks.' }],
+    errors: [BAD_PLAYER, { status: 429, when: `This player asked for ${APP_OPENS_PER_HOUR} checks in the last hour, or this address ${APP_OPENS_PER_HOUR * ADDRESS_FACTOR}.` }, { status: 503, when: 'Too many outstanding checks.' }],
     examplePlayer: AGENT_A,
   },
   'POST /api/copies': {
     operationId: 'reportAppOpen',
     tag: 'Account',
     summary: 'Prove a paid Android app open with Play Integrity. The app sends it on each start.',
-    description: `The app is paid, so the first open makes a copy of this device. The copy belongs to the account that is logged in on this device now, or to the device without a login. A login with another account moves it. With an inviter, the copy counts for the invite achievements of that person, once per person, also when the same person claimed a code through the link. A later open only adds an inviter that the copy lacks. One address can report ${APP_OPENS_PER_HOUR} times per hour.`,
+    description: `The app is paid, so the first open makes a copy of this device. The copy belongs to the account that is logged in on this device now, or to the device without a login. A login with another account moves it. With an inviter, the copy counts for the invite achievements of that person, once per person, also when the same person claimed a code through the link. A later open only adds an inviter that the copy lacks. One player can report ${APP_OPENS_PER_HOUR} times per hour, and one address ${APP_OPENS_PER_HOUR * ADDRESS_FACTOR}.`,
     player: 'required',
     body: { schema: 'AppOpen', example: { by: OTHER_PERSON, proof: 'encrypted-play-integrity-token', store: 'play' } },
     response: { status: 200, description: 'Stored, or known already.', schema: 'CopyAnswer', example: { hasCopy: true } },
-    errors: [BAD_PLAYER, { status: 400, when: 'The body needs a proof token and a person id or null in `by`.' }, { status: 403, when: 'The store proof is invalid, expired or used already, belongs to another device, or the Apple purchase holds 5 devices already.' }, { status: 409, when: 'This iPhone holds another Apple purchase.' }, { status: 503, when: 'Purchase verification is unavailable.' }, TOO_BIG, { status: 429, when: `This address reported ${APP_OPENS_PER_HOUR} app opens in the last hour.` }],
+    errors: [BAD_PLAYER, { status: 400, when: 'The body needs a proof token and a person id or null in `by`.' }, { status: 403, when: 'The store proof is invalid, expired or used already, belongs to another device, or the Apple purchase holds 5 devices already.' }, { status: 409, when: 'This iPhone holds another Apple purchase.' }, { status: 503, when: 'Purchase verification is unavailable.' }, TOO_BIG, { status: 429, when: `This player reported ${APP_OPENS_PER_HOUR} app opens in the last hour, or this address ${APP_OPENS_PER_HOUR * ADDRESS_FACTOR}.` }],
     examplePlayer: AGENT_A,
   },
   'GET /api/testing/claims': {
@@ -2341,7 +2344,7 @@ curl -s -X POST {origin}/api/sessions/CODE/moves -H "X-Player: $ME" \\
     blocks: [
       {
         list: [
-          `One address can create ${CREATES_PER_HOUR} sessions per hour. More gets 429. Play a session again with a new game instead of a new session.`,
+          `One player can create ${CREATES_PER_HOUR} sessions per hour. More gets 429. Play a session again with a new game instead of a new session.`,
           'Wait with `?wait=<version>`. Do not poll more than once per second.',
           'An error answer is JSON: `{"error":"<message>"}`. Read the message: it says what to do.',
           `A session with a move never expires. A player can come back later, and the game waits for the move. A session where no game has a move goes after ${EMPTY_SESSION_TTL_MS / 3_600_000} hours without a change. A long poll is not a change.`,
