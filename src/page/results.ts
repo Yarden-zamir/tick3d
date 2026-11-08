@@ -63,7 +63,7 @@ export async function recordResult(open: Session, game: Game, index: number): Pr
     metrics: { ...metrics, tuning, nearby: open.mode === 'nearby' ? await nearbyMetrics() : null },
     guest: hosting && you !== null ? await guestOf(open.code) : null,
   };
-  await page.deviceDb.put('results', { id, upload, sent: false });
+  await page.deviceDb.put('results', { id, upload, sent: false, refused: null });
   await flushResults();
   return upload.publicId ?? undefined;
 }
@@ -108,17 +108,23 @@ export async function gameIdOf(open: Session, index: number): Promise<GameId | u
   return (await page.deviceDb?.get('results', resultIdOf(open.code, index)))?.upload.publicId ?? undefined;
 }
 
-// Sends every result that is waiting, when the network is up. A failure leaves them for the next try.
+// Sends every result that is waiting, when the network is up. A failure leaves them for the next try. A result that the
+// server refuses stays on the device with its error and is not sent again: the same page would send it the same way.
 export async function flushResults(): Promise<void> {
   if (flushing || page.deviceDb === undefined || !navigator.onLine) return;
   flushing = true;
   try {
-    const waiting = (await page.deviceDb.all('results')).filter((result) => !result.sent);
+    const waiting = (await page.deviceDb.all('results')).filter((result) => !result.sent && result.refused === null);
     if (waiting.length === 0) return;
-    const renamed = await api.uploadResults(waiting.map((result) => result.upload));
+    const { renamed, refused } = await api.uploadResults(waiting.map((result) => result.upload));
     // The server gives another id to a result without one, or to one whose id another game holds.
     // A link that the page showed before keeps the old id; that is rare enough to accept.
     for (const result of waiting) {
+      const error = refused.get(result.id);
+      if (error !== undefined) {
+        await page.deviceDb.put('results', { ...result, refused: error });
+        continue;
+      }
       const publicId = renamed.get(result.id);
       const upload = publicId === undefined ? result.upload : { ...result.upload, publicId };
       await page.deviceDb.put('results', { ...result, upload, sent: true });

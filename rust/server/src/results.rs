@@ -27,7 +27,12 @@ pub async fn add_results(State(app): State<App>, headers: HeaderMap, body: Body)
         _ => return Err(ApiError::bad_request(format!("An upload needs a results list of at most {RESULTS_PER_UPLOAD}."))),
     };
     let token = require_player(&headers)?;
-    let queued = app.store.call(move |db| db.add_results(&token, &uploads)).await?;
+    let total = uploads.len();
+    let (queued, refused) = app.store.call(move |db| Ok(db.add_results(&token, &uploads))).await?;
+    // A refused result shows here only as a count and a reason: no token, no game.
+    if let Some(first) = refused.first() {
+        eprintln!("result upload: refused {} of {total}: {}", refused.len(), first.error);
+    }
     let mut stored = 0;
     let mut renamed = BTreeMap::new();
     for upload in queued {
@@ -42,7 +47,8 @@ pub async fn add_results(State(app): State<App>, headers: HeaderMap, body: Body)
             renamed.insert(upload.id, public_id);
         }
     }
-    Ok(ok_json(StatusCode::OK, &json!({ "stored": stored, "renamed": renamed })))
+    let refused: Vec<Value> = refused.iter().map(|each| json!({ "index": each.index, "error": each.error })).collect();
+    Ok(ok_json(StatusCode::OK, &json!({ "stored": stored, "renamed": renamed, "refused": refused })))
 }
 
 pub async fn add_metrics(State(app): State<App>, Path(id): Path<String>, headers: HeaderMap, body: Body) -> ApiResult<Response> {
