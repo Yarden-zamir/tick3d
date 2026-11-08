@@ -231,6 +231,36 @@ body {
   min-height: 100dvh;
   color: var(--ink);
   background: radial-gradient(var(--dot) 1.2px, transparent 1.6px) 0 0 / 22px 22px, var(--page);
+  /* A fast double tap, a double click or a long press on a control must not mark text. Safari and the iOS app
+     (WKWebView) know only the -webkit- property. Text that people copy opts back in below. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* On a touch screen a long press opens the system menu of the text or the image: not on the game. */
+@media (hover: none) {
+  body {
+    -webkit-touch-callout: none;
+  }
+}
+
+/* Text that people copy: fields, chat messages, the agent snippet, and the stats and privacy pages. A link keeps the
+   system menu of a long press, so people can copy it. */
+input,
+textarea,
+[contenteditable],
+pre,
+code,
+.chat-message,
+main.stats,
+main.privacy {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+a[href] {
+  -webkit-touch-callout: default;
 }
 
 /* Every modal surface carries .modal: each <dialog> and each popover with role="dialog".
@@ -389,6 +419,7 @@ input::placeholder {
 /* A long press shows the tooltip, so the press must not select text or open the system menu. */
 [data-tip] {
   -webkit-touch-callout: none;
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -1210,6 +1241,7 @@ body[data-turn='O'] .status[data-state='playing'] {
   cursor: grab;
   /* Touch: a sideways swipe turns the tower, a vertical one still scrolls the page, and a pinch still zooms. */
   touch-action: pan-y pinch-zoom;
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -2815,6 +2847,7 @@ body[data-turn='O'] .status[data-state='playing'] {
    so a touch must not select its text or open the image menu. */
 .end-card .song {
   margin-left: auto;
+  -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
 }
@@ -2889,6 +2922,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 /* A long press opens the report and block menu, so a touch must not select the picture or open the image menu. */
 .avatar[role='button'] {
   cursor: pointer;
+  -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
 }
@@ -2945,6 +2979,7 @@ body[data-turn='O'] .status[data-state='playing'] {
 @media (pointer: coarse) {
   [data-person] {
     -webkit-touch-callout: none;
+    -webkit-user-select: none;
     user-select: none;
   }
 }

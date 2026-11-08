@@ -24,5 +24,10 @@ export default defineConfig({
     baseURL,
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // Safari and the iOS app run WebKit, which differs in some CSS (-webkit-user-select). Only the specs that check
+    // such a difference run here, so the suite stays fast.
+    { name: 'webkit', use: { ...devices['Desktop Safari'] }, testMatch: /selection\.spec\.ts/ },
+  ],
 });

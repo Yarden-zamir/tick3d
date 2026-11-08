@@ -423,7 +423,10 @@
   letter-spacing: 0.03em;
   text-align: center;
   overflow-wrap: anywhere;
+  /* One tap marks the whole code, for a copy. */
+  -webkit-user-select: all;
   user-select: all;
+  -webkit-touch-callout: default;
 }
 
 .my-code-actions {
