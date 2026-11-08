@@ -3,6 +3,8 @@ mod account;
 mod achievements;
 mod apple_proof;
 mod auth;
+#[cfg(test)]
+mod benches;
 mod copies;
 mod doc;
 mod docs;
