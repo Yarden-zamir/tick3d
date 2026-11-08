@@ -74,11 +74,15 @@ const dayOf = (row: Row): number => {
   return Date.UTC(start.year, start.month - 1, start.day);
 };
 
-// The 7-day user-weighted rate of the newest row of the version (by its start day), or undefined without a row.
+// The 7-day user-weighted rate of the newest row of the version (by its start day) that holds the metric, or
+// undefined without one. A newer row without the value must not hide an older rate over the limit.
 export function latestRate(rows: Row[], versionCode: number, metric: string): number | undefined {
-  const mine = rows.filter((row) => row.dimensions?.some((d) => d.dimension === 'versionCode' && Number(d.int64Value ?? d.stringValue) === versionCode));
+  const valueOf = (row: Row) => row.metrics?.find((m) => m.metric === metric)?.decimalValue?.value;
+  const mine = rows.filter(
+    (row) => valueOf(row) !== undefined && row.dimensions?.some((d) => d.dimension === 'versionCode' && Number(d.int64Value ?? d.stringValue) === versionCode),
+  );
   const newest = mine.reduce<Row | undefined>((best, row) => (best === undefined || dayOf(row) > dayOf(best) ? row : best), undefined);
-  const value = newest?.metrics?.find((m) => m.metric === metric)?.decimalValue?.value;
+  const value = newest === undefined ? undefined : valueOf(newest);
   if (value === undefined) return undefined;
   const rate = Number(value);
   if (!Number.isFinite(rate)) throw new Error(`${metric} is not a number: ${value}`);

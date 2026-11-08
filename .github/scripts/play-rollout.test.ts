@@ -58,6 +58,11 @@ describe('Android vitals', () => {
     expect(latestRate([row('41', '0.9', 5)], 42, 'm')).toBeUndefined();
   });
 
+  it('skips a newer row without the metric, so it cannot hide a rate over the limit', () => {
+    const empty = { startTime: { year: 2026, month: 11, day: 6 }, dimensions: [{ dimension: 'versionCode', int64Value: '42' }], metrics: [] };
+    expect(latestRate([row('42', '0.05', 5), empty], 42, 'm')).toBe(0.05);
+  });
+
   it('is bad over a threshold of Google, and has no data without rows', () => {
     expect(healthOf(0.005, 0.001)).toEqual({ kind: 'ok' });
     expect(healthOf(0.02, undefined).kind).toBe('bad');
