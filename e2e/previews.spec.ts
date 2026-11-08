@@ -50,8 +50,12 @@ test('the kitshn button lists the open previews and marks this one', async ({ op
       const foot = here.locator(':scope > .preview-foot');
       await expect(foot.getByRole('link', { name: 'Pull request' })).toHaveAttribute('href', new RegExp(`^https://github\\.com/.+/pull/${number}$`));
       await expect(foot.getByRole('link', { name: 'Open preview' })).toHaveAttribute('href', new URL(baseURL).origin);
-      // At least the author of the pull request, with a link to the profile.
-      await expect(here.locator(':scope > .preview-people a').first()).toHaveAttribute('href', /^https:\/\/github\.com\/[\w-]+$/);
+      // Each person links to the profile. A pull request with only bot authors (the store-images pull request)
+      // has no people, because the server leaves "[bot]" logins out (rust/server/src/previews.rs, person_of).
+      // Limit: so this test does not catch a list that loses the human author. The server unit tests cover that.
+      for (const person of await here.locator(':scope > .preview-people a').all()) {
+        await expect(person).toHaveAttribute('href', /^https:\/\/github\.com\/[\w-]+$/);
+      }
     }
   }
 

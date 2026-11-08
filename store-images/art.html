@@ -6,7 +6,7 @@
     <!--
       The feature graphic and the ads: the "sticker" style that the maintainers picked on pull request 149.
       art.spec.ts opens this page at the output size, with ?tower=<png>. A wide page puts the text left of
-      the phone, a tall or square page puts it above. All lengths use vmin, so one layout fits every size.
+      the phone, a tall or square page puts it above. Most lengths use vmin, so one layout fits every size.
     -->
     <style>
       @font-face { font-family: Brand; src: url(../src/fonts/bricolage-grotesque-latin.woff2); font-weight: 200 800; }
@@ -31,13 +31,21 @@
       }
       .phone img { display: block; width: 100%; }
 
-      /* Wide: the text on the left, the phone on the right, cut by the bottom edge. */
+      /*
+        Wide: the text on the left, the whole phone on the right. The desktop Play store crops and zooms the
+        feature graphic, and Google gives no exact safe area. So the padding keeps all content inside the
+        centered 70% × 80% (art.spec.ts checks it), and the edges show only the background.
+      */
       @media (min-aspect-ratio: 4 / 3) {
-        body { grid-template-rows: none; grid-template-columns: 1fr auto; align-items: center; padding: 0 0 0 9vmin; }
-        .phones { margin: 14vmin 6vmin 0 0; align-self: start; }
-        .phone { width: 52vmin; }
-        .mark { font-size: 24vmin; }
-        p { font-size: 6.4vmin; }
+        body {
+          grid-template-rows: none; grid-template-columns: auto auto; justify-content: center; align-items: center;
+          column-gap: 8vmin; padding: 10vh 15vw;
+        }
+        .phones { margin: 0; }
+        /* The height leaves room for the shadow below the phone. */
+        .phone { width: auto; height: calc(80vh - 2vmin); }
+        .mark { font-size: 22vmin; }
+        p { font-size: 5.6vmin; }
       }
 
       /* Tall (story): larger text, and the phone fills the extra height. */
