@@ -5,46 +5,80 @@ name: store-images
 # Docker Compose build of main, the other scenes read production without writing. convert.py fails the
 # run on a missing image or a size that the store does not accept, and keeps the committed file of each
 # image that changed only by render noise. With no real change left, the run opens no pull request.
-# tick3d-agents[bot] opens the pull request, so its checks run. A merge then starts play-listing.yml,
-# which uploads the Play images. The Apple images in apple/store/ wait for the App Store listing sync (#139).
+# tick3d-agents[bot] opens the pull request and turns on auto-merge, so the pull request merges when the
+# required check `check` passes. The merge starts play-listing.yml, which uploads the Play images.
+# The Apple images in apple/store/ wait for the App Store listing sync (#139).
+#
+# The scenes read production, so a render starts when kitshn.yml deployed main, not on the push. A push
+# whose deploy fails renders nothing, and the next deploy renders it.
+# workflow_run uses this file from main, so a change here works after its merge.
 on:
   workflow_dispatch:
-  push:
+  workflow_run:
+    workflows: ['.github/workflows/kitshn.yml']
+    types: [completed]
     branches: [main]
-    paths:
-      - 'src/**'
-      - '*.html'
-      - 'store-images/**'
 
 # The app token of tick3d-agents[bot] pushes the branch and opens the pull request, not this token.
 permissions:
   contents: read
 
-# A newer push renders the newer page, so it replaces a run that is still waiting.
-concurrency:
-  group: store-images
-  cancel-in-progress: true
-
 jobs:
+  # Only a change to the page can change the images. A dispatch always renders.
+  # Limit: this compares with the parent commit only. So the page change of a push whose deploy failed
+  # renders only with the next page change, or with a dispatch. Revisit if deploys fail often.
+  page:
+    # A deploy of main from a push or a dispatch. A pull request event never deploys production.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 2
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ] || ! git diff --quiet HEAD^ HEAD -- src '*.html' store-images; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No change to the page (src/, the HTML files or store-images/) in this commit: no render."
+          fi
+
   render:
+    needs: page
+    if: needs.page.outputs.changed == 'true'
+    # A newer page change renders the newer page, so it replaces a render that is still running. The group is
+    # on this job, so a deploy without a page change does not stop a render.
+    concurrency:
+      group: store-images
+      cancel-in-progress: true
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       LOCAL_URL: http://localhost:8080
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      # The scenes read production, which kitshn.yml deploys after its check. release.json holds the
-      # commit time of the deployed build (vite.config.ts), so this waits until it is this commit or newer.
-      - name: Wait for production
+      # kitshn.yml deployed this commit, but a newer deploy can already serve production. release.json holds
+      # the commit time of the deployed build (vite.config.ts), so this only checks that it is this commit or newer.
+      - name: Check production
         run: |
           commit_ms=$(( $(git log -1 --format=%ct) * 1000 ))
-          for _ in $(seq 60); do
+          for _ in $(seq 15); do
             deployed_ms=$(curl -fsS https://tick3d.yarden-zamir.com/release.json | jq -e '.at') || deployed_ms=0
             if [ "$deployed_ms" -ge "$commit_ms" ]; then exit 0; fi
             sleep 20
           done
-          echo "::error::production does not serve this commit after 20 minutes"
+          echo "::error::production does not serve this commit 5 minutes after its deploy"
           exit 1
 
       - name: Start the local build
@@ -79,7 +113,7 @@ jobs:
             echo '🤖 **store-images** · Store image workflow'
             echo
             echo 'The store-images workflow rendered the store images from production, and these images changed by more than render noise (store-images/convert.py).'
-            echo 'Look at each image before the merge. The merge uploads the Play images (play-listing.yml).'
+            echo 'It merges by itself when the check passes, and the merge uploads the Play images (play-listing.yml).'
             echo
             shown=0
             while read -r status path; do
@@ -100,8 +134,11 @@ jobs:
           permission-pull-requests: write
 
       # With no change left after convert.py, this opens no pull request and deletes an old branch.
-      - uses: peter-evans/create-pull-request@v8.1.1
+      # The checkout is a commit, not a branch, so base names main.
+      - id: pr
+        uses: peter-evans/create-pull-request@v8.1.1
         with:
+          base: main
           token: ${{ steps.app.outputs.token }}
           branch: chore/store-images
           commit-message: 'chore(store): render the store images again'
@@ -113,3 +150,13 @@ jobs:
             marketing/ads/**
             public/screenshots/**
           delete-branch: true
+
+      # The safety check is the required check `check` and the size checks of convert.py, so no maintainer
+      # waits. The app token turns on the merge, not github.token: GitHub starts no workflow from a merge
+      # made with github.token, and play-listing.yml must run on it.
+      - name: Turn on auto-merge
+        if: steps.pr.outputs.pull-request-operation == 'created' || steps.pr.outputs.pull-request-operation == 'updated'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR_URL: ${{ steps.pr.outputs.pull-request-url }}
+        run: gh pr merge --auto --merge "$PR_URL"
