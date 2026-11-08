@@ -10,7 +10,7 @@ use serde_json::json;
 use crate::App;
 use crate::account::require_person;
 use crate::error::{ApiError, ApiResult};
-use crate::limits::{Limiter, client_of};
+use crate::limits::{Limiter, PlayerLimit, client_of};
 use crate::protocol::{is_github_login, js_safe_integer, parse_client_event, parse_report_request};
 use crate::sessions::{MAX_BODY_BYTES, ok_json, read_json, require_player, session_code};
 use crate::store::{DeleteTarget, now_ms};
@@ -20,7 +20,7 @@ static ALLOW_EVENT: Limiter = Limiter::new(30, 600_000, 10_000, "Too many report
 const MAX_EVENT_BODY_BYTES: usize = 1024;
 
 /// Reports per address: 20 per 10 minutes (REPORTS_PER_10_MINUTES).
-static ALLOW_REPORT: Limiter = Limiter::new(20, 600_000, 10_000, "Too many reports from this address. Try again later.");
+static ALLOW_REPORT: PlayerLimit = PlayerLimit::new(20, 600_000, "Too many reports. Try again later.");
 
 pub async fn report(
     State(app): State<App>,
@@ -28,8 +28,8 @@ pub async fn report(
     headers: HeaderMap,
     body: Body,
 ) -> ApiResult<Response> {
-    ALLOW_REPORT.allow(&client_of(&headers, peer), now_ms())?;
     let token = require_player(&headers)?;
+    ALLOW_REPORT.allow(&token, &client_of(&headers, peer), now_ms())?;
     let request = parse_report_request(&read_json(body, MAX_BODY_BYTES).await?).ok_or_else(|| {
         ApiError::bad_request("A report needs one message id with a code or one person id, a reason, and a note of at most 200 characters.")
     })?;

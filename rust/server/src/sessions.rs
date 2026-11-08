@@ -15,7 +15,7 @@ use tokio_stream::StreamExt;
 
 use crate::App;
 use crate::error::{ApiError, ApiResult, no_store};
-use crate::limits::{Limiter, client_of};
+use crate::limits::{PlayerLimit, client_of};
 use crate::protocol::{
     as_player_token, normalize_code, parse_move_request, parse_new_session, parse_playoff_request, parse_seat_action, parse_seat_answer,
     parse_session_update,
@@ -25,7 +25,7 @@ use crate::store::now_ms;
 pub const MAX_BODY_BYTES: usize = 4096;
 
 /// Session codes are never freed, so one client must not use them all up: 60 new sessions per hour (CREATES_PER_HOUR).
-static ALLOW_CREATE: Limiter = Limiter::new(60, 3_600_000, 10_000, "Too many new games from this address. Try again later.");
+static ALLOW_CREATE: PlayerLimit = PlayerLimit::new(60, 3_600_000, "Too many new games. Try again later.");
 
 /// The body of a request as JSON. An empty body reads as `{}`.
 pub async fn read_json(body: Body, limit: usize) -> ApiResult<Value> {
@@ -80,10 +80,10 @@ pub async fn create(
     headers: HeaderMap,
     body: Body,
 ) -> ApiResult<Response> {
-    ALLOW_CREATE.allow(&client_of(&headers, peer), now_ms())?;
+    let token = require_player(&headers)?;
+    ALLOW_CREATE.allow(&token, &client_of(&headers, peer), now_ms())?;
     let request = parse_new_session(&read_json(body, MAX_BODY_BYTES).await?)
         .ok_or_else(|| ApiError::bad_request("A new game needs a name of 1 to 40 characters, and a valid clock or none."))?;
-    let token = require_player(&headers)?;
     let created = app.store.call(move |db| db.create(&token, &request.name, request.clock)).await?;
     Ok(ok_json(StatusCode::CREATED, &created))
 }
