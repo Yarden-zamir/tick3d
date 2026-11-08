@@ -264,7 +264,7 @@ pub static RULES: [Rule; 54] = [
 
 /// Raise it with ACHIEVEMENT_RULES_VERSION in contract/achievement-cases.ts when a rule changes. The signatures of
 /// achievement_players read it (the cases test checks that both are the same).
-pub const RULES_VERSION: u32 = 4;
+pub const RULES_VERSION: u32 = 5;
 
 /// The rules of the signatures: the version and every id.
 pub fn rules_value() -> String {
@@ -313,8 +313,8 @@ pub struct Achievements {
 /// The progress of every achievement, in the order of RULES. The games can come in any order.
 pub fn achievement_progress(games: &[AchievementGame], invites: &Invites) -> ApiResult<Vec<Progress>> {
     let mut sorted: Vec<&AchievementGame> = games.iter().collect();
-    // A stable sort, as toSorted in src/achievements.ts.
-    sorted.sort_by_key(|game| game.finished_at);
+    // Oldest first, then by id with a game without one first, as byFinish in src/achievements.ts.
+    sorted.sort_by(|a, b| a.finished_at.cmp(&b.finished_at).then_with(|| a.id.cmp(&b.id)));
     let mut rivalries: HashMap<&str, Vec<Outcome>> = HashMap::new();
     let mut played = Vec::with_capacity(sorted.len());
     for game in sorted {

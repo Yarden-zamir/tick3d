@@ -12,7 +12,7 @@ import type { GameId, SessionMode } from '../src/protocol.ts';
 
 // Raise it when a rule in src/achievements.ts changes: every row of achievement_players then fills again.
 // A new or removed achievement changes the signatures by itself.
-const ACHIEVEMENT_RULES_VERSION = 4;
+const ACHIEVEMENT_RULES_VERSION = 5;
 
 // The game fixtures of src/achievements.test.ts.
 const X_ROW = [0, 16, 1, 17, 2, 18, 3];

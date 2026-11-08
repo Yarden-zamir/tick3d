@@ -102,7 +102,9 @@ pub(super) fn filtered_games(tokens: Option<usize>, filter: &FilterSql) -> Strin
            {mine_o} AS mine_o,
            {mine_upload} AS mine_upload,
            CASE WHEN scoped THEN (CASE WHEN mine_x AND mine_o THEN NULL WHEN mine_x THEN 'X' WHEN mine_o THEN 'O' END)
-             WHEN mode = 'computer' THEN you END AS side
+             WHEN mode = 'computer' THEN you END AS side,
+           -- The second key of every order by time: two games can end in the same millisecond. Never sent to a page.
+           results.id AS result_id
          WHERE results.nearby_role IS DISTINCT FROM 'guest'
            AND ({since} IS NULL OR finished_at >= make_timestamptz({since} * 1000))
            AND ({mode} IS NULL OR results.mode = {mode})
@@ -425,7 +427,7 @@ fn stats_of_games(conn: &Connection, filter: &StatsFilter, scoped: bool, now: i6
         conn,
         &format!(
             "{SAMPLE} SELECT epoch_ms(finished_at), CASE WHEN winner IS NULL THEN 'drawn' WHEN winner = side THEN 'won' ELSE 'lost' END
-             FROM g WHERE side IS NOT NULL ORDER BY finished_at DESC LIMIT {SIDED_GAMES}"
+             FROM g WHERE side IS NOT NULL ORDER BY finished_at DESC, result_id DESC LIMIT {SIDED_GAMES}"
         ),
         |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
     )?

@@ -51,6 +51,8 @@ struct Game {
     mine_o: bool,
     mine_upload: bool,
     side: Option<String>,
+    /// The second key of an order by time (results.id).
+    result_id: String,
 }
 
 /// The quantile of `values` as DuckDB's quantile_cont computes it: linear between the two nearest ranks.
@@ -95,7 +97,7 @@ fn read_games(conn: &Connection, filter: &StatsFilter, tokens: &[String], now: i
     let sql = format!(
         "SELECT epoch_ms(finished_at), mode, level, you, computer, tuned, hide_board, hide_history, hide_coordinates,
            to_json(moves)::VARCHAR, to_json(times)::VARCHAR, per_game, per_move, winner, ending, line, player_x, player_o,
-           to_json(metrics)::VARCHAR, public_id, mine_x, mine_o, mine_upload, side
+           to_json(metrics)::VARCHAR, public_id, mine_x, mine_o, mine_upload, side, result_id
          FROM ({})",
         filtered_games(Some(tokens.len()), &filter_sql)
     );
@@ -134,6 +136,7 @@ fn read_games(conn: &Connection, filter: &StatsFilter, tokens: &[String], now: i
             mine_o: row.get(21)?,
             mine_upload: row.get(22)?,
             side: row.get(23)?,
+            result_id: row.get(24)?,
         })
     })?;
     Ok(found.collect::<duckdb::Result<Vec<_>>>()?)
@@ -335,8 +338,8 @@ pub(super) fn personal_stats(conn: &Connection, now: i64, filter: &StatsFilter, 
         *mixes.entry(pair.join(" + ")).or_default() += 1;
     }
 
-    // Outcomes from the player's side, oldest first.
-    let mut sided: Vec<(i64, SideOutcome)> = games
+    // Outcomes from the player's side, newest first, by time and then by result id (as the SQL path).
+    let mut keyed: Vec<((i64, &str), SideOutcome)> = games
         .iter()
         .filter_map(|game| {
             let side = game.side.as_deref()?;
@@ -345,10 +348,11 @@ pub(super) fn personal_stats(conn: &Connection, now: i64, filter: &StatsFilter, 
                 Some(winner) if winner == side => SideOutcome::Won,
                 Some(_) => SideOutcome::Lost,
             };
-            Some((game.finished, outcome))
+            Some(((game.finished, game.result_id.as_str()), outcome))
         })
         .collect();
-    sided.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
+    keyed.sort_by(|(a, _), (b, _)| b.cmp(a));
+    let mut sided: Vec<(i64, SideOutcome)> = keyed.into_iter().map(|((at, _), outcome)| (at, outcome)).collect();
     sided.truncate(SIDED_GAMES as usize);
     sided.reverse();
 
@@ -568,7 +572,9 @@ mod tests {
                 if timed_out {
                     moves.truncate(4);
                 }
-                let finished = now - (n * 17 % 45) * DAY - n * 61_000;
+                // Game 8 ends in the same millisecond as game 7, so the order of a tie counts in both paths.
+                let at = if n == 8 { 7 } else { n };
+                let finished = now - (at * 17 % 45) * DAY - at * 61_000;
                 let times: Vec<i64> = (0..moves.len()).map(|i| finished - (moves.len() - i) as i64 * (300 + (n * 977 + i as i64 * 431) % 9000)).collect();
                 let you = if mode == "friend" { Value::Null } else { json!(if n % 2 == 0 { "X" } else { "O" }) };
                 let device = ["phone", "tablet", "computer"][(n % 3) as usize];

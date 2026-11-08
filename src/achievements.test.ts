@@ -209,6 +209,17 @@ describe('achievements', () => {
     expect(progressOf(achievementProgress(three), 'streak-3')).toMatchObject({ count: 3, unlockedBy: three.at(-1)?.id });
   });
 
+  it('gives the same streak in any order of games that end in the same millisecond', () => {
+    // Two wins, then a win and a loss in the same millisecond: the order of the tie decides between 3 and 2 in a row.
+    const before = [game(X_ROW, online('cy')), game(X_ROW, online('dee'))];
+    const win = game(X_ROW, online('ana'));
+    const loss = { ...game(O_ROW, online('ben')), finishedAt: win.finishedAt };
+    const streak = (games: AchievementGame[]) => progressOf(achievementProgress(games), 'streak-3')?.count;
+    expect(streak([...before, win, loss])).toBe(streak([...before, loss, win]));
+    // The game with the smaller id counts first.
+    expect(streak([loss, ...before, win])).toBe((win.id ?? '') < (loss.id ?? '') ? 3 : 2);
+  });
+
   it('knows each opponent: different people, a nemesis and a revenge', () => {
     const loss = (who: string) => game(O_ROW, online(who));
     const win = (who: string) => game(X_ROW, online(who));
