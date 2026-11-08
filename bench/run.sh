@@ -35,6 +35,8 @@ ticks() { awk '{print $14 + $15}' "/proc/$PID/stat"; }
 
 # ONLY="stats-mine history" measures only these. It defaults to all.
 ONLY=${ONLY:-}
+# PAIRS pairs of players play ROUNDS games each in the game loop, at the same time. Each pair has its own address.
+PAIRS=${PAIRS:-20}; ROUNDS=${ROUNDS:-10}
 wanted() { [ -z "$ONLY" ] || [[ " $ONLY " == *" $1 "* ]]; }
 
 load() { # <server> <name> <connections> <path> [header]
@@ -61,7 +63,7 @@ PY
 interaction() { # <server> <channel>
   wanted "interaction-$2" || return 0
   local before; before=$(ticks)
-  local line; line=$(taskset -c $CLIENT_CPUS node "$HERE/interaction.ts" "http://127.0.0.1:$PORT" 20 10 "$2")
+  local line; line=$(taskset -c $CLIENT_CPUS node "$HERE/interaction.ts" "http://127.0.0.1:$PORT" "$PAIRS" "$ROUNDS" "$2")
   echo "{\"server\":\"$1\",\"measure\":\"interaction-$2\",\"serverCpuSeconds\":$(awk -v t="$(( $(ticks) - before ))" -v hz="$(getconf CLK_TCK)" 'BEGIN { printf "%.2f", t / hz }'),\"result\":$line}"
 }
 
@@ -72,7 +74,7 @@ mixed() { # <server>
   taskset -c $CLIENT_CPUS "$OHA" --no-tui -z 60s -c 4 -H "x-player: $token" "http://127.0.0.1:$PORT/api/stats?scope=mine" > /dev/null &
   local loader=$!
   sleep 2
-  local line; line=$(taskset -c $CLIENT_CPUS node "$HERE/interaction.ts" "http://127.0.0.1:$PORT" 20 10 sse)
+  local line; line=$(taskset -c $CLIENT_CPUS node "$HERE/interaction.ts" "http://127.0.0.1:$PORT" "$PAIRS" "$ROUNDS" sse)
   kill "$loader" 2>/dev/null || true; wait "$loader" 2>/dev/null || true
   echo "{\"server\":\"$1\",\"measure\":\"interaction-sse-under-stats-load\",\"result\":$line}"
 }

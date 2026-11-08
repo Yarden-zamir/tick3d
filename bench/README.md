@@ -17,6 +17,73 @@ SEED_FILE=/tmp/bench-seed.duckdb OHA=~/.cargo/bin/oha \
 - `SEED_FILE` keeps the seed between runs. Seeding takes about 3 minutes.
 - The VPS is noisy. For an A/B comparison, run the binaries in turn several times, and compare the pairs.
 
+## The units of a move, in process (2026-11-08)
+
+`rust/server/src/benches.rs` measures each unit of a move inside the server process: no network, no proxy, and no limit per address. Run them in release mode, one at a time:
+
+```sh
+cd rust && BENCH_GAMES=1000 cargo test --release -p tick3d-server bench_ -- --ignored --nocapture --test-threads 1
+```
+
+Each game is 7 moves; the 7th ends the game. Three runs on the VPS (load average 2 to 9 from other work):
+
+| Unit | p50 | p90 | p99 | Rate |
+|---|---|---|---|---|
+| Rules (`rust/core`): one move on a document | 2 µs | 3–4 µs | 4–21 µs | 260,000–580,000 / s |
+| Store: one move (load, rules, save in memory, view), through the store thread | 136 µs | 0.6 ms | 5.7 ms | 2,070 / s |
+| Router: one move request (body, checks, handler, store, JSON) | 208 µs | 2.4 ms | 18.6 ms | 735 / s, one at a time |
+| Store or router: the move that ends a game | 380–390 ms | 570–640 ms | 0.9–1.0 s | its answer waits for the result batch |
+| Fan-out: one move to 10 open pages | 1.7–9 ms | | 25 ms | |
+| Fan-out: to 100 open pages | 62–75 ms | | 141 ms | |
+| Fan-out: to 1,000 open pages | 3.9–4.5 s | | 6.0 s | |
+
+What the numbers say:
+
+- The rules cost nothing next to the rest. A move spends most of its time in the store job (the session load, the save and the view) and in the request around it.
+- One store thread handles about 2,000 moves per second. All the online play of the launch fits in that by a wide margin.
+- The move that ends a game answers after the finished game is in DuckDB (the result batch waits up to 200 ms, then writes). Its opponent gets the view at once; only the mover waits.
+- Limit: the fan-out grows with the square of the open pages of one session. Each page with its own token gets its own view, and each view lists every watcher, so 1,000 watchers of one game cost about 4 s per move. 100 watchers cost about 70 ms. Revisit when one game draws hundreds of watchers: send one view to all watchers without a seat.
+
+## Launch load without the network (2026-11-08)
+
+`run.sh` runs the release server on the seeded database (40,000 games) on this machine. Each pair of players has its own address, so no limit takes part. `PAIRS` and `ROUNDS` set the size of the game loop; every pair moves without a pause, which is far harsher than real players.
+
+```sh
+PAIRS=200 ROUNDS=3 ONLY=interaction-ws SEED_FILE=/tmp/bench-seed.duckdb bench/run.sh "$LIB" 1 /tmp/main
+```
+
+| Pairs (players) | Moves | Moves/s | Move p50 / p90 / p99 | Delivery p50 / p90 / p99 | Server CPU | Peak memory |
+|---|---|---|---|---|---|---|
+| 20 (40) | 420 | 93 | 24 / 365 / 911 ms | 36 / 56 / 312 ms | 1.6 s in 4.5 s | 118 MB |
+| 200 (400) | 4,200 | 394 | 134 / 403 / 1,723 ms | 175 / 389 / 1,570 ms | 8.3 s in 10.7 s | 213 MB |
+
+- 400 players who all move at once still get a median answer of 134 ms; the server used less than one core of four.
+- The load average of the VPS was 5 to 6.6 from other work during the run, so the numbers are worse than on a quiet machine.
+
+## Launch load on a preview (2026-11-05)
+
+`preview-load.sh` runs the game loop over the WebSocket against a deployed site while `oha` reads the stats, the leaderboard and the page at about 20 requests per second. It is the end-to-end check through Cloudflare and Caddy. It stops when production health slows down. The client ran on the VPS, so each request went out to Cloudflare and back.
+
+```sh
+OHA=~/.cargo/bin/oha bench/preview-load.sh https://tick3d-pr-279.yarden-zamir.com 50 1 60
+```
+
+| Measure | Result |
+|---|---|
+| 50 online games at the same time (100 players), 350 moves over the WebSocket | all done, 56 moves/s |
+| Move answer p50 / p90 / p99 | 66 / 549 / 752 ms |
+| Delivery to the opponent p50 / p90 / p99 | 70 / 321 / 752 ms |
+| Reads at 21 requests/s: stats, leaderboard, page p50 / p99 | 36–48 / 300–476 ms, all 200 |
+| Production health during the run | median 0.20 s, max 0.40 s; the guard did not stop the run |
+
+All 50 games started in the same second and moved without a pause, which is harsher than real players.
+
+Limits:
+
+- The limits count per player since #293, with 20 times as much per address. One machine can still start only 1,200 games per hour per site, so a larger end-to-end test needs more client addresses.
+- The counts live in memory and reset with each deploy (`rust/server/src/limits.rs`).
+- Previews and production share the 4 cores of the VPS.
+
 The results below compare the Node API, which this repository removed after the Rust server went live on 2026-11-04, with the Rust API. They stay as the record of that switch.
 
 ## Method
