@@ -33,7 +33,7 @@
     "pngjs": "^7.0.0",
     "qrcode-generator": "^2.0.4",
     "stylelint": "^18.0.0",
-    "stylelint-config-recommended": "^18.0.0",
+    "stylelint-config-recommended": "^19.0.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.6",
     "vite-plugin-pwa": "^2.0.0",
