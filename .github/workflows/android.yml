@@ -198,7 +198,7 @@ jobs:
           echo "body=$body" >> "$GITHUB_OUTPUT"
 
       - name: GitHub release
-        uses: softprops/action-gh-release@v3.0.3
+        uses: softprops/action-gh-release@v3.0.4
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           target_commitish: ${{ github.sha }}

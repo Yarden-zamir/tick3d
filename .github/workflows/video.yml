@@ -159,7 +159,7 @@ jobs:
         with:
           pattern: tick3d-video-spot-*
           path: renders
-      - uses: softprops/action-gh-release@v3.0.3
+      - uses: softprops/action-gh-release@v3.0.4
         with:
           files: |
             renders/*/tick3d-15s-*.mp4
