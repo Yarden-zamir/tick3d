@@ -1,11 +1,11 @@
-//! Finished games from the devices and the metrics of online games (server/store.ts: addResults, addSeatMetrics).
+//! Finished games from the devices and the metrics of online games.
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 use tick3d_core::game::{PerPlayer, Player};
 use tokio::sync::oneshot;
 
 use super::sessions::{QueuedResult, ResultOutcome, Row, is_finished};
-use super::{Db, FROM_NODE, metric_lists, now_ms};
+use super::{CONTRACT, Db, metric_lists, now_ms};
 use crate::error::{ApiError, ApiResult};
 use crate::protocol::{GameId, parse_result_upload};
 
@@ -100,7 +100,7 @@ impl Db {
             Player::X => "X",
             Player::O => "O",
         };
-        let fields = &FROM_NODE.fields;
+        let fields = &CONTRACT.fields;
         let inserted = self.query(
             &format!(
                 "INSERT INTO seat_metrics (public_id, seat, metrics, {}) VALUES ($id, $seat, $metrics::JSON::VARIANT, {})

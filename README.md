@@ -165,25 +165,25 @@ A mode change moves neither the board nor the Opponent picker:
 - `src/ai.ts`, `src/ai-worker.ts`, `src/move-search.ts`: the computer levels, in a Web Worker.
 - `src/session/core.ts`: the session rules. The server, the device and the Nearby host all run them.
 - `src/session/format.ts`: the stored session format.
-- `rust/core/`: a Rust copy of the online session rules, for the Rust server ([#265](https://github.com/Yarden-zamir/tick3d/issues/265)). It must pass every case in `src/session/rule-cases.json`. After a rule change in TypeScript, run `UPDATE_RULE_CASES=1 npx vitest run src/session/rule-cases.test.ts`, then change the Rust copy until `cargo test` in `rust/` passes.
+- `rust/core/`: a Rust copy of the online session rules, for the server. It must pass every case in `src/session/rule-cases.json`. After a rule change in TypeScript, run `UPDATE_RULE_CASES=1 npx vitest run src/session/rule-cases.test.ts`, then change the Rust copy until `cargo test` in `rust/` passes.
 - `src/protocol.ts`: the contract between the page and the API.
 - `src/online.ts`: the API client. `src/local.ts` and `src/device-db.ts`: the device backend on IndexedDB.
 - `src/nearby/`: WebRTC, QR codes and the host and guest sessions.
 - `src/sound.ts`, `src/sound-sets.ts`: the sounds and the sound sets. `src/click-sound.ts`: the click of every control. `src/song.ts`: a finished game as a song.
 - `src/voice/`: the voice engine (pitch, range, sticky cells, tilt, clips) for the game and the Voice room. `src/page/voice.ts`: play by voice in the game.
-- `sound-input.html`, `src/sound-input/`: the Voice room. `src/practice/`: the practice and playoff rules, shared with `server/practice.ts`.
+- `sound-input.html`, `src/sound-input/`: the Voice room. `src/practice/`: the practice and playoff rules.
 - `src/main.ts`, `src/page/`, `index.html`, `src/style.css`: the game page, one module per feature in `src/page/`.
 - `src/page/safety.ts`, `src/page/person-mark.ts`: the report and block menu of the game. `src/safety-dialog.ts` and `src/blocks.ts`: the menu and the block list, shared with the stats page.
 - `src/header/`: the header and the footer of every page. `src/markup.test.ts` checks that every page has the same header and footer.
 - `stats.html`, `src/stats/`: the stats page. `sound-training.html`, `src/sound-training/`: the ear trainer.
-- `share.html`, `src/share/`: the share page. `server/tester-codes.ts`: the codes from `TESTER_CODES`.
+- `share.html`, `src/share/`: the share page. `rust/server/src/tester_codes.rs`: the codes from `TESTER_CODES`.
 - `src/pwa.ts`, `vite.config.ts`: the service worker and the manifest.
-- `server/main.ts`: the HTTP API. `server/store.ts`: the DuckDB store. `server/auth.ts`: GitHub and Google login.
-- `server/api-docs.ts`: every API route with its docs. The server finds routes in this list.
+- `rust/server/`: the HTTP API in Rust. `rust/server/src/routes.rs`: every route. `rust/server/src/store/`: the DuckDB store. `rust/server/src/auth.rs`: GitHub and Google login.
+- `contract/`: the API contract that the page and the server share. `contract/api-docs.ts`: every API route with its docs. `contract/schema.ts`: the tables. `contract/contract.test.ts` writes them, with the metric lists of `src/`, to `rust/server/contract.json`, which the server reads at build time.
 
-To add a route, add one entry to `ROUTES` in `server/api-docs.ts` and one case to the switch in `server/main.ts`. The type check fails when one of the two is missing.
+To add a route, add one entry to `ROUTES` in `contract/api-docs.ts`, write `rust/server/contract.json` again (`UPDATE_RUST_API=1 npx vitest run contract/contract.test.ts`), and add the handler to `ROUTES` in `rust/server/src/routes.rs`. The tests fail when one of the two is missing.
 
-The page is plain TypeScript built with Vite, with no runtime dependencies. The API runs TypeScript directly on Node 26 and stores data in [DuckDB](https://duckdb.org).
+The page is plain TypeScript built with Vite, with no runtime dependencies. The API is a Rust server ([axum](https://github.com/tokio-rs/axum)) that stores data in [DuckDB](https://duckdb.org).
 
 ## Stored data and format changes
 
@@ -191,15 +191,15 @@ The page is plain TypeScript built with Vite, with no runtime dependencies. The 
 - A new optional field needs only a default in `parseDoc` (`src/session/format.ts`). It needs no migration and no database reset.
 - A breaking change needs a new `CURRENT_FORMAT` and one `UPGRADES` step. `src/session/format.ts` explains the rules.
 - `src/session/fixtures/` holds a document of each released format. A test reads each one.
-- Table changes are append-only statements in `server/store.ts`, such as `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
-- A one-time data change runs through `runOnce` in `server/store.ts`: the `migrations` table keeps its name, so it runs once per database.
+- Table changes are append-only statements in `contract/schema.ts`, such as `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
+- A one-time data change runs through `run_once` in `rust/server/src/store/mod.rs`: the `migrations` table keeps its name, so it runs once per database.
 
 ## API
 
 - `/api/openapi.json`: the OpenAPI 3.1 document, with every route, shape, error and a curl example.
 - `/api/docs`: the same document in Swagger UI.
 
-Both come from `server/api-docs.ts`. The routes that change a game accept an `Idempotency-Key` header, and every 429 has a `Retry-After` header.
+Both come from `contract/api-docs.ts`. The routes that change a game accept an `Idempotency-Key` header, and every 429 has a `Retry-After` header.
 
 ## Stats page and what is logged
 
@@ -209,7 +209,7 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 - "Hide my stats" in My games closes your person view, your achievements included, to everyone but you: `GET /api/stats` and `GET /api/stats/card/{person}` then answer 403. It also takes you off the leaderboard. Mine still works, and Everyone still counts your games without your name. The setting follows a GitHub login.
 - Leaderboard (Everyone only): one row per player with their name, GitHub login and picture, and games, won, drawn, lost, win rate, best streak, fastest win, average moves, achievements and last game. Tap a column to sort; tap it again to turn the order around. It follows the time, mode and level filters, and loads when it scrolls into view. The achievements count covers all games. Friend games and the computer do not count. Players that you blocked are not on your board. `GET /api/leaderboard` gives the same rows.
 - Everyone answers (the stats and the leaderboard) come from a snapshot. A second database connection refreshes it in the background when it is a minute old, or older for a costly refresh, so a visitor and the game never wait for it. With more than 100,000 games, the charts of moves, times, settings and devices show the newest 100,000.
-- Speed: the queries read plain columns that each write copies out of the stored game (`server/fields.ts`), and the games of one player come through indexes on the seat columns. At 1,000,000 players (5,000,000 games) every request of one player answered in under 1.5 s.
+- Speed: the queries read plain columns that each write copies out of the stored game (`contract/fields.ts`), and the games of one player come through indexes on the seat columns. At 1,000,000 players (5,000,000 games) every request of one player answered in under 1.5 s.
 - A tap on a row opens the person view. Its player card shows the unlocked achievements in a row that scrolls, newest first, and Report or block. The card has its own request (`GET /api/stats/card/{person}`), which reads no game, so it shows before the stats of the person.
 - On a phone, the player column of the leaderboard stays in view and cuts off long names, so about 4 number columns fit next to it.
 - While the stats load, the cards show as grey skeletons with a moving light, and then fade in. With reduced motion, the skeletons stay still.
@@ -235,18 +235,18 @@ Both come from `server/api-docs.ts`. The routes that change a game accept an `Id
 - The copy belongs to the account that is logged in on that device now, or to the device without a login. A login with another account on the device moves the copy to that account, and a logout moves it back to the device. So one copy serves one account at a time. No step on the page is needed.
 - `GET /api/me` gives `hasCopy`: true on every browser of an account that holds a copy, the web too.
 - A valid, player-bound `UNLICENSED` Play verdict clears `proved` on that device only. `UNEVALUATED` (Google could not decide) answers 403 and changes nothing. Other proved devices of the account keep their copies. A malformed, stale, reused or wrong-player proof cannot revoke a copy. Apple refunds are not checked; revisit when a player reports a refund.
-- The invite achievements count distinct people, also for Family tree: the claims and the app opens with that inviter, merged when they share a device, an owner or the account that holds a device now (`server/invite-people.ts`). A claim in the browser, a later login and the app on the same phone count once, and so do two devices of one account, also when a device logs in after its event. The claims from before the invite links count as invites of Yarden, except the codes that he gave to himself (a one-time migration in `server/store.ts`).
-- The iPhone app reports StoreKit 2 `AppTransaction` through a small Capacitor plugin. The server verifies its signed data with Apple's App Store Server Library, the bundle identifier, app identifier and environment. Apple's `appTransactionId` identifies an app purchase; `originalTransactionId` belongs to in-app purchases and is not present here. The plugin also sends `AppStore.deviceVerificationID`, and the server checks it against the signed `deviceVerification` hash. One purchase holds at most five devices (`apple_slots`), keyed by that id, so a copied proof cannot fill other slots. A new player token on the same device takes its slot over. A device cannot switch Apple purchases. Delete my data frees the slot, and a device unused for 90 days frees its slot when a new device needs it. TestFlight gets copies while it stays invite only; revisit when the TestFlight link becomes public. The iPhone browser storage is separate from Safari, so only an inviter visible inside the app can count.
+- The invite achievements count distinct people, also for Family tree: the claims and the app opens with that inviter, merged when they share a device, an owner or the account that holds a device now (`people_of` in `rust/server/src/achievements.rs`). A claim in the browser, a later login and the app on the same phone count once, and so do two devices of one account, also when a device logs in after its event. The claims from before the invite links count as invites of Yarden, except the codes that he gave to himself (a one-time migration in `rust/server/src/store/mod.rs`).
+- The iPhone app reports StoreKit 2 `AppTransaction` through a small Capacitor plugin. The server verifies its signed data as Apple's App Store Server Library does (`rust/server/src/apple_proof.rs`), and checks the bundle identifier, app identifier and environment. Apple's `appTransactionId` identifies an app purchase; `originalTransactionId` belongs to in-app purchases and is not present here. The plugin also sends `AppStore.deviceVerificationID`, and the server checks it against the signed `deviceVerification` hash. One purchase holds at most five devices (`apple_slots`), keyed by that id, so a copied proof cannot fill other slots. A new player token on the same device takes its slot over. A device cannot switch Apple purchases. Delete my data frees the slot, and a device unused for 90 days frees its slot when a new device needs it. TestFlight gets copies while it stays invite only; revisit when the TestFlight link becomes public. The iPhone browser storage is separate from Safari, so only an inviter visible inside the app can count.
 
 Run it locally with fake codes:
 
 ```sh
-TESTER_CODES="AAAAAAAAAAAAAAAAAAAAAA1=Tom,BBBBBBBBBBBBBBBBBBBBBB2" DB_PATH=/tmp/share.duckdb node server/main.ts
+cd rust && TESTER_CODES="AAAAAAAAAAAAAAAAAAAAAA1=Tom,BBBBBBBBBBBBBBBBBBBBBB2" DB_PATH=/tmp/share.duckdb cargo run --release -p tick3d-server
 ```
 
 ## Develop
 
-Node is not necessary on the host. Run the commands in a container:
+Node is not necessary on the host. Run the page commands in a container:
 
 ```sh
 docker run --rm -v "$PWD":/app -w /app node:26-alpine sh -c 'npm ci && npm run check && npm run build'
@@ -255,8 +255,8 @@ docker run --rm -it -p 5173:5173 -v "$PWD":/app -w /app node:26-alpine npx vite 
 
 - `npm run check` runs the type check, the linters (`npm run lint`) and the unit tests.
 - `npm run build` runs the type check and the Vite build.
-- `cargo test` in `rust/` runs the Rust rules against the rule cases. `rust/rust-toolchain.toml` sets the Rust version.
-- `npm run api` starts the API on port 8080 with `./dev.duckdb`.
+- `cargo test` in `rust/` runs the tests of the server and of the Rust rules, also against the rule cases. `rust/rust-toolchain.toml` sets the Rust version.
+- `npm run api` builds and starts the Rust API on port 8080 with `./dev.duckdb`. It needs Rust (rustup) on the host.
 - `npm run dev` starts the Vite dev server on port 5173. It sends `/api` calls to `npm run api`, so run both for Online games.
 
 `npm run e2e` runs the Playwright tests in `e2e/` against a deployed site. Set `E2E_BASE_URL` to the site, for example a pull request preview:

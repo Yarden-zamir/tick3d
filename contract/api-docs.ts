@@ -1,8 +1,8 @@
 // The public HTTP API in one place. The server dispatches requests with matchRoute, and
-// /api/openapi.json and its Swagger UI page /api/docs come from this file (see server/api-docs-render.ts).
-// To add a route, add one entry to ROUTES and one case to the switch in server/main.ts.
-// The type checker refuses a case without an entry, and a switch without a case for an entry.
-// server/api-docs.test.ts runs every example through the real parsers in src/protocol.ts.
+// /api/openapi.json and its Swagger UI page /api/docs come from this file (see contract/api-docs-render.ts).
+// To add a route, add one entry to ROUTES and its handler to rust/server/src/routes.rs. The tests of routes.rs fail
+// when a route of rust/server/contract.json has no handler, or a handler has no route.
+// contract/api-docs.test.ts runs every example through the real parsers in src/protocol.ts.
 import { ACHIEVEMENT_IDS, achievementProgress, rarityOf } from '../src/achievements.ts';
 import { DIFFICULTIES } from '../src/ai.ts';
 import { LIMIT_RANGE } from '../src/clock.ts';
@@ -53,36 +53,35 @@ import { EMPTY_SESSION_TTL_MS, ERROR_CODES, SEAT_REQUEST_MS } from '../src/sessi
 import { CODE_MAX_LENGTH, CODE_MIN_LENGTH, EMAIL_MAX_LENGTH, HINT_LENGTH, TESTER_NAME_MAX_LENGTH } from '../src/share/codes.ts';
 
 // Long polls wait at most this long. Proxies keep an idle request open for longer.
-export const WAIT_MS = 25_000;
-// New sessions per hour from one address. server/main.ts enforces it.
-export const CREATES_PER_HOUR = 60;
-// Fault reports per 10 minutes from one address. server/main.ts enforces it.
-export const EVENTS_PER_10_MINUTES = 30;
-// Nearby lobby calls (announce and answer) per 10 minutes from one network. server/main.ts enforces it.
-export const NEARBY_CALLS_PER_10_MINUTES = 120;
-// Games in the Nearby list from one network. server/lobby.ts enforces it.
-export const NEARBY_HOSTS_PER_NETWORK = 10;
+const WAIT_MS = 25_000;
+// New sessions per hour from one address. rust/server/src/sessions.rs enforces it (ALLOW_CREATE).
+const CREATES_PER_HOUR = 60;
+// Fault reports per 10 minutes from one address. rust/server/src/moderation.rs enforces it (ALLOW_EVENT).
+const EVENTS_PER_10_MINUTES = 30;
+// Nearby lobby calls (announce and answer) per 10 minutes from one network. rust/server/src/nearby.rs enforces it (ALLOW_NEARBY).
+const NEARBY_CALLS_PER_10_MINUTES = 120;
+// Games in the Nearby list from one network. rust/server/src/nearby.rs enforces it (PER_NETWORK).
+const NEARBY_HOSTS_PER_NETWORK = 10;
 // A Nearby host stays in the list for this long after its announce request ends.
-export const NEARBY_GRACE_MS = 10_000;
-// Practice runs per 10 minutes from one address. server/main.ts enforces it.
-export const PRACTICE_RUNS_PER_10_MINUTES = 60;
-// Reports of chat messages and people per 10 minutes from one address. server/main.ts enforces it.
-export const REPORTS_PER_10_MINUTES = 20;
-// Delete my data calls per hour from one address. server/main.ts enforces it.
-export const DATA_DELETES_PER_HOUR = 10;
-// Claims of tester codes per hour from one address. server/main.ts enforces it.
-export const TESTER_CLAIMS_PER_HOUR = 5;
+const NEARBY_GRACE_MS = 10_000;
+// Practice runs per 10 minutes from one address. rust/server/src/practice.rs enforces it (ALLOW_PRACTICE_RUN).
+const PRACTICE_RUNS_PER_10_MINUTES = 60;
+// Reports of chat messages and people per 10 minutes from one address. rust/server/src/moderation.rs enforces it (ALLOW_REPORT).
+const REPORTS_PER_10_MINUTES = 20;
+// Delete my data calls per hour from one address. rust/server/src/account.rs enforces it (ALLOW_DATA_DELETE).
+const DATA_DELETES_PER_HOUR = 10;
+// Claims of tester codes per hour from one address. rust/server/src/tester_codes.rs enforces it (ALLOW_TESTER_CLAIM).
+const TESTER_CLAIMS_PER_HOUR = 5;
 // Reports of an Android app open per hour from one address (POST /api/copies). The app sends one per start, so 60
 // leave room for a family that starts the app often.
-export const APP_OPENS_PER_HOUR = 60;
-// The tables that Delete my data (deleteData in server/store.ts) changes, with the rows it deleted and
+const APP_OPENS_PER_HOUR = 60;
+// The tables that Delete my data (rust/server/src/store/deletion.rs) changes, with the rows it deleted and
 // the rows it kept without the player. chat_messages counts the messages inside the session documents.
 // The other tables hold no player data: events, and moderation_log (kept for moderation). tester_codes holds
 // the email and the name that a tester typed, without a player token: a maintainer deletes them on an email
 // request. Delete my data only removes the person ids of the player from it.
-export const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'app_copies', 'apple_slots', 'player_tokens', 'users', 'logins'] as const;
-export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number; anonymised: number }>;
-// The previews list on production is at most this old. server/previews.ts enforces it.
+const DATA_TABLES = ['sessions', 'chat_messages', 'results', 'seat_metrics', 'player_names', 'blocks', 'private_stats', 'achievement_resets', 'achievement_players', 'seat_people', 'practice_runs', 'reports', 'tester_codes', 'app_copies', 'apple_slots', 'player_tokens', 'users', 'logins'] as const;
+// The previews list on production is at most this old. rust/server/src/previews.rs enforces it (CACHE_MS).
 // Only production calls GitHub, without a token: 60 calls per hour, 5 of them kept in reserve, so 55.
 // The calls per hour at about 10 open pull requests:
 // - the pull request list: 60 / 3 = 20;
@@ -92,13 +91,9 @@ export type DeletedData = Record<(typeof DATA_TABLES)[number], { deleted: number
 // Revisit with more than about 15 open pull requests or about 25 pushes per hour: then use a GitHub token (5000 per hour).
 export const PREVIEWS_CACHE_MS = 180_000;
 // The stats page and the leaderboard ask often; the numbers change slowly.
-export const STATS_CACHE_MS = 60_000;
+const STATS_CACHE_MS = 60_000;
 // A preview server keeps production's list for this long. It costs no GitHub call, only a request to production.
 export const PREVIEWS_RELAY_CACHE_MS = 15_000;
-// The 400 answer of GET /api/stats for a query that parseStatsFilter refuses.
-// The 400 answer of GET /api/leaderboard for a query that parseLeaderboardFilter refuses.
-export const LEADERBOARD_FILTER_ERROR = `Unknown leaderboard filter. range: ${STATS_RANGES.join(', ')}. mode: ${SESSION_MODES.join(', ')}. level: ${DIFFICULTIES.join(', ')}, only with the computer mode or no mode. Each key at most once.`;
-export const STATS_FILTER_ERROR = `Unknown stats filter. scope: ${STATS_SCOPES.join(' or ')}. range: ${STATS_RANGES.join(', ')}. mode: ${SESSION_MODES.join(', ')}. level: ${DIFFICULTIES.join(', ')}, only with the computer mode or no mode. person: a person id of ${PERSON_ID_LENGTH} hex characters, not with scope mine. Each key at most once.`;
 
 // ---- Shapes (JSON Schema 2020-12, as OpenAPI 3.1 uses) ----
 
@@ -920,7 +915,7 @@ const AGENT_A = 'agent-7f3k9q2m4x8w1z5c';
 const AGENT_B = 'agent-b2c8n4v6x1q9w3e7';
 const T0 = 1_791_200_000_000;
 const NO_LIMIT = { perMove: null, perGame: null };
-// Real signal codes: a laptop's offer and a phone's answer (server/lobby.test.ts decodes them).
+// Real signal codes: a laptop's offer and a phone's answer (rust/server/src/signal.rs decodes codes like them).
 const EXAMPLE_OFFER =
   'T3A1.BcHRCoIwFADQX4n7PKG5qflYaQmKKUYWIrK0bNnaqDH1pW_vnAoi43WAYCXseMq75XxpXYXlxtcFMQkdAUHB51ubH-i5bPieTVEfmNNVhdl9y4fSSnWomvVj17pGhICAAaoq-AWYfsunTo_CisU06mzwGRsBOZTYGNkYE5942MF1jaAFBAk3_N0vPlKKxYspLRXUfw';
 const EXAMPLE_ANSWER =
@@ -1094,7 +1089,7 @@ export type Route = {
   errors: readonly { status: number; when: string }[];
   // The X-Player value in the example, when the route reads one.
   examplePlayer?: string;
-  // The route accepts an Idempotency-Key header (server/idempotency.ts): a repeat gets the first answer.
+  // The route accepts an Idempotency-Key header (rust/server/src/idempotency.rs): a repeat gets the first answer.
   idempotencyKey?: true;
 };
 

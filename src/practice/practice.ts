@@ -125,7 +125,7 @@ type PresetKey = ReturnType<typeof presetKey>;
 type Best = { totalMs: number; score: number; at: number };
 
 // One place of a leaderboard. `player` is a GitHub login or a generated name.
-export type PracticeLeader = { mode: PracticeMode; preset: PresetId; rank: number; player: string; totalMs: number; score: number };
+type PracticeLeader = { mode: PracticeMode; preset: PresetId; rank: number; player: string; totalMs: number; score: number };
 // GET /api/practice/best: the best 10 people of one mode and preset, and the caller's own best.
 export type PracticeBoard = { mode: PracticeMode; preset: PresetId; top: PracticeLeader[]; you: { totalMs: number; score: number } | null };
 // The practice part of the stats page.
@@ -151,12 +151,6 @@ export function parsePracticeBoard(value: unknown): PracticeBoard {
   return { mode, preset, top, you: you === null ? null : { totalMs: you.totalMs as number, score: you.score as number } };
 }
 
-// The query of GET /api/practice/best. undefined for an unknown mode or preset.
-export function parseBoardQuery(mode: string | null, preset: string | null): { mode: PracticeMode; preset: PresetId } | undefined {
-  const knownMode = oneOf(PRACTICE_MODES, mode);
-  const knownPreset = oneOf(PRESET_IDS, preset);
-  return knownMode === undefined || knownPreset === undefined ? undefined : { mode: knownMode, preset: knownPreset };
-}
 
 // The bests of this device, by mode and preset (presetKey). The device keeps them in localStorage, so a
 // stored value can come from an older visit or a hand edit: a bad entry is left out.

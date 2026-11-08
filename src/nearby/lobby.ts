@@ -1,4 +1,4 @@
-// The Nearby lobby contract between the page and the server (see server/lobby.ts).
+// The Nearby lobby contract between the page and the server (see rust/server/src/nearby.rs).
 // A host announces its open game with an offer code. A guest on the same network reads the list,
 // and sends its answer code to the host through the server.
 import { isRecord } from '../guards.ts';
@@ -10,7 +10,7 @@ export type HostId = string & { readonly __brand: 'HostId' };
 const HOST_ID_LENGTH = 16;
 const HOST_ID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
-export function asHostId(value: unknown): HostId | undefined {
+function asHostId(value: unknown): HostId | undefined {
   if (typeof value !== 'string' || value.length !== HOST_ID_LENGTH) return undefined;
   return [...value].every((char) => HOST_ID_CHARS.includes(char)) ? (value as HostId) : undefined;
 }

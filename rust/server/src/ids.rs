@@ -5,7 +5,7 @@ pub const ACCOUNT_TOKEN_PREFIX: &str = "account-";
 pub const PERSON_ID_PREFIX: &str = "tick3d-person:";
 pub const PERSON_ID_LENGTH: usize = 16;
 
-/// The token that a seat holds when a logged-in player takes it (accountToken in server/store.ts).
+/// The token that a seat holds when a logged-in player takes it.
 /// The padding is the same as `lpad(github_id::VARCHAR, 16, '0')` in SQL, also for a negative id.
 pub fn account_token(account_id: i64) -> String {
     format!("{ACCOUNT_TOKEN_PREFIX}{account_id:0>16}")
@@ -30,5 +30,11 @@ mod tests {
         assert_eq!(account_token(8178413), "account-0000000008178413");
         // lpad('-5', 16, '0') puts the sign after the zeros.
         assert_eq!(account_token(-5), "account-00000000000000-5");
+    }
+
+    #[test]
+    fn a_person_id_is_the_same_as_on_the_page() {
+        // src/nearby/session.test.ts expects the same id for this token from a Nearby host.
+        assert_eq!(person_id("bbbbbbbb-0000-4000-8000-000000000002"), "f9ef0340306bef2f");
     }
 }

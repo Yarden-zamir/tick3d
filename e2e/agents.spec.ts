@@ -30,7 +30,7 @@ async function call(request: APIRequestContext, player: string, method: 'GET' | 
 
 test('the OpenAPI document and its Swagger UI page load', async ({ request, page, baseURL }) => {
   const response = await request.get('/api/openapi.json');
-  // server/api-docs.test.ts checks the document itself. Here: the deployed server fills in its own origin.
+  // contract/api-docs.test.ts checks the document itself. Here: the deployed server fills in its own origin.
   const doc = (await response.json()) as { servers: { url: string }[] };
   expect(doc.servers).toEqual([{ url: baseURL }]);
 

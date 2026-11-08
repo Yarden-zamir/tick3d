@@ -13,7 +13,7 @@ use super::stats::{
     CELL_COUNT, DAY_MS, DIFFICULTIES, FilterSql, HIDE_SETTINGS, MOVE_TIME_BUCKETS, RELEASE_ROWS, SESSION_MODES, SIDED_GAMES, SideOutcome,
     bound_filter, filtered_games, form_of, js_number, js_option, per_cell, since_of, streaks_of,
 };
-use super::{FROM_NODE, json_list, metric_lists};
+use super::{CONTRACT, json_list, metric_lists};
 use crate::error::{ApiError, ApiResult};
 use crate::protocol::{StatsFilter, StatsScope};
 
@@ -139,7 +139,7 @@ fn read_games(conn: &Connection, filter: &StatsFilter, tokens: &[String], now: i
     Ok(found.collect::<duckdb::Result<Vec<_>>>()?)
 }
 
-/// The person key of each token (PERSON in server/stats.ts): "github:<id>" for a linked token, else the token.
+/// The person key of each token: "github:<id>" for a linked token, else the token.
 fn persons_of(conn: &Connection, tokens: &HashSet<&str>) -> ApiResult<HashMap<String, String>> {
     let asked: Vec<String> = tokens.iter().map(|token| (*token).to_owned()).collect();
     let linked: HashMap<String, i64> = conn
@@ -285,7 +285,7 @@ pub(super) fn personal_stats(conn: &Connection, now: i64, filter: &StatsFilter, 
         let ids: Vec<String> = mine_seats.keys().map(|id| (*id).to_owned()).collect();
         let sql = format!(
             "SELECT sm.public_id, sm.seat, to_json({})::VARCHAR FROM seat_metrics sm WHERE list_contains(CAST($ids AS JSON)::VARCHAR[], sm.public_id)",
-            FROM_NODE.fields.metrics_of_seat_metrics
+            CONTRACT.fields.metrics_of_seat_metrics
         );
         let seat_rows = conn
             .prepare_cached(&sql)?

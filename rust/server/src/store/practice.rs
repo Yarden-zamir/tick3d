@@ -1,4 +1,4 @@
-//! The practice room: its runs and leaderboards (server/store.ts addPracticeRun, practiceBoard; server/practice.ts).
+//! The practice room: its runs and leaderboards.
 use serde::Serialize;
 use tick3d_core::names::name_of;
 use tick3d_core::playoff::PresetId;
@@ -9,13 +9,13 @@ use super::{Db, json_list};
 use crate::error::{ApiError, ApiResult};
 use crate::protocol::{PracticeMode, PracticeRun};
 
-/// The person of a token: the GitHub account, else the token (PERSON in server/stats.ts).
+/// The person of a token: the GitHub account, else the token.
 pub(super) const PERSON: &str = "coalesce('github:' || pt.github_id, token)";
-/// The name of an account: the custom name, else the login (ACCOUNT_NAME in server/stats.ts).
+/// The name of an account: the custom name, else the login.
 pub(super) const ACCOUNT_NAME: &str = "coalesce(u.name, u.login)";
 
-/// The shown name of a person: the account name, else the custom name of the device, else the generated name
-/// (personName in server/stats.ts). The person text stays on the server.
+/// The shown name of a person: the account name, else the custom name of the device, else the generated name.
+/// The person text stays on the server.
 pub(super) fn person_name(account: Option<String>, custom: Option<String>, person: &str) -> String {
     account.or(custom).unwrap_or_else(|| name_of(person))
 }
@@ -110,7 +110,7 @@ impl Db {
     }
 }
 
-/// The best `limit` people of each mode and preset (leaders in server/practice.ts). `only` limits the list to one mode
+/// The best `limit` people of each mode and preset. `only` limits the list to one mode
 /// and preset. A free function, so the reader connection runs it for the Everyone stats too.
 fn practice_leaders(conn: &Connection, limit: i64, only: Option<(PracticeMode, PresetId)>) -> ApiResult<Vec<PracticeLeader>> {
     let sql = format!(
@@ -160,7 +160,7 @@ pub struct PracticeStats {
     best: Vec<PracticeLeader>,
 }
 
-/// practiceStats in server/practice.ts.
+/// The runs and players of each mode and preset, and the best people.
 pub(super) fn practice_stats(conn: &Connection) -> ApiResult<PracticeStats> {
     let sql = format!(
         "{} SELECT mode, preset, count(*)::INTEGER AS runs, count(DISTINCT person)::INTEGER AS players,

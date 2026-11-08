@@ -1,4 +1,4 @@
-//! The Nearby lobby (server/lobby.ts) and its routes: open Nearby games that devices on the same network see in a list.
+//! The Nearby lobby and its routes: open Nearby games that devices on the same network see in a list.
 //! A web page cannot broadcast or discover on a local network, so a host announces its game through this server.
 //!
 //! The first announcement of a game answers at once with its id. Then the host holds one announce request with that id
@@ -29,7 +29,7 @@ use crate::sessions::{MAX_BODY_BYTES, ok_json, player_of, read_json, require_pla
 use crate::signal::{DeviceKind, Hello, MAX_CODE_LENGTH, SignalKind, decode_signal};
 use crate::store::now_ms;
 
-/// NEARBY_HOSTS_PER_NETWORK, NEARBY_GRACE_MS and the total of createLobby in server/main.ts.
+/// NEARBY_HOSTS_PER_NETWORK and NEARBY_GRACE_MS in contract/api-docs.ts, and the total of the lobby.
 const PER_NETWORK: usize = 10;
 const TOTAL: usize = 1000;
 const GRACE_MS: i64 = 10_000;
@@ -49,7 +49,7 @@ pub fn network_of(address: &str) -> Option<String> {
         return Some(plain.to_owned());
     }
     let ip: Ipv6Addr = plain.parse().ok()?;
-    // An IPv4 client on an IPv6 socket, as Node writes it.
+    // An IPv4 client on an IPv6 socket (::ffff:a.b.c.d).
     let lower = plain.to_lowercase();
     if let Some(v4) = lower.strip_prefix("::ffff:").filter(|v4| v4.parse::<Ipv4Addr>().is_ok()) {
         return Some(v4.to_owned());

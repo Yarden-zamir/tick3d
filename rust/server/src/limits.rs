@@ -1,4 +1,4 @@
-//! Limits per client address (createLimiter and clientOf in server/auth.ts).
+//! Limits per client address.
 use std::collections::{BTreeMap, VecDeque};
 use std::net::SocketAddr;
 use std::sync::Mutex;

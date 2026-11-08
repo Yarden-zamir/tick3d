@@ -1,4 +1,4 @@
-//! The stats page (server/main.ts: GET /api/stats, GET /api/stats/card/{person} and GET /api/leaderboard). Aggregates only (see
+//! The stats page. Aggregates only (see
 //! store/stats.rs), so the public stats page needs no login.
 use axum::body::Bytes;
 use axum::extract::{Path, RawQuery, State};

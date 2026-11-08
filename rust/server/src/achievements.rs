@@ -1,5 +1,5 @@
 //! Achievements: goals that a player reaches over their finished games. A copy of the rules in src/achievements.ts.
-//! achievement-cases.json (server/achievement-cases.ts) holds the progress that the TypeScript rules give, and a test
+//! achievement-cases.json (contract/achievement-cases.ts) holds the progress that the TypeScript rules give, and a test
 //! here replays it, so the two copies cannot drift. Only the ids and the goals live here: the page holds the texts.
 use std::collections::{BTreeMap, HashMap};
 
@@ -262,11 +262,11 @@ pub static RULES: [Rule; 54] = [
     count("beat-inviter", 1, |g| won(g) && against_person(g) && invited_before(g, g.game.invited_by_opponent_at)),
 ];
 
-/// Raise ACHIEVEMENT_RULES_VERSION in server/store.ts when a rule changes. The signatures of achievement_players read
-/// it, and both servers write that table, so the value is the same here (the cases test checks it).
+/// Raise it with ACHIEVEMENT_RULES_VERSION in contract/achievement-cases.ts when a rule changes. The signatures of
+/// achievement_players read it (the cases test checks that both are the same).
 pub const RULES_VERSION: u32 = 4;
 
-/// rulesValue in server/store.ts: the version and every id.
+/// The rules of the signatures: the version and every id.
 pub fn rules_value() -> String {
     let ids: Vec<&str> = RULES.iter().map(|rule| rule.id).collect();
     format!("{RULES_VERSION} {}", ids.join(" "))
@@ -404,14 +404,14 @@ fn progress_of(rule: &Rule, games: &[Played], among: Test, test: Test, is_streak
     }
 }
 
-/// One event that got the game to somebody through an invite (InviteEvent in server/invite-people.ts).
+/// One event that got the game to somebody through an invite.
 /// `keys` name the human behind it. Events that share a key belong to one person.
 pub struct InviteEvent {
     pub keys: Vec<String>,
     pub at: EpochMs,
 }
 
-/// peopleOf in server/invite-people.ts: the first time of each person, after a merge of the events that share a key.
+/// The first time of each person, after a merge of the events that share a key.
 pub fn people_of(events: &[InviteEvent]) -> Vec<EpochMs> {
     fn find(parent: &mut HashMap<String, String>, key: &str) -> String {
         match parent.get(key).cloned() {
@@ -434,7 +434,7 @@ pub fn people_of(events: &[InviteEvent]) -> Vec<EpochMs> {
             }
         }
     }
-    // The roots in the order of their first event, as the Map of server/invite-people.ts keeps them.
+    // The roots in the order of their first event.
     let mut first: Vec<(String, EpochMs)> = Vec::new();
     for event in events {
         let root = find(&mut parent, &first_key(event));
