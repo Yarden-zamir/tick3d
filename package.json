@@ -29,7 +29,7 @@
     "jsqr": "^1.4.0",
     "knip": "^6.44.1",
     "oxlint": "^1.91.0",
-    "oxlint-tsgolint": "^7.0.2005",
+    "oxlint-tsgolint": "^7.0.2006",
     "pngjs": "^7.0.0",
     "qrcode-generator": "^2.0.4",
     "stylelint": "^18.0.0",
