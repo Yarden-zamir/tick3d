@@ -42,8 +42,10 @@ jobs:
           hashes=$(curl "${auth[@]}" "$api/generatedApks/$code" | jq --raw-output '[.generatedApks[]?.certificateSha256Hash] | unique | .[]')
           if [[ -z "$hashes" ]]; then echo "::notice::Play made no APKs for version $code yet."; exit 0; fi
           if [[ $(wc -l <<< "$hashes") -ne 1 ]]; then echo "::error::More than one signing certificate: $hashes"; exit 1; fi
-          # The API reference does not name the encoding: accept hex, or base64 of the 32 bytes.
-          if [[ "$hashes" =~ ^[0-9a-fA-F]{64}$ ]]; then hex=$hashes; else hex=$(base64 --decode <<< "$hashes" | od -An -tx1 -v | tr -d ' \n'); fi
+          # The API reference does not name the encoding: accept hex, colon-separated hex (the answer since 2026-10), or
+          # base64 of the 32 bytes.
+          plain=${hashes//:/}
+          if [[ "$plain" =~ ^[0-9a-fA-F]{64}$ ]]; then hex=$plain; else hex=$(base64 --decode <<< "$hashes" | od -An -tx1 -v | tr -d ' \n'); fi
           [[ "$hex" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "::error::Unknown certificate hash format: $hashes"; exit 1; }
           fingerprint=$(tr 'a-f' 'A-F' <<< "$hex" | sed -E 's/(..)/\1:/g; s/:$//')
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
