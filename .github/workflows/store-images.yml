@@ -136,7 +136,7 @@ jobs:
       # With no change left after convert.py, this opens no pull request and deletes an old branch.
       # The checkout is a commit, not a branch, so base names main.
       - id: pr
-        uses: peter-evans/create-pull-request@v8.1.1
+        uses: peter-evans/create-pull-request@v8.1.2
         with:
           base: main
           token: ${{ steps.app.outputs.token }}
