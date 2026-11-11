@@ -13,7 +13,8 @@ const INFO = {
   training: 'How the ear training works',
   input: 'How the Voice room works',
   privacy: 'About this page',
-  share: 'How sharing and testing work',
+  // The page for everyone: the Android app is live on Google Play. The test answers GET /api/stores itself.
+  share: 'How sharing works',
 } as const satisfies Record<PageName, string>;
 
 const USER = { login: 'octocat', avatar: 'https://avatars.githubusercontent.com/u/583231?v=4' };
@@ -29,6 +30,7 @@ for (const name of keysOf(PAGES)) {
   test(`the header of ${path} has the wordmark, the account and Info, and the footer has kitshn and GitHub`, async ({ page }) => {
     const errors: Error[] = [];
     page.on('pageerror', (error) => errors.push(error));
+    await page.route('**/api/stores', (route) => route.fulfill({ json: { play: 'live' } }));
     await page.goto(path);
     const header = page.locator('header.brand');
     const footer = page.locator('.site-footer');
