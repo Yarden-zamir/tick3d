@@ -627,6 +627,16 @@ input:disabled {
     width: 2.5rem;
     padding: 0;
   }
+
+  /* "Get the app" keeps its words: a phone icon alone does not say what the link does (src/header/get-app.ts). */
+  .repo-link.get-app-link {
+    width: auto;
+    padding: 0.45rem 0.8rem;
+  }
+
+  .repo-link.get-app-link span {
+    display: inline;
+  }
 }
 
 .info-panel {

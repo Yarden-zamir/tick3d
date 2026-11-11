@@ -1,10 +1,13 @@
 // Chrome owns the player token. Request its bound nonce here, then let the native app attest it.
 import { OnlineError, api } from '../online.ts';
 import { isRecord } from '../guards.ts';
+import { platform } from '../platform.ts';
 
 export function receivePlayOpen(): Promise<{ proof: string; referrer: string | null } | null> | undefined {
   const url = new URL(location.href);
   if (url.searchParams.get('playPurchase') !== '1') return undefined;
+  // The platform reads the mark of the Android app from the address once, before the mark goes.
+  platform();
   url.searchParams.delete('playPurchase');
   history.replaceState(history.state, '', url);
   return new Promise((resolve, reject) => {
