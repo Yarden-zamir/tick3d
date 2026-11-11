@@ -389,7 +389,7 @@ function renderAccountBox(): void {
   }
   const { user, githubLogin, googleConnected, googleLogin } = page.account;
   // The iOS app offers no login: App Store rule 4.8 asks for Sign in with Apple next to GitHub and Google.
-  const canLogIn = page.account.loginAvailable && navigator.onLine && platform() === 'web';
+  const canLogIn = page.account.loginAvailable && navigator.onLine && platform() !== 'ios';
   const shown = ownName();
   const status = user === null ? 'You play as a guest on this device' : `Account from ${PROVIDER_NAMES[user.provider]}`;
   const nameChoice: NameChoice =

@@ -51,7 +51,7 @@ function loadScript(): Promise<GoogleIdentity> {
 // Without a network, on iOS (no login there), or on a page that Google does not accept, it does nothing.
 export async function offerGoogleOneTap(onError: (error: unknown) => void): Promise<void> {
   const client = page.account.googleOneTapClient;
-  if (client === null || loggedIn() || platform() !== 'web' || !navigator.onLine) return;
+  if (client === null || loggedIn() || platform() === 'ios' || !navigator.onLine) return;
   const identity = await loadScript();
   identity.initialize({
     client_id: client,

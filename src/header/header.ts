@@ -1,4 +1,4 @@
-// The header of every page: the wordmark, the account button and Info. kitshn and GitHub sit in the
+// The header of every page: the wordmark, the account button and Info. kitshn, GitHub and "Get the app" sit in the
 // footer of every page. Each page has the same header and footer markup (src/markup.test.ts checks it). The Info button opens the
 // #info-panel popover of the page, so each page writes its own Info text, and Info needs no script.
 // The header setup also installs the click sound of every control (src/click-sound.ts).
@@ -11,6 +11,7 @@ import { setupTooltips } from '../tooltip.ts';
 import { setupClickSound } from '../click-sound.ts';
 import { setupPreviews } from './previews.ts';
 import { markPlatform } from '../platform.ts';
+import { setupGetApp } from './get-app.ts';
 
 export const homeLink = element('#home-link', HTMLAnchorElement);
 export const accountLink = element('#account-button', HTMLAnchorElement);
@@ -31,6 +32,7 @@ export function setupGameHeader(): void {
   setupClickSound();
   setupTooltips();
   setupPreviews();
+  setupGetApp();
 }
 
 // A page other than the game: the account button opens My games on the game page, and a login there
@@ -41,6 +43,7 @@ export function setupPageHeader(onAccount?: (me: Me) => void): void {
   setupClickSound();
   setupTooltips();
   setupPreviews();
+  setupGetApp();
   accountLink.href = myGamesHref(`${location.pathname}${location.search}`);
   // The last answer shows at once, also offline. The new answer replaces it.
   showAccount(storedMe()?.user ?? null);
