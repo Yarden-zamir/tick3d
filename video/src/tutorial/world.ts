@@ -5,9 +5,9 @@ import { interpolate } from 'remotion';
 import { LINES, type Line, linesThrough } from '../../../src/game.ts';
 import type { Picture } from '../Film.tsx';
 import { frameOf, since } from '../grid.ts';
-import { type BadgeArt, SQUARE } from '../lettering.ts';
+import type { BadgeArt } from '../lettering.ts';
 import { CELL, OUTLINE, TILE_HEIGHT, cellCenter } from '../layout.ts';
-import { aim, clamp } from '../rig.ts';
+import { aim, clamp, onSquareAt } from '../rig.ts';
 import { createStage, pulse, squareFrame } from '../stage.ts';
 import { readTheme } from '../themes.ts';
 import { shotAt } from './camera.ts';
@@ -130,11 +130,7 @@ export function createTutorialWorld(width: number, height: number, art: BadgeArt
 
   // A cell of the tower on the centre square of the text, in its pixels (lettering.ts onSquare), with the camera
   // of the frame.
-  const cellAt = (cell: number): Point => {
-    const point = cellCenter(cell).project(camera);
-    const unit = Math.min(width, height) / SQUARE;
-    return { x: (point.x * width) / 2 / unit, y: (-point.y * height) / 2 / unit };
-  };
+  const cellAt = (cell: number): Point => onSquareAt(camera, cellCenter(cell), width, height);
 
   function update(frame: number): void {
     aim(camera, shotAt(frame), width, height);
