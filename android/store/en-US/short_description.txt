@@ -1,1 +1,1 @@
-3D tic-tac-toe on a 4×4×4 cube. Play the computer, a friend, or online.
+Tick 3D: 3D tic-tac-toe on a 4×4×4 cube. Play solo, with a friend, or online.
