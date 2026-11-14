@@ -1,4 +1,4 @@
-tick3d is tic-tac-toe in three dimensions. The board is a tower of four 4×4 layers. Get four marks in a straight line to win: along a row or a column, up through the layers, or diagonally through the whole cube.
+tick3d (Tick 3D) is tic-tac-toe in three dimensions. The board is a tower of four 4×4 layers. Get four marks in a straight line to win: along a row or a column, up through the layers, or diagonally through the whole cube.
 
 Ways to play
 • Against the computer, from easy to hard.
