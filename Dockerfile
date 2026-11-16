@@ -20,7 +20,7 @@ RUN --mount=type=bind,from=git,target=/app/.git npx vite build
 # The API (rust/server). compose.yml and compose.lan.yml run rust-api as the `api` service.
 # Build by hand: docker build --target rust-api --build-context git=.git .
 # The duckdb crate downloads libduckdb.so for glibc at build time, so these stages use Debian, not Alpine.
-FROM rust:1.99.1-slim-trixie AS rust-build
+FROM rust:1.100.0-slim-trixie AS rust-build
 WORKDIR /src
 COPY rust rust
 # The Apple root certificate (rust/server/apple-roots) goes into the binary (rust/server/src/apple_proof.rs).
