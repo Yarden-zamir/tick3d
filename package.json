@@ -14,7 +14,7 @@
     "e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
-    "@capacitor/core": "8.6.0"
+    "@capacitor/core": "8.6.2"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
@@ -22,20 +22,20 @@
     "@types/node": "^26.6.6",
     "@types/pngjs": "^6.0.5",
     "ajv": "^8.20.0",
-    "fake-indexeddb": "^6.2.7",
+    "fake-indexeddb": "^6.2.8",
     "ggwave": "0.4.0",
     "happy-dom": "^21.0.4",
-    "html-validate": "^11.18.0",
+    "html-validate": "^11.21.1",
     "jsqr": "^1.4.0",
-    "knip": "^6.44.1",
-    "oxlint": "^1.91.0",
-    "oxlint-tsgolint": "^7.0.2006",
+    "knip": "^6.45.1",
+    "oxlint": "^1.93.0",
+    "oxlint-tsgolint": "^7.0.2007",
     "pngjs": "^7.0.0",
     "qrcode-generator": "^2.0.4",
     "stylelint": "^18.0.0",
     "stylelint-config-recommended": "^19.0.0",
     "typescript": "^7.0.2",
-    "vite": "^8.3.6",
+    "vite": "^8.3.8",
     "vite-plugin-pwa": "^2.0.0",
     "vitest": "^5.1.0",
     "workbox-window": "^7.4.1"
