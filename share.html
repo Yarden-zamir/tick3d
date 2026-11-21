@@ -148,7 +148,13 @@
             <h3>Keep TestFlight</h3>
             <p>New builds come through TestFlight. A build stops after 90 days.</p>
           </li>
-          <li class="step" data-only="general">
+          <!-- The App Store step shows once the iOS app is live (GET /api/stores). The Safari step shows until then. -->
+          <li class="step" data-only="general" data-app-store-only="live">
+            <h3>Install</h3>
+            <p>Get tick3d on the App Store, for iPhone and iPad.</p>
+            <a class="btn btn-primary" href="https://apps.apple.com/app/id6821623182" target="_blank" rel="noopener">Install from the App Store</a>
+          </li>
+          <li class="step" data-only="general" data-app-store-only="none">
             <h3>Play in Safari</h3>
             <p>The iPhone app comes later. tick3d plays in Safari now: tap Share, then "Add to Home Screen" to keep it like an app.</p>
             <a class="btn btn-primary" href="/">Play now</a>
@@ -159,7 +165,7 @@
     <!-- The links about the project sit at the bottom of every page, away from the game. -->
     <footer class="site-footer">
       <div class="footer-links">
-        <!-- Shows only in a browser that can install the Android app, while it is live on Google Play (src/header/get-app.ts). -->
+        <!-- Shows only in a browser that can install a live app: Google Play, or the App Store on an iPhone or an iPad (src/header/get-app.ts). -->
         <a class="repo-link get-app-link" id="get-app-link" href="https://play.google.com/store/apps/details?id=com.yardenzamir.tick3d" target="_blank" rel="noopener" aria-label="Get the app on Google Play" data-tip="The Android app on Google Play" hidden>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M12 7v7M9 11l3 3 3-3M10 18h4"/></svg>
           <span>Get the app</span>
@@ -216,7 +222,8 @@
         <li>Android: a free Google Play code makes the app free, while codes last. A card shows only the first letters of its code.</li>
         <li>A claim stores the email and the name that you type. Other players see the name and your Gravatar picture, never the email.</li>
         <li>This browser keeps your code, so it shows here on your next visit.</li>
-        <li>iPhone: tick3d plays in Safari. The iPhone app comes later.</li>
+        <li data-app-store-only="live">iPhone and iPad: install tick3d from the App Store.</li>
+        <li data-app-store-only="none">iPhone: tick3d plays in Safari. The iPhone app comes later.</li>
         <li>Share with a friend shares your invite link. A friend who gets the game on Android through it counts for your invite achievements.</li>
       </ul>
       <ul data-only="testing">

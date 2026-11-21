@@ -14,7 +14,7 @@ import { type Countdown, countdown, formatLeft } from './countdown.ts';
 import { inviteUrl, inviterOf } from './invite.ts';
 import { PHONES, type Phone, isPhone, phoneOf } from './phone.ts';
 import { askReminder, remind, reminderSupport } from './reminder.ts';
-import { playStage, showShareSiteInIosWhenLive } from '../stores.ts';
+import { showShareSiteInIosWhenLive, storeStages } from '../stores.ts';
 import { type Progress, STEPS, type StepId, force, markDone, parseProgress, stepStates } from './steps.ts';
 import type { PersonId } from '../protocol.ts';
 import { type ShareVersion, knownVersion, versionOf } from './version.ts';
@@ -613,11 +613,21 @@ function showVersion(next: ShareVersion): void {
   if (choices.iphone.getAttribute('aria-pressed') === 'true') showPhone('iphone');
 }
 
+// The iPhone step of the page for everyone (share.css): the App Store once the iOS app is live, Safari until then.
+// Both stay hidden until the page knows, as the two pages do.
+function showAppStore(live: boolean): void {
+  document.body.dataset.appStore = live ? 'live' : 'none';
+}
+
 const known = knownVersion(location.search, readStored(STORAGE_KEYS.playLive) === true);
 if (known !== undefined) showVersion(known);
-void playStage().then((stage) => {
-  if (stage === 'live') writeStored(STORAGE_KEYS.playLive, true);
-  if (known === undefined) showVersion(versionOf(stage));
+const appStoreKnown = readStored(STORAGE_KEYS.appStoreLive) === true;
+if (appStoreKnown) showAppStore(true);
+void storeStages().then((stores) => {
+  if (stores?.play === 'live') writeStored(STORAGE_KEYS.playLive, true);
+  if (stores?.apple === 'live') writeStored(STORAGE_KEYS.appStoreLive, true);
+  if (known === undefined) showVersion(versionOf(stores?.play));
+  if (!appStoreKnown) showAppStore(stores?.apple === 'live');
 });
 
 const stored = readStored(STORAGE_KEYS.testerPhone);

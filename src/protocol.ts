@@ -1344,15 +1344,21 @@ function parsePreview(value: unknown): Preview | undefined {
 }
 
 // GET /api/stores: where the apps stand in the stores (rust/server/src/stores.rs). testing: only testers get the
-// Android app (the closed test). live: everyone gets it from Google Play.
-export const PLAY_STAGES = ['testing', 'live'] as const;
-export type PlayStage = (typeof PLAY_STAGES)[number];
-export type Stores = { play: PlayStage };
+// app (the Play closed test, or TestFlight). live: everyone gets it from the store. `apple` is absent on a server
+// without an App Store app id (APPLE_APP_ID).
+export const STORE_STAGES = ['testing', 'live'] as const;
+export type StoreStage = (typeof STORE_STAGES)[number];
+export type Stores = { play: StoreStage; apple?: StoreStage };
+
+const storeStageOf = (value: unknown): StoreStage | undefined => STORE_STAGES.find((stage) => stage === value);
 
 export function parseStores(value: unknown): Stores | undefined {
   if (!isRecord(value)) return undefined;
-  const play = PLAY_STAGES.find((stage) => stage === value.play);
-  return play === undefined ? undefined : { play };
+  const play = storeStageOf(value.play);
+  if (play === undefined) return undefined;
+  if (value.apple === undefined) return { play };
+  const apple = storeStageOf(value.apple);
+  return apple === undefined ? undefined : { play, apple };
 }
 
 export function parsePreviews(value: unknown): Previews {

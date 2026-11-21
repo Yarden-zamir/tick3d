@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { type AppVisitor, type PlatformSignals, appleOf, offersPlayApp, platformOf } from './platform.ts';
+import { type AppVisitor, type PlatformSignals, appOffer, appleOf, platformOf } from './platform.ts';
+import type { Stores } from './protocol.ts';
 
 const SAFARI = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
 const IPAD = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
@@ -37,22 +38,29 @@ describe('appleOf', () => {
   });
 });
 
-describe('offersPlayApp', () => {
-  const visitor: AppVisitor = { platform: 'web', apple: false, installed: false };
+describe('appOffer', () => {
+  const computer: AppVisitor = { platform: 'web', apple: false, installed: false };
+  const iphone: AppVisitor = { ...computer, apple: true };
+  const live: Stores = { play: 'live', apple: 'live' };
 
-  it('offers the Android app to a browser on Android or on a computer while the listing is live', () => {
-    expect(offersPlayApp(visitor, 'live')).toBe(true);
+  it('offers Google Play on Android or a computer, and the App Store on an iPhone or an iPad', () => {
+    expect(appOffer(computer, live)).toBe('play');
+    expect(appOffer(iphone, live)).toBe('app-store');
   });
 
-  it('never offers it inside an app, on an iPhone or an iPad, or in an installed web app', () => {
-    expect(offersPlayApp({ ...visitor, platform: 'android' }, 'live')).toBe(false);
-    expect(offersPlayApp({ ...visitor, platform: 'ios' }, 'live')).toBe(false);
-    expect(offersPlayApp({ ...visitor, apple: true }, 'live')).toBe(false);
-    expect(offersPlayApp({ ...visitor, installed: true }, 'live')).toBe(false);
+  it('never offers an app inside an app or in an installed web app', () => {
+    for (const visitor of [computer, iphone]) {
+      expect(appOffer({ ...visitor, platform: 'android' }, live)).toBeUndefined();
+      expect(appOffer({ ...visitor, platform: 'ios' }, live)).toBeUndefined();
+      expect(appOffer({ ...visitor, installed: true }, live)).toBeUndefined();
+    }
   });
 
-  it('does not offer it while the app is in the closed test or the server is out of reach', () => {
-    expect(offersPlayApp(visitor, 'testing')).toBe(false);
-    expect(offersPlayApp(visitor, undefined)).toBe(false);
+  it('offers a store only while its own app is live', () => {
+    expect(appOffer(computer, { play: 'testing', apple: 'live' })).toBeUndefined();
+    expect(appOffer(iphone, { play: 'live', apple: 'testing' })).toBeUndefined();
+    expect(appOffer(iphone, { play: 'live' })).toBeUndefined();
+    expect(appOffer(computer, undefined)).toBeUndefined();
+    expect(appOffer(iphone, undefined)).toBeUndefined();
   });
 });

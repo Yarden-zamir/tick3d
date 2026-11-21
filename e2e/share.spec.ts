@@ -68,8 +68,21 @@ test('the page for everyone keeps the codes and the invite link, without the clo
   await expect(card(page, 'B9W')).toBeVisible();
   await page.getByRole('button', { name: 'iPhone' }).click();
   await expect(page.locator('#testflight-link')).toBeHidden();
-  await expect(page.getByRole('link', { name: 'Play now' })).toBeVisible();
 });
+
+// The test answers GET /api/stores before the first visit, because a browser that saw the App Store app live keeps it.
+for (const appStore of [true, false]) {
+  test(`the iPhone step of the page for everyone ${appStore ? 'links to the App Store' : 'says to play in Safari'} ${appStore ? 'once' : 'while'} the iOS app is ${appStore ? '' : 'not '}live there`, async ({ page }) => {
+    await page.route('**/api/stores', (route) => route.fulfill({ json: appStore ? { play: 'live', apple: 'live' } : { play: 'live' } }));
+    await page.goto(`${PAGES.share.path}?version=general`);
+    await page.getByRole('button', { name: 'iPhone' }).click();
+    const install = page.locator('#iphone-path').getByRole('link', { name: 'Install from the App Store' });
+    const safari = page.getByRole('link', { name: 'Play now' });
+    await expect(appStore ? install : safari).toBeVisible();
+    await expect(appStore ? safari : install).toBeHidden();
+    if (appStore) await expect(install).toHaveAttribute('href', 'https://apps.apple.com/app/id6821623182');
+  });
+}
 
 test('the steps open in order, with a wait before the code step, and a tap opens a step early', async ({ open }) => {
   const { page } = await open({ path: TESTING });

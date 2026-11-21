@@ -165,6 +165,8 @@ async fn main() {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => println!("no release.json: this build records no release"),
         Err(error) => panic!("release.json cannot be read: {error}"),
     }
+    let apple = apple_proof::AppleProof::from_env().unwrap_or_else(|error| panic!("{error}"));
+    let stores = stores::Stores::new(apple.as_ref().map(apple_proof::AppleProof::app_id));
     let app = App(Arc::new(AppState {
         store: store.clone(),
         live: live.clone(),
@@ -175,8 +177,8 @@ async fn main() {
         previews: previews::previews_config_from_env().unwrap_or_else(|error| panic!("{error}")).map(previews::Previews::new),
         snapshots: snapshots::Snapshots::default(),
         play: play_proof::PlayProof::from_env().unwrap_or_else(|error| panic!("{error}")),
-        apple: apple_proof::AppleProof::from_env().unwrap_or_else(|error| panic!("{error}")),
-        stores: stores::Stores::default(),
+        apple,
+        stores,
     }));
     // A LAN host may have no internet, and its page has no store links to switch.
     if app.lan_host.is_none() {

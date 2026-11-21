@@ -1,16 +1,19 @@
 import type { Browser, Page } from '@playwright/test';
 import { expect, test } from './fixtures.ts';
 
-// "Get the app" in the footer links to the Android app on Google Play (src/header/get-app.ts). It shows only in a
-// browser that can install the app, while the listing is live. The tests answer GET /api/stores themselves, because
-// the server asks Google.
+// "Get the app" in the footer links to the app in its store (src/header/get-app.ts): Google Play on Android or a
+// computer, the App Store on an iPhone or an iPad. It shows only in a browser that can install the app, while that
+// listing is live. The tests answer GET /api/stores themselves, because the server asks Google and Apple.
 
 const PLAY = 'https://play.google.com/store/apps/details?id=com.yardenzamir.tick3d';
+const APP_STORE = 'https://apps.apple.com/app/id6821623182';
 const IOS_APP = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 tick3dApp/ios';
 const IPHONE_SAFARI = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 
-async function playStage(page: Page, play: 'live' | 'testing'): Promise<void> {
-  await page.route('**/api/stores', (route) => route.fulfill({ json: { play } }));
+type Stage = 'live' | 'testing';
+
+async function storeStages(page: Page, play: Stage, apple?: Stage): Promise<void> {
+  await page.route('**/api/stores', (route) => route.fulfill({ json: { play, ...(apple === undefined ? {} : { apple }) } }));
 }
 
 async function newPage(browser: Browser, baseURL: string | undefined, userAgent?: string): Promise<Page> {
@@ -19,13 +22,13 @@ async function newPage(browser: Browser, baseURL: string | undefined, userAgent?
 }
 
 test('a browser on a computer gets the link while the app is live', async ({ page }) => {
-  await playStage(page, 'live');
+  await storeStages(page, 'live', 'live');
   await page.goto('/');
   await expect(page.locator('.site-footer').getByRole('link', { name: 'Get the app' })).toHaveAttribute('href', PLAY);
 });
 
 test('the link stays hidden while the app is in the closed test', async ({ page }) => {
-  await playStage(page, 'testing');
+  await storeStages(page, 'testing', 'live');
   const answered = page.waitForResponse('**/api/stores');
   await page.goto('/');
   await answered;
@@ -34,7 +37,7 @@ test('the link stays hidden while the app is in the closed test', async ({ page 
 
 test('the Android app hides the link on its first page and on the next pages of the tab', async ({ browser, baseURL }) => {
   const page = await newPage(browser, baseURL);
-  await playStage(page, 'live');
+  await storeStages(page, 'live', 'live');
   // Chrome opens the first page of the Trusted Web Activity with this referrer. A link to the next page loses it.
   await page.addInitScript(() => {
     if (location.pathname !== '/') return;
@@ -49,14 +52,30 @@ test('the Android app hides the link on its first page and on the next pages of 
   await page.context().close();
 });
 
-for (const [name, userAgent] of [
-  ['the iOS app', IOS_APP],
-  ['Safari on an iPhone', IPHONE_SAFARI],
-]) {
-  test(`${name} hides the link, because the iOS app is not public`, async ({ browser, baseURL }) => {
-    const page = await newPage(browser, baseURL, userAgent);
-    await playStage(page, 'live');
+test('the iOS app hides the link', async ({ browser, baseURL }) => {
+  const page = await newPage(browser, baseURL, IOS_APP);
+  await storeStages(page, 'live', 'live');
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-platform', 'ios');
+  await expect(page.locator('#get-app-link')).toBeHidden();
+  await page.context().close();
+});
+
+test('Safari on an iPhone gets the App Store link while the iOS app is live', async ({ browser, baseURL }) => {
+  const page = await newPage(browser, baseURL, IPHONE_SAFARI);
+  await storeStages(page, 'live', 'live');
+  await page.goto('/');
+  await expect(page.locator('.site-footer').getByRole('link', { name: 'Get the app' })).toHaveAttribute('href', APP_STORE);
+  await page.context().close();
+});
+
+for (const apple of ['testing', undefined] as const) {
+  test(`Safari on an iPhone gets no link with the iOS app ${apple ?? 'unknown'}, even while the Android app is live`, async ({ browser, baseURL }) => {
+    const page = await newPage(browser, baseURL, IPHONE_SAFARI);
+    await storeStages(page, 'live', apple);
+    const answered = page.waitForResponse('**/api/stores');
     await page.goto('/');
+    await answered;
     await expect(page.locator('#get-app-link')).toBeHidden();
     await page.context().close();
   });
