@@ -138,6 +138,11 @@ impl AppleProof {
         Ok(Some(AppleProof::new(bundle_id, app_id, APPLE_ROOT.to_vec(), Box::new(ocsp_over_http))))
     }
 
+    /// The Apple ID of the app (APPLE_APP_ID). The store watch reads its App Store listing (stores.rs).
+    pub fn app_id(&self) -> u64 {
+        self.app_id
+    }
+
     fn new(bundle_id: String, app_id: u64, root: Vec<u8>, fetch: OcspFetch) -> AppleProof {
         AppleProof { bundle_id, app_id, root, fetch, verified: Mutex::default() }
     }

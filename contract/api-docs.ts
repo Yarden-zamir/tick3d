@@ -14,7 +14,7 @@ import { PLAYOFF_COUNTDOWN_MS, PLAYOFF_TARGETS } from '../src/practice/playoff.t
 import { ECHO_POINTS, MAX_ROUND_MS, PRACTICE_MODES, PRESET_IDS, ROUNDS } from '../src/practice/practice.ts';
 import {
   AVATAR_PICTURES,
-  PLAY_STAGES,
+  STORE_STAGES,
   AVATAR_SEED_LENGTH,
   CHAT_KEEP,
   CHAT_MAX_LENGTH,
@@ -857,9 +857,14 @@ export const SCHEMAS: Record<SchemaName, Schema> = {
       }),
     ),
   }),
-  Stores: object('Where the apps stand in the stores. The server reads the public Google Play listing of the app at start, then every hour.', {
-    play: strings(PLAY_STAGES, 'testing: only testers get the Android app (the closed test). live: everyone gets it from Google Play.'),
-  }),
+  Stores: object(
+    'Where the apps stand in the stores. The server reads the public Google Play listing and the App Store lookup of the app at start, then every hour.',
+    {
+      play: strings(STORE_STAGES, 'testing: only testers get the Android app (the closed test). live: everyone gets it from Google Play.'),
+      apple: strings(STORE_STAGES, 'testing: only testers get the iOS app (TestFlight). live: everyone gets it from the App Store. Absent on a server without an App Store app id.'),
+    },
+    ['apple'],
+  ),
   TesterCodes: object('The Google Play promo codes of the Android closed test, in a fixed order. Never a full code or an email.', {
     codes: list(
       'Every code, free and claimed.',
@@ -2002,10 +2007,11 @@ export const ROUTES = {
   'GET /api/stores': {
     operationId: 'stores',
     tag: 'Testing',
-    summary: 'Where the apps stand in the stores. The /share page and the iOS app use it.',
-    description: 'Once the Android app is live, /share shows the page for everyone instead of the closed-test steps, and the iOS app shows "Share tick3d".',
+    summary: 'Where the apps stand in the stores. The /share page, "Get the app" and the iOS app use it.',
+    description:
+      'Once the Android app is live, /share shows the page for everyone instead of the closed-test steps, and the iOS app shows "Share tick3d". Once the iOS app is live, /share and "Get the app" link to the App Store on an iPhone or an iPad.',
     player: 'none',
-    response: { status: 200, description: 'The stage of each app.', schema: 'Stores', example: { play: 'testing' } },
+    response: { status: 200, description: 'The stage of each app.', schema: 'Stores', example: { play: 'live', apple: 'live' } },
     errors: [],
   },
   'GET /api/testing/codes': {

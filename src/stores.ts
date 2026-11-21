@@ -1,19 +1,20 @@
 // Where the apps stand in the stores (GET /api/stores, rust/server/src/stores.rs), asked once per page.
 import { OnlineError, api } from './online.ts';
 import { platform } from './platform.ts';
-import type { PlayStage } from './protocol.ts';
+import type { Stores } from './protocol.ts';
 
-let asked: Promise<PlayStage | undefined> | undefined;
+// The store pages of the apps. The App Store id is the Apple ID of the app (the APPLE_APP_ID setting of the server).
+export const PLAY_URL = 'https://play.google.com/store/apps/details?id=com.yardenzamir.tick3d';
+export const APP_STORE_URL = 'https://apps.apple.com/app/id6821623182';
 
-// The stage of the Android app on Google Play, or undefined when the server is out of reach.
-export function playStage(): Promise<PlayStage | undefined> {
-  asked ??= api.stores().then(
-    (stores) => stores.play,
-    (error: unknown) => {
-      if (error instanceof OnlineError) return undefined;
-      throw error;
-    },
-  );
+let asked: Promise<Stores | undefined> | undefined;
+
+// The stage of each app, or undefined when the server is out of reach.
+export function storeStages(): Promise<Stores | undefined> {
+  asked ??= api.stores().catch((error: unknown) => {
+    if (error instanceof OnlineError) return undefined;
+    throw error;
+  });
   return asked;
 }
 
@@ -22,7 +23,7 @@ export function playStage(): Promise<PlayStage | undefined> {
 // and the iOS app shows it. /share always opens in the browser, never in the iOS app (no universal links).
 export function showShareSiteInIosWhenLive(button: HTMLElement): void {
   if (platform() !== 'ios') return;
-  void playStage().then((stage) => {
-    if (stage === 'live') delete button.dataset.hideIn;
+  void storeStages().then((stores) => {
+    if (stores?.play === 'live') delete button.dataset.hideIn;
   });
 }

@@ -71,6 +71,15 @@ test('the page for everyone keeps the codes and the invite link, without the clo
   await expect(page.getByRole('link', { name: 'Play now' })).toBeVisible();
 });
 
+test('the page for everyone links to the App Store once the iOS app is live there', async ({ open }) => {
+  const { page } = await open({ path: `${PAGES.share.path}?version=general` });
+  await page.route('**/api/stores', (route) => route.fulfill({ json: { play: 'live', apple: 'live' } }));
+  await page.reload();
+  await page.getByRole('button', { name: 'iPhone' }).click();
+  await expect(page.locator('#iphone-path').getByRole('link', { name: 'Install from the App Store' })).toHaveAttribute('href', 'https://apps.apple.com/app/id6821623182');
+  await expect(page.getByRole('link', { name: 'Play now' })).toBeHidden();
+});
+
 test('the steps open in order, with a wait before the code step, and a tap opens a step early', async ({ open }) => {
   const { page } = await open({ path: TESTING });
   // The links open Google in a new tab. The test needs only the tap.

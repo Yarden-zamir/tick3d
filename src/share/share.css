@@ -789,6 +789,12 @@ body:not([data-share-version='general']) [data-only='general'] {
   display: none;
 }
 
+/* The iPhone step of the page for everyone: the App Store once the iOS app is live, Safari until then (src/share/main.ts). */
+body:not([data-app-store='live']) [data-app-store-only='live'],
+body:not([data-app-store='none']) [data-app-store-only='none'] {
+  display: none;
+}
+
 body:not([data-share-version]) [data-general-text] {
   visibility: hidden;
 }

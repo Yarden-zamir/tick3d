@@ -6,7 +6,7 @@
 //   has two marks: the address holds "playPurchase=1" (PurchaseActivity.java, every build since 0.12), and Chrome
 //   gives the referrer "android-app://com.yardenzamir.tick3d/". The next page has neither, so the page keeps a marker
 //   in sessionStorage. The app has its own Chrome tab, so the marker never reaches the Chrome browser.
-import type { PlayStage } from './protocol.ts';
+import type { Stores } from './protocol.ts';
 
 export type Platform = 'web' | 'ios' | 'android';
 
@@ -58,7 +58,7 @@ export function markPlatform(): void {
   document.documentElement.dataset.platform = platform();
 }
 
-// The device of a browser visitor, for the "Get the app" link. Only the Android app is in a public store.
+// The device of a browser visitor, for the "Get the app" link.
 export type AppVisitor = {
   platform: Platform;
   // True on an iPhone or an iPad. iPadOS 13 and later names a Mac in the user agent, but a Mac has no touch screen.
@@ -71,8 +71,15 @@ export type AppVisitor = {
 export const appleOf = (userAgent: string, maxTouchPoints: number): boolean =>
   userAgent.includes('iPhone') || userAgent.includes('iPad') || (userAgent.includes('Macintosh') && maxTouchPoints > 1);
 
-export const offersPlayApp = (visitor: AppVisitor, stage: PlayStage | undefined): boolean =>
-  stage === 'live' && visitor.platform === 'web' && !visitor.apple && !visitor.installed;
+// The store that "Get the app" links to: the App Store on an iPhone or an iPad, Google Play on Android or a computer.
+// None inside an app or an installed web app, or while the app of that store is not live.
+export type AppOffer = 'play' | 'app-store';
+
+export function appOffer(visitor: AppVisitor, stores: Stores | undefined): AppOffer | undefined {
+  if (visitor.platform !== 'web' || visitor.installed) return undefined;
+  if (visitor.apple) return stores?.apple === 'live' ? 'app-store' : undefined;
+  return stores?.play === 'live' ? 'play' : undefined;
+}
 
 export const appVisitor = (): AppVisitor => ({
   platform: platform(),
