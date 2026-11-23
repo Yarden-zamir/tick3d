@@ -3,12 +3,9 @@
 import {
   Color,
   DoubleSide,
-  InstancedMesh,
-  Matrix4,
   Mesh,
   OrthographicCamera,
   PlaneGeometry,
-  Quaternion,
   Scene,
   ShaderMaterial,
   Vector3,
@@ -20,6 +17,7 @@ import { seededRandom } from '../../src/practice/practice.ts';
 import { SIXTEENTH } from '../../src/song.ts';
 import { winVoices } from '../../src/sound.ts';
 import { cameraAt } from './camera.ts';
+import { createConfetti } from './confetti.ts';
 import type { Picture } from './Film.tsx';
 import { drawHud } from './hud.ts';
 import { CELL, LAYER_GAP, OUTLINE, TILE_HEIGHT, cellCenter } from './layout.ts';
@@ -53,7 +51,7 @@ export function createWorld(width: number, height: number, art: BadgeArt): Pictu
   };
 
   const stage = createStage(width, height);
-  const { scene, camera, paint, layers, cells } = stage;
+  const { camera, paint, layers, cells } = stage;
 
   // The shockwave of a layer slam: a thick square `--line` frame that grows, holds, then fades.
   const frameGeometry = squareFrame(0.9);
@@ -99,27 +97,9 @@ export function createWorld(width: number, height: number, art: BadgeArt): Pictu
   beamTo.add(beamReach);
   const beamLight = stage.beam();
 
-  // ---- Confetti from the end of the winning line, in `--x`, `--o`, `--win` and `--slab` ----
+  // ---- Confetti from the end of the winning line ----
   const confetti = eventOf('confetti');
-  const random = seededRandom(BEATS.game.seed);
-  const CONFETTI_PER_COLOR = 40;
-  const confettiGeometry = new PlaneGeometry(0.22, 0.14);
-  const bursts = (['x', 'o', 'win', 'slab'] as const).map((token) => {
-    const mesh = new InstancedMesh(confettiGeometry, paint(token, { side: DoubleSide }).material, CONFETTI_PER_COLOR);
-    mesh.frustumCulled = false;
-    scene.add(mesh);
-    const bits = Array.from({ length: CONFETTI_PER_COLOR }, () => {
-      const angle = random() * Math.PI * 2;
-      const rise = 0.2 + random() * 0.9;
-      const speed = 3 + random() * 6;
-      return {
-        velocity: new Vector3(Math.cos(angle) * (1 - rise * 0.5), rise, Math.sin(angle) * (1 - rise * 0.5)).multiplyScalar(speed),
-        axis: new Vector3(random() - 0.5, random() - 0.5, random() - 0.5).normalize(),
-        spin: 6 + random() * 14,
-      };
-    });
-    return { mesh, bits };
-  });
+  const confettiBits = createConfetti(stage, seededRandom(BEATS.game.seed));
   const confettiFrom = cellCenter(beam.line[3]);
 
   // ---- The theme wipe ----
@@ -234,18 +214,7 @@ export function createWorld(width: number, height: number, art: BadgeArt): Pictu
     if (fire < 0) beamLight.hide();
     else beamLight.place(beamFrom, beamTo, { length: interpolate(fire, [0, 1], [0, 1], clamp), throb: 1 + 0.25 * hit });
 
-    // Confetti: thrown with gravity, turning, gone below the tower.
-    const seconds = since(frame, confetti.at) * SIXTEENTH;
-    const matrix = new Matrix4();
-    for (const { mesh, bits } of bursts) {
-      mesh.visible = seconds >= 0;
-      bits.forEach((bit, i) => {
-        const position = confettiFrom.clone().addScaledVector(bit.velocity, seconds).add(new Vector3(0, -4.5 * seconds * seconds, 0));
-        matrix.compose(position, new Quaternion().setFromAxisAngle(bit.axis, bit.spin * seconds), new Vector3(1, 1, 1));
-        mesh.setMatrixAt(i, matrix);
-      });
-      mesh.instanceMatrix.needsUpdate = true;
-    }
+    confettiBits.place(confettiFrom, since(frame, confetti.at) * SIXTEENTH);
   }
 
   function draw(gl: WebGLRenderer, frame: number, theme: Theme, target: WebGLRenderTarget | null): void {
